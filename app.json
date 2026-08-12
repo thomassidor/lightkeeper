@@ -3,6 +3,7 @@
   "id": "com.thomassidor.lightlink",
   "version": "0.1.0",
   "compatibility": ">=12.3.0",
+  "runtime": "nodejs",
   "sdk": 3,
   "platforms": [
     "local"
@@ -12,12 +13,32 @@
     "da": "Light Link"
   },
   "description": {
-    "en": "Turn any paired remote, switch or dial into a controller for any paired lights — without writing a single Flow.",
-    "da": "Gør enhver tilknyttet fjernbetjening, kontakt eller drejeknap til en betjening for dine lamper — uden at skrive et eneste Flow."
+    "en": "Your remotes and lights, finally working together.",
+    "da": "Dine fjernbetjeninger og lamper, endelig i samspil."
   },
-  "category": [
-    "lights"
-  ],
+  "category": "lights",
+  "tags": {
+    "en": [
+      "remote control",
+      "smart lights",
+      "dimmer",
+      "rotary dial",
+      "button",
+      "flow",
+      "zigbee",
+      "matter"
+    ],
+    "da": [
+      "fjernbetjening",
+      "smartlys",
+      "lysdæmper",
+      "drejeknap",
+      "trykknap",
+      "flow",
+      "zigbee",
+      "matter"
+    ]
+  },
   "brandColor": "#1F3A5F",
   "permissions": [
     "homey:manager:api"
@@ -32,6 +53,7 @@
   },
   "source": "https://github.com/thomassidor/lightlink",
   "homepage": "https://github.com/thomassidor/lightlink#readme",
+  "support": "https://github.com/thomassidor/lightlink/issues",
   "bugs": {
     "url": "https://github.com/thomassidor/lightlink/issues"
   },
@@ -65,27 +87,32 @@
     "actions": [
       {
         "title": {
-          "en": "Receive controller event"
+          "en": "Receive controller event",
+          "da": "Modtag hændelse fra betjening"
         },
         "titleFormatted": {
-          "en": "Send event [[event_key]] to controller [[controller]]"
+          "en": "Send event [[event_key]] to controller [[controller]]",
+          "da": "Send hændelsen [[event_key]] til betjeningen [[controller]]"
         },
         "hint": {
-          "en": "Used internally by Light Link. These cards appear in Flows that Light Link creates and maintains for you — you do not need to add them by hand, and editing them will disconnect your controller."
+          "en": "Used internally by Light Link. These cards appear in Flows that Light Link creates and maintains for you — you do not need to add them by hand, and editing them will disconnect your controller.",
+          "da": "Bruges internt af Light Link. Disse kort vises i de Flows, som Light Link opretter og vedligeholder for dig — du behøver ikke selv at tilføje dem, og hvis du redigerer dem, afbrydes forbindelsen til betjeningen."
         },
         "args": [
           {
             "type": "text",
             "name": "controller",
             "title": {
-              "en": "Controller"
+              "en": "Controller",
+              "da": "Betjening"
             }
           },
           {
             "type": "text",
             "name": "event_key",
             "title": {
-              "en": "Event"
+              "en": "Event",
+              "da": "Hændelse"
             }
           }
         ],
@@ -93,34 +120,40 @@
       },
       {
         "title": {
-          "en": "Receive numeric controller event"
+          "en": "Receive numeric controller event",
+          "da": "Modtag numerisk hændelse fra betjening"
         },
         "titleFormatted": {
-          "en": "Send event [[event_key]] with value [[value]] to controller [[controller]]"
+          "en": "Send event [[event_key]] with value [[value]] to controller [[controller]]",
+          "da": "Send hændelsen [[event_key]] med værdien [[value]] til betjeningen [[controller]]"
         },
         "hint": {
-          "en": "Used internally by Light Link, for events that carry an amount as a fixed value — for example one Flow per dial detent. Do not add or edit these by hand."
+          "en": "Used internally by Light Link, for events that carry an amount as a fixed value — for example one Flow per dial detent. Do not add or edit these by hand.",
+          "da": "Bruges internt af Light Link til hændelser med en fast numerisk værdi — for eksempel ét Flow pr. trin på en drejeknap. Du må ikke selv tilføje eller redigere disse kort."
         },
         "args": [
           {
             "type": "text",
             "name": "controller",
             "title": {
-              "en": "Controller"
+              "en": "Controller",
+              "da": "Betjening"
             }
           },
           {
             "type": "text",
             "name": "event_key",
             "title": {
-              "en": "Event"
+              "en": "Event",
+              "da": "Hændelse"
             }
           },
           {
             "type": "number",
             "name": "value",
             "title": {
-              "en": "Value"
+              "en": "Value",
+              "da": "Værdi"
             },
             "min": -1000000,
             "max": 1000000,
@@ -131,13 +164,16 @@
       },
       {
         "title": {
-          "en": "Receive controller event with a token value"
+          "en": "Receive controller event with a token value",
+          "da": "Modtag hændelse fra betjening med tokenværdi"
         },
         "titleFormatted": {
-          "en": "Send event [[event_key]] with value [[droptoken]] to controller [[controller]]"
+          "en": "Send event [[event_key]] with value [[droptoken]] to controller [[controller]]",
+          "da": "Send hændelsen [[event_key]] med værdien [[droptoken]] til betjeningen [[controller]]"
         },
         "hint": {
-          "en": "Used internally by Light Link, for events whose amount arrives as a Flow token — for example a dial reporting how far it turned. Do not add or edit these by hand."
+          "en": "Used internally by Light Link, for events whose amount arrives as a Flow token — for example a dial reporting how far it turned. Do not add or edit these by hand.",
+          "da": "Bruges internt af Light Link til hændelser, hvor værdien kommer som et Flow-token — for eksempel en drejeknap, der angiver, hvor langt den blev drejet. Du må ikke selv tilføje eller redigere disse kort."
         },
         "droptoken": [
           "number"
@@ -147,14 +183,16 @@
             "type": "text",
             "name": "controller",
             "title": {
-              "en": "Controller"
+              "en": "Controller",
+              "da": "Betjening"
             }
           },
           {
             "type": "text",
             "name": "event_key",
             "title": {
-              "en": "Event"
+              "en": "Event",
+              "da": "Hændelse"
             }
           }
         ],

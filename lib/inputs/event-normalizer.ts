@@ -9,7 +9,7 @@ import {
 } from './magnitude-collapser';
 
 export interface CardToken {
-  /** Token identity is `id`, not `name` — established in Phase 0. */
+  /** Token identity is `id`, not `name` — using `name` produces broken flows. */
   id: string;
   type: string;
   title?: unknown;

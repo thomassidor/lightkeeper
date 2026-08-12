@@ -28,10 +28,10 @@ export interface TargetCapabilities {
 }
 
 /**
- * Echoes arrive duplicated — observed in Phase 0, where one `dim` write
+ * Echoes arrive duplicated — observed on real hardware, where one `dim` write
  * produced two identical callbacks. Without a guard the cache would treat the
  * second as an external change, clobbering desired state mid-burst and (in
- * Phase 2) cancelling ramps spuriously.
+ * the ramp engine) cancelling ramps spuriously.
  */
 const ECHO_DEDUPE_MS = 1500;
 

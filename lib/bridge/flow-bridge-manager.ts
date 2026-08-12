@@ -52,7 +52,7 @@ export class FlowBridgeManager {
   ) {}
 
   /**
-   * Resolve this app's own bridge cards by enumeration. Phase 0: a card's uri
+   * Resolve this app's own bridge cards by enumeration. A card's uri
    * embeds its id and is not `homey:app:<appId>` — constructing it yields a 404
    * that reads like a permission refusal.
    */
@@ -200,9 +200,9 @@ export class FlowBridgeManager {
   /**
    * Delete generated Flows whose controller no longer exists.
    *
-   * Needed because managed flow references were not being persisted, so
-   * deleting a controller left its Flows behind and every restart created a
-   * fresh set. The leak is fixed; this clears what it left.
+   * Offered from app settings rather than run automatically: a bulk delete the
+   * user did not ask for is not something to do on a heuristic, and the count
+   * is always shown first (see countOrphans in api.ts).
    */
   async sweepOrphans(
     liveControllerIds: Set<string>,

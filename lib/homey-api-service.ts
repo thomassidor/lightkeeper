@@ -7,7 +7,7 @@ const { HomeyAPI } = require('homey-api');
 /**
  * Owns BOTH API clients and every subscription made through them.
  *
- * Phase 0 established that these cannot be one client (docs/spike-result.md):
+ * These cannot be one client — see CLAUDE.md for the evidence:
  *
  *   read client  — createAppAPI, the app's own token. Devices, zones,
  *                  capability subscriptions, setCapabilityValue, flow READS.

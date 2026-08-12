@@ -57,7 +57,7 @@ module.exports = {
   async setCredential({ homey, body }: any) {
     const token = String(body?.token ?? '');
     // Validate with a WRITE: reads succeed on credentials that cannot write,
-    // which is exactly how the Phase 0 refusal was nearly misdiagnosed.
+    // which is exactly how the original refusal was nearly misdiagnosed.
     return homey.app.credentials.setCredential(token, async (client: any) => {
       const folder = await client.flow.createFlowFolder({
         flowfolder: { name: 'Light Link (checking permissions)' },

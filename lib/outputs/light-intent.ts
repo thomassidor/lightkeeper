@@ -77,7 +77,7 @@ export function clampToRange(value: number, min: number, max: number): number {
 }
 
 /**
- * Round to a capability's decimals. Observed in Phase 0: `dim` reports
+ * Round to a capability's decimals. Observed on real hardware: `dim` reports
  * decimals: 2, so writes finer than 0.01 are no-ops — callers accumulate
  * instead of writing, or a slow dial would never move the light at all.
  */

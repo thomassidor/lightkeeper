@@ -73,7 +73,7 @@ export function assignedInputKeys(profile: ControllerProfile): string[] {
 }
 
 /**
- * §8.3 conflict rule: one lighting function per normalised event in MVP.
+ * §8.3 conflict rule: one lighting function per normalised event.
  * Returns the rule that would be displaced by assigning this input.
  */
 export function conflictingRule(

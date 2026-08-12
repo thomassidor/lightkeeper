@@ -1,17 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
-  <!-- A remote on the left, a lamp on the right, linked by a signal arc:
-       the app's whole idea in one mark. -->
-  <g fill="none" stroke="#1F3A5F" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="12" y="22" width="26" height="56" rx="7" />
-    <circle cx="25" cy="38" r="3.5" fill="#1F3A5F" stroke="none" />
-    <line x1="19" y1="52" x2="31" y2="52" />
-    <line x1="19" y1="62" x2="31" y2="62" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 960" width="960" height="960">
+  <title>Light Link</title>
+  <desc>A remote linked to a glowing lamp.</desc>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="112" y="218" width="250" height="524" rx="72" stroke="#1F3A5F" stroke-width="52"/>
+    <circle cx="237" cy="356" r="34" fill="#1F3A5F"/>
+    <path d="M178 514h118M178 622h118" stroke="#1F3A5F" stroke-width="52"/>
 
-    <path d="M48 44c4-4 4-4 8 0" />
-    <path d="M46 36c6-6 12-6 18 0" opacity="0.55" />
+    <path d="M428 390c70-70 144-70 214 0M446 488c46-46 92-46 138 0"
+          stroke="#F2A93B" stroke-width="48"/>
 
-    <path d="M74 30a14 14 0 0 0-9 24v6h18v-6a14 14 0 0 0-9-24z" />
-    <line x1="69" y1="68" x2="79" y2="68" />
-    <line x1="71" y1="75" x2="77" y2="75" />
+    <path d="M732 286c-106 0-192 86-192 192 0 66 34 126 88 161v69h208v-69c54-35 88-95 88-161 0-106-86-192-192-192z"
+          stroke="#1F3A5F" stroke-width="52"/>
+    <path d="M626 478c0-59 48-107 107-107 34 0 66 16 86 42" stroke="#FFD27A" stroke-width="44"/>
+    <path d="M654 708h156M676 794h112" stroke="#1F3A5F" stroke-width="52"/>
   </g>
 </svg>

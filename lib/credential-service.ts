@@ -1,10 +1,10 @@
 /**
  * Owns the Personal API Key that flow writes require.
  *
- * Not a module named in spec §10 — it exists because of a Phase 0 finding the
- * specification did not anticipate: an app's OWN token is refused with
+ * Not a module named in spec §10 — it exists because of a platform constraint
+ * the specification did not anticipate: an app's OWN token is refused with
  * 403 Missing Scopes on every flow write, while a user-minted Personal API Key
- * succeeds, including from inside the app process. See docs/spike-result.md.
+ * succeeds, including from inside the app process. See CLAUDE.md.
  *
  * §12 obligations: the key is never logged, never returned over the app API,
  * and never included in diagnostics or profile exports.
@@ -150,7 +150,7 @@ export class CredentialService {
   /**
    * Store a key after proving it can WRITE. Validating with a read is not
    * enough — reads succeed on credentials that cannot write, which is exactly
-   * how the Phase 0 refusal was nearly misdiagnosed.
+   * how the original refusal was nearly misdiagnosed.
    */
   async setCredential(rawToken: string, validate: (client: unknown) => Promise<void>): Promise<CredentialStatus> {
     const token = rawToken.trim();

@@ -155,7 +155,7 @@ describe('idempotency', () => {
 });
 
 describe('capability bindings', () => {
-  test('need no flow at all (§2.1, interface only in MVP)', () => {
+  test('need no flow at all (§2.1, interface only)', () => {
     const flows = compileBinding(request({
       kind: 'direct_capability', capabilityId: 'button', interpreter: 'boolean_press',
     }));

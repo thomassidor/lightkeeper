@@ -38,7 +38,13 @@
     "onoff": "On/off",
     "brightness": "Brightness",
     "temperature": "Colour temperature",
-    "ofTotal": "__count__ of __total__"
+    "ofTotal": "__count__ of __total__",
+    "noLights": "No lights were found. Check that your lights are paired and available, then try again.",
+    "unavailable": "unavailable",
+    "loadFailed": "The lights could not be loaded. Check that Homey is reachable, then try again.",
+    "capOnOff": "on/off",
+    "capBrightness": "brightness",
+    "capTemperature": "temperature"
   },
   "mapping": {
     "title": "Map controls",
@@ -115,6 +121,8 @@
     "writeSent": "sent",
     "writeFailed": "failed",
     "copied": "Copied ✓",
-    "selectToCopy": "Selected below — press Ctrl+C"
+    "selectToCopy": "Selected below — press Ctrl+C",
+    "controllerFallback": "Controller",
+    "requestFailed": "The request could not be completed. Try again."
   }
 }

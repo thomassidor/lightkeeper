@@ -1,0 +1,7 @@
+role,quantity,brand,model_or_sku,connection,firmware,accessories,review_handover,return_instructions,status
+Source remote,1,IKEA,BILRESA,Matter/Thread,,Battery,[OWNER ACTION],[OWNER ACTION],PLANNED
+Source remote,1,IKEA,STYRBAR,Zigbee local,,Battery,[OWNER ACTION],[OWNER ACTION],PLANNED
+Source remote,1,Philips Hue,Tap Dial,Hue Bridge,,Battery and compatible bridge,[OWNER ACTION],[OWNER ACTION],PLANNED
+Target light,1,[OWNER ACTION],On/off light,Existing Homey integration,,Required power/gateway,[OWNER ACTION],[OWNER ACTION],PLANNED
+Target light,1,[OWNER ACTION],Dimmable light,Existing Homey integration,,Required power/gateway,[OWNER ACTION],[OWNER ACTION],PLANNED
+Target light,1,[OWNER ACTION],Colour-temperature light,Existing Homey integration,,Required power/gateway,[OWNER ACTION],[OWNER ACTION],PLANNED

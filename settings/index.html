@@ -181,7 +181,7 @@
         el.className = 'card';
         el.innerHTML = '<span class="state ' + stateClass(controller.state) + '">'
           + escapeHtml(controller.state) + '</span> '
-          + '<strong>' + escapeHtml(controller.sourceName || 'Controller') + '</strong>'
+          + '<strong>' + escapeHtml(controller.sourceName || t('controllerFallback')) + '</strong>'
           + '<p style="margin:6px 0 0;">'
           + escapeHtml(t('mappingsAndFlows', {
             mappings: controller.mappings,
@@ -292,7 +292,7 @@
         return refreshOrphans();
       }).catch(function (e) {
         msg.className = 'msg broken';
-        msg.textContent = e.message;
+        msg.textContent = t('requestFailed');
         button.disabled = false;
       });
     });

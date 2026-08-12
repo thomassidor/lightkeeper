@@ -1,0 +1,15 @@
+asset,status,publication_path,master_path,dimensions,format,background,revision,notes
+App icon,required,/assets/icon.svg,/assets/icon.svg,960x960,SVG,transparent,2026-08-12,Original vector remote-to-lamp integration mark
+App hero small,required,/assets/images/small.png,/release-materials/graphics/masters/app-hero-master.png,250x175,PNG,opaque,2026-08-12,Lifestyle hero; thumbnail checked
+App hero large,required,/assets/images/large.png,/release-materials/graphics/masters/app-hero-master.png,500x350,PNG,opaque,2026-08-12,Lifestyle hero
+App hero xlarge,recommended,/assets/images/xlarge.png,/release-materials/graphics/masters/app-hero-master.png,1000x700,PNG,opaque,2026-08-12,Lifestyle hero
+Controller driver icon,required,/drivers/controller/assets/icon.svg,/drivers/controller/assets/icon.svg,960x960,SVG,transparent,2026-08-12,Original vector rotary-controller mark
+Controller product small,required,/drivers/controller/assets/images/small.png,/release-materials/graphics/masters/controller-product-master.png,75x75,PNG,white,2026-08-12,Generic representative controller; thumbnail checked
+Controller product large,required,/drivers/controller/assets/images/large.png,/release-materials/graphics/masters/controller-product-master.png,500x500,PNG,white,2026-08-12,Generic representative controller
+Controller product xlarge,recommended,/drivers/controller/assets/images/xlarge.png,/release-materials/graphics/masters/controller-product-master.png,1000x1000,PNG,white,2026-08-12,Generic representative controller
+Widget light preview,not applicable,,,1024x1024,PNG,transparent,,App has no widgets
+Widget dark preview,not applicable,,,1024x1024,PNG,transparent,,App has no widgets
+Pairing illustration,not applicable,,,,,,Sources are already-paired devices; no reset/scan manipulation is required
+Launch graphic square,recommended,,/release-materials/launch-collateral/graphics/launch-square-1200x1200.png,1200x1200,PNG,opaque,2026-08-12,Approved hero with navy copy area
+Launch graphic landscape,recommended,,/release-materials/launch-collateral/graphics/launch-landscape-1600x900.png,1600x900,PNG,opaque,2026-08-12,Approved hero cinematic crop
+Launch graphic portrait,recommended,,/release-materials/launch-collateral/graphics/launch-portrait-1080x1350.png,1080x1350,PNG,opaque,2026-08-12,Approved hero with navy copy area

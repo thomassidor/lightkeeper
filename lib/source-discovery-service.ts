@@ -10,7 +10,7 @@ import type { SelectableInput } from './inputs/selectable-input';
 
 /**
  * Spec §5.1 — discovery order, corrected against what the platform actually
- * exposes (docs/spike-result.md).
+ * exposes (see CLAUDE.md).
  *
  * Device-scoped trigger cards encode their device in the card ID:
  *     homey:device:<deviceId>:<cardName>
@@ -18,8 +18,9 @@ import type { SelectableInput } from './inputs/selectable-input';
  * obvious reading of §5.1.3 — finds nothing and makes every remote look
  * eventless.
  *
- * Capability inspection (§5.1.2) is interface-only in MVP: no reference device
- * exposes input as a capability change (§2.1).
+ * Capability inspection (§5.1.2) is interface-only: no device tested so far
+ * exposes input as a capability change (§2.1). The seam exists so adding one
+ * is additive rather than structural.
  */
 
 export type MatchRoute = 'device_scoped' | 'device_arg' | 'device_arg_unfiltered';

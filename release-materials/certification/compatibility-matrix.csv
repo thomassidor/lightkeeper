@@ -1,0 +1,9 @@
+brand,family_or_model,connection_or_owning_app,evidence,event_surface,claimed_status,limitations,owner_verification
+IKEA,STYRBAR,Zigbee local,repository fixture,press and hold trigger surface,fixture-backed reference,physical latency and end-to-end action pending,REQUIRED
+Philips Hue,Dimmer v2,Philips Hue app / Hue Bridge,repository fixture,button trigger surface,fixture-backed reference,physical latency and end-to-end action pending,REQUIRED
+Philips Hue,Tap Dial,Philips Hue app / Hue Bridge,repository fixture,button plus numeric rotary token,fixture-backed reference,numeric bridge physical verification pending,REQUIRED
+IKEA,BILRESA,Matter/Thread via IKEA integration,repository fixture,button/count stepping; no release card,fixture-backed reference,no hold ramp; card-loss testing pending,REQUIRED
+Generic,Any already-paired remote/switch/dial,Owning Homey integration,design boundary,usable capability change or bindable Flow trigger,conditional compatibility,unsupported when neither surface is exposed,PER MODEL/PATH
+Generic,On/off light,Owning Homey integration,unit tests and API design,onoff target capability,supported target class,real-hardware verification pending,REQUIRED
+Generic,Dimmable light,Owning Homey integration,unit tests and API design,onoff plus dim,supported target class,real-hardware verification pending,REQUIRED
+Generic,Colour-temperature light,Owning Homey integration,unit tests and API design,onoff plus dim plus light_temperature,supported target class,real-hardware verification pending,REQUIRED

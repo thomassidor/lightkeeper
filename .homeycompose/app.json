@@ -2,6 +2,7 @@
   "id": "com.thomassidor.lightlink",
   "version": "0.1.0",
   "compatibility": ">=12.3.0",
+  "runtime": "nodejs",
   "sdk": 3,
   "platforms": [
     "local"
@@ -11,12 +12,14 @@
     "da": "Light Link"
   },
   "description": {
-    "en": "Turn any paired remote, switch or dial into a controller for any paired lights — without writing a single Flow.",
-    "da": "Gør enhver tilknyttet fjernbetjening, kontakt eller drejeknap til en betjening for dine lamper — uden at skrive et eneste Flow."
+    "en": "Your remotes and lights, finally working together.",
+    "da": "Dine fjernbetjeninger og lamper, endelig i samspil."
   },
-  "category": [
-    "lights"
-  ],
+  "category": "lights",
+  "tags": {
+    "en": ["remote control", "smart lights", "dimmer", "rotary dial", "button", "flow", "zigbee", "matter"],
+    "da": ["fjernbetjening", "smartlys", "lysdæmper", "drejeknap", "trykknap", "flow", "zigbee", "matter"]
+  },
   "brandColor": "#1F3A5F",
   "permissions": [
     "homey:manager:api"
@@ -31,6 +34,7 @@
   },
   "source": "https://github.com/thomassidor/lightlink",
   "homepage": "https://github.com/thomassidor/lightlink#readme",
+  "support": "https://github.com/thomassidor/lightlink/issues",
   "bugs": {
     "url": "https://github.com/thomassidor/lightlink/issues"
   },

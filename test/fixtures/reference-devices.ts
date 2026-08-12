@@ -2,7 +2,7 @@ import type { DiscoveredTriggerCard } from '../../lib/inputs/event-normalizer';
 
 /**
  * RAW card schemas, transcribed verbatim from a live Homey Pro 2023 during the
- * Phase 0 spike (firmware 13.4.0). Device IDs are replaced with stable
+ * Homey Pro 2023 (firmware 13.4.0). Device IDs are replaced with stable
  * placeholders; nothing else is altered.
  *
  * §11.2 requires raw fixture data be kept separate from the normalised expected

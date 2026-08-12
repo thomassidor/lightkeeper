@@ -218,7 +218,11 @@ function __llBootTg(Homey) {
     document.getElementById('tg-s-temp').textContent = Homey.__('targets.ofTotal', { count: support.light_temperature, total: support.total });
   }
 
-  var CAP_LABEL = { onoff: 'on/off', dim: 'brightness', light_temperature: 'temperature' };
+  var CAP_LABEL = {
+    onoff: Homey.__('targets.capOnOff'),
+    dim: Homey.__('targets.capBrightness'),
+    light_temperature: Homey.__('targets.capTemperature')
+  };
 
   function fail(text) {
     var el = document.getElementById('tg-loadError');
@@ -232,7 +236,7 @@ function __llBootTg(Homey) {
 
     var rooms = (data && data.rooms) || [];
     if (!rooms.length) {
-      fail('No lights were returned. Check the app log for pair/listTargets.');
+      fail(Homey.__('targets.noLights'));
       return;
     }
 
@@ -258,7 +262,7 @@ function __llBootTg(Homey) {
         var caps = (light.capabilities || []).map(function (c) { return CAP_LABEL[c] || c; }).join(', ');
         el.innerHTML = '<div class="name">' + escapeHtml(light.name) + '</div>'
           + '<div class="meta">' + escapeHtml(caps)
-          + (light.available === false ? ' &middot; unavailable' : '') + '</div>';
+          + (light.available === false ? ' &middot; ' + escapeHtml(Homey.__('targets.unavailable')) : '') + '</div>';
         el.addEventListener('click', function () {
           if (selected.has(light.id)) { selected.delete(light.id); el.classList.remove('sel'); }
           else { selected.add(light.id); el.classList.add('sel'); }
@@ -287,7 +291,7 @@ function __llBootTg(Homey) {
     }
     refresh();
   }).catch(function (err) {
-    fail(err.message || String(err));
+    fail(Homey.__('targets.loadFailed'));
   });
 
   function switchMode(next) {

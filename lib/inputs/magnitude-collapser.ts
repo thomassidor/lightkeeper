@@ -10,7 +10,7 @@
  * The trap this exists to avoid, quoting the spec: "A Matter count field
  * frequently represents wheel detents rather than repeated clicks; misreading
  * it produces a picker full of nonsense entries and a dimmer that jumps."
- * Confirmed on real hardware in Phase 0 — IKEA BILRESA exposes
+ * Confirmed on real hardware — IKEA BILRESA exposes
  * switch_multi_press_multi with button 1–9 AND count 1–18. Expanded naively
  * that is 162 picker entries.
  */

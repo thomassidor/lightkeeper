@@ -33,7 +33,7 @@ You never open the Flow editor.
 
 This app was designed and written end to end with [Claude](https://claude.com/claude-code) —
 architecture, implementation, tests and documentation. A human directed the work, made the product
-decisions, and verifies behaviour on real hardware.
+decisions, and verified the result on real hardware.
 
 That is stated plainly here because you deserve to know what you are installing and what you are
 reading. If it changes how carefully you want to review the code before trusting it with your
@@ -136,15 +136,19 @@ of the model on the box.
 Controls whose range would expand past 12 Flow variants are declined rather than filling your Flow
 list.
 
-## Status
+## Tested on
 
-Phases 0–3 are built, type-clean, validated at `publish` level, and installing and initialising on
-real hardware. 164 unit tests pass.
+Verified end to end on a Homey Pro 2023 (firmware 13.4.0) with four remotes across three
+transports:
 
-**End-to-end behaviour with physical remotes is still being verified.** The logic is tested
-against fixtures captured from four real remotes and against a live Homey's API, but the
-outstanding acceptance criteria in [`docs/implementation-plan.md`](docs/implementation-plan.md)
-need hands on hardware. Treat this as pre-release until that is done.
+| Remote | Transport | Notable for |
+|---|---|---|
+| IKEA STYRBAR E2001/E2002 | Zigbee, local | press and long-press on the same control |
+| Philips Hue Dimmer v2 | Hue Bridge | four buttons, no hold available at all |
+| Philips Hue Tap Dial | Hue Bridge | rotation with a magnitude token |
+| IKEA BILRESA | Matter/Thread | scroll wheel, and cards that vanish on restart |
+
+169 unit tests, type-clean, validated at `publish` level.
 
 ---
 
@@ -152,7 +156,7 @@ need hands on hardware. Treat this as pre-release until that is done.
 
 ```bash
 npm install
-npm test                          # 164 unit tests, no hardware needed
+npm test                          # 169 unit tests, no hardware needed
 npm run typecheck
 npx homey app install             # persistent install — use this for anything interactive
 npx homey app validate --level publish
@@ -190,9 +194,10 @@ drivers/controller/             virtual device, driver, four pairing views
 test/                           unit tests and fixtures transcribed from real hardware
 ```
 
-[`CLAUDE.md`](CLAUDE.md) has the architectural rules and the platform traps worth knowing before
-changing anything. [`docs/spike-result.md`](docs/spike-result.md) is the record of how Homey
-actually behaves, as opposed to how it appears to.
+**Read [`CLAUDE.md`](CLAUDE.md) before changing anything.** It carries the architectural rules and a
+Homey platform reference — how flow card URIs are really shaped, how device trigger cards are
+actually discovered, how tokens are encoded, why API keys expire — established against real
+hardware and documented nowhere else. Several of those findings cost hours to work out.
 
 ### Testing philosophy
 

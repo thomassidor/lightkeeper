@@ -1,12 +1,15 @@
 {
   "title": {
-    "en": "Receive controller event with a token value"
+    "en": "Receive controller event with a token value",
+    "da": "Modtag hændelse fra betjening med tokenværdi"
   },
   "titleFormatted": {
-    "en": "Send event [[event_key]] with value [[droptoken]] to controller [[controller]]"
+    "en": "Send event [[event_key]] with value [[droptoken]] to controller [[controller]]",
+    "da": "Send hændelsen [[event_key]] med værdien [[droptoken]] til betjeningen [[controller]]"
   },
   "hint": {
-    "en": "Used internally by Light Link, for events whose amount arrives as a Flow token — for example a dial reporting how far it turned. Do not add or edit these by hand."
+    "en": "Used internally by Light Link, for events whose amount arrives as a Flow token — for example a dial reporting how far it turned. Do not add or edit these by hand.",
+    "da": "Bruges internt af Light Link til hændelser, hvor værdien kommer som et Flow-token — for eksempel en drejeknap, der angiver, hvor langt den blev drejet. Du må ikke selv tilføje eller redigere disse kort."
   },
   "droptoken": ["number"],
   "args": [
@@ -14,14 +17,16 @@
       "type": "text",
       "name": "controller",
       "title": {
-        "en": "Controller"
+        "en": "Controller",
+        "da": "Betjening"
       }
     },
     {
       "type": "text",
       "name": "event_key",
       "title": {
-        "en": "Event"
+        "en": "Event",
+        "da": "Hændelse"
       }
     }
   ]

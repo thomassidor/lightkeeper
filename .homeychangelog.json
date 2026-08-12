@@ -1,6 +1,6 @@
 {
   "0.1.0": {
-    "en": "First release. Turn any paired remote, switch or dial into a controller for any paired lights — pick a remote, pick lights, assign an event to each lighting function, and Light Link generates and maintains the Flows for you.",
-    "da": "Første udgivelse. Gør enhver tilknyttet fjernbetjening, kontakt eller drejeknap til en betjening for dine lamper — vælg en fjernbetjening, vælg lamper, tildel en hændelse til hver lysfunktion, og Light Link opretter og vedligeholder dine Flows."
+    "en": "Added\n- Initial support for paired remotes, switches, buttons and rotary dials exposed through Homey.\n- Control of on/off, brightness and colour temperature across individual lights or zones.\n- Automatic creation and maintenance of the Flows behind each mapping.\n- Local connection for Homey Pro 2023 and later.",
+    "da": "Tilføjet\n- Første understøttelse af tilknyttede fjernbetjeninger, kontakter, trykknapper og drejeknapper, som Homey gør tilgængelige.\n- Betjening af tænd/sluk, lysstyrke og farvetemperatur for enkelte lamper eller zoner.\n- Automatisk oprettelse og vedligeholdelse af de Flows, der ligger bag hver tildeling.\n- Lokal forbindelse til Homey Pro 2023 og nyere."
   }
 }

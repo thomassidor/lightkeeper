@@ -1,33 +1,39 @@
 {
   "title": {
-    "en": "Receive numeric controller event"
+    "en": "Receive numeric controller event",
+    "da": "Modtag numerisk hændelse fra betjening"
   },
   "titleFormatted": {
-    "en": "Send event [[event_key]] with value [[value]] to controller [[controller]]"
+    "en": "Send event [[event_key]] with value [[value]] to controller [[controller]]",
+    "da": "Send hændelsen [[event_key]] med værdien [[value]] til betjeningen [[controller]]"
   },
   "hint": {
-    "en": "Used internally by Light Link, for events that carry an amount as a fixed value — for example one Flow per dial detent. Do not add or edit these by hand."
+    "en": "Used internally by Light Link, for events that carry an amount as a fixed value — for example one Flow per dial detent. Do not add or edit these by hand.",
+    "da": "Bruges internt af Light Link til hændelser med en fast numerisk værdi — for eksempel ét Flow pr. trin på en drejeknap. Du må ikke selv tilføje eller redigere disse kort."
   },
   "args": [
     {
       "type": "text",
       "name": "controller",
       "title": {
-        "en": "Controller"
+        "en": "Controller",
+        "da": "Betjening"
       }
     },
     {
       "type": "text",
       "name": "event_key",
       "title": {
-        "en": "Event"
+        "en": "Event",
+        "da": "Hændelse"
       }
     },
     {
       "type": "number",
       "name": "value",
       "title": {
-        "en": "Value"
+        "en": "Value",
+        "da": "Værdi"
       },
       "min": -1000000,
       "max": 1000000,

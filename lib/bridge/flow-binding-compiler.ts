@@ -3,7 +3,7 @@ import type { LogicalSourceBinding } from '../inputs/selectable-input';
 /**
  * Spec §6.3 / §6.4 — compile logical bindings into concrete flow definitions.
  *
- * Two Phase 0 findings shape this module (docs/spike-result.md):
+ * Two platform findings shape this module (see CLAUDE.md):
  *
  *  1. A card's `uri` is a full resource URI that EMBEDS its id, e.g.
  *     `homey:flowcardaction:homey:manager:alarms:enable_next`. It is not
@@ -96,7 +96,7 @@ export function compileBinding(request: CompileRequest): CompiledFlow[] {
       return compileRange(request, binding);
 
     case 'direct_capability':
-      // §2.1 — adapter interface in MVP, implementation deferred. A capability
+      // §2.1 — adapter interface only; no device tested so far needs it. A capability
       // source needs no flow at all.
       return [];
   }

@@ -8,9 +8,9 @@ import { CredentialService } from '../../lib/credential-service';
  * invitation to attach it to a bug report. It must therefore never carry API
  * key material.
  *
- * docs/implementation-plan.md calls for this to be proved by a test rather than
- * a code review, and asserts on SERIALISED output: a getter that looks safe can
- * still be walked by JSON.stringify, and that is what actually leaves the app.
+ * This is proved by test rather than by code review, and asserts on SERIALISED
+ * output: a getter that looks safe can still be walked by JSON.stringify, and
+ * that is what actually leaves the app.
  */
 
 /**

@@ -38,7 +38,13 @@
     "onoff": "Tænd/sluk",
     "brightness": "Lysstyrke",
     "temperature": "Farvetemperatur",
-    "ofTotal": "__count__ af __total__"
+    "ofTotal": "__count__ af __total__",
+    "noLights": "Der blev ikke fundet nogen lamper. Kontrollér, at dine lamper er tilknyttet og tilgængelige, og prøv igen.",
+    "unavailable": "utilgængelig",
+    "loadFailed": "Lamperne kunne ikke indlæses. Kontrollér, at der er forbindelse til Homey, og prøv igen.",
+    "capOnOff": "tænd/sluk",
+    "capBrightness": "lysstyrke",
+    "capTemperature": "temperatur"
   },
   "mapping": {
     "title": "Tildel betjeninger",
@@ -115,6 +121,8 @@
     "writeSent": "sendt",
     "writeFailed": "mislykkedes",
     "copied": "Kopieret ✓",
-    "selectToCopy": "Markeret nedenfor — tryk Ctrl+C"
+    "selectToCopy": "Markeret nedenfor — tryk Ctrl+C",
+    "controllerFallback": "Betjening",
+    "requestFailed": "Handlingen kunne ikke gennemføres. Prøv igen."
   }
 }

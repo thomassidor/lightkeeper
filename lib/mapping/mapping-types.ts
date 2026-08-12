@@ -36,7 +36,7 @@ export interface MappingRule {
   function: LightFunction;
   /** null = not assigned. */
   inputKey: string | null;
-  /** null = inherit the controller's targets. Schema in MVP, UI in Phase 3 (§4.2). */
+  /** null = inherit the controller's targets. Set per rule on the mapping screen (§4.2). */
   target: TargetSpec | null;
   options?: MappingOptions;
 }

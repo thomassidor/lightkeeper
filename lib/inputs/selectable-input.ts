@@ -15,7 +15,8 @@ export type LogicalSourceBinding =
     cardOwnerUri: string;
     args: Record<string, unknown>;
     /**
-     * The token's `id`, not its `name` — established in Phase 0. For a token
+     * The token's `id`, not its `name`; using `name` silently produces broken
+     * flows. For a token
      * owned by the flow's own trigger this is referenced bare; global tokens
      * use "<ownerUri>|<tokenId>".
      */
