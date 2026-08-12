@@ -141,3 +141,77 @@ describe('credential service', () => {
     assert.equal(service.hasCredential(), false);
   });
 });
+
+/**
+ * A key appears to hold a single live session: a second createLocalAPI handshake
+ * claims or replaces it, invalidating the first holder (CLAUDE.md §2). At boot
+ * the app's own revalidation races every controller's first reconcile, so an
+ * unguarded build here means two handshakes on one key — which presents as a key
+ * that "randomly" stops working minutes after it was accepted.
+ */
+describe('one handshake per key', () => {
+  /** As harness(), but counting how many clients were actually built. */
+  function counting() {
+    const store = new Map<string, unknown>([['flowWriteApiKey', VALID_KEY]]);
+    let built = 0;
+    let fail = false;
+
+    const service = new CredentialService({
+      settings: {
+        get: k => store.get(k),
+        set: (k, v) => { store.set(k, v); },
+        unset: k => { store.delete(k); },
+      },
+      createWriteClient: async () => {
+        built += 1;
+        // Yield, so a second caller arriving mid-handshake is a real race rather
+        // than one the microtask ordering hides.
+        await new Promise(resolve => setImmediate(resolve));
+        if (fail) throw new Error('Homey is still starting up');
+        return { id: built };
+      },
+      getLocalAddress: async () => 'http://127.0.0.1:80',
+      log: () => { /* quiet */ },
+    });
+
+    return { service, store, built: () => built, failNext: () => { fail = true; }, succeedNext: () => { fail = false; } };
+  }
+
+  test('concurrent callers share one handshake', async () => {
+    const h = counting();
+
+    const [a, b, c] = await Promise.all([
+      h.service.getWriteClient(),
+      h.service.getWriteClient(),
+      h.service.getWriteClient(),
+    ]);
+
+    assert.equal(h.built(), 1, 'a second handshake would invalidate the first session');
+    assert.equal(a, b);
+    assert.equal(b, c);
+  });
+
+  test('a failed handshake is not cached', async () => {
+    const h = counting();
+    h.failNext();
+
+    await assert.rejects(h.service.getWriteClient(), /still starting up/);
+
+    h.succeedNext();
+    const client = await h.service.getWriteClient();
+
+    assert.notEqual(client, undefined);
+    assert.equal(h.built(), 2, 'the retry must make a fresh attempt');
+  });
+
+  test('a handshake in flight cannot resurrect a cleared key', async () => {
+    const h = counting();
+
+    const pending = h.service.getWriteClient();
+    h.service.clearCredential();
+
+    await assert.rejects(pending, /changed while connecting/);
+    // And the cleared state stands: no client was cached behind our back.
+    await assert.rejects(() => h.service.getWriteClient(), /cannot create its Flows/);
+  });
+});

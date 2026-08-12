@@ -1,7 +1,9 @@
 import Homey from 'homey';
 
 import { DEFAULT_BEHAVIOR, FUNCTION_CAPABILITY, type LightFunction, type MappingRule } from '../../lib/mapping/mapping-types';
-import { CURRENT_SCHEMA_VERSION, type ControllerProfile } from '../../lib/profiles/controller-profile';
+import {
+  CURRENT_SCHEMA_VERSION, dedupeByInputKey, type ControllerProfile,
+} from '../../lib/profiles/controller-profile';
 import { availableFunctions } from '../../lib/mapping/mapping-engine';
 import { groupByControl, type SelectableInput } from '../../lib/inputs/selectable-input';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
@@ -312,7 +314,16 @@ module.exports = class ControllerDriver extends Homey.Driver {
     handler('setRules', async (rules: Array<{
       id: string; function: LightFunction; inputKey: string | null; groupKey: string;
     }>) => {
-      state.mappings = (rules ?? [])
+      // One rule per gesture. The mapping screen already displaces a duplicate
+      // visibly; this is the net behind it, because a gesture assigned twice
+      // reaches the engine's first-match resolve() and the second assignment
+      // silently does nothing.
+      const { rules: unique, displaced } = dedupeByInputKey(rules ?? []);
+      for (const dropped of displaced) {
+        this.log(`Dropped duplicate assignment of "${dropped.inputKey}" to ${dropped.function}`);
+      }
+
+      state.mappings = unique
         .filter(r => r.inputKey)
         .map(r => ({
           id: r.id,

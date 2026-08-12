@@ -1,4 +1,4 @@
-import { CredentialService } from './credential-service';
+import { CredentialService, sanitizedWriteError } from './credential-service';
 
 // homey-api ships JS with JSDoc rather than type declarations.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -86,6 +86,13 @@ export class HomeyApiService {
   /**
    * Run a flow write, classifying credential failures so the health monitor
    * can distinguish "needs a new key" from "needs remapping".
+   *
+   * The failure is re-thrown SANITISED, never passed through. This is the only
+   * place in the app where an error object has been anywhere near the API key,
+   * and callers do log and display these messages: the bridge manager logs a
+   * failed delete, and ControllerRuntime puts an unclassified message straight
+   * into the device's unavailable text. An upstream error that quotes the request
+   * back would carry the token into both. Do not "simplify" this to `throw error`.
    */
   async withWriteClient<T>(operation: (api: any) => Promise<T>): Promise<T> {
     const api = await this.write();
@@ -95,7 +102,7 @@ export class HomeyApiService {
       return result;
     } catch (error) {
       this.credentials.reportFailure(error);
-      throw error;
+      throw sanitizedWriteError(error);
     }
   }
 

@@ -1,6 +1,7 @@
 import Homey from 'homey';
 
 import { migrateProfile } from '../../lib/profiles/migrations';
+import { carryForwardFlows } from '../../lib/profiles/controller-profile';
 import type {
   ControllerProfile, ControllerState, StateDetail,
 } from '../../lib/profiles/controller-profile';
@@ -62,14 +63,21 @@ module.exports = class ControllerDevice extends Homey.Device {
   /** Called by the pair/repair session when the user saves. */
   async applyProfile(profile: ControllerProfile): Promise<void> {
     // Carry forward the flows we already own, so reconciliation reuses them
-    // instead of orphaning a set and creating duplicates.
+    // instead of orphaning a set and creating duplicates — but only while the
+    // source device is the same one. See carryForwardFlows().
     const previous: ControllerProfile | null = this.getStoreValue('profile') ?? null;
-    const merged: ControllerProfile = {
-      ...profile,
-      managedFlows: previous?.managedFlows ?? [],
-    };
+    const { profile: merged, obsolete } = carryForwardFlows(previous, profile);
 
     await this.setStoreValue('profile', merged);
+
+    // The source moved, so these flows trigger on a device that is gone. Delete
+    // them BEFORE registering, or reconciliation recreates their replacements
+    // alongside them and the user is left with two sets.
+    if (obsolete.length > 0) {
+      const removed = await this.app.bridge.removeAll(obsolete);
+      this.log(`Source changed: removed ${removed} of ${obsolete.length} flow(s) from the old remote`);
+    }
+
     await this.app.controllers.register(
       this.controllerId,
       merged,

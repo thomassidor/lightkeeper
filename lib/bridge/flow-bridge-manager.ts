@@ -1,4 +1,5 @@
 import type { HomeyApiService } from '../homey-api-service';
+import { redactKeyMaterial } from '../credential-service';
 import type { ManagedFlowReference } from '../profiles/controller-profile';
 import {
   compileBinding,
@@ -264,7 +265,8 @@ export class FlowBridgeManager {
       return true;
     } catch (error) {
       // A flow the user already deleted is not an error worth surfacing.
-      this.log(`Could not delete flow ${flowId}:`, (error as Error)?.message);
+      // Redacted as well as sanitised upstream: this line goes to the app log.
+      this.log(`Could not delete flow ${flowId}:`, redactKeyMaterial(String((error as Error)?.message ?? '')));
       return false;
     }
   }
@@ -286,7 +288,10 @@ export class FlowBridgeManager {
       return created.id;
     } catch (error) {
       // Folders are organisational only — never let one block the real work.
-      this.log('Could not create the Light Link folder; continuing without it:', (error as Error)?.message);
+      this.log(
+        'Could not create the Light Link folder; continuing without it:',
+        redactKeyMaterial(String((error as Error)?.message ?? '')),
+      );
       return undefined;
     }
   }

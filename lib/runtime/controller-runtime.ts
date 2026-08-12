@@ -1,5 +1,5 @@
 import type { HomeyApiService } from '../homey-api-service';
-import { credentialFailureKey } from '../credential-service';
+import { credentialFailureKey, redactKeyMaterial } from '../credential-service';
 import type { DeviceCatalog } from '../device-catalog';
 import type { SourceDiscoveryService } from '../source-discovery-service';
 import { FlowBridgeManager } from '../bridge/flow-bridge-manager';
@@ -13,7 +13,7 @@ import { planIntent, type Capability } from '../outputs/intent-planner';
 import { RampEngine, canRamp } from '../outputs/ramp-engine';
 import type { LightIntent } from '../outputs/light-intent';
 import type { ControllerProfile, ControllerState, StateDetail } from '../profiles/controller-profile';
-import type { HealthMonitor } from './health-monitor';
+import type { HealthAssessment, HealthMonitor } from './health-monitor';
 import type { InputEvent } from '../inputs/input-event';
 import type { SelectableInput } from '../inputs/selectable-input';
 import type { ControllerBehavior, LightFunction } from '../mapping/mapping-types';
@@ -28,6 +28,15 @@ function rampFor(intent: LightIntent): { kind: 'brightness' | 'temperature'; dir
   }
   // Toggling or setting power has no continuous form.
   return null;
+}
+
+/** A health verdict as a StateDetail the device layer can translate. */
+function detailFor(assessment: HealthAssessment): StateDetail {
+  return {
+    ...(assessment.messageKey ? { key: assessment.messageKey } : {}),
+    ...(assessment.tokens ? { tokens: assessment.tokens } : {}),
+    ...(assessment.detail ? { text: assessment.detail } : {}),
+  };
 }
 
 /** The same function-to-intent mapping the engine uses, without a rule. */
@@ -140,14 +149,40 @@ export class ControllerRuntime {
       const assessment = await this.deps.health.assess(this.profile);
       if (assessment.state === 'ready') return;
 
-      this.setState(assessment.state, {
-        ...(assessment.messageKey ? { key: assessment.messageKey } : {}),
-        ...(assessment.tokens ? { tokens: assessment.tokens } : {}),
-        ...(assessment.detail ? { text: assessment.detail } : {}),
-      });
+      this.setState(assessment.state, detailFor(assessment));
     } catch (error) {
       // A health check that cannot run is not itself a controller fault.
       this.deps.log('Health assessment failed:', (error as Error)?.message);
+    }
+  }
+
+  /**
+   * A usable credential arrived — leave needs_credential if nothing else is wrong.
+   *
+   * assessHealth() above deliberately never declares a controller ready, because
+   * a runtime that failed to build knows things the monitor does not.
+   * needs_credential is the one state where that reasoning does not apply: it
+   * says the mappings, targets and subscriptions were all sound and only the key
+   * was not. Without this the device stays unavailable until the app restarts, so
+   * the whole "mint a new key, paste it in" recovery ends with nothing coming
+   * back — which is indistinguishable, from outside, from the new key being bad.
+   */
+  async recoverFromCredentialFailure(): Promise<void> {
+    if (this.state !== 'needs_credential') return;
+
+    // No monitor (the ephemeral test rig) — the reconcile that just succeeded is
+    // the only evidence available, and it is good enough.
+    if (!this.deps.health) {
+      this.setState('ready');
+      return;
+    }
+
+    try {
+      const assessment = await this.deps.health.assess(this.profile);
+      this.setState(assessment.state, detailFor(assessment));
+    } catch (error) {
+      // Leave the controller where it is rather than guessing it is well.
+      this.deps.log('Health re-check after a credential change failed:', (error as Error)?.message);
     }
   }
 
@@ -319,8 +354,12 @@ export class ControllerRuntime {
           ...(failure.hint ? { text: failure.hint } : {}),
         });
       } else {
-        // Not our string to translate — an API error, shown verbatim.
-        this.setState('needs_repair', { text: (error as Error)?.message });
+        // Not our string to translate — an API error, shown verbatim. Verbatim
+        // means redacted: this text reaches setUnavailable() on the device, and
+        // an upstream error can quote the API key back inside its own message.
+        this.setState('needs_repair', {
+          text: redactKeyMaterial(String((error as Error)?.message ?? '')),
+        });
       }
     }
   }

@@ -134,6 +134,12 @@ export class HealthMonitor {
    * Rebind to the new device ID, preserving every mapping and target. The
    * binding keys are derived from card short ids, which are stable across a
    * re-add, so the catalogue keys still line up.
+   *
+   * Clearing managedFlows here is only half the contract: the device layer must
+   * not put them back. `carryForwardFlows()` in lib/profiles/controller-profile.ts
+   * is what enforces that, and it is load-bearing — the old flows trigger on the
+   * device id that just disappeared, so keeping them makes reconciliation read
+   * them as user-edited and create nothing.
    */
   static applyReattach(profile: ControllerProfile, candidate: ReattachCandidate, catalogue: ControllerProfile['catalogue']): ControllerProfile {
     return {

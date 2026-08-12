@@ -83,3 +83,63 @@ export function conflictingRule(
 ): MappingRule | undefined {
   return profile.mappings.find(m => m.inputKey === inputKey && m.id !== exceptRuleId);
 }
+
+/**
+ * One rule per normalised event, enforced on a whole rule set.
+ *
+ * The mapping screen is keyed on (light group, function), so nothing there
+ * stopped one gesture being assigned twice — and MappingEngine.resolve() takes
+ * the FIRST match, so the second assignment silently did nothing. A control that
+ * looks configured and has no effect is the exact failure this app exists to
+ * prevent, so duplicates are collapsed rather than tolerated.
+ *
+ * First wins, matching the engine. Displaced rules are returned so the caller
+ * can say what it dropped.
+ */
+export function dedupeByInputKey<T extends { inputKey: string | null }>(
+  rules: T[],
+): { rules: T[]; displaced: T[] } {
+  const seen = new Set<string>();
+  const kept: T[] = [];
+  const displaced: T[] = [];
+
+  for (const rule of rules) {
+    if (rule.inputKey !== null && seen.has(rule.inputKey)) {
+      displaced.push(rule);
+      continue;
+    }
+    if (rule.inputKey !== null) seen.add(rule.inputKey);
+    kept.push(rule);
+  }
+
+  return { rules: kept, displaced };
+}
+
+/**
+ * Which managed flows a saved profile may keep, and which are now dead.
+ *
+ * Carrying the existing references forward is what stops reconciliation
+ * orphaning a set and creating duplicates when only the mappings changed. But a
+ * flow's trigger embeds its source DEVICE id, so the moment the source changes —
+ * one-tap re-attach after a BILRESA re-add, or picking a different remote in
+ * repair — every old reference points at a flow whose trigger can no longer
+ * match. Kept, those flows fail hasBeenUserEdited() on the trigger id and the
+ * controller lands in "a user edited this flow" repair, with no new flows
+ * created. They cannot be reached by the orphan sweep either: their controller id
+ * still belongs to a live controller.
+ *
+ * So: same source, keep; different source, hand them back for deletion.
+ */
+export function carryForwardFlows(
+  previous: ControllerProfile | null | undefined,
+  next: ControllerProfile,
+): { profile: ControllerProfile; obsolete: ManagedFlowReference[] } {
+  const existing = previous?.managedFlows ?? [];
+  const sameSource = previous?.source?.deviceId === next.source.deviceId;
+
+  if (sameSource) {
+    return { profile: { ...next, managedFlows: existing }, obsolete: [] };
+  }
+
+  return { profile: { ...next, managedFlows: [] }, obsolete: existing };
+}

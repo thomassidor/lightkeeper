@@ -5,7 +5,10 @@ import { MappingEngine, availableFunctions } from '../../lib/mapping/mapping-eng
 import { DEFAULT_BEHAVIOR, type MappingRule } from '../../lib/mapping/mapping-types';
 import { TargetStateCache } from '../../lib/outputs/target-state-cache';
 import { migrateProfile } from '../../lib/profiles/migrations';
-import { CURRENT_SCHEMA_VERSION } from '../../lib/profiles/controller-profile';
+import {
+  CURRENT_SCHEMA_VERSION, conflictingRule, dedupeByInputKey,
+  type ControllerProfile,
+} from '../../lib/profiles/controller-profile';
 import type { InputEvent } from '../../lib/inputs/input-event';
 
 const rule = (over: Partial<MappingRule>): MappingRule => ({
@@ -178,5 +181,86 @@ describe('migrations', () => {
       () => migrateProfile({ schemaVersion: CURRENT_SCHEMA_VERSION + 1 }),
       /newer than this app understands/,
     );
+  });
+});
+
+/**
+ * One rule per gesture.
+ *
+ * The mapping screen is keyed on (light group, function), so nothing there
+ * stopped a gesture being assigned twice — and resolve() above takes the FIRST
+ * match, so the second assignment silently did nothing. A row that looks
+ * configured and has no effect is the failure this app exists to prevent, so
+ * duplicates are collapsed on the way in and the displaced rule is reported.
+ */
+describe('one rule per gesture', () => {
+  test('a duplicated gesture collapses to the first assignment', () => {
+    const { rules, displaced } = dedupeByInputKey([
+      rule({ id: 'a', function: 'toggle', inputKey: 'k1' }),
+      rule({ id: 'b', function: 'on', inputKey: 'k1' }),
+    ]);
+
+    assert.equal(rules.length, 1);
+    assert.equal(rules[0]!.id, 'a', 'first wins, matching the engine');
+    assert.equal(displaced.length, 1);
+    assert.equal(displaced[0]!.id, 'b');
+  });
+
+  test('the same gesture aimed at two different lights is still one rule', () => {
+    // Legitimate-looking and still broken: only the first target would ever move.
+    const { rules, displaced } = dedupeByInputKey([
+      rule({ id: 'a', inputKey: 'k1', target: { kind: 'devices', deviceIds: ['light-1'] } }),
+      rule({ id: 'b', inputKey: 'k1', target: { kind: 'devices', deviceIds: ['light-2'] } }),
+    ]);
+
+    assert.deepEqual(rules.map(r => r.id), ['a']);
+    assert.deepEqual(displaced.map(r => r.id), ['b']);
+  });
+
+  test('distinct gestures are all kept, in order', () => {
+    const { rules, displaced } = dedupeByInputKey([
+      rule({ id: 'a', inputKey: 'k1' }),
+      rule({ id: 'b', inputKey: 'k2' }),
+      rule({ id: 'c', inputKey: 'k3' }),
+    ]);
+
+    assert.deepEqual(rules.map(r => r.id), ['a', 'b', 'c']);
+    assert.deepEqual(displaced, []);
+  });
+
+  test('unassigned rows never collide with each other', () => {
+    const { rules, displaced } = dedupeByInputKey([
+      rule({ id: 'a', inputKey: null }),
+      rule({ id: 'b', inputKey: null }),
+    ]);
+
+    assert.equal(rules.length, 2, 'two empty dropdowns are not a conflict');
+    assert.deepEqual(displaced, []);
+  });
+
+  test('every surviving rule resolves — no silent dead assignment', () => {
+    const { rules } = dedupeByInputKey([
+      rule({ id: 'a', function: 'toggle', inputKey: 'k1' }),
+      rule({ id: 'b', function: 'on', inputKey: 'k1' }),
+    ]);
+    const engine = new MappingEngine(rules, DEFAULT_BEHAVIOR);
+
+    for (const surviving of rules) {
+      const resolved = engine.resolve({ inputKey: surviving.inputKey!, event: event() });
+      assert.equal(resolved?.rule.id, surviving.id, 'a kept rule that cannot fire is the bug');
+    }
+  });
+
+  test('conflictingRule names what an assignment would displace', () => {
+    const profile = {
+      mappings: [
+        rule({ id: 'a', function: 'toggle', inputKey: 'k1' }),
+        rule({ id: 'b', function: 'on', inputKey: 'k2' }),
+      ],
+    } as ControllerProfile;
+
+    assert.equal(conflictingRule(profile, 'k1', 'b')?.id, 'a');
+    assert.equal(conflictingRule(profile, 'k1', 'a'), undefined, 'a rule cannot conflict with itself');
+    assert.equal(conflictingRule(profile, 'k3', 'a'), undefined);
   });
 });

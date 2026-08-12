@@ -222,10 +222,31 @@ export class ControllerRuntimeManager {
    * either way; only flow reconciliation depends on it.
    */
   async onCredentialChange(): Promise<void> {
-    if (!this.deps.api.credentials.getStatus().valid) return;
+    if (!this.deps.api.credentials.getStatus().valid) {
+      // The key just died, or was deleted from settings. There is nothing to
+      // reconcile — but a controller that still reports "ready" while its Flow
+      // maintenance is dead is telling the user something untrue, and would go on
+      // doing so until the next restart. assessHealth() never declares a
+      // controller ready, so re-asking can only ever be honest.
+      for (const runtime of this.runtimes.values()) {
+        try {
+          await runtime.assessHealth();
+        } catch (error) {
+          this.deps.log('Health re-check after a credential loss failed:', (error as Error)?.message);
+        }
+      }
+      return;
+    }
+
     for (const runtime of this.runtimes.values()) {
       try {
         await runtime.reconcileFlows();
+        // Reconciling is not enough on its own: a controller that went
+        // needs_credential stays there, and its device stays unavailable, until
+        // something re-checks its health. Safe to call unconditionally —
+        // reconcileFlows reports its own failures as state rather than throwing,
+        // and the re-check asks the monitor rather than assuming the best.
+        await runtime.recoverFromCredentialFailure();
       } catch (error) {
         this.deps.log('Reconcile after credential change failed:', (error as Error)?.message);
       }
