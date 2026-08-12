@@ -12,10 +12,15 @@ A Homey Pro app.
 
 ## The problem
 
-You have a remote — an IKEA STYRBAR, a Hue Dimmer, a rotary dial — and you have lights. Making one
-control the other on Homey means opening the Flow editor and building a Flow for every button, for
-every light, for every thing you want that button to do. Turn on. Turn off. Brighter. Dimmer. Then
-again for the next lamp.
+I bought three scroll wheel remotes from IKEA. Three remotes, three lights each, three things I
+wanted each remote to do — 27 Flows to build by hand. Half an hour of clicking, maybe an hour. I
+couldn't be bothered, so I spent a couple of days building this instead. Or rather, I had AI build
+it.
+
+The general version: you have a remote — an IKEA STYRBAR, a Hue Dimmer, a rotary dial — and you have
+lights. Making one control the other on Homey means opening the Flow editor and building a Flow for
+every button, for every light, for every thing you want that button to do. Turn on. Turn off.
+Brighter. Dimmer. Then again for the next lamp.
 
 It works, and it is tedious, and it falls apart the moment you move a lamp to another room.
 
@@ -45,7 +50,7 @@ home: fair, and the code is right here.
 
 - **Homey Pro 2023 or later.** Homey Pro 2019 and earlier cannot create API Keys, which this app
   needs — see below.
-- **Firmware 12.3.0 or newer.**
+- **Firmware 12.9.0 or newer.**
 - **Homey Cloud is not supported.** The design depends on broad local Web API access.
 
 ## Setup
@@ -136,6 +141,63 @@ of the model on the box.
 Controls whose range would expand past 12 Flow variants are declined rather than filling your Flow
 list.
 
+---
+
+## When something is wrong
+
+**A press does nothing.** This is the one worth knowing how to read, because three
+different failures look identical from the sofa. Open Homey settings → Light Link and
+look at **Recent remote presses**:
+
+- **No row at all** — the generated Flow never fired. The remote's event did not reach
+  Light Link, so the problem is upstream of this app.
+- **A row marked ignored** — the event arrived and was deliberately not acted on. The
+  row says why.
+- **A row marked handled** — Light Link acted. Now look at **Writes to lights**: a
+  write that was sent and refused is a target problem; no write at all means the
+  intent never reached the queue.
+
+That distinction is the whole reason those two lists exist.
+
+**No usable events found for my remote.** The owning integration exposes neither a
+capability change nor a bindable trigger card for this pairing path. Try another
+official pairing path if the device has one — a Hue remote exposes more through the
+Philips Hue app than through Matter. If there is no such path, the device cannot be
+observed through Homey's public interfaces and no app can reach it.
+
+**The key does not work.** Create a complete new Personal API Key *with Flow
+permissions*. A key without them validates ordinary reads but cannot maintain Flows,
+and the two failures are reported differently — the message tells you which one you
+have.
+
+**A light is unavailable.** Bring it and its integration back online. Zone targets
+resolve at the moment of use, so a light that comes back is included again without
+any reconfiguration.
+
+**Brightness keeps changing on its own.** Every ramp stops unconditionally after 10
+seconds, because release events do get lost. If your remote exposes no release event,
+Light Link offers stepping rather than a hold ramp in the first place.
+
+### Repair, and what it fixes
+
+Open repair on the controller (Devices → the controller → Repair):
+
+| Situation | What repair does |
+|---|---|
+| API key expired or revoked | Save a new key. Lights keep working throughout; Flow maintenance resumes once it validates. Nothing you configured is lost. |
+| The remote was re-added under a new id | Select the matching remote. One tap keeps every mapping and target. |
+| The remote now exposes different events | Remap the affected controls. |
+| A generated Flow was edited by hand | Rebuilds it. Light Link never silently overwrites your edit — it asks. |
+
+### Removing it
+
+Deleting a controller removes only the Flows it can attribute to that controller. The
+settings page can also find orphaned Light Link Flows, and refuses to clean up when no
+controller is running — in that state every managed Flow looks orphaned and attribution
+would be unsafe. Uninstalling the app removes its settings, including the stored key.
+
+---
+
 ## Tested on
 
 Verified end to end on a Homey Pro 2023 (firmware 13.4.0) with four remotes across three
@@ -148,7 +210,7 @@ transports:
 | Philips Hue Tap Dial | Hue Bridge | rotation with a magnitude token |
 | IKEA BILRESA | Matter/Thread | scroll wheel, and cards that vanish on restart |
 
-169 unit tests, type-clean, validated at `publish` level.
+206 unit tests, type-clean, validated at `publish` level.
 
 ---
 
@@ -156,7 +218,7 @@ transports:
 
 ```bash
 npm install
-npm test                          # 169 unit tests, no hardware needed
+npm test                          # 206 unit tests, no hardware needed
 npm run typecheck
 npx homey app install             # persistent install — use this for anything interactive
 npx homey app validate --level publish
@@ -192,6 +254,7 @@ lib/
   profiles/                     profile schema, repository, migrations
 drivers/controller/             virtual device, driver, four pairing views
 test/                           unit tests and fixtures transcribed from real hardware
+docs/                           review notes, privacy, localisation, artwork (not bundled)
 ```
 
 **Read [`CLAUDE.md`](CLAUDE.md) before changing anything.** It carries the architectural rules and a
@@ -208,6 +271,14 @@ against a normalizer that did nothing.
 
 Captures from a real home are never committed; see [`test/fixtures/README.md`](test/fixtures/README.md).
 
+### Reference
+
+- [`docs/privacy.md`](docs/privacy.md) — what the app reads, stores and never transmits
+- [`docs/homey-review-notes.md`](docs/homey-review-notes.md) — why `homey:manager:api` and a
+  Personal API Key are both unavoidable, plus what is still untested
+- [`docs/localisation.md`](docs/localisation.md) — the app is English-only; how to add a language
+- [`docs/artwork.md`](docs/artwork.md) — palette, icon rules, and how to re-export the store images
+
 ---
 
 ## Contributing
@@ -218,4 +289,4 @@ material.
 
 ## Licence
 
-[MIT](LICENSE) © Thomas Sidor
+[MIT](LICENSE) © Thomas René Sidor

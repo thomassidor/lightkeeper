@@ -1,7 +1,6 @@
 {
   "name": {
-    "en": "Remote-to-light controller",
-    "da": "Fjernbetjening til lamper"
+    "en": "Remote-to-light controller"
   },
   "class": "service",
   "capabilities": [],

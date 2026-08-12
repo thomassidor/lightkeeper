@@ -4,7 +4,7 @@
   "description": "Homey Pro app that turns any paired remote, switch or dial into a controller for any paired lights, without writing a single Flow.",
   "license": "MIT",
   "author": {
-    "name": "Thomas Sidor"
+    "name": "Thomas René Sidor"
   },
   "repository": {
     "type": "git",
@@ -34,7 +34,7 @@
     "validate": "homey app validate --level publish"
   },
   "dependencies": {
-    "homey-api": "^3.19.2"
+    "homey-api": "3.19.2"
   },
   "devDependencies": {
     "@tsconfig/node16": "^16.1.8",

@@ -1,6 +1,5 @@
 {
   "0.1.0": {
-    "en": "Added\n- Initial support for paired remotes, switches, buttons and rotary dials exposed through Homey.\n- Control of on/off, brightness and colour temperature across individual lights or zones.\n- Automatic creation and maintenance of the Flows behind each mapping.\n- Local connection for Homey Pro 2023 and later.",
-    "da": "Tilføjet\n- Første understøttelse af tilknyttede fjernbetjeninger, kontakter, trykknapper og drejeknapper, som Homey gør tilgængelige.\n- Betjening af tænd/sluk, lysstyrke og farvetemperatur for enkelte lamper eller zoner.\n- Automatisk oprettelse og vedligeholdelse af de Flows, der ligger bag hver tildeling.\n- Lokal forbindelse til Homey Pro 2023 og nyere."
+    "en": "Added\n- Initial support for paired remotes, switches, buttons and rotary dials exposed through Homey.\n- Control of on/off, brightness and colour temperature across individual lights or zones.\n- Automatic creation and maintenance of the Flows behind each mapping.\n- Local connection for Homey Pro 2023 and later."
   }
 }

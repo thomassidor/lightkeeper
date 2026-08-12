@@ -3,31 +3,153 @@
 <head>
   <script type="text/javascript" src="/homey.js" data-origin="settings"></script>
   <style>
-    body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; padding: 14px; }
-    h2 { font-size: 15px; margin: 22px 0 8px; }
-    p { font-size: 13px; line-height: 1.55; color: #444; }
-    .card { border: 1px solid #e4e4e7; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
-    .state { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
-    .ready { background: #e6f6ea; color: #14532d; }
-    .partial { background: #fef3c7; color: #92400e; }
-    .broken { background: #fdeaea; color: #7f1d1d; }
-    input { width: 100%; padding: 9px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box;
-            font-family: monospace; font-size: 12px; }
-    button { padding: 8px 14px; border-radius: 6px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
-    .primary { background: #1F3A5F; color: #fff; border-color: #1F3A5F; }
+    /* Tokens mirror the pair views' shared base (drivers/controller/pair/*.html)
+       so the app looks like one product across pairing and settings. This page
+       is a document of its own, so they can live on :root — the pair views have
+       to scope theirs to a root id because all four share one document.
+
+       This page used to be the least finished surface: 8px radii against the
+       pair flow's 14, no shadows, no section labels, row styling built in JS
+       strings, and a VS-Code-dark diagnostics block that was the only dark
+       thing in a light UI. */
+    :root {
+      --ll-accent: #1f3a5f;
+      --ll-accent-ink: #ffffff;
+      --ll-accent-tint: #f1f5fa;
+      --ll-accent-strong: #1f3a5f;
+      --ll-ring: rgba(31, 58, 95, .16);
+      --ll-amber: #f2a93b;
+
+      --ll-ink: #16181d;
+      --ll-sub: #6b7280;
+      --ll-body: #4b5563;
+      --ll-muted: #8b929e;
+      --ll-faint: #9aa1ac;
+
+      /* transparent in light so the Homey settings frame keeps painting the
+         page behind us; claimed in dark, because a white card on a dark frame
+         is the one combination that reads as broken. */
+      --ll-page: transparent;
+      --ll-surface: #ffffff;
+      --ll-raised: #f7f8fa;
+      --ll-line: #eceef2;
+      --ll-field: #e3e6ec;
+      --ll-hover: #c9d2e0;
+      --ll-shadow: 0 1px 2px rgba(16, 24, 40, .05);
+
+      --ll-ok-bg: #eaf7ef;   --ll-ok-ink: #10633a;
+      --ll-warn-bg: #fef3c7; --ll-warn-ink: #92400e;
+      --ll-bad-bg: #fdeceb;  --ll-bad-ink: #8f1d18;
+      --ll-flat-bg: #f4f5f7; --ll-flat-ink: #5b616e;
+
+      --ll-code-bg: #f4f5f7; --ll-code-ink: #16181d;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ll-accent: #6fa0d8;
+        --ll-accent-ink: #10151b;
+        --ll-accent-tint: #1d2a3a;
+        --ll-accent-strong: #9cc2ea;
+        --ll-ring: rgba(111, 160, 216, .28);
+        --ll-amber: #f5b75a;
+
+        --ll-ink: #f2f3f5;
+        --ll-sub: #a6adb8;
+        --ll-body: #c3c9d2;
+        --ll-muted: #8b929e;
+        --ll-faint: #7c8390;
+
+        --ll-page: #16181b;
+        --ll-surface: #1f2126;
+        --ll-raised: #262a31;
+        --ll-line: #2c3037;
+        --ll-field: #3a3f48;
+        --ll-hover: #4a5160;
+        --ll-shadow: 0 1px 2px rgba(0, 0, 0, .4);
+
+        --ll-ok-bg: #14301f;   --ll-ok-ink: #7ddba4;
+        --ll-warn-bg: #3a2d10; --ll-warn-ink: #f0c669;
+        --ll-bad-bg: #3a1a19;  --ll-bad-ink: #f7a49e;
+        --ll-flat-bg: #262a31; --ll-flat-ink: #aeb5c0;
+
+        --ll-code-bg: #101215; --ll-code-ink: #d7dbe0;
+      }
+    }
+
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                        "Helvetica Neue", sans-serif;
+           background: var(--ll-page); color: var(--ll-ink); padding: 16px;
+           -webkit-font-smoothing: antialiased; }
+
+    /* Eyebrow labels, as in the pair views, rather than small bold headings. */
+    h2 { font-size: 12px; font-weight: 600; text-transform: uppercase;
+         letter-spacing: .06em; color: var(--ll-faint); margin: 24px 0 8px 2px; }
+    h2:first-of-type { margin-top: 0; }
+    p { font-size: 13px; line-height: 1.55; color: var(--ll-body); }
+
+    .card { background: var(--ll-surface); border: 1px solid var(--ll-line);
+            border-radius: 14px; box-shadow: var(--ll-shadow); padding: 14px;
+            margin-bottom: 10px; }
+
+    .state { display: inline-block; padding: 3px 9px; border-radius: 999px;
+             font-size: 11px; font-weight: 600; }
+    .ready { background: var(--ll-ok-bg); color: var(--ll-ok-ink); }
+    .partial { background: var(--ll-warn-bg); color: var(--ll-warn-ink); }
+    .broken { background: var(--ll-bad-bg); color: var(--ll-bad-ink); }
+    .flat { background: var(--ll-flat-bg); color: var(--ll-flat-ink); }
+
+    input { width: 100%; padding: 12px 13px; border: 1.5px solid var(--ll-field);
+            border-radius: 11px; box-sizing: border-box; background: var(--ll-surface);
+            color: var(--ll-ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 12px; }
+    input:focus { outline: none; border-color: var(--ll-accent);
+                  box-shadow: 0 0 0 3px var(--ll-ring); }
+
+    button { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
+             border-radius: 10px; border: 1.5px solid var(--ll-field);
+             background: var(--ll-surface); color: var(--ll-ink); cursor: pointer;
+             min-height: 40px; }
+    button:hover { border-color: var(--ll-hover); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .primary { background: var(--ll-accent); color: var(--ll-accent-ink);
+               border-color: var(--ll-accent); font-weight: 600; }
+
     .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-    .msg { margin-top: 10px; padding: 9px 11px; border-radius: 6px; font-size: 13px; }
-    pre { margin-top: 14px; background: #1e1e1e; color: #d4d4d4; padding: 10px; border-radius: 6px; font-size: 11px;
-          max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+
+    /* A default ground, so a message shown before a state class lands on it is
+       still a message rather than bare text on the page. */
+    .msg { margin-top: 10px; padding: 11px 13px; border-radius: 11px; font-size: 13px;
+           line-height: 1.5; background: var(--ll-flat-bg); color: var(--ll-flat-ink); }
+
+    /* The recent-presses and recent-writes rows. These were built with
+       row.style.cssText in the render loop, which put the styling of the two
+       busiest lists in the file out of reach of both the token palette and
+       anyone reading the CSS. */
+    .entry { padding: 7px 0; border-bottom: 1px solid var(--ll-line); font-size: 12px; }
+    .entry:last-child { border-bottom: none; }
+    .entry code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                  color: var(--ll-body); }
+    .entry-error { color: var(--ll-bad-ink); margin-top: 3px; }
+    .entry-meta { margin: 6px 0 0; }
+    .entry-sub { margin: 4px 0 0; color: var(--ll-muted); }
+    /* First child of a card, so the card's own padding is the only spacing. */
+    .tight { margin: 0; }
+
+    pre { margin-top: 14px; background: var(--ll-code-bg); color: var(--ll-code-ink);
+          padding: 12px; border-radius: 11px; font-size: 11px; max-height: 320px;
+          overflow: auto; white-space: pre-wrap; word-break: break-word;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   </style>
 </head>
 <body>
 
 <!--
-  Static copy is translated by homey.js, which resolves every [data-i18n] and
+  Static copy is resolved by homey.js, which looks up every [data-i18n] and
   [data-i18n-placeholder] element against locales/*.json on load. Strings built
-  at runtime go through Homey.__ in the script below. Anything hard-coded here
-  would be English-only for Danish users.
+  at runtime go through Homey.__ in the script below. The app ships English only,
+  but anything hard-coded here could never be translated — so it still goes
+  through a key.
 -->
 
 <h2 data-i18n="settings.apiKeyTitle"></h2>
@@ -48,7 +170,7 @@
 
 <h2 data-i18n="settings.flowsTitle"></h2>
 <div class="card">
-  <p id="orphanText" style="margin:0;" data-i18n="settings.checking"></p>
+  <p id="orphanText" class="tight" data-i18n="settings.checking"></p>
   <div class="row">
     <button id="sweep" style="display:none;"></button>
   </div>
@@ -97,7 +219,27 @@
   function stateClass(state) {
     if (state === 'ready') return 'ready';
     if (state === 'partial') return 'partial';
+    if (state === 'disabled') return 'flat';
     return 'broken';
+  }
+
+  /**
+   * ControllerState is a code, not a label.
+   *
+   * This chip printed `controller.state` verbatim, so a controller waiting on a
+   * key showed the literal string "needs_credential" — an internal identifier,
+   * underscore and all, in the one place a user looks to find out what is wrong.
+   * The enum lives in lib/profiles/controller-profile.ts.
+   */
+  function stateLabel(state) {
+    switch (state) {
+      case 'ready': return t('stateReady');
+      case 'partial': return t('statePartial');
+      case 'needs_repair': return t('stateNeedsRepair');
+      case 'needs_credential': return t('stateNeedsCredential');
+      case 'disabled': return t('stateDisabled');
+      default: return state;
+    }
   }
 
   /**
@@ -133,7 +275,7 @@
       } else {
         status.recentEvents.forEach(function (e) {
           var row = document.createElement('div');
-          row.style.cssText = 'padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:12px;';
+          row.className = 'entry';
           var when = new Date(e.at).toLocaleTimeString();
           row.innerHTML = '<span class="state ' + (e.accepted ? 'ready' : 'broken') + '">'
             + escapeHtml(e.accepted ? t('eventHandled') : t('eventIgnored')) + '</span> '
@@ -142,7 +284,7 @@
               ? ' &middot; ' + escapeHtml(t('eventValue', { value: e.magnitude }))
               : '')
             + (e.reason
-              ? '<div style="color:#7f1d1d;margin-top:3px;">' + escapeHtml(e.reason) + '</div>'
+              ? '<div class="entry-error">' + escapeHtml(e.reason) + '</div>'
               : '');
           events.appendChild(row);
         });
@@ -155,14 +297,14 @@
       } else {
         status.recentWrites.forEach(function (w) {
           var row = document.createElement('div');
-          row.style.cssText = 'padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:12px;';
+          row.className = 'entry';
           row.innerHTML = '<span class="state ' + (w.ok ? 'ready' : 'broken') + '">'
             + escapeHtml(w.ok ? t('writeSent') : t('writeFailed')) + '</span> '
             + escapeHtml(new Date(w.at).toLocaleTimeString())
             + ' &middot; <code>' + escapeHtml(w.capability) + ' = ' + escapeHtml(String(w.value)) + '</code>'
             + ' &middot; ' + escapeHtml(String(w.ms)) + ' ms'
             + (w.error
-              ? '<div style="color:#7f1d1d;margin-top:3px;">' + escapeHtml(w.error) + '</div>'
+              ? '<div class="entry-error">' + escapeHtml(w.error) + '</div>'
               : '');
           writes.appendChild(row);
         });
@@ -180,9 +322,9 @@
         var el = document.createElement('div');
         el.className = 'card';
         el.innerHTML = '<span class="state ' + stateClass(controller.state) + '">'
-          + escapeHtml(controller.state) + '</span> '
+          + escapeHtml(stateLabel(controller.state)) + '</span> '
           + '<strong>' + escapeHtml(controller.sourceName || t('controllerFallback')) + '</strong>'
-          + '<p style="margin:6px 0 0;">'
+          + '<p class="entry-meta">'
           + escapeHtml(t('mappingsAndFlows', {
             mappings: controller.mappings,
             flows: controller.managedFlows,
@@ -191,7 +333,7 @@
             ? ' &middot; <strong>' + escapeHtml(t('notStarted')) + '</strong>'
             : '')
           + '</p>'
-          + '<p style="margin:4px 0 0;color:#71717a;">'
+          + '<p class="entry-sub">'
           + escapeHtml(t('controls', {
             names: (controller.targetNames || []).join(', ') || t('noLights'),
           }))

@@ -26,7 +26,10 @@
     "reattach": "__name__ looks like the same remote, re-added. Re-attaching keeps every mapping and target exactly as they were.",
     "reattachButton": "Re-attach and keep my mappings",
     "reattaching": "Re-attaching…",
-    "reattached": "Re-attached to __name__ with __count__ mapping(s) intact."
+    "reattached": "Re-attached to __name__ with __count__ mapping(s) intact.",
+    "searchPlaceholder": "Search devices…",
+    "noMatch": "No device matches that search.",
+    "listFailed": "No devices were returned. Check the app log for pair/listSources."
   },
   "targets": {
     "title": "Choose lights",
@@ -54,9 +57,11 @@
     "testing": "Testing __name__…",
     "tested": "Sent to __writes__ of __targets__ light(s).",
     "testedSkipped": "Sent to __writes__ of __targets__ light(s), __skipped__ skipped.",
+    "reassigned": "__event__ now does __function__ — it no longer does __previous__.",
     "save": "Save",
     "saving": "Saving…",
-    "allLights": "All lights"
+    "allLights": "All lights",
+    "noEvents": "This remote exposed no usable events. Go back and pick another."
   },
   "functions": {
     "toggle": "On / off",
@@ -90,6 +95,11 @@
     "newKeyPlaceholder": "Paste a new API key",
     "controllers": "Controllers",
     "noControllers": "No controllers yet. Add one from Devices.",
+    "stateReady": "Ready",
+    "statePartial": "Partial",
+    "stateNeedsRepair": "Needs repair",
+    "stateNeedsCredential": "Needs API key",
+    "stateDisabled": "Disabled",
     "mappingsAndFlows": "__mappings__ mapping(s), __flows__ managed Flow(s)",
     "diagnostics": "Diagnostics",
     "showDiagnostics": "Show diagnostics",

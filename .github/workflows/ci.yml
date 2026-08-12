@@ -13,9 +13,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 22, to stay close to what current Homey Pro firmware runs. homey-api
+      # declares engines.node >= 24, which npm only warns about — 3.19.2 is the
+      # version verified on real hardware and is pinned exactly in package.json.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -29,5 +32,9 @@ jobs:
 
       # Validates app.json, the compose sources, drivers, flow cards and
       # locales at the same level the App Store applies on submission.
+      #
+      # The CLI is pinned: an unpinned `npx homey` silently changes what
+      # "publish-level valid" means between two runs of the same commit, so a
+      # green build stops being evidence of anything.
       - name: Validate Homey app
-        run: npx --yes homey app validate --level publish
+        run: npx --yes homey@4.4.2 app validate --level publish

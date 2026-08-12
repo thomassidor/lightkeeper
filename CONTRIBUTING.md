@@ -44,11 +44,13 @@ concurrent holders appear to invalidate one another.
 
 - `npm test` and `npm run typecheck` pass.
 - `homey app validate --level publish` passes.
-- New user-facing strings exist in **both** `locales/en.json` and `locales/da.json`. The locale
-  test enforces this: every defined key must be referenced, every referenced key must be defined,
-  and the two files must agree on keys and on `__token__` placeholders. A string hardcoded in
-  HTML or in `lib/` is English-only for Danish users — `lib/` has no access to `homey.__`, so pass
-  a locale key up through `StateDetail` instead.
+- New user-facing strings exist in `locales/en.json` — never inline in HTML or in `lib/`. The locale
+  test enforces this: every defined key must be referenced, every referenced key must be defined.
+  The app is English-only for now, but a string hardcoded in HTML or in `lib/` can never be
+  translated at all, and `lib/` has no access to `homey.__` — so pass a locale key up through
+  `StateDetail` instead. Adding a language later means dropping in `locales/<lang>.json`; the test
+  finds it on disk and starts checking key parity and `__token__` placeholders against it
+  automatically. `docs/localisation.md` has the rest of the list.
 
 ## House rules
 

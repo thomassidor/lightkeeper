@@ -4,20 +4,28 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import en from '../../locales/en.json' with { type: 'json' };
-import da from '../../locales/da.json' with { type: 'json' };
 
 /**
- * Localisation regressions are silent: a missing Danish key falls back to
+ * Localisation regressions are silent: a missing translation falls back to
  * English and nothing fails, and an unused key is a string someone wrote and
  * then quietly rendered as hardcoded English somewhere else. Both happened —
  * the settings page shipped with zero data-i18n attributes while fifteen
  * `settings.*` keys sat unreferenced, and every credential failure hint reached
- * the user in English despite having Danish translations.
+ * the user in English despite having translations.
  *
  * These tests make both failure modes loud.
+ *
+ * The app currently ships English only. The two cross-locale tests below
+ * therefore discover their subjects from disk rather than importing a second
+ * language by name: with just `en.json` present they pass trivially, and the
+ * moment a `locales/<lang>.json` is added back they re-arm against it with no
+ * edit here. That is deliberate — the mechanism for translating (locale keys
+ * out of `lib/`, `data-i18n` attributes, `Homey.__`) is all still in place, so
+ * the guard protecting it should not have to be rebuilt too.
  */
 
 const ROOT = join(import.meta.dirname, '..', '..');
+const LOCALES = join(ROOT, 'locales');
 
 /** Every leaf path in a nested locale object, as `a.b.c`. */
 function keysOf(object: Record<string, unknown>, prefix = ''): string[] {
@@ -25,6 +33,22 @@ function keysOf(object: Record<string, unknown>, prefix = ''): string[] {
     value !== null && typeof value === 'object'
       ? keysOf(value as Record<string, unknown>, `${prefix}${key}.`)
       : [`${prefix}${key}`]);
+}
+
+/**
+ * Every locale other than English, as `[language, contents]`.
+ *
+ * Read with readFileSync rather than an import so that adding a language needs
+ * no new import statement — an import would have to name the file, which is
+ * exactly the coupling this avoids.
+ */
+function translations(): [string, Record<string, unknown>][] {
+  return readdirSync(LOCALES)
+    .filter(name => name.endsWith('.json') && name !== 'en.json')
+    .map(name => [
+      name.replace(/\.json$/, ''),
+      JSON.parse(readFileSync(join(LOCALES, name), 'utf8')) as Record<string, unknown>,
+    ]);
 }
 
 /** Source files that can reference a locale key. */
@@ -84,18 +108,28 @@ function referencedKeys(): Set<string> {
 }
 
 describe('locales', () => {
-  test('Danish covers exactly the same keys as English', () => {
-    const english = keysOf(en as Record<string, unknown>);
-    const danish = keysOf(da as Record<string, unknown>);
+  test('English is the reference locale and is present', () => {
+    assert.ok(
+      readdirSync(LOCALES).includes('en.json'),
+      'locales/en.json is the fallback every other language resolves against',
+    );
+  });
 
-    assert.deepEqual(
-      english.filter(k => !danish.includes(k)), [],
-      'keys present in en.json but missing from da.json',
-    );
-    assert.deepEqual(
-      danish.filter(k => !english.includes(k)), [],
-      'keys present in da.json but missing from en.json',
-    );
+  test('every translation covers exactly the same keys as English', () => {
+    const english = keysOf(en as Record<string, unknown>);
+
+    for (const [language, contents] of translations()) {
+      const translated = keysOf(contents);
+
+      assert.deepEqual(
+        english.filter(k => !translated.includes(k)), [],
+        `keys present in en.json but missing from ${language}.json`,
+      );
+      assert.deepEqual(
+        translated.filter(k => !english.includes(k)), [],
+        `keys present in ${language}.json but missing from en.json`,
+      );
+    }
   });
 
   test('every defined key is actually referenced by the UI', () => {
@@ -115,24 +149,26 @@ describe('locales', () => {
     assert.deepEqual(missing, [], 'referenced in source but absent from en.json');
   });
 
-  test('token placeholders match between the two languages', () => {
+  test('token placeholders match between English and every translation', () => {
     const tokensIn = (value: string) =>
       [...value.matchAll(/__(\w+)__/g)].map(m => m[1]!).sort();
 
-    const walk = (a: Record<string, any>, b: Record<string, any>, path = '') => {
-      for (const [key, value] of Object.entries(a)) {
-        const here = `${path}${key}`;
-        if (value !== null && typeof value === 'object') {
-          walk(value, b[key] ?? {}, `${here}.`);
-        } else if (typeof value === 'string' && typeof b[key] === 'string') {
-          assert.deepEqual(
-            tokensIn(b[key]), tokensIn(value),
-            `${here}: Danish uses different __tokens__ than English`,
-          );
+    for (const [language, contents] of translations()) {
+      const walk = (a: Record<string, any>, b: Record<string, any>, path = '') => {
+        for (const [key, value] of Object.entries(a)) {
+          const here = `${path}${key}`;
+          if (value !== null && typeof value === 'object') {
+            walk(value, b[key] ?? {}, `${here}.`);
+          } else if (typeof value === 'string' && typeof b[key] === 'string') {
+            assert.deepEqual(
+              tokensIn(b[key]), tokensIn(value),
+              `${here}: ${language}.json uses different __tokens__ than English`,
+            );
+          }
         }
-      }
-    };
+      };
 
-    walk(en as Record<string, any>, da as Record<string, any>);
+      walk(en as Record<string, any>, contents as Record<string, any>);
+    }
   });
 });

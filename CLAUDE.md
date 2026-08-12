@@ -36,9 +36,9 @@ lib/
   profiles/                     profile schema, repository, migrations
 drivers/controller/             virtual device, driver, four pairing views
 settings/index.html             app settings page
-locales/{en,da}.json            all user-facing strings
+locales/en.json                 all user-facing strings
 test/                           unit tests and hand-transcribed fixtures
-release-materials/              store assets and submission material (excluded from the app bundle)
+docs/                           review notes, privacy, localisation, artwork masters (not bundled)
 ```
 
 ---
@@ -299,6 +299,33 @@ because the handlers are gone.
 local Docker container. `--remote` uploads and runs it on the Homey, which is also the only
 faithful context for anything touching app-scoped permissions.
 
+## Pinned versions, and why each one is pinned
+
+Everything here is pinned to what was actually verified on hardware. Changing any of it means
+re-running the hardware pass list, not just re-running CI.
+
+- **`homey-api` is pinned exactly at `3.19.2`** — no caret. This is the version verified on
+  Homey Pro 2023, firmware 13.4.0. Its `engines.node` says `>=24`, which npm only *warns* about
+  (`EBADENGINE`); the package runs fine on the Node the Homey actually has and on Node 22 locally.
+  A review recommended downgrading to `3.17.3` purely on the strength of that field — **do not**,
+  on that evidence alone: it swaps a version proven on real hardware for one that never has been.
+- **CI runs Node 22**, to stay near current firmware, and pins the CLI as `homey@4.4.2`. An
+  unpinned `npx homey` changes what "publish-level valid" means between two runs of one commit.
+- **`compatibility: >=12.9.0`** — the floor we can stand behind, rather than the older `>=12.3.0`
+  that was never tested. Note this is a *firmware* floor; the real hardware floor is Homey Pro
+  2023 and newer, because earlier models cannot mint an API Key at all (§1).
+- **`category: ["tools", "lights"]`.** Apps holding `homey:manager:api` are reviewed as Tools-style
+  cross-app functionality — `homey app validate` says so itself: *"using the homey:manager:api
+  permission will require a more thorough review"*. `lights` stays second for discoverability.
+- **`npm audit`: four moderate findings, zero high or critical, all accepted.** They are one chain —
+  `parseuri` → `engine.io-client` → `socket.io-client` — reached only through `homey-api`, which is
+  our single runtime dependency. There is no upstream fix to take, the endpoint being parsed is the
+  fixed `http://127.0.0.1:80` from `getLocalUrl()`, and npm's suggested remediation is a downgrade
+  of `homey-api` itself. Leave it, and re-check at each dependency bump.
+- **`homey-api` is not MIT.** Its LICENSE reads: *may be used freely with Homey products; source
+  proprietary to Athom B.V.; no warranty*. Bundling it in a Homey app is exactly the permitted use,
+  but it does not inherit this repo's MIT licence and belongs in the rights register as its own line.
+
 ## Conventions
 
 **Comments explain why.** Module headers give the rationale, and inline comments record which bug a
@@ -310,9 +337,18 @@ type declarations. Everything of ours is strict — `strict: true`, `noImplicitO
 **Translation belongs to the device layer.** `lib/` has no access to `homey.__`, so anything
 user-facing produced there returns a locale key plus tokens via `StateDetail`
 (`lib/profiles/controller-profile.ts`), and `drivers/controller/device.ts` resolves it. A string
-hardcoded in `lib/` is English-only no matter what the locale files say.
+hardcoded in `lib/` can never be translated, no matter what the locale files say.
 `test/unit/locales.test.ts` enforces the invariant in both directions: no defined key unused, no
-referenced key undefined, both languages agreeing on keys and on `__token__` placeholders.
+referenced key undefined.
+
+**The app ships English only, and the machinery to change that is intact.** Danish was removed
+(0.1.0) because maintaining two languages doubled the cost of every copy change before anyone had
+asked for the second one. What was *not* removed: the `StateDetail` key-passing above, every
+`data-i18n` attribute, and the `{ "en": … }` object form of every manifest field — so adding a
+language is a sibling key, never a reshape. `locales.test.ts` discovers `locales/*.json` from disk
+rather than importing a second language by name, so its key-parity and `__token__` checks re-arm by
+themselves the moment a file is added. See `docs/localisation.md` for the full re-add list and the
+English–Danish glossary kept from the removed translation.
 
 **Pair views share ONE document.** The four views under `drivers/controller/pair/` are injected into
 the pairing container's document rather than getting their own iframe. They must not load `homey.js`
@@ -343,6 +379,28 @@ Load-bearing product guarantees, not implementation details:
 - **The API key is never logged, never returned over the app API, and never included in
   diagnostics.** Errors are classified before logging, because an error object can echo the token.
   `test/unit/diagnostics-redaction.test.ts` asserts this against serialised output.
+  Two mechanisms hold it up, and both are load-bearing: `withWriteClient` re-throws a
+  `sanitizedWriteError()` rather than the original — the only place in the app where an error has
+  been near the key — and `redactKeyMaterial()` scrubs anything key-shaped from a message on its way
+  into a log line or a device's unavailable text. An unclassifiable platform error keeps its own
+  wording (redacted), because `404 Not Found: FlowCardAction with ID <x>` is the message that costs
+  hours and replacing it with "could not reach Homey" sends the next reader elsewhere.
+- **One live handshake per API key.** `getWriteClient()` memoises the in-flight attempt. A key holds
+  a single session (§2), so two concurrent `createLocalAPI` calls fight over it — and at boot the
+  app's own revalidation races every controller's first reconcile. Symptom if this is removed: a key
+  that was just accepted "randomly" stops working minutes later.
+- **A recovered key returns controllers to ready without a restart.** `needs_credential` is the one
+  state a health re-check may leave downward (`recoverFromCredentialFailure`), because it asserts
+  the runtime was sound and only the key was not. Without it, "mint a new key and paste it in" ends
+  with every device still unavailable, which reads as the new key being bad too.
+- **Managed Flow references are only carried forward while the source device is unchanged.**
+  `carryForwardFlows()`. A flow's trigger embeds the source device id, so after a re-attach (or a
+  repair that picks a different remote) the old references describe flows that can never fire —
+  kept, they read as user-edited, and the new remote gets no flows at all. They are deleted
+  explicitly, because the orphan sweep cannot see them: their controller id is still live.
+- **One rule per gesture.** Enforced in the mapping view, in `setRules`, and by `dedupeByInputKey()`.
+  `MappingEngine.resolve()` takes the first match, so a gesture assigned twice leaves a row that
+  looks configured and does nothing — the exact failure this app exists to prevent.
 - **Bridge arguments are untrusted.** Generated flow arguments are user-editable, so every incoming
   bridge event is validated against a live controller and an expected binding key before anything
   executes. On malformed or stale input, fail closed — log and ignore, never execute heuristically.

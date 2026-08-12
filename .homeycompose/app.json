@@ -1,24 +1,21 @@
 {
   "id": "com.thomassidor.lightlink",
   "version": "0.1.0",
-  "compatibility": ">=12.3.0",
+  "compatibility": ">=12.9.0",
   "runtime": "nodejs",
   "sdk": 3,
   "platforms": [
     "local"
   ],
   "name": {
-    "en": "Light Link",
-    "da": "Light Link"
+    "en": "Light Link"
   },
   "description": {
-    "en": "Your remotes and lights, finally working together.",
-    "da": "Dine fjernbetjeninger og lamper, endelig i samspil."
+    "en": "27 Flows, or one app. Point any remote at any lights."
   },
-  "category": "lights",
+  "category": ["tools", "lights"],
   "tags": {
-    "en": ["remote control", "smart lights", "dimmer", "rotary dial", "button", "flow", "zigbee", "matter"],
-    "da": ["fjernbetjening", "smartlys", "lysdæmper", "drejeknap", "trykknap", "flow", "zigbee", "matter"]
+    "en": ["remote control", "smart lights", "dimmer", "rotary dial", "button", "flow", "zigbee", "matter"]
   },
   "brandColor": "#1F3A5F",
   "permissions": [
@@ -30,7 +27,7 @@
     "xlarge": "/assets/images/xlarge.png"
   },
   "author": {
-    "name": "Thomas Sidor"
+    "name": "Thomas René Sidor"
   },
   "source": "https://github.com/thomassidor/lightlink",
   "homepage": "https://github.com/thomassidor/lightlink#readme",

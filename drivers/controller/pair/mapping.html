@@ -1,94 +1,193 @@
 <style>
-  /* Scoped to this view's root: all four pair views share ONE document, so
-     unscoped class names bleed between screens. */
-  #map-root { padding: 18px 16px 24px; font-family: -apple-system, BlinkMacSystemFont,
-           "Segoe UI", Roboto, "Helvetica Neue", sans-serif; color: #16181d;
-           -webkit-font-smoothing: antialiased; }
-  #map-root h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
-  #map-root .sub { font-size: 14px; line-height: 1.5; color: #6b7280; margin: 0 0 18px; }
-  #map-root p { font-size: 14px; line-height: 1.55; color: #4b5563; }
+  /* ==== shared base: identical in all four pair views ====
+     Scoped to this view's root because all four views share ONE document, so
+     unscoped class names bleed between screens (see the script header).
 
-  #map-root .card { background: #fff; border: 1px solid #eceef2; border-radius: 14px;
-                 box-shadow: 0 1px 2px rgba(16,24,40,.05); padding: 14px; margin-bottom: 10px; }
+     That also means these ~110 lines cannot be de-duplicated into a stylesheet
+     — there is nowhere to put one. So the duplication is made safe instead:
+     test/unit/pair-view-styles.test.ts compares the four copies with the root
+     id normalised and fails on any difference. Edit this block in all four
+     files, or in none of them.
+
+     Colours are tokens so that the dark scheme below restates values only,
+     never rules. A colour written as a literal anywhere past this block is a
+     token that is missing. */
+  #map-root {
+    /* Brand. Navy is the manifest brandColor and carries both icons; amber is
+       the link accent. This flow previously used a generic #2f6fed for every
+       interactive state — a colour that appeared nowhere else the user had
+       seen, in the app or in the store listing. */
+    --ll-accent: #1f3a5f;
+    --ll-accent-ink: #ffffff;
+    --ll-accent-tint: #f1f5fa;
+    --ll-accent-wash: #fbfcfe;
+    --ll-accent-line: #cdd8e6;
+    --ll-accent-strong: #1f3a5f;
+    --ll-ring: rgba(31, 58, 95, .16);
+    --ll-amber: #f2a93b;
+
+    --ll-ink: #16181d;
+    --ll-sub: #6b7280;
+    --ll-body: #4b5563;
+    --ll-muted: #8b929e;
+    --ll-faint: #9aa1ac;
+
+    /* transparent, not white: the pairing container paints the page behind us,
+       and claiming it in light mode would flatten every card against it. The
+       dark scheme does claim it, because a white card on a dark container is
+       the one combination that reads as broken rather than merely plain. */
+    --ll-page: transparent;
+    --ll-surface: #ffffff;
+    --ll-raised: #f7f8fa;
+    --ll-line: #eceef2;
+    --ll-field: #e3e6ec;
+    --ll-hover: #c9d2e0;
+    --ll-shadow: 0 1px 2px rgba(16, 24, 40, .05);
+
+    --ll-ok-bg: #eaf7ef;   --ll-ok-ink: #10633a;
+    --ll-bad-bg: #fdeceb;  --ll-bad-ink: #8f1d18;
+    --ll-flat-bg: #f4f5f7; --ll-flat-ink: #5b616e;
+
+    background: var(--ll-page);
+    padding: 18px 16px 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", sans-serif;
+    color: var(--ll-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Values only. Note the accent inverts: #1f3a5f is a dark navy and cannot
+     carry white text on a dark ground, so dark mode lightens the accent and
+     darkens the ink on top of it. */
+  @media (prefers-color-scheme: dark) {
+    #map-root {
+      --ll-accent: #6fa0d8;
+      --ll-accent-ink: #10151b;
+      --ll-accent-tint: #1d2a3a;
+      --ll-accent-wash: #1a1e25;
+      --ll-accent-line: #3f5f86;
+      --ll-accent-strong: #9cc2ea;
+      --ll-ring: rgba(111, 160, 216, .28);
+      --ll-amber: #f5b75a;
+
+      --ll-ink: #f2f3f5;
+      --ll-sub: #a6adb8;
+      --ll-body: #c3c9d2;
+      --ll-muted: #8b929e;
+      --ll-faint: #7c8390;
+
+      --ll-page: #16181b;
+      --ll-surface: #1f2126;
+      --ll-raised: #262a31;
+      --ll-line: #2c3037;
+      --ll-field: #3a3f48;
+      --ll-hover: #4a5160;
+      --ll-shadow: 0 1px 2px rgba(0, 0, 0, .4);
+
+      --ll-ok-bg: #14301f;   --ll-ok-ink: #7ddba4;
+      --ll-bad-bg: #3a1a19;  --ll-bad-ink: #f7a49e;
+      --ll-flat-bg: #262a31; --ll-flat-ink: #aeb5c0;
+    }
+  }
+
+  #map-root h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+  #map-root .sub { font-size: 14px; line-height: 1.5; color: var(--ll-sub); margin: 0 0 18px; }
+  #map-root p { font-size: 14px; line-height: 1.55; color: var(--ll-body); }
+
+  #map-root .card { background: var(--ll-surface); border: 1px solid var(--ll-line);
+              border-radius: 14px; box-shadow: var(--ll-shadow); padding: 14px;
+              margin-bottom: 10px; }
 
   #map-root .section { margin-bottom: 18px; }
   #map-root .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase;
-                          letter-spacing: .06em; color: #9aa1ac; margin: 0 0 8px 2px; }
+                       letter-spacing: .06em; color: var(--ll-faint); margin: 0 0 8px 2px; }
 
   /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
-  #map-root .tile { display: block; width: 100%; text-align: left; background: #fff;
-                 border: 1.5px solid #eceef2; border-radius: 12px; padding: 13px 14px;
-                 margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
-                 transition: border-color .12s ease, background .12s ease; }
-  #map-root .tile:hover { border-color: #c9d2e0; }
-  #map-root .tile.sel { border-color: #2f6fed; background: #f3f7ff; }
+  #map-root .tile { display: block; width: 100%; text-align: left; background: var(--ll-surface);
+              border: 1.5px solid var(--ll-line); border-radius: 12px; padding: 13px 14px;
+              margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
+              color: var(--ll-ink);
+              transition: border-color .12s ease, background .12s ease; }
+  #map-root .tile:hover { border-color: var(--ll-hover); }
+  #map-root .tile.sel { border-color: var(--ll-accent); background: var(--ll-accent-tint); }
   #map-root .tile .name { font-size: 15px; font-weight: 500; line-height: 1.3; }
-  #map-root .tile .meta { font-size: 12.5px; color: #8b929e; margin-top: 3px; line-height: 1.35; }
+  #map-root .tile .meta { font-size: 12.5px; color: var(--ll-muted); margin-top: 3px; line-height: 1.35; }
 
   #map-root input[type=text], #map-root input[type=password], #map-root select {
     width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
-    border: 1.5px solid #e3e6ec; border-radius: 11px; background: #fff; color: #16181d;
-    font-family: inherit; -webkit-appearance: none; appearance: none; }
+    border: 1.5px solid var(--ll-field); border-radius: 11px; background: var(--ll-surface);
+    color: var(--ll-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
+  /* The chevron's fill stays a literal: #8b929e is --ll-muted, which is the one
+     token with the same value in both schemes, and a data URI cannot read a
+     custom property. */
   #map-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%238b929e' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
-                  background-repeat: no-repeat; background-position: right 13px center;
-                  background-size: 11px; padding-right: 34px; }
-  #map-root input:focus, #map-root select:focus { outline: none; border-color: #2f6fed;
-                                            box-shadow: 0 0 0 3px rgba(47,111,237,.12); }
+               background-repeat: no-repeat; background-position: right 13px center;
+               background-size: 11px; padding-right: 34px; }
+  #map-root input:focus, #map-root select:focus { outline: none; border-color: var(--ll-accent);
+                                      box-shadow: 0 0 0 3px var(--ll-ring); }
 
   #map-root .btn { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
-                border-radius: 10px; border: 1.5px solid #e3e6ec; background: #fff;
-                color: #16181d; cursor: pointer; min-height: 40px; }
-  #map-root .btn:hover { border-color: #c9d2e0; }
+             border-radius: 10px; border: 1.5px solid var(--ll-field);
+             background: var(--ll-surface); color: var(--ll-ink); cursor: pointer;
+             min-height: 40px; }
+  #map-root .btn:hover { border-color: var(--ll-hover); }
   #map-root .btn:disabled { opacity: .45; cursor: not-allowed; }
   #map-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
-                        border-radius: 12px; border: none; background: #2f6fed; color: #fff;
-                        cursor: pointer; min-height: 50px; margin-top: 16px; font-family: inherit; }
+                     border-radius: 12px; border: none; background: var(--ll-accent);
+                     color: var(--ll-accent-ink); cursor: pointer; min-height: 50px;
+                     margin-top: 16px; font-family: inherit; }
   #map-root .btn-primary:disabled { opacity: .5; cursor: progress; }
 
+  /* A default ground, so a .msg shown before any state class lands on it is
+     still a message rather than bare text on the page. */
   #map-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 11px; font-size: 13.5px;
-                line-height: 1.5; }
-  #map-root .ok { background: #eaf7ef; color: #10633a; }
-  #map-root .bad { background: #fdeceb; color: #8f1d18; }
-  #map-root .muted { background: #f4f5f7; color: #5b616e; }
+             line-height: 1.5; background: var(--ll-flat-bg); color: var(--ll-flat-ink); }
+  #map-root .ok { background: var(--ll-ok-bg); color: var(--ll-ok-ink); }
+  #map-root .bad { background: var(--ll-bad-bg); color: var(--ll-bad-ink); }
+  #map-root .muted { background: var(--ll-flat-bg); color: var(--ll-flat-ink); }
 
-  #map-root ol { font-size: 14px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px; color: #4b5563; }
+  #map-root ol { font-size: 14px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+           color: var(--ll-body); }
   #map-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
   @media (max-width: 380px) { #map-root .grid { grid-template-columns: 1fr; } }
-  #map-root .group { background: #fff; border: 1px solid #eceef2; border-radius: 14px;
-                     box-shadow: 0 1px 2px rgba(16,24,40,.05); margin-bottom: 10px; }
-  #map-root .group-all { border-color: #d8e3fb; background: #fcfdff; }
+  #map-root .empty { font-size: 14px; color: var(--ll-muted); padding: 12px 0; }
+  /* ==== end shared base ==== */
+
+  #map-root .group { background: var(--ll-surface); border: 1px solid var(--ll-line);
+               border-radius: 14px; box-shadow: var(--ll-shadow); margin-bottom: 10px; }
+  #map-root .group-all { border-color: var(--ll-accent-line); background: var(--ll-accent-wash); }
   #map-root .group > summary { display: flex; align-items: center; gap: 10px;
-                               padding: 12px 12px 12px 16px; cursor: pointer; list-style: none;
-                               min-height: 60px; box-sizing: border-box;
-                               -webkit-tap-highlight-color: transparent; }
+                         padding: 12px 12px 12px 16px; cursor: pointer; list-style: none;
+                         min-height: 60px; box-sizing: border-box;
+                         -webkit-tap-highlight-color: transparent; }
   #map-root .group > summary::-webkit-details-marker { display: none; }
-  #map-root .group > summary:active { background: #f7f8fa; border-radius: 14px; }
+  #map-root .group > summary:active { background: var(--ll-raised); border-radius: 14px; }
 
   /* A 44x44 circular target: the glyph alone was too small to hit reliably on
      a phone, even though the whole row toggles. */
   #map-root .chevron { flex: none; width: 44px; height: 44px; border-radius: 50%;
-                       display: flex; align-items: center; justify-content: center;
-                       background: #f1f3f6; color: #5b616e;
-                       transition: transform .18s ease, background .18s ease; }
-  #map-root .group > summary:hover .chevron { background: #e6e9ef; }
+                 display: flex; align-items: center; justify-content: center;
+                 background: var(--ll-flat-bg); color: var(--ll-flat-ink);
+                 transition: transform .18s ease, background .18s ease; }
+  #map-root .group > summary:hover .chevron { background: var(--ll-line); }
   #map-root .group[open] .chevron { transform: rotate(180deg); }
   #map-root .chevron svg { width: 18px; height: 18px; display: block; }
   #map-root .group-heading { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   #map-root .group-title { font-size: 15px; font-weight: 600; }
-  #map-root .group-where { font-size: 12px; color: #9aa1ac; }
-  #map-root .group-badge { font-size: 11px; font-weight: 600; color: #9aa1ac;
-                           background: #f4f5f7; border-radius: 999px; padding: 4px 10px;
-                           white-space: nowrap; margin-left: auto; }
-  #map-root .group-badge.has { color: #1d4ed8; background: #eaf0fe; }
+  #map-root .group-where { font-size: 12px; color: var(--ll-faint); }
+  #map-root .group-badge { font-size: 11px; font-weight: 600; color: var(--ll-faint);
+                     background: var(--ll-flat-bg); border-radius: 999px; padding: 4px 10px;
+                     white-space: nowrap; margin-left: auto; }
+  #map-root .group-badge.has { color: var(--ll-accent-strong); background: var(--ll-accent-tint); }
   #map-root .group-body { padding: 0 14px 12px; }
   #map-root .fn { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
-  #map-root .fn + .fn { border-top: 1px solid #f4f5f7; }
+  #map-root .fn + .fn { border-top: 1px solid var(--ll-flat-bg); }
   /* Related rows sit tight; a gap and a hairline mark where one kind of control
      ends and the next begins. */
   #map-root .fn-group + .fn-group { margin-top: 12px; padding-top: 12px;
-                                    border-top: 1px solid #eceef2; }
+                              border-top: 1px solid var(--ll-line); }
   #map-root .fn .label { width: 84px; flex: none; font-size: 11px; font-weight: 600;
-                         text-transform: uppercase; letter-spacing: .04em; color: #8b929e; }
+                   text-transform: uppercase; letter-spacing: .04em; color: var(--ll-muted); }
   #map-root .fn select { flex: 1; min-width: 0; padding: 9px 11px; font-size: 14px; }
   #map-root .fn .btn { flex: none; padding: 8px 12px; min-height: 36px; font-size: 13px; }
 </style>
@@ -188,6 +287,15 @@ function __llBootMap(Homey) {
 
   var model = { functions: [], groups: [], controls: [], rules: [] };
 
+  /**
+   * Every select and badge currently on screen, rebuilt by render().
+   *
+   * Displacing a gesture has to update a row the user is not touching, and a
+   * full re-render would collapse every open <details> under them. So the
+   * elements are addressable instead.
+   */
+  var widgets = { selects: [], badges: [] };
+
   function show(cls, text) {
     var el = document.getElementById('map-msg');
     el.className = 'msg ' + cls;
@@ -201,20 +309,73 @@ function __llBootMap(Homey) {
     })[0];
   }
 
+  function labelForFunction(func) {
+    var found = model.functions.filter(function (f) { return f.function === func; })[0];
+    return found ? found.label : func;
+  }
+
+  function labelForGroup(groupKey) {
+    var found = model.groups.filter(function (g) { return g.key === groupKey; })[0];
+    return found ? found.label : groupKey;
+  }
+
+  function labelForInput(inputKey) {
+    var label = inputKey;
+    model.controls.forEach(function (control) {
+      control.inputs.forEach(function (input) {
+        if (input.key === inputKey) label = input.label;
+      });
+    });
+    return label;
+  }
+
+  function clearSelect(groupKey, func) {
+    widgets.selects.forEach(function (entry) {
+      if (entry.groupKey === groupKey && entry.func === func) entry.el.value = '';
+    });
+  }
+
   function setAssignment(groupKey, func, inputKey) {
     var rule = ruleFor(groupKey, func);
     if (!inputKey) {
       model.rules = model.rules.filter(function (r) { return r !== rule; });
-    } else if (rule) {
-      rule.inputKey = inputKey;
     } else {
-      model.rules.push({
-        id: groupKey + '-' + func,
-        function: func,
-        inputKey: inputKey,
-        groupKey: groupKey,
+      /**
+       * One rule per gesture. Assigning a gesture already in use takes it away
+       * from wherever it was: the engine resolves the FIRST matching rule only,
+       * so keeping both would leave a row that looks configured and does
+       * nothing — the exact failure this app exists to prevent. Programmatic
+       * value changes fire no 'change' event, so the displaced row is cleared
+       * here rather than by a listener.
+       */
+      var displaced = model.rules.filter(function (r) {
+        return r.inputKey === inputKey && !(r.groupKey === groupKey && r.function === func);
       });
+
+      if (displaced.length) {
+        model.rules = model.rules.filter(function (r) { return displaced.indexOf(r) < 0; });
+        displaced.forEach(function (r) { clearSelect(r.groupKey, r.function); });
+        show('muted', Homey.__('mapping.reassigned', {
+          event: labelForInput(inputKey),
+          function: labelForFunction(func),
+          previous: labelForFunction(displaced[0].function)
+            + ' (' + labelForGroup(displaced[0].groupKey) + ')',
+        }));
+      }
+
+      if (rule) {
+        rule.inputKey = inputKey;
+      } else {
+        model.rules.push({
+          id: groupKey + '-' + func,
+          function: func,
+          inputKey: inputKey,
+          groupKey: groupKey,
+        });
+      }
     }
+
+    refreshBadges();
     return emit('setRules', model.rules).catch(function (err) {
       show('bad', err.message || String(err));
     });
@@ -252,6 +413,7 @@ function __llBootMap(Homey) {
     select.addEventListener('change', function () {
       setAssignment(groupKey, func, select.value || null);
     });
+    widgets.selects.push({ groupKey: groupKey, func: func, el: select });
     return select;
   }
 
@@ -259,6 +421,20 @@ function __llBootMap(Homey) {
     return model.rules.filter(function (r) {
       return r.groupKey === groupKey && r.inputKey;
     }).length;
+  }
+
+  function badgeText(count) {
+    if (!count) return 'none set';
+    return count + (count === 1 ? ' action' : ' actions');
+  }
+
+  /** Keep every badge honest, including ones a displacement changed. */
+  function refreshBadges() {
+    widgets.badges.forEach(function (entry) {
+      var count = assignedCount(entry.groupKey);
+      entry.el.textContent = badgeText(count);
+      entry.el.className = 'group-badge' + (count ? ' has' : '');
+    });
   }
 
   function functionRows(group) {
@@ -347,10 +523,9 @@ function __llBootMap(Homey) {
     var count = assignedCount(group.key);
     var badge = document.createElement('span');
     badge.className = 'group-badge' + (count ? ' has' : '');
-    badge.textContent = count
-      ? count + (count === 1 ? ' action' : ' actions')
-      : 'none set';
+    badge.textContent = badgeText(count);
     summary.appendChild(badge);
+    widgets.badges.push({ groupKey: group.key, el: badge });
 
     var chevron = document.createElement('span');
     chevron.className = 'chevron';
@@ -366,19 +541,14 @@ function __llBootMap(Homey) {
     body.appendChild(functionRows(group));
     card.appendChild(body);
 
-    // Keep the badge honest as assignments change.
-    card.addEventListener('change', function () {
-      var next = assignedCount(group.key);
-      badge.textContent = next ? next + (next === 1 ? ' action' : ' actions') : 'none set';
-      badge.className = 'group-badge' + (next ? ' has' : '');
-    });
-
     return card;
   }
 
   function render() {
     var container = document.getElementById('map-groups');
     container.innerHTML = '';
+    // The registries address elements that are about to be discarded.
+    widgets = { selects: [], badges: [] };
     model.groups.forEach(function (group) { container.appendChild(renderGroup(group)); });
   }
 
@@ -386,10 +556,19 @@ function __llBootMap(Homey) {
     model.functions = data.functions || [];
     model.groups = data.groups || [];
     model.controls = data.controls || [];
-    model.rules = data.rules || [];
+    // A profile saved before one-rule-per-gesture was enforced can still hold a
+    // duplicate. Collapse it first-wins, exactly as the engine and the backend
+    // do, so the screen shows what the remote will actually do.
+    var seen = {};
+    model.rules = (data.rules || []).filter(function (r) {
+      if (!r.inputKey) return true;
+      if (seen[r.inputKey]) return false;
+      seen[r.inputKey] = true;
+      return true;
+    });
 
     if (!model.controls.length) {
-      show('bad', 'This remote exposed no usable events. Go back and pick another.');
+      show('bad', Homey.__('mapping.noEvents'));
       return;
     }
     render();
@@ -426,9 +605,14 @@ window.onHomeyReady = __llBootMap;
 
 (function waitForHomey(attempt) {
   if (window.Homey && typeof window.Homey.emit === 'function') return __llBootMap(window.Homey);
+  // Homey never arrived, so Homey.__ does not exist and this one string cannot
+  // go through a locale key: the failure mode IS "no Homey on the page". It is
+  // also inserted into document.body, outside the view root, so the tokens
+  // scoped to that root cannot reach it either — hence the literal colours,
+  // which are the pair-view error palette rather than the settings one.
   if ((attempt || 0) > 100) {
     document.body.insertAdjacentHTML('afterbegin',
-      '<div style="padding:12px;background:#fdeaea;color:#7f1d1d;font-size:13px;">'
+      '<div style="padding:12px;background:#fdeceb;color:#8f1d18;font-size:13px;">'
       + 'Light Link could not reach the Homey pairing API on this page.</div>');
     return;
   }
