@@ -3,8 +3,7 @@
 [![CI](https://github.com/thomassidor/lightlink/actions/workflows/ci.yml/badge.svg)](https://github.com/thomassidor/lightlink/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Use any remote you already own to control any lights you already own — without writing a single
-Flow.**
+**Use any remote to control any lights — without writing a single Flow.**
 
 A Homey Pro app.
 
@@ -12,7 +11,7 @@ A Homey Pro app.
 
 ## The problem
 
-I bought three scroll wheel remotes from IKEA. Three remotes, three lights each, three things I
+I recently bought three scroll wheel remotes from IKEA. Three remotes, three lights each, three things I
 wanted each remote to do — 27 Flows to build by hand. Half an hour of clicking, maybe an hour. I
 couldn't be bothered, so I spent a couple of days building this instead. Or rather, I had AI build
 it.
@@ -22,7 +21,7 @@ lights. Making one control the other on Homey means opening the Flow editor and 
 every button, for every light, for every thing you want that button to do. Turn on. Turn off.
 Brighter. Dimmer. Then again for the next lamp.
 
-It works, and it is tedious, and it falls apart the moment you move a lamp to another room.
+It works, and it is tedious.
 
 ## What Light Link does
 
@@ -56,8 +55,6 @@ home: fair, and the code is right here.
 ## Setup
 
 ### 1. Give Light Link an API key
-
-This is the one unusual step, and it is worth explaining rather than hiding.
 
 **Homey does not let an app create Flows on its own.** An app's own token is refused with
 `403 Missing Scopes` on every flow write. A Personal API Key that you create succeeds. Since
