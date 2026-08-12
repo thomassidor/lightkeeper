@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script type="text/javascript" src="/homey.js" data-origin="settings"></script>
+  <style>
+    body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; padding: 14px; }
+    h2 { font-size: 15px; margin: 22px 0 8px; }
+    p { font-size: 13px; line-height: 1.55; color: #444; }
+    .card { border: 1px solid #e4e4e7; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+    .state { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+    .ready { background: #e6f6ea; color: #14532d; }
+    .partial { background: #fef3c7; color: #92400e; }
+    .broken { background: #fdeaea; color: #7f1d1d; }
+    input { width: 100%; padding: 9px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box;
+            font-family: monospace; font-size: 12px; }
+    button { padding: 8px 14px; border-radius: 6px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+    .primary { background: #1F3A5F; color: #fff; border-color: #1F3A5F; }
+    .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .msg { margin-top: 10px; padding: 9px 11px; border-radius: 6px; font-size: 13px; }
+    pre { margin-top: 14px; background: #1e1e1e; color: #d4d4d4; padding: 10px; border-radius: 6px; font-size: 11px;
+          max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+  </style>
+</head>
+<body>
+
+<!--
+  Static copy is translated by homey.js, which resolves every [data-i18n] and
+  [data-i18n-placeholder] element against locales/*.json on load. Strings built
+  at runtime go through Homey.__ in the script below. Anything hard-coded here
+  would be English-only for Danish users, which is how the whole page used to be.
+-->
+
+<h2 data-i18n="settings.apiKeyTitle"></h2>
+<p id="credText" data-i18n="settings.checking"></p>
+<div class="card">
+  <input id="key" type="password" data-i18n-placeholder="settings.newKeyPlaceholder"
+         autocomplete="off" spellcheck="false" />
+  <div class="row">
+    <button id="save" class="primary" data-i18n="settings.saveKey"></button>
+    <button id="clear" data-i18n="settings.removeKey"></button>
+  </div>
+  <div id="credMsg" class="msg" style="display:none;"></div>
+</div>
+<p data-i18n="settings.apiKeyExplain"></p>
+
+<h2 data-i18n="settings.controllers"></h2>
+<div id="controllers"></div>
+
+<h2 data-i18n="settings.flowsTitle"></h2>
+<div class="card">
+  <p id="orphanText" style="margin:0;" data-i18n="settings.checking"></p>
+  <div class="row">
+    <button id="sweep" style="display:none;"></button>
+  </div>
+  <div id="sweepMsg" class="msg" style="display:none;"></div>
+</div>
+<p data-i18n="settings.flowsExplain"></p>
+
+<h2 data-i18n="settings.pressesTitle"></h2>
+<p data-i18n="settings.pressesExplain"></p>
+<div id="events" class="card" data-i18n="settings.loading"></div>
+
+<h2 data-i18n="settings.writesTitle"></h2>
+<p data-i18n="settings.writesExplain"></p>
+<div id="writes" class="card" data-i18n="settings.loading"></div>
+
+<h2 data-i18n="settings.diagnostics"></h2>
+<div class="row">
+  <button id="diag" data-i18n="settings.showDiagnostics"></button>
+  <button id="download" data-i18n="settings.downloadDiagnostics"></button>
+</div>
+<pre id="out" style="display:none;"></pre>
+
+<script type="text/javascript">
+  var HomeyRef = null;
+
+  function api(method, path, body) {
+    return new Promise(function (resolve, reject) {
+      HomeyRef.api(method, path, body || null, function (err, result) {
+        if (err) return reject(err instanceof Error ? err : new Error(String(err)));
+        resolve(result);
+      });
+    });
+  }
+
+  /** Shorthand for a translated string with optional __token__ substitutions. */
+  function t(key, tokens) {
+    return HomeyRef.__('settings.' + key, tokens || {});
+  }
+
+  function escapeHtml(text) {
+    return String(text == null ? '' : text).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function stateClass(state) {
+    if (state === 'ready') return 'ready';
+    if (state === 'partial') return 'partial';
+    return 'broken';
+  }
+
+  /**
+   * Translate a credential failure.
+   *
+   * `status.hint` comes from describeFailure() in lib/credential-service.ts and
+   * is always English — lib/ has no access to Homey.__. The failure CODE is what
+   * carries the translation. Mirrors credentialFailureKey() on the app side.
+   */
+  function failureText(cred) {
+    switch (cred.failure) {
+      case 'malformed': return HomeyRef.__('credential.malformed');
+      case 'session_expired': return HomeyRef.__('credential.expired');
+      case 'insufficient_scope': return HomeyRef.__('credential.noScope');
+      case 'unknown': return HomeyRef.__('credential.unreachable');
+      default: return cred.hint || t('keyBroken');
+    }
+  }
+
+  function refresh() {
+    return api('GET', '/').then(function (status) {
+      var cred = status.credential || {};
+      document.getElementById('credText').textContent = cred.valid
+        ? t('keyValid')
+        : cred.present
+          ? failureText(cred)
+          : t('keyMissing');
+
+      var events = document.getElementById('events');
+      events.innerHTML = '';
+      if (!status.recentEvents || !status.recentEvents.length) {
+        events.textContent = t('noPresses');
+      } else {
+        status.recentEvents.forEach(function (e) {
+          var row = document.createElement('div');
+          row.style.cssText = 'padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:12px;';
+          var when = new Date(e.at).toLocaleTimeString();
+          row.innerHTML = '<span class="state ' + (e.accepted ? 'ready' : 'broken') + '">'
+            + escapeHtml(e.accepted ? t('eventHandled') : t('eventIgnored')) + '</span> '
+            + escapeHtml(when) + ' &middot; <code>' + escapeHtml(e.eventKey) + '</code>'
+            + (e.magnitude !== undefined
+              ? ' &middot; ' + escapeHtml(t('eventValue', { value: e.magnitude }))
+              : '')
+            + (e.reason
+              ? '<div style="color:#7f1d1d;margin-top:3px;">' + escapeHtml(e.reason) + '</div>'
+              : '');
+          events.appendChild(row);
+        });
+      }
+
+      var writes = document.getElementById('writes');
+      writes.innerHTML = '';
+      if (!status.recentWrites || !status.recentWrites.length) {
+        writes.textContent = t('noWrites');
+      } else {
+        status.recentWrites.forEach(function (w) {
+          var row = document.createElement('div');
+          row.style.cssText = 'padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:12px;';
+          row.innerHTML = '<span class="state ' + (w.ok ? 'ready' : 'broken') + '">'
+            + escapeHtml(w.ok ? t('writeSent') : t('writeFailed')) + '</span> '
+            + escapeHtml(new Date(w.at).toLocaleTimeString())
+            + ' &middot; <code>' + escapeHtml(w.capability) + ' = ' + escapeHtml(String(w.value)) + '</code>'
+            + ' &middot; ' + escapeHtml(String(w.ms)) + ' ms'
+            + (w.error
+              ? '<div style="color:#7f1d1d;margin-top:3px;">' + escapeHtml(w.error) + '</div>'
+              : '');
+          writes.appendChild(row);
+        });
+      }
+
+      var list = document.getElementById('controllers');
+      list.innerHTML = '';
+      if (!status.controllers.length) {
+        var empty = document.createElement('p');
+        empty.textContent = t('noControllers');
+        list.appendChild(empty);
+        return;
+      }
+      status.controllers.forEach(function (controller) {
+        var el = document.createElement('div');
+        el.className = 'card';
+        el.innerHTML = '<span class="state ' + stateClass(controller.state) + '">'
+          + escapeHtml(controller.state) + '</span> '
+          + '<strong>' + escapeHtml(controller.sourceName || 'Controller') + '</strong>'
+          + '<p style="margin:6px 0 0;">'
+          + escapeHtml(t('mappingsAndFlows', {
+            mappings: controller.mappings,
+            flows: controller.managedFlows,
+          }))
+          + (controller.schedulerReady === false
+            ? ' &middot; <strong>' + escapeHtml(t('notStarted')) + '</strong>'
+            : '')
+          + '</p>'
+          + '<p style="margin:4px 0 0;color:#71717a;">'
+          + escapeHtml(t('controls', {
+            names: (controller.targetNames || []).join(', ') || t('noLights'),
+          }))
+          + '</p>';
+        list.appendChild(el);
+      });
+    });
+  }
+
+  function showMsg(cls, text) {
+    var el = document.getElementById('credMsg');
+    el.className = 'msg ' + cls;
+    el.textContent = text;
+    el.style.display = 'block';
+  }
+
+  function onHomeyReady(Homey) {
+    HomeyRef = Homey;
+    Homey.ready();
+    refresh().catch(function (e) { showMsg('broken', e.message); });
+
+    document.getElementById('save').addEventListener('click', function () {
+      var key = document.getElementById('key').value.trim();
+      if (!key) return showMsg('broken', Homey.__('credential.pasteFirst'));
+      showMsg('partial', Homey.__('credential.checking'));
+      api('POST', '/credential', { token: key }).then(function (status) {
+        if (status.valid) {
+          showMsg('ready', Homey.__('credential.accepted'));
+          document.getElementById('key').value = '';
+        } else {
+          showMsg('broken', failureText(status));
+        }
+        return refresh();
+      }).catch(function (e) { showMsg('broken', e.message); });
+    });
+
+    document.getElementById('clear').addEventListener('click', function () {
+      api('DELETE', '/credential').then(function () {
+        showMsg('partial', t('keyRemoved'));
+        return refresh();
+      }).catch(function (e) { showMsg('broken', e.message); });
+    });
+
+    function refreshOrphans() {
+      return api('GET', '/orphans').then(function (info) {
+        var text = document.getElementById('orphanText');
+        var button = document.getElementById('sweep');
+
+        // With no controller running, EVERY managed Flow looks orphaned. The
+        // count is meaningless in that state, so say so and hide the button
+        // rather than offering a delete the API would refuse anyway.
+        if (info.refused) {
+          text.textContent = t('sweepRefused', { total: info.total });
+          button.style.display = 'none';
+          return;
+        }
+
+        if (info.orphans === 0) {
+          text.textContent = t('noneOrphaned', { total: info.total });
+          button.style.display = 'none';
+          return;
+        }
+
+        text.textContent = t('orphansFound', {
+          orphans: info.orphans,
+          total: info.total,
+          live: info.liveControllers,
+        });
+        button.style.display = 'inline-block';
+        button.textContent = t('deleteOrphans', { count: info.orphans });
+      }).catch(function (e) {
+        document.getElementById('orphanText').textContent = t('checkFailed', { message: e.message });
+      });
+    }
+    refreshOrphans();
+
+    document.getElementById('sweep').addEventListener('click', function () {
+      var button = document.getElementById('sweep');
+      var msg = document.getElementById('sweepMsg');
+      button.disabled = true;
+      msg.className = 'msg partial';
+      msg.textContent = t('sweeping');
+      msg.style.display = 'block';
+
+      api('POST', '/orphans').then(function (result) {
+        if (result.refused) {
+          msg.className = 'msg partial';
+          msg.textContent = t('sweepRefused', { total: result.kept });
+        } else {
+          msg.className = 'msg ready';
+          msg.textContent = result.failed
+            ? t('sweptWithFailures', {
+              deleted: result.deleted, kept: result.kept, failed: result.failed,
+            })
+            : t('swept', { deleted: result.deleted, kept: result.kept });
+        }
+        button.disabled = false;
+        return refreshOrphans();
+      }).catch(function (e) {
+        msg.className = 'msg broken';
+        msg.textContent = e.message;
+        button.disabled = false;
+      });
+    });
+
+    document.getElementById('diag').addEventListener('click', function () {
+      api('GET', '/diagnostics').then(function (data) {
+        var out = document.getElementById('out');
+        out.style.display = 'block';
+        out.textContent = JSON.stringify(data, null, 2);
+      }).catch(function (e) { showMsg('broken', e.message); });
+    });
+
+    /**
+     * navigator.clipboard is blocked by permissions policy inside the settings
+     * iframe, and Blob downloads are blocked too. execCommand('copy') on a real
+     * selection still works, and showing the text is the guaranteed fallback.
+     */
+    function copyText(text) {
+      var area = document.createElement('textarea');
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.style.cssText = 'position:absolute;left:-9999px;top:0;';
+      document.body.appendChild(area);
+      area.select();
+      area.setSelectionRange(0, text.length);
+
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(area);
+      return ok;
+    }
+
+    document.getElementById('download').addEventListener('click', function () {
+      var button = document.getElementById('download');
+      api('GET', '/diagnostics').then(function (data) {
+        var text = JSON.stringify(data, null, 2);
+        var out = document.getElementById('out');
+        out.style.display = 'block';
+        out.textContent = text;
+
+        if (copyText(text)) {
+          button.textContent = t('copied');
+        } else {
+          // Select it so one keystroke finishes the job.
+          var range = document.createRange();
+          range.selectNodeContents(out);
+          var sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+          button.textContent = t('selectToCopy');
+        }
+        setTimeout(function () { button.textContent = t('downloadDiagnostics'); }, 4000);
+      }).catch(function (e) {
+        showMsg('broken', e.message);
+      });
+    });
+  }
+</script>
+
+</body>
+</html>

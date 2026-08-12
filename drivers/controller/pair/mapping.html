@@ -1,0 +1,437 @@
+<style>
+  /* Scoped to this view's root: all four pair views share ONE document, so
+     unscoped class names bleed between screens. */
+  #map-root { padding: 18px 16px 24px; font-family: -apple-system, BlinkMacSystemFont,
+           "Segoe UI", Roboto, "Helvetica Neue", sans-serif; color: #16181d;
+           -webkit-font-smoothing: antialiased; }
+  #map-root h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+  #map-root .sub { font-size: 14px; line-height: 1.5; color: #6b7280; margin: 0 0 18px; }
+  #map-root p { font-size: 14px; line-height: 1.55; color: #4b5563; }
+
+  #map-root .card { background: #fff; border: 1px solid #eceef2; border-radius: 14px;
+                 box-shadow: 0 1px 2px rgba(16,24,40,.05); padding: 14px; margin-bottom: 10px; }
+
+  #map-root .section { margin-bottom: 18px; }
+  #map-root .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase;
+                          letter-spacing: .06em; color: #9aa1ac; margin: 0 0 8px 2px; }
+
+  /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
+  #map-root .tile { display: block; width: 100%; text-align: left; background: #fff;
+                 border: 1.5px solid #eceef2; border-radius: 12px; padding: 13px 14px;
+                 margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
+                 transition: border-color .12s ease, background .12s ease; }
+  #map-root .tile:hover { border-color: #c9d2e0; }
+  #map-root .tile.sel { border-color: #2f6fed; background: #f3f7ff; }
+  #map-root .tile .name { font-size: 15px; font-weight: 500; line-height: 1.3; }
+  #map-root .tile .meta { font-size: 12.5px; color: #8b929e; margin-top: 3px; line-height: 1.35; }
+
+  #map-root input[type=text], #map-root input[type=password], #map-root select {
+    width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
+    border: 1.5px solid #e3e6ec; border-radius: 11px; background: #fff; color: #16181d;
+    font-family: inherit; -webkit-appearance: none; appearance: none; }
+  #map-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%238b929e' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+                  background-repeat: no-repeat; background-position: right 13px center;
+                  background-size: 11px; padding-right: 34px; }
+  #map-root input:focus, #map-root select:focus { outline: none; border-color: #2f6fed;
+                                            box-shadow: 0 0 0 3px rgba(47,111,237,.12); }
+
+  #map-root .btn { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
+                border-radius: 10px; border: 1.5px solid #e3e6ec; background: #fff;
+                color: #16181d; cursor: pointer; min-height: 40px; }
+  #map-root .btn:hover { border-color: #c9d2e0; }
+  #map-root .btn:disabled { opacity: .45; cursor: not-allowed; }
+  #map-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
+                        border-radius: 12px; border: none; background: #2f6fed; color: #fff;
+                        cursor: pointer; min-height: 50px; margin-top: 16px; font-family: inherit; }
+  #map-root .btn-primary:disabled { opacity: .5; cursor: progress; }
+
+  #map-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 11px; font-size: 13.5px;
+                line-height: 1.5; }
+  #map-root .ok { background: #eaf7ef; color: #10633a; }
+  #map-root .bad { background: #fdeceb; color: #8f1d18; }
+  #map-root .muted { background: #f4f5f7; color: #5b616e; }
+
+  #map-root ol { font-size: 14px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px; color: #4b5563; }
+  #map-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  @media (max-width: 380px) { #map-root .grid { grid-template-columns: 1fr; } }
+  #map-root .group { background: #fff; border: 1px solid #eceef2; border-radius: 14px;
+                     box-shadow: 0 1px 2px rgba(16,24,40,.05); margin-bottom: 10px; }
+  #map-root .group-all { border-color: #d8e3fb; background: #fcfdff; }
+  #map-root .group > summary { display: flex; align-items: center; gap: 10px;
+                               padding: 12px 12px 12px 16px; cursor: pointer; list-style: none;
+                               min-height: 60px; box-sizing: border-box;
+                               -webkit-tap-highlight-color: transparent; }
+  #map-root .group > summary::-webkit-details-marker { display: none; }
+  #map-root .group > summary:active { background: #f7f8fa; border-radius: 14px; }
+
+  /* A 44x44 circular target: the glyph alone was too small to hit reliably on
+     a phone, even though the whole row toggles. */
+  #map-root .chevron { flex: none; width: 44px; height: 44px; border-radius: 50%;
+                       display: flex; align-items: center; justify-content: center;
+                       background: #f1f3f6; color: #5b616e;
+                       transition: transform .18s ease, background .18s ease; }
+  #map-root .group > summary:hover .chevron { background: #e6e9ef; }
+  #map-root .group[open] .chevron { transform: rotate(180deg); }
+  #map-root .chevron svg { width: 18px; height: 18px; display: block; }
+  #map-root .group-heading { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  #map-root .group-title { font-size: 15px; font-weight: 600; }
+  #map-root .group-where { font-size: 12px; color: #9aa1ac; }
+  #map-root .group-badge { font-size: 11px; font-weight: 600; color: #9aa1ac;
+                           background: #f4f5f7; border-radius: 999px; padding: 4px 10px;
+                           white-space: nowrap; margin-left: auto; }
+  #map-root .group-badge.has { color: #1d4ed8; background: #eaf0fe; }
+  #map-root .group-body { padding: 0 14px 12px; }
+  #map-root .fn { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
+  #map-root .fn + .fn { border-top: 1px solid #f4f5f7; }
+  /* Related rows sit tight; a gap and a hairline mark where one kind of control
+     ends and the next begins. */
+  #map-root .fn-group + .fn-group { margin-top: 12px; padding-top: 12px;
+                                    border-top: 1px solid #eceef2; }
+  #map-root .fn .label { width: 84px; flex: none; font-size: 11px; font-weight: 600;
+                         text-transform: uppercase; letter-spacing: .04em; color: #8b929e; }
+  #map-root .fn select { flex: 1; min-width: 0; padding: 9px 11px; font-size: 14px; }
+  #map-root .fn .btn { flex: none; padding: 8px 12px; min-height: 36px; font-size: 13px; }
+</style>
+
+<div class="wrap" id="map-root">
+  <h2 data-i18n="mapping.title"></h2>
+  <p class="sub" data-i18n="mapping.subtitle"></p>
+
+  <div id="map-groups"></div>
+
+  <div id="map-msg" class="msg muted" style="display:none;"></div>
+
+  <button id="map-save" class="btn-primary">Save</button>
+</div>
+
+<script type="text/javascript">
+/**
+ * Pair views are INJECTED INTO the pairing container's document — they do not
+ * get their own iframe, and they must not load homey.js themselves (a second
+ * copy overwrites window.Homey with a base object that has no emit/showView).
+ *
+ * The container calls window.onHomeyReady once, at its own page load, long
+ * before this view's script exists, so waiting to be called never fires. The
+ * container's fully-equipped Homey is already on window by the time this runs,
+ * so take it directly — while still accepting onHomeyReady if it does arrive.
+ *
+ * All four views share ONE document. That is why every CSS rule here is scoped
+ * to this view's root id, and why the boot guard below lives on the root
+ * ELEMENT rather than in a global.
+ */
+/**
+ * The guard lives on the view's root ELEMENT, not in a global. All four views
+ * share one document, and a global flag survives leaving and re-entering the
+ * pairing flow — which silently blocked the second run from ever rendering.
+ */
+function __llBootMap(Homey) {
+  var __root = document.getElementById('map-root');
+  if (!__root || __root.dataset.llBooted === '1') return;
+  __root.dataset.llBooted = '1';
+
+  /**
+   * Reserve room for the scrollbar so expanding a section cannot resize the
+   * content.
+   *
+   * When the view grows past the pane height a scrollbar appears, the usable
+   * width drops by its thickness, and every percentage-width row re-wraps —
+   * text shifts as you expand and collapse. `scrollbar-gutter: stable` keeps
+   * the gutter reserved whether or not the bar is showing.
+   *
+   * The scrolling element belongs to the pairing container, not to us, so find
+   * it by walking up rather than guessing a selector.
+   */
+  (function stabiliseScrollbar() {
+    var scroller = null;
+    for (var el = __root.parentElement; el && el !== document.documentElement; el = el.parentElement) {
+      var overflowY = getComputedStyle(el).overflowY;
+      if (overflowY === 'auto' || overflowY === 'scroll') { scroller = el; break; }
+    }
+    var targets = scroller ? [scroller] : [document.documentElement, document.body];
+    var supported = window.CSS && CSS.supports && CSS.supports('scrollbar-gutter', 'stable');
+
+    targets.forEach(function (el) {
+      if (!el) return;
+      if (supported) el.style.scrollbarGutter = 'stable';
+      // Without gutter support, always showing the track is the stable option.
+      else if (el !== document.body) el.style.overflowY = 'scroll';
+    });
+  })();
+
+  if (typeof Homey.ready === 'function') Homey.ready();
+
+  function emit(event, data) {
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var finish = function (err, result) {
+        if (settled) return;
+        settled = true;
+        if (err) reject(err instanceof Error ? err : new Error(String(err)));
+        else resolve(result);
+      };
+      var timer = setTimeout(function () { finish(new Error('Homey did not respond to "' + event + '"')); }, 20000);
+      var done = function (err, result) { clearTimeout(timer); finish(err, result); };
+      try {
+        var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
+        if (returned && typeof returned.then === 'function') {
+          returned.then(function (r) { done(null, r); }, function (e) { done(e); });
+        }
+      } catch (err) { done(err); }
+    });
+  }
+
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(function (el) {
+    el.placeholder = Homey.__(el.getAttribute('data-i18n-placeholder'));
+  });
+
+  document.getElementById('map-save').textContent = Homey.__('mapping.save') || 'Save';
+
+  var model = { functions: [], groups: [], controls: [], rules: [] };
+
+  function show(cls, text) {
+    var el = document.getElementById('map-msg');
+    el.className = 'msg ' + cls;
+    el.textContent = text;
+    el.style.display = 'block';
+  }
+
+  function ruleFor(groupKey, func) {
+    return model.rules.filter(function (r) {
+      return r.groupKey === groupKey && r.function === func;
+    })[0];
+  }
+
+  function setAssignment(groupKey, func, inputKey) {
+    var rule = ruleFor(groupKey, func);
+    if (!inputKey) {
+      model.rules = model.rules.filter(function (r) { return r !== rule; });
+    } else if (rule) {
+      rule.inputKey = inputKey;
+    } else {
+      model.rules.push({
+        id: groupKey + '-' + func,
+        function: func,
+        inputKey: inputKey,
+        groupKey: groupKey,
+      });
+    }
+    return emit('setRules', model.rules).catch(function (err) {
+      show('bad', err.message || String(err));
+    });
+  }
+
+  function eventSelect(groupKey, func, current) {
+    var select = document.createElement('select');
+    var none = document.createElement('option');
+    none.value = '';
+    none.textContent = Homey.__('mapping.notAssigned');
+    select.appendChild(none);
+
+    model.controls.forEach(function (control) {
+      // A control with a single gesture needs no nesting — "1 up rotary" reads
+      // better than a group containing only "1 up rotary — Press".
+      if (control.inputs.length === 1) {
+        var flat = document.createElement('option');
+        flat.value = control.inputs[0].key;
+        flat.textContent = control.label;
+        select.appendChild(flat);
+        return;
+      }
+      var group = document.createElement('optgroup');
+      group.label = control.label;
+      control.inputs.forEach(function (input) {
+        var option = document.createElement('option');
+        option.value = input.key;
+        option.textContent = input.actionLabel || input.label;
+        group.appendChild(option);
+      });
+      select.appendChild(group);
+    });
+
+    select.value = current || '';
+    select.addEventListener('change', function () {
+      setAssignment(groupKey, func, select.value || null);
+    });
+    return select;
+  }
+
+  function assignedCount(groupKey) {
+    return model.rules.filter(function (r) {
+      return r.groupKey === groupKey && r.inputKey;
+    }).length;
+  }
+
+  function functionRows(group) {
+    var frag = document.createDocumentFragment();
+    var block = null;
+    var blockCapability = null;
+
+    model.functions.forEach(function (fn) {
+      // Only offer what this particular light can actually do.
+      if (group.capabilities && group.capabilities.indexOf(fn.capability) < 0) return;
+
+      // Power, brightness and temperature are separate kinds of thing. A single
+      // undifferentiated list of seven rows reads as a wall; grouping by what
+      // they act on makes the screen scannable.
+      if (fn.capability !== blockCapability) {
+        block = document.createElement('div');
+        block.className = 'fn-group';
+        frag.appendChild(block);
+        blockCapability = fn.capability;
+      }
+
+      var row = document.createElement('div');
+      row.className = 'fn';
+
+      var label = document.createElement('div');
+      label.className = 'label';
+      label.textContent = fn.label;
+      row.appendChild(label);
+
+      var existing = ruleFor(group.key, fn.function);
+      row.appendChild(eventSelect(group.key, fn.function, existing && existing.inputKey));
+
+      var test = document.createElement('button');
+      test.className = 'btn';
+      test.textContent = Homey.__('mapping.test');
+      test.addEventListener('click', function () {
+        show('muted', Homey.__('mapping.testing', { name: fn.label }));
+        emit('test', { func: fn.function, deviceIds: group.deviceIds }).then(function (result) {
+          show('ok', result.skipped
+            ? Homey.__('mapping.testedSkipped', { writes: result.writes, targets: result.targets, skipped: result.skipped })
+            : Homey.__('mapping.tested', { writes: result.writes, targets: result.targets }));
+        }).catch(function (err) { show('bad', err.message || String(err)); });
+      });
+      row.appendChild(test);
+
+      block.appendChild(row);
+    });
+
+    return frag;
+  }
+
+  /**
+   * "All lights" is open by default — controlling every selected light the same
+   * way is what most people want, and making them expand something to reach it
+   * would put the common case behind a click. The per-light sections stay
+   * collapsed but visibly expandable, so overrides are discoverable without
+   * crowding the screen.
+   */
+  function renderGroup(group) {
+    var isAll = group.key === '__all__';
+
+    var card = document.createElement('details');
+    card.className = 'group' + (isAll ? ' group-all' : '');
+    card.open = isAll;
+
+    var summary = document.createElement('summary');
+
+    var heading = document.createElement('div');
+    heading.className = 'group-heading';
+
+    var title = document.createElement('span');
+    title.className = 'group-title';
+    title.textContent = group.label;
+    heading.appendChild(title);
+
+    if (group.zoneName) {
+      var where = document.createElement('span');
+      where.className = 'group-where';
+      where.textContent = group.zoneName;
+      heading.appendChild(where);
+    }
+
+    summary.appendChild(heading);
+
+    // A badge makes it obvious which collapsed sections already hold overrides.
+    var count = assignedCount(group.key);
+    var badge = document.createElement('span');
+    badge.className = 'group-badge' + (count ? ' has' : '');
+    badge.textContent = count
+      ? count + (count === 1 ? ' action' : ' actions')
+      : 'none set';
+    summary.appendChild(badge);
+
+    var chevron = document.createElement('span');
+    chevron.className = 'chevron';
+    chevron.innerHTML = '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true">'
+      + '<path d="M5 8l5 5 5-5" stroke="currentColor" stroke-width="2.2"'
+      + ' stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    summary.appendChild(chevron);
+
+    card.appendChild(summary);
+
+    var body = document.createElement('div');
+    body.className = 'group-body';
+    body.appendChild(functionRows(group));
+    card.appendChild(body);
+
+    // Keep the badge honest as assignments change.
+    card.addEventListener('change', function () {
+      var next = assignedCount(group.key);
+      badge.textContent = next ? next + (next === 1 ? ' action' : ' actions') : 'none set';
+      badge.className = 'group-badge' + (next ? ' has' : '');
+    });
+
+    return card;
+  }
+
+  function render() {
+    var container = document.getElementById('map-groups');
+    container.innerHTML = '';
+    model.groups.forEach(function (group) { container.appendChild(renderGroup(group)); });
+  }
+
+  emit('getMapping').then(function (data) {
+    model.functions = data.functions || [];
+    model.groups = data.groups || [];
+    model.controls = data.controls || [];
+    model.rules = data.rules || [];
+
+    if (!model.controls.length) {
+      show('bad', 'This remote exposed no usable events. Go back and pick another.');
+      return;
+    }
+    render();
+  }).catch(function (err) { show('bad', err.message || String(err)); });
+
+  document.getElementById('map-save').addEventListener('click', function () {
+    var button = document.getElementById('map-save');
+    button.disabled = true;
+    show('muted', Homey.__('mapping.saving'));
+
+    emit('setRules', model.rules)
+      // No name field: the driver derives one from the remote and its lights,
+      // and Homey lets the user rename the device afterwards.
+      .then(function () { return emit('save', ''); })
+      .then(function (result) {
+        if (!result.created) { Homey.done(); return; }
+        // createDevice alone does NOT add the device — its own source says the
+        // view must also emit 'add_device' with the device data.
+        return Homey.createDevice(result.device)
+          .then(function (deviceData) {
+            return emit('add_device', deviceData || result.device)
+              .catch(function () { /* some SDK builds add it for us */ });
+          })
+          .then(function () { Homey.done(); });
+      })
+      .catch(function (err) {
+        button.disabled = false;
+        show('bad', err.message || String(err));
+      });
+  });
+}
+
+window.onHomeyReady = __llBootMap;
+
+(function waitForHomey(attempt) {
+  if (window.Homey && typeof window.Homey.emit === 'function') return __llBootMap(window.Homey);
+  if ((attempt || 0) > 100) {
+    document.body.insertAdjacentHTML('afterbegin',
+      '<div style="padding:12px;background:#fdeaea;color:#7f1d1d;font-size:13px;">'
+      + 'Light Link could not reach the Homey pairing API on this page.</div>');
+    return;
+  }
+  setTimeout(function () { waitForHomey((attempt || 0) + 1); }, 50);
+})(0);
+</script>

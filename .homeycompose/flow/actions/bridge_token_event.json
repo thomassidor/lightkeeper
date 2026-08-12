@@ -1,0 +1,28 @@
+{
+  "title": {
+    "en": "Receive controller event with a token value"
+  },
+  "titleFormatted": {
+    "en": "Send event [[event_key]] with value [[droptoken]] to controller [[controller]]"
+  },
+  "hint": {
+    "en": "Used internally by Light Link, for events whose amount arrives as a Flow token — for example a dial reporting how far it turned. Do not add or edit these by hand."
+  },
+  "droptoken": ["number"],
+  "args": [
+    {
+      "type": "text",
+      "name": "controller",
+      "title": {
+        "en": "Controller"
+      }
+    },
+    {
+      "type": "text",
+      "name": "event_key",
+      "title": {
+        "en": "Event"
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+# Homey
+/.homeybuild/
+/env.json
+
+# Dependencies
+/node_modules/
+
+# Build output
+*.tsbuildinfo
+
+# Logs
+*.log
+
+# Captures from a real Homey contain device names, zone names and the owner's
+# display name. They must never be committed — see test/fixtures/README.md.
+/test/fixtures/raw/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

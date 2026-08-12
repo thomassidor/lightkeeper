@@ -1,0 +1,21 @@
+{
+  "extends": "@tsconfig/node16/tsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "outDir": ".homeybuild/",
+    "strict": true,
+    "noImplicitOverride": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": [
+    "app.ts",
+    "api.ts",
+    "lib/**/*.ts",
+    "drivers/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    ".homeybuild",
+    "test"
+  ]
+}

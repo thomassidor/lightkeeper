@@ -1,0 +1,51 @@
+{
+  "name": {
+    "en": "Remote-to-light controller",
+    "da": "Fjernbetjening til lamper"
+  },
+  "class": "service",
+  "capabilities": [],
+  "platforms": ["local"],
+  "connectivity": ["lan"],
+  "images": {
+    "small": "/drivers/controller/assets/images/small.png",
+    "large": "/drivers/controller/assets/images/large.png",
+    "xlarge": "/drivers/controller/assets/images/xlarge.png"
+  },
+  "pair": [
+    {
+      "id": "credential",
+      "navigation": { "next": "source" }
+    },
+    {
+      "id": "source",
+      "navigation": { "next": "targets" }
+    },
+    {
+      "id": "targets",
+      "navigation": { "prev": "source", "next": "mapping" }
+    },
+    {
+      "id": "mapping",
+      "navigation": { "prev": "targets" }
+    }
+  ],
+  "repair": [
+    {
+      "id": "credential",
+      "navigation": { "next": "source" }
+    },
+    {
+      "id": "source",
+      "navigation": { "next": "targets" }
+    },
+    {
+      "id": "targets",
+      "navigation": { "prev": "source", "next": "mapping" }
+    },
+    {
+      "id": "mapping",
+      "navigation": { "prev": "targets" }
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- A remote on the left, a lamp on the right, linked by a signal arc:
+       the app's whole idea in one mark. -->
+  <g fill="none" stroke="#1F3A5F" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="12" y="22" width="26" height="56" rx="7" />
+    <circle cx="25" cy="38" r="3.5" fill="#1F3A5F" stroke="none" />
+    <line x1="19" y1="52" x2="31" y2="52" />
+    <line x1="19" y1="62" x2="31" y2="62" />
+
+    <path d="M48 44c4-4 4-4 8 0" />
+    <path d="M46 36c6-6 12-6 18 0" opacity="0.55" />
+
+    <path d="M74 30a14 14 0 0 0-9 24v6h18v-6a14 14 0 0 0-9-24z" />
+    <line x1="69" y1="68" x2="79" y2="68" />
+    <line x1="71" y1="75" x2="77" y2="75" />
+  </g>
+</svg>

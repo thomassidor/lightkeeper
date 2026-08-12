@@ -1,0 +1,219 @@
+# Light Link
+
+[![CI](https://github.com/thomassidor/lightlink/actions/workflows/ci.yml/badge.svg)](https://github.com/thomassidor/lightlink/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+**Use any remote you already own to control any lights you already own — without writing a single
+Flow.**
+
+A Homey Pro app.
+
+---
+
+## The problem
+
+You have a remote — an IKEA STYRBAR, a Hue Dimmer, a rotary dial — and you have lights. Making one
+control the other on Homey means opening the Flow editor and building a Flow for every button, for
+every light, for every thing you want that button to do. Turn on. Turn off. Brighter. Dimmer. Then
+again for the next lamp.
+
+It works, and it is tedious, and it falls apart the moment you move a lamp to another room.
+
+## What Light Link does
+
+Pick a remote. Pick the lights. Say which button does what. Save.
+
+Light Link writes the Flows for you, keeps them in a folder of their own, and maintains them as
+things change. If you add a lamp to a room the controller points at, it follows. If you delete the
+controller, its Flows go with it — and only its Flows.
+
+You never open the Flow editor.
+
+## Built with AI
+
+This app was designed and written end to end with [Claude](https://claude.com/claude-code) —
+architecture, implementation, tests and documentation. A human directed the work, made the product
+decisions, and verifies behaviour on real hardware.
+
+That is stated plainly here because you deserve to know what you are installing and what you are
+reading. If it changes how carefully you want to review the code before trusting it with your
+home: fair, and the code is right here.
+
+---
+
+## Requirements
+
+- **Homey Pro 2023 or later.** Homey Pro 2019 and earlier cannot create API Keys, which this app
+  needs — see below.
+- **Firmware 12.3.0 or newer.**
+- **Homey Cloud is not supported.** The design depends on broad local Web API access.
+
+## Setup
+
+### 1. Give Light Link an API key
+
+This is the one unusual step, and it is worth explaining rather than hiding.
+
+**Homey does not let an app create Flows on its own.** An app's own token is refused with
+`403 Missing Scopes` on every flow write. A Personal API Key that you create succeeds. Since
+generating Flows is the entire mechanism by which this app works, and no app permission grants it,
+Light Link asks you for a key.
+
+1. Open [my.homey.app](https://my.homey.app) and pick your Homey
+2. Settings → API Keys → New API Key
+3. Tick the **Flow** permissions, then create it
+4. Copy the key — it is shown only once — and paste it into Light Link
+
+The key is stored on your Homey and never leaves it. It is never logged, never returned by the
+app's own API, and never included in the diagnostics export. It is used for **flow writes only**.
+
+If the key later stops working, your controllers keep driving your lights. Only Flow maintenance
+pauses, and you are asked for a new key without losing a single mapping.
+
+### 2. Add a controller
+
+Devices → Add → Light Link → Controller. Then:
+
+- **Choose a remote** — grouped by room, with a count of the events Homey exposes for each
+- **Choose lights** — individually, or a whole zone
+- **Map the controls** — assign a lighting function to each button, hold or turn. Every row has a
+  **Test** button that drives the real lights immediately, before you save anything
+
+Homey lets you rename the device afterwards, so there is no name field to fill in.
+
+---
+
+## How it works
+
+### Two API clients, deliberately separated
+
+| Client | Authenticated as | Responsible for |
+|---|---|---|
+| App API | the app's own token | reading devices and zones, subscribing to capability changes, writing to your lights |
+| Local API | your Personal API Key | creating, updating and deleting Flows |
+
+The separation bounds the damage when a key expires: only Flow maintenance stops. Your remotes
+keep working.
+
+### What it writes
+
+Ordinary Flows, one per mapped event, each with your remote's trigger card and a single internal
+Light Link action card, in a folder called **Light Link**. Created only for events you actually
+mapped. Idempotent, so reconfiguring reuses Flows rather than duplicating them.
+
+### Safety properties
+
+- **A ramp stops after 10 seconds, always.** Not configurable. Release events are routinely
+  dropped on Zigbee and unreliable on Matter/Thread, so a stuck ramp is a certainty, not a risk —
+  and a light ramping forever is the worst thing this app could do to you.
+- **A Flow you have edited by hand is never overwritten.** The controller marks itself for repair
+  instead.
+- **Deleting a controller deletes only the Flows it demonstrably created.**
+- **The orphan cleanup refuses to run when no controller is loaded**, because every Flow would
+  look orphaned in that state.
+- **Nothing leaves your Homey.** No telemetry, opt-in or otherwise. The diagnostics export is
+  generated locally and shared only if you choose to attach it to a report.
+
+### Diagnostics
+
+Homey settings → Light Link shows the last remote presses received, whether each was handled or
+ignored and why, and every write actually attempted against a light. That distinction — a Flow
+that never fired, versus one that fired and was refused, versus an intent that never reached the
+queue — is what makes a silent failure diagnosable at all.
+
+---
+
+## Limits, stated plainly
+
+**"Any remote" means any remote for which Homey exposes something usable** — either a capability
+change, or a flow trigger card bindable to that device. If the owning integration exposes neither,
+the input is unobservable through public Homey interfaces and no app can reach it.
+
+The same hardware can expose a different event surface through different pairing paths: a Hue
+device offers more through the Philips Hue app than through Matter. So support is not a property
+of the model on the box.
+
+Controls whose range would expand past 12 Flow variants are declined rather than filling your Flow
+list.
+
+## Status
+
+Phases 0–3 are built, type-clean, validated at `publish` level, and installing and initialising on
+real hardware. 164 unit tests pass.
+
+**End-to-end behaviour with physical remotes is still being verified.** The logic is tested
+against fixtures captured from four real remotes and against a live Homey's API, but the
+outstanding acceptance criteria in [`docs/implementation-plan.md`](docs/implementation-plan.md)
+need hands on hardware. Treat this as pre-release until that is done.
+
+---
+
+## Development
+
+```bash
+npm install
+npm test                          # 164 unit tests, no hardware needed
+npm run typecheck
+npx homey app install             # persistent install — use this for anything interactive
+npx homey app validate --level publish
+```
+
+**Use `homey app install` for interactive testing, not `homey app run`.** `run` creates a debug
+session and **uninstalls the app when the CLI exits**, taking its app settings with it — including
+the stored API key. Pairing against a session that has ended gives screens that render but do
+nothing, because the handlers are gone.
+
+**`--remote` is not optional on `run`.** Since CLI 3.x a bare `homey app run` runs the app in a
+local Docker container; `--remote` runs it on the Homey, which is the only faithful context for
+anything touching app-scoped permissions.
+
+**Do not share an API key between the app and an external script.** A key embeds a session id, and
+concurrent holders appear to invalidate one another.
+
+### Layout
+
+```
+app.ts                          app entry, bridge action listeners, validation on receipt
+api.ts                          app Web API consumed by the settings page
+lib/
+  homey-api-service.ts          both API clients, subscription teardown
+  credential-service.ts         the API key: storage, validation, failure classification
+  device-catalog.ts             devices, zones, owning apps, capability metadata
+  source-discovery-service.ts   trigger card discovery and event-surface fingerprints
+  inputs/                       input contract, normalizer, magnitude collapse
+  mapping/                      mapping engine, supersede gate, types
+  outputs/                      intents, perceptual curve, planner, scheduler, ramp engine
+  bridge/                       binding compiler, flow bridge manager, reconciler
+  runtime/                      controller runtime, manager, health monitor
+  profiles/                     profile schema, repository, migrations
+drivers/controller/             virtual device, driver, four pairing views
+test/                           unit tests and fixtures transcribed from real hardware
+```
+
+[`CLAUDE.md`](CLAUDE.md) has the architectural rules and the platform traps worth knowing before
+changing anything. [`docs/spike-result.md`](docs/spike-result.md) is the record of how Homey
+actually behaves, as opposed to how it appears to.
+
+### Testing philosophy
+
+Fixtures in `test/fixtures/reference-devices.ts` are transcribed verbatim from four real remotes.
+The raw capture data is kept separate from the expected normalised catalogue, so the tests prove
+the normalizer rather than the fixture.
+
+Three real bugs were caught this way — including a regex that failed to match "long pressed" (a
+space, not an underscore), which would have left the app's headline press-versus-hold fix as dead
+code.
+
+Captures from a real home are never committed; see [`test/fixtures/README.md`](test/fixtures/README.md).
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports are best accompanied by the diagnostics export
+from Homey settings → Light Link → **Copy for a bug report**, which deliberately contains no key
+material.
+
+## Licence
+
+[MIT](LICENSE) © Thomas Sidor

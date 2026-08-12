@@ -1,0 +1,27 @@
+{
+  "title": {
+    "en": "Receive controller event"
+  },
+  "titleFormatted": {
+    "en": "Send event [[event_key]] to controller [[controller]]"
+  },
+  "hint": {
+    "en": "Used internally by Light Link. These cards appear in Flows that Light Link creates and maintains for you — you do not need to add them by hand, and editing them will disconnect your controller."
+  },
+  "args": [
+    {
+      "type": "text",
+      "name": "controller",
+      "title": {
+        "en": "Controller"
+      }
+    },
+    {
+      "type": "text",
+      "name": "event_key",
+      "title": {
+        "en": "Event"
+      }
+    }
+  ]
+}

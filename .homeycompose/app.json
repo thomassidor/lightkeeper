@@ -1,0 +1,63 @@
+{
+  "id": "com.thomassidor.lightlink",
+  "version": "0.1.0",
+  "compatibility": ">=12.3.0",
+  "sdk": 3,
+  "platforms": [
+    "local"
+  ],
+  "name": {
+    "en": "Light Link",
+    "da": "Light Link"
+  },
+  "description": {
+    "en": "Turn any paired remote, switch or dial into a controller for any paired lights — without writing a single Flow.",
+    "da": "Gør enhver tilknyttet fjernbetjening, kontakt eller drejeknap til en betjening for dine lamper — uden at skrive et eneste Flow."
+  },
+  "category": [
+    "lights"
+  ],
+  "brandColor": "#1F3A5F",
+  "permissions": [
+    "homey:manager:api"
+  ],
+  "images": {
+    "small": "/assets/images/small.png",
+    "large": "/assets/images/large.png",
+    "xlarge": "/assets/images/xlarge.png"
+  },
+  "author": {
+    "name": "Thomas Sidor"
+  },
+  "source": "https://github.com/thomassidor/lightlink",
+  "homepage": "https://github.com/thomassidor/lightlink#readme",
+  "bugs": {
+    "url": "https://github.com/thomassidor/lightlink/issues"
+  },
+  "api": {
+    "getStatus": {
+      "method": "GET",
+      "path": "/"
+    },
+    "setCredential": {
+      "method": "POST",
+      "path": "/credential"
+    },
+    "deleteCredential": {
+      "method": "DELETE",
+      "path": "/credential"
+    },
+    "getDiagnostics": {
+      "method": "GET",
+      "path": "/diagnostics"
+    },
+    "sweepOrphans": {
+      "method": "POST",
+      "path": "/orphans"
+    },
+    "countOrphans": {
+      "method": "GET",
+      "path": "/orphans"
+    }
+  }
+}

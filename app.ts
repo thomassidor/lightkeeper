@@ -1,0 +1,164 @@
+'use strict';
+
+import Homey from 'homey';
+
+import { CredentialService } from './lib/credential-service';
+import { HomeyApiService } from './lib/homey-api-service';
+import { DeviceCatalog } from './lib/device-catalog';
+import { SourceDiscoveryService } from './lib/source-discovery-service';
+import { FlowBridgeManager } from './lib/bridge/flow-bridge-manager';
+import { ControllerRuntimeManager } from './lib/runtime/controller-runtime-manager';
+import { HealthMonitor } from './lib/runtime/health-monitor';
+
+/**
+ * Light Link.
+ *
+ * §4.2 keeps inside the App class: shared services, the Homey API clients,
+ * bridge action listeners and runtime manager startup. Mapping logic and
+ * source-specific parsing live in lib/.
+ */
+module.exports = class LightLinkApp extends Homey.App {
+
+  credentials!: CredentialService;
+  api!: HomeyApiService;
+  catalog!: DeviceCatalog;
+  discovery!: SourceDiscoveryService;
+  bridge!: FlowBridgeManager;
+  controllers!: ControllerRuntimeManager;
+  health!: HealthMonitor;
+
+  /**
+   * §9.5 — last received events. A generated Flow that fires but produces no
+   * light change is otherwise undiagnosable from outside: this records whether
+   * the bridge card was reached at all, and if it was rejected, why.
+   */
+  readonly recentEvents: Array<{
+    at: number; cardId: string; controller: string; eventKey: string;
+    magnitude?: number; accepted: boolean; reason?: string;
+  }> = [];
+
+  private recordEvent(entry: {
+    cardId: string; controller: string; eventKey: string;
+    magnitude?: number; accepted: boolean; reason?: string;
+  }): void {
+    this.recentEvents.unshift({ at: Date.now(), ...entry });
+    if (this.recentEvents.length > 40) this.recentEvents.pop();
+  }
+
+  override async onInit() {
+    this.credentials = new CredentialService({
+      settings: {
+        get: key => this.homey.settings.get(key),
+        set: (key, value) => this.homey.settings.set(key, value),
+        unset: key => this.homey.settings.unset(key),
+      },
+      createWriteClient: (address, token) => HomeyApiService.createWriteClient(address, token),
+      getLocalAddress: () => this.homey.api.getLocalUrl(),
+      log: (...args) => this.log(...args),
+      onStatusChange: status => {
+        this.log(`Credential status: ${status.valid ? 'valid' : status.failure ?? 'absent'}`);
+        void this.controllers?.onCredentialChange();
+      },
+    });
+
+    this.api = new HomeyApiService(this.homey, this.credentials);
+    this.catalog = new DeviceCatalog(this.api);
+    this.discovery = new SourceDiscoveryService(this.api);
+    this.bridge = new FlowBridgeManager(this.api, this.homey.manifest.id, (...args) => this.log(...args));
+    this.health = new HealthMonitor(
+      this.catalog,
+      this.discovery,
+      () => this.credentials.getStatus().valid,
+    );
+    this.controllers = new ControllerRuntimeManager({
+      api: this.api,
+      catalog: this.catalog,
+      discovery: this.discovery,
+      bridge: this.bridge,
+      // §9.2/§9.3 — without this the health checks never run outside the tests,
+      // so an unpaired remote or a changed event surface stayed invisible until
+      // the user pressed a button and nothing happened.
+      health: this.health,
+      log: (...args) => this.log(...args),
+    });
+
+    this.registerBridgeCard('bridge_event');
+    this.registerBridgeCard('bridge_numeric_event', args => Number(args.value));
+    this.registerBridgeCard('bridge_token_event', args => Number(args.droptoken));
+
+    // Zones and devices change under us; targets must follow (§7.1).
+    await this.catalog.watch(() => void this.controllers.onCatalogChange());
+
+    // A stored key must be re-checked after every restart, or pairing asks for
+    // a key the user has already given. Deliberately not awaited: a slow or
+    // unreachable Homey must not delay app start.
+    void this.revalidateCredential();
+
+    this.log('Light Link initialised');
+  }
+
+  /** Proves the stored key can still WRITE, not merely read. */
+  async revalidateCredential(): Promise<void> {
+    if (!this.credentials.hasCredential()) {
+      this.log('No API key stored yet');
+      return;
+    }
+    const status = await this.credentials.revalidate(async (client: any) => {
+      const folder = await client.flow.createFlowFolder({
+        flowfolder: { name: 'Light Link (checking permissions)' },
+      });
+      await client.flow.deleteFlowFolder({ id: folder.id });
+    });
+    this.log(`Stored API key: ${status.valid ? 'valid' : status.failure}`);
+  }
+
+  /**
+   * §12 — generated flow arguments are user-editable and therefore untrusted.
+   * Every incoming bridge argument is validated against an existing controller
+   * and expected binding key before anything executes. On malformed or stale
+   * input we fail closed: log and ignore, never execute heuristically.
+   */
+  private registerBridgeCard(cardId: string, magnitudeOf?: (args: any) => number) {
+    const card = this.homey.flow.getActionCard(cardId);
+
+    card.registerRunListener(async (args: any) => {
+      const controllerId = String(args?.controller ?? '');
+      const eventKey = String(args?.event_key ?? '');
+
+      if (!controllerId || !eventKey) {
+        this.recordEvent({ cardId, controller: controllerId, eventKey, accepted: false, reason: 'missing controller or event key' });
+        this.log(`Ignoring ${cardId}: missing controller or event key`);
+        return false;
+      }
+
+      const magnitude = magnitudeOf ? magnitudeOf(args) : undefined;
+      const outcome = this.controllers.dispatchWithReason(controllerId, eventKey, {
+        magnitude: Number.isFinite(magnitude) ? magnitude : undefined,
+      });
+
+      this.recordEvent({
+        cardId,
+        controller: controllerId,
+        eventKey,
+        ...(Number.isFinite(magnitude) ? { magnitude } : {}),
+        accepted: outcome.accepted,
+        ...(outcome.reason ? { reason: outcome.reason } : {}),
+      });
+
+      if (!outcome.accepted) {
+        // A flow left behind by a deleted controller, or an edited event key.
+        this.log(`Ignoring ${cardId}: ${outcome.reason}`);
+        return false;
+      }
+
+      return true;
+    });
+  }
+
+  override async onUninit() {
+    // Never leave a light mid-ramp, a timer running or a listener attached.
+    await this.controllers?.destroyAll();
+    await this.api?.destroy();
+  }
+
+};
