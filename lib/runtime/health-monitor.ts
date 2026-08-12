@@ -3,13 +3,13 @@ import type { SourceDiscoveryService } from '../source-discovery-service';
 import type { ControllerProfile, ControllerState } from '../profiles/controller-profile';
 
 /**
- * Spec §9.2 and §9.4 — detects missing sources and targets, broken flows and
+ * Detects missing sources and targets, broken flows and
  * changed card schemas, and offers one-tap re-attach.
  */
 
 export interface HealthAssessment {
   state: ControllerState;
-  /** Locale key plus tokens, so the device layer can translate (§14 Danish). */
+  /** Locale key plus tokens, so the device layer can translate it. */
   messageKey?: string;
   tokens?: Record<string, string | number>;
   /** English fallback, for logs and diagnostics. */
@@ -38,7 +38,7 @@ export class HealthMonitor {
     const source = await this.catalog.device(profile.source.deviceId);
 
     if (!source) {
-      // §9.4 — the source is gone. Before declaring "needs repair", look for
+      // The source is gone. Before declaring "needs repair", look for
       // the same remote re-added under a new device ID.
       const candidate = await this.findReattachCandidate(profile);
       return candidate
@@ -56,7 +56,7 @@ export class HealthMonitor {
         };
     }
 
-    // §9.3 — an integration update can change the event surface under us.
+    // An integration update can change the event surface under us.
     const discovered = await this.discovery.discover(source);
     if (discovered.fingerprint !== profile.source.eventSurfaceFingerprint) {
       return {
@@ -67,7 +67,7 @@ export class HealthMonitor {
     }
 
     if (profile.managedFlows.length > 0 && !this.credentialValid()) {
-      // The mappings are fine; only the credential is not (§9.2).
+      // The mappings are fine; only the credential is not.
       return {
         state: 'needs_credential',
         messageKey: 'state.needsCredential',
@@ -96,7 +96,7 @@ export class HealthMonitor {
   }
 
   /**
-   * §9.4 CRITICAL — one-tap re-attach.
+   * CRITICAL — one-tap re-attach.
    *
    * On BILRESA, trigger cards disappear after a Homey restart and the device
    * must be removed and re-added. That is recurring, not exceptional. A generic
@@ -104,8 +104,8 @@ export class HealthMonitor {
    * defeats the product.
    *
    * A candidate must match on owner app AND driver AND event-surface
-   * fingerprint. Where the fingerprint has changed we fall back to §6.5 and
-   * require remapping — never guess a new binding.
+   * fingerprint. Where the fingerprint has changed we require remapping
+   * instead — never guess a new binding.
    */
   async findReattachCandidate(profile: ControllerProfile): Promise<ReattachCandidate | undefined> {
     if (!profile.source.eventSurfaceFingerprint) return undefined;
@@ -167,7 +167,7 @@ export class HealthMonitor {
 }
 
 export function matchesOwnerAndDriver(device: CatalogDevice, profile: ControllerProfile): boolean {
-  // §2.4 — match on owner app plus driver, never on model name alone. The same
+  // Match on owner app plus driver, never on model name alone. The same
   // hardware exposes a different surface through a different pairing path.
   if (profile.source.driverId && device.driverId !== profile.source.driverId) return false;
   if (profile.source.ownerAppId && device.ownerUri !== profile.source.ownerAppId) return false;

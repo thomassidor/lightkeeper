@@ -8,7 +8,7 @@ import type { ControllerProfile, ControllerState, StateDetail } from '../profile
 import type { InputEvent } from '../inputs/input-event';
 
 /**
- * Spec §4 — registry of live controller runtimes.
+ * Registry of live controller runtimes.
  *
  * The App owns this; individual virtual devices register themselves on init and
  * deregister on delete, so bridge events can be routed by controller id.
@@ -19,7 +19,7 @@ export interface RuntimeManagerDeps {
   catalog: DeviceCatalog;
   discovery: SourceDiscoveryService;
   bridge: FlowBridgeManager;
-  /** §9.2/§9.3 assessment, handed to every registered runtime. */
+  /** Health assessment, handed to every registered runtime. */
   health?: HealthMonitor;
   log: (...args: unknown[]) => void;
 }
@@ -32,8 +32,8 @@ export interface RuntimeManagerDeps {
 export const NOTCHES_PER_TURN = 10;
 
 /**
- * Convert a raw magnitude into step multiples (§5.4: magnitude is forwarded,
- * never chosen by the user).
+ * Convert a raw magnitude into step multiples. Magnitude is forwarded from the
+ * source, never chosen by the user.
  *
  * The Hue Tap Dial reports its rotation as "Steps (1000/turn)", so a small
  * nudge arrives as 151. Multiplying a 0.1 step by 151 slams the lights to full
@@ -100,7 +100,7 @@ export class ControllerRuntimeManager {
 
   /**
    * A runtime that is never registered and generates no flows — it exists only
-   * so the Test control (§8.3) can drive real lights before save. Callers must
+   * so the Test control can drive real lights before save. Callers must
    * stop it.
    */
   async ephemeral(profile: ControllerProfile): Promise<ControllerRuntime> {
@@ -134,14 +134,14 @@ export class ControllerRuntimeManager {
 
   /**
    * Route a validated bridge event. Returns false when no controller expects
-   * it, so the caller can fail closed (§12).
+   * it, so the caller can fail closed.
    */
   dispatch(controllerId: string, eventKey: string, extra: { magnitude?: number }): boolean {
     return this.dispatchWithReason(controllerId, eventKey, extra).accepted;
   }
 
   /** As dispatch, but says WHY it refused — the difference between a flow that
-   *  fires and does nothing, and one we can actually diagnose (§9.5). */
+   *  fires and does nothing, and one we can actually diagnose. */
   dispatchWithReason(
     controllerId: string,
     eventKey: string,
@@ -165,7 +165,7 @@ export class ControllerRuntimeManager {
     }
 
     // Never allow a generated flow to control a controller other than the one
-    // encoded in its managed binding (§12) — the lookup above is that check.
+    // encoded in its managed binding — the lookup above is that check.
     const isMapped = runtime.currentProfile.mappings.some(m => m.inputKey === eventKey);
     if (!isMapped) {
       return {
@@ -192,7 +192,7 @@ export class ControllerRuntimeManager {
   }
 
   /**
-   * Devices or zones changed — targets may need re-resolving (§7.1).
+   * Devices or zones changed — targets may need re-resolving.
    *
    * This must NOT restart the runtimes. Our own virtual devices are devices
    * too, so persisting a profile emits device.update and lands back here; a

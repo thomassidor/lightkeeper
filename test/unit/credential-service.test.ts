@@ -103,7 +103,7 @@ describe('credential service', () => {
     assert.equal(called, false);
   });
 
-  test('the key never appears in log output (§12)', async () => {
+  test('the key never appears in log output', async () => {
     const { service, logs } = harness();
 
     await service.setCredential(VALID_KEY, async () => {

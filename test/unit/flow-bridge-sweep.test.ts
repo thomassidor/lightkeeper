@@ -9,7 +9,7 @@ import type { HomeyApiService } from '../../lib/homey-api-service';
  * generated Flow as an orphan by asking whether its controller id is in the set
  * of RUNNING controllers — which means an empty set makes every Flow look
  * orphaned. That is indistinguishable from "the runtimes have not registered
- * yet", so the sweep refuses rather than guessing (§8.5).
+ * yet", so the sweep refuses rather than guessing.
  */
 
 const APP_ID = 'com.thomassidor.lightlink';

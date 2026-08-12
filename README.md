@@ -197,17 +197,14 @@ test/                           unit tests and fixtures transcribed from real ha
 **Read [`CLAUDE.md`](CLAUDE.md) before changing anything.** It carries the architectural rules and a
 Homey platform reference — how flow card URIs are really shaped, how device trigger cards are
 actually discovered, how tokens are encoded, why API keys expire — established against real
-hardware and documented nowhere else. Several of those findings cost hours to work out.
+hardware and documented nowhere else.
 
 ### Testing philosophy
 
 Fixtures in `test/fixtures/reference-devices.ts` are transcribed verbatim from four real remotes.
 The raw capture data is kept separate from the expected normalised catalogue, so the tests prove
-the normalizer rather than the fixture.
-
-Three real bugs were caught this way — including a regex that failed to match "long pressed" (a
-space, not an underscore), which would have left the app's headline press-versus-hold fix as dead
-code.
+the normalizer rather than the fixture — a fixture that also encoded the expectation would pass
+against a normalizer that did nothing.
 
 Captures from a real home are never committed; see [`test/fixtures/README.md`](test/fixtures/README.md).
 

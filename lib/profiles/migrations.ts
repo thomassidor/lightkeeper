@@ -2,8 +2,8 @@ import { CURRENT_SCHEMA_VERSION, type ControllerProfile } from './controller-pro
 import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
 
 /**
- * Spec §9.1 — every profile carries schemaVersion and migrates
- * deterministically at startup. §11.1 requires that every historical schema
+ * Every profile carries schemaVersion and migrates
+ * deterministically at startup. Every historical schema
  * fixture migrates without data loss, so each step is a pure function and the
  * chain is exhaustive.
  */

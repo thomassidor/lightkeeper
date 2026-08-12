@@ -1,5 +1,5 @@
 /**
- * Spec §5.4 — magnitude collapse. The single most consequential piece of
+ * Magnitude collapse. The single most consequential piece of
  * normalisation in the app.
  *
  * Events differing only in magnitude are ONE selectable entry. A dial exposing
@@ -38,9 +38,9 @@ export type ArgumentRole =
   | 'direction'
   /** Carries HOW MUCH. Never expand into the picker; preserve as magnitude. */
   | 'magnitude'
-  /** Free numeric input, not enumerable — excluded from the catalogue (§2.2). */
+  /** Free numeric input, not enumerable — excluded from the catalogue. */
   | 'numeric_open'
-  /** Not enumerable and must not be exposed (§2.2). */
+  /** Not enumerable and must not be exposed. */
   | 'unsupported';
 
 /**

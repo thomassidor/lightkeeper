@@ -9,17 +9,17 @@ import {
 import type { SelectableInput } from './inputs/selectable-input';
 
 /**
- * Spec §5.1 — discovery order, corrected against what the platform actually
+ * Discovery order, corrected against what the platform actually
  * exposes (see CLAUDE.md).
  *
  * Device-scoped trigger cards encode their device in the card ID:
  *     homey:device:<deviceId>:<cardName>
  * NO card carries a uri of `homey:device:<deviceId>`, so matching on uri — the
- * obvious reading of §5.1.3 — finds nothing and makes every remote look
+ * obvious reading — finds nothing and makes every remote look
  * eventless.
  *
- * Capability inspection (§5.1.2) is interface-only: no device tested so far
- * exposes input as a capability change (§2.1). The seam exists so adding one
+ * Capability inspection is interface-only: no device tested so far
+ * exposes input as a capability change. The seam exists so adding one
  * is additive rather than structural.
  */
 
@@ -34,9 +34,9 @@ export interface RankedSource {
 export interface DiscoveryResult {
   device: CatalogDevice;
   inputs: SelectableInput[];
-  /** Cards declined, with why — surfaced in diagnostics only (§9.5). */
+  /** Cards declined, with why — surfaced in diagnostics only. */
   rejected: Array<{ cardId: string; reason: string }>;
-  /** §9.3 — what makes repair safe after an integration update. */
+  /** What makes repair safe after an integration update. */
   fingerprint: string;
   matchRoutes: MatchRoute[];
   cardsInspected: number;
@@ -79,7 +79,7 @@ export class SourceDiscoveryService {
   }
 
   /**
-   * §8.1 — rank plausible sources first, never hard-filter. A device with no
+   * Rank plausible sources first, never hard-filter. A device with no
    * discoverable events must still be selectable, so the user sees "no usable
    * remote events found" rather than an unexplained absence.
    */
@@ -119,7 +119,7 @@ function remoteScore(device: CatalogDevice): number {
 /**
  * Extract the device id from a device-scoped card id.
  *
- * Phase 0: device cards are identified by ID (`homey:device:<id>:<card>`), never
+ * Device cards are identified by ID (`homey:device:<id>:<card>`), never
  * by uri — no card carries a uri of `homey:device:<id>`, so matching on uri
  * finds nothing and makes every remote look eventless.
  */
@@ -226,7 +226,7 @@ function titleOf(title: unknown): string | null {
 }
 
 /**
- * §9.3 — fingerprint the trigger and capability schema used at configuration
+ * Fingerprint the trigger and capability schema used at configuration
  * time: card owner URI, card ID, argument names and types, enum values, token
  * IDs and types. Strictly stronger than hashing the generated flow alone,
  * because it detects an integration changing an argument the flow happens not

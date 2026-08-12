@@ -30,7 +30,8 @@ describe('IKEA STYRBAR', () => {
     assert.equal(up.length, 2, 'up button should carry both a press and a long press');
     assert.deepEqual(up.map(i => i.action).sort(), ['long_press', 'press']);
 
-    // §7.6 only engages where one control carries both; left/right must not.
+    // The supersede gate only engages where one control carries both;
+    // left and right must not.
     const right = inputs.filter(i => i.controlId === 'right_button');
     assert.deepEqual(right.map(i => i.action), ['press']);
   });
@@ -56,7 +57,7 @@ describe('Philips Hue Dimmer v2', () => {
     assert.equal(new Set(inputs.map(i => i.controlId)).size, 4);
   });
 
-  test('never invents a long press the integration does not expose (§5.5)', () => {
+  test('never invents a long press the integration does not expose', () => {
     assert.equal(inputs.some(i => i.action === 'long_press'), false);
   });
 
@@ -87,7 +88,7 @@ describe('Philips Hue Tap Dial', () => {
     ]);
   });
 
-  test('collapses overlapping rotation cards into one entry per direction (§5.4)', () => {
+  test('collapses overlapping rotation cards into one entry per direction', () => {
     // rotation_started and rotation_stopped both describe "turn right".
     const right = inputs.filter(i => i.label === 'Dial — Turn right');
     assert.equal(right.length, 1);
@@ -112,7 +113,7 @@ describe('Philips Hue Tap Dial', () => {
   });
 });
 
-describe('IKEA BILRESA — the count-vs-detent trap (§5.4)', () => {
+describe('IKEA BILRESA — the count-vs-detent trap', () => {
   const { inputs, rejected } = normalizeCards(BILRESA_CARDS, { sourceDeviceId: BILRESA_DEVICE_ID });
 
   test('declines the 9x18 multi-press card rather than generating 162 entries', () => {
@@ -151,7 +152,7 @@ describe('gesture classification', () => {
     }), 'rotate_stop');
   });
 
-  test('unrecognised semantics return null rather than a guess (§5.5)', () => {
+  test('unrecognised semantics return null rather than a guess', () => {
     assert.equal(actionOf({
       id: 'x', shortId: 'something_odd', uri: 'x',
       title: 'The vibe changed', args: [], tokens: [],

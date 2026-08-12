@@ -1,7 +1,7 @@
 import { isDiscreteAction, isHoldAction, type InputEvent } from '../inputs/input-event';
 
 /**
- * Spec §7.6 — the press-versus-hold race. CRITICAL.
+ * The press-versus-hold race. CRITICAL.
  *
  * STYRBAR emits a short-press event before a hold on some controls. Untreated,
  * holding to dim also toggles the light.
@@ -11,7 +11,7 @@ import { isDiscreteAction, isHoldAction, type InputEvent } from '../inputs/input
  * event arrives inside the window, cancel the discrete action and start the
  * ramp. Otherwise execute normally.
  *
- * Controls with a single mapping incur ZERO added latency (AC-13). Never apply
+ * Controls with a single mapping incur ZERO added latency. Never apply
  * globally — a 250 ms delay on every button would make the whole app feel
  * broken, which is precisely the failure this design avoids.
  */

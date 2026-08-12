@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { CredentialService } from '../../lib/credential-service';
 
 /**
- * §12 / §9.5 — the diagnostics export is offered to users with an explicit
+ * The diagnostics export is offered to users with an explicit
  * invitation to attach it to a bug report. It must therefore never carry API
  * key material.
  *

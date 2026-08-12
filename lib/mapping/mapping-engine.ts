@@ -3,14 +3,14 @@ import type { LightIntent, TargetSpec } from '../outputs/light-intent';
 import type { ControllerBehavior, LightFunction, MappingRule } from './mapping-types';
 
 /**
- * Spec §4 — resolves normalised events into configured light intents.
+ * Resolves normalised events into configured light intents.
  * Pure: no Homey, no I/O, no timers.
  */
 
 export interface ResolvedIntent {
   intent: LightIntent;
   rule: MappingRule;
-  /** null means inherit the controller's targets (§4.2). */
+  /** null means inherit the controller's targets. */
   target: TargetSpec | null;
 }
 
@@ -31,7 +31,7 @@ export class MappingEngine {
     this.behavior = behavior;
   }
 
-  /** Unmapped input resolves to null — never a guess (§12: fail closed). */
+  /** Unmapped input resolves to null — never a guess. Fail closed. */
   resolve({ inputKey, event }: MappingEngineInput): ResolvedIntent | null {
     const rule = this.rules.find(r => r.inputKey === inputKey);
     if (!rule) return null;
@@ -66,8 +66,8 @@ export class MappingEngine {
   }
 
   /**
-   * §8.4 — step and sensitivity per row, magnitude used where available.
-   * Magnitude is forwarded from the binding, never chosen by the user (§5.4).
+   * Step and sensitivity per row, magnitude used where available.
+   * Magnitude is forwarded from the binding, never chosen by the user.
    */
   private stepFor(rule: MappingRule, event: InputEvent, kind: 'brightness' | 'temperature'): number {
     const options = rule.options ?? {};
@@ -87,7 +87,7 @@ export class MappingEngine {
   }
 }
 
-/** Which functions are offerable given the targets' combined capabilities (§8.3). */
+/** Which functions are offerable given the targets' combined capabilities. */
 export function availableFunctions(
   support: { onoff: number; dim: number; light_temperature: number },
 ): LightFunction[] {

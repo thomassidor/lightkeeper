@@ -69,7 +69,7 @@ function harness(options: {
   return new HealthMonitor(catalog, discovery, () => options.credentialValid ?? true);
 }
 
-describe('controller health states (§9.2)', () => {
+describe('controller health states', () => {
   test('ready when source, targets and credential are all fine', async () => {
     const monitor = harness({
       devices: [device({ id: 'old-device' }), light('light-1')],
@@ -82,7 +82,7 @@ describe('controller health states (§9.2)', () => {
     assert.equal((await monitor.assess(profile({ enabled: false }))).state, 'disabled');
   });
 
-  test('a changed event surface produces needs_repair, not a guessed binding (AC-15)', async () => {
+  test('a changed event surface produces needs_repair, not a guessed binding', async () => {
     const monitor = harness({
       devices: [device({ id: 'old-device' }), light('light-1')],
       fingerprints: { 'old-device': 'fp-CHANGED' },
@@ -128,7 +128,7 @@ describe('controller health states (§9.2)', () => {
   });
 });
 
-describe('one-tap re-attach (§9.4, AC-16)', () => {
+describe('one-tap re-attach', () => {
   test('finds the same remote re-added under a new device ID', async () => {
     const monitor = harness({
       devices: [
@@ -198,7 +198,7 @@ describe('one-tap re-attach (§9.4, AC-16)', () => {
   });
 });
 
-describe('re-attach candidate matching (§2.4)', () => {
+describe('re-attach candidate matching', () => {
   test('matches on owner app plus driver, never model name alone', () => {
     const p = profile();
     assert.equal(matchesOwnerAndDriver(device({ id: 'x' }), p), true);

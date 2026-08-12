@@ -11,7 +11,7 @@ import {
 import type { SelectableInput } from '../inputs/selectable-input';
 
 /**
- * Spec §6.4 / §6.5 — compiles bindings into generated flows and reconciles
+ * Compiles bindings into generated flows and reconciles
  * their lifecycle.
  *
  * All writes go through the API-key client; reads use the app client. Creation
@@ -25,7 +25,7 @@ export interface SyncRequest {
   controllerId: string;
   sourceName: string;
   fingerprint: string;
-  /** Only the inputs actually mapped — never every discovered event (§6.4). */
+  /** Only the inputs actually mapped — never every discovered event. */
   mapped: SelectableInput[];
   existing: ManagedFlowReference[];
 }
@@ -113,7 +113,7 @@ export class FlowBridgeManager {
       } catch (error) {
         if (error instanceof RangeExpansionTooLargeError) {
           // Mark the control unsupported and log, rather than flooding the
-          // user's Flow list (§6.4).
+          // user's Flow list.
           this.log(`Declining "${input.label}": ${error.message}`);
           result.unsupported.push({ bindingKey: input.key, reason: error.message });
           continue;
@@ -132,7 +132,7 @@ export class FlowBridgeManager {
 
       if (existing && live) {
         if (hasBeenUserEdited(live, flow)) {
-          // Never overwrite a flow that appears materially user-edited (§6.4).
+          // Never overwrite a flow that appears materially user-edited.
           this.log(`Flow ${existing.flowId} looks user-edited; leaving it alone`);
           result.userEdited.push(existing.flowId);
           result.references.push(existing);
@@ -173,7 +173,7 @@ export class FlowBridgeManager {
   /**
    * Find every Flow that calls one of OUR bridge cards, grouped by the
    * controller id in its arguments. That id is what makes a flow provably ours
-   * and provably attributable — §8.5 forbids touching anything else.
+   * and provably attributable. Nothing else may be touched.
    */
   async findManagedFlows(): Promise<Array<{ flowId: string; name: string; controllerId: string }>> {
     const cards = await this.bridgeCards();
@@ -235,7 +235,7 @@ export class FlowBridgeManager {
     return { deleted, kept, failed };
   }
 
-  /** §8.5 / AC-18 — remove ONLY flows provably managed by this controller. */
+  /** Remove ONLY flows provably managed by this controller. */
   async removeAll(references: ManagedFlowReference[]): Promise<number> {
     let deleted = 0;
     for (const ref of references) {
@@ -269,7 +269,7 @@ export class FlowBridgeManager {
     }
   }
 
-  /** Keep all managed flows in a clearly named app-managed folder (§6.4). */
+  /** Keep all managed flows in a clearly named app-managed folder. */
   private async ensureFolder(): Promise<string | undefined> {
     if (this.folderId) return this.folderId;
     try {
@@ -293,7 +293,7 @@ export class FlowBridgeManager {
 }
 
 /**
- * §6.4 — never overwrite a flow that appears materially user-edited.
+ * Never overwrite a flow that appears materially user-edited.
  *
  * "Material" means the parts we generated: the trigger, and our own bridge
  * action with its arguments. A renamed flow, or one moved to another folder or

@@ -5,7 +5,7 @@ import type { DiscoveredTriggerCard } from '../../lib/inputs/event-normalizer';
  * Homey Pro 2023 (firmware 13.4.0). Device IDs are replaced with stable
  * placeholders; nothing else is altered.
  *
- * §11.2 requires raw fixture data be kept separate from the normalised expected
+ * Raw fixture data is kept separate from the normalised expected
  * catalogue — that separation is what proves the normalizer, rather than the
  * fixture, is doing the work. The expected catalogues live in the test files.
  */
@@ -53,8 +53,8 @@ export const STYRBAR_CARDS: DiscoveredTriggerCard[] = [
 
 /**
  * Philips Hue Dimmer v2 RWL022 via the Hue Bridge — `nl.philips.hue:dimmerswitch`.
- * NOTE: exposes press only. §2.3 expected press and long-press; through this
- * integration no hold exists, so none may be offered (§5.5).
+ * NOTE: exposes press only. Through this integration no hold exists at all, so
+ * none may be offered.
  */
 export const HUE_DIMMER_DEVICE_ID = 'huedimmer-0000-0000-0000-000000000002';
 export const HUE_DIMMER_CARDS: DiscoveredTriggerCard[] = [
@@ -88,7 +88,7 @@ export const TAP_DIAL_CARDS: DiscoveredTriggerCard[] = [
  * IKEA BILRESA scroll wheel via Matter/Thread —
  * `com.ikea.tradfri:matter_bilresa_scroll_wheel`.
  *
- * `switch_multi_press_multi` is §5.4's warning made real: button 1–9 AND
+ * `switch_multi_press_multi` is the combinatorial-expansion trap made real: button 1–9 AND
  * count 1–18 is 162 combinations, and a count reaching 18 is plainly detents
  * rather than repeated clicks.
  */

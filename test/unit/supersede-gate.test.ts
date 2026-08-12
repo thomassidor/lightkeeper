@@ -52,7 +52,7 @@ function harness(contested: string[]) {
   return { clock, dispatched, gate };
 }
 
-describe('supersede gate (§7.6)', () => {
+describe('supersede gate', () => {
   test('press alone executes after the window', () => {
     const { clock, dispatched, gate } = harness(['up']);
     gate.submit(event('up', 'press'));
@@ -88,7 +88,7 @@ describe('supersede gate (§7.6)', () => {
     assert.deepEqual(dispatched.map(e => e.action), ['press', 'long_press']);
   });
 
-  test('zero added latency when a control has only one mapping (AC-13)', () => {
+  test('zero added latency when a control has only one mapping', () => {
     const { dispatched, gate } = harness([]);
     const held = gate.submit(event('right', 'press'));
 

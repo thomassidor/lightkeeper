@@ -6,11 +6,11 @@ import type {
 } from '../../lib/profiles/controller-profile';
 
 /**
- * §4.1 — one virtual device per configuration, and the lifecycle boundary for
+ * One virtual device per configuration, and the lifecycle boundary for
  * the relationship: source reference, targets, mappings, managed flow
  * references, runtime status and diagnostics.
  *
- * §4.2 keeps inside the Device: profile loading, lifecycle registration,
+ * The Device owns: profile loading, lifecycle registration,
  * status and deletion cleanup.
  */
 module.exports = class ControllerDevice extends Homey.Device {
@@ -39,7 +39,7 @@ module.exports = class ControllerDevice extends Homey.Device {
   }
 
   /**
-   * §9.1 — every profile carries schemaVersion and migrates deterministically
+   * Every profile carries schemaVersion and migrates deterministically
    * at startup. A profile we cannot migrate must not silently become defaults.
    */
   private loadProfile(): ControllerProfile | null {
@@ -59,7 +59,7 @@ module.exports = class ControllerDevice extends Homey.Device {
     }
   }
 
-  /** Called by the pair/repair session when the user saves (§8.5). */
+  /** Called by the pair/repair session when the user saves. */
   async applyProfile(profile: ControllerProfile): Promise<void> {
     // Carry forward the flows we already own, so reconciliation reuses them
     // instead of orphaning a set and creating duplicates.
@@ -79,7 +79,7 @@ module.exports = class ControllerDevice extends Homey.Device {
     await this.setAvailable();
   }
 
-  /** Managed flow references must survive a restart, or they leak (see §6.4). */
+  /** Managed flow references must survive a restart, or they leak. */
   private async persistProfile(profile: ControllerProfile): Promise<void> {
     await this.setStoreValue('profile', profile);
   }
@@ -87,9 +87,9 @@ module.exports = class ControllerDevice extends Homey.Device {
   /**
    * Resolve a runtime's state reason into text for this Homey's language.
    *
-   * lib/ has no access to `homey.__`, so it hands up a locale key plus tokens
-   * (§14). Only strings we did not author — an API error, say — arrive as
-   * `text`, and those are shown verbatim because there is nothing to translate.
+   * lib/ has no access to `homey.__`, so it hands up a locale key plus tokens.
+   * Only strings we did not author — an API error, say — arrive as `text`, and
+   * those are shown verbatim because there is nothing to translate.
    */
   private describe(detail: StateDetail | undefined, fallbackKey: string): string {
     if (detail?.key) return this.homey.__(detail.key, detail.tokens ?? {});
@@ -124,7 +124,7 @@ module.exports = class ControllerDevice extends Homey.Device {
   }
 
   /**
-   * §8.5 / AC-18 — deleting the controller removes only flows provably managed
+   * Deleting the controller removes only flows provably managed
    * by it, plus its runtime subscriptions.
    */
   override async onDeleted() {

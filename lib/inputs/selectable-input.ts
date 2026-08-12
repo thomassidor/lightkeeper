@@ -1,7 +1,7 @@
 import type { InputAction } from './input-event';
 
 /**
- * Spec §6.3 — how a normalised event is bound back to its raw source.
+ * How a normalised event is bound back to its raw source.
  * Persisted in the controller profile; the compiler turns it into flows.
  */
 export type LogicalSourceBinding =
@@ -30,8 +30,8 @@ export type ValueInterpreter =
   | 'enum_selection';
 
 /**
- * Spec §5.3 — what the mapping UI consumes. Never live raw events, and never
- * magnitude variants (§5.4 collapses those before they reach here).
+ * What the mapping UI consumes. Never live raw events, and never
+ * magnitude variants (collapses those before they reach here).
  */
 export interface SelectableInput {
   /** Stable binding key; what a MappingRule stores. */
@@ -51,7 +51,7 @@ export interface SelectableInput {
   binding: LogicalSourceBinding;
 }
 
-/** Grouped for the event picker (§8.3): by physical control, in stable order. */
+/** Grouped for the event picker: by physical control, in stable order. */
 export interface ControlGroup {
   controlId: string;
   label: string;

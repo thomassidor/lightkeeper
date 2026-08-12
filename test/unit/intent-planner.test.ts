@@ -28,7 +28,7 @@ function cacheWith(targets: Array<{
 const dimWrites = (writes: { deviceId: string; capability: string; value: unknown }[]) =>
   Object.fromEntries(writes.filter(w => w.capability === 'dim').map(w => [w.deviceId, w.value]));
 
-describe('group toggle (§7.3, AC-08)', () => {
+describe('group toggle', () => {
   test('any on → all off', () => {
     const cache = cacheWith([
       { id: 'a', on: true }, { id: 'b', on: false }, { id: 'c', on: false },
@@ -55,7 +55,7 @@ describe('group toggle (§7.3, AC-08)', () => {
   });
 });
 
-describe('relative group brightness (§7.4, AC-07)', () => {
+describe('relative group brightness', () => {
   test('preserves inter-light differences', () => {
     // The spec's own worked example: 70/50/30 plus a step stays ordered and spaced.
     const cache = cacheWith([
@@ -105,7 +105,7 @@ describe('relative group brightness (§7.4, AC-07)', () => {
   });
 });
 
-describe('partial capability (§7.9, AC-09)', () => {
+describe('partial capability', () => {
   test('executes on the compatible subset and discloses the rest', () => {
     const cache = cacheWith([
       { id: 'a', on: true, dim: 0.5 },
@@ -131,7 +131,7 @@ describe('partial capability (§7.9, AC-09)', () => {
   });
 });
 
-describe('while-off policy (§7.8)', () => {
+describe('while-off policy', () => {
   test('increase while off turns on and applies, in ONE write (the default)', () => {
     const cache = cacheWith([{ id: 'a', on: false, dim: 0.3 }]);
     const { writes } = planIntent(
@@ -176,7 +176,7 @@ describe('while-off policy (§7.8)', () => {
   });
 });
 
-describe('clamping to each device\'s own range (§7.1)', () => {
+describe('clamping to each device\'s own range', () => {
   test('respects a target\'s own dim range rather than assuming 0–1', () => {
     const cache = new TargetStateCache();
     cache.setCapabilities('a', { onoff: true, dim: { min: 0.1, max: 0.9, decimals: 2 } });
@@ -203,7 +203,7 @@ describe('clamping to each device\'s own range (§7.1)', () => {
   });
 });
 
-describe('perceptual curve (§7.2)', () => {
+describe('perceptual curve', () => {
   test('round-trips', () => {
     for (const v of [0, 0.1, 0.25, 0.5, 0.75, 1]) {
       assert.ok(Math.abs(toDevice(toPerceptual(v)) - v) < 1e-9);

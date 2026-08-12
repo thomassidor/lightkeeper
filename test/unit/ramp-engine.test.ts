@@ -58,7 +58,7 @@ function harness(ratePerSecond = 0.6) {
   return { clock, ticks, stops, engine };
 }
 
-describe('ramp engine (§7.7, AC-12)', () => {
+describe('ramp engine', () => {
   test('ticks at 100 ms while held', () => {
     const { clock, ticks, engine } = harness();
     engine.start('up', 'brightness', 1);
@@ -188,7 +188,7 @@ describe('ramp engine (§7.7, AC-12)', () => {
   });
 });
 
-describe('when a hold may ramp at all (§5.5)', () => {
+describe('when a hold may ramp at all', () => {
   const catalogue = [
     { controlId: 'up', action: 'press' },
     { controlId: 'up', action: 'long_press' },

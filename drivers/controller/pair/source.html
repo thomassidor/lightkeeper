@@ -61,7 +61,7 @@
   <h2 data-i18n="source.title"></h2>
   <p class="sub" data-i18n="source.subtitle"></p>
 
-  <!-- §9.4 — shown only during repair, when the same remote has been re-added
+  <!-- Shown only during repair, when the same remote has been re-added
        under a new device ID. One tap keeps every mapping. -->
   <div id="src-reattach" class="msg ok" style="display:none;">
     <div id="src-reattachText"></div>
@@ -175,7 +175,7 @@ function __llBootSrc(Homey) {
 
     emit('selectSource', device.id).then(function (result) {
       if (!result.usable) {
-        // §8.1 — allow selection but say plainly why it cannot be used.
+        // Allow selection but say plainly why it cannot be used.
         msg.className = 'msg bad';
         msg.textContent = Homey.__('source.unusable');
         return;
@@ -232,7 +232,7 @@ function __llBootSrc(Homey) {
     document.getElementById('src-empty').style.display = shown === 0 ? 'block' : 'none';
   }
 
-  // Offer re-attach before anything else — it is the whole point of §9.4 that
+  // Offer re-attach before anything else — the whole point of re-attach is that
   // the user never has to redo the mapping.
   emit('checkReattach').then(function (candidate) {
     if (!candidate) return;

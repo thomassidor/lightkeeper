@@ -1,7 +1,7 @@
 import type { LogicalSourceBinding } from '../inputs/selectable-input';
 
 /**
- * Spec §6.3 / §6.4 — compile logical bindings into concrete flow definitions.
+ * Compile logical bindings into concrete flow definitions.
  *
  * Two platform findings shape this module (see CLAUDE.md):
  *
@@ -74,7 +74,7 @@ export class RangeExpansionTooLargeError extends Error {
 
 /**
  * Create only the variants needed by mapped events, never every discovered
- * event (§6.4).
+ * event.
  */
 export function compileBinding(request: CompileRequest): CompiledFlow[] {
   const { binding } = request;
@@ -96,7 +96,7 @@ export function compileBinding(request: CompileRequest): CompiledFlow[] {
       return compileRange(request, binding);
 
     case 'direct_capability':
-      // §2.1 — adapter interface only; no device tested so far needs it. A capability
+      // Adapter interface only; no device tested so far needs it. A capability
       // source needs no flow at all.
       return [];
   }
@@ -118,7 +118,7 @@ function compileRange(
   const variants = to - from + 1;
 
   // Beyond the ceiling, mark unsupported and log — silently generating fifty
-  // flows is worse than declining (§6.4).
+  // flows is worse than declining.
   if (variants > ceiling || variants <= 0) {
     throw new RangeExpansionTooLargeError(variants, ceiling);
   }
@@ -177,7 +177,7 @@ export function flowName(request: CompileRequest, variantKey: string): string {
   return `Light Link — ${request.sourceName}: ${request.label}${suffix}`;
 }
 
-/** Idempotency key: one flow per binding per variant (§6.4). */
+/** Idempotency key: one flow per binding per variant. */
 export function managedKey(controllerId: string, bindingKey: string, variantKey: string): string {
   return `${controllerId}::${bindingKey}::${variantKey}`;
 }

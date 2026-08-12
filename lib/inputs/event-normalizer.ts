@@ -15,7 +15,7 @@ export interface CardToken {
   title?: unknown;
 }
 
-/** A trigger card resolved as belonging to a source device (§5.1). */
+/** A trigger card resolved as belonging to a source device. */
 export interface DiscoveredTriggerCard {
   /** Full id, e.g. homey:device:<uuid>:tapdial_button_pressed */
   id: string;
@@ -49,19 +49,19 @@ const PRESS = /(press(ed)?|click(ed)?|push(ed)?|tap(ped)?)/i;
  * "Higher brightness was long pressed", "Left button was pressed". Splitting
  * on that gives a stable control identity that groups a press and its
  * long-press onto ONE physical control — which is exactly what the supersede
- * gate (§7.6) needs in order to know a control carries both.
+ * gate needs in order to know a control carries both.
  */
 const TITLE_CONTROL = /^(.*?)\s+(?:was|is|has been|stops?|starts?)\b/i;
 
 export interface NormalizeOptions {
   sourceDeviceId: string;
-  /** §6.4 — beyond this many variants a control is marked unsupported. */
+  /** Beyond this many variants a control is marked unsupported. */
   rangeExpansionCeiling?: number;
 }
 
 export interface NormalizeResult {
   inputs: SelectableInput[];
-  /** Controls declined, with the reason — surfaced in diagnostics (§9.5). */
+  /** Controls declined, with the reason — surfaced in diagnostics. */
   rejected: Array<{ cardId: string; reason: string }>;
 }
 
@@ -88,7 +88,10 @@ export function normalizeCards(
       continue;
     }
     if (roles.some(r => r.role === 'numeric_open')) {
-      rejected.push({ cardId: card.id, reason: 'free numeric argument — manual mode only (§2.2)' });
+      rejected.push({
+        cardId: card.id,
+        reason: 'free numeric argument — no fixed set of values to offer as events',
+      });
       continue;
     }
 
@@ -102,7 +105,7 @@ export function normalizeCards(
     const direction = roles.find(r => r.role === 'direction');
     const magnitude = roles.find(r => r.role === 'magnitude');
 
-    // Range expansion is bounded (§6.4): silently generating fifty flows is
+    // Range expansion is bounded: silently generating fifty flows is
     // worse than declining.
     if (magnitude) {
       const range = numericRangeOf(magnitude.arg);
@@ -117,9 +120,9 @@ export function normalizeCards(
     }
 
     // A rotation with no resolvable direction cannot drive Brighter or Dimmer —
-    // "Dial — Turn" is not something a user can map. §5.5: mark unsupported
+    // "Dial — Turn" is not something a user can map. Mark it unsupported
     // rather than guess. (Tap Dial's rotation_dimmed lands here; it reports an
-    // absolute level, which belongs to "Set brightness", deferred per §8.3.)
+    // absolute level, which belongs to "Set brightness" and is not offered.)
     const isRotation = action === 'rotate_delta' || action === 'rotate_start' || action === 'rotate_stop';
     const hasUsableDirection = direction
       && (direction.arg.values ?? []).some(v => directionOf(String(v.id)) !== null);
@@ -253,7 +256,7 @@ function bindingFor(
   }
 
   // A fixed enum magnitude means one flow per value, each passing its own
-  // literal amount to the numeric bridge card (§6.4 range expansion).
+  // literal amount to the numeric bridge card (range expansion).
   if (magnitude) {
     const range = numericRangeOf(magnitude.arg) ?? [1, 1];
     return {
@@ -327,7 +330,7 @@ export function actionOf(card: DiscoveredTriggerCard): InputAction | null {
  * Identity of the physical control.
  *
  * Grouping matters more than prettiness: a press and its long-press MUST land
- * on the same controlId, because that is how the supersede gate (§7.6) knows a
+ * on the same controlId, because that is how the supersede gate knows a
  * control carries both and needs the 250 ms window.
  */
 export function controlIdentityOf(
@@ -370,7 +373,7 @@ function isGenericBase(id: string): boolean {
 /**
  * Rotation cards overlap: a Tap Dial exposes rotation_started (direction only)
  * AND rotation_stopped (direction plus a `steps` token). Both would render as
- * "Dial — Turn right", which §5.4 forbids: one user-meaningful gesture, one
+ * "Dial — Turn right", which is wrong: one user-meaningful gesture, one
  * entry. Collapse them, preferring the variant that carries magnitude — losing
  * magnitude would turn a proportional dimmer into a fixed step.
  */

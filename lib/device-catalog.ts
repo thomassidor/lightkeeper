@@ -1,6 +1,6 @@
 import type { HomeyApiService } from './homey-api-service';
 
-/** Spec §4 — devices, zones, owning apps and drivers, and target capabilities. */
+/** Devices, zones, owning apps and drivers, and target capabilities. */
 
 export interface CatalogDevice {
   id: string;
@@ -43,7 +43,7 @@ export class DeviceCatalog {
 
   constructor(private readonly api: HomeyApiService) {}
 
-  /** Zone and device changes invalidate the cache (§7.1 zone re-resolution). */
+  /** Zone and device changes invalidate the cache (zone re-resolution). */
   async watch(onChange: () => void): Promise<void> {
     const client = await this.api.read();
     const invalidate = () => {
@@ -81,7 +81,7 @@ export class DeviceCatalog {
     return [...this.zones!.values()];
   }
 
-  /** Devices in a zone, optionally including every descendant zone (§7.1). */
+  /** Devices in a zone, optionally including every descendant zone. */
   async devicesInZone(zoneId: string, includeSubzones: boolean): Promise<CatalogDevice[]> {
     const [devices, zones] = await Promise.all([this.allDevices(), this.allZones()]);
     const wanted = new Set<string>([zoneId]);
@@ -108,7 +108,7 @@ export class DeviceCatalog {
     return devices.filter(d => d.capabilities.includes('onoff'));
   }
 
-  /** How many of these targets support each light capability (§8.2). */
+  /** How many of these targets support each light capability. */
   async capabilitySummary(deviceIds: string[]): Promise<{ onoff: number; dim: number; light_temperature: number; total: number }> {
     const devices = await Promise.all(deviceIds.map(id => this.device(id)));
     const present = devices.filter((d): d is CatalogDevice => d !== undefined);
@@ -156,7 +156,7 @@ export class DeviceCatalog {
     }));
   }
 
-  /** §8.1 requires always showing the owning integration, by name not URI. */
+  /** Always show the owning integration, by name rather than URI. */
   private async loadAppNames(client: any): Promise<void> {
     if (this.appNames.size > 0) return;
     try {

@@ -3,9 +3,9 @@ import type { Capability } from './intent-planner';
 import type { TargetStateCache } from './target-state-cache';
 
 /**
- * Spec §4 — executes intents against targets and reconciles external changes.
+ * Executes intents against targets and reconciles external changes.
  *
- * Failure policy (§7.9): target writes are independent and results aggregated.
+ * Failure policy: target writes are independent and results aggregated.
  * One light failing must not prevent updates to the others, and routine
  * transient failures are recorded rather than surfaced as blocking UI.
  */
@@ -19,7 +19,7 @@ export interface TargetFailure {
 
 export class LightTargetAdapter {
   private readonly recentFailures: TargetFailure[] = [];
-  /** Rate-limit repeated transient errors from the same target (§9.5). */
+  /** Rate-limit repeated transient errors from the same target. */
   private readonly lastLoggedAt = new Map<string, number>();
 
   /**
@@ -97,7 +97,7 @@ export class LightTargetAdapter {
     options: { impliesOn?: boolean } = {},
   ): Promise<void> {
     // Record the intended value first so the resulting echo is recognised as
-    // ours rather than as an external change (§7.5).
+    // ours rather than as an external change.
     this.cache.noteWrite(deviceId, capability, value);
     const startedAt = Date.now();
 
@@ -187,7 +187,7 @@ export class LightTargetAdapter {
   /**
    * Release everything this adapter holds: subscriptions, pending onoff checks
    * and cached device handles. Called from ControllerRuntime.stop() so nothing
-   * outlives the controller that created it (§12).
+   * outlives the controller that created it.
    */
   async unsubscribeAll(): Promise<void> {
     for (const timer of this.pendingChecks) clearTimeout(timer);

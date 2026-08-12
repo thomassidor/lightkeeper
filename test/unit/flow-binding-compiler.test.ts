@@ -70,7 +70,7 @@ describe('enum bindings', () => {
   });
 });
 
-describe('token bindings (§6.4)', () => {
+describe('token bindings', () => {
   const flows = compileBinding(request({
     kind: 'flow_token',
     cardId: 'homey:device:ghi:tapdial_dial_rotation_stopped',
@@ -95,7 +95,7 @@ describe('token bindings (§6.4)', () => {
   });
 });
 
-describe('range expansion (§6.4)', () => {
+describe('range expansion', () => {
   const rangeBinding = (from: number, to: number): LogicalSourceBinding => ({
     kind: 'flow_range',
     cardId: 'homey:device:jkl:wheel',
@@ -155,7 +155,7 @@ describe('idempotency', () => {
 });
 
 describe('capability bindings', () => {
-  test('need no flow at all (§2.1, interface only)', () => {
+  test('need no flow at all (interface only)', () => {
     const flows = compileBinding(request({
       kind: 'direct_capability', capabilityId: 'button', interpreter: 'boolean_press',
     }));

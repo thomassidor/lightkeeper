@@ -2,7 +2,7 @@
  * App Web API consumed by settings/index.html. Route names must match the
  * "api" block in .homeycompose/app.json.
  *
- * §9.5 / §12: nothing here ever returns the API key, and diagnostics carry no
+ * Nothing here ever returns the API key, and diagnostics carry no
  * secrets or unrelated Homey configuration.
  *
  * Every handler's return shape is documented below, because the settings page
@@ -57,7 +57,7 @@ module.exports = {
   async setCredential({ homey, body }: any) {
     const token = String(body?.token ?? '');
     // Validate with a WRITE: reads succeed on credentials that cannot write,
-    // which is exactly how the original refusal was nearly misdiagnosed.
+    // so a read-based check gives false confidence.
     return homey.app.credentials.setCredential(token, async (client: any) => {
       const folder = await client.flow.createFlowFolder({
         flowfolder: { name: 'Light Link (checking permissions)' },
@@ -102,7 +102,7 @@ module.exports = {
   },
 
   /**
-   * §9.5 — for troubleshooting and bug reports, not for setup.
+   * For troubleshooting and bug reports, not for setup.
    *
    * ```
    * {

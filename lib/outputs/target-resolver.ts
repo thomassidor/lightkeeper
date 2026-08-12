@@ -3,7 +3,7 @@ import type { TargetSpec } from './light-intent';
 import type { TargetCapabilities, TargetStateCache } from './target-state-cache';
 
 /**
- * Spec §7.1 — resolves device lists and zones into a concrete target set plus
+ * Resolves device lists and zones into a concrete target set plus
  * the capability matrix.
  *
  * Zones re-resolve on device create, delete and zone update, so lights added
@@ -46,7 +46,7 @@ export class TargetResolver {
   }
 
   /**
-   * Load each target's own capability options into the cache. §7.1 is explicit
+   * Load each target's own capability options into the cache. It matters
    * that min, max and step must not be assumed identical across targets.
    */
   primeCache(devices: CatalogDevice[], cache: TargetStateCache): void {

@@ -21,7 +21,7 @@ Run a single test file: `node --import tsx --test test/unit/ramp-engine.test.ts`
 ## Layout
 
 ```
-app.ts                          app entry, bridge action listeners, §12 validation on receipt
+app.ts                          app entry, bridge action listeners, validation on receipt
 api.ts                          app Web API consumed by settings/index.html
 lib/
   homey-api-service.ts          both API clients, subscription tracking and teardown
@@ -41,69 +41,13 @@ test/                           unit tests and hand-transcribed fixtures
 release-materials/              store assets and submission material (excluded from the app bundle)
 ```
 
-## Reading the `§n` references
-
-Comments throughout the code cite `§7.5`, `§12`, `AC-18` and so on. These come from the app
-specification the project was built against, which is not published. They are kept because they are
-**stable identifiers for requirements**: citations sharing a number are the same requirement seen
-from different files, and that grouping is genuinely useful when changing behaviour. Treat them as
-tags, not as links.
-
-What each one covers:
-
-| § | Subject |
-|---|---|
-| 2.1 | Compatibility boundary — what counts as a usable source; capability-adapter seam |
-| 2.2 | Inputs that cannot be enumerated (free numeric arguments) are excluded |
-| 2.3 | Reference devices and their expected event surfaces |
-| 2.4 | Device identity — match on owning app plus driver, never on model name |
-| 4 | Module responsibilities |
-| 4.1 | One virtual device per configuration; its lifecycle boundary |
-| 4.2 | What belongs in the App, the Driver and the Device |
-| 5.1 | Source event discovery order |
-| 5.2 | The stable input contract every source adapter normalises into |
-| 5.3 | What the mapping UI consumes — never live raw events |
-| 5.4 | Magnitude collapse: one user-meaningful gesture, one row |
-| 5.5 | Hold may only ramp where a reliable stop signal exists; otherwise step |
-| 6.3 | Binding a normalised event back to its raw source |
-| 6.4 | Generated flow lifecycle: idempotence, attribution, never overwrite user edits |
-| 6.5 | Reconciliation |
-| 7.1 | Target resolution, zone changes, non-uniform capability metadata |
-| 7.2 | The perceptual brightness axis |
-| 7.3 | Group toggle is a group action, not independent inversion |
-| 7.4 | Group brightness: relative preserves differences and is the default |
-| 7.5 | Write scheduling — coalescing, rate limiting, optimistic desired state |
-| 7.6 | The supersede gate: press versus hold on one control |
-| 7.7 | **Ramp safety.** The 10-second hard stop |
-| 7.8 | Behaviour while off; minimum brightness |
-| 7.9 | Independent per-target failure; latency budgets per transport |
-| 8.1 | Never hard-filter — allow selection, explain plainly why something cannot be used |
-| 8.2 | Zone selection at equal prominence with multi-select |
-| 8.3 | The mapping screen, the Test control, one function per normalised event |
-| 8.4 | Per-row tuning: step and sensitivity |
-| 8.5 | Save and delete lifecycle; delete only what is provably ours |
-| 9.1 | Profile schema versioning and deterministic migration |
-| 9.2 | Controller health states |
-| 9.3 | Event-surface fingerprints |
-| 9.4 | One-tap re-attach |
-| 9.5 | Diagnostics and export |
-| 10 | The module tree |
-| 11.1 | Unit test requirements |
-| 11.2 | Fixture requirements — raw captures separate from expected output |
-| 11.4 | Lifecycle and restart testing |
-| 12 | Security and privacy obligations |
-| 14 | Localisation |
-| 15 | Locked defaults |
-
-`AC-nn` are acceptance criteria from the same document; all of them now pass on hardware.
-
 ---
 
 # Homey platform reference
 
 Everything below was established against real hardware: Homey Pro 2023, firmware 13.4.0,
-homey-api 3.19.2. It is the record of how Homey actually behaves as opposed to how it appears to,
-and several of these findings cost hours to establish. They are not documented anywhere else.
+homey-api 3.19.2. It is how Homey actually behaves, as opposed to how it appears to, and it is not
+documented anywhere else.
 
 ## 1. An app's own token cannot write Flows
 
@@ -174,9 +118,9 @@ to claim or replace the session, invalidating the first holder. So: **never shar
 app and any external tool.** Two holders fight, and the symptom is a key that "randomly" stops
 working.
 
-**Validate a key with a WRITE, not a read.** Reads succeed on credentials that cannot write, which
-is exactly how the original refusal was nearly misdiagnosed. `setCredential` proves the key by
-creating a flow folder and immediately deleting it.
+**Validate a key with a WRITE, not a read.** Reads succeed on credentials that cannot write, so a
+read-based check gives false confidence. `setCredential` proves the key by creating a flow folder
+and immediately deleting it.
 
 ## 3. Never construct a flow card URI
 
@@ -228,7 +172,7 @@ The discovery rules, in rank order:
 2. **`device_arg`** — an app-level card with a `device`-typed argument whose `filter` matches. Rare.
 3. **`device_arg_unfiltered`** — an unfiltered device argument matches every device on the Homey
    and is near worthless; it offered "LG refrigerator error changed" as an input for a Tap Dial.
-   Keep it reachable (§8.1 says never hard-filter) but rank it last.
+   Keep it reachable (says never hard-filter) but rank it last.
 4. **"Same owning app" must NOT be a match route.** It offered Hue motion-area triggers as buttons
    on a Hue dial. A ranking hint at best.
 
@@ -296,7 +240,7 @@ how differently they behave — this is why capability is resolved at runtime an
 | `n2_scene_up` / `n2_scene_down` | right / left pressed |
 
 Fixed cards, no arguments, no tokens. Up and down carry **both** press and long-press — these are
-the controls the §7.6 supersede gate exists for, and grouping `n2_on` with `n2_dim_up` under one
+the controls the supersede gate exists for, and grouping `n2_on` with `n2_dim_up` under one
 `controlId` is the normalizer's job. Left and right expose press only, so no hold is offered there.
 
 **Hue Dimmer v2** — `nl.philips.hue:dimmerswitch`, Hue Bridge
@@ -336,7 +280,7 @@ suggesting 9 logical endpoints map onto 3 physical buttons plus wheel positions.
 
 No release or "stopped" card exists for BILRESA, so no hold-ramp is offered — stepping only.
 
-BILRESA is also the device §9.4 one-tap re-attach exists for: its cards vanish after a Homey restart
+BILRESA is also the device one-tap re-attach exists for: its cards vanish after a Homey restart
 and the device must be re-added under a new id. That is recurring, not exceptional, and making the
 user redo the mapping every time would defeat the product.
 

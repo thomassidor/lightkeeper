@@ -1,7 +1,7 @@
 import type { LightIntent } from './light-intent';
 
 /**
- * Spec §7.7 — ramp safety. CRITICAL.
+ * Ramp safety. CRITICAL.
  *
  * Tick at 100 ms; default rate 60% of perceptual range per second.
  *
@@ -118,7 +118,7 @@ export class RampEngine {
   }
 
   /**
-   * Any other input from the same controller stops every ramp (§7.7). Pressing
+   * Any other input from the same controller stops every ramp. Pressing
    * another button while holding one must not leave the first ramping.
    */
   stopAllExcept(controlId: string | null, reason: RampStopReason): number {
@@ -145,7 +145,7 @@ export class RampEngine {
 }
 
 /**
- * §5.5 — do not offer a continuous hold-ramp without a reliable release or stop
+ * Do not offer a continuous hold-ramp without a reliable release or stop
  * signal, or repeated source events. Where absent, offer stepping instead.
  *
  * Decided from the discovered catalogue, per control: a hold may ramp only if

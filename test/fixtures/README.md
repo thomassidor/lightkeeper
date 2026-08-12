@@ -3,26 +3,24 @@
 ## `reference-devices.ts`
 
 Raw flow-card schemas, transcribed by hand from four real remotes on a Homey Pro 2023
-(firmware 13.4.0) during the Phase 0 spike. Device IDs are replaced with stable placeholders;
-nothing else is altered.
+(firmware 13.4.0). Device IDs are replaced with stable placeholders; nothing else is altered.
 
 | Remote | Transport | Notable for |
 |---|---|---|
 | IKEA STYRBAR E2001/E2002 | Zigbee, local | Fixed cards, no arguments or tokens. Up and down carry both press and long-press; left and right press only. |
 | Philips Hue Dimmer v2 | Hue Bridge | Argument-based card selection. |
 | Philips Hue Tap Dial | Hue Bridge | The rotation token — `steps`, 1000 per turn — that made magnitude scaling necessary. |
-| IKEA BILRESA | Matter/Thread | Cards that vanish after a Homey restart, which is what §9.4 one-tap re-attach exists for. |
+| IKEA BILRESA | Matter/Thread | Cards that vanish after a Homey restart, which is what one-tap re-attach exists for. |
 
 ## Why the expectations are written by hand
 
-§11.2 requires that raw fixture data stay separate from the normalised catalogue the tests
+Raw fixture data stays separate from the normalised catalogue the tests
 assert against. The expected catalogues live in the test files, authored independently of these
 captures.
 
 That separation is the whole point: it proves the **normalizer** is doing the work rather than
-the fixture. Three real bugs were caught this way, including a regex that failed to match
-"long pressed" — a space, not an underscore — which would have left the app's headline
-press-versus-hold behaviour as dead code.
+the fixture. A fixture that also encoded the expected output would pass against a normalizer that
+did nothing at all.
 
 ## Never commit captures from a real home
 

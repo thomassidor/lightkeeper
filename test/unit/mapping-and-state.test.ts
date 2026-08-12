@@ -25,7 +25,7 @@ describe('mapping engine', () => {
     assert.deepEqual(resolved?.intent, { type: 'toggle' });
   });
 
-  test('unmapped input resolves to null rather than a guess (§12)', () => {
+  test('unmapped input resolves to null rather than a guess', () => {
     const engine = new MappingEngine([rule({})], DEFAULT_BEHAVIOR);
     assert.equal(engine.resolve({ inputKey: 'unknown', event: event() }), null);
   });
@@ -86,7 +86,7 @@ describe('mapping engine', () => {
   });
 });
 
-describe('available functions (§8.3, AC-03)', () => {
+describe('available functions', () => {
   test('offers only what the targets support', () => {
     assert.deepEqual(availableFunctions({ onoff: 3, dim: 0, light_temperature: 0 }),
       ['toggle', 'on', 'off']);
@@ -100,7 +100,7 @@ describe('available functions (§8.3, AC-03)', () => {
   });
 });
 
-describe('target state cache (§7.5)', () => {
+describe('target state cache', () => {
   test('duplicate echoes are not treated as external changes', () => {
     let now = 1000;
     const cache = new TargetStateCache(() => now);
@@ -147,7 +147,7 @@ describe('target state cache (§7.5)', () => {
   });
 });
 
-describe('migrations (§9.1)', () => {
+describe('migrations', () => {
   test('a pre-versioning profile migrates without data loss', () => {
     const legacy = {
       enabled: true,

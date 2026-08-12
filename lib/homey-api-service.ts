@@ -99,7 +99,7 @@ export class HomeyApiService {
     }
   }
 
-  /** Register a teardown so nothing leaks on stop or delete (§12). */
+  /** Register a teardown so nothing leaks on stop or delete. */
   track(unsubscribe: Unsubscribe): Unsubscribe {
     this.subscriptions.add(unsubscribe);
     return async () => {

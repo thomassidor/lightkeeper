@@ -57,9 +57,7 @@ zone names, the owner's display name and Athom user ID, and notification text fr
 `/test/fixtures/raw/` is gitignored for this reason. See `test/fixtures/README.md`.
 
 **Comments explain why, not what.** The codebase is dense with rationale — which bug a guard
-prevents, which platform quirk forced a design. That is deliberate; please match it. Tags like
-`§7.5` are stable identifiers for requirements; comments sharing a number are the same requirement
-seen from different files. `CLAUDE.md` lists what each one covers.
+prevents, which platform quirk forced a design. That is deliberate; please match it.
 
 **`any` on Homey API boundaries is intentional.** `homey-api` ships JavaScript with JSDoc rather
 than type declarations. Everything that is ours is strictly typed.

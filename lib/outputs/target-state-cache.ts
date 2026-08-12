@@ -1,6 +1,6 @@
 import { clamp01 } from './light-intent';
 
-/** Spec §7.5 — optimistic desired state, per target. */
+/** Optimistic desired state, per target. */
 export interface TargetRuntimeState {
   actualOn?: boolean;
   actualDim?: number;
@@ -13,7 +13,7 @@ export interface TargetRuntimeState {
   lastExternalUpdateAt?: number;
 }
 
-/** Capability metadata read per target — never assumed uniform (§7.1). */
+/** Capability metadata read per target — never assumed uniform. */
 export interface CapabilityOptions {
   min: number;
   max: number;
@@ -65,7 +65,7 @@ export class TargetStateCache {
     return state;
   }
 
-  /** Seed from live device values at startup — never from persisted queues (§7.5). */
+  /** Seed from live device values at startup — never from persisted queues. */
   initialise(deviceId: string, actual: { onoff?: boolean; dim?: number; light_temperature?: number }): void {
     const state = this.state(deviceId);
     state.actualOn = actual.onoff;

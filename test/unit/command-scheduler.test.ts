@@ -54,7 +54,7 @@ function harness(overrides: Partial<{ failOn: string }> = {}) {
   return { clock, written, errors, scheduler };
 }
 
-describe('command scheduler (§7.5, AC-10)', () => {
+describe('command scheduler', () => {
   test('coalesces a burst, acting immediately then once more at the end', async () => {
     const { clock, written, scheduler } = harness();
 
@@ -76,7 +76,7 @@ describe('command scheduler (§7.5, AC-10)', () => {
     await clock.advance(0);
 
     assert.equal(written.length, 1,
-      'a single press must not wait out the burst window (AC-13)');
+      'a single press must not wait out the burst window');
   });
 
   test('ends at the correct final value after a long burst', async () => {
@@ -122,7 +122,7 @@ describe('command scheduler (§7.5, AC-10)', () => {
     assert.deepEqual(written.map(w => w.deviceId).sort(), ['a', 'b', 'c']);
   });
 
-  test('one failing target does not block the others (§7.9)', async () => {
+  test('one failing target does not block the others', async () => {
     const { clock, written, errors, scheduler } = harness({ failOn: 'b' });
 
     scheduler.submit([
@@ -181,7 +181,7 @@ describe('command scheduler (§7.5, AC-10)', () => {
     assert.deepEqual(written, [], 'a stopped scheduler accepts nothing');
   });
 
-  test('bounds the number of queued devices (§12)', async () => {
+  test('bounds the number of queued devices', async () => {
     const clock = new FakeClock();
     const written: Recorded[] = [];
     const scheduler = new CommandScheduler({

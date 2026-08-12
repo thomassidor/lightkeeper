@@ -8,7 +8,7 @@ import { DEFAULT_BEHAVIOR } from '../../lib/mapping/mapping-types';
 import { MappingEngine } from '../../lib/mapping/mapping-engine';
 import type { InputEvent } from '../../lib/inputs/input-event';
 
-describe('dial magnitude scaling (§5.4)', () => {
+describe('dial magnitude scaling', () => {
   test('reads units-per-turn from the token title', () => {
     assert.equal(magnitudePerTurnOf({ title: 'Steps (1000/turn)' }), 1000);
     assert.equal(magnitudePerTurnOf({ title: { en: 'Steps (1000/turn)' } }), 1000);

@@ -1,4 +1,4 @@
-/** Spec §7.1 — what the mapping engine produces and the scheduler executes. */
+/** What the mapping engine produces and the scheduler executes. */
 
 export type TargetSpec =
   | { kind: 'devices'; deviceIds: string[] }
@@ -12,7 +12,7 @@ export type LightIntent =
   | { type: 'temperature_delta'; delta: number }
   | { type: 'temperature_absolute'; value: number };
 
-/** Which capability an intent needs. Drives the partial-support disclosure (§8.3). */
+/** Which capability an intent needs. Drives the partial-support disclosure. */
 export function requiredCapability(intent: LightIntent): 'onoff' | 'dim' | 'light_temperature' {
   switch (intent.type) {
     case 'toggle':
@@ -28,7 +28,7 @@ export function requiredCapability(intent: LightIntent): 'onoff' | 'dim' | 'ligh
 }
 
 /**
- * Spec §7.2 — the perceptual axis.
+ * The perceptual axis.
  *
  * All brightness arithmetic happens on p ∈ [0,1]; the device value is v = p^γ
  * with γ = 2.2. Deltas apply to p, then convert. Linear stepping feels violent
@@ -66,7 +66,7 @@ export function clamp01(value: number): number {
 }
 
 /**
- * Clamp into a capability's own range. §7.1 is explicit that min/max/step must
+ * Clamp into a capability's own range. min/max/step must
  * not be assumed identical across targets, so every write goes through this
  * with that target's own options.
  */

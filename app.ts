@@ -13,7 +13,7 @@ import { HealthMonitor } from './lib/runtime/health-monitor';
 /**
  * Light Link.
  *
- * §4.2 keeps inside the App class: shared services, the Homey API clients,
+ * The App class owns: shared services, the Homey API clients,
  * bridge action listeners and runtime manager startup. Mapping logic and
  * source-specific parsing live in lib/.
  */
@@ -28,7 +28,7 @@ module.exports = class LightLinkApp extends Homey.App {
   health!: HealthMonitor;
 
   /**
-   * §9.5 — last received events. A generated Flow that fires but produces no
+   * Last received events. A generated Flow that fires but produces no
    * light change is otherwise undiagnosable from outside: this records whether
    * the bridge card was reached at all, and if it was rejected, why.
    */
@@ -75,7 +75,7 @@ module.exports = class LightLinkApp extends Homey.App {
       catalog: this.catalog,
       discovery: this.discovery,
       bridge: this.bridge,
-      // §9.2/§9.3 — without this the health checks never run outside the tests,
+      // Without this the health checks never run outside the tests,
       // so an unpaired remote or a changed event surface stayed invisible until
       // the user pressed a button and nothing happened.
       health: this.health,
@@ -86,7 +86,7 @@ module.exports = class LightLinkApp extends Homey.App {
     this.registerBridgeCard('bridge_numeric_event', args => Number(args.value));
     this.registerBridgeCard('bridge_token_event', args => Number(args.droptoken));
 
-    // Zones and devices change under us; targets must follow (§7.1).
+    // Zones and devices change under us; targets must follow.
     await this.catalog.watch(() => void this.controllers.onCatalogChange());
 
     // A stored key must be re-checked after every restart, or pairing asks for
@@ -113,7 +113,7 @@ module.exports = class LightLinkApp extends Homey.App {
   }
 
   /**
-   * §12 — generated flow arguments are user-editable and therefore untrusted.
+   * Generated flow arguments are user-editable and therefore untrusted.
    * Every incoming bridge argument is validated against an existing controller
    * and expected binding key before anything executes. On malformed or stale
    * input we fail closed: log and ignore, never execute heuristically.

@@ -8,12 +8,12 @@ import type { TargetSpec } from '../../lib/outputs/light-intent';
 import { HealthMonitor } from '../../lib/runtime/health-monitor';
 
 /**
- * §4.2 keeps inside the Driver: pair/repair session handlers, UI data
+ * The Driver owns: pair/repair session handlers, UI data
  * endpoints and virtual device creation. Flow-card discovery algorithms and
  * scheduler internals stay out.
  *
  * The same three screens serve both pairing and repair; repair pre-selects the
- * existing values (AC-17).
+ * existing values.
  */
 
 interface SessionState {
@@ -107,7 +107,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
     // ------------------------------------------------------- one-tap re-attach
 
     /**
-     * §9.4 — offered at the top of repair. On BILRESA, cards vanish after a
+     * Offered at the top of repair. On BILRESA, cards vanish after a
      * restart and the device must be re-added; making the user redo the whole
      * mapping every time would defeat the product.
      */
@@ -178,15 +178,15 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
       const result = await this.app.discovery.discover(device);
 
-      // Changing the source invalidates bindings (§8.5).
+      // Changing the source invalidates bindings.
       if (state.sourceDeviceId && state.sourceDeviceId !== deviceId) {
         state.mappings = [];
       }
       state.sourceDeviceId = deviceId;
       state.catalogue = result.inputs;
       state.fingerprint = result.fingerprint;
-      // Recorded for §9.4 one-tap re-attach, which matches on owner app plus
-      // driver plus fingerprint — never on model name alone (§2.4).
+      // Recorded for one-tap re-attach, which matches on owner app plus
+      // driver plus fingerprint — never on model name alone.
       state.sourceDriverId = device.driverId ?? undefined;
       state.sourceOwnerUri = device.ownerUri ?? undefined;
       state.sourceName = device.name;
@@ -200,7 +200,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
           label: g.label,
           inputs: g.inputs.map(i => ({ key: i.key, label: i.label, action: i.action })),
         })),
-        // §8.1 — allow selection but block completion, rather than hiding it.
+        // Allow selection but block completion, rather than hiding it.
         usable: result.inputs.length > 0,
         rejected: result.rejected,
       };
@@ -306,8 +306,8 @@ module.exports = class ControllerDriver extends Homey.Driver {
      * Replace the whole rule set. Simpler and less racy than per-rule edits,
      * and the list is tiny.
      *
-     * Each rule may aim at a subset of the controller's lights (§4.2 per-action
-     * targets). null means "inherit" — all of them.
+     * Each rule may aim at a subset of the controller's lights. null means
+     * "inherit" — all of them.
      */
     handler('setRules', async (rules: Array<{
       id: string; function: LightFunction; inputKey: string | null; groupKey: string;
@@ -327,7 +327,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
     });
 
     /**
-     * §8.3 Test control — executes the intent directly against the rule's own
+     * Test control — executes the intent directly against the rule's own
      * targets. No flow required, works before save. The primary defence against
      * silent failure.
      */

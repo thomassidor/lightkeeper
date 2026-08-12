@@ -2,7 +2,7 @@ import { migrateProfile } from './migrations';
 import type { ControllerProfile } from './controller-profile';
 
 /**
- * Spec §9.1 — profiles live in the virtual device store; app-level settings are
+ * Profiles live in the virtual device store; app-level settings are
  * only for global configuration and migrations.
  *
  * This wraps the device store so migration is unavoidable: every read goes

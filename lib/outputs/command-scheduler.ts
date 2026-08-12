@@ -1,15 +1,15 @@
 import type { Capability, PlannedWrite } from './intent-planner';
 
 /**
- * Spec §7.5 — coalesce bursts, serialise per-target writes, cap write
+ * Coalesce bursts, serialise per-target writes, cap write
  * frequency, and GUARANTEE a final write after the burst ends.
  *
  * A fast dial turn produces a flood of events. Writing each one saturates
  * Zigbee, Z-Wave or a cloud integration and the light ends up wherever the
  * queue happened to stop. Coalescing fixes the flood; the guaranteed final
- * write is what makes the light end at the correct level (AC-10).
+ * write is what makes the light end at the correct level.
  *
- * Queues are never persisted (§7.5) — runtime state is rebuilt from live
+ * Queues are never persisted — runtime state is rebuilt from live
  * device values after a restart.
  */
 
@@ -22,7 +22,7 @@ export type Executor = (
 
 export interface SchedulerOptions {
   minWriteIntervalMs: number;
-  /** Bounded so a runaway source cannot exhaust memory (§12). */
+  /** Bounded so a runaway source cannot exhaust memory. */
   maxQueuedDevices?: number;
   setTimeout?: (fn: () => void, ms: number) => unknown;
   clearTimeout?: (handle: unknown) => void;
@@ -109,7 +109,7 @@ export class CommandScheduler {
     // every isolated button press — latency the user feels on every single
     // press, to coalesce a burst that is not happening. Bursts still coalesce,
     // because anything arriving during the write or the rate window is held
-    // and flushed after (§7.5's guaranteed final write).
+    // and flushed after — the guaranteed final write.
     if (rateDelay === 0) {
       void this.flush(deviceId);
       return;
@@ -143,7 +143,7 @@ export class CommandScheduler {
       snapshot.push(turningOff);
     }
 
-    // Serialised per target; failures are independent (§7.9) so one bad write
+    // Serialised per target; failures are independent so one bad write
     // never blocks the rest of this device's burst, let alone other devices.
     for (const [capability, value] of snapshot) {
       if (this.stopped) break;

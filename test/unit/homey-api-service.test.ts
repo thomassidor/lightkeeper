@@ -7,9 +7,9 @@ import type { CredentialService } from '../../lib/credential-service';
 /**
  * The read client is the single choke point for every device read, zone read
  * and capability subscription in the app. These tests cover its caching and,
- * more importantly, its RECOVERY: an earlier version cleared the in-flight
- * promise only on success, so one transient failure at boot left a rejected
- * promise cached forever and no read ever worked again without a restart.
+ * more importantly, its RECOVERY: the in-flight promise must be cleared on
+ * failure as well as success, or one transient failure at boot leaves a
+ * rejected promise cached forever and no read works again without a restart.
  */
 
 /** A stand-in for HomeyAPI's client, with the four managers the service connects. */

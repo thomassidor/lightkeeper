@@ -9,10 +9,11 @@ import type { TargetStateCache } from './target-state-cache';
 import type { ControllerBehavior } from '../mapping/mapping-types';
 
 /**
- * Pure planning for §7.3, §7.4 and §7.8. Not a module named in §10 — the spec
- * puts this inside light-target-adapter — but group semantics are the most
- * subtle rules in the app and §11.1 demands they be unit tested, so they are
- * separated from anything that touches Homey. The adapter executes the plan.
+ * Pure planning: group toggle, group brightness and while-off policy.
+ *
+ * Deliberately separated from anything that touches Homey. Group semantics are
+ * the most subtle rules in the app, and keeping them free of I/O is what makes
+ * them unit-testable. The adapter executes the plan this produces.
  */
 
 export type Capability = 'onoff' | 'dim' | 'light_temperature';
@@ -51,7 +52,7 @@ export function planIntent(
   const writes: PlannedWrite[] = [];
   const skipped: SkippedTarget[] = [];
 
-  // §7.9 / AC-09: partial support behaves like partial failure — execute on the
+  // Partial support behaves like partial failure — execute on the
   // compatible subset, disclose, never fail the whole intent.
   const supported = deviceIds.filter(id => {
     if (cache.supports(id, capability)) return true;
@@ -96,7 +97,7 @@ export function planIntent(
 }
 
 /**
- * §7.3 — toggle is a GROUP action, not independent inversion. If any
+ * Toggle is a GROUP action, not independent inversion. If any
  * controllable target is on, turn all off; otherwise turn all on. This keeps a
  * room predictable once individual lights have drifted out of sync.
  */
@@ -107,7 +108,7 @@ function planGroupToggle(deviceIds: string[], cache: TargetStateCache): PlannedW
 }
 
 /**
- * §7.4 — relative by default. The same normalised delta applies to every
+ * Relative by default. The same normalised delta applies to every
  * target based on that target's OWN level, preserving deliberate differences.
  * Synchronised mode exists but must never be the default: it destroys existing
  * lighting composition.
@@ -130,14 +131,14 @@ function planBrightnessDelta(
     const isOn = cache.currentOn(deviceId);
     const current = cache.currentDim(deviceId) ?? 0;
 
-    // §7.8 while-off policy.
+    // While-off policy.
     if (isOn === false) {
       if (delta > 0) {
         if (behavior.increaseWhileOff === 'ignore') {
           skipped.push({ deviceId, reason: 'off, and increase-while-off is set to ignore' });
           continue;
         }
-        // §7.8 turn on AND apply. The dim write below carries the "on" for us,
+        // Turn on AND apply. The dim write below carries the "on" for us,
         // so no separate onoff write is queued — see PlannedWrite.impliesOn.
         turningOnViaDim.add(deviceId);
       } else if (behavior.decreaseWhileOff === 'ignore') {
@@ -155,7 +156,7 @@ function planBrightnessDelta(
     const raw = synchronisedValue ?? applyPerceptualDelta(current, delta);
     const next = clampDim(deviceId, raw, cache);
 
-    // §7.8 — where the result would fall below the minimum, turn off rather
+    // Where the result would fall below the minimum, turn off rather
     // than clamping, when configured to do so.
     if (behavior.offBelowMinimum && delta < 0 && next <= behavior.minimumBrightness) {
       writes.push({ deviceId, capability: 'onoff', value: false });
@@ -191,8 +192,8 @@ function computeSynchronisedTarget(
 
 /**
  * Temperature deltas are linear on the normalised axis — the perceptual curve
- * is a brightness phenomenon (§7.2) and applying it here would be wrong.
- * §7.8: a temperature change must never implicitly turn a light on.
+ * is a brightness phenomenon and applying it here would be wrong.
+ * A temperature change must never implicitly turn a light on.
  */
 function planTemperatureDelta(
   delta: number,

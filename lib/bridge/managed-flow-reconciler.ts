@@ -2,14 +2,14 @@ import type { HomeyApiService } from '../homey-api-service';
 import type { ManagedFlowReference } from '../profiles/controller-profile';
 
 /**
- * Spec §6.5 — reconciliation.
+ * Reconciliation.
  *
  * Runs on app start, controller start, repair, and relevant source or
  * integration change. Verifies existence and whether each flow is broken.
  *
  * Recreate missing flows ONLY where the binding schema is still compatible. If
  * the event surface changed, invalidate the binding and require remapping
- * rather than guessing — with the one exception in §9.4.
+ * rather than guessing — with the one exception of one-tap re-attach.
  */
 
 export interface ReconcileReport {

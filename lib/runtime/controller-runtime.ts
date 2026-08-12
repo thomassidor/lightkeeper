@@ -44,10 +44,10 @@ export function intentForFunction(func: LightFunction, behavior: ControllerBehav
 }
 
 /**
- * Spec §4 — owns all listeners and state for ONE virtual controller device.
+ * Owns all listeners and state for ONE virtual controller device.
  *
  * Everything here is torn down on stop or delete: no timers, subscriptions or
- * queues survive (§12).
+ * queues survive.
  */
 
 export interface ControllerRuntimeDeps {
@@ -56,7 +56,7 @@ export interface ControllerRuntimeDeps {
   discovery: SourceDiscoveryService;
   bridge: FlowBridgeManager;
   /**
-   * §9.2/§9.3 detection: source unpaired, event surface changed, targets gone.
+   * Detects an unpaired source, a changed event surface, or missing targets.
    * Optional so the ephemeral Test runtime can skip it — a rig that drives
    * lights before save has no health state to report.
    */
@@ -86,7 +86,7 @@ export class ControllerRuntime {
   private engine: MappingEngine | null = null;
   private gate: SupersedeGate | null = null;
   private ramps: RampEngine | null = null;
-  /** Controls whose hold may ramp rather than step (§5.5). */
+  /** Controls whose hold may ramp rather than step. */
   private rampable = new Set<string>();
 
   private targetIds: string[] = [];
@@ -118,7 +118,7 @@ export class ControllerRuntime {
     await this.refreshCatalogue();
     await this.buildRuntime();
     await this.reconcileFlows();
-    // Last, so a genuine §9.2/§9.3 problem — the remote unpaired, or its event
+    // Last, so a genuine health problem — the remote unpaired, or its event
     // surface changed under us — wins over the target-count assessment
     // buildRuntime() made. Without this the checks never ran in production at
     // all: assess() had no caller outside the tests.
@@ -126,7 +126,7 @@ export class ControllerRuntime {
   }
 
   /**
-   * §9.2/§9.3 — ask the health monitor whether this controller is actually
+   * Ask the health monitor whether this controller is actually
    * sound, and adopt its verdict when it is worse than what we already know.
    *
    * Never downgrades to 'ready': buildRuntime() has scheduler and subscription
@@ -162,7 +162,7 @@ export class ControllerRuntime {
    * Binding keys are derived from card ids and are stable across re-discovery,
    * so existing mappings keep pointing at the right events. If the event
    * surface has genuinely changed, the fingerprint check in HealthMonitor is
-   * what catches it (§9.3) — this only refreshes metadata.
+   * what catches it — this only refreshes metadata.
    */
   private async refreshCatalogue(): Promise<void> {
     try {
@@ -196,7 +196,7 @@ export class ControllerRuntime {
     await this.buildRuntime();
   }
 
-  /** §8.3 — run one mapped function against its own targets, right now. */
+  /** Run one mapped function against its own targets, right now. */
   async testFunction(
     func: LightFunction,
     deviceIds?: string[],
@@ -227,7 +227,7 @@ export class ControllerRuntime {
 
     this.engine = new MappingEngine(this.profile.mappings, this.profile.behavior);
 
-    // §7.6 — the gate engages ONLY for controls carrying both a discrete and a
+    // The gate engages ONLY for controls carrying both a discrete and a
     // hold mapping. Everything else keeps zero added latency.
     const catalogue = this.profile.catalogue ?? [];
     const assignments = this.profile.mappings
@@ -241,7 +241,7 @@ export class ControllerRuntime {
       contestedControlIds: contestedControls(assignments),
     }, event => void this.execute(event));
 
-    // §5.5 — a hold may only ramp where the source gives a reliable stop
+    // A hold may only ramp where the source gives a reliable stop
     // signal. Everything else steps.
     this.rampable = new Set(
       catalogue
@@ -275,7 +275,7 @@ export class ControllerRuntime {
     }
   }
 
-  /** §6.5 — run on app start, controller start, repair and source change. */
+  /** Run on app start, controller start, repair and source change. */
   async reconcileFlows(): Promise<void> {
     const catalogue = this.profile.catalogue ?? [];
     const mappedKeys = new Set(
@@ -312,7 +312,7 @@ export class ControllerRuntime {
     } catch (error) {
       const failure = this.deps.api.credentials.getStatus();
       if (failure.present && !failure.valid) {
-        // The mappings are fine; only the credential is not (§9.2). The failure
+        // The mappings are fine; only the credential is not. The failure
         // CODE carries the translation; `hint` is English and only a fallback.
         this.setState('needs_credential', {
           key: credentialFailureKey(failure.failure),
@@ -326,7 +326,7 @@ export class ControllerRuntime {
   }
 
   /**
-   * Entry point for bridge events. §12: the caller must already have validated
+   * Entry point for bridge events. The caller must already have validated
    * that the controller and binding key exist.
    */
   handleInput(event: InputEvent, inputKey: string): void {
@@ -339,7 +339,7 @@ export class ControllerRuntime {
   private async execute(event: InputEvent): Promise<void> {
     const inputKey = String(event.value ?? '');
 
-    // §7.7 — ANY other input from this controller stops a running ramp.
+    // ANY other input from this controller stops a running ramp.
     if (this.ramps) {
       const isStopSignal = event.action === 'release' || event.action === 'rotate_stop';
 
@@ -374,7 +374,7 @@ export class ControllerRuntime {
     await this.runIntent(resolved.intent, targets);
   }
 
-  /** Shared by live events and the Test control (§8.3), which needs no flow. */
+  /** Shared by live events and the Test control, which needs no flow. */
   async runIntent(intent: LightIntent, targetIds: string[] = this.targetIds): Promise<{ writes: number; skipped: number }> {
     const plan = planIntent(intent, targetIds, this.cache, this.profile.behavior);
 
@@ -403,7 +403,7 @@ export class ControllerRuntime {
   }
 
   /**
-   * Re-resolve targets after a device or zone change (§7.1) without tearing
+   * Re-resolve targets after a device or zone change without tearing
    * down the scheduler, gate or subscriptions. A full restart here dropped
    * writes that were already queued.
    */
@@ -428,7 +428,7 @@ export class ControllerRuntime {
   }
 
   async stop(): Promise<void> {
-    // Never leave a light mid-ramp across a restart (§7.7).
+    // Never leave a light mid-ramp across a restart.
     this.ramps?.stopAll('shutdown');
     this.ramps = null;
     this.gate?.cancelAll();
@@ -437,14 +437,14 @@ export class ControllerRuntime {
     this.scheduler = null;
     this.engine = null;
     // Capability subscriptions and pending post-write checks are the adapter's,
-    // and outlive this runtime unless explicitly released (§12).
+    // and outlive this runtime unless explicitly released.
     await this.adapter.unsubscribeAll();
     this.cache.clear();
     this.targetIds = [];
     this.targetNames = [];
   }
 
-  /** §8.5 / AC-18 — remove only resources demonstrably owned by this controller. */
+  /** Remove only resources demonstrably owned by this controller. */
   async destroy(): Promise<void> {
     await this.stop();
     await this.deps.bridge.removeAll(this.profile.managedFlows);
@@ -456,7 +456,7 @@ export class ControllerRuntime {
     this.deps.onStateChange(state, detail);
   }
 
-  /** §9.5 — never exposes secrets or unrelated Homey configuration. */
+  /** Never exposes secrets or unrelated Homey configuration. */
   diagnostics(): Record<string, unknown> {
     return {
       controllerId: this.controllerId,
