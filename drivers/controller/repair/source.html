@@ -1,0 +1,400 @@
+<style>
+  /* ==== shared base: identical in all four pair views ====
+     Scoped to this view's root because all four views share ONE document, so
+     unscoped class names bleed between screens (see the script header).
+
+     That also means these ~110 lines cannot be de-duplicated into a stylesheet
+     — there is nowhere to put one. So the duplication is made safe instead:
+     test/unit/pair-view-styles.test.ts compares the four copies with the root
+     id normalised and fails on any difference. Edit this block in all four
+     files, or in none of them.
+
+     Colours are tokens so that the dark scheme below restates values only,
+     never rules. A colour written as a literal anywhere past this block is a
+     token that is missing. */
+  #src-root {
+    /* Brand. Navy is the manifest brandColor and carries both icons; amber is
+       the link accent. This flow previously used a generic #2f6fed for every
+       interactive state — a colour that appeared nowhere else the user had
+       seen, in the app or in the store listing. */
+    --ll-accent: #1f3a5f;
+    --ll-accent-ink: #ffffff;
+    --ll-accent-tint: #f1f5fa;
+    --ll-accent-wash: #fbfcfe;
+    --ll-accent-line: #cdd8e6;
+    --ll-accent-strong: #1f3a5f;
+    --ll-ring: rgba(31, 58, 95, .16);
+    --ll-amber: #f2a93b;
+
+    --ll-ink: #16181d;
+    --ll-sub: #6b7280;
+    --ll-body: #4b5563;
+    --ll-muted: #8b929e;
+    --ll-faint: #9aa1ac;
+
+    /* transparent, not white: the pairing container paints the page behind us,
+       and claiming it in light mode would flatten every card against it. The
+       dark scheme does claim it, because a white card on a dark container is
+       the one combination that reads as broken rather than merely plain. */
+    --ll-page: transparent;
+    --ll-surface: #ffffff;
+    --ll-raised: #f7f8fa;
+    --ll-line: #eceef2;
+    --ll-field: #e3e6ec;
+    --ll-hover: #c9d2e0;
+    --ll-shadow: 0 1px 2px rgba(16, 24, 40, .05);
+
+    --ll-ok-bg: #eaf7ef;   --ll-ok-ink: #10633a;
+    --ll-bad-bg: #fdeceb;  --ll-bad-ink: #8f1d18;
+    --ll-flat-bg: #f4f5f7; --ll-flat-ink: #5b616e;
+
+    background: var(--ll-page);
+    padding: 18px 16px 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", sans-serif;
+    color: var(--ll-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Values only. Note the accent inverts: #1f3a5f is a dark navy and cannot
+     carry white text on a dark ground, so dark mode lightens the accent and
+     darkens the ink on top of it. */
+  @media (prefers-color-scheme: dark) {
+    #src-root {
+      --ll-accent: #6fa0d8;
+      --ll-accent-ink: #10151b;
+      --ll-accent-tint: #1d2a3a;
+      --ll-accent-wash: #1a1e25;
+      --ll-accent-line: #3f5f86;
+      --ll-accent-strong: #9cc2ea;
+      --ll-ring: rgba(111, 160, 216, .28);
+      --ll-amber: #f5b75a;
+
+      --ll-ink: #f2f3f5;
+      --ll-sub: #a6adb8;
+      --ll-body: #c3c9d2;
+      --ll-muted: #8b929e;
+      --ll-faint: #7c8390;
+
+      --ll-page: #16181b;
+      --ll-surface: #1f2126;
+      --ll-raised: #262a31;
+      --ll-line: #2c3037;
+      --ll-field: #3a3f48;
+      --ll-hover: #4a5160;
+      --ll-shadow: 0 1px 2px rgba(0, 0, 0, .4);
+
+      --ll-ok-bg: #14301f;   --ll-ok-ink: #7ddba4;
+      --ll-bad-bg: #3a1a19;  --ll-bad-ink: #f7a49e;
+      --ll-flat-bg: #262a31; --ll-flat-ink: #aeb5c0;
+    }
+  }
+
+  #src-root h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+  #src-root .sub { font-size: 14px; line-height: 1.5; color: var(--ll-sub); margin: 0 0 18px; }
+  #src-root p { font-size: 14px; line-height: 1.55; color: var(--ll-body); }
+
+  #src-root .card { background: var(--ll-surface); border: 1px solid var(--ll-line);
+              border-radius: 14px; box-shadow: var(--ll-shadow); padding: 14px;
+              margin-bottom: 10px; }
+
+  #src-root .section { margin-bottom: 18px; }
+  #src-root .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase;
+                       letter-spacing: .06em; color: var(--ll-faint); margin: 0 0 8px 2px; }
+
+  /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
+  #src-root .tile { display: block; width: 100%; text-align: left; background: var(--ll-surface);
+              border: 1.5px solid var(--ll-line); border-radius: 12px; padding: 13px 14px;
+              margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
+              color: var(--ll-ink);
+              transition: border-color .12s ease, background .12s ease; }
+  #src-root .tile:hover { border-color: var(--ll-hover); }
+  #src-root .tile.sel { border-color: var(--ll-accent); background: var(--ll-accent-tint); }
+  #src-root .tile .name { font-size: 15px; font-weight: 500; line-height: 1.3; }
+  #src-root .tile .meta { font-size: 12.5px; color: var(--ll-muted); margin-top: 3px; line-height: 1.35; }
+
+  #src-root input[type=text], #src-root input[type=password], #src-root select {
+    width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
+    border: 1.5px solid var(--ll-field); border-radius: 11px; background: var(--ll-surface);
+    color: var(--ll-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
+  /* The chevron's fill stays a literal: #8b929e is --ll-muted, which is the one
+     token with the same value in both schemes, and a data URI cannot read a
+     custom property. */
+  #src-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%238b929e' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+               background-repeat: no-repeat; background-position: right 13px center;
+               background-size: 11px; padding-right: 34px; }
+  #src-root input:focus, #src-root select:focus { outline: none; border-color: var(--ll-accent);
+                                      box-shadow: 0 0 0 3px var(--ll-ring); }
+
+  #src-root .btn { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
+             border-radius: 10px; border: 1.5px solid var(--ll-field);
+             background: var(--ll-surface); color: var(--ll-ink); cursor: pointer;
+             min-height: 40px; }
+  #src-root .btn:hover { border-color: var(--ll-hover); }
+  #src-root .btn:disabled { opacity: .45; cursor: not-allowed; }
+  #src-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
+                     border-radius: 12px; border: none; background: var(--ll-accent);
+                     color: var(--ll-accent-ink); cursor: pointer; min-height: 50px;
+                     margin-top: 16px; font-family: inherit; }
+  #src-root .btn-primary:disabled { opacity: .5; cursor: progress; }
+
+  /* A default ground, so a .msg shown before any state class lands on it is
+     still a message rather than bare text on the page. */
+  #src-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 11px; font-size: 13.5px;
+             line-height: 1.5; background: var(--ll-flat-bg); color: var(--ll-flat-ink); }
+  #src-root .ok { background: var(--ll-ok-bg); color: var(--ll-ok-ink); }
+  #src-root .bad { background: var(--ll-bad-bg); color: var(--ll-bad-ink); }
+  #src-root .muted { background: var(--ll-flat-bg); color: var(--ll-flat-ink); }
+
+  #src-root ol { font-size: 14px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+           color: var(--ll-body); }
+  #src-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  @media (max-width: 380px) { #src-root .grid { grid-template-columns: 1fr; } }
+  #src-root .empty { font-size: 14px; color: var(--ll-muted); padding: 12px 0; }
+  /* ==== end shared base ==== */
+
+  #src-root .search { margin-bottom: 16px; }
+  #src-root .reattach-actions { margin-top: 10px; }
+</style>
+
+<div class="wrap" id="src-root">
+  <h2 data-i18n="source.title"></h2>
+  <p class="sub" data-i18n="source.subtitle"></p>
+
+  <!-- Shown only during repair, when the same remote has been re-added
+       under a new device ID. One tap keeps every mapping. -->
+  <div id="src-reattach" class="msg ok" style="display:none;">
+    <div id="src-reattachText"></div>
+    <div class="reattach-actions">
+      <button id="src-reattachBtn" class="btn" data-i18n="source.reattachButton"></button>
+    </div>
+  </div>
+
+  <input id="src-search" class="search" type="text"
+         data-i18n-placeholder="source.searchPlaceholder" autocomplete="off" />
+
+  <div id="src-rooms"></div>
+  <div id="src-empty" class="empty" style="display:none;" data-i18n="source.noMatch"></div>
+
+  <div id="src-msg" class="msg muted" style="display:none;"></div>
+</div>
+
+<script type="text/javascript">
+/**
+ * Pair views are INJECTED INTO the pairing container's document — they do not
+ * get their own iframe, and they must not load homey.js themselves (a second
+ * copy overwrites window.Homey with a base object that has no emit/showView).
+ *
+ * The container calls window.onHomeyReady once, at its own page load, long
+ * before this view's script exists, so waiting to be called never fires. The
+ * container's fully-equipped Homey is already on window by the time this runs,
+ * so take it directly — while still accepting onHomeyReady if it does arrive.
+ *
+ * All four views share ONE document. That is why every CSS rule here is scoped
+ * to this view's root id, and why the boot guard below lives on the root
+ * ELEMENT rather than in a global.
+ */
+/**
+ * The guard lives on the view's root ELEMENT, not in a global. All four views
+ * share one document, and a global flag survives leaving and re-entering the
+ * pairing flow — which silently blocked the second run from ever rendering.
+ * A freshly injected root has no marker, so each injection boots exactly once.
+ */
+function __llBootSrc(Homey) {
+  var __root = document.getElementById('src-root');
+  if (!__root || __root.dataset.llBooted === '1') return;
+  __root.dataset.llBooted = '1';
+
+  /**
+   * Reserve room for the scrollbar so expanding a section cannot resize the
+   * content.
+   *
+   * When the view grows past the pane height a scrollbar appears, the usable
+   * width drops by its thickness, and every percentage-width row re-wraps —
+   * text shifts as you expand and collapse. `scrollbar-gutter: stable` keeps
+   * the gutter reserved whether or not the bar is showing.
+   *
+   * The scrolling element belongs to the pairing container, not to us, so find
+   * it by walking up rather than guessing a selector.
+   */
+  (function stabiliseScrollbar() {
+    var scroller = null;
+    for (var el = __root.parentElement; el && el !== document.documentElement; el = el.parentElement) {
+      var overflowY = getComputedStyle(el).overflowY;
+      if (overflowY === 'auto' || overflowY === 'scroll') { scroller = el; break; }
+    }
+    var targets = scroller ? [scroller] : [document.documentElement, document.body];
+    var supported = window.CSS && CSS.supports && CSS.supports('scrollbar-gutter', 'stable');
+
+    targets.forEach(function (el) {
+      if (!el) return;
+      if (supported) el.style.scrollbarGutter = 'stable';
+      // Without gutter support, always showing the track is the stable option.
+      else if (el !== document.body) el.style.overflowY = 'scroll';
+    });
+  })();
+
+  if (typeof Homey.ready === 'function') Homey.ready();
+
+  function emit(event, data) {
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var finish = function (err, result) {
+        if (settled) return;
+        settled = true;
+        if (err) reject(err instanceof Error ? err : new Error(String(err)));
+        else resolve(result);
+      };
+      // A call that never comes back would leave the screen stuck.
+      var timer = setTimeout(function () { finish(new Error('Homey did not respond to "' + event + '"')); }, 20000);
+      var done = function (err, result) { clearTimeout(timer); finish(err, result); };
+      try {
+        var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
+        if (returned && typeof returned.then === 'function') {
+          returned.then(function (r) { done(null, r); }, function (e) { done(e); });
+        }
+      } catch (err) { done(err); }
+    });
+  }
+
+  var rooms = [];
+
+  function escapeHtml(text) {
+    return String(text == null ? '' : text).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function choose(device, el) {
+    __root.querySelectorAll('.tile').forEach(function (n) { n.classList.remove('sel'); });
+    el.classList.add('sel');
+
+    var msg = document.getElementById('src-msg');
+    msg.className = 'msg muted';
+    msg.textContent = Homey.__('source.searching');
+    msg.style.display = 'block';
+
+    emit('selectSource', device.id).then(function (result) {
+      if (!result.usable) {
+        // Allow selection but say plainly why it cannot be used.
+        msg.className = 'msg bad';
+        msg.textContent = Homey.__('source.unusable');
+        return;
+      }
+      msg.className = 'msg ok';
+      msg.textContent = Homey.__('source.found', { count: result.eventCount, controls: result.controls.length });
+    }).catch(function (err) {
+      msg.className = 'msg bad';
+      msg.textContent = err.message || String(err);
+    });
+  }
+
+  function render(query) {
+    var container = document.getElementById('src-rooms');
+    container.innerHTML = '';
+    var needle = (query || '').trim().toLowerCase();
+    var shown = 0;
+
+    rooms.forEach(function (room) {
+      var matches = room.devices.filter(function (device) {
+        if (!needle) return true;
+        return (device.name + ' ' + (device.ownerName || '') + ' ' + (device.zoneName || ''))
+          .toLowerCase().indexOf(needle) >= 0;
+      });
+      if (!matches.length) return;
+
+      var section = document.createElement('div');
+      section.className = 'section';
+      var heading = document.createElement('div');
+      heading.className = 'section-title';
+      heading.textContent = room.zoneName;
+      section.appendChild(heading);
+
+      matches.forEach(function (device) {
+        shown++;
+        var el = document.createElement('div');
+        el.className = 'tile' + (device.selected ? ' sel' : '');
+        // The event count is the honest signal for whether a device can act as
+        // a controller. Showing it beats guessing a "remotes" category and
+        // getting it wrong.
+        var events = device.eventCount > 0
+          ? device.eventCount + ' event' + (device.eventCount === 1 ? '' : 's')
+          : 'no events';
+        el.innerHTML = '<div class="name">' + escapeHtml(device.name) + '</div>'
+          + '<div class="meta">' + escapeHtml(device.ownerName || '') + ' &middot; ' + events
+          + (device.available === false ? ' &middot; unavailable' : '') + '</div>';
+        el.addEventListener('click', function () { choose(device, el); });
+        section.appendChild(el);
+      });
+
+      container.appendChild(section);
+    });
+
+    document.getElementById('src-empty').style.display = shown === 0 ? 'block' : 'none';
+  }
+
+  // Offer re-attach before anything else — the whole point of re-attach is that
+  // the user never has to redo the mapping.
+  emit('checkReattach').then(function (candidate) {
+    if (!candidate) return;
+    document.getElementById('src-reattachText').textContent =
+      Homey.__('source.reattach', { name: candidate.deviceName });
+    document.getElementById('src-reattach').style.display = 'block';
+  }).catch(function () { /* not a repair session */ });
+
+  document.getElementById('src-reattachBtn').addEventListener('click', function () {
+    var msg = document.getElementById('src-msg');
+    msg.className = 'msg muted';
+    msg.textContent = Homey.__('source.reattaching');
+    msg.style.display = 'block';
+
+    emit('applyReattach').then(function (result) {
+      msg.className = 'msg ok';
+      msg.textContent = Homey.__('source.reattached', { name: result.deviceName, count: result.mappings });
+      Homey.done();
+    }).catch(function (err) {
+      msg.className = 'msg bad';
+      msg.textContent = err.message || String(err);
+    });
+  });
+
+  document.getElementById('src-search').addEventListener('input', function (e) {
+    render(e.target.value);
+  });
+
+  emit('listSources').then(function (data) {
+    rooms = data.rooms || [];
+    if (!rooms.length) {
+      var m = document.getElementById('src-msg');
+      m.className = 'msg bad';
+      m.textContent = Homey.__('source.listFailed');
+      m.style.display = 'block';
+      return;
+    }
+    render('');
+  }).catch(function (err) {
+    var m = document.getElementById('src-msg');
+    m.className = 'msg bad';
+    m.textContent = err.message || String(err);
+    m.style.display = 'block';
+  });
+}
+
+window.onHomeyReady = __llBootSrc;
+
+(function waitForHomey(attempt) {
+  if (window.Homey && typeof window.Homey.emit === 'function') return __llBootSrc(window.Homey);
+  // Homey never arrived, so Homey.__ does not exist and this one string cannot
+  // go through a locale key: the failure mode IS "no Homey on the page". It is
+  // also inserted into document.body, outside the view root, so the tokens
+  // scoped to that root cannot reach it either — hence the literal colours,
+  // which are the pair-view error palette rather than the settings one.
+  if ((attempt || 0) > 100) {
+    document.body.insertAdjacentHTML('afterbegin',
+      '<div style="padding:12px;background:#fdeceb;color:#8f1d18;font-size:13px;">'
+      + 'Light Link could not reach the Homey pairing API on this page.</div>');
+    return;
+  }
+  setTimeout(function () { waitForHomey((attempt || 0) + 1); }, 50);
+})(0);
+</script>

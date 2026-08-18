@@ -29,6 +29,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
+    "sync:repair-views": "node scripts/sync-repair-views.mjs",
     "test": "node --import tsx --test \"test/unit/**/*.test.ts\"",
     "test:watch": "node --import tsx --test --watch \"test/unit/**/*.test.ts\"",
     "validate": "homey app validate --level publish"

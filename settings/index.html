@@ -92,6 +92,18 @@
             border-radius: 14px; box-shadow: var(--ll-shadow); padding: 14px;
             margin-bottom: 10px; }
 
+    /* A default ground, so a message shown before a state class lands on it is
+       still a message rather than bare text on the page.
+
+       It MUST stay above the state colours below. .msg and .ready weigh the
+       same, so whichever is declared last wins — with .msg last, every
+       `className = 'msg ready'` painted flat grey and the whole page reported
+       success, failure and progress in one indistinguishable colour. */
+    .msg { margin-top: 10px; padding: 11px 13px; border-radius: 11px; font-size: 13px;
+           line-height: 1.5; background: var(--ll-flat-bg); color: var(--ll-flat-ink); }
+
+    /* Shared by the state pills and by .msg blocks: geometry comes from .state
+       or .msg, the colour pair from here. */
     .state { display: inline-block; padding: 3px 9px; border-radius: 999px;
              font-size: 11px; font-weight: 600; }
     .ready { background: var(--ll-ok-bg); color: var(--ll-ok-ink); }
@@ -116,11 +128,6 @@
                border-color: var(--ll-accent); font-weight: 600; }
 
     .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-
-    /* A default ground, so a message shown before a state class lands on it is
-       still a message rather than bare text on the page. */
-    .msg { margin-top: 10px; padding: 11px 13px; border-radius: 11px; font-size: 13px;
-           line-height: 1.5; background: var(--ll-flat-bg); color: var(--ll-flat-ink); }
 
     /* The recent-presses and recent-writes rows. These were built with
        row.style.cssText in the render loop, which put the styling of the two
@@ -153,7 +160,10 @@
 -->
 
 <h2 data-i18n="settings.apiKeyTitle"></h2>
-<p id="credText" data-i18n="settings.checking"></p>
+<!-- The one line on this page people come to check. As plain body text it read
+     as prose and had to be parsed; refresh() gives it the same green/amber/red
+     grounds the rest of the page uses for state, so it answers at a glance. -->
+<p id="credText" class="msg flat" data-i18n="settings.checking"></p>
 <div class="card">
   <input id="key" type="password" data-i18n-placeholder="settings.newKeyPlaceholder"
          autocomplete="off" spellcheck="false" />
@@ -262,11 +272,16 @@
   function refresh() {
     return api('GET', '/').then(function (status) {
       var cred = status.credential || {};
-      document.getElementById('credText').textContent = cred.valid
+      var credText = document.getElementById('credText');
+      credText.textContent = cred.valid
         ? t('keyValid')
         : cred.present
           ? failureText(cred)
           : t('keyMissing');
+      // Amber, not red, when no key was ever saved: nothing is broken, the
+      // setup simply is not finished. Red is reserved for a key that was
+      // supposed to work and does not.
+      credText.className = 'msg ' + (cred.valid ? 'ready' : cred.present ? 'broken' : 'partial');
 
       var events = document.getElementById('events');
       events.innerHTML = '';

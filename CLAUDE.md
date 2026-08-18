@@ -35,6 +35,8 @@ lib/
   runtime/                      controller runtime, manager, health monitor
   profiles/                     profile schema, repository, migrations
 drivers/controller/             virtual device, driver, four pairing views
+  pair/                         the four views, edited here
+  repair/                       exact copies of pair/, generated — see §8
 settings/index.html             app settings page
 locales/en.json                 all user-facing strings
 test/                           unit tests and hand-transcribed fixtures
@@ -284,6 +286,34 @@ BILRESA is also the device one-tap re-attach exists for: its cards vanish after 
 and the device must be re-added under a new id. That is recurring, not exceptional, and making the
 user redo the mapping every time would defeat the product.
 
+## 8. Repair views live in their own folder, and validation cannot tell you
+
+Homey serves pair views from `drivers/<driverId>/pair/<viewId>.html` and repair views from
+`drivers/<driverId>/repair/<viewId>.html`. **Two separate folders.** The CLI's own
+`HomeyCompose.js` shows it: the pair branch writes templated views into `.../<driverId>/pair`, the
+repair branch into `.../<driverId>/repair`.
+
+Declaring `repair` views in `driver.compose.json` without that second folder is not a validation
+error. `homey-lib` asserts the existence of the **pair** view files only
+(`_ensureFileExistsCaseSensitive('drivers', <id>, 'pair', '<viewId>.html')`) and has no equivalent
+check for repair — `repair` is not even in its app schema, merely tolerated. So the app passes
+`homey app validate --level publish`, ships, and then every Repair fails on the device with Homey's
+own untranslated
+
+```
+Error: unknown_error_getting_file
+```
+
+thrown before a single app screen renders. It reads like a corrupt install; it means one HTML file
+is in the wrong folder. Repair is where re-attach, remap and flow-edited recovery all live, so this
+turns every `needs_repair` state into a dead end.
+
+Our four views are identical in both modes — self-contained, each rule scoped to its own root id,
+separate sessions with separate documents, and the one branch that differs (`createDevice` vs
+`done`) is already decided by what `save` returns. So `repair/` is a copy of `pair/`, made by
+`npm run sync:repair-views` and held there by `test/unit/repair-views.test.ts`, which is the only
+thing that can catch a missing repair view before hardware does.
+
 ---
 
 # Working on this codebase
@@ -298,6 +328,19 @@ because the handlers are gone.
 **`--remote` is not optional on `run`.** Since CLI 3.x a bare `homey app run` runs the app in a
 local Docker container. `--remote` uploads and runs it on the Homey, which is also the only
 faithful context for anything touching app-scoped permissions.
+
+**`Missing File` on install means a stale `.homeybuild`, not a missing file.** Observed: `homey app
+install` failed with a bare server-side
+
+```
+× Missing File
+```
+
+after every local check had passed — validation clean, and every path referenced by `app.json`
+present in the build. The same tree installed on the first try with `homey app install --clean`. The
+build directory is reused between runs, and a `validate` beforehand leaves one that `install` can
+disagree with. The error names nothing and comes from the Homey, so it reads like a corrupt package;
+reach for `--clean` before investigating anything else.
 
 ## Pinned versions, and why each one is pinned
 
@@ -354,6 +397,10 @@ English–Danish glossary kept from the removed translation.
 the pairing container's document rather than getting their own iframe. They must not load `homey.js`
 themselves, every CSS rule is scoped to the view's root id, and the boot guard lives on the root
 element rather than in a global. Each file's header explains this.
+
+**Edit a pair view, then run `npm run sync:repair-views`.** `drivers/controller/repair/` holds byte
+copies of `pair/`, because Homey needs a real file in each folder (§8). `npm test` fails on drift and
+names the script; nothing runs it for you.
 
 **Tests use `node --test` with `tsx`.** No framework. Fixtures in
 `test/fixtures/reference-devices.ts` are transcribed from the four remotes above; the expected
