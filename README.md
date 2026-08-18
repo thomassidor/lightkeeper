@@ -233,6 +233,11 @@ anything touching app-scoped permissions.
 **Do not share an API key between the app and an external script.** A key embeds a session id, and
 concurrent holders appear to invalidate one another.
 
+**A release writes the changelog twice.** `.homeychangelog.json` is what Homey shows in the store;
+[Changelog](#changelog) below is the same release for anyone reading the repo. Both go in the commit
+that bumps the version, and `test/unit/release-metadata.test.ts` fails if either is missing it. Full
+checklist in [CLAUDE.md](CLAUDE.md#releasing-a-version).
+
 ### Layout
 
 ```
@@ -280,10 +285,6 @@ Captures from a real home are never committed; see [`test/fixtures/README.md`](t
 
 ## Changelog
 
-Also shipped to Homey as the app's own changelog, in `.homeychangelog.json`. Both are updated in the
-same commit as the version bump — see the release checklist in
-[CLAUDE.md](CLAUDE.md#releasing-a-version).
-
 ### 0.1.1
 
 Fixed:
@@ -298,6 +299,12 @@ Fixed:
 - **App settings show the API key status in colour.** Green when a working key is saved, amber when
   none is saved yet, red when a saved key has stopped working. Previously every message on that page
   rendered the same flat grey, success and failure alike.
+
+Added:
+
+- **A changelog, and a release process that is enforced rather than remembered.** This section and
+  `.homeychangelog.json` now record each release, and a test fails if the version, either changelog,
+  or the test count this README quotes fall out of step.
 
 ### 0.1.0
 
