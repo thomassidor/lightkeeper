@@ -1,6 +1,6 @@
 {
   "name": "com.thomassidor.lightlink",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Homey Pro app that turns any paired remote, switch or dial into a controller for any paired lights, without writing a single Flow.",
   "license": "MIT",
   "author": {

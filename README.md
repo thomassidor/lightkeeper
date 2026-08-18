@@ -207,7 +207,7 @@ transports:
 | Philips Hue Tap Dial | Hue Bridge | rotation with a magnitude token |
 | IKEA BILRESA | Matter/Thread | scroll wheel, and cards that vanish on restart |
 
-206 unit tests, type-clean, validated at `publish` level.
+220 unit tests, type-clean, validated at `publish` level.
 
 ---
 
@@ -215,7 +215,7 @@ transports:
 
 ```bash
 npm install
-npm test                          # 206 unit tests, no hardware needed
+npm test                          # 220 unit tests, no hardware needed
 npm run typecheck
 npx homey app install             # persistent install — use this for anything interactive
 npx homey app validate --level publish
@@ -275,6 +275,35 @@ Captures from a real home are never committed; see [`test/fixtures/README.md`](t
   Personal API Key are both unavoidable, plus what is still untested
 - [`docs/localisation.md`](docs/localisation.md) — the app is English-only; how to add a language
 - [`docs/artwork.md`](docs/artwork.md) — palette, icon rules, and how to re-export the store images
+
+---
+
+## Changelog
+
+Also shipped to Homey as the app's own changelog, in `.homeychangelog.json`. Both are updated in the
+same commit as the version bump — see the release checklist in
+[CLAUDE.md](CLAUDE.md#releasing-a-version).
+
+### 0.1.1
+
+Fixed:
+
+- **Repair now opens.** It failed with an internal file error before any screen appeared, so a
+  controller that needed repair had no way to be fixed. Homey serves repair views from their own
+  folder, and `homey app validate` does not check that they exist.
+- **A reassigned button says so where you are looking.** Giving a button a job another button
+  already had now shows a note next to both controls. The notice used to sit at the bottom of the
+  screen, below every light — where nobody saw it, while the control that lost its job quietly went
+  back to "Not assigned".
+- **App settings show the API key status in colour.** Green when a working key is saved, amber when
+  none is saved yet, red when a saved key has stopped working. Previously every message on that page
+  rendered the same flat grey, success and failure alike.
+
+### 0.1.0
+
+First release. Paired remotes, switches, buttons and rotary dials driving on/off, brightness and
+colour temperature across individual lights or zones, with the Flows underneath created and
+maintained automatically. Local connection, Homey Pro 2023 and later.
 
 ---
 

@@ -342,6 +342,39 @@ build directory is reused between runs, and a `validate` beforehand leaves one t
 disagree with. The error names nothing and comes from the Homey, so it reads like a corrupt package;
 reach for `--clean` before investigating anything else.
 
+## Releasing a version
+
+The version lives in **three** places and a release is only coherent when all of them agree:
+
+| File | Role |
+|---|---|
+| `.homeycompose/app.json` | the source of truth |
+| `package.json` | must match it |
+| `app.json` | **generated** — never hand-edit; the CLI rewrites it from `.homeycompose/` on every `validate`, `build` and `install` |
+
+Every user-visible change ships a changelog entry, in two places with two different audiences:
+
+| File | Audience |
+|---|---|
+| `.homeychangelog.json` | what Homey shows in the app store. Keyed by the exact version string. Plain user language — what changed for them, never file names or internals |
+| `README.md` → `## Changelog` | the same release, for anyone reading the repo. May say *why*, and may name the mechanism |
+
+**The checklist, in one commit:**
+
+1. Bump `.homeycompose/app.json` and `package.json` to the same version. Patch for fixes, minor for
+   new capability; pre-1.0 means no major bumps for breaking changes, so say it in the changelog
+   instead.
+2. Add a `.homeychangelog.json` entry under that exact version.
+3. Mirror it under `## Changelog` in `README.md`, newest first.
+4. Run `npx homey app validate --level publish` — this is what regenerates `app.json`, so it is a
+   required step and not just a check. Commit the regenerated `app.json` with the rest.
+5. `npm test`. `test/unit/release-metadata.test.ts` fails if the three versions disagree, if either
+   changelog is missing the current version, or if `README.md` states a test count that no longer
+   matches the suite.
+
+`.homeychangelog.json` keeps the `{ "en": … }` object form for the same reason every other
+user-facing string does: adding a language stays a sibling key (see the localisation note below).
+
 ## Pinned versions, and why each one is pinned
 
 Everything here is pinned to what was actually verified on hardware. Changing any of it means

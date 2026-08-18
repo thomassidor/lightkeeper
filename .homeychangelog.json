@@ -1,5 +1,8 @@
 {
   "0.1.0": {
     "en": "Added\n- Initial support for paired remotes, switches, buttons and rotary dials exposed through Homey.\n- Control of on/off, brightness and colour temperature across individual lights or zones.\n- Automatic creation and maintenance of the Flows behind each mapping.\n- Local connection for Homey Pro 2023 and later."
+  },
+  "0.1.1": {
+    "en": "Fixed\n- Repair now opens. It failed with an internal file error before any screen appeared, so a controller that needed repair had no way to be fixed.\n- Giving a button a job another button already had now says so next to both controls. The notice used to sit at the bottom of the screen, below every light, where nobody saw it — and the control that lost its job quietly went back to \"Not assigned\".\n- App settings now show the API key status in colour: green when a working key is saved, amber when none is saved yet, red when a saved key has stopped working."
   }
 }
