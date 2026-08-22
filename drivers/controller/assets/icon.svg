@@ -1,6 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 960">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 960" width="960" height="960">
   <title>Remote-to-light controller</title>
   <desc>A handheld remote with a rotary wheel above three buttons.</desc>
+
+  <!-- Delivered as a CSS mask painted with a theme colour, fetched from Athom's
+       icon CDN by this file's MD5 — see ../../../assets/icon.svg for the whole
+       mechanism, including why a CLI-installed app correctly shows no icon at
+       all and why colour inside an icon is discarded. -->
 
   <!-- Line art, for the reasons recorded in ../../../assets/icon.svg: guideline
        1.6 asks for "a clean, vector-based drawing… drawn using lines and shapes",

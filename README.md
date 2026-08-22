@@ -374,6 +374,12 @@ Changed:
   otherwise invisible until submission. `docs/artwork.md` gained the distinction between what the
   validator enforces and what a reviewer applies, with citations.
 
+Worth knowing if you install this over the CLI rather than from the store: **the app will show no
+icon at all.** Homey renders an icon as a CSS mask fetched from `icons-cdn.athom.com` by the file's
+MD5, and that CDN only holds icons from published builds — so a development install leaves an empty
+brand-colour circle where the icon belongs. Nothing is wrong; it appears once the app is published.
+The mechanism is written up in [`docs/artwork.md`](docs/artwork.md) and [CLAUDE.md](CLAUDE.md) §10.
+
 ### 0.2.1
 
 Fixed:

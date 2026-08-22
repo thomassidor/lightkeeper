@@ -188,6 +188,26 @@ at once. Sources: `homey-lib/lib/App/index.js` for the validator,
 Athom's published guidelines at
 <https://apps.developer.homey.app/app-store/guidelines>.
 
+**How an icon reaches a screen, which is not what the guidelines imply.** Read off a live Homey's
+DOM while the add-device dialog was open:
+
+```html
+<span class="Glyph-root-…" style="--prop-mask-image:
+        url('https://icons-cdn.athom.com/63f6f8d5f37f041d686f0e70d879fe42.svg');
+      --prop-size: 50px; --prop-color: var(--theme-color-white);"></span>
+```
+
+That hash is `md5(assets/icon.svg)` — verified byte for byte — and it is the `iconHash` the CLI puts
+in the manifest. So an icon is an **alpha mask painted with a theme colour**, served from Athom's CDN.
+
+- **Colour inside an icon never survives.** Draw for silhouette and internal gaps, not for palette.
+  This is the mechanism behind `homey-lib`'s *"Icons are rendered white"*, and the reason a filled
+  two-colour mark reads as one blob: as a mask, fill and stroke are the same thing — alpha.
+- **A CLI-installed app has no icon at all**, because that CDN only holds published builds. An empty
+  `brandColor` circle in the app picker and no icon in the driver list is the expected appearance of
+  a dev install. It is not a fault in the SVG, and no amount of redrawing changes it. Verify icons at
+  publish time, or by eye with the contact sheet above.
+
 **The validator (`homey app validate --level publish`) checks, and only checks:**
 
 | Check | Where |

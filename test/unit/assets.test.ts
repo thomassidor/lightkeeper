@@ -145,16 +145,16 @@ describe('icons', () => {
     }
   });
 
-  test('each is the full 960x960 canvas, with no intrinsic size', () => {
+  test('each is the full 960x960 canvas', () => {
+    // Guideline 1.5/1.6: "Always use the full canvas (960x960px) so the icon is
+    // displayed properly." Nothing is asserted about width/height: the icon is
+    // consumed as a CSS mask sized by the UI, so an intrinsic size is neither
+    // required nor forbidden. An earlier version of this test insisted on one,
+    // on the strength of a wrong diagnosis — see assets/icon.svg for what the
+    // delivery path actually does.
     for (const target of iconTargets()) {
       const svg = readFileSync(target.path, 'utf8');
       assert.match(svg, /viewBox="0 0 960 960"/, `${target.label}: not a 960x960 canvas`);
-      // Guideline 1.5/1.6: "Always use the full canvas". homey-lib's own 226 stock
-      // class icons declare viewBox only; width/height pins an intrinsic size.
-      assert.doesNotMatch(
-        svg.slice(0, svg.indexOf('>') + 1), /\swidth="|\sheight="/,
-        `${target.label}: the root <svg> declares width/height; stock icons declare viewBox only`,
-      );
     }
   });
 

@@ -432,12 +432,27 @@ Consequences worth not re-deriving:
 each one was learned by reading `homey-lib` inside the CLI's own package rather than from
 anything discoverable in this repo:
 
-- **Homey renders app and driver icons WHITE** in several surfaces — the app list, Flows, Add
-  devices — on top of `brandColor`. `homey-lib` says so in the error it raises for too bright a
-  brand colour: *"Icons are rendered white, so choose a darker color that has enough contrast."*
-  A filled two-colour mark therefore collapses into one silhouette. All three of our icons are
-  stroke-only line art (`stroke="#000"`, `fill="none"`, `stroke-width="40"`, `viewBox` with no
-  `width`/`height`), which is also what every one of `homey-lib`'s 226 stock class icons is.
+- **An icon is a CSS MASK fetched from Athom's CDN by its MD5.** Read off a live Homey's DOM:
+
+  ```html
+  <span style="--prop-mask-image: url('https://icons-cdn.athom.com/<md5>.svg');
+               --prop-size: 50px; --prop-color: var(--theme-color-white);">
+  ```
+
+  `<md5>` is exactly the `iconHash` the CLI writes into the manifest — confirmed by hashing
+  `assets/icon.svg` and matching it against the URL the UI requested. Two consequences:
+
+  - **Colour inside an icon is discarded; only alpha survives.** That is the mechanism behind
+    `homey-lib`'s *"Icons are rendered white, so choose a darker color that has enough contrast"*,
+    and it is why a filled two-colour mark becomes the single solid blob guideline 1.5 warns about.
+    All three of our icons are stroke-only line art (`stroke="#000"`, `fill="none"`,
+    `stroke-width="40"`), which is what every one of `homey-lib`'s 226 stock class icons is.
+  - **A CLI-installed app shows NO icon, ever.** That CDN only holds icons from builds Athom
+    published, so `homey app install` leaves the mask pointing at a 404 and the UI draws an empty
+    `brandColor` circle. This cost a diagnosis: the SVGs render correctly inline, as a sized
+    `<img>`, as an unsized `<img>` and as a CSS mask, and the right bytes were in `.homeybuild` —
+    the file was never the problem. **Do not redraw anything chasing a blank icon on a dev
+    install.** It resolves on publish, test channel included.
 - **The validator checks far less than the guidelines say.** `_validateImages` iterates
   `['small', 'large']` only: **`xlarge` is optional and never checked**, at any level. It never
   opens an SVG — there is no driver-icon existence check and no content validation at all. Every

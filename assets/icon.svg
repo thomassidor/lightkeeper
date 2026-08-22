@@ -1,6 +1,36 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 960">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 960" width="960" height="960">
   <title>Lightkeeper</title>
   <desc>A lighthouse, its lamp room throwing beams to both sides.</desc>
+
+  <!-- HOW HOMEY ACTUALLY DELIVERS THIS FILE, read off a live Homey's DOM:
+
+           <span style="--prop-mask-image:
+                   url('https://icons-cdn.athom.com/<md5>.svg');
+                 --prop-size: 50px;
+                 --prop-color: var(--theme-color-white);">
+
+       The icon is a CSS MASK, painted with a theme colour, fetched from Athom's
+       icon CDN by the MD5 of this exact file — the hash the CLI writes into the
+       manifest as `iconHash`. Verified: md5(assets/icon.svg) matched the URL the
+       UI requested, character for character.
+
+       Two things follow, and both are easy to waste hours on:
+
+       1. Colour inside the icon is DISCARDED. Only alpha survives. That is the
+          mechanism behind homey-lib's "Icons are rendered white", and it is why a
+          filled two-colour mark becomes the single solid blob guideline 1.5 warns
+          about. Line art is not a style choice here; it is the only thing that
+          keeps internal detail.
+       2. A CLI-installed app shows NO icon at all. That CDN only holds icons from
+          builds Athom published, so `homey app install` leaves the mask pointing
+          at a 404 and the UI draws an empty brand-coloured circle. This is
+          expected on a dev install and is NOT a fault in this file — do not
+          redraw anything chasing it. It resolves on publish, including to the
+          test channel.
+
+       width/height are kept for any consumer that does need an intrinsic size;
+       the mask itself does not care, and homey-lib's own 226 stock icons omit
+       them. -->
 
   <!-- LINE ART, and deliberately so. The previous mark was a filled two-colour
        drawing — navy remote, amber bulb — which was wrong twice over.
