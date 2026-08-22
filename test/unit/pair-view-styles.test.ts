@@ -1,40 +1,54 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * The four pair views are injected into ONE document (see any view's script
- * header), so they cannot share a stylesheet — there is nowhere to serve one
- * from — and every CSS rule has to be scoped to the view's own root id. The
- * consequence is ~110 lines of base CSS duplicated four times.
+ * Pair views are injected into ONE document (see any view's script header), so
+ * they cannot share a stylesheet — there is nowhere to serve one from — and every
+ * CSS rule has to be scoped to the view's own root id. The consequence is ~110
+ * lines of base CSS duplicated once per view.
  *
  * That duplication cannot be removed, so it is made safe instead: this test
- * compares the four copies with the root id normalised away. Without it the
- * first person to fix a colour in one view ships three views that disagree,
- * which is exactly the drift that left the flow using an off-brand accent in
- * some places and the brand navy in others.
+ * compares every copy with the root id normalised away. Without it the first
+ * person to fix a colour in one view ships the others disagreeing, which is
+ * exactly the drift that left the flow using an off-brand accent in some places
+ * and the brand navy in others.
+ *
+ * Views are DISCOVERED from disk, across every driver, and each root id is read
+ * out of the file rather than listed here — a second driver's views were
+ * invisible to this test while both were hardcoded, which is the one way the
+ * convention could be broken without anything failing.
  *
  * The other tests here enforce the rules that made the base block worth
  * extracting in the first place.
  */
 
 const ROOT = join(import.meta.dirname, '..', '..');
-const PAIR = join(ROOT, 'drivers', 'controller', 'pair');
+const DRIVERS = join(ROOT, 'drivers');
 
-/** view file -> its root element id. */
-const VIEWS: Record<string, string> = {
-  'credential.html': 'cr-wrap',
-  'source.html': 'src-root',
-  'targets.html': 'tg-root',
-  'mapping.html': 'map-root',
-};
-
-const START = '/* ==== shared base: identical in all four pair views ====';
+const START = '/* ==== shared base:';
 const END = '/* ==== end shared base ==== */';
 
+/** Every pair view in the repository, as "<driver>/<file>" -> its root id. */
+const VIEWS: Record<string, string> = Object.fromEntries(
+  readdirSync(DRIVERS, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .flatMap(driver => {
+      const dir = join(DRIVERS, driver.name, 'pair');
+      const files = existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.html')) : [];
+      return files.map(file => {
+        const text = readFileSync(join(dir, file), 'utf8');
+        const root = /class="wrap" id="([\w-]+)"/.exec(text)?.[1];
+        assert.ok(root, `${driver.name}/${file}: no <div class="wrap" id="…"> root element`);
+        return [`${driver.name}/${file}`, root] as const;
+      });
+    }),
+);
+
 function read(view: string): string {
-  return readFileSync(join(PAIR, view), 'utf8');
+  const [driver, file] = view.split('/');
+  return readFileSync(join(DRIVERS, driver!, 'pair', file!), 'utf8');
 }
 
 /** The shared base block, with this view's root id replaced by a placeholder. */
@@ -60,7 +74,16 @@ function styleBlock(view: string): string {
 }
 
 describe('pair view styles', () => {
-  test('the shared base block is identical in all four views', () => {
+  test('every pair view in the repository is discovered', () => {
+    // A view the test cannot see is a view whose scoping and colours nobody
+    // checks. Both drivers' screens must be in the set.
+    const views = Object.keys(VIEWS);
+    assert.ok(views.length >= 5, `only ${views.length} pair view(s) discovered`);
+    assert.ok(views.some(v => v.startsWith('controller/')), 'no controller views discovered');
+    assert.ok(views.some(v => v.startsWith('schedule/')), 'no schedule views discovered');
+  });
+
+  test('the shared base block is identical in every view', () => {
     const views = Object.keys(VIEWS);
     const reference = baseBlock(views[0]!);
 
@@ -69,7 +92,7 @@ describe('pair view styles', () => {
         baseBlock(view), reference,
         `${view}'s shared base has drifted from ${views[0]}'s — `
         + 'the block is duplicated because the views share one document, '
-        + 'so a change has to be made in all four files',
+        + "so a change has to be made in every file, including the other driver's",
       );
     }
   });
@@ -79,8 +102,8 @@ describe('pair view styles', () => {
       const style = styleBlock(view);
 
       // Strip comments and @media wrappers, then every remaining selector must
-      // name this view's root. An unscoped rule bleeds into the other three
-      // views, which is the failure the scoping convention exists to prevent.
+      // name this view's root. An unscoped rule bleeds into the other views of
+      // the same session, which is the failure the convention exists to prevent.
       const rules = style
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/@media[^{]+\{/g, '')
@@ -106,7 +129,7 @@ describe('pair view styles', () => {
       const style = styleBlock(view)
         .replace(/\/\*[\s\S]*?\*\//g, '')
         // the two token declaration blocks, where literals are the point
-        .replace(/--ll-[\w-]+:[^;]+;/g, '')
+        .replace(/--lk-[\w-]+:[^;]+;/g, '')
         .replace(/url\("data:[^"]*"\)/g, '');
 
       const literals = [...style.matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\(/g)]
@@ -129,7 +152,7 @@ describe('pair view styles', () => {
       const light = base.slice(0, base.indexOf('@media (prefers-color-scheme: dark)'));
 
       const names = (text: string) =>
-        [...new Set([...text.matchAll(/(--ll-[\w-]+)\s*:/g)].map(m => m[1]!))].sort();
+        [...new Set([...text.matchAll(/(--lk-[\w-]+)\s*:/g)].map(m => m[1]!))].sort();
 
       assert.deepEqual(
         names(dark), names(light),

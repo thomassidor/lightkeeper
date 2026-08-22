@@ -1,9 +1,10 @@
-# Light Link
+# Lightkeeper
 
-[![CI](https://github.com/thomassidor/lightlink/actions/workflows/ci.yml/badge.svg)](https://github.com/thomassidor/lightlink/actions/workflows/ci.yml)
+[![CI](https://github.com/thomassidor/lightkeeper/actions/workflows/ci.yml/badge.svg)](https://github.com/thomassidor/lightkeeper/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Use any remote to control any lights — without writing a single Flow.**
+**Use any remote to control any lights, and put any lights on a timer — without writing a single
+Flow.**
 
 A Homey Pro app.
 
@@ -23,13 +24,22 @@ Brighter. Dimmer. Then again for the next lamp.
 
 It works, and it is tedious.
 
-## What Light Link does
+Schedules are the same story told with a clock. Lights on when it gets dark, off at bedtime,
+weekdays only — that is two Flows per window, one of them at a time you worked out by hand, and
+every change means finding both again.
 
-Pick a remote. Pick the lights. Say which button does what. Save.
+## What Lightkeeper does
 
-Light Link writes the Flows for you, keeps them in a folder of their own, and maintains them as
-things change. If you add a lamp to a room the controller points at, it follows. If you delete the
-controller, its Flows go with it — and only its Flows.
+Two kinds of device, both built the same way.
+
+**A controller.** Pick a remote. Pick the lights. Say which button does what. Save.
+
+**A schedule.** Pick the lights. Say when they come on, and whether they go off after a while or at
+a set time. Add as many windows as you need. Save.
+
+Lightkeeper writes the Flows for you, keeps them in a folder of their own, and maintains them as
+things change. If you add a lamp to a room a device points at, it follows. If you delete the device,
+its Flows go with it — and only its Flows.
 
 You never open the Flow editor.
 
@@ -54,27 +64,28 @@ home: fair, and the code is right here.
 
 ## Setup
 
-### 1. Give Light Link an API key
+### 1. Give Lightkeeper an API key
 
 **Homey does not let an app create Flows on its own.** An app's own token is refused with
 `403 Missing Scopes` on every flow write. A Personal API Key that you create succeeds. Since
 generating Flows is the entire mechanism by which this app works, and no app permission grants it,
-Light Link asks you for a key.
+Lightkeeper asks you for a key.
 
 1. Open [my.homey.app](https://my.homey.app) and pick your Homey
 2. Settings → API Keys → New API Key
 3. Tick the **Flow** permissions, then create it
-4. Copy the key — it is shown only once — and paste it into Light Link
+4. Copy the key — it is shown only once — and paste it into Lightkeeper
 
 The key is stored on your Homey and never leaves it. It is never logged, never returned by the
 app's own API, and never included in the diagnostics export. It is used for **flow writes only**.
 
-If the key later stops working, your controllers keep driving your lights. Only Flow maintenance
-pauses, and you are asked for a new key without losing a single mapping.
+If the key later stops working, your controllers keep driving your lights and your existing
+schedules keep firing. Only Flow maintenance pauses, and you are asked for a new key without losing
+a single mapping.
 
 ### 2. Add a controller
 
-Devices → Add → Light Link → Controller. Then:
+Devices → Add → Lightkeeper → Controller. Then:
 
 - **Choose a remote** — grouped by room, with a count of the events Homey exposes for each
 - **Choose lights** — individually, or a whole zone
@@ -82,6 +93,18 @@ Devices → Add → Light Link → Controller. Then:
   **Test** button that drives the real lights immediately, before you save anything
 
 Homey lets you rename the device afterwards, so there is no name field to fill in.
+
+### 3. Add a schedule
+
+Devices → Add → Lightkeeper → Light schedule. Then:
+
+- **Choose lights** — the same picker, individually or a whole zone
+- **Set the times** — for each schedule: an on-time, the days it runs, and either a duration or an
+  off-time. Optionally a brightness and a warmth, offered only if the lights you chose support them
+- **Test on** and **Test off** drive the real lights immediately, before you save anything
+
+Up to twelve schedules on one device. The device's own switch pauses the whole thing without losing
+anything — useful when you are away, or when you would rather it left the room alone tonight.
 
 ---
 
@@ -99,26 +122,38 @@ keep working.
 
 ### What it writes
 
-Ordinary Flows, one per mapped event, each with your remote's trigger card and a single internal
-Light Link action card, in a folder called **Light Link**. Created only for events you actually
-mapped. Idempotent, so reconfiguring reuses Flows rather than duplicating them.
+Ordinary Flows, in a folder called **Lightkeeper**, each with one internal Lightkeeper action card:
+
+- **A controller** gets one Flow per mapped event, triggered by your remote's own trigger card, and
+  only for events you actually mapped.
+- **A schedule** gets two Flows per window — one at each end — triggered by Homey's own time
+  trigger. The days it runs are deliberately not in the Flow: it fires every day and the app checks
+  the day against your Homey's clock, so changing weekdays to weekends rewrites nothing.
+
+Idempotent either way, so reconfiguring reuses Flows rather than duplicating them. Move a schedule
+from 22:00 to 23:00 and the old pair is replaced, rather than left behind firing at the old time.
 
 ### Safety properties
 
 - **A ramp stops after 10 seconds, always.** Not configurable. Release events are routinely
   dropped on Zigbee and unreliable on Matter/Thread, so a stuck ramp is a certainty, not a risk —
   and a light ramping forever is the worst thing this app could do to you.
-- **A Flow you have edited by hand is never overwritten.** The controller marks itself for repair
-  instead.
-- **Deleting a controller deletes only the Flows it demonstrably created.**
-- **The orphan cleanup refuses to run when no controller is loaded**, because every Flow would
+- **A Flow you have edited by hand is never overwritten.** The device marks itself for repair
+  instead — including a schedule whose time you changed in the Flow editor rather than in the app.
+- **Deleting a device deletes only the Flows it demonstrably created.**
+- **The orphan cleanup refuses to run when nothing is loaded**, because every Flow would
   look orphaned in that state.
+- **A schedule never switches your lights off retroactively.** If the app was down when a window
+  should have ended, the lights are left alone — see the limits below. Coming back up *inside* a
+  window does switch them on, because that is the case where doing nothing means a dark evening.
+- **Pausing a schedule keeps its Flows.** Pausing means "do not act", not "throw the setup away", so
+  resuming is instant and any folder you moved those Flows into survives.
 - **Nothing leaves your Homey.** No telemetry, opt-in or otherwise. The diagnostics export is
   generated locally and shared only if you choose to attach it to a report.
 
 ### Diagnostics
 
-Homey settings → Light Link shows the last remote presses received, whether each was handled or
+Homey settings → Lightkeeper shows the last remote presses received, whether each was handled or
 ignored and why, and every write actually attempted against a light. That distinction — a Flow
 that never fired, versus one that fired and was refused, versus an intent that never reached the
 queue — is what makes a silent failure diagnosable at all.
@@ -138,19 +173,31 @@ of the model on the box.
 Controls whose range would expand past 12 Flow variants are declined rather than filling your Flow
 list.
 
+**Schedules follow your Homey's own clock**, daylight-saving changes included, because Homey's time
+trigger is what fires them. The settings page shows which timezone that is, next to each schedule's
+windows.
+
+**Twelve schedules per device**, which is twenty-four generated Flows. Add a second schedule device
+if you need more; the cap exists so your Flow list stays readable.
+
+**If the app is not running at the moment a window should end, that off is missed** and the lights
+stay on until the next one.
+
+**Times are clock times.** Sunrise and sunset are not offered yet.
+
 ---
 
 ## When something is wrong
 
 **A press does nothing.** This is the one worth knowing how to read, because three
-different failures look identical from the sofa. Open Homey settings → Light Link and
+different failures look identical from the sofa. Open Homey settings → Lightkeeper and
 look at **Recent remote presses**:
 
 - **No row at all** — the generated Flow never fired. The remote's event did not reach
-  Light Link, so the problem is upstream of this app.
+  Lightkeeper, so the problem is upstream of this app.
 - **A row marked ignored** — the event arrived and was deliberately not acted on. The
   row says why.
-- **A row marked handled** — Light Link acted. Now look at **Writes to lights**: a
+- **A row marked handled** — Lightkeeper acted. Now look at **Writes to lights**: a
   write that was sent and refused is a target problem; no write at all means the
   intent never reached the queue.
 
@@ -173,7 +220,14 @@ any reconfiguration.
 
 **Brightness keeps changing on its own.** Every ramp stops unconditionally after 10
 seconds, because release events do get lost. If your remote exposes no release event,
-Light Link offers stepping rather than a hold ramp in the first place.
+Lightkeeper offers stepping rather than a hold ramp in the first place.
+
+**A schedule did not fire.** Look at the schedule's card in Homey settings → Lightkeeper.
+It lists every window, whether one is on right now, and the clock those times are read
+against — a Homey in an unexpected timezone is the most common answer by far. If the card
+says paused, the device's switch is off. Otherwise check **Recent remote presses**: a
+schedule's boundary arrives there like any other event, with the reason when it was
+ignored, including "not one of this schedule's days".
 
 ### Repair, and what it fixes
 
@@ -184,12 +238,13 @@ Open repair on the controller (Devices → the controller → Repair):
 | API key expired or revoked | Save a new key. Lights keep working throughout; Flow maintenance resumes once it validates. Nothing you configured is lost. |
 | The remote was re-added under a new id | Select the matching remote. One tap keeps every mapping and target. |
 | The remote now exposes different events | Remap the affected controls. |
-| A generated Flow was edited by hand | Rebuilds it. Light Link never silently overwrites your edit — it asks. |
+| A generated Flow was edited by hand | Rebuilds it. Lightkeeper never silently overwrites your edit — it asks. |
+| A schedule needs different lights or different times | Reopens both of its screens with everything as you left it. |
 
 ### Removing it
 
-Deleting a controller removes only the Flows it can attribute to that controller. The
-settings page can also find orphaned Light Link Flows, and refuses to clean up when no
+Deleting a controller or a schedule removes only the Flows it can attribute to that device. The
+settings page can also find orphaned Lightkeeper Flows, and refuses to clean up when no
 controller is running — in that state every managed Flow looks orphaned and attribution
 would be unsafe. Uninstalling the app removes its settings, including the stored key.
 
@@ -207,7 +262,12 @@ transports:
 | Philips Hue Tap Dial | Hue Bridge | rotation with a magnitude token |
 | IKEA BILRESA | Matter/Thread | scroll wheel, and cards that vanish on restart |
 
-220 unit tests, type-clean, validated at `publish` level.
+Schedules are covered by unit tests rather than by a table of hardware: their times, days,
+midnight-crossing windows and restart behaviour are pure arithmetic. The trigger card they are built
+on is resolved at runtime by enumerating what your Homey actually offers, rather than hardcoding an
+id, so it adapts if a firmware update moves it.
+
+295 unit tests, type-clean, validated at `publish` level.
 
 ---
 
@@ -215,7 +275,7 @@ transports:
 
 ```bash
 npm install
-npm test                          # 220 unit tests, no hardware needed
+npm test                          # 295 unit tests, no hardware needed
 npm run typecheck
 npx homey app install             # persistent install — use this for anything interactive
 npx homey app validate --level publish
@@ -252,9 +312,13 @@ lib/
   mapping/                      mapping engine, supersede gate, types
   outputs/                      intents, perceptual curve, planner, scheduler, ramp engine
   bridge/                       binding compiler, flow bridge manager, reconciler
-  runtime/                      controller runtime, manager, health monitor
+  runtime/                      controller runtime, manager, health monitor, target health
   profiles/                     profile schema, repository, migrations
+  schedules/                    schedule types, window maths, local clock, runtime, manager
+  pairing/                      the light picker, shared by both drivers
 drivers/controller/             virtual device, driver, four pairing views
+drivers/schedule/               virtual device, driver, three pairing views
+scripts/sync-views.mjs          copies pair views into repair/, and shared views between drivers
 test/                           unit tests and fixtures transcribed from real hardware
 docs/                           review notes, privacy, localisation, artwork (not bundled)
 ```
@@ -284,6 +348,29 @@ Captures from a real home are never committed; see [`test/fixtures/README.md`](t
 ---
 
 ## Changelog
+
+### 0.2.0
+
+Added:
+
+- **Light schedules, as a second kind of device.** Pick lights, then set one or more windows: an
+  on-time, the days it runs, and either a duration or an off-time — plus an optional brightness and
+  warmth. Two generated Flows per window, triggered by Homey's own time trigger, reconciled through
+  the same machinery the remote controllers use. The day filter deliberately lives in the app rather
+  than in the Flow, so changing which days a schedule runs on rewrites nothing.
+- **A pause switch on each schedule device.** Pausing stops it acting and keeps its Flows, so
+  resuming is instant. Resuming inside a window that has already started switches the lights on
+  rather than waiting for tomorrow — the same catch-up that runs after an app restart.
+- **A new name.** "Light Link" described pointing one thing at another, which is now half of what
+  the app does. Nothing is carried over from the old name because nothing had shipped under it.
+
+Changed:
+
+- **Hand-edited Flows are detected in more cases.** The check now compares the trigger's arguments as
+  well as its card and our own action, so a schedule whose time you changed in the Flow editor is
+  respected instead of being silently ignored — the device asks to be repaired.
+- **The orphan cleanup counts both kinds of device as live.** Without that, the first cleanup after
+  this release would have found every schedule's Flows unattributable and deleted them.
 
 ### 0.1.1
 
@@ -317,7 +404,7 @@ maintained automatically. Local connection, Homey Pro 2023 and later.
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports are best accompanied by the diagnostics export
-from Homey settings → Light Link → **Copy for a bug report**, which deliberately contains no key
+from Homey settings → Lightkeeper → **Copy for a bug report**, which deliberately contains no key
 material.
 
 ## Licence

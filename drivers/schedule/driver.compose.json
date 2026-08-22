@@ -1,0 +1,49 @@
+{
+  "name": {
+    "en": "Light schedule"
+  },
+  "class": "service",
+  "capabilities": ["onoff"],
+  "capabilitiesOptions": {
+    "onoff": {
+      "title": {
+        "en": "Schedule active"
+      }
+    }
+  },
+  "platforms": ["local"],
+  "connectivity": ["lan"],
+  "images": {
+    "small": "/drivers/schedule/assets/images/small.png",
+    "large": "/drivers/schedule/assets/images/large.png",
+    "xlarge": "/drivers/schedule/assets/images/xlarge.png"
+  },
+  "pair": [
+    {
+      "id": "credential",
+      "navigation": { "next": "targets" }
+    },
+    {
+      "id": "targets",
+      "navigation": { "next": "schedule" }
+    },
+    {
+      "id": "schedule",
+      "navigation": { "prev": "targets" }
+    }
+  ],
+  "repair": [
+    {
+      "id": "credential",
+      "navigation": { "next": "targets" }
+    },
+    {
+      "id": "targets",
+      "navigation": { "next": "schedule" }
+    },
+    {
+      "id": "schedule",
+      "navigation": { "prev": "targets" }
+    }
+  ]
+}

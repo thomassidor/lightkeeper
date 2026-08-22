@@ -58,6 +58,22 @@ CONTROLLER = {
 }
 
 
+# The schedule driver ships its own mark rather than a product photograph: a
+# schedule is not a device you can hold, and photographing a stand-in lamp would
+# say the wrong thing. The master is drivers/schedule/assets/icon.svg rendered on
+# white at 1254x1254 (headless Chrome, 1000 px mark centred in the frame), so it
+# is regenerated from the SVG rather than hand-drawn twice.
+#
+# The crop is 1120, exactly the controller's, so the two driver thumbnails sit at
+# the same visual scale in the pairing flow.
+SCHEDULE = {
+    'master': 'schedule-mark-master.png',
+    'crop': (67, 67, 1187, 1187),
+    'out': ROOT / 'drivers' / 'schedule' / 'assets' / 'images',
+    'sizes': {'small.png': (75, 75), 'large.png': (500, 500), 'xlarge.png': (1000, 1000)},
+}
+
+
 def export(spec: dict) -> None:
     master = MASTERS / spec['master']
     if not master.exists():
@@ -77,5 +93,5 @@ def export(spec: dict) -> None:
 
 
 if __name__ == '__main__':
-    for spec in (HERO, CONTROLLER):
+    for spec in (HERO, CONTROLLER, SCHEDULE):
         export(spec)

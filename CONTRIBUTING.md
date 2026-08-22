@@ -68,8 +68,20 @@ than type declarations. Everything that is ours is strictly typed.
 through the app's own token; flow **writes** go through the user's Personal API Key. See
 `CLAUDE.md` for why, and do not route one through the other.
 
+**Pair views are copies on disk, and `npm run sync:views` is what makes them.** Every driver's
+`repair/` folder holds byte copies of its `pair/`, and the schedule driver's `credential.html` and
+`targets.html` are byte copies of the controller's — Homey needs a real file in each place and will
+not follow a reference. Edit the controller's copy of a shared view, then run the script. `npm test`
+fails on drift and names it; nothing runs it for you.
+
+**Schedules fire from generated Flows, not from timers.** The SDK has no scheduler, and Homey's own
+time trigger already handles DST, clock changes and restarts. The app only decides what a Flow cannot
+express — the day of the week, the pause switch, and what "on" means for lights that may not all dim.
+Keep it that way: a timer in the app would have to re-derive everything the Flow engine already
+guarantees. `CLAUDE.md` §9 has the details.
+
 ## Reporting a bug
 
-Homey settings → Light Link → Diagnostics → **Copy for a bug report**. The export is generated
+Homey settings → Lightkeeper → Diagnostics → **Copy for a bug report**. The export is generated
 locally and deliberately contains no API key material. Skim it before posting — it does include
 your device and zone names.

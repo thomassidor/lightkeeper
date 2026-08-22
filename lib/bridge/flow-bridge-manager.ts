@@ -9,7 +9,7 @@ import {
   type CompiledFlow,
   type CompileRequest,
 } from './flow-binding-compiler';
-import type { SelectableInput } from '../inputs/selectable-input';
+import type { LogicalSourceBinding } from '../inputs/selectable-input';
 
 /**
  * Compiles bindings into generated flows and reconciles
@@ -19,15 +19,33 @@ import type { SelectableInput } from '../inputs/selectable-input';
  * is idempotent, keyed on binding key plus variant key.
  */
 
-export const MANAGED_FOLDER_NAME = 'Light Link';
+export const MANAGED_FOLDER_NAME = 'Lightkeeper';
 export const MANAGED_VERSION = 1;
+
+/**
+ * The minimum this manager needs to compile one flow.
+ *
+ * Deliberately narrower than `SelectableInput` (which satisfies it structurally,
+ * so no controller call site changed): a light schedule has no physical control,
+ * no action and no magnitude, but it does have a key, a label and a binding. The
+ * flow lifecycle — idempotency, attribution, user-edit detection, orphan
+ * sweeping, deletion — is identical for both, and duplicating it for the second
+ * device type would have been the wrong kind of symmetry.
+ */
+export interface BindableInput {
+  key: string;
+  label: string;
+  binding: LogicalSourceBinding;
+  /** See CompileRequest.variantKey. Only meaningful for fixed bindings. */
+  variantKey?: string;
+}
 
 export interface SyncRequest {
   controllerId: string;
   sourceName: string;
   fingerprint: string;
   /** Only the inputs actually mapped — never every discovered event. */
-  mapped: SelectableInput[];
+  mapped: BindableInput[];
   existing: ManagedFlowReference[];
 }
 
@@ -68,7 +86,7 @@ export class FlowBridgeManager {
       const card = actions.find(c => String(c.id ?? '') === wanted)
         ?? actions.find(c => String(c.id ?? '').endsWith(`:${shortId}`) && String(c.id).includes(this.appId));
       if (!card) {
-        throw new Error(`Light Link's own action card "${shortId}" is not registered on this Homey.`);
+        throw new Error(`Lightkeeper's own action card "${shortId}" is not registered on this Homey.`);
       }
       return { id: String(card.id), uri: String(card.uri) };
     };
@@ -103,6 +121,7 @@ export class FlowBridgeManager {
         cards,
         label: input.label,
         sourceName: request.sourceName,
+        ...(input.variantKey !== undefined ? { variantKey: input.variantKey } : {}),
       };
 
       try {
@@ -289,7 +308,7 @@ export class FlowBridgeManager {
     } catch (error) {
       // Folders are organisational only — never let one block the real work.
       this.log(
-        'Could not create the Light Link folder; continuing without it:',
+        'Could not create the Lightkeeper folder; continuing without it:',
         redactKeyMaterial(String((error as Error)?.message ?? '')),
       );
       return undefined;
@@ -308,6 +327,16 @@ export function hasBeenUserEdited(live: any, expected: CompiledFlow): boolean {
   if (!live) return false;
 
   if (String(live.trigger?.id ?? '') !== expected.trigger.id) return true;
+
+  // The trigger's ARGUMENTS count as ours too. Without this, a schedule whose
+  // time the user changed in the Flow itself read as untouched — the trigger id
+  // and our action arguments were still exactly what we wrote — so the app
+  // silently kept a flow that fires at a time no screen in the app admits to.
+  // Only the keys we generated are compared: Homey may echo back more than it
+  // was given, and a superset is not an edit.
+  for (const [key, value] of Object.entries(expected.trigger.args)) {
+    if (String((live.trigger?.args ?? {})[key] ?? '') !== String(value)) return true;
+  }
 
   const liveActions = (live.actions ?? []) as any[];
   const ours = liveActions.find(a => String(a?.id ?? '') === expected.actions[0]!.id);

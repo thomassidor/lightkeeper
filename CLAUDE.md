@@ -2,8 +2,9 @@
 
 Guidance for Claude Code (and any other agent) working in this repository.
 
-Light Link is a Homey Pro app that turns an already-paired remote, switch or dial into a
-controller for already-paired lights, by generating and maintaining the Flows underneath.
+Lightkeeper is a Homey Pro app that does two things to already-paired lights, both by generating
+and maintaining the Flows underneath: it turns an already-paired remote, switch or dial into a
+controller for them, and it puts them on a schedule.
 
 ## Commands
 
@@ -14,6 +15,8 @@ npm run build                  # tsc, emits to .homeybuild/
 npx homey app validate --level publish
 npx homey app install          # persistent install on a real Homey
 npx homey app run --remote     # live logs, TEMPORARY — see below
+npm run sync:views             # pair -> repair, and shared views between drivers. See §8
+python docs/artwork/export-assets.py   # re-export every shipped PNG from its master
 ```
 
 Run a single test file: `node --import tsx --test test/unit/ramp-engine.test.ts`
@@ -32,11 +35,18 @@ lib/
   mapping/                      mapping engine, supersede gate, behaviour types
   outputs/                      intents, perceptual curve, planner, scheduler, ramp engine
   bridge/                       binding compiler, flow bridge manager, reconciler
-  runtime/                      controller runtime, manager, health monitor
+  runtime/                      controller runtime, manager, health monitor, shared target health
   profiles/                     profile schema, repository, migrations
+  schedules/                    types, window maths, local clock, bindings, runtime, manager
+  pairing/                      the light picker, shared by both drivers
 drivers/controller/             virtual device, driver, four pairing views
   pair/                         the four views, edited here
   repair/                       exact copies of pair/, generated — see §8
+drivers/schedule/               virtual device, driver, three pairing views
+  pair/                         credential.html and targets.html are COPIES of the
+                                controller's; only schedule.html is its own — see §8
+  repair/                       exact copies of pair/, generated — see §8
+scripts/sync-views.mjs          makes every copy named above; nothing runs it for you
 settings/index.html             app settings page
 locales/en.json                 all user-facing strings
 test/                           unit tests and hand-transcribed fixtures
@@ -308,11 +318,73 @@ thrown before a single app screen renders. It reads like a corrupt install; it m
 is in the wrong folder. Repair is where re-attach, remap and flow-edited recovery all live, so this
 turns every `needs_repair` state into a dead end.
 
-Our four views are identical in both modes — self-contained, each rule scoped to its own root id,
+Our views are identical in both modes — self-contained, each rule scoped to its own root id,
 separate sessions with separate documents, and the one branch that differs (`createDevice` vs
 `done`) is already decided by what `save` returns. So `repair/` is a copy of `pair/`, made by
-`npm run sync:repair-views` and held there by `test/unit/repair-views.test.ts`, which is the only
+`npm run sync:views` and held there by `test/unit/repair-views.test.ts`, which is the only
 thing that can catch a missing repair view before hardware does.
+
+**The same applies between drivers.** The API-key screen and the light picker are one screen each,
+used by both the controller and the schedule driver, and Homey will not follow a reference: each
+driver needs its own real file. So `drivers/schedule/pair/credential.html` and `targets.html` are
+copies too, made by the same script and compared by the same test. The credential view stays
+driver-agnostic because the **driver** tells it which view comes next (`nextView` on the
+`getCredentialStatus` reply) — a view that hardcoded `showView('source')` would silently strand the
+schedule flow, since `source` is not one of its screens.
+
+`test/unit/pair-view-styles.test.ts` discovers views from disk across every driver for the same
+reason: while it hardcoded `drivers/controller/pair`, a second driver's screens could break the
+scoping and colour-token conventions with nothing failing.
+
+## 9. Time comes from the Flow engine, because the SDK has no scheduler
+
+SDK v3 has **no cron manager** — v2's `ManagerCron` is gone, and the full `manager/` list (api, apps,
+arp, audio, ble, clock, cloud, dashboards, discovery, drivers, flow, geolocation, i18n, images,
+insights, ledring, nfc, notifications, rf, settings, speech-input, speech-output, zigbee, zwave) has
+nothing else that fires at a time. There is no sunrise/sunset helper either; `ManagerGeolocation`
+offers latitude and longitude and requires `homey:manager:geolocation`, which this app does not
+declare.
+
+What the SDK does give, and all a schedule needs:
+
+| Call | Notes |
+|---|---|
+| `this.homey.clock.getTimezone()` | synchronous, an IANA name, **no permission required** — unlike every geolocation method |
+| `this.homey.setTimeout` / `setInterval` | disposal-safe aliases, cleaned up when the Homey instance is destroyed |
+
+`homey-api`'s own clock manager exposes only `getState` under the `homey.system.readonly` scope, so
+it needs a scoped token. `this.homey.clock.getTimezone()` is free and is what we use.
+
+**So schedules fire from generated Flows, not from timers.** A light schedule compiles to two Flows
+per window — one at each boundary — triggered by Homey's own time card and calling our bridge action.
+The Flow engine then owns everything hard: DST, clock corrections, re-arming after a restart, and
+surviving an app that was not running a moment ago. The app owns only what a Flow cannot express: the
+day-of-week filter, the pause switch, and what "on" means for lights that may not all dim.
+
+Consequences worth not re-deriving:
+
+- **The day filter is deliberately NOT in the Flow.** The Flow fires every day and
+  `boundaryDayMatches()` checks the weekday on receipt, in the Homey's own timezone. That keeps a
+  day-of-week edit from rewriting Flows, and avoids depending on a day-condition card whose shape we
+  cannot enumerate ahead of time.
+- **A window belongs to the day it STARTED on.** "23:30 for two hours, Fridays" switches off at 01:30
+  on a Saturday, and that off event is Friday's. Matching an off event against the day it arrives on
+  silently drops every midnight-crossing schedule. `lib/schedules/schedule-window.ts` is the only
+  place that knows this, and `test/unit/schedule-window.test.ts` is why it stays known.
+- **Everything about time is a wall-clock minute count, 0–1439** — never a timestamp, never a UTC
+  offset. Because the Flow engine fires, the app never has to answer "when is the next 22:00 in
+  Europe/Copenhagen", only "is it 22:00 there now". That is what keeps DST out of our code entirely.
+- **The time card's id is UNVERIFIED against hardware and must never be hardcoded.** `discoverTimeCard()`
+  finds it by shape — a `homey:manager:*` trigger whose single argument is a time — and echoes its
+  `id` and `uri` back verbatim (§3). It also returns every candidate it considered, and
+  `getDiagnostics` includes them, so the first run on an unseen firmware reports what was on offer.
+  **When you confirm the real card on hardware, record its id and argument shape here.** If no such
+  card exists on some firmware, the fallback is in-app timers: `local-time.ts` and
+  `schedule-window.ts` are needed either way, and only `schedule-bindings.ts` and
+  `time-card-discovery.ts` would be wasted.
+- **`Intl` timezone data on the Homey's Node build is likewise unverified.** `localNow()` formats with
+  a fixed `en-US` locale and falls back to process-local time if `Intl` throws, and diagnostics report
+  the resolved timezone and local time so a wrong answer is visible rather than mysterious.
 
 ---
 
@@ -402,6 +474,26 @@ re-running the hardware pass list, not just re-running CI.
   proprietary to Athom B.V.; no warranty*. Bundling it in a Homey app is exactly the permitted use,
   but it does not inherit this repo's MIT licence and belongs in the rights register as its own line.
 
+## Two device types, one flow lifecycle
+
+`FlowBridgeManager` takes `BindableInput` — `{ key, label, binding, variantKey? }` — not
+`SelectableInput`. A schedule has no physical control, no action and no magnitude, but it does have a
+key, a label and a `flow_fixed` binding, so both device types share one implementation of
+idempotency, attribution, user-edit detection, orphan sweeping and deletion. `SelectableInput`
+satisfies the narrower type structurally, so no controller call site changed.
+
+Two traps in that shared path, both now covered by tests:
+
+- **Anything that can change inside a trigger's ARGUMENTS while the binding key stays the same must
+  appear in the variant key.** Reuse is keyed on (controller, binding key, variant key) plus the
+  fingerprint, and a reused Flow's trigger is never rewritten — so a schedule retimed from 22:00 to
+  23:00 kept its old Flow and went on firing at 22:00 while every screen said otherwise. Schedule
+  bindings therefore carry `variantKey: 'at:HH:MM'`.
+- **`hasBeenUserEdited()` compares trigger arguments too.** Without it, a user who changed the time in
+  the Flow editor left the trigger card and our action arguments untouched, so the app read the Flow as
+  its own and ignored the edit. It only compares keys we generated: Homey may echo back more than it
+  was given, and a superset is not an edit.
+
 ## Conventions
 
 **Comments explain why.** Module headers give the rationale, and inline comments record which bug a
@@ -426,14 +518,17 @@ rather than importing a second language by name, so its key-parity and `__token_
 themselves the moment a file is added. See `docs/localisation.md` for the full re-add list and the
 English–Danish glossary kept from the removed translation.
 
-**Pair views share ONE document.** The four views under `drivers/controller/pair/` are injected into
-the pairing container's document rather than getting their own iframe. They must not load `homey.js`
-themselves, every CSS rule is scoped to the view's root id, and the boot guard lives on the root
-element rather than in a global. Each file's header explains this.
+**Pair views share ONE document.** The views under `drivers/*/pair/` are injected into the pairing
+container's document rather than getting their own iframe. They must not load `homey.js` themselves,
+every CSS rule is scoped to the view's root id, and the boot guard lives on the root element rather
+than in a global. Each file's header explains this. The `~110`-line shared CSS base is byte-identical
+in every view, across both drivers, and `test/unit/pair-view-styles.test.ts` fails on any drift.
 
-**Edit a pair view, then run `npm run sync:repair-views`.** `drivers/controller/repair/` holds byte
-copies of `pair/`, because Homey needs a real file in each folder (§8). `npm test` fails on drift and
-names the script; nothing runs it for you.
+**Edit a pair view, then run `npm run sync:views`.** Every `repair/` folder holds byte copies of its
+`pair/`, and the schedule driver's `credential.html` and `targets.html` are byte copies of the
+controller's, because Homey needs a real file in each place (§8). Edit the controller's copy of a
+shared view, never the schedule's. `npm test` fails on drift and names the script; nothing runs it
+for you.
 
 **Tests use `node --test` with `tsx`.** No framework. Fixtures in
 `test/fixtures/reference-devices.ts` are transcribed from the four remotes above; the expected
@@ -485,7 +580,26 @@ Load-bearing product guarantees, not implementation details:
   bridge event is validated against a live controller and an expected binding key before anything
   executes. On malformed or stale input, fail closed — log and ignore, never execute heuristically.
 - **Range expansion is capped at 12 flow variants.** Beyond that the control is declined rather than
-  flooding the user's Flow list.
+  flooding the user's Flow list. A schedule device is capped at 12 windows for the same reason: two
+  Flows each, so 24 rows in the user's list.
+- **The orphan sweep's "live" set is the UNION of both registries** (`liveDeviceIds()` in `api.ts`).
+  `findManagedFlows()` groups by the device id in a Flow's bridge arguments and cannot tell which
+  registry that id belongs to, so a sweep that knew only about controllers would find every schedule's
+  Flows unattributable and delete them — and the "refuse when nothing is running" guard would not have
+  caught it, because with one controller running the set is not empty.
+- **A schedule is never switched off retroactively.** Catch-up on start applies a window that
+  CONTAINS now, because the alternative is a dark evening after a restart at 22:01. It deliberately
+  does not act on a window that already ended: switching a household's lights off at app start, on
+  the guess that we might once have switched them on, is the worse surprise. Stated as a limit in the
+  README rather than hidden.
+- **Pausing a schedule keeps its Flows and does not mark the device unavailable.** The controller
+  marks a disabled controller unavailable, which is harmless there; a paused schedule's tile carries
+  the switch that un-pauses it, and an unavailable device cannot be switched. So `'disabled'` keeps a
+  schedule device available and lives in the capability value instead.
+- **A schedule runtime's health verdict never overrides reconciliation's.** `assessHealth()` only
+  looks at targets, so it returns early while `flowsHealthy` is false — otherwise it reported 'ready'
+  straight over the top of "no time trigger card on this Homey", and the schedule looked well and
+  never fired.
 
 ## Built with AI
 

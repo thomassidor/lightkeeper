@@ -1,6 +1,6 @@
 {
-  "id": "com.thomassidor.lightlink",
-  "version": "0.1.1",
+  "id": "com.thomassidor.lightkeeper",
+  "version": "0.2.0",
   "compatibility": ">=12.9.0",
   "runtime": "nodejs",
   "sdk": 3,
@@ -8,14 +8,15 @@
     "local"
   ],
   "name": {
-    "en": "Light Link"
+    "en": "Lightkeeper"
   },
   "description": {
-    "en": "27 Flows, or one app. Point any remote at any lights."
+    "en": "Dozens of Flows, or one app. Point any remote at any lights, and put those lights on a timer."
   },
   "category": ["tools", "lights"],
   "tags": {
-    "en": ["remote control", "smart lights", "dimmer", "rotary dial", "button", "flow", "zigbee", "matter"]
+    "en": ["remote control", "smart lights", "schedule", "timer", "time of day", "dimmer", "rotary dial",
+      "button", "flow", "zigbee", "matter"]
   },
   "brandColor": "#1F3A5F",
   "permissions": [
@@ -29,11 +30,11 @@
   "author": {
     "name": "Thomas René Sidor"
   },
-  "source": "https://github.com/thomassidor/lightlink",
-  "homepage": "https://github.com/thomassidor/lightlink#readme",
-  "support": "https://github.com/thomassidor/lightlink/issues",
+  "source": "https://github.com/thomassidor/lightkeeper",
+  "homepage": "https://github.com/thomassidor/lightkeeper#readme",
+  "support": "https://github.com/thomassidor/lightkeeper/issues",
   "bugs": {
-    "url": "https://github.com/thomassidor/lightlink/issues"
+    "url": "https://github.com/thomassidor/lightkeeper/issues"
   },
   "api": {
     "getStatus": {

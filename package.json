@@ -1,18 +1,18 @@
 {
-  "name": "com.thomassidor.lightlink",
-  "version": "0.1.1",
-  "description": "Homey Pro app that turns any paired remote, switch or dial into a controller for any paired lights, without writing a single Flow.",
+  "name": "com.thomassidor.lightkeeper",
+  "version": "0.2.0",
+  "description": "Homey Pro app that points any paired remote, switch or dial at any paired lights, and puts those lights on a schedule — without writing a single Flow.",
   "license": "MIT",
   "author": {
     "name": "Thomas René Sidor"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/thomassidor/lightlink.git"
+    "url": "git+https://github.com/thomassidor/lightkeeper.git"
   },
-  "homepage": "https://github.com/thomassidor/lightlink#readme",
+  "homepage": "https://github.com/thomassidor/lightkeeper#readme",
   "bugs": {
-    "url": "https://github.com/thomassidor/lightlink/issues"
+    "url": "https://github.com/thomassidor/lightkeeper/issues"
   },
   "keywords": [
     "homey",
@@ -20,7 +20,9 @@
     "lighting",
     "zigbee",
     "matter",
-    "remote-control"
+    "remote-control",
+    "schedule",
+    "timer"
   ],
   "private": true,
   "engines": {
@@ -29,7 +31,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "sync:repair-views": "node scripts/sync-repair-views.mjs",
+    "sync:views": "node scripts/sync-views.mjs",
     "test": "node --import tsx --test \"test/unit/**/*.test.ts\"",
     "test:watch": "node --import tsx --test --watch \"test/unit/**/*.test.ts\"",
     "validate": "homey app validate --level publish"

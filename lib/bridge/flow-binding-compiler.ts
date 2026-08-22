@@ -58,6 +58,18 @@ export interface CompileRequest {
   label: string;
   sourceName: string;
   ceiling?: number;
+  /**
+   * Overrides the variant key of a `flow_fixed` binding.
+   *
+   * Reuse is keyed on (controller, binding key, variant key) plus the
+   * fingerprint, and a reused flow's trigger is never rewritten — so anything
+   * that lives in the TRIGGER'S ARGUMENTS and can change while the binding key
+   * stays the same has to appear here, or the edit is silently ignored. A light
+   * schedule moved from 22:00 to 23:00 is exactly that case: same schedule, same
+   * binding key, different trigger argument. With the time in the variant key
+   * the old flow is no longer wanted and is deleted, and a new one is created.
+   */
+  variantKey?: string;
 }
 
 /**
@@ -81,8 +93,8 @@ export function compileBinding(request: CompileRequest): CompiledFlow[] {
 
   switch (binding.kind) {
     case 'flow_fixed':
-      return [buildFlow(request, 'fixed', binding.cardId, binding.cardOwnerUri, binding.args,
-        request.cards.event, {})];
+      return [buildFlow(request, request.variantKey ?? 'fixed', binding.cardId, binding.cardOwnerUri,
+        binding.args, request.cards.event, {})];
 
     case 'flow_enum':
       return [buildFlow(request, `enum:${String(binding.value)}`, binding.cardId, binding.cardOwnerUri,
@@ -174,7 +186,7 @@ function buildFlow(
  */
 export function flowName(request: CompileRequest, variantKey: string): string {
   const suffix = variantKey.startsWith('range:') ? ` (${variantKey.slice(6)})` : '';
-  return `Light Link — ${request.sourceName}: ${request.label}${suffix}`;
+  return `Lightkeeper — ${request.sourceName}: ${request.label}${suffix}`;
 }
 
 /** Idempotency key: one flow per binding per variant. */

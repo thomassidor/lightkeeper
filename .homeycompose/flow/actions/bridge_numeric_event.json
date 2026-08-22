@@ -6,7 +6,7 @@
     "en": "Send event [[event_key]] with value [[value]] to controller [[controller]]"
   },
   "hint": {
-    "en": "Used internally by Light Link, for events that carry an amount as a fixed value — for example one Flow per dial detent. Do not add or edit these by hand."
+    "en": "Used internally by Lightkeeper, for events that carry an amount as a fixed value — for example one Flow per dial detent. Do not add or edit these by hand."
   },
   "args": [
     {

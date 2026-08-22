@@ -253,7 +253,7 @@ export class CredentialService {
 
     const token = this.token;
     if (!token) {
-      const error = new Error('No API key stored — Light Link cannot create its Flows without one.');
+      const error = new Error('No API key stored — Lightkeeper cannot create its Flows without one.');
       (error as { credentialFailure?: CredentialFailure }).credentialFailure = 'malformed';
       throw error;
     }

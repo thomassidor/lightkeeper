@@ -1,4 +1,5 @@
 import type { DeviceCatalog, CatalogDevice } from '../device-catalog';
+import { countTargets } from './target-health';
 import type { SourceDiscoveryService } from '../source-discovery-service';
 import type { ControllerProfile, ControllerState } from '../profiles/controller-profile';
 
@@ -71,11 +72,11 @@ export class HealthMonitor {
       return {
         state: 'needs_credential',
         messageKey: 'state.needsCredential',
-        detail: 'Light Link needs a valid API key to maintain its Flows.',
+        detail: 'Lightkeeper needs a valid API key to maintain its Flows.',
       };
     }
 
-    const targets = await this.resolveTargetHealth(profile);
+    const targets = await countTargets(this.catalog, profile.target);
     if (targets.available === 0) {
       return {
         state: 'needs_repair',
@@ -156,20 +157,6 @@ export class HealthMonitor {
     };
   }
 
-  private async resolveTargetHealth(profile: ControllerProfile): Promise<{ total: number; available: number }> {
-    if (profile.target.kind === 'devices') {
-      const devices = await Promise.all(profile.target.deviceIds.map(id => this.catalog.device(id)));
-      const present = devices.filter((d): d is CatalogDevice => d !== undefined);
-      return {
-        total: profile.target.deviceIds.length,
-        available: present.filter(d => d.available).length,
-      };
-    }
-
-    const inZone = await this.catalog.devicesInZone(profile.target.zoneId, profile.target.includeSubzones);
-    const lights = inZone.filter(d => d.capabilities.includes('onoff'));
-    return { total: lights.length, available: lights.filter(d => d.available).length };
-  }
 }
 
 export function matchesOwnerAndDriver(device: CatalogDevice, profile: ControllerProfile): boolean {

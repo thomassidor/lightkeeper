@@ -70,7 +70,7 @@ describe('credential redaction', () => {
     // embedded exactly as it is there.
     const payload = {
       generatedAt: 1,
-      app: { id: 'com.thomassidor.lightlink', version: '0.1.0' },
+      app: { id: 'com.thomassidor.lightkeeper', version: '0.1.0' },
       credential: service.getStatus(),
       recentEvents: [
         { at: 1, cardId: 'bridge_event', controller: 'c1', eventKey: 'k', accepted: true },
@@ -120,7 +120,7 @@ describe('redactKeyMaterial', () => {
   });
 
   test('leaves ordinary error text alone', () => {
-    const message = '404 Not Found: FlowCardAction with ID com.thomassidor.lightlink:bridge_event';
+    const message = '404 Not Found: FlowCardAction with ID com.thomassidor.lightkeeper:bridge_event';
     assert.equal(redactKeyMaterial(message), message);
   });
 
@@ -221,7 +221,7 @@ describe('write failures never carry the key out of the write path', () => {
 
   test('deleteFlow through the bridge logs nothing sensitive and does not throw', async () => {
     const { api, logged } = writePath();
-    const bridge = new FlowBridgeManager(api, 'com.thomassidor.lightlink', (...args) => {
+    const bridge = new FlowBridgeManager(api, 'com.thomassidor.lightkeeper', (...args) => {
       logged.push(args.map(String).join(' '));
     });
 

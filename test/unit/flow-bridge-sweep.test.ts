@@ -12,7 +12,7 @@ import type { HomeyApiService } from '../../lib/homey-api-service';
  * yet", so the sweep refuses rather than guessing.
  */
 
-const APP_ID = 'com.thomassidor.lightlink';
+const APP_ID = 'com.thomassidor.lightkeeper';
 
 function cardId(shortId: string) {
   return `${APP_ID}:${shortId}`;
@@ -48,7 +48,7 @@ function harness(flows: Record<string, unknown>) {
 function managedFlow(id: string, controllerId: string) {
   return {
     id,
-    name: `Light Link — ${id}`,
+    name: `Lightkeeper — ${id}`,
     actions: [{ id: cardId('bridge_event'), args: { controller: controllerId, event_key: 'k' } }],
   };
 }

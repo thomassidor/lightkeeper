@@ -1,6 +1,6 @@
-# Light Link privacy notice
+# Lightkeeper privacy notice
 
-Light Link runs entirely on your own Homey Pro. Nothing it reads, stores or
+Lightkeeper runs entirely on your own Homey Pro. Nothing it reads, stores or
 generates is transmitted anywhere.
 
 ## What it reads
@@ -14,7 +14,7 @@ through Homey's local Web API, all of it needed to do the one thing the app does
 Controller profiles — which remote, which lights, which gesture does what — and
 the Personal API Key you provide. Both live in the app's settings on your Homey.
 
-The API key is used only to create, update and delete the Flows Light Link
+The API key is used only to create, update and delete the Flows Lightkeeper
 manages. It is never logged, never returned through the app's own API, and never
 included in a diagnostics report. Errors are classified before they are logged,
 because an error object can carry the token that caused it.
@@ -35,7 +35,7 @@ Uninstalling the app removes its settings.
 
 ## Reporting a problem
 
-Bugs, and anything else: <https://github.com/thomassidor/lightlink/issues>.
+Bugs, and anything else: <https://github.com/thomassidor/lightkeeper/issues>.
 
 For anything security-sensitive, use GitHub's private vulnerability reporting on
 that repository rather than a public issue — it goes to the maintainer without

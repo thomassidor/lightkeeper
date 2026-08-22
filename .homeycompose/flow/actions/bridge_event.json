@@ -6,7 +6,7 @@
     "en": "Send event [[event_key]] to controller [[controller]]"
   },
   "hint": {
-    "en": "Used internally by Light Link. These cards appear in Flows that Light Link creates and maintains for you — you do not need to add them by hand, and editing them will disconnect your controller."
+    "en": "Used internally by Lightkeeper. These cards appear in Flows that Lightkeeper creates and maintains for you — you do not need to add them by hand, and editing them will disconnect your controller."
   },
   "args": [
     {

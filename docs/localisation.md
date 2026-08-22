@@ -1,6 +1,6 @@
 # Localisation
 
-**Light Link ships English only.** It previously shipped Danish too, and that was
+**Lightkeeper ships English only.** It previously shipped Danish too, and that was
 removed in 0.1.0 — maintaining two languages doubled the cost of every copy change
 before anyone had asked for the second one.
 
@@ -32,7 +32,10 @@ Say Danish, `da`. Nothing below requires touching a test or a build script.
    `title`, `titleFormatted`, `hint`, and the `title` of every entry in `args`.
    These strings appear in the user's Flow editor, so they are user-facing even
    though the cards are internal.
-4. **`drivers/controller/driver.compose.json`** — add `da` to `name`.
+4. **`drivers/controller/driver.compose.json`** and
+   **`drivers/schedule/driver.compose.json`** — add `da` to `name`, and to the
+   schedule driver's `capabilitiesOptions.onoff.title` (the "Schedule active"
+   label on its tile).
 5. **`.homeychangelog.json`** — add `da` to each released version you want
    translated.
 6. **`README.da.txt`** — the App Store long description. Homey uploads
@@ -41,8 +44,15 @@ Say Danish, `da`. Nothing below requires touching a test or a build script.
 7. Run `npx homey app build` to regenerate `app.json`, then `npm test` and
    `npx homey app validate --level publish`.
 
+One group of strings is deliberately English and is not in `locales/`: the labels
+inside generated Flow names, built by `lib/schedules/schedule-bindings.ts` —
+"On at 22:00, Mon–Fri". They are part of a Flow's title in the user's own Flow
+list, `lib/` has no access to `homey.__`, and a Flow title has nowhere to carry a
+locale key. Translating them would mean the device layer renaming Flows, which is
+the one thing reconciliation treats as a user's own edit.
+
 One thing that cannot be translated, and should not be attempted: the "could not
-reach the Homey pairing API" banner in the four pair views. It fires precisely
+reach the Homey pairing API" banner in the pair views. It fires precisely
 when `window.Homey` never arrives, so `Homey.__` does not exist at that moment.
 The failure mode *is* the absence of the translator.
 
@@ -53,7 +63,8 @@ choices took thought, and re-deriving them would produce a different and worse s
 
 | English | Danish | Note |
 |---|---|---|
-| controller | betjening | The virtual Light Link device. **Avoid *controller* in Danish UI** — it reads as a hardware controller. |
+| controller | betjening | The virtual Lightkeeper device. **Avoid *controller* in Danish UI** — it reads as a hardware controller. |
+| schedule | tidsplan | The virtual schedule device, and one window inside it |
 | remote | fjernbetjening | The physical source device |
 | switch | kontakt | Physical source type |
 | rotary dial | drejeknap | Physical source type |
@@ -69,5 +80,5 @@ choices took thought, and re-deriving them would produce a different and worse s
 | unavailable | utilgængelig | |
 | repair | reparér / reparation | Verb / noun |
 
-Brand and protocol names are never translated: Light Link, Homey, Zigbee, Matter,
+Brand and protocol names are never translated: Lightkeeper, Homey, Zigbee, Matter,
 IKEA BILRESA, Philips Hue.

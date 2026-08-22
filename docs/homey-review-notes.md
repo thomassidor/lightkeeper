@@ -12,11 +12,11 @@ will require a more thorough review"*.
 
 ## Why `homey:manager:api`
 
-Light Link has to enumerate source devices, target lights, zones and the Flow
-trigger cards that *other apps* own; subscribe to target capability changes; set
-capability values on target lights; and read back the Flows it generated. Homey's
-broad Web API permission is the only permission that exposes cross-app resources
-at all.
+Lightkeeper has to enumerate source devices, target lights, zones and the Flow
+trigger cards that *other apps* own — plus Homey's own time trigger card, which the
+schedule device is built on; subscribe to target capability changes; set capability
+values on target lights; and read back the Flows it generated. Homey's broad Web API
+permission is the only permission that exposes cross-app resources at all.
 
 It is also the only API permission that exists. `homey-lib`'s
 `assets/app/permissions.json` lists exactly one, so there is no finer-grained
@@ -47,7 +47,7 @@ for Flow writes only — never for reads, which go through the app's own session
 Never logged, never returned through the app's Web API, never included in a
 diagnostics report. Two mechanisms enforce that and both are covered by
 `test/unit/diagnostics-redaction.test.ts`. If the key expires, controllers keep
-driving lights and only Flow maintenance pauses.
+driving lights, existing schedules keep firing, and only Flow maintenance pauses.
 
 **Why `local` only.** `homey:manager:api` is incompatible with Homey Cloud, and
 the design depends on local cross-app Web API access.
@@ -56,28 +56,61 @@ the design depends on local cross-app Web API access.
 at all, so the app cannot work on them. That is the real compatibility floor —
 the manifest's `>=12.9.0` is a firmware floor on top of it.
 
+## Why schedules use Homey's own time trigger
+
+The app ships two device types and both generate Flows. A light schedule compiles to
+two Flows per window — one at each end — triggered by **Homey's own time card**,
+which the app locates by enumerating the trigger cards this Homey offers and echoing
+that card's `id` and `uri` back verbatim. It never constructs a card URI, and it does
+not depend on any other app's cards.
+
+Two consequences a reviewer may want to check:
+
+- There is **no scheduler in SDK v3** (v2's `ManagerCron` is gone), so the
+  alternative would have been in-app timers. Using the Flow engine instead means DST,
+  clock changes and restarts are handled by the platform, and every schedule is
+  visible and inspectable in the user's own Flow list.
+- The **day-of-week filter is not in the Flow**. Each Flow fires daily and the app
+  checks the weekday against `homey.clock.getTimezone()` before acting, so changing
+  which days a schedule runs on rewrites no Flows. Refusals are recorded, with their
+  reason, in the app's own diagnostics.
+
 ---
 
 ## Test script
 
 1. Install on a Homey Pro 2023 or later running firmware 12.9.0 or newer.
-2. Open Devices, add Light Link, and follow the API-key instructions.
+2. Open Devices, add Lightkeeper, and follow the API-key instructions.
 3. Select an already-paired source and confirm the discovered events.
 4. Select individual lights; map on/off and brightness; use **Test** on each row;
    save.
 5. Press and turn the physical remote. Confirm the lights actually change, and
-   that Settings → Light Link shows the presses and the writes.
+   that Settings → Lightkeeper shows the presses and the writes.
 6. Repair the controller, switch targets to a zone, save. Add or move a lamp in
    that zone and confirm it is picked up without reconfiguring.
-7. Change a light outside Light Link, then use a relative brightness gesture —
+6a. Add a **Light schedule**: pick two lights, set one window a minute or two ahead
+    with a short duration, use **Test on** and **Test off**, then save. Two Flows
+    should appear in the Lightkeeper folder at the two times shown on screen, and
+    both boundaries should fire on the clock.
+6b. Move that schedule's on-time. The old pair of Flows must be replaced, not left
+    behind firing at the old time.
+6c. Turn the schedule device's own switch off. Its Flows stay, nothing fires, and the
+    device stays available so the switch can be turned back on. Turn it on again
+    inside an active window and the lights should come on rather than wait for
+    tomorrow.
+6d. Set a schedule to weekdays only and check a non-matching day: Settings →
+    Lightkeeper shows the boundary arriving and being ignored, with the reason.
+7. Change a light outside Lightkeeper, then use a relative brightness gesture —
    it should continue from the light's real state, not from a stale one.
 8. **Revoke the API key.** Existing mappings must keep controlling lights, while
    the app asks for a new key. Paste a new one: every mapping should survive and
    the controllers should return to ready without a restart.
-9. **Hand-edit a generated Flow.** Light Link must ask for repair rather than
-   overwrite it.
-10. **Delete the controller.** Only the Flows attributable to that controller may
-    be removed.
+9. **Hand-edit a generated Flow**, including changing the time on a schedule's Flow.
+   Lightkeeper must ask for repair rather than overwrite it.
+10. **Delete the controller, and separately a schedule.** Only the Flows
+    attributable to that device may be removed. Then check the orphan count in app
+    settings: with the other device still running it must not report the survivor's
+    Flows as orphans.
 11. Restart the app, then the Homey, and repeat a mapped action.
 
 Steps 8, 9 and 10 are the ones worth the time — they are the app's genuinely
@@ -106,6 +139,14 @@ accident of implementation.
   a certainty rather than a risk.
 - Rotary behaviour differs by pairing path. Matter BILRESA exposes stepping with
   no release event, so no hold-ramp is offered for it.
+- Schedules are clock times only; sunrise and sunset are not offered. They follow the
+  Homey's own timezone, which the settings page displays next to each schedule.
+- Twelve windows per schedule device, which is twenty-four generated Flows. Past that
+  the user's Flow list stops being readable.
+- If the app is not running at the moment a window should end, that off is missed and
+  the lights stay on until the next boundary. The app deliberately does not switch a
+  household's lights off at start-up on the assumption that it once switched them on;
+  it does switch them on when it starts up *inside* a window.
 - **Per-transport output latency beyond the Hue Bridge is untested**, because
   every light on the test Homey sits behind that bridge. A `setCapabilityValue`
   to a Hue Bridge light acks in roughly 275 ms; nothing is claimed about Zigbee
@@ -114,3 +155,9 @@ accident of implementation.
 Verified end to end on a Homey Pro 2023 (firmware 13.4.0) against IKEA STYRBAR
 (Zigbee, local), Philips Hue Dimmer v2 and Hue Tap Dial (Hue Bridge), and IKEA
 BILRESA (Matter/Thread).
+
+The schedule device's time and day arithmetic is covered by unit tests rather than by
+that hardware list, since it is pure arithmetic. Its one hardware-dependent step is
+finding Homey's time trigger card, which is why the card is discovered by shape at
+runtime rather than hardcoded, and why the app's diagnostics list every candidate it
+considered.

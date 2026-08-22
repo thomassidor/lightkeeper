@@ -11,9 +11,9 @@ import {
 import type { LogicalSourceBinding } from '../../lib/inputs/selectable-input';
 
 const CARDS: BridgeCardRefs = {
-  event: { id: 'homey:app:com.thomassidor.lightlink:bridge_event', uri: 'homey:flowcardaction:homey:app:com.thomassidor.lightlink:bridge_event' },
-  numeric: { id: 'homey:app:com.thomassidor.lightlink:bridge_numeric_event', uri: 'homey:flowcardaction:homey:app:com.thomassidor.lightlink:bridge_numeric_event' },
-  token: { id: 'homey:app:com.thomassidor.lightlink:bridge_token_event', uri: 'homey:flowcardaction:homey:app:com.thomassidor.lightlink:bridge_token_event' },
+  event: { id: 'homey:app:com.thomassidor.lightkeeper:bridge_event', uri: 'homey:flowcardaction:homey:app:com.thomassidor.lightkeeper:bridge_event' },
+  numeric: { id: 'homey:app:com.thomassidor.lightkeeper:bridge_numeric_event', uri: 'homey:flowcardaction:homey:app:com.thomassidor.lightkeeper:bridge_numeric_event' },
+  token: { id: 'homey:app:com.thomassidor.lightkeeper:bridge_token_event', uri: 'homey:flowcardaction:homey:app:com.thomassidor.lightkeeper:bridge_token_event' },
 };
 
 const request = (binding: LogicalSourceBinding, over: Partial<CompileRequest> = {}): CompileRequest => ({
@@ -51,7 +51,7 @@ describe('fixed bindings', () => {
   });
 
   test('names the flow so a user can tell what it is', () => {
-    assert.equal(flows[0]!.name, 'Light Link — Kitchen STYRBAR: Higher brightness — Press');
+    assert.equal(flows[0]!.name, 'Lightkeeper — Kitchen STYRBAR: Higher brightness — Press');
   });
 });
 

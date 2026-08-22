@@ -8,6 +8,23 @@
  * Every handler's return shape is documented below, because the settings page
  * is the only consumer and there is no schema between the two.
  */
+/**
+ * Every device this app can attribute a generated Flow to — controllers AND
+ * schedules.
+ *
+ * Load-bearing. `findManagedFlows()` groups by the device id in a Flow's bridge
+ * arguments and cannot tell which registry that id belongs to, so a sweep run
+ * against the controllers alone would find every schedule's Flows "orphaned" and
+ * delete the lot. The guard below ("no live controllers, refuse") would not have
+ * caught it either: with one controller running, the set is not empty.
+ */
+function liveDeviceIds(app: any): Set<string> {
+  return new Set([
+    ...app.controllers.all().map((r: any) => r.controllerId),
+    ...app.schedules.all().map((r: any) => r.controllerId),
+  ]);
+}
+
 module.exports = {
 
   /**
@@ -19,6 +36,8 @@ module.exports = {
    *   recentEvents: [{ at, cardId, controller, eventKey, magnitude?, accepted, reason? }],
    *   controllers:  [{ id, state, sourceName, mappings, managedFlows,
    *                    schedulerReady, targetNames }],
+   *   schedules:    [{ id, state, name, enabled, entries, managedFlows,
+   *                    localTime, timezone, targetNames }],
    *   recentWrites: [{ at, deviceId, capability, value, ok, ms, error? }],
    * }
    * ```
@@ -41,9 +60,30 @@ module.exports = {
         schedulerReady: runtime.diagnostics().schedulerReady,
         targetNames: runtime.diagnostics().targetNames,
       })),
+      schedules: app.schedules.all().map((runtime: any) => {
+        const diagnostics = runtime.diagnostics();
+        return {
+          id: runtime.controllerId,
+          state: runtime.currentState,
+          name: diagnostics.name,
+          enabled: diagnostics.enabled,
+          entries: diagnostics.entries,
+          managedFlows: diagnostics.managedFlows?.length ?? 0,
+          // The Homey's own clock, echoed back. "It fired an hour late" is
+          // almost always a timezone answer, and this is where it is visible.
+          timezone: diagnostics.timezone,
+          localTime: diagnostics.localTime,
+          targetNames: diagnostics.targetNames,
+          lastAction: diagnostics.lastAction,
+        };
+      }),
       // Writes actually attempted against lights — the step after an event is
       // accepted, and where a working-looking app can still do nothing.
-      recentWrites: (app.controllers.all()[0]?.diagnostics().recentWrites ?? []).slice(0, 10),
+      recentWrites: (
+        app.controllers.all()[0]?.diagnostics().recentWrites
+        ?? app.schedules.all()[0]?.diagnostics().recentWrites
+        ?? []
+      ).slice(0, 10),
     };
   },
 
@@ -60,7 +100,7 @@ module.exports = {
     // so a read-based check gives false confidence.
     return homey.app.credentials.setCredential(token, async (client: any) => {
       const folder = await client.flow.createFlowFolder({
-        flowfolder: { name: 'Light Link (checking permissions)' },
+        flowfolder: { name: 'Lightkeeper (checking permissions)' },
       });
       await client.flow.deleteFlowFolder({ id: folder.id });
     });
@@ -82,7 +122,7 @@ module.exports = {
    */
   async countOrphans({ homey }: any) {
     const app = homey.app;
-    const live = new Set(app.controllers.all().map((r: any) => r.controllerId));
+    const live = liveDeviceIds(app);
     const managed = await app.bridge.findManagedFlows();
     const orphans = managed.filter((f: any) => !f.controllerId || !live.has(f.controllerId));
     return {
@@ -97,8 +137,7 @@ module.exports = {
   /** Returns `{ deleted, kept, failed, refused? }`. See countOrphans. */
   async sweepOrphans({ homey }: any) {
     const app = homey.app;
-    const live = new Set(app.controllers.all().map((r: any) => r.controllerId));
-    return app.bridge.sweepOrphans(live);
+    return app.bridge.sweepOrphans(liveDeviceIds(app));
   },
 
   /**
@@ -110,6 +149,8 @@ module.exports = {
    *   credential:  { present, valid, failure?, hint?, lastCheckedAt? },
    *   recentEvents: [...],                  // every retained event, not just 12
    *   controllers:  [ControllerRuntime.diagnostics(), ...],
+   *   schedules:    [ScheduleRuntime.diagnostics(), ...],
+   *   timeCard:     { id, argument } | null, and every candidate considered,
    * }
    * ```
    *
@@ -127,6 +168,14 @@ module.exports = {
       // from one that fired and was refused.
       recentEvents: app.recentEvents,
       controllers: app.controllers.all().map((runtime: any) => runtime.diagnostics()),
+      schedules: app.schedules.all().map((runtime: any) => runtime.diagnostics()),
+      // Which of Homey's own trigger cards the schedules are built on, and what
+      // else was on offer. A card URI may never be constructed (§3), so when a
+      // firmware moves this card the candidate list IS the investigation.
+      timeCard: await app.schedules.timeCard().catch((error: any) => ({
+        card: null,
+        error: String(error?.message ?? error),
+      })),
     };
   },
 

@@ -23,7 +23,7 @@ import type { SelectableInput } from '../../lib/inputs/selectable-input';
  * in repair claiming an edit the user never made.
  */
 
-const APP_ID = 'com.thomassidor.lightlink';
+const APP_ID = 'com.thomassidor.lightkeeper';
 const CONTROLLER = 'ctrl-1';
 
 const cardId = (shortId: string) => `${APP_ID}:${shortId}`;
@@ -55,7 +55,7 @@ function inputOn(deviceId: string): SelectableInput {
 function liveFlow(id: string, deviceId: string) {
   return {
     id,
-    name: 'Light Link — BILRESA: Button 1 — Press',
+    name: 'Lightkeeper — BILRESA: Button 1 — Press',
     trigger: { id: `homey:device:${deviceId}:switch_initial_press_multi` },
     actions: [{
       id: cardId('bridge_event'),
@@ -91,7 +91,7 @@ function harness(flows: Record<string, unknown>) {
     flow: {
       getFlowCardActions: async () => actions,
       getFlows: async () => flows,
-      getFlowFolders: async () => ({ f: { id: 'folder-1', name: 'Light Link' } }),
+      getFlowFolders: async () => ({ f: { id: 'folder-1', name: 'Lightkeeper' } }),
       createFlow: async ({ flow }: { flow: any }) => {
         created.push(flow);
         nextId += 1;

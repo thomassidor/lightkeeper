@@ -1,12 +1,13 @@
 <style>
-  /* ==== shared base: identical in all four pair views ====
-     Scoped to this view's root because all four views share ONE document, so
-     unscoped class names bleed between screens (see the script header).
+  /* ==== shared base: identical in every pair view ====
+     Scoped to this view's root because all views of a session share ONE
+     document, so unscoped class names bleed between screens (see the script
+     header).
 
      That also means these ~110 lines cannot be de-duplicated into a stylesheet
      — there is nowhere to put one. So the duplication is made safe instead:
-     test/unit/pair-view-styles.test.ts compares the four copies with the root
-     id normalised and fails on any difference. Edit this block in all four
+     test/unit/pair-view-styles.test.ts compares every copy with the root
+     id normalised and fails on any difference. Edit this block in all
      files, or in none of them.
 
      Colours are tokens so that the dark scheme below restates values only,
@@ -17,42 +18,42 @@
        the link accent. This flow previously used a generic #2f6fed for every
        interactive state — a colour that appeared nowhere else the user had
        seen, in the app or in the store listing. */
-    --ll-accent: #1f3a5f;
-    --ll-accent-ink: #ffffff;
-    --ll-accent-tint: #f1f5fa;
-    --ll-accent-wash: #fbfcfe;
-    --ll-accent-line: #cdd8e6;
-    --ll-accent-strong: #1f3a5f;
-    --ll-ring: rgba(31, 58, 95, .16);
-    --ll-amber: #f2a93b;
+    --lk-accent: #1f3a5f;
+    --lk-accent-ink: #ffffff;
+    --lk-accent-tint: #f1f5fa;
+    --lk-accent-wash: #fbfcfe;
+    --lk-accent-line: #cdd8e6;
+    --lk-accent-strong: #1f3a5f;
+    --lk-ring: rgba(31, 58, 95, .16);
+    --lk-amber: #f2a93b;
 
-    --ll-ink: #16181d;
-    --ll-sub: #6b7280;
-    --ll-body: #4b5563;
-    --ll-muted: #8b929e;
-    --ll-faint: #9aa1ac;
+    --lk-ink: #16181d;
+    --lk-sub: #6b7280;
+    --lk-body: #4b5563;
+    --lk-muted: #8b929e;
+    --lk-faint: #9aa1ac;
 
     /* transparent, not white: the pairing container paints the page behind us,
        and claiming it in light mode would flatten every card against it. The
        dark scheme does claim it, because a white card on a dark container is
        the one combination that reads as broken rather than merely plain. */
-    --ll-page: transparent;
-    --ll-surface: #ffffff;
-    --ll-raised: #f7f8fa;
-    --ll-line: #eceef2;
-    --ll-field: #e3e6ec;
-    --ll-hover: #c9d2e0;
-    --ll-shadow: 0 1px 2px rgba(16, 24, 40, .05);
+    --lk-page: transparent;
+    --lk-surface: #ffffff;
+    --lk-raised: #f7f8fa;
+    --lk-line: #eceef2;
+    --lk-field: #e3e6ec;
+    --lk-hover: #c9d2e0;
+    --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
 
-    --ll-ok-bg: #eaf7ef;   --ll-ok-ink: #10633a;
-    --ll-bad-bg: #fdeceb;  --ll-bad-ink: #8f1d18;
-    --ll-flat-bg: #f4f5f7; --ll-flat-ink: #5b616e;
+    --lk-ok-bg: #eaf7ef;   --lk-ok-ink: #10633a;
+    --lk-bad-bg: #fdeceb;  --lk-bad-ink: #8f1d18;
+    --lk-flat-bg: #f4f5f7; --lk-flat-ink: #5b616e;
 
-    background: var(--ll-page);
+    background: var(--lk-page);
     padding: 18px 16px 24px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
                  "Helvetica Neue", sans-serif;
-    color: var(--ll-ink);
+    color: var(--lk-ink);
     -webkit-font-smoothing: antialiased;
   }
 
@@ -61,96 +62,96 @@
      darkens the ink on top of it. */
   @media (prefers-color-scheme: dark) {
     #src-root {
-      --ll-accent: #6fa0d8;
-      --ll-accent-ink: #10151b;
-      --ll-accent-tint: #1d2a3a;
-      --ll-accent-wash: #1a1e25;
-      --ll-accent-line: #3f5f86;
-      --ll-accent-strong: #9cc2ea;
-      --ll-ring: rgba(111, 160, 216, .28);
-      --ll-amber: #f5b75a;
+      --lk-accent: #6fa0d8;
+      --lk-accent-ink: #10151b;
+      --lk-accent-tint: #1d2a3a;
+      --lk-accent-wash: #1a1e25;
+      --lk-accent-line: #3f5f86;
+      --lk-accent-strong: #9cc2ea;
+      --lk-ring: rgba(111, 160, 216, .28);
+      --lk-amber: #f5b75a;
 
-      --ll-ink: #f2f3f5;
-      --ll-sub: #a6adb8;
-      --ll-body: #c3c9d2;
-      --ll-muted: #8b929e;
-      --ll-faint: #7c8390;
+      --lk-ink: #f2f3f5;
+      --lk-sub: #a6adb8;
+      --lk-body: #c3c9d2;
+      --lk-muted: #8b929e;
+      --lk-faint: #7c8390;
 
-      --ll-page: #16181b;
-      --ll-surface: #1f2126;
-      --ll-raised: #262a31;
-      --ll-line: #2c3037;
-      --ll-field: #3a3f48;
-      --ll-hover: #4a5160;
-      --ll-shadow: 0 1px 2px rgba(0, 0, 0, .4);
+      --lk-page: #16181b;
+      --lk-surface: #1f2126;
+      --lk-raised: #262a31;
+      --lk-line: #2c3037;
+      --lk-field: #3a3f48;
+      --lk-hover: #4a5160;
+      --lk-shadow: 0 1px 2px rgba(0, 0, 0, .4);
 
-      --ll-ok-bg: #14301f;   --ll-ok-ink: #7ddba4;
-      --ll-bad-bg: #3a1a19;  --ll-bad-ink: #f7a49e;
-      --ll-flat-bg: #262a31; --ll-flat-ink: #aeb5c0;
+      --lk-ok-bg: #14301f;   --lk-ok-ink: #7ddba4;
+      --lk-bad-bg: #3a1a19;  --lk-bad-ink: #f7a49e;
+      --lk-flat-bg: #262a31; --lk-flat-ink: #aeb5c0;
     }
   }
 
   #src-root h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
-  #src-root .sub { font-size: 14px; line-height: 1.5; color: var(--ll-sub); margin: 0 0 18px; }
-  #src-root p { font-size: 14px; line-height: 1.55; color: var(--ll-body); }
+  #src-root .sub { font-size: 14px; line-height: 1.5; color: var(--lk-sub); margin: 0 0 18px; }
+  #src-root p { font-size: 14px; line-height: 1.55; color: var(--lk-body); }
 
-  #src-root .card { background: var(--ll-surface); border: 1px solid var(--ll-line);
-              border-radius: 14px; box-shadow: var(--ll-shadow); padding: 14px;
+  #src-root .card { background: var(--lk-surface); border: 1px solid var(--lk-line);
+              border-radius: 14px; box-shadow: var(--lk-shadow); padding: 14px;
               margin-bottom: 10px; }
 
   #src-root .section { margin-bottom: 18px; }
   #src-root .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase;
-                       letter-spacing: .06em; color: var(--ll-faint); margin: 0 0 8px 2px; }
+                       letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 8px 2px; }
 
   /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
-  #src-root .tile { display: block; width: 100%; text-align: left; background: var(--ll-surface);
-              border: 1.5px solid var(--ll-line); border-radius: 12px; padding: 13px 14px;
+  #src-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+              border: 1.5px solid var(--lk-line); border-radius: 12px; padding: 13px 14px;
               margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
-              color: var(--ll-ink);
+              color: var(--lk-ink);
               transition: border-color .12s ease, background .12s ease; }
-  #src-root .tile:hover { border-color: var(--ll-hover); }
-  #src-root .tile.sel { border-color: var(--ll-accent); background: var(--ll-accent-tint); }
+  #src-root .tile:hover { border-color: var(--lk-hover); }
+  #src-root .tile.sel { border-color: var(--lk-accent); background: var(--lk-accent-tint); }
   #src-root .tile .name { font-size: 15px; font-weight: 500; line-height: 1.3; }
-  #src-root .tile .meta { font-size: 12.5px; color: var(--ll-muted); margin-top: 3px; line-height: 1.35; }
+  #src-root .tile .meta { font-size: 12.5px; color: var(--lk-muted); margin-top: 3px; line-height: 1.35; }
 
   #src-root input[type=text], #src-root input[type=password], #src-root select {
     width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
-    border: 1.5px solid var(--ll-field); border-radius: 11px; background: var(--ll-surface);
-    color: var(--ll-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
-  /* The chevron's fill stays a literal: #8b929e is --ll-muted, which is the one
+    border: 1.5px solid var(--lk-field); border-radius: 11px; background: var(--lk-surface);
+    color: var(--lk-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
+  /* The chevron's fill stays a literal: #8b929e is --lk-muted, which is the one
      token with the same value in both schemes, and a data URI cannot read a
      custom property. */
   #src-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%238b929e' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
                background-repeat: no-repeat; background-position: right 13px center;
                background-size: 11px; padding-right: 34px; }
-  #src-root input:focus, #src-root select:focus { outline: none; border-color: var(--ll-accent);
-                                      box-shadow: 0 0 0 3px var(--ll-ring); }
+  #src-root input:focus, #src-root select:focus { outline: none; border-color: var(--lk-accent);
+                                      box-shadow: 0 0 0 3px var(--lk-ring); }
 
   #src-root .btn { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
-             border-radius: 10px; border: 1.5px solid var(--ll-field);
-             background: var(--ll-surface); color: var(--ll-ink); cursor: pointer;
+             border-radius: 10px; border: 1.5px solid var(--lk-field);
+             background: var(--lk-surface); color: var(--lk-ink); cursor: pointer;
              min-height: 40px; }
-  #src-root .btn:hover { border-color: var(--ll-hover); }
+  #src-root .btn:hover { border-color: var(--lk-hover); }
   #src-root .btn:disabled { opacity: .45; cursor: not-allowed; }
   #src-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
-                     border-radius: 12px; border: none; background: var(--ll-accent);
-                     color: var(--ll-accent-ink); cursor: pointer; min-height: 50px;
+                     border-radius: 12px; border: none; background: var(--lk-accent);
+                     color: var(--lk-accent-ink); cursor: pointer; min-height: 50px;
                      margin-top: 16px; font-family: inherit; }
   #src-root .btn-primary:disabled { opacity: .5; cursor: progress; }
 
   /* A default ground, so a .msg shown before any state class lands on it is
      still a message rather than bare text on the page. */
   #src-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 11px; font-size: 13.5px;
-             line-height: 1.5; background: var(--ll-flat-bg); color: var(--ll-flat-ink); }
-  #src-root .ok { background: var(--ll-ok-bg); color: var(--ll-ok-ink); }
-  #src-root .bad { background: var(--ll-bad-bg); color: var(--ll-bad-ink); }
-  #src-root .muted { background: var(--ll-flat-bg); color: var(--ll-flat-ink); }
+             line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+  #src-root .ok { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
+  #src-root .bad { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
+  #src-root .muted { background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
 
   #src-root ol { font-size: 14px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
-           color: var(--ll-body); }
+           color: var(--lk-body); }
   #src-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
   @media (max-width: 380px) { #src-root .grid { grid-template-columns: 1fr; } }
-  #src-root .empty { font-size: 14px; color: var(--ll-muted); padding: 12px 0; }
+  #src-root .empty { font-size: 14px; color: var(--lk-muted); padding: 12px 0; }
   /* ==== end shared base ==== */
 
   #src-root .search { margin-bottom: 16px; }
@@ -190,12 +191,12 @@
  * container's fully-equipped Homey is already on window by the time this runs,
  * so take it directly — while still accepting onHomeyReady if it does arrive.
  *
- * All four views share ONE document. That is why every CSS rule here is scoped
- * to this view's root id, and why the boot guard below lives on the root
+ * All views of a session share ONE document. That is why every CSS rule here is
+ * scoped to this view's root id, and why the boot guard below lives on the root
  * ELEMENT rather than in a global.
  */
 /**
- * The guard lives on the view's root ELEMENT, not in a global. All four views
+ * The guard lives on the view's root ELEMENT, not in a global. All views
  * share one document, and a global flag survives leaving and re-entering the
  * pairing flow — which silently blocked the second run from ever rendering.
  * A freshly injected root has no marker, so each injection boots exactly once.
@@ -392,7 +393,7 @@ window.onHomeyReady = __llBootSrc;
   if ((attempt || 0) > 100) {
     document.body.insertAdjacentHTML('afterbegin',
       '<div style="padding:12px;background:#fdeceb;color:#8f1d18;font-size:13px;">'
-      + 'Light Link could not reach the Homey pairing API on this page.</div>');
+      + 'Lightkeeper could not reach the Homey pairing API on this page.</div>');
     return;
   }
   setTimeout(function () { waitForHomey((attempt || 0) + 1); }, 50);

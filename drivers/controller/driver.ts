@@ -8,6 +8,9 @@ import { availableFunctions } from '../../lib/mapping/mapping-engine';
 import { groupByControl, type SelectableInput } from '../../lib/inputs/selectable-input';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
 import { HealthMonitor } from '../../lib/runtime/health-monitor';
+import {
+  listTargetsPayload, resolveSummary, targetLights,
+} from '../../lib/pairing/target-picker';
 
 /**
  * The Driver owns: pair/repair session handlers, UI data
@@ -87,14 +90,19 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
     // ---------------------------------------------------------- credentials
 
-    handler('getCredentialStatus', async () => this.app.credentials.getStatus());
+    handler('getCredentialStatus', async () => ({
+      ...this.app.credentials.getStatus(),
+      // The credential view is shared byte-for-byte between drivers, so it
+      // cannot know what follows it. The driver does.
+      nextView: 'source',
+    }));
 
     handler('setCredential', async (token: string) => {
       // Validating with a READ is not enough: reads succeed on credentials that
       // cannot write. Prove a write, then immediately clean it up.
       return this.app.credentials.setCredential(token, async (client: any) => {
         const folder = await client.flow.createFlowFolder({
-          flowfolder: { name: 'Light Link (checking permissions)' },
+          flowfolder: { name: 'Lightkeeper (checking permissions)' },
         });
         await client.flow.deleteFlowFolder({ id: folder.id });
       });
@@ -210,44 +218,11 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
     // -------------------------------------------------------------- targets
 
-    handler('listTargets', async () => {
-      const [lights, zones] = await Promise.all([
-        this.app.catalog.lightCandidates(),
-        this.app.catalog.allZones(),
-      ]);
-      const selected = state.target?.kind === 'devices' ? new Set(state.target.deviceIds) : new Set();
-
-      // Grouped by room: a house with 39 lights is unusable as a flat grid.
-      const byZone = new Map<string, { zoneName: string; lights: unknown[] }>();
-      for (const d of lights as any[]) {
-        const key = d.zone ?? 'unknown';
-        if (!byZone.has(key)) byZone.set(key, { zoneName: d.zoneName || 'Unassigned', lights: [] });
-        byZone.get(key)!.lights.push({
-          id: d.id,
-          name: d.name,
-          zoneName: d.zoneName,
-          available: d.available,
-          capabilities: d.capabilities.filter((c: string) =>
-            ['onoff', 'dim', 'light_temperature'].includes(c)),
-          selected: selected.has(d.id),
-        });
-      }
-
-      return {
-        rooms: [...byZone.values()]
-          .sort((a, b) => a.zoneName.localeCompare(b.zoneName))
-          .map(room => ({
-            zoneName: room.zoneName,
-            lights: (room.lights as any[]).sort((a, b) => a.name.localeCompare(b.name)),
-          })),
-        zones: zones.map((z: any) => ({ id: z.id, name: z.name })),
-        current: state.target ?? null,
-      };
-    });
+    handler('listTargets', async () => listTargetsPayload(this.app.catalog, state.target));
 
     handler('selectTargets', async (spec: TargetSpec) => {
       state.target = spec;
-      const resolved = await this.resolveSummary(spec);
+      const resolved = await resolveSummary(this.app.catalog, spec);
       return resolved;
     });
 
@@ -255,9 +230,9 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
     handler('getMapping', async () => {
       if (!state.target) throw new Error('Choose some lights first.');
-      const summary = await this.resolveSummary(state.target);
+      const summary = await resolveSummary(this.app.catalog, state.target);
       const offered = availableFunctions(summary.support);
-      const lights = await this.targetLights(state.target);
+      const lights = await targetLights(this.app.catalog, state.target);
 
       return {
         functions: offered.map(fn => ({
@@ -388,7 +363,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
       return `${source} → ${zone?.name ?? 'zone'}`;
     }
 
-    const lights = await this.targetLights(state.target);
+    const lights = await targetLights(this.app.catalog, state.target);
     if (lights.length === 0) return source;
     if (lights.length === 1) return `${source} → ${lights[0]!.name}`;
 
@@ -398,35 +373,6 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
     if (lights.length === 2) return `${source} → ${lights[0]!.name} + ${lights[1]!.name}`;
     return `${source} → ${lights.length} lights`;
-  }
-
-  /** The lights a controller targets, for per-rule subset selection. */
-  private async targetLights(spec: TargetSpec) {
-    const ids = spec.kind === 'devices'
-      ? spec.deviceIds
-      : (await this.app.catalog.devicesInZone(spec.zoneId, spec.includeSubzones))
-        .filter((d: any) => d.capabilities.includes('onoff'))
-        .map((d: any) => d.id);
-
-    const lights = await Promise.all(ids.map((id: string) => this.app.catalog.device(id)));
-    return lights.filter(Boolean).map((d: any) => ({
-      id: d.id,
-      name: d.name,
-      zoneName: d.zoneName,
-      capabilities: d.capabilities.filter((c: string) =>
-        ['onoff', 'dim', 'light_temperature'].includes(c)),
-    }));
-  }
-
-  private async resolveSummary(spec: TargetSpec) {
-    const ids = spec.kind === 'devices'
-      ? spec.deviceIds
-      : (await this.app.catalog.devicesInZone(spec.zoneId, spec.includeSubzones))
-        .filter((d: any) => d.capabilities.includes('onoff'))
-        .map((d: any) => d.id);
-
-    const support = await this.app.catalog.capabilitySummary(ids);
-    return { count: ids.length, support };
   }
 
   private buildProfile(state: SessionState): ControllerProfile {

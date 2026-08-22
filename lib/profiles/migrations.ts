@@ -47,7 +47,7 @@ export function migrateProfile(raw: unknown): MigrationResult {
     // Downgrade is not something we can do safely; refusing beats corrupting.
     throw new Error(
       `Profile schema version ${fromVersion} is newer than this app understands `
-      + `(${CURRENT_SCHEMA_VERSION}). Update Light Link.`,
+      + `(${CURRENT_SCHEMA_VERSION}). Update Lightkeeper.`,
     );
   }
 

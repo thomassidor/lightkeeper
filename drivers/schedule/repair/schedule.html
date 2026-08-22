@@ -1,0 +1,720 @@
+<style>
+  /* ==== shared base: identical in every pair view ====
+     Scoped to this view's root because all views of a session share ONE
+     document, so unscoped class names bleed between screens (see the script
+     header).
+
+     That also means these ~110 lines cannot be de-duplicated into a stylesheet
+     — there is nowhere to put one. So the duplication is made safe instead:
+     test/unit/pair-view-styles.test.ts compares every copy with the root
+     id normalised and fails on any difference. Edit this block in all
+     files, or in none of them.
+
+     Colours are tokens so that the dark scheme below restates values only,
+     never rules. A colour written as a literal anywhere past this block is a
+     token that is missing. */
+  #sch-root {
+    /* Brand. Navy is the manifest brandColor and carries both icons; amber is
+       the link accent. This flow previously used a generic #2f6fed for every
+       interactive state — a colour that appeared nowhere else the user had
+       seen, in the app or in the store listing. */
+    --lk-accent: #1f3a5f;
+    --lk-accent-ink: #ffffff;
+    --lk-accent-tint: #f1f5fa;
+    --lk-accent-wash: #fbfcfe;
+    --lk-accent-line: #cdd8e6;
+    --lk-accent-strong: #1f3a5f;
+    --lk-ring: rgba(31, 58, 95, .16);
+    --lk-amber: #f2a93b;
+
+    --lk-ink: #16181d;
+    --lk-sub: #6b7280;
+    --lk-body: #4b5563;
+    --lk-muted: #8b929e;
+    --lk-faint: #9aa1ac;
+
+    /* transparent, not white: the pairing container paints the page behind us,
+       and claiming it in light mode would flatten every card against it. The
+       dark scheme does claim it, because a white card on a dark container is
+       the one combination that reads as broken rather than merely plain. */
+    --lk-page: transparent;
+    --lk-surface: #ffffff;
+    --lk-raised: #f7f8fa;
+    --lk-line: #eceef2;
+    --lk-field: #e3e6ec;
+    --lk-hover: #c9d2e0;
+    --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
+
+    --lk-ok-bg: #eaf7ef;   --lk-ok-ink: #10633a;
+    --lk-bad-bg: #fdeceb;  --lk-bad-ink: #8f1d18;
+    --lk-flat-bg: #f4f5f7; --lk-flat-ink: #5b616e;
+
+    background: var(--lk-page);
+    padding: 18px 16px 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", sans-serif;
+    color: var(--lk-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Values only. Note the accent inverts: #1f3a5f is a dark navy and cannot
+     carry white text on a dark ground, so dark mode lightens the accent and
+     darkens the ink on top of it. */
+  @media (prefers-color-scheme: dark) {
+    #sch-root {
+      --lk-accent: #6fa0d8;
+      --lk-accent-ink: #10151b;
+      --lk-accent-tint: #1d2a3a;
+      --lk-accent-wash: #1a1e25;
+      --lk-accent-line: #3f5f86;
+      --lk-accent-strong: #9cc2ea;
+      --lk-ring: rgba(111, 160, 216, .28);
+      --lk-amber: #f5b75a;
+
+      --lk-ink: #f2f3f5;
+      --lk-sub: #a6adb8;
+      --lk-body: #c3c9d2;
+      --lk-muted: #8b929e;
+      --lk-faint: #7c8390;
+
+      --lk-page: #16181b;
+      --lk-surface: #1f2126;
+      --lk-raised: #262a31;
+      --lk-line: #2c3037;
+      --lk-field: #3a3f48;
+      --lk-hover: #4a5160;
+      --lk-shadow: 0 1px 2px rgba(0, 0, 0, .4);
+
+      --lk-ok-bg: #14301f;   --lk-ok-ink: #7ddba4;
+      --lk-bad-bg: #3a1a19;  --lk-bad-ink: #f7a49e;
+      --lk-flat-bg: #262a31; --lk-flat-ink: #aeb5c0;
+    }
+  }
+
+  #sch-root h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+  #sch-root .sub { font-size: 14px; line-height: 1.5; color: var(--lk-sub); margin: 0 0 18px; }
+  #sch-root p { font-size: 14px; line-height: 1.55; color: var(--lk-body); }
+
+  #sch-root .card { background: var(--lk-surface); border: 1px solid var(--lk-line);
+              border-radius: 14px; box-shadow: var(--lk-shadow); padding: 14px;
+              margin-bottom: 10px; }
+
+  #sch-root .section { margin-bottom: 18px; }
+  #sch-root .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase;
+                       letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 8px 2px; }
+
+  /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
+  #sch-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+              border: 1.5px solid var(--lk-line); border-radius: 12px; padding: 13px 14px;
+              margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
+              color: var(--lk-ink);
+              transition: border-color .12s ease, background .12s ease; }
+  #sch-root .tile:hover { border-color: var(--lk-hover); }
+  #sch-root .tile.sel { border-color: var(--lk-accent); background: var(--lk-accent-tint); }
+  #sch-root .tile .name { font-size: 15px; font-weight: 500; line-height: 1.3; }
+  #sch-root .tile .meta { font-size: 12.5px; color: var(--lk-muted); margin-top: 3px; line-height: 1.35; }
+
+  #sch-root input[type=text], #sch-root input[type=password], #sch-root select {
+    width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
+    border: 1.5px solid var(--lk-field); border-radius: 11px; background: var(--lk-surface);
+    color: var(--lk-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
+  /* The chevron's fill stays a literal: #8b929e is --lk-muted, which is the one
+     token with the same value in both schemes, and a data URI cannot read a
+     custom property. */
+  #sch-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%238b929e' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+               background-repeat: no-repeat; background-position: right 13px center;
+               background-size: 11px; padding-right: 34px; }
+  #sch-root input:focus, #sch-root select:focus { outline: none; border-color: var(--lk-accent);
+                                      box-shadow: 0 0 0 3px var(--lk-ring); }
+
+  #sch-root .btn { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
+             border-radius: 10px; border: 1.5px solid var(--lk-field);
+             background: var(--lk-surface); color: var(--lk-ink); cursor: pointer;
+             min-height: 40px; }
+  #sch-root .btn:hover { border-color: var(--lk-hover); }
+  #sch-root .btn:disabled { opacity: .45; cursor: not-allowed; }
+  #sch-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
+                     border-radius: 12px; border: none; background: var(--lk-accent);
+                     color: var(--lk-accent-ink); cursor: pointer; min-height: 50px;
+                     margin-top: 16px; font-family: inherit; }
+  #sch-root .btn-primary:disabled { opacity: .5; cursor: progress; }
+
+  /* A default ground, so a .msg shown before any state class lands on it is
+     still a message rather than bare text on the page. */
+  #sch-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 11px; font-size: 13.5px;
+             line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+  #sch-root .ok { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
+  #sch-root .bad { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
+  #sch-root .muted { background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+
+  #sch-root ol { font-size: 14px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+           color: var(--lk-body); }
+  #sch-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  @media (max-width: 380px) { #sch-root .grid { grid-template-columns: 1fr; } }
+  #sch-root .empty { font-size: 14px; color: var(--lk-muted); padding: 12px 0; }
+  /* ==== end shared base ==== */
+
+  #sch-root .rowhead { display: flex; align-items: baseline; justify-content: space-between;
+                  margin-bottom: 12px; }
+  #sch-root .rowhead .name { font-size: 15px; font-weight: 600; }
+  #sch-root .link { background: none; border: none; padding: 4px 0; font-family: inherit;
+               font-size: 13px; color: var(--lk-muted); cursor: pointer; }
+  #sch-root .link:hover { color: var(--lk-ink); }
+
+  #sch-root .field { margin-bottom: 14px; }
+  #sch-root .label { font-size: 12px; font-weight: 600; text-transform: uppercase;
+                letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 6px 2px; }
+
+  /* Hour and minute as two selects rather than <input type="time">: the pairing
+     webview renders the native picker differently on every platform it runs on,
+     and one of those renderings is a 13px field with no touch target. */
+  #sch-root .times { display: flex; align-items: center; gap: 6px; }
+  #sch-root .times select { width: auto; flex: 1 1 0; min-width: 0; }
+  #sch-root .times .sep { font-size: 15px; color: var(--lk-muted); flex: none; }
+  #sch-root .times .unit { font-size: 13px; color: var(--lk-muted); flex: none; }
+
+  #sch-root .tabs { display: flex; gap: 6px; margin-bottom: 10px; background: var(--lk-flat-bg);
+              padding: 4px; border-radius: 12px; }
+  #sch-root .tab { flex: 1; text-align: center; padding: 9px; border-radius: 9px;
+             font-size: 13.5px; cursor: pointer; color: var(--lk-flat-ink); }
+  #sch-root .tab.on { background: var(--lk-surface); color: var(--lk-ink); font-weight: 600;
+                box-shadow: var(--lk-shadow); }
+
+  #sch-root .days { display: flex; gap: 5px; }
+  #sch-root .day { flex: 1; text-align: center; padding: 11px 0; border-radius: 10px;
+              border: 1.5px solid var(--lk-line); background: var(--lk-surface);
+              color: var(--lk-muted); font-size: 12.5px; cursor: pointer; min-height: 44px;
+              box-sizing: border-box; font-family: inherit; }
+  #sch-root .day.on { border-color: var(--lk-accent); background: var(--lk-accent-tint);
+                 color: var(--lk-ink); font-weight: 600; }
+
+  #sch-root .window { font-size: 13px; color: var(--lk-sub); margin-top: 8px; }
+
+  #sch-root .check { display: flex; align-items: center; gap: 10px; min-height: 44px;
+               font-size: 14px; color: var(--lk-body); cursor: pointer; }
+  #sch-root .check input { width: 22px; height: 22px; margin: 0; flex: none;
+                      accent-color: var(--lk-accent); cursor: pointer; }
+
+  #sch-root .slider { display: flex; align-items: center; gap: 10px; }
+  #sch-root .slider input[type=range] { flex: 1; min-width: 0; accent-color: var(--lk-accent);
+                                   height: 28px; }
+  #sch-root .slider .value { font-size: 13px; color: var(--lk-sub); flex: none;
+                        min-width: 62px; text-align: right; }
+
+  #sch-root .acts { display: flex; gap: 7px; }
+  #sch-root .acts .btn { flex: 1; }
+  #sch-root .result { font-size: 13px; color: var(--lk-sub); margin-top: 8px; }
+  #sch-root .add { width: 100%; }
+</style>
+
+<div class="wrap" id="sch-root">
+  <h2 data-i18n="schedule.title"></h2>
+  <p class="sub" data-i18n="schedule.subtitle"></p>
+
+  <div id="sch-list"></div>
+
+  <button class="btn add" id="sch-add">Add another schedule</button>
+
+  <div class="msg muted" id="sch-summary"></div>
+  <div class="msg" id="sch-msg" style="display:none;"></div>
+
+  <button id="sch-save" class="btn-primary">Save</button>
+</div>
+
+<script type="text/javascript">
+/**
+ * Pair views are INJECTED INTO the pairing container's document — they do not
+ * get their own iframe, and they must not load homey.js themselves (a second
+ * copy overwrites window.Homey with a base object that has no emit/showView).
+ *
+ * The container calls window.onHomeyReady once, at its own page load, long
+ * before this view's script exists, so waiting to be called never fires. The
+ * container's fully-equipped Homey is already on window by the time this runs,
+ * so take it directly — while still accepting onHomeyReady if it does arrive.
+ *
+ * All views of a session share ONE document. That is why every CSS rule here is
+ * scoped to this view's root id, and why the boot guard below lives on the root
+ * ELEMENT rather than in a global.
+ */
+/**
+ * The guard lives on the view's root ELEMENT, not in a global. All views
+ * share one document, and a global flag survives leaving and re-entering the
+ * pairing flow — which silently blocked the second run from ever rendering.
+ * A freshly injected root has no marker, so each injection boots exactly once.
+ */
+function __llBootSch(Homey) {
+  var __root = document.getElementById('sch-root');
+  if (!__root || __root.dataset.llBooted === '1') return;
+  __root.dataset.llBooted = '1';
+
+  /**
+   * Reserve room for the scrollbar so expanding a section cannot resize the
+   * content.
+   *
+   * When the view grows past the pane height a scrollbar appears, the usable
+   * width drops by its thickness, and every percentage-width row re-wraps —
+   * text shifts as you expand and collapse. `scrollbar-gutter: stable` keeps
+   * the gutter reserved whether or not the bar is showing.
+   *
+   * The scrolling element belongs to the pairing container, not to us, so find
+   * it by walking up rather than guessing a selector.
+   */
+  (function stabiliseScrollbar() {
+    var scroller = null;
+    for (var el = __root.parentElement; el && el !== document.documentElement; el = el.parentElement) {
+      var overflowY = getComputedStyle(el).overflowY;
+      if (overflowY === 'auto' || overflowY === 'scroll') { scroller = el; break; }
+    }
+    var targets = scroller ? [scroller] : [document.documentElement, document.body];
+    var supported = window.CSS && CSS.supports && CSS.supports('scrollbar-gutter', 'stable');
+
+    targets.forEach(function (el) {
+      if (!el) return;
+      if (supported) el.style.scrollbarGutter = 'stable';
+      // Without gutter support, always showing the track is the stable option.
+      else if (el !== document.body) el.style.overflowY = 'scroll';
+    });
+  })();
+
+  if (typeof Homey.ready === 'function') Homey.ready();
+
+  function emit(event, data) {
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var finish = function (err, result) {
+        if (settled) return;
+        settled = true;
+        if (err) reject(err instanceof Error ? err : new Error(String(err)));
+        else resolve(result);
+      };
+      // A call that never comes back must not leave a blank screen.
+      var timer = setTimeout(function () { finish(new Error('Homey did not respond to "' + event + '"')); }, 20000);
+      var done = function (err, result) { clearTimeout(timer); finish(err, result); };
+      try {
+        var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
+        if (returned && typeof returned.then === 'function') {
+          returned.then(function (r) { done(null, r); }, function (e) { done(e); });
+        }
+      } catch (err) { done(err); }
+    });
+  }
+
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(function (el) {
+    el.placeholder = Homey.__(el.getAttribute('data-i18n-placeholder'));
+  });
+
+  var MINUTES_PER_DAY = 1440;
+  var DAY_KEYS = ['schedule.mon', 'schedule.tue', 'schedule.wed', 'schedule.thu',
+                  'schedule.fri', 'schedule.sat', 'schedule.sun'];
+
+  var model = { entries: [], support: { dim: 0, light_temperature: 0 }, maxEntries: 12 };
+  var listEl = document.getElementById('sch-list');
+  var msgEl = document.getElementById('sch-msg');
+
+  function show(cls, text) {
+    msgEl.className = 'msg ' + cls;
+    msgEl.textContent = text;
+    msgEl.style.display = 'block';
+  }
+
+  function escapeHtml(text) {
+    return String(text == null ? '' : text).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function pad(value) { return (value < 10 ? '0' : '') + value; }
+  function formatMinutes(minutes) {
+    var wrapped = ((Math.round(minutes) % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+    return pad(Math.floor(wrapped / 60)) + ':' + pad(wrapped % 60);
+  }
+
+  /** Mirrors lib/schedules/schedule-window.ts. The app re-derives it anyway. */
+  function offMinuteOf(entry) {
+    if (entry.end.kind === 'time') return entry.end.at;
+    return (entry.onAt + entry.end.minutes) % MINUTES_PER_DAY;
+  }
+  function windowLength(entry) {
+    if (entry.end.kind === 'duration') return entry.end.minutes;
+    var length = (entry.end.at - entry.onAt + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+    return length === 0 ? MINUTES_PER_DAY : length;
+  }
+
+  function newEntry() {
+    // 22:00 for two hours, every day: a defensible evening default that is
+    // never an accidentally valid 00:00.
+    return { id: 's' + Date.now() + Math.round(Math.random() * 1000),
+             onAt: 22 * 60, days: [1, 2, 3, 4, 5, 6, 7], end: { kind: 'duration', minutes: 120 } };
+  }
+
+  function options(count, selected, step, labeller) {
+    var values = [];
+    for (var value = 0; value < count; value += (step || 1)) values.push(value);
+    // A plan edited elsewhere can hold a minute this step does not land on — 22:37
+    // with a five-minute step. Showing 00 selected while the plan says 37 is the
+    // kind of quiet disagreement this app exists to avoid, so the odd value joins
+    // the list rather than being rounded behind the user's back.
+    if (values.indexOf(selected) === -1 && selected >= 0 && selected < count) {
+      values.push(selected);
+      values.sort(function (a, b) { return a - b; });
+    }
+    return values.map(function (value) {
+      return '<option value="' + value + '"' + (value === selected ? ' selected' : '') + '>'
+        + escapeHtml(labeller ? labeller(value) : pad(value)) + '</option>';
+    }).join('');
+  }
+
+  function timeSelects(entry, hourAct, minuteAct, minutes) {
+    return '<div class="times">'
+      + '<select data-act="' + hourAct + '">' + options(24, Math.floor(minutes / 60)) + '</select>'
+      + '<span class="sep">:</span>'
+      + '<select data-act="' + minuteAct + '">' + options(60, minutes % 60, 5) + '</select>'
+      + '</div>';
+  }
+
+  function durationSelects(entry) {
+    var total = entry.end.kind === 'duration' ? entry.end.minutes : 120;
+    return '<div class="times">'
+      + '<select data-act="durHours">' + options(24, Math.floor(total / 60), 1, function (v) { return String(v); }) + '</select>'
+      + '<span class="unit">' + escapeHtml(Homey.__('schedule.hoursUnit')) + '</span>'
+      + '<select data-act="durMinutes">' + options(60, total % 60, 5, function (v) { return String(v); }) + '</select>'
+      + '<span class="unit">' + escapeHtml(Homey.__('schedule.minutesUnit')) + '</span>'
+      + '</div>';
+  }
+
+  function windowText(entry) {
+    var off = offMinuteOf(entry);
+    var crosses = entry.onAt + windowLength(entry) >= MINUTES_PER_DAY;
+    return Homey.__(crosses ? 'schedule.windowNextDay' : 'schedule.window',
+      { on: formatMinutes(entry.onAt), off: formatMinutes(off) });
+  }
+
+  function brightnessText(entry) {
+    return Homey.__('schedule.percent', { percent: Math.round((entry.brightness || 0) * 100) });
+  }
+  /**
+   * Named steps rather than a percentage. Colour temperature is normalised 0-1
+   * with 0 as the WARMEST end (§6), so a percentage either contradicted the
+   * handle's position ("85% warm" with the handle at the left) or read as a
+   * quantity of a thing nobody measures in percent. Five words say it without
+   * either problem.
+   */
+  function temperatureText(entry) {
+    var value = entry.temperature || 0;
+    if (value < 0.1) return Homey.__('schedule.warmthWarmest');
+    if (value < 0.35) return Homey.__('schedule.warmthWarm');
+    if (value < 0.65) return Homey.__('schedule.warmthNeutral');
+    if (value < 0.9) return Homey.__('schedule.warmthCool');
+    return Homey.__('schedule.warmthCoolest');
+  }
+
+  function entryHtml(entry, index) {
+    var isDuration = entry.end.kind === 'duration';
+    var offMinutes = entry.end.kind === 'time' ? entry.end.at : offMinuteOf(entry);
+
+    var html = '<div class="card" data-id="' + escapeHtml(entry.id) + '">'
+      + '<div class="rowhead"><div class="name">'
+      + escapeHtml(Homey.__('schedule.number', { number: index + 1 }))
+      + '</div><button class="link" data-act="remove">'
+      + escapeHtml(Homey.__('schedule.remove')) + '</button></div>'
+
+      + '<div class="field"><div class="label">'
+      + escapeHtml(Homey.__('schedule.onAt')) + '</div>'
+      + timeSelects(entry, 'onHour', 'onMinute', entry.onAt) + '</div>'
+
+      + '<div class="field"><div class="label">'
+      + escapeHtml(Homey.__('schedule.offLabel')) + '</div>'
+      + '<div class="tabs">'
+      + '<div class="tab' + (isDuration ? ' on' : '') + '" data-act="endKind" data-kind="duration">'
+      + escapeHtml(Homey.__('schedule.afterDuration')) + '</div>'
+      + '<div class="tab' + (isDuration ? '' : ' on') + '" data-act="endKind" data-kind="time">'
+      + escapeHtml(Homey.__('schedule.atTime')) + '</div>'
+      + '</div>'
+      + (isDuration ? durationSelects(entry) : timeSelects(entry, 'offHour', 'offMinute', offMinutes))
+      + '<div class="window" data-role="window">' + escapeHtml(windowText(entry)) + '</div>'
+      + '</div>'
+
+      + '<div class="field"><div class="label">'
+      + escapeHtml(Homey.__('schedule.days')) + '</div><div class="days">';
+
+    for (var day = 1; day <= 7; day += 1) {
+      var on = entry.days.indexOf(day) !== -1;
+      html += '<button class="day' + (on ? ' on' : '') + '" data-act="day" data-day="' + day + '">'
+        + escapeHtml(Homey.__(DAY_KEYS[day - 1])) + '</button>';
+    }
+    html += '</div></div>';
+
+    if (model.support.dim > 0) {
+      html += '<div class="field">'
+        + '<label class="check"><input type="checkbox" data-act="useBrightness"'
+        + (entry.brightness !== undefined ? ' checked' : '') + ' /> <span>'
+        + escapeHtml(Homey.__('schedule.setBrightness')) + '</span></label>'
+        + '<div class="slider" data-role="brightnessSlider"'
+        + (entry.brightness === undefined ? ' style="display:none;"' : '') + '>'
+        + '<input type="range" min="5" max="100" step="5" data-act="brightness" value="'
+        + Math.round((entry.brightness === undefined ? 0.6 : entry.brightness) * 100) + '" />'
+        + '<span class="value" data-role="brightnessValue">' + escapeHtml(brightnessText(entry))
+        + '</span></div></div>';
+    }
+
+    if (model.support.light_temperature > 0) {
+      html += '<div class="field">'
+        + '<label class="check"><input type="checkbox" data-act="useTemperature"'
+        + (entry.temperature !== undefined ? ' checked' : '') + ' /> <span>'
+        + escapeHtml(Homey.__('schedule.setWarmth')) + '</span></label>'
+        + '<div class="slider" data-role="temperatureSlider"'
+        + (entry.temperature === undefined ? ' style="display:none;"' : '') + '>'
+        + '<input type="range" min="0" max="100" step="5" data-act="temperature" value="'
+        + Math.round((entry.temperature === undefined ? 0.2 : entry.temperature) * 100) + '" />'
+        + '<span class="value" data-role="temperatureValue">' + escapeHtml(temperatureText(entry))
+        + '</span></div></div>';
+    }
+
+    html += '<div class="acts">'
+      + '<button class="btn" data-act="testOn">' + escapeHtml(Homey.__('schedule.testOn')) + '</button>'
+      + '<button class="btn" data-act="testOff">' + escapeHtml(Homey.__('schedule.testOff')) + '</button>'
+      + '</div><div class="result" data-role="result"></div>';
+
+    return html + '</div>';
+  }
+
+  function summary() {
+    document.getElementById('sch-summary').textContent = Homey.__('schedule.summary', {
+      count: model.entries.length,
+      flows: model.entries.length * 2,
+    });
+    document.getElementById('sch-add').disabled = model.entries.length >= model.maxEntries;
+  }
+
+  function render() {
+    listEl.innerHTML = model.entries.map(entryHtml).join('');
+    summary();
+  }
+
+  function entryOf(element) {
+    var card = element.closest('.card');
+    if (!card) return null;
+    var id = card.getAttribute('data-id');
+    for (var i = 0; i < model.entries.length; i += 1) {
+      if (model.entries[i].id === id) return { entry: model.entries[i], card: card };
+    }
+    return null;
+  }
+
+  /**
+   * Values change in place; only structure re-renders. Re-rendering the whole
+   * list on a slider drag would drop the pointer capture mid-gesture, which
+   * reads as a slider that fights you.
+   */
+  function refreshDerived(found) {
+    var window_ = found.card.querySelector('[data-role="window"]');
+    if (window_) window_.textContent = windowText(found.entry);
+  }
+
+  listEl.addEventListener('click', function (event) {
+    var target = event.target.closest('[data-act]');
+    if (!target) return;
+    var act = target.getAttribute('data-act');
+    var found = entryOf(target);
+    if (!found) return;
+
+    if (act === 'remove') {
+      model.entries = model.entries.filter(function (e) { return e.id !== found.entry.id; });
+      render();
+      return;
+    }
+
+    if (act === 'day') {
+      var day = Number(target.getAttribute('data-day'));
+      var index = found.entry.days.indexOf(day);
+      // Never allow an empty day set: a schedule with no days is a row that
+      // looks configured and can never fire.
+      if (index === -1) found.entry.days.push(day);
+      else if (found.entry.days.length > 1) found.entry.days.splice(index, 1);
+      found.entry.days.sort(function (a, b) { return a - b; });
+      target.className = 'day' + (found.entry.days.indexOf(day) !== -1 ? ' on' : '');
+      return;
+    }
+
+    if (act === 'endKind') {
+      var kind = target.getAttribute('data-kind');
+      if (kind === found.entry.end.kind) return;
+      found.entry.end = kind === 'duration'
+        ? { kind: 'duration', minutes: Math.max(5, windowLength(found.entry)) }
+        : { kind: 'time', at: offMinuteOf(found.entry) };
+      render();
+      return;
+    }
+
+    if (act === 'testOn' || act === 'testOff') {
+      runTest(found, act === 'testOn' ? 'on' : 'off', target);
+    }
+  });
+
+  listEl.addEventListener('change', function (event) {
+    var target = event.target.closest('[data-act]');
+    if (!target) return;
+    var found = entryOf(target);
+    if (!found) return;
+    var act = target.getAttribute('data-act');
+    var value = Number(target.value);
+
+    if (act === 'onHour') found.entry.onAt = value * 60 + (found.entry.onAt % 60);
+    else if (act === 'onMinute') found.entry.onAt = Math.floor(found.entry.onAt / 60) * 60 + value;
+    else if (act === 'offHour') found.entry.end = { kind: 'time', at: value * 60 + (found.entry.end.at % 60) };
+    else if (act === 'offMinute') found.entry.end = { kind: 'time', at: Math.floor(found.entry.end.at / 60) * 60 + value };
+    else if (act === 'durHours' || act === 'durMinutes') {
+      var hours = Number(found.card.querySelector('[data-act="durHours"]').value);
+      var minutes = Number(found.card.querySelector('[data-act="durMinutes"]').value);
+      // A zero-length window cannot be what anyone meant, and the app would
+      // drop the row on save — so it is corrected here, visibly.
+      found.entry.end = { kind: 'duration', minutes: Math.max(5, hours * 60 + minutes) };
+    } else if (act === 'useBrightness') {
+      var slider = found.card.querySelector('[data-role="brightnessSlider"]');
+      if (target.checked) {
+        found.entry.brightness = Number(slider.querySelector('input').value) / 100;
+        slider.style.display = '';
+      } else {
+        delete found.entry.brightness;
+        slider.style.display = 'none';
+      }
+      found.card.querySelector('[data-role="brightnessValue"]').textContent = brightnessText(found.entry);
+    } else if (act === 'useTemperature') {
+      var tempSlider = found.card.querySelector('[data-role="temperatureSlider"]');
+      if (target.checked) {
+        found.entry.temperature = Number(tempSlider.querySelector('input').value) / 100;
+        tempSlider.style.display = '';
+      } else {
+        delete found.entry.temperature;
+        tempSlider.style.display = 'none';
+      }
+      found.card.querySelector('[data-role="temperatureValue"]').textContent = temperatureText(found.entry);
+    }
+
+    refreshDerived(found);
+  });
+
+  listEl.addEventListener('input', function (event) {
+    var target = event.target.closest('[data-act]');
+    if (!target) return;
+    var found = entryOf(target);
+    if (!found) return;
+    var act = target.getAttribute('data-act');
+
+    if (act === 'brightness') {
+      found.entry.brightness = Number(target.value) / 100;
+      found.card.querySelector('[data-role="brightnessValue"]').textContent = brightnessText(found.entry);
+    } else if (act === 'temperature') {
+      found.entry.temperature = Number(target.value) / 100;
+      found.card.querySelector('[data-role="temperatureValue"]').textContent = temperatureText(found.entry);
+    }
+  });
+
+  /**
+   * Test drives the real lights before anything is saved, so the schedules have
+   * to reach the driver first — the ephemeral runtime is built from what the
+   * driver holds, not from what the screen holds.
+   */
+  function runTest(found, boundary, button) {
+    var result = found.card.querySelector('[data-role="result"]');
+    button.disabled = true;
+    result.textContent = Homey.__('schedule.testing');
+
+    emit('setSchedules', model.entries)
+      .then(function () { return emit('test', { entryId: found.entry.id, boundary: boundary }); })
+      .then(function (outcome) {
+        result.textContent = Homey.__('schedule.tested', {
+          writes: outcome.writes, targets: outcome.targets,
+        });
+      })
+      .catch(function (err) { result.textContent = err.message || String(err); })
+      .then(function () { button.disabled = false; });
+  }
+
+  document.getElementById('sch-add').addEventListener('click', function () {
+    if (model.entries.length >= model.maxEntries) {
+      return show('bad', Homey.__('schedule.atMost', { max: model.maxEntries }));
+    }
+    model.entries.push(newEntry());
+    render();
+  });
+
+  document.getElementById('sch-save').addEventListener('click', function () {
+    var button = document.getElementById('sch-save');
+    if (model.entries.length === 0) return show('bad', Homey.__('schedule.needOne'));
+
+    button.disabled = true;
+    show('muted', Homey.__('schedule.saving'));
+
+    emit('setSchedules', model.entries)
+      .then(function (result) {
+        if (result.dropped && result.dropped.length > 0) {
+          // Named rather than silently corrected: the user is looking at the row.
+          throw new Error(Homey.__('schedule.droppedSome', { count: result.dropped.length }));
+        }
+        return emit('save', '');
+      })
+      .then(function (result) {
+        if (!result.created) { Homey.done(); return; }
+        // createDevice alone does NOT add the device — the view must also emit
+        // 'add_device' with the device data.
+        return Homey.createDevice(result.device)
+          .then(function (deviceData) {
+            return emit('add_device', deviceData || result.device)
+              .catch(function () { /* some SDK builds add it for us */ });
+          })
+          .then(function () { Homey.done(); });
+      })
+      .catch(function (err) {
+        button.disabled = false;
+        show('bad', err.message || String(err));
+      });
+  });
+
+  document.getElementById('sch-add').textContent = Homey.__('schedule.add') || 'Add another schedule';
+  document.getElementById('sch-save').textContent = Homey.__('schedule.save') || 'Save';
+
+  emit('getSchedule').then(function (data) {
+    model.support = data.support || model.support;
+    model.maxEntries = data.maxEntries || model.maxEntries;
+    model.entries = (data.entries || []).map(function (entry) {
+      // Stored days are null for "every day"; the chips are always explicit.
+      return {
+        id: entry.id,
+        onAt: entry.onAt,
+        days: entry.days === null || entry.days === undefined ? [1, 2, 3, 4, 5, 6, 7] : entry.days,
+        end: entry.end,
+        brightness: entry.brightness,
+        temperature: entry.temperature,
+      };
+    });
+
+    // Pairing starts with one row already open: an empty screen with an "add"
+    // button makes the user do a step the app could have done for them.
+    if (model.entries.length === 0) model.entries.push(newEntry());
+    render();
+
+    if (data.timezone) {
+      show('muted', Homey.__('schedule.timezone', { zone: data.timezone }));
+    }
+  }).catch(function (err) {
+    show('bad', err.message || String(err));
+  });
+
+}
+
+window.onHomeyReady = __llBootSch;
+
+(function waitForHomey(attempt) {
+  if (window.Homey && typeof window.Homey.emit === 'function') return __llBootSch(window.Homey);
+  if ((attempt || 0) > 100) {
+    // The one literal-colour exception in this file, and the reason the style
+    // test only inspects <style>: this banner has to render when nothing else
+    // in the view has booted, tokens included.
+    document.body.insertAdjacentHTML('afterbegin', '<div style="padding:12px;background:#fdeceb;color:#8f1d18;font-size:13px;">'
+      + 'Lightkeeper could not reach the Homey pairing API on this page.</div>');
+    return;
+  }
+  setTimeout(function () { waitForHomey((attempt || 0) + 1); }, 50);
+})(0);
+</script>

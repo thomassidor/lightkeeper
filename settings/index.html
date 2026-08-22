@@ -13,83 +13,83 @@
        strings, and a VS-Code-dark diagnostics block that was the only dark
        thing in a light UI. */
     :root {
-      --ll-accent: #1f3a5f;
-      --ll-accent-ink: #ffffff;
-      --ll-accent-tint: #f1f5fa;
-      --ll-accent-strong: #1f3a5f;
-      --ll-ring: rgba(31, 58, 95, .16);
-      --ll-amber: #f2a93b;
+      --lk-accent: #1f3a5f;
+      --lk-accent-ink: #ffffff;
+      --lk-accent-tint: #f1f5fa;
+      --lk-accent-strong: #1f3a5f;
+      --lk-ring: rgba(31, 58, 95, .16);
+      --lk-amber: #f2a93b;
 
-      --ll-ink: #16181d;
-      --ll-sub: #6b7280;
-      --ll-body: #4b5563;
-      --ll-muted: #8b929e;
-      --ll-faint: #9aa1ac;
+      --lk-ink: #16181d;
+      --lk-sub: #6b7280;
+      --lk-body: #4b5563;
+      --lk-muted: #8b929e;
+      --lk-faint: #9aa1ac;
 
       /* transparent in light so the Homey settings frame keeps painting the
          page behind us; claimed in dark, because a white card on a dark frame
          is the one combination that reads as broken. */
-      --ll-page: transparent;
-      --ll-surface: #ffffff;
-      --ll-raised: #f7f8fa;
-      --ll-line: #eceef2;
-      --ll-field: #e3e6ec;
-      --ll-hover: #c9d2e0;
-      --ll-shadow: 0 1px 2px rgba(16, 24, 40, .05);
+      --lk-page: transparent;
+      --lk-surface: #ffffff;
+      --lk-raised: #f7f8fa;
+      --lk-line: #eceef2;
+      --lk-field: #e3e6ec;
+      --lk-hover: #c9d2e0;
+      --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
 
-      --ll-ok-bg: #eaf7ef;   --ll-ok-ink: #10633a;
-      --ll-warn-bg: #fef3c7; --ll-warn-ink: #92400e;
-      --ll-bad-bg: #fdeceb;  --ll-bad-ink: #8f1d18;
-      --ll-flat-bg: #f4f5f7; --ll-flat-ink: #5b616e;
+      --lk-ok-bg: #eaf7ef;   --lk-ok-ink: #10633a;
+      --lk-warn-bg: #fef3c7; --lk-warn-ink: #92400e;
+      --lk-bad-bg: #fdeceb;  --lk-bad-ink: #8f1d18;
+      --lk-flat-bg: #f4f5f7; --lk-flat-ink: #5b616e;
 
-      --ll-code-bg: #f4f5f7; --ll-code-ink: #16181d;
+      --lk-code-bg: #f4f5f7; --lk-code-ink: #16181d;
     }
 
     @media (prefers-color-scheme: dark) {
       :root {
-        --ll-accent: #6fa0d8;
-        --ll-accent-ink: #10151b;
-        --ll-accent-tint: #1d2a3a;
-        --ll-accent-strong: #9cc2ea;
-        --ll-ring: rgba(111, 160, 216, .28);
-        --ll-amber: #f5b75a;
+        --lk-accent: #6fa0d8;
+        --lk-accent-ink: #10151b;
+        --lk-accent-tint: #1d2a3a;
+        --lk-accent-strong: #9cc2ea;
+        --lk-ring: rgba(111, 160, 216, .28);
+        --lk-amber: #f5b75a;
 
-        --ll-ink: #f2f3f5;
-        --ll-sub: #a6adb8;
-        --ll-body: #c3c9d2;
-        --ll-muted: #8b929e;
-        --ll-faint: #7c8390;
+        --lk-ink: #f2f3f5;
+        --lk-sub: #a6adb8;
+        --lk-body: #c3c9d2;
+        --lk-muted: #8b929e;
+        --lk-faint: #7c8390;
 
-        --ll-page: #16181b;
-        --ll-surface: #1f2126;
-        --ll-raised: #262a31;
-        --ll-line: #2c3037;
-        --ll-field: #3a3f48;
-        --ll-hover: #4a5160;
-        --ll-shadow: 0 1px 2px rgba(0, 0, 0, .4);
+        --lk-page: #16181b;
+        --lk-surface: #1f2126;
+        --lk-raised: #262a31;
+        --lk-line: #2c3037;
+        --lk-field: #3a3f48;
+        --lk-hover: #4a5160;
+        --lk-shadow: 0 1px 2px rgba(0, 0, 0, .4);
 
-        --ll-ok-bg: #14301f;   --ll-ok-ink: #7ddba4;
-        --ll-warn-bg: #3a2d10; --ll-warn-ink: #f0c669;
-        --ll-bad-bg: #3a1a19;  --ll-bad-ink: #f7a49e;
-        --ll-flat-bg: #262a31; --ll-flat-ink: #aeb5c0;
+        --lk-ok-bg: #14301f;   --lk-ok-ink: #7ddba4;
+        --lk-warn-bg: #3a2d10; --lk-warn-ink: #f0c669;
+        --lk-bad-bg: #3a1a19;  --lk-bad-ink: #f7a49e;
+        --lk-flat-bg: #262a31; --lk-flat-ink: #aeb5c0;
 
-        --ll-code-bg: #101215; --ll-code-ink: #d7dbe0;
+        --lk-code-bg: #101215; --lk-code-ink: #d7dbe0;
       }
     }
 
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
                         "Helvetica Neue", sans-serif;
-           background: var(--ll-page); color: var(--ll-ink); padding: 16px;
+           background: var(--lk-page); color: var(--lk-ink); padding: 16px;
            -webkit-font-smoothing: antialiased; }
 
     /* Eyebrow labels, as in the pair views, rather than small bold headings. */
     h2 { font-size: 12px; font-weight: 600; text-transform: uppercase;
-         letter-spacing: .06em; color: var(--ll-faint); margin: 24px 0 8px 2px; }
+         letter-spacing: .06em; color: var(--lk-faint); margin: 24px 0 8px 2px; }
     h2:first-of-type { margin-top: 0; }
-    p { font-size: 13px; line-height: 1.55; color: var(--ll-body); }
+    p { font-size: 13px; line-height: 1.55; color: var(--lk-body); }
 
-    .card { background: var(--ll-surface); border: 1px solid var(--ll-line);
-            border-radius: 14px; box-shadow: var(--ll-shadow); padding: 14px;
+    .card { background: var(--lk-surface); border: 1px solid var(--lk-line);
+            border-radius: 14px; box-shadow: var(--lk-shadow); padding: 14px;
             margin-bottom: 10px; }
 
     /* A default ground, so a message shown before a state class lands on it is
@@ -100,32 +100,32 @@
        `className = 'msg ready'` painted flat grey and the whole page reported
        success, failure and progress in one indistinguishable colour. */
     .msg { margin-top: 10px; padding: 11px 13px; border-radius: 11px; font-size: 13px;
-           line-height: 1.5; background: var(--ll-flat-bg); color: var(--ll-flat-ink); }
+           line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
 
     /* Shared by the state pills and by .msg blocks: geometry comes from .state
        or .msg, the colour pair from here. */
     .state { display: inline-block; padding: 3px 9px; border-radius: 999px;
              font-size: 11px; font-weight: 600; }
-    .ready { background: var(--ll-ok-bg); color: var(--ll-ok-ink); }
-    .partial { background: var(--ll-warn-bg); color: var(--ll-warn-ink); }
-    .broken { background: var(--ll-bad-bg); color: var(--ll-bad-ink); }
-    .flat { background: var(--ll-flat-bg); color: var(--ll-flat-ink); }
+    .ready { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
+    .partial { background: var(--lk-warn-bg); color: var(--lk-warn-ink); }
+    .broken { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
+    .flat { background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
 
-    input { width: 100%; padding: 12px 13px; border: 1.5px solid var(--ll-field);
-            border-radius: 11px; box-sizing: border-box; background: var(--ll-surface);
-            color: var(--ll-ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    input { width: 100%; padding: 12px 13px; border: 1.5px solid var(--lk-field);
+            border-radius: 11px; box-sizing: border-box; background: var(--lk-surface);
+            color: var(--lk-ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
             font-size: 12px; }
-    input:focus { outline: none; border-color: var(--ll-accent);
-                  box-shadow: 0 0 0 3px var(--ll-ring); }
+    input:focus { outline: none; border-color: var(--lk-accent);
+                  box-shadow: 0 0 0 3px var(--lk-ring); }
 
     button { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
-             border-radius: 10px; border: 1.5px solid var(--ll-field);
-             background: var(--ll-surface); color: var(--ll-ink); cursor: pointer;
+             border-radius: 10px; border: 1.5px solid var(--lk-field);
+             background: var(--lk-surface); color: var(--lk-ink); cursor: pointer;
              min-height: 40px; }
-    button:hover { border-color: var(--ll-hover); }
+    button:hover { border-color: var(--lk-hover); }
     button:disabled { opacity: .45; cursor: not-allowed; }
-    .primary { background: var(--ll-accent); color: var(--ll-accent-ink);
-               border-color: var(--ll-accent); font-weight: 600; }
+    .primary { background: var(--lk-accent); color: var(--lk-accent-ink);
+               border-color: var(--lk-accent); font-weight: 600; }
 
     .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 
@@ -133,17 +133,17 @@
        row.style.cssText in the render loop, which put the styling of the two
        busiest lists in the file out of reach of both the token palette and
        anyone reading the CSS. */
-    .entry { padding: 7px 0; border-bottom: 1px solid var(--ll-line); font-size: 12px; }
+    .entry { padding: 7px 0; border-bottom: 1px solid var(--lk-line); font-size: 12px; }
     .entry:last-child { border-bottom: none; }
     .entry code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-                  color: var(--ll-body); }
-    .entry-error { color: var(--ll-bad-ink); margin-top: 3px; }
+                  color: var(--lk-body); }
+    .entry-error { color: var(--lk-bad-ink); margin-top: 3px; }
     .entry-meta { margin: 6px 0 0; }
-    .entry-sub { margin: 4px 0 0; color: var(--ll-muted); }
+    .entry-sub { margin: 4px 0 0; color: var(--lk-muted); }
     /* First child of a card, so the card's own padding is the only spacing. */
     .tight { margin: 0; }
 
-    pre { margin-top: 14px; background: var(--ll-code-bg); color: var(--ll-code-ink);
+    pre { margin-top: 14px; background: var(--lk-code-bg); color: var(--lk-code-ink);
           padding: 12px; border-radius: 11px; font-size: 11px; max-height: 320px;
           overflow: auto; white-space: pre-wrap; word-break: break-word;
           font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -177,6 +177,9 @@
 
 <h2 data-i18n="settings.controllers"></h2>
 <div id="controllers"></div>
+
+<h2 data-i18n="settings.schedules"></h2>
+<div id="schedules"></div>
 
 <h2 data-i18n="settings.flowsTitle"></h2>
 <div class="card">
@@ -325,36 +328,95 @@
         });
       }
 
-      var list = document.getElementById('controllers');
-      list.innerHTML = '';
-      if (!status.controllers.length) {
-        var empty = document.createElement('p');
-        empty.textContent = t('noControllers');
-        list.appendChild(empty);
-        return;
-      }
-      status.controllers.forEach(function (controller) {
-        var el = document.createElement('div');
-        el.className = 'card';
-        el.innerHTML = '<span class="state ' + stateClass(controller.state) + '">'
-          + escapeHtml(stateLabel(controller.state)) + '</span> '
-          + '<strong>' + escapeHtml(controller.sourceName || t('controllerFallback')) + '</strong>'
-          + '<p class="entry-meta">'
-          + escapeHtml(t('mappingsAndFlows', {
-            mappings: controller.mappings,
-            flows: controller.managedFlows,
-          }))
-          + (controller.schedulerReady === false
-            ? ' &middot; <strong>' + escapeHtml(t('notStarted')) + '</strong>'
-            : '')
-          + '</p>'
-          + '<p class="entry-sub">'
-          + escapeHtml(t('controls', {
-            names: (controller.targetNames || []).join(', ') || t('noLights'),
-          }))
-          + '</p>';
-        list.appendChild(el);
-      });
+      renderControllers(status.controllers || []);
+      renderSchedules(status.schedules || []);
+    });
+  }
+
+  function renderControllers(controllers) {
+    var list = document.getElementById('controllers');
+    list.innerHTML = '';
+    if (!controllers.length) {
+      var empty = document.createElement('p');
+      empty.textContent = t('noControllers');
+      list.appendChild(empty);
+      return;
+    }
+    controllers.forEach(function (controller) {
+      var el = document.createElement('div');
+      el.className = 'card';
+      el.innerHTML = '<span class="state ' + stateClass(controller.state) + '">'
+        + escapeHtml(stateLabel(controller.state)) + '</span> '
+        + '<strong>' + escapeHtml(controller.sourceName || t('controllerFallback')) + '</strong>'
+        + '<p class="entry-meta">'
+        + escapeHtml(t('mappingsAndFlows', {
+          mappings: controller.mappings,
+          flows: controller.managedFlows,
+        }))
+        + (controller.schedulerReady === false
+          ? ' &middot; <strong>' + escapeHtml(t('notStarted')) + '</strong>'
+          : '')
+        + '</p>'
+        + '<p class="entry-sub">'
+        + escapeHtml(t('controls', {
+          names: (controller.targetNames || []).join(', ') || t('noLights'),
+        }))
+        + '</p>';
+      list.appendChild(el);
+    });
+  }
+
+  /** Weekday names come from the schedule screen's own keys, not settings'. */
+  var DAY_KEYS = ['schedule.mon', 'schedule.tue', 'schedule.wed', 'schedule.thu',
+                  'schedule.fri', 'schedule.sat', 'schedule.sun'];
+
+  function daysText(days) {
+    // The runtime sends the string 'every day' for an unrestricted schedule and
+    // an array of ISO weekdays otherwise.
+    if (!days || typeof days === 'string') return t('scheduleEveryDay');
+    return days.map(function (day) { return HomeyRef.__(DAY_KEYS[day - 1]); }).join(', ');
+  }
+
+  function renderSchedules(schedules) {
+    var list = document.getElementById('schedules');
+    list.innerHTML = '';
+    if (!schedules.length) {
+      var empty = document.createElement('p');
+      empty.textContent = t('noSchedules');
+      list.appendChild(empty);
+      return;
+    }
+    schedules.forEach(function (schedule) {
+      // Paused is not a fault, so it gets its own label rather than borrowing
+      // the controller's "Disabled".
+      var label = schedule.enabled === false ? t('statePaused') : stateLabel(schedule.state);
+      var cls = schedule.enabled === false ? 'flat' : stateClass(schedule.state);
+
+      var rows = (schedule.entries || []).map(function (entry) {
+        return escapeHtml(t('scheduleWindow', { on: entry.on, off: entry.off }))
+          + ' &middot; ' + escapeHtml(daysText(entry.days))
+          + (entry.active ? ' &middot; <strong>' + escapeHtml(t('scheduleActiveNow')) + '</strong>' : '');
+      }).join('<br />');
+
+      var el = document.createElement('div');
+      el.className = 'card';
+      el.innerHTML = '<span class="state ' + cls + '">' + escapeHtml(label) + '</span> '
+        + '<strong>' + escapeHtml(schedule.name || t('controllerFallback')) + '</strong>'
+        + '<p class="entry-meta">' + (rows || escapeHtml(t('noSchedules'))) + '</p>'
+        + '<p class="entry-sub">'
+        + escapeHtml(t('controls', {
+          names: (schedule.targetNames || []).join(', ') || t('noLights'),
+        }))
+        + ' &middot; ' + escapeHtml(t('scheduleFlows', { flows: schedule.managedFlows }))
+        + '</p>'
+        // Which clock the times above are read against. "It fired an hour out"
+        // is almost always this line.
+        + '<p class="entry-sub">'
+        + escapeHtml(t('scheduleClock', {
+          local: schedule.localTime || '?', zone: schedule.timezone || '?',
+        }))
+        + '</p>';
+      list.appendChild(el);
     });
   }
 

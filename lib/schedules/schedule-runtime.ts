@@ -1,0 +1,454 @@
+import type { HomeyApiService } from '../homey-api-service';
+import { credentialFailureKey, redactKeyMaterial } from '../credential-service';
+import type { DeviceCatalog } from '../device-catalog';
+import type { FlowBridgeManager } from '../bridge/flow-bridge-manager';
+import { CommandScheduler } from '../outputs/command-scheduler';
+import { LightTargetAdapter } from '../outputs/light-target-adapter';
+import { TargetResolver } from '../outputs/target-resolver';
+import { TargetStateCache } from '../outputs/target-state-cache';
+import { planIntent, type PlannedWrite } from '../outputs/intent-planner';
+import { toDevice } from '../outputs/light-intent';
+import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
+import type { ControllerState, StateDetail } from '../profiles/controller-profile';
+import { assessTargets } from '../runtime/target-health';
+import { describeClock, localNow } from './local-time';
+import { bindingsForPlan, parseEventKey } from './schedule-bindings';
+import { activeWindowStartDay, boundaryDayMatches, offMinuteOf } from './schedule-window';
+import type { TimeCardDiscovery } from './time-card-discovery';
+import {
+  formatMinutes,
+  type ScheduleBoundary,
+  type ScheduleEntry,
+  type SchedulePlan,
+} from './schedule-types';
+
+/**
+ * One light schedule, live.
+ *
+ * There is deliberately NO timer in here. The generated Flows are the clock: the
+ * Homey's own Flow engine fires them, which means DST, clock changes, restarts
+ * and re-arming are all its problem rather than ours, and a schedule is
+ * inspectable in the Flow list like everything else this app builds. What the
+ * runtime owns is the half a Flow cannot express — whether today is one of this
+ * schedule's days, whether it is paused, and what "on" means for lights that may
+ * not all support dimming.
+ *
+ * Everything reached from here is shared with the remote controller: the same
+ * target resolver, capability cache, write planner and write queue.
+ */
+
+export interface ScheduleRuntimeDeps {
+  api: HomeyApiService;
+  catalog: DeviceCatalog;
+  bridge: FlowBridgeManager;
+  /** Memoised by the manager: one enumeration per app run, not per schedule. */
+  timeCard: () => Promise<TimeCardDiscovery>;
+  /** The Homey's IANA timezone, or undefined to fall back to process-local. */
+  timezone: () => string | undefined;
+  /** The device's name, which appears in the generated Flows' titles. */
+  displayName: () => string;
+  now?: () => number;
+  log: (...args: unknown[]) => void;
+  onStateChange: (state: ControllerState, detail?: StateDetail) => void;
+  /**
+   * Separate from onStateChange for the same reason the controller keeps them
+   * apart: reconciliation can learn new managed-flow references while the state
+   * never changes, and unpersisted references leak Flows on every restart.
+   */
+  onPlanChange: (plan: SchedulePlan) => void;
+}
+
+export interface ScheduleAction {
+  at: number;
+  entryId: string;
+  boundary: ScheduleBoundary;
+  writes: number;
+  skipped: number;
+  note?: string;
+}
+
+export class ScheduleRuntime {
+  private readonly cache = new TargetStateCache();
+  private readonly adapter: LightTargetAdapter;
+  private readonly resolver: TargetResolver;
+  private scheduler: CommandScheduler | null = null;
+  private targetIds: string[] = [];
+  private targetNames: string[] = [];
+  private state: ControllerState = 'disabled';
+  private lastAction: ScheduleAction | null = null;
+  private lastRejection: { at: number; eventKey: string; reason: string } | null = null;
+  /**
+   * Whether the last reconciliation left the Flows in a state worth trusting.
+   *
+   * assessHealth() only knows about targets, so without this it cheerfully
+   * reported 'ready' straight over the top of a "no time trigger card on this
+   * Homey" or a dead-key verdict that reconciliation had just set — the schedule
+   * looked healthy and never fired. Same reasoning as the controller runtime's
+   * refusal to let a health check declare a failed runtime ready.
+   */
+  private flowsHealthy = true;
+
+  constructor(
+    readonly controllerId: string,
+    private plan: SchedulePlan,
+    private readonly deps: ScheduleRuntimeDeps,
+  ) {
+    this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log);
+    this.resolver = new TargetResolver(deps.catalog);
+  }
+
+  get currentState(): ControllerState { return this.state; }
+  get currentPlan(): SchedulePlan { return this.plan; }
+
+  private now(): number {
+    return this.deps.now ? this.deps.now() : Date.now();
+  }
+
+  async start(): Promise<void> {
+    await this.buildRuntime();
+    // Reconciled even while paused: pausing is "do not act", not "throw the
+    // Flows away". Deleting and recreating two Flows per schedule on every pause
+    // would churn the user's Flow list and lose any folder they moved them to.
+    await this.reconcileFlows();
+    await this.assessHealth();
+    await this.catchUp();
+  }
+
+  /** Targets, capability cache and write queue. No flows, for the Test control. */
+  async startWithoutFlows(): Promise<void> {
+    await this.buildRuntime();
+  }
+
+  private async buildRuntime(): Promise<void> {
+    const resolved = await this.resolver.resolve(this.plan.target);
+    this.targetIds = resolved.devices.map(d => d.id);
+    this.targetNames = resolved.devices.map(d => `${d.name} (${d.zoneName})`);
+    this.resolver.primeCache(resolved.devices, this.cache);
+
+    this.scheduler = new CommandScheduler({
+      minWriteIntervalMs: DEFAULT_BEHAVIOR.minWriteIntervalMs,
+      onError: (deviceId, capability, error) =>
+        this.deps.log(`Write failed on ${deviceId}/${capability}:`, (error as Error)?.message),
+    }, (deviceId, capability, value, options) =>
+      this.adapter.write(deviceId, capability, value, options));
+  }
+
+  /**
+   * Two generated Flows per schedule, reconciled through exactly the same path a
+   * remote's Flows take.
+   *
+   * The fingerprint is the time card's own identity: if a firmware update moves
+   * the card, every schedule Flow is rebuilt against the new one instead of
+   * silently pointing at a card that no longer exists.
+   */
+  async reconcileFlows(): Promise<void> {
+    if (this.plan.entries.length === 0) return;
+
+    try {
+      this.flowsHealthy = true;
+
+      const { card, candidates } = await this.deps.timeCard();
+      if (!card) {
+        this.flowsHealthy = false;
+        this.deps.log(
+          'No usable time trigger card on this Homey. Candidates seen:',
+          candidates.map(c => `${c.id} (${c.args})`).join(' | ') || 'none',
+        );
+        this.setState('needs_repair', { key: 'state.noTimeCard' });
+        return;
+      }
+
+      const result = await this.deps.bridge.sync({
+        controllerId: this.controllerId,
+        sourceName: this.deps.displayName(),
+        fingerprint: `time:${card.id}:${card.argument}`,
+        mapped: bindingsForPlan(this.plan.entries, card),
+        existing: this.plan.managedFlows,
+      });
+
+      const before = JSON.stringify(this.plan.managedFlows);
+      this.plan = { ...this.plan, managedFlows: result.references };
+      // Persisting unconditionally emits device.update, which invalidates the
+      // catalog, which lands back in onCatalogChange — the loop the controller
+      // runtime documents at the same spot.
+      if (JSON.stringify(result.references) !== before) this.deps.onPlanChange(this.plan);
+
+      if (result.userEdited.length > 0) {
+        this.flowsHealthy = false;
+        this.setState('needs_repair', { key: 'state.flowEdited' });
+      }
+
+      this.deps.log(
+        `Schedule flows reconciled: ${result.created} created, ${result.reused} reused, `
+        + `${result.deleted} deleted`,
+      );
+    } catch (error) {
+      this.flowsHealthy = false;
+      const credential = this.deps.api.credentials.getStatus();
+      if (credential.present && !credential.valid) {
+        this.setState('needs_credential', {
+          key: credentialFailureKey(credential.failure),
+          ...(credential.hint ? { text: credential.hint } : {}),
+        });
+      } else {
+        // Redacted: this text reaches the device's unavailable message, and an
+        // upstream error can quote the API key back inside its own message.
+        this.setState('needs_repair', {
+          text: redactKeyMaterial(String((error as Error)?.message ?? '')),
+        });
+      }
+    }
+  }
+
+  /** Targets present, key still able to write — in that order of severity. */
+  async assessHealth(): Promise<void> {
+    if (!this.plan.enabled) {
+      this.setState('disabled');
+      return;
+    }
+
+    // Reconciliation knows things this check does not, so its verdict stands
+    // until a later reconcile succeeds.
+    if (!this.flowsHealthy) return;
+
+    if (this.plan.managedFlows.length > 0 && !this.deps.api.credentials.getStatus().valid) {
+      this.setState('needs_credential', { key: 'state.needsCredential' });
+      return;
+    }
+
+    const assessment = await assessTargets(this.deps.catalog, this.plan.target);
+    this.setState(assessment.state, assessment.detail);
+  }
+
+  /**
+   * A window that began while the app was down.
+   *
+   * Its on-Flow has already fired into nothing and will not fire again until
+   * tomorrow, so without this a restart at 22:01 means no evening light at all.
+   * The reverse case is deliberately NOT handled: a window that ENDED while we
+   * were down leaves the lights as they are. Switching a user's lights off at app
+   * start, on the guess that we might once have switched them on, is a worse
+   * surprise than the one it prevents — and it is stated as a limit in the README
+   * rather than hidden.
+   */
+  async catchUp(): Promise<void> {
+    if (!this.plan.enabled) return;
+
+    const clock = localNow(this.deps.timezone(), this.now());
+    for (const entry of this.plan.entries) {
+      if (activeWindowStartDay(entry, clock) === null) continue;
+      this.deps.log(
+        `Catching up schedule ${entry.id}: ${formatMinutes(entry.onAt)}–`
+        + `${formatMinutes(offMinuteOf(entry))} contains ${describeClock(clock)}`,
+      );
+      await this.apply(entry, 'on', 'catch-up');
+    }
+  }
+
+  /**
+   * Entry point for a boundary event arriving from a generated Flow.
+   *
+   * Fails closed with a reason for each refusal. Generated flow arguments are
+   * user-editable, so "the Flow fired" is never on its own permission to write to
+   * anyone's lights.
+   */
+  handleEvent(eventKey: string): { accepted: boolean; reason?: string } {
+    const outcome = this.validate(eventKey);
+    if (!outcome.accepted) {
+      this.lastRejection = { at: this.now(), eventKey, reason: outcome.reason ?? 'refused' };
+      return outcome;
+    }
+
+    const { entry, boundary } = outcome;
+    void this.apply(entry, boundary);
+    return { accepted: true };
+  }
+
+  private validate(eventKey: string):
+  | { accepted: true; entry: ScheduleEntry; boundary: ScheduleBoundary }
+  | { accepted: false; reason: string } {
+    const parsed = parseEventKey(eventKey);
+    if (!parsed) return { accepted: false, reason: `"${eventKey}" is not a schedule event key` };
+
+    if (!this.plan.enabled) return { accepted: false, reason: 'this schedule is paused' };
+
+    const entry = this.plan.entries.find(e => e.id === parsed.entryId);
+    if (!entry) {
+      return {
+        accepted: false,
+        reason: `schedule "${parsed.entryId}" is not in this device's plan of ${this.plan.entries.length}`,
+      };
+    }
+
+    const clock = localNow(this.deps.timezone(), this.now());
+    if (!boundaryDayMatches(entry, parsed.boundary, clock.isoWeekday)) {
+      return {
+        accepted: false,
+        reason: `${describeClock(clock)} is not one of this schedule's days`,
+      };
+    }
+
+    return { accepted: true, entry, boundary: parsed.boundary };
+  }
+
+  /** Run one boundary now, whatever the clock says. Used by the Test control. */
+  async testEntry(entryId: string, boundary: ScheduleBoundary): Promise<{ writes: number; skipped: number; targets: number }> {
+    const entry = this.plan.entries.find(e => e.id === entryId);
+    if (!entry) throw new Error('That schedule is no longer in the plan.');
+
+    const result = await this.apply(entry, boundary, 'test');
+    await this.scheduler?.drain();
+    return { ...result, targets: this.targetIds.length };
+  }
+
+  private async apply(
+    entry: ScheduleEntry,
+    boundary: ScheduleBoundary,
+    note?: string,
+  ): Promise<{ writes: number; skipped: number }> {
+    if (this.targetIds.length === 0) {
+      this.lastAction = { at: this.now(), entryId: entry.id, boundary, writes: 0, skipped: 0, note: 'no targets' };
+      return { writes: 0, skipped: 0 };
+    }
+
+    // Re-read live state first. The catalog is cached and only invalidates on
+    // Homey events, so planning against a stale cache is how a group action ends
+    // up deciding "nothing is on" hours after the fact.
+    await Promise.all(this.targetIds.map(id => this.adapter.refresh(id)));
+
+    const plan = boundary === 'on' ? this.planOn(entry) : this.planOff();
+
+    if (!this.scheduler) {
+      // Recorded rather than swallowed: an intent counted as N writes while
+      // nothing was queued looks exactly like a working app with no effect.
+      this.deps.log('No scheduler: the schedule runtime is not started, so writes were dropped');
+      this.lastAction = {
+        at: this.now(), entryId: entry.id, boundary,
+        writes: 0, skipped: plan.skipped, note: 'dropped — runtime not started',
+      };
+      return { writes: 0, skipped: plan.skipped };
+    }
+
+    this.scheduler.submit(plan.writes);
+    this.lastAction = {
+      at: this.now(), entryId: entry.id, boundary,
+      writes: plan.writes.length, skipped: plan.skipped,
+      ...(note ? { note } : {}),
+    };
+    return { writes: plan.writes.length, skipped: plan.skipped };
+  }
+
+  /**
+   * "On" is up to three intents against the same lights: power, then brightness,
+   * then warmth. They are composed rather than expressed as one new intent type
+   * because the planner already knows how to skip a target that cannot dim, and
+   * the write queue already orders onoff before dim so the level lands on a lit
+   * lamp. Brightness is stored perceptually, so it converts through toDevice()
+   * here — 40% means 40% of perceived brightness, as it does everywhere else.
+   */
+  private planOn(entry: ScheduleEntry): { writes: PlannedWrite[]; skipped: number } {
+    const plans = [planIntent({ type: 'power', value: true }, this.targetIds, this.cache, DEFAULT_BEHAVIOR)];
+
+    if (entry.brightness !== undefined) {
+      plans.push(planIntent(
+        { type: 'brightness_absolute', value: toDevice(entry.brightness) },
+        this.targetIds, this.cache, DEFAULT_BEHAVIOR,
+      ));
+    }
+    if (entry.temperature !== undefined) {
+      plans.push(planIntent(
+        { type: 'temperature_absolute', value: entry.temperature },
+        this.targetIds, this.cache, DEFAULT_BEHAVIOR,
+      ));
+    }
+
+    return {
+      writes: plans.flatMap(p => p.writes),
+      // Only the power leg's skips are a real miss; a lamp that cannot dim is
+      // not a failed schedule, it is a lamp.
+      skipped: plans[0]!.skipped.length,
+    };
+  }
+
+  private planOff(): { writes: PlannedWrite[]; skipped: number } {
+    const plan = planIntent({ type: 'power', value: false }, this.targetIds, this.cache, DEFAULT_BEHAVIOR);
+    return { writes: plan.writes, skipped: plan.skipped.length };
+  }
+
+  /** Devices or zones changed: re-resolve without tearing the queue down. */
+  async refreshTargets(): Promise<void> {
+    const resolved = await this.resolver.resolve(this.plan.target);
+    const ids = resolved.devices.map(d => d.id);
+    if (JSON.stringify(ids) === JSON.stringify(this.targetIds)) return;
+
+    this.targetIds = ids;
+    this.targetNames = resolved.devices.map(d => `${d.name} (${d.zoneName})`);
+    this.resolver.primeCache(resolved.devices, this.cache);
+    this.deps.log(`Schedule targets re-resolved: ${ids.length} light(s)`);
+  }
+
+  async updatePlan(plan: SchedulePlan): Promise<void> {
+    this.plan = plan;
+    await this.stop();
+    await this.start();
+  }
+
+  async stop(): Promise<void> {
+    this.scheduler?.stop();
+    this.scheduler = null;
+    // The adapter's pending post-write checks outlive this runtime unless
+    // released — one firing after teardown would switch a light on 1.5 s after
+    // the schedule was told to stand down.
+    await this.adapter.unsubscribeAll();
+    this.cache.clear();
+    this.targetIds = [];
+    this.targetNames = [];
+  }
+
+  /** Remove only what this schedule demonstrably owns. */
+  async destroy(): Promise<void> {
+    await this.stop();
+    await this.deps.bridge.removeAll(this.plan.managedFlows);
+  }
+
+  private setState(state: ControllerState, detail?: StateDetail): void {
+    if (this.state === state) return;
+    this.state = state;
+    this.deps.onStateChange(state, detail);
+  }
+
+  /** Never exposes secrets or unrelated Homey configuration. */
+  diagnostics(): Record<string, unknown> {
+    const timezone = this.deps.timezone();
+    const clock = localNow(timezone, this.now());
+    return {
+      controllerId: this.controllerId,
+      kind: 'schedule',
+      name: this.deps.displayName(),
+      state: this.state,
+      enabled: this.plan.enabled,
+      // The two facts every "it fired at the wrong time" report needs, and the
+      // only place the resolved timezone is visible at all.
+      timezone: timezone ?? 'process-local',
+      localTime: describeClock(clock),
+      entries: this.plan.entries.map(entry => ({
+        id: entry.id,
+        on: formatMinutes(entry.onAt),
+        off: formatMinutes(offMinuteOf(entry)),
+        days: entry.days ?? 'every day',
+        ...(entry.brightness !== undefined ? { brightness: entry.brightness } : {}),
+        ...(entry.temperature !== undefined ? { temperature: entry.temperature } : {}),
+        active: activeWindowStartDay(entry, clock) !== null,
+      })),
+      targetIds: this.targetIds,
+      targetNames: this.targetNames,
+      managedFlows: this.plan.managedFlows,
+      lastAction: this.lastAction,
+      lastRejection: this.lastRejection,
+      recentFailures: this.adapter.failures(),
+      recentWrites: this.adapter.writes(),
+      schedulerReady: this.scheduler !== null,
+      credential: this.deps.api.credentials.getStatus(),
+    };
+  }
+}
