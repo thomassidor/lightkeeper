@@ -1,15 +1,19 @@
 # Artwork
 
 Everything shipped is derived from two master images in `artwork/masters/` plus
-two hand-authored SVGs. The masters are the only artifacts in this repository that
-cannot be regenerated from something else.
+three hand-authored SVGs. The masters are the only artifacts in this repository
+that cannot be regenerated from something else.
+
+**Read [What Athom enforces, and what it reviews](#what-athom-enforces-and-what-it-reviews)
+before changing anything here.** Three of the four decisions on this page were
+originally made against a guess at the rules and had to be redone.
 
 ## Palette
 
 | Role | Hex | Where |
 |---|---|---|
 | Brand navy | `#1F3A5F` | manifest `brandColor`, both icons, primary buttons and selection in the UI |
-| Link amber | `#F2A93B` | the connection accent — icon link arcs, the lit bulb, the driver icon's wheel |
+| Link amber | `#F2A93B` | the accent in the UI: selection, the dial's wedge on the schedule screen, warm detail. **No longer in the icons** — see below |
 | Light amber | `#FFD27A` | illuminated detail, currently unused |
 | White | `#FFFFFF` | ink on navy |
 
@@ -25,34 +29,50 @@ to carry white text on a dark ground, so the dark scheme lightens the accent to
 
 ## Icons
 
-`assets/icon.svg` (app), `drivers/controller/assets/icon.svg` and
-`drivers/schedule/assets/icon.svg` are all 960×960, flat vector, transparent, no
-gradients.
+`assets/icon.svg` (app, a lighthouse), `drivers/controller/assets/icon.svg` (a
+handheld remote) and `drivers/schedule/assets/icon.svg` (a clock) are all
+960×960, **stroke-only line art**: `stroke="#000"`, `fill="none"`,
+`stroke-width="40"`, `stroke-linejoin="round"`, transparent, and `viewBox` with no
+`width`/`height`.
 
-**They are drawn for ~40 px, which is where Homey actually renders them.** The
-first versions were 52 px strokes with interior detail — a screen, button bars, a
-lamp stem, eight tick marks around the driver's wheel — and at 40 px every one of
-those clusters collapsed into a grey smudge. Solid masses survive the downscale;
-hairlines do not.
+**That is Homey's own house style, not a preference.** Every one of the 226 stock
+class icons `homey-lib` ships (`assets/device/icons/`) is exactly that. Guideline
+1.5 forbids the alternative in as many words: *"do not use images, filled
+illustrations, gradients, or background colours in your app icon. Submitting a
+filled image or illustration as an icon will cause it to appear as a solid shape,
+which is not recognisable at small sizes and will not be approved."*
 
-Two problems only showed up when the marks were actually rasterised, which is why
-that step is not optional:
+**And there is a mechanical reason underneath the guideline.** `homey-lib` raises
+this when a `brandColor` is too bright: *"Icons are rendered white, so choose a
+darker color that has enough contrast."* Homey recolours the icon in several
+surfaces. A two-colour filled mark — navy body, amber detail — becomes one
+undifferentiated white silhouette there, losing exactly the figure/ground
+separation the drawing was built on. **So the contact sheet has three rows now, and
+the white-on-`brandColor` row is the one that matters most.**
 
-- The app icon's two amber link arcs were struck from the same vertical line with
-  radii too close together. Their stroke bands overlapped and the pair rendered as
-  a single thick crescent. They are now concentric about a point, with a real gap.
-- Splitting the bulb navy-glass/amber-cap detached the cap and the whole thing read
-  as a balloon on a stick. The bulb is amber throughout — which also means the mark
-  keeps a large bright mass on a dark ground, where navy alone goes muddy.
-- The schedule icon began as a clock above a bulb. At 75 px two shapes of equal
+Everything below was found by rasterising rather than by reading the SVG, which is
+why that step is not optional:
+
+- The app icon's two amber link arcs (in the filled era) were struck from the same
+  vertical line with radii too close together. Their stroke bands overlapped and
+  the pair rendered as one thick crescent.
+- Splitting a bulb navy-glass/amber-cap detached the cap and the whole thing read
+  as a balloon on a stick.
+- The schedule icon began as a clock above a bulb: at 75 px, two shapes of equal
   weight read as two unrelated blobs, and the bulb — the shape every other lighting
-  app also draws — took the attention. It is now the dial alone, with an amber wedge
-  standing for the stretch of the day the lights are on. The wedge is inset inside
-  the rim so a navy ring survives all the way round: drawn to the full radius it
-  reads as a pie chart, and the hub is what turns a fan into a clock.
+  app draws — took the attention.
+- Its second attempt was a dial with an amber wedge for the on-stretch of the day.
+  Redrawn as line art the wedge became an inner arc, which closed against the two
+  hands and made the whole mark read as a leaf. Pushed outside the rim instead, the
+  same arc read as a wifi indicator. It is now a plain clock: nothing to
+  misinterpret, and unmistakably not the remote beside it in the add-device list.
+- The lighthouse without its beams reads as a pepper grinder at 32 px. The beams
+  are load-bearing, and so is the ground line under the tower — without it the
+  tower floats.
 
-To check a change, render both at 32 / 40 / 56 / 80 / 140 px over white and near
-black. The 32 px row is the one that decides. Headless Chrome will do it:
+To check a change, render every mark at 32 / 40 / 56 / 80 / 140 px in three rows:
+black on white, **white on `#1F3A5F`**, and black on near-black. The 32 px row
+decides. Headless Chrome will do it:
 
 ```bash
 chrome --headless=new --disable-gpu --screenshot=out.png \
@@ -69,23 +89,36 @@ to force it in the CSS rather than ask the browser.
 python docs/artwork/export-assets.py
 ```
 
-Regenerates all nine shipped PNGs from the three masters. Requires Pillow. The crop
+Regenerates all nine shipped PNGs from the two masters. Requires Pillow. The crop
 boxes and the reasoning behind them are in the script — in particular why the
-controller crop is 1120 px and not tighter, and why the schedule crop is the same.
+controller crop is 1120 px and not tighter, and why the schedule driver's window on
+the hero is 420 px and not 270 or 520.
 
-Homey's required sizes are not negotiable and a wrong one fails
-`homey app validate`:
+The icons are **not** in that pipeline: they ship as SVG, so the only tool they need
+is the contact sheet above.
 
 | | small | large | xlarge |
 |---|---|---|---|
 | app (10:7) | 250×175 | 500×350 | 1000×700 |
 | driver (1:1) | 75×75 | 500×500 | 1000×1000 |
 
+**Small and large are required; xlarge is optional.** This page used to say all
+three were mandatory. `homey-lib`'s `_validateImages` iterates `['small', 'large']`
+and never looks at xlarge, its schema marks `xlarge` optional, and its AI reviewer
+is instructed not to raise a finding when xlarge is absent. We ship it anyway, for
+high-resolution screens — but that is a quality choice, and the three xlarge files
+are 1.8 MB of the app package if they are ever worth dropping.
+
+`test/unit/assets.test.ts` checks presence, PNG magic bytes and exact dimensions
+for every declared image, plus the line-art invariants for every icon, so a wrong
+crop fails locally rather than at submission.
+
 ## Provenance
 
 The hero and controller masters were generated on **12 August 2026** with OpenAI
-image generation, then resized locally with Pillow. The schedule master is a render
-of our own SVG (see below). They are not photographs of any real product,
+image generation, then cropped and resized locally with Pillow. They are the only
+two masters: the schedule driver's picture is a window on the hero, and the icons
+ship as SVG. They are not photographs of any real product,
 and were reviewed to exclude logos, trademarks, brand-recognisable hardware and
 text. Homey's review does check that store imagery is not manufacturer
 photography, so this matters.
@@ -103,26 +136,25 @@ All three SVG icons are original vector work, not generated.
 > 250 x 175. No text, logos, trademarks, Homey or IKEA branding, screens or
 > watermarks.
 
-### Schedule mark master — `artwork/masters/schedule-mark-master.png` (1254×1254)
+### The schedule driver's picture — a window on the hero, not a mark
 
-Not generated and not a photograph: it is `drivers/schedule/assets/icon.svg`
-rendered on white by headless Chrome, a 1000 px mark centred in a 1254 px square,
-then cropped and resized by the export script like the other two.
+There is no third master. The schedule driver's three PNGs are a 420×420 crop of
+the hero master, centred on the right-hand table lamp with the blue-hour window
+behind it.
 
-**The schedule driver ships its mark rather than a product shot on purpose.** The
-controller driver depicts a physical remote, because there is one. A schedule is
-not a device you can hold, and photographing a stand-in lamp would claim otherwise.
-The crop is 1120 — exactly the controller's — so the two driver thumbnails sit at
-the same visual scale in the pairing flow.
+**It shipped as the rasterised icon once, and that was the app's most likely review
+finding.** The argument for it was honest — a schedule is not a device you can hold
+— but it argues with a written rule rather than following it. Guideline 1.4 rejects
+*"images with big two-dimensional unicolored shapes on a monochrome or transparent
+background"*, and 1.4.3 asks for *"a recognizable picture of the device it
+supports"* and says plainly *"Don't use your app icon as a driver image."*
 
-To regenerate it after editing the SVG:
-
-```bash
-# a page with the SVG centred in a 1254x1254 white frame, then:
-chrome --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=1 \
-       --window-size=1254,1254 --screenshot=schedule-mark-master.png file:///path/to/sheet.html
-python docs/artwork/export-assets.py
-```
+So the device it supports is the lamp. What that trades away is the same
+guideline's *"should have a white background"*: this picture is a dark room. That is
+the deliberate choice — of the two rules we cannot satisfy at once, the flat-shape
+one is the one the reviewer checklist states as a rejection and the white ground is
+the one it states as a preference (*"white or transparent"*). It also means the two
+driver pictures and the store image are visibly the same photography.
 
 ### Controller product master — `artwork/masters/controller-product-master.png` (1254×1254)
 
@@ -133,22 +165,61 @@ python docs/artwork/export-assets.py
 > white square background, recognizable at 75 x 75. No text, logos, trademarks,
 > branded-product resemblance, hand, props, packaging or watermark.
 
-Keep the hero's 10:7 crop centred — the composition runs corner to corner and
-shifting the window drops one of the three lights the image is about.
+**The hero's crop moved, and the reason is worth keeping.** It used to be centred,
+which kept all three lamps and the hand turning the scroll wheel. That composition
+predates the schedule driver: it says the app is a remote, which is half the story.
+The crop is now a 920×644 window on the right of the frame — floor lamp, table
+lamp, blue-hour window, no hand and no remote — so it reads as lights that came on
+by themselves. The prompt above still describes the whole generated frame, hand
+included; the shipped image is a window on it.
 
-**The hero now under-describes the app.** Its composition is a hand turning a
-scroll wheel, from when pointing a remote at lights was the whole product; the app
-also puts lights on a schedule now. It is not wrong, only partial, and it is
-flagged here rather than quietly kept: a re-shoot would want the same room at blue
-hour with the lamps already lit and no hand in frame, so the image reads as lights
-that came on by themselves.
+This is also why the hero is still a photograph rather than the app mark on a navy
+field, which is what a graphics refresh naturally reaches for: guideline 1.4.2
+rejects it — *"Images that consist of a single flat shape or icon on a plain,
+monochrome or transparent background are not approved. For example, a black shape
+on a white background will look flat and unappealing in the Homey App Store, rather
+than inviting."* Lifestyle photography is what Athom asks for, in those words.
+
+## What Athom enforces, and what it reviews
+
+Two different gates, and confusing them is how this page ended up wrong three times
+at once. Sources: `homey-lib/lib/App/index.js` for the validator,
+`homey-lib/lib/AIReviewer/data/guidelines.md` and `checklist.md` for the review, and
+Athom's published guidelines at
+<https://apps.developer.homey.app/app-store/guidelines>.
+
+**The validator (`homey app validate --level publish`) checks, and only checks:**
+
+| Check | Where |
+|---|---|
+| `images.small` and `images.large` exist, case-sensitively, at exact pixel sizes | `_validateImages`, app and every driver |
+| the file's magic bytes match its declared extension (`.png`/`.jpg`/`.jpeg`) | same |
+| `assets/icon.svg` exists — at every level, not just publish | `_ensureFileExistsCaseSensitive` |
+| `brandColor` is present and has brightness ≤ 184 | `isValidBrandColor` |
+
+It never opens an SVG. There is **no** driver-icon existence check, no canvas or
+`viewBox` check, no fill or stroke check, no file-size limit, and no `xlarge` check
+of any kind. Everything else on this page is a rule a human or Athom's AI reviewer
+applies, which means it costs a review round trip rather than a failed build.
+
+**Things that do not exist, so we do not chase them:** flow cards cannot carry an
+icon (the `icon` property in the SDK types belongs to *argument autocomplete
+results*, and our cards take plain text and number arguments); `capabilitiesOptions`
+cannot carry one either — only app-defined **custom** capabilities can, and our
+schedule's switch is the standard `onoff`; there is no per-device icon override in
+the manifest, and no screenshot or promotional asset class at all.
+
+**The one asset class we ship nothing for:** widget previews. If a dashboard widget
+is ever added, `widgets/<id>/preview-light.png` and `preview-dark.png` are a hard
+build requirement — the build reads both and rethrows if either is missing — square,
+at least 512 px, transparent, no text, simple shapes.
 
 ## Rights
 
 - Lightkeeper source and all three SVGs: MIT, © Thomas René Sidor. See `../LICENSE`.
 - The hero and controller masters: AI-generated as recorded above, no third-party
-  rights claimed. The schedule master is a render of our own SVG, so it carries the
-  same licence as the source.
+  rights claimed. Both are used for more than one shipped image now — the hero
+  carries both the store image and the schedule driver's picture.
 - **`homey-api` is not MIT.** Its licence permits free use with Homey products but
   keeps the source proprietary to Athom B.V. and disclaims warranty. Bundling it in
   a Homey app is exactly the permitted use, but it does not inherit this repo's

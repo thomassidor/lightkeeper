@@ -1,26 +1,28 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 960" width="960" height="960">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 960">
   <title>Light schedule</title>
-  <desc>A clock dial with a wedge of the day marked out in amber.</desc>
+  <desc>A clock face showing ten past four.</desc>
 
-  <!-- Same construction rules as the controller icon: a solid navy body, amber
-       for the one thing that distinguishes the device, and nothing that stops
-       being legible at the ~40 px Homey actually renders.
+  <!-- Line art, for the reasons recorded in ../../../assets/icon.svg.
 
-       The first version drew a clock above a bulb. At thumbnail size two shapes
-       of equal weight read as two unrelated blobs, and the bulb — the part every
-       other lighting app also draws — won the attention. So the mark is the dial
-       alone, and the amber wedge is the stretch of the day the lights are on:
-       the one thing this device does that the controller does not.
+       Two earlier attempts died on the contact sheet, both at 32 px:
 
-       Unlike the controller, this driver ships its mark rather than a product
-       photograph, because there is no product. A schedule is not a device you can
-       hold, and photographing a stand-in lamp would say the wrong thing. -->
-  <circle cx="480" cy="480" r="330" fill="#1F3A5F"/>
+       - A filled navy dial with an amber wedge for the on-stretch of the day.
+         Fills are out (guideline 1.5/1.6), and rendered white the wedge and the
+         dial became one shape.
+       - The same idea in outline: an inner arc from twelve round to half past
+         four. The arc closed against the two hands and the whole mark read as a
+         leaf. A variant with the arc pushed outside the rim read as a wifi
+         indicator instead.
 
-  <!-- Inset inside the rim, so a navy ring survives all the way round: a wedge
-       drawn to the full radius reads as a pie chart rather than as a dial. -->
-  <path d="M480 480 L480 180 A300 300 0 0 1 630 740 Z" fill="#F2A93B"/>
-
-  <!-- The hub. Two shapes meeting at a point read as a fan; a hub reads as hands. -->
-  <circle cx="480" cy="480" r="46" fill="#1F3A5F"/>
+       So the mark is a plain clock, which says "time" with nothing to
+       misinterpret, and is unmistakably not the controller's remote beside it in
+       the add-device list. The hands point at ten past four rather than twelve
+       o'clock: an asymmetric time reads as a clock, where twelve reads as a
+       plus sign. -->
+  <g stroke="#000" fill="none" fill-rule="evenodd" stroke-width="40"
+     stroke-linejoin="round" stroke-linecap="round">
+    <circle cx="480" cy="480" r="360"/>
+    <path d="M480 480 L480 215"/>
+    <path d="M480 480 L672 620"/>
+  </g>
 </svg>

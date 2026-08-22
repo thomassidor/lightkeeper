@@ -13,10 +13,14 @@ the masters and this file, and nothing else.
 
 Requires Pillow (`pip install pillow`). Verified against Pillow 12.2.
 
-Homey's required sizes, which are not negotiable:
-    app     250x175, 500x350, 1000x700   (10:7)
-    driver   75x75,  500x500, 1000x1000  (1:1)
-A wrong size fails `homey app validate`.
+Homey's sizes, and which of them are actually enforced:
+    app     250x175, 500x350  required   1000x700   optional  (10:7)
+    driver   75x75,  500x500  required   1000x1000  optional  (1:1)
+A wrong size fails `homey app validate` — but only for the required two. homey-lib
+checks `['small', 'large']` and never looks at xlarge (lib/App/index.js,
+_validateImages), and its AI reviewer is told in as many words not to raise a
+finding when xlarge is absent. We ship xlarge anyway, for high-resolution screens;
+this note is here so nobody re-derives the rule from a comment that overstated it.
 """
 
 from pathlib import Path
@@ -25,13 +29,22 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[2]
 MASTERS = Path(__file__).resolve().parent / 'masters'
 
-# The hero is 1536x1024 (3:2) and ships at 10:7, so height is the binding
-# constraint and the crop takes 37 px off each side. Centred: the composition
-# runs corner to corner — hand bottom-left, floor lamp centre, table lamp right
-# — and shifting the window drops one of the three lights the image is about.
+# The hero is 1536x1024 (3:2) and ships at 10:7, so the crop is 920x644 taken
+# from the right-hand side of the frame.
+#
+# It used to be centred, which kept all three lamps AND the hand holding a
+# scroll-wheel remote. That composition predates the schedule driver: it says the
+# app is a remote, which is now half the story. This window drops the hand and the
+# remote entirely and keeps the tripod floor lamp, the table lamp and the blue-hour
+# window, so it reads as lights that came on by themselves — the other half. The
+# amber light trails survive as streaks rather than as wires from a device.
+#
+# Athom's guideline 1.4.2 is why this stays a photograph rather than becoming the
+# app mark on a field: "Images that consist of a single flat shape or icon on a
+# plain, monochrome or transparent background are not approved."
 HERO = {
     'master': 'app-hero-master.png',
-    'crop': (37, 0, 1499, 1024),
+    'crop': (616, 224, 1536, 868),
     'out': ROOT / 'assets' / 'images',
     'sizes': {'small.png': (250, 175), 'large.png': (500, 350), 'xlarge.png': (1000, 700)},
 }
@@ -58,17 +71,24 @@ CONTROLLER = {
 }
 
 
-# The schedule driver ships its own mark rather than a product photograph: a
-# schedule is not a device you can hold, and photographing a stand-in lamp would
-# say the wrong thing. The master is drivers/schedule/assets/icon.svg rendered on
-# white at 1254x1254 (headless Chrome, 1000 px mark centred in the frame), so it
-# is regenerated from the SVG rather than hand-drawn twice.
+# The schedule driver used to ship its own icon, rasterised on white. That was the
+# most likely review finding in the app: guideline 1.4 rejects "images with big
+# two-dimensional unicolored shapes on a monochrome or transparent background",
+# and 1.4.3 asks for "a recognizable picture of the device it supports" and says
+# outright "Don't use your app icon as a driver image".
 #
-# The crop is 1120, exactly the controller's, so the two driver thumbnails sit at
-# the same visual scale in the pairing flow.
+# A schedule has no hardware, so the device it supports is the lamp. This is a
+# 420x420 window on the right-hand table lamp of the hero master, lit, with the
+# blue-hour window behind it — which reads as evening, which is what a schedule is
+# for. It shares the hero's photography, so the two driver pictures and the store
+# image are visibly one app.
+#
+# 420 is a compromise, chosen by looking: 270 crops tighter but upscales 3.7x to
+# the optional 1000 px size and goes soft; 520 pulls in the floor lamp base and a
+# cup, and the lamp stops being the subject.
 SCHEDULE = {
-    'master': 'schedule-mark-master.png',
-    'crop': (67, 67, 1187, 1187),
+    'master': 'app-hero-master.png',
+    'crop': (985, 280, 1405, 700),
     'out': ROOT / 'drivers' / 'schedule' / 'assets' / 'images',
     'sizes': {'small.png': (75, 75), 'large.png': (500, 500), 'xlarge.png': (1000, 1000)},
 }

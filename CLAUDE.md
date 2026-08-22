@@ -426,6 +426,35 @@ Consequences worth not re-deriving:
   | `active: false` in diagnostics at exactly 20:30 | The off boundary is EXCLUSIVE, as `activeWindowStartDay()` and its tests say |
   | Both events accepted, `lastRejection: null` | The day check passed on receipt, and the bridge arguments round-tripped intact |
 
+## 10. Store assets: what is validated, what is reviewed, and what Homey does to your icon
+
+`docs/artwork.md` holds the full account. The four facts worth having here, because
+each one was learned by reading `homey-lib` inside the CLI's own package rather than from
+anything discoverable in this repo:
+
+- **Homey renders app and driver icons WHITE** in several surfaces — the app list, Flows, Add
+  devices — on top of `brandColor`. `homey-lib` says so in the error it raises for too bright a
+  brand colour: *"Icons are rendered white, so choose a darker color that has enough contrast."*
+  A filled two-colour mark therefore collapses into one silhouette. All three of our icons are
+  stroke-only line art (`stroke="#000"`, `fill="none"`, `stroke-width="40"`, `viewBox` with no
+  `width`/`height`), which is also what every one of `homey-lib`'s 226 stock class icons is.
+- **The validator checks far less than the guidelines say.** `_validateImages` iterates
+  `['small', 'large']` only: **`xlarge` is optional and never checked**, at any level. It never
+  opens an SVG — there is no driver-icon existence check and no content validation at all. Every
+  other rule (line art, transparent, full canvas, "a recognizable picture of the device") is applied
+  by a human or by Athom's AI reviewer, so breaking one costs a review round trip, not a red build.
+  `test/unit/assets.test.ts` is what makes those rules fail locally instead.
+- **A flat mark is rejected as an app or driver IMAGE.** Guideline 1.4: *"Images that consist of a
+  single flat shape or icon on a plain, monochrome or transparent background are not approved."*
+  Lifestyle photography is what Athom asks for, in those words — which is why the store image and
+  both driver pictures are photographs, and why the schedule driver's picture is a lamp rather than
+  its own clock icon.
+- **Three things simply do not exist**, so do not spend time looking for them: an icon on a flow
+  card (the SDK's `icon` property belongs to argument *autocomplete results*), an icon on
+  `capabilitiesOptions` (only app-defined custom capabilities can carry one), and any
+  screenshot or promotional asset class. Widget previews are the one asset class we ship nothing
+  for, and they are a hard build requirement the moment a widget is added.
+
 ---
 
 # Working on this codebase

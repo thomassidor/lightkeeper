@@ -8,9 +8,9 @@ by `.homeyignore`, so nothing here ships to a Homey.
 | [`homey-review-notes.md`](homey-review-notes.md) | The answers Athom's review will ask for — why this app needs `homey:manager:api` and a Personal API Key — plus a test script and the honest list of what is untested. |
 | [`privacy.md`](privacy.md) | What the app reads, stores and never transmits. Needed because it handles a credential. |
 | [`localisation.md`](localisation.md) | The app is English-only. This is how to add a language back, and the glossary from the Danish translation that was removed. |
-| [`artwork.md`](artwork.md) | Palette, icon rules, how the two masters were generated, and how to re-export every shipped PNG. |
-| `artwork/masters/` | The two source images. The only artifacts here that cannot be regenerated. |
-| `artwork/export-assets.py` | Regenerates all six shipped PNGs from those masters. |
+| [`artwork.md`](artwork.md) | Palette, the icon rules and why they are line art, how the two masters were generated, how to re-export every shipped PNG — and which asset rules Homey *validates* versus which a reviewer merely applies. |
+| `artwork/masters/` | The two source images. The only artifacts here that cannot be regenerated: the icons are SVG in the app itself, and every shipped PNG is a crop of one of these two. |
+| `artwork/export-assets.py` | Regenerates all nine shipped PNGs from those masters. |
 
 Everything a user needs is in the top-level [`README.md`](../README.md) instead —
 requirements, setup, how it works, limits and troubleshooting. Architecture and

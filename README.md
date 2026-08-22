@@ -269,7 +269,7 @@ covered by unit tests rather than by a week of waiting. The trigger card they ar
 resolved at runtime by enumerating what your Homey actually offers, rather than hardcoding an id, so
 it adapts if a firmware update moves it.
 
-297 unit tests, type-clean, validated at `publish` level.
+307 unit tests, type-clean, validated at `publish` level.
 
 ---
 
@@ -277,7 +277,7 @@ it adapts if a firmware update moves it.
 
 ```bash
 npm install
-npm test                          # 297 unit tests, no hardware needed
+npm test                          # 307 unit tests, no hardware needed
 npm run typecheck
 npx homey app install             # persistent install — use this for anything interactive
 npx homey app validate --level publish
@@ -350,6 +350,29 @@ Captures from a real home are never committed; see [`test/fixtures/README.md`](t
 ---
 
 ## Changelog
+
+### 0.2.2
+
+Changed:
+
+- **All three icons are line art now.** A lighthouse for the app — the old mark drew a remote
+  beaming at a bulb, which was the previous name made literal — plus the remote and the clock
+  redrawn to match. This is not a taste change: `homey-lib` renders icons **white** on the brand
+  colour in several surfaces (its own words: *"Icons are rendered white, so choose a darker color
+  that has enough contrast"*), where a filled two-colour mark collapses into one silhouette. Athom's
+  guideline 1.5 forbids filled illustrations outright, and every one of the 226 stock class icons
+  Homey ships is stroke-only at `stroke-width: 40`. Ours now are too.
+- **The store image drops the hand and the remote.** Same photograph, new window on it: two lamps
+  lit and a blue-hour window, so it reads as lights that came on by themselves rather than as a
+  remote being pressed. The old crop predated schedules and described half the app.
+- **The schedule device shows a lamp instead of its own icon.** Rasterising the icon onto white was
+  the app's most likely review finding — guideline 1.4 rejects *"images with big two-dimensional
+  unicolored shapes on a monochrome or transparent background"* and 1.4.3 asks for *"a recognizable
+  picture of the device it supports"*. A schedule has no hardware, so the device is the lamp.
+- **`test/unit/assets.test.ts`** now checks every shipped image for presence, real PNG bytes and
+  exact dimensions, and every icon for the line-art invariants — the class of mistake that is
+  otherwise invisible until submission. `docs/artwork.md` gained the distinction between what the
+  validator enforces and what a reviewer applies, with citations.
 
 ### 0.2.1
 

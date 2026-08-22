@@ -1,18 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 960" width="960" height="960">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 960">
   <title>Remote-to-light controller</title>
-  <desc>A handheld controller with a rotary wheel above three buttons.</desc>
+  <desc>A handheld remote with a rotary wheel above three buttons.</desc>
 
-  <!-- Solid body rather than a 52 px outline: in a device list this renders
-       small enough that an outline and its interior read as a single shape,
-       so the outline buys nothing and costs contrast. -->
-  <rect x="250" y="80" width="460" height="800" rx="150" fill="#1F3A5F"/>
+  <!-- Line art, for the reasons recorded in ../../../assets/icon.svg: guideline
+       1.6 asks for "a clean, vector-based drawing… drawn using lines and shapes",
+       transparent, full canvas, and Homey renders icons white in several
+       surfaces, where a filled body loses every internal detail.
 
-  <!-- The wheel is what distinguishes this device, so it takes the amber and
-       most of the upper body. The eight tick marks that used to ring it were
-       invisible below ~64 px and only added noise above it. -->
-  <circle cx="480" cy="300" r="150" fill="none" stroke="#F2A93B" stroke-width="76"/>
-
-  <circle cx="480" cy="575" r="40" fill="#F2A93B"/>
-  <circle cx="480" cy="685" r="40" fill="#F2A93B"/>
-  <circle cx="480" cy="795" r="40" fill="#F2A93B"/>
+       The wheel is what distinguishes this device from any other remote, so it
+       takes the top third at a diameter no smaller than the body allows. Three
+       buttons rather than the two the old filled mark used: as outlines they stay
+       separate at 32 px, where filled dots merged into a bar. -->
+  <g stroke="#000" fill="none" fill-rule="evenodd" stroke-width="40"
+     stroke-linejoin="round" stroke-linecap="round">
+    <rect x="270" y="90" width="420" height="780" rx="140"/>
+    <circle cx="480" cy="315" r="135"/>
+    <circle cx="480" cy="580" r="58"/>
+    <circle cx="480" cy="700" r="58"/>
+    <circle cx="480" cy="820" r="58"/>
+  </g>
 </svg>

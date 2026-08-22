@@ -1,4 +1,7 @@
 {
+  "0.2.2": {
+    "en": "Changed\n- New artwork throughout. The app icon is a lighthouse now, which suits the name better than the old remote-and-bulb, and the two device icons are drawn to match it.\n- The app’s picture in the store shows lamps lit in an evening room, instead of a hand holding a remote — the app does more than remotes.\n- The schedule device now has a picture of a lamp rather than a drawing of a clock face."
+  },
   "0.2.1": {
     "en": "Fixed\n- Warm and cold were the wrong way round. A schedule set to the warmest setting lit the room cold white, and on a remote the \"warmer\" button made the light colder. Both now go the way they say. If you set a warmth on a schedule before this update, open it and check the setting still reads the way you want it."
   },
