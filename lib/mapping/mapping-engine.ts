@@ -55,11 +55,14 @@ export class MappingEngine {
       case 'brightness_down':
         return { type: 'brightness_delta', delta: -this.stepFor(rule, event, 'brightness') };
       case 'warmer':
-        // Warmer means a LOWER colour temperature value on Homey's normalised
-        // axis, where 0 is warm and 1 is cold.
-        return { type: 'temperature_delta', delta: -this.stepFor(rule, event, 'temperature') };
-      case 'colder':
+        // Warmer means a HIGHER value on Homey's normalised axis: 0 is the
+        // coolest end, 1 the warmest. homey-lib's own capability hint says so —
+        // "A higher value means a warmer color" — and this comment used to claim
+        // the opposite, which is how a schedule set to "Warmest" wrote 0 and lit
+        // a room cold white on its first live run.
         return { type: 'temperature_delta', delta: this.stepFor(rule, event, 'temperature') };
+      case 'colder':
+        return { type: 'temperature_delta', delta: -this.stepFor(rule, event, 'temperature') };
       default:
         return null;
     }

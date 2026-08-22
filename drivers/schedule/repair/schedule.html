@@ -393,18 +393,20 @@ function __llBootSch(Homey) {
     return Homey.__('schedule.percent', { percent: Math.round((entry.brightness || 0) * 100) });
   }
   /**
-   * Named steps rather than a percentage. Colour temperature is normalised 0-1
-   * with 0 as the WARMEST end (§6), so a percentage either contradicted the
-   * handle's position ("85% warm" with the handle at the left) or read as a
-   * quantity of a thing nobody measures in percent. Five words say it without
-   * either problem.
+   * Named steps rather than a percentage: nobody measures warmth in percent, and
+   * a number here contradicted the handle's position at least half the time.
+   *
+   * HIGHER IS WARMER. The axis is normalised 0-1 and 1 is the warm end — that is
+   * homey-lib's own capability hint ("A higher value means a warmer color"), and
+   * this view had it backwards on the first hardware run: a schedule set to
+   * "Warmest" wrote 0 and lit the room cold white.
    */
   function temperatureText(entry) {
-    var value = entry.temperature || 0;
-    if (value < 0.1) return Homey.__('schedule.warmthWarmest');
-    if (value < 0.35) return Homey.__('schedule.warmthWarm');
-    if (value < 0.65) return Homey.__('schedule.warmthNeutral');
-    if (value < 0.9) return Homey.__('schedule.warmthCool');
+    var value = entry.temperature === undefined ? 0.8 : entry.temperature;
+    if (value >= 0.9) return Homey.__('schedule.warmthWarmest');
+    if (value >= 0.65) return Homey.__('schedule.warmthWarm');
+    if (value >= 0.35) return Homey.__('schedule.warmthNeutral');
+    if (value >= 0.1) return Homey.__('schedule.warmthCool');
     return Homey.__('schedule.warmthCoolest');
   }
 
@@ -465,7 +467,9 @@ function __llBootSch(Homey) {
         + '<div class="slider" data-role="temperatureSlider"'
         + (entry.temperature === undefined ? ' style="display:none;"' : '') + '>'
         + '<input type="range" min="0" max="100" step="5" data-act="temperature" value="'
-        + Math.round((entry.temperature === undefined ? 0.2 : entry.temperature) * 100) + '" />'
+        // Defaults warm, because a schedule that sets warmth at all is usually an
+        // evening one. The handle sits to the right, which is the warm end.
+        + Math.round((entry.temperature === undefined ? 0.8 : entry.temperature) * 100) + '" />'
         + '<span class="value" data-role="temperatureValue">' + escapeHtml(temperatureText(entry))
         + '</span></div></div>';
     }

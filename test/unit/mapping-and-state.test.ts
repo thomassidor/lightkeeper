@@ -2,6 +2,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { MappingEngine, availableFunctions } from '../../lib/mapping/mapping-engine';
+import { intentForFunction } from '../../lib/runtime/controller-runtime';
 import { DEFAULT_BEHAVIOR, type MappingRule } from '../../lib/mapping/mapping-types';
 import { TargetStateCache } from '../../lib/outputs/target-state-cache';
 import { migrateProfile } from '../../lib/profiles/migrations';
@@ -51,14 +52,33 @@ describe('mapping engine', () => {
     assert.deepEqual(down, { type: 'brightness_delta', delta: -0.1 });
   });
 
-  test('warmer lowers the normalised temperature, colder raises it', () => {
+  test('warmer RAISES the normalised temperature, colder lowers it', () => {
+    // Higher is warmer on Homey's axis — homey-lib's own capability hint says so,
+    // and this test used to assert the opposite, which is why "Warmest" lit a
+    // room cold white on the first live run. See CLAUDE.md §6.
     const engine = new MappingEngine([
       rule({ id: 'w', function: 'warmer', inputKey: 'w' }),
       rule({ id: 'c', function: 'colder', inputKey: 'c' }),
     ], DEFAULT_BEHAVIOR);
 
-    assert.ok((engine.resolve({ inputKey: 'w', event: event() })!.intent as { delta: number }).delta < 0);
-    assert.ok((engine.resolve({ inputKey: 'c', event: event() })!.intent as { delta: number }).delta > 0);
+    assert.ok((engine.resolve({ inputKey: 'w', event: event() })!.intent as { delta: number }).delta > 0);
+    assert.ok((engine.resolve({ inputKey: 'c', event: event() })!.intent as { delta: number }).delta < 0);
+  });
+
+  test('the Test control agrees with the engine about which way is warmer', () => {
+    // Two entry points produce temperature intents: the engine, for a mapped
+    // gesture, and intentForFunction, for the Test button and the schedule path.
+    // Them disagreeing is the exact shape of the bug that shipped, so they are
+    // now checked against each other rather than separately.
+    const engine = new MappingEngine([rule({ id: 'w', function: 'warmer', inputKey: 'w' })], DEFAULT_BEHAVIOR);
+    const mapped = engine.resolve({ inputKey: 'w', event: event() })!.intent as { delta: number };
+    const direct = intentForFunction('warmer', DEFAULT_BEHAVIOR) as { delta: number };
+
+    assert.ok(mapped.delta > 0, 'warmer must raise the normalised temperature');
+    assert.equal(Math.sign(direct.delta), Math.sign(mapped.delta));
+    assert.equal(
+      Math.sign((intentForFunction('colder', DEFAULT_BEHAVIOR) as { delta: number }).delta), -1,
+    );
   });
 
   test('magnitude scales the step but is never a user-facing choice', () => {

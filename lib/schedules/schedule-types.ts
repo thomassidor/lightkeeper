@@ -53,7 +53,7 @@ export interface ScheduleEntry {
    * Absent = leave brightness alone and only switch on.
    */
   brightness?: number;
-  /** Normalised colour temperature 0–1, 0 being the warmest (§6). */
+  /** Normalised colour temperature 0–1, where 1 is the WARMEST end (§6). */
   temperature?: number;
 }
 

@@ -1,4 +1,7 @@
 {
+  "0.2.1": {
+    "en": "Fixed\n- Warm and cold were the wrong way round. A schedule set to the warmest setting lit the room cold white, and on a remote the \"warmer\" button made the light colder. Both now go the way they say. If you set a warmth on a schedule before this update, open it and check the setting still reads the way you want it."
+  },
   "0.2.0": {
     "en": "Added\n- Light schedules. Add a schedule device, pick your lights, and say when they come on and when they go off — after a while, or at a set time. Up to twelve windows per device, on the days you choose, optionally at a brightness and warmth you set.\n- Each schedule device has its own switch, so you can pause the whole thing while you are away without losing any of it.\n- The app is now called Lightkeeper, because it does more than link a remote to a light.\n\nChanged\n- Editing a generated Flow by hand is now noticed in more cases, including changing the time on one. Lightkeeper leaves your edit alone and asks you to repair instead of quietly overwriting it."
   },

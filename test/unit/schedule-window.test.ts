@@ -240,7 +240,7 @@ describe('sanitising what a screen sends', () => {
       { id: 'a', onAt: '07:00', end: { kind: 'duration', minutes: 30 }, brightness: 0, temperature: 0 },
     ]);
     assert.equal(entries[0]!.brightness, undefined);
-    // Temperature 0 is meaningful: it is the warmest end of the axis.
+    // Temperature 0 is meaningful: it is the coolest end of the axis, not absence.
     assert.equal(entries[0]!.temperature, 0);
   });
 

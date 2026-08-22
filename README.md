@@ -262,12 +262,14 @@ transports:
 | Philips Hue Tap Dial | Hue Bridge | rotation with a magnitude token |
 | IKEA BILRESA | Matter/Thread | scroll wheel, and cards that vanish on restart |
 
-Schedules are covered by unit tests rather than by a table of hardware: their times, days,
-midnight-crossing windows and restart behaviour are pure arithmetic. The trigger card they are built
-on is resolved at runtime by enumerating what your Homey actually offers, rather than hardcoding an
-id, so it adapts if a firmware update moves it.
+Schedules were verified on the same Homey: a window switched three Hue spots on at its start minute,
+applied the brightness and warmth it was given, and switched them off again at its end minute, both
+boundaries firing within ~20 ms of the clock. Their day handling and midnight-crossing arithmetic is
+covered by unit tests rather than by a week of waiting. The trigger card they are built on is
+resolved at runtime by enumerating what your Homey actually offers, rather than hardcoding an id, so
+it adapts if a firmware update moves it.
 
-296 unit tests, type-clean, validated at `publish` level.
+297 unit tests, type-clean, validated at `publish` level.
 
 ---
 
@@ -275,7 +277,7 @@ id, so it adapts if a firmware update moves it.
 
 ```bash
 npm install
-npm test                          # 296 unit tests, no hardware needed
+npm test                          # 297 unit tests, no hardware needed
 npm run typecheck
 npx homey app install             # persistent install — use this for anything interactive
 npx homey app validate --level publish
@@ -348,6 +350,20 @@ Captures from a real home are never committed; see [`test/fixtures/README.md`](t
 ---
 
 ## Changelog
+
+### 0.2.1
+
+Fixed:
+
+- **Colour temperature ran backwards.** `light_temperature` is normalised 0–1 and **higher is
+  warmer** — that is `homey-lib`'s own capability hint, and both the controller's `warmer`/`colder`
+  mapping and the schedule screen's warmth labels assumed the opposite. A schedule set to "Warmest"
+  wrote 0 and lit a room cold white on the first live run; a remote's "warmer" button made lights
+  colder. Both directions are now fixed, the axis is documented in
+  [CLAUDE.md](CLAUDE.md) §6 with the evidence, and a test pins the two code paths that produce
+  temperature intents against each other, since them disagreeing is the shape this bug took.
+  A schedule saved before this update keeps the number it was given, so its warmth may now read
+  differently on screen — open it and check it says what you meant.
 
 ### 0.2.0
 

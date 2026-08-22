@@ -156,8 +156,11 @@ Verified end to end on a Homey Pro 2023 (firmware 13.4.0) against IKEA STYRBAR
 (Zigbee, local), Philips Hue Dimmer v2 and Hue Tap Dial (Hue Bridge), and IKEA
 BILRESA (Matter/Thread).
 
-The schedule device's time and day arithmetic is covered by unit tests rather than by
-that hardware list, since it is pure arithmetic. Its one hardware-dependent step is
-finding Homey's time trigger card, which is why the card is discovered by shape at
-runtime rather than hardcoded, and why the app's diagnostics list every candidate it
-considered.
+The schedule device was verified on the same Homey on 18 August 2026: a 20:25–20:30
+window over three Hue spots, both boundaries firing within ~20 ms of the clock, the
+on-boundary applying power, brightness and colour temperature in that order, and the
+off-boundary switching all three off. The trigger card it builds on resolved to
+`homey:manager:cron:time_exactly`, found by shape rather than hardcoded — the app's
+diagnostics list every candidate considered, which is what makes an unfamiliar
+firmware diagnosable. Day handling and midnight-crossing windows are covered by unit
+tests rather than by a week of waiting for the calendar.

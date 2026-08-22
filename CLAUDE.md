@@ -234,6 +234,15 @@ a duplicate as an external change that cancels the ramp.
 same normalised axis as brightness. `decimals: 2` implies a meaningful step of 0.01 — a smaller
 delta is a no-op and is accumulated rather than written.
 
+**HIGHER IS WARMER on that axis: 0 is the coolest end, 1 the warmest.** This is not a guess and not
+a convention we chose — `homey-lib`'s own capability definition
+(`assets/capability/capabilities/light_temperature.json`) states it in the hint for its
+`temperature` flow action: *"Adjusts the temperature of the light. A higher value means a warmer
+color."* It cost a real bug to learn: both the controller's `warmer`/`colder` mapping and the
+schedule screen's warmth labels assumed the opposite, so a schedule set to "Warmest" wrote 0 and
+lit a room cold white on the first live run. Anything that reasons about this axis — a delta's
+sign, a slider's labels, a default — must go the same way.
+
 A `setCapabilityValue` write to a Hue Bridge light acks in roughly 275 ms. That is the output leg
 only; radio time and flow-engine dispatch upstream of the bridge card are not observable from
 inside an app.
@@ -399,11 +408,23 @@ Consequences worth not re-deriving:
   revisiting, the missing piece is that argument's `values` list from `getFlowCardTriggers()` — read
   it, do not guess it. The energy cards above are the reason the shape match requires the time to be
   the ONLY argument.
-- **`Intl` timezone data on the Homey's Node build is still unverified.** The card probe above did
-  not answer it: with no schedule device paired, diagnostics reported no runtimes, and the timezone
-  and local clock are per-runtime fields. Pair one schedule and the same export shows both. `localNow()` formats with
-  a fixed `en-US` locale and falls back to process-local time if `Intl` throws, and diagnostics report
-  the resolved timezone and local time so a wrong answer is visible rather than mysterious.
+- **`Intl` timezone data IS present on the Homey's Node build.** Verified on the same firmware:
+  `homey.clock.getTimezone()` returned `Europe/Copenhagen` and `localNow()` resolved it to the right
+  weekday and minute (`Sat 20:30`). The fallback in `localNow()` — a fixed `en-US` locale, and
+  process-local time if `Intl` throws — stays anyway: it costs nothing and the next firmware is not
+  something we get to test in advance.
+
+- **What the first live window actually did** (a 20:25–20:30 schedule over three Hue spots,
+  18 August 2026). Worth keeping because it is the only measurement of the whole path, and because
+  each line confirms a design decision rather than merely working:
+
+  | Observation | What it confirms |
+  |---|---|
+  | Both boundary Flows fired **~11–22 ms after the minute** | The Flow engine is punctual enough that no app-side timer would improve on it |
+  | On-boundary wrote `onoff` ×3, then `dim` ×3, then `light_temperature` ×3 | The write queue's ordering holds across a composed intent — the level lands on a lit lamp |
+  | Every write acked, 304–501 ms each, three devices in parallel and serial per device | Comparable to the ~275 ms single-write figure in §6; nothing in the schedule path adds latency |
+  | `active: false` in diagnostics at exactly 20:30 | The off boundary is EXCLUSIVE, as `activeWindowStartDay()` and its tests say |
+  | Both events accepted, `lastRejection: null` | The day check passed on receipt, and the bridge arguments round-tripped intact |
 
 ---
 
