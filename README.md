@@ -267,7 +267,7 @@ midnight-crossing windows and restart behaviour are pure arithmetic. The trigger
 on is resolved at runtime by enumerating what your Homey actually offers, rather than hardcoding an
 id, so it adapts if a firmware update moves it.
 
-295 unit tests, type-clean, validated at `publish` level.
+296 unit tests, type-clean, validated at `publish` level.
 
 ---
 
@@ -275,7 +275,7 @@ id, so it adapts if a firmware update moves it.
 
 ```bash
 npm install
-npm test                          # 295 unit tests, no hardware needed
+npm test                          # 296 unit tests, no hardware needed
 npm run typecheck
 npx homey app install             # persistent install — use this for anything interactive
 npx homey app validate --level publish

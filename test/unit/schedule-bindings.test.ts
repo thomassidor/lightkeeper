@@ -25,9 +25,10 @@ import type { HomeyApiService } from '../../lib/homey-api-service';
  */
 
 const APP_ID = 'com.thomassidor.lightkeeper';
+/** The real card, as confirmed on hardware. */
 const TIME_CARD = {
-  id: 'homey:manager:cron:cron',
-  uri: 'homey:flowcardtrigger:homey:manager:cron:cron',
+  id: 'homey:manager:cron:time_exactly',
+  uri: 'homey:flowcardtrigger:homey:manager:cron:time_exactly',
   argument: 'time',
 };
 
@@ -245,15 +246,59 @@ describe('a flow edited by hand', () => {
 });
 
 describe('finding Homey\'s time trigger card', () => {
+  /**
+   * Transcribed from a diagnostics export off a real Homey Pro 2023 (firmware
+   * 13.4.0) — these are the cards it actually offered, including the three it
+   * offered that must NOT be chosen.
+   */
   const cards = [
-    { id: 'homey:manager:cron:cron', uri: 'homey:flowcardtrigger:homey:manager:cron:cron', args: [{ name: 'time', type: 'time' }] },
-    { id: 'homey:manager:cron:every', uri: 'u2', args: [{ name: 'minutes', type: 'number' }] },
-    { id: 'homey:manager:weather:temperature_above', uri: 'u3', args: [{ name: 'value', type: 'number' }] },
+    {
+      id: 'homey:manager:cron:time_exactly',
+      uri: 'homey:flowcardtrigger:homey:manager:cron:time_exactly',
+      args: [{ name: 'time', type: 'time' }],
+    },
+    {
+      id: 'homey:manager:cron:time_exactly_day',
+      uri: 'homey:flowcardtrigger:homey:manager:cron:time_exactly_day',
+      args: [{ name: 'time', type: 'time' }, { name: 'day', type: 'multiselect' }],
+    },
+    {
+      id: 'homey:manager:energy:dynamic_electricity_price_period_lowest_start_between',
+      uri: 'u3',
+      args: [{ name: 'duration', type: 'number' }, { name: 'unit', type: 'dropdown' },
+        { name: 'startTime', type: 'time' }, { name: 'endTime', type: 'time' }],
+    },
+    { id: 'homey:manager:cron:every', uri: 'u4', args: [{ name: 'minutes', type: 'number' }] },
   ];
 
   test('matches on shape, and echoes the uri back verbatim', () => {
     const { card } = discoverTimeCard(cards);
-    assert.deepEqual(card, { id: 'homey:manager:cron:cron', uri: cards[0]!.uri, argument: 'time' });
+    assert.deepEqual(card, {
+      id: 'homey:manager:cron:time_exactly',
+      uri: 'homey:flowcardtrigger:homey:manager:cron:time_exactly',
+      argument: 'time',
+    });
+  });
+
+  test('the day-filtered sibling is declined, and that is deliberate', () => {
+    // `time_exactly_day` carries the weekday itself, which sounds like exactly
+    // what a schedule wants. It is not taken: the day set would then live in the
+    // Flow, so every day-of-week edit would rewrite Flows, and its `multiselect`
+    // value tokens are not something we can enumerate ahead of time. The app
+    // checks the weekday on receipt instead. See CLAUDE.md §9.
+    const { candidates } = discoverTimeCard(cards);
+    const sibling = candidates.find(c => c.id === 'homey:manager:cron:time_exactly_day');
+    assert.match(sibling!.note, /not only that/);
+  });
+
+  test('a confirmed id outranks an unknown card of the same shape', () => {
+    // Ranking, never filtering: an unfamiliar card still works if it is the only
+    // one, but where both are on offer the one seen on hardware wins.
+    const { card } = discoverTimeCard([
+      { id: 'homey:manager:somethingelse:at_time', uri: 'u1', args: [{ name: 'time', type: 'time' }] },
+      cards[0]!,
+    ]);
+    assert.equal(card!.id, 'homey:manager:cron:time_exactly');
   });
 
   test('declines an app-provided card, however well named', () => {
@@ -265,25 +310,24 @@ describe('finding Homey\'s time trigger card', () => {
     assert.equal(card, null);
   });
 
-  test('declines a card that needs more than a time', () => {
-    const { card, candidates } = discoverTimeCard([
-      { id: 'homey:manager:cron:between', uri: 'u', args: [{ name: 'time', type: 'time' }, { name: 'until', type: 'time' }] },
-    ]);
-    assert.equal(card, null);
-    assert.match(candidates[0]!.note, /not only that/);
-  });
-
   test('a card with no uri is unusable rather than half-usable', () => {
     const { card } = discoverTimeCard([
-      { id: 'homey:manager:cron:cron', args: [{ name: 'time', type: 'time' }] },
+      { id: 'homey:manager:cron:time_exactly', args: [{ name: 'time', type: 'time' }] },
     ]);
     assert.equal(card, null);
   });
 
   test('reports the candidates it considered, for a firmware nobody has seen', () => {
     const { candidates } = discoverTimeCard(cards);
-    assert.deepEqual(candidates.map(c => c.id), ['homey:manager:cron:cron']);
+    // Everything carrying a time argument is listed, usable or not — the note says
+    // which, and that list is what a report from an unseen firmware turns on.
+    assert.deepEqual(candidates.map(c => c.id), [
+      'homey:manager:cron:time_exactly',
+      'homey:manager:cron:time_exactly_day',
+      'homey:manager:energy:dynamic_electricity_price_period_lowest_start_between',
+    ]);
     assert.match(candidates[0]!.args, /time:time/);
+    assert.match(candidates[0]!.note, /usable/);
   });
 
   test('the argument value is a wall-clock string', () => {

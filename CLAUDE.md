@@ -374,15 +374,34 @@ Consequences worth not re-deriving:
 - **Everything about time is a wall-clock minute count, 0–1439** — never a timestamp, never a UTC
   offset. Because the Flow engine fires, the app never has to answer "when is the next 22:00 in
   Europe/Copenhagen", only "is it 22:00 there now". That is what keeps DST out of our code entirely.
-- **The time card's id is UNVERIFIED against hardware and must never be hardcoded.** `discoverTimeCard()`
-  finds it by shape — a `homey:manager:*` trigger whose single argument is a time — and echoes its
-  `id` and `uri` back verbatim (§3). It also returns every candidate it considered, and
-  `getDiagnostics` includes them, so the first run on an unseen firmware reports what was on offer.
-  **When you confirm the real card on hardware, record its id and argument shape here.** If no such
-  card exists on some firmware, the fallback is in-app timers: `local-time.ts` and
-  `schedule-window.ts` are needed either way, and only `schedule-bindings.ts` and
-  `time-card-discovery.ts` would be wasted.
-- **`Intl` timezone data on the Homey's Node build is likewise unverified.** `localNow()` formats with
+- **The card, confirmed on hardware** (Homey Pro 2023, firmware 13.4.0, via the app's own
+  diagnostics on 18 August 2026):
+
+  | Card | Arguments |
+  |---|---|
+  | `homey:manager:cron:time_exactly` | `time` of type `time`. **This is the one we use.** |
+  | `homey:manager:cron:time_exactly_day` | `time` of type `time`, plus `day` of type `multiselect` |
+  | `homey:manager:cron:every` | `minutes` of type `number` |
+  | `homey:manager:energy:dynamic_electricity_price_period_{lowest,highest}_start_between` | `duration`, `unit`, `startTime`, `endTime` |
+
+  The trigger argument's value is the wall-clock string `"HH:MM"`. The uri is
+  `homey:flowcardtrigger:` + the id, which is §3's rule and is still never constructed — it is
+  echoed back from enumeration. The id now also RANKS in `discoverTimeCard()` (`KNOWN_TIME_CARDS`)
+  but never filters, so an unfamiliar card of the right shape still works on a firmware we have not
+  seen, and `getDiagnostics` keeps reporting every candidate considered.
+
+- **`time_exactly_day` exists and is deliberately NOT used.** It carries the weekday itself, which
+  sounds like exactly what a schedule wants. Two reasons against it, and they are the same two that
+  put the day filter in the app in the first place: the day set would then live in the Flow, so every
+  day-of-week edit would rewrite Flows (and would have to appear in the variant key, or silently
+  not); and its `day` argument is a `multiselect` whose accepted value tokens we cannot enumerate
+  ahead of time, which is how you get a Flow that validates and never fires. If it is ever worth
+  revisiting, the missing piece is that argument's `values` list from `getFlowCardTriggers()` — read
+  it, do not guess it. The energy cards above are the reason the shape match requires the time to be
+  the ONLY argument.
+- **`Intl` timezone data on the Homey's Node build is still unverified.** The card probe above did
+  not answer it: with no schedule device paired, diagnostics reported no runtimes, and the timezone
+  and local clock are per-runtime fields. Pair one schedule and the same export shows both. `localNow()` formats with
   a fixed `en-US` locale and falls back to process-local time if `Intl` throws, and diagnostics report
   the resolved timezone and local time so a wrong answer is visible rather than mysterious.
 

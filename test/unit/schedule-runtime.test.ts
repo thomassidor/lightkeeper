@@ -100,7 +100,7 @@ function harness(options: {
     bridge,
     timeCard: async () => (options.timeCard !== undefined
       ? options.timeCard
-      : { card: { id: 'homey:manager:cron:cron', uri: 'homey:flowcardtrigger:homey:manager:cron:cron', argument: 'time' }, candidates: [] }) as any,
+      : { card: { id: 'homey:manager:cron:time_exactly', uri: 'homey:flowcardtrigger:homey:manager:cron:time_exactly', argument: 'time' }, candidates: [] }) as any,
     timezone: () => options.timezone ?? 'Europe/Copenhagen',
     displayName: () => 'Kitchen schedule',
     now: () => options.now ?? Date.UTC(2026, 7, 18, 20, 15),
@@ -320,7 +320,7 @@ describe('flow reconciliation', () => {
     // The trigger argument is the wall-clock time, and the card is echoed back
     // from enumeration rather than constructed.
     assert.deepEqual(request.mapped[0].binding.args, { time: '22:00' });
-    assert.equal(request.mapped[0].binding.cardId, 'homey:manager:cron:cron');
+    assert.equal(request.mapped[0].binding.cardId, 'homey:manager:cron:time_exactly');
     assert.equal(h.runtime.currentPlan.managedFlows.length, 2);
   });
 

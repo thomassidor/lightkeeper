@@ -11,11 +11,23 @@ import { formatMinutes } from './schedule-types';
  *
  * The card is matched on SHAPE rather than on a hardcoded id: a manager-owned
  * trigger whose only argument is a time. That keeps working if Athom renames the
- * card or moves it between managers, and it declines the neighbouring
- * "every N minutes" cards, whose argument is a number. `candidates` is returned
- * even on success so diagnostics can show what was on offer — when this goes
- * wrong on a firmware we have not seen, the list is the whole investigation.
+ * card or moves it between managers, and it declines the neighbouring cards whose
+ * arguments happen to include a time — see KNOWN_TIME_CARDS for what a real Homey
+ * actually offers. `candidates` is returned even on success so diagnostics can show
+ * what was on offer; when this goes wrong on a firmware we have not seen, that list
+ * is the whole investigation.
  */
+
+/**
+ * Ids confirmed on real hardware. This RANKS, it never filters: an unknown id of
+ * the right shape is still usable, and a known one only wins a tie. Hardcoding it
+ * as a requirement would reintroduce exactly the brittleness the shape match
+ * exists to avoid.
+ *
+ * Verified on Homey Pro 2023, firmware 13.4.0: `homey:manager:cron:time_exactly`,
+ * one argument, `time` of type `time`.
+ */
+export const KNOWN_TIME_CARDS = ['homey:manager:cron:time_exactly'];
 
 export interface TimeCardRef {
   id: string;
@@ -63,10 +75,11 @@ export function discoverTimeCard(triggers: unknown[]): TimeCardDiscovery {
       continue;
     }
 
-    // Preference, not a requirement: the naming is a hint, the shape is the test.
+    // Preference, not a requirement: the shape is the test, everything else ranks.
+    const known = KNOWN_TIME_CARDS.includes(id) ? 4 : 0;
     const named = /cron|time|clock|date/.test(id) ? 1 : 0;
     const typed = String(timeArg?.type ?? '') === 'time' ? 2 : 0;
-    const score = named + typed;
+    const score = known + named + typed;
 
     candidates.push({ id, args: summary, note: `usable (score ${score})` });
     scored.push({
