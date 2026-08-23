@@ -5,14 +5,21 @@ generates is transmitted anywhere.
 
 ## What it reads
 
-Paired device and zone metadata, the events your remote reports, the capability
-state of the lights you point it at, and the Flows it generated itself. All of it
-through Homey's local Web API, all of it needed to do the one thing the app does.
+Paired device and zone metadata, the events your remotes report, the capability
+state of the lights you point a controller or a schedule at, your Homey's own
+timezone, and the Flows it generated itself. All of it through Homey's local Web
+API, all of it needed to do the two things the app does.
 
 ## What it stores
 
-Controller profiles — which remote, which lights, which gesture does what — and
-the Personal API Key you provide. Both live in the app's settings on your Homey.
+Two things, in two places on your own Homey.
+
+**With each device you add:** a controller's profile — which remote, which
+lights, which gesture does what — or a schedule's plan: which lights, the times,
+the days, and any brightness and warmth you set. Each is stored with that
+virtual device, so removing the device removes it.
+
+**In the app's settings:** the Personal API Key you provide, and nothing else.
 
 The API key is used only to create, update and delete the Flows Lightkeeper
 manages. It is never logged, never returned through the app's own API, and never
@@ -29,9 +36,10 @@ report yourself.
 
 ## How long it keeps things
 
-Until you remove them. Deleting a controller removes its profile and the Flows
-demonstrably created for it. Removing the API key in settings deletes the key.
-Uninstalling the app removes its settings.
+Until you remove them. Deleting a controller or a schedule removes its own
+configuration and the Flows demonstrably created for it. Removing the API key in
+settings deletes the key. Uninstalling the app removes its settings, the stored
+key included.
 
 ## Reporting a problem
 

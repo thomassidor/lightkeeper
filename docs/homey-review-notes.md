@@ -88,32 +88,32 @@ Two consequences a reviewer may want to check:
    that Settings → Lightkeeper shows the presses and the writes.
 6. Repair the controller, switch targets to a zone, save. Add or move a lamp in
    that zone and confirm it is picked up without reconfiguring.
-6a. Add a **Light schedule**: pick two lights, set one window a minute or two ahead
-    with a short duration, use **Test on** and **Test off**, then save. Two Flows
-    should appear in the Lightkeeper folder at the two times shown on screen, and
-    both boundaries should fire on the clock.
-6b. Move that schedule's on-time. The old pair of Flows must be replaced, not left
-    behind firing at the old time.
-6c. Turn the schedule device's own switch off. Its Flows stay, nothing fires, and the
-    device stays available so the switch can be turned back on. Turn it on again
-    inside an active window and the lights should come on rather than wait for
-    tomorrow.
-6d. Set a schedule to weekdays only and check a non-matching day: Settings →
+7. Add a **Light schedule**: pick two lights, set one schedule a minute or two
+   ahead with a short duration, use **Test on** and **Test off**, then save. Two
+   Flows should appear in the Lightkeeper folder at the two times shown on
+   screen, and both boundaries should fire on the clock.
+8. Move that schedule's on-time. The old pair of Flows must be replaced, not left
+   behind firing at the old time.
+9. Turn the schedule device's own switch off. Its Flows stay, nothing fires, and
+   the device stays available so the switch can be turned back on. Turn it on
+   again inside an active window and the lights should come on rather than wait
+   for tomorrow.
+10. Set a schedule to weekdays only and check a non-matching day: Settings →
     Lightkeeper shows the boundary arriving and being ignored, with the reason.
-7. Change a light outside Lightkeeper, then use a relative brightness gesture —
-   it should continue from the light's real state, not from a stale one.
-8. **Revoke the API key.** Existing mappings must keep controlling lights, while
-   the app asks for a new key. Paste a new one: every mapping should survive and
-   the controllers should return to ready without a restart.
-9. **Hand-edit a generated Flow**, including changing the time on a schedule's Flow.
-   Lightkeeper must ask for repair rather than overwrite it.
-10. **Delete the controller, and separately a schedule.** Only the Flows
+11. Change a light outside Lightkeeper, then use a relative brightness gesture —
+    it should continue from the light's real state, not from a stale one.
+12. **Revoke the API key.** Existing mappings must keep controlling lights, while
+    the app asks for a new key. Paste a new one: every mapping should survive and
+    the controllers should return to ready without a restart.
+13. **Hand-edit a generated Flow**, including changing the time on a schedule's
+    Flow. Lightkeeper must ask for repair rather than overwrite it.
+14. **Delete the controller, and separately a schedule.** Only the Flows
     attributable to that device may be removed. Then check the orphan count in app
     settings: with the other device still running it must not report the survivor's
     Flows as orphans.
-11. Restart the app, then the Homey, and repeat a mapped action.
+15. Restart the app, then the Homey, and repeat a mapped action.
 
-Steps 8, 9 and 10 are the ones worth the time — they are the app's genuinely
+Steps 12, 13 and 14 are the ones worth the time — they are the app's genuinely
 risky behaviours, and each is a deliberate safety property rather than an
 accident of implementation.
 
@@ -141,8 +141,9 @@ accident of implementation.
   no release event, so no hold-ramp is offered for it.
 - Schedules are clock times only; sunrise and sunset are not offered. They follow the
   Homey's own timezone, which the settings page displays next to each schedule.
-- Twelve windows per schedule device, which is twenty-four generated Flows. Past that
-  the user's Flow list stops being readable.
+- Twelve schedules per schedule device — one schedule is one on/off window — which
+  is twenty-four generated Flows. Past that the user's Flow list stops being
+  readable.
 - If the app is not running at the moment a window should end, that off is missed and
   the lights stay on until the next boundary. The app deliberately does not switch a
   household's lights off at start-up on the assumption that it once switched them on;

@@ -2,7 +2,8 @@
 
 Every shipped graphic is built from `masters/` by `export-assets.py`. Nothing is hand-edited: an edit
 to a shipped file is lost on the next export. What to produce, and why, is in
-[`../asset-spec.md`](../asset-spec.md); how Homey consumes it is in [`../../CLAUDE.md`](../../CLAUDE.md) §10.
+[`../asset-spec.md`](../asset-spec.md); how Homey consumes it is in
+[`../../CLAUDE.md`](../../CLAUDE.md) §10.
 
 ## The masters
 
@@ -17,10 +18,15 @@ to a shipped file is lost on the next export. What to produce, and why, is in
 | `logo-bitmap-original.png` 1071² | nothing ships from it; it is the palette's source of truth |
 
 Supplied by the author on **23 August 2026**, replacing a set generated on 12 August 2026. The
-photographs are image-model output from the prompts in `asset-spec.md`, reviewed to exclude logos,
+photographs are image-model output from the prompts in
+[`../asset-spec.md`](../asset-spec.md#prompts-for-the-three-photographs), reviewed to exclude logos,
 trademarks, brand-recognisable hardware and text — Homey's review checks that store imagery is not
-manufacturer photography, so that matters. **Name the specific generator here** if the rights register
-needs to be exact; this file is where a reviewer or a future maintainer will look.
+manufacturer photography, so that matters. The prompts live there and are not repeated here; this file
+carries the date, the tool and the rights.
+
+**The specific model is not recorded.** That is a gap rather than a decision: this file is where a
+reviewer or a future maintainer looks, and "an image model" is a weaker answer than a name. Whoever
+replaces a master next should write theirs in.
 
 ## Icon weight
 

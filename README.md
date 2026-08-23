@@ -37,7 +37,7 @@ Two kinds of device, both built the same way.
 **A controller.** Pick a remote. Pick the lights. Say which button does what. Save.
 
 **A schedule.** Pick the lights. Say when they come on, and whether they go off after a while or at
-a set time. Add as many windows as you need. Save.
+a set time. Add as many schedules as you need. Save.
 
 Lightkeeper writes the Flows for you, keeps them in a folder of their own, and maintains them as
 things change. If you add a lamp to a room a device points at, it follows. If you delete the device,
@@ -87,7 +87,7 @@ a single mapping.
 
 ### 2. Add a controller
 
-Devices → Add → Lightkeeper → Controller. Then:
+Devices → Add → Lightkeeper → **Remote-to-light controller**. Then:
 
 - **Choose a remote** — grouped by room, with a count of the events Homey exposes for each
 - **Choose lights** — individually, or a whole zone
@@ -98,7 +98,7 @@ Homey lets you rename the device afterwards, so there is no name field to fill i
 
 ### 3. Add a schedule
 
-Devices → Add → Lightkeeper → Light schedule. Then:
+Devices → Add → Lightkeeper → **Light schedule**. Then:
 
 - **Choose lights** — the same picker, individually or a whole zone
 - **Set the times** — for each schedule: an on-time, the days it runs, and either a duration or an
@@ -176,8 +176,8 @@ Controls whose range would expand past 12 Flow variants are declined rather than
 list.
 
 **Schedules follow your Homey's own clock**, daylight-saving changes included, because Homey's time
-trigger is what fires them. The settings page shows which timezone that is, next to each schedule's
-windows.
+trigger is what fires them. The settings page shows which timezone that is, next to each device's
+schedules.
 
 **Twelve schedules per device**, which is twenty-four generated Flows. Add a second schedule device
 if you need more; the cap exists so your Flow list stays readable.
@@ -225,7 +225,7 @@ seconds, because release events do get lost. If your remote exposes no release e
 Lightkeeper offers stepping rather than a hold ramp in the first place.
 
 **A schedule did not fire.** Look at the schedule's card in Homey settings → Lightkeeper.
-It lists every window, whether one is on right now, and the clock those times are read
+It lists every schedule on it, whether one is on right now, and the clock those times are read
 against — a Homey in an unexpected timezone is the most common answer by far. If the card
 says paused, the device's switch is off. Otherwise check **Recent remote presses**: a
 schedule's boundary arrives there like any other event, with the reason when it was
@@ -246,8 +246,8 @@ Open repair on the controller (Devices → the controller → Repair):
 ### Removing it
 
 Deleting a controller or a schedule removes only the Flows it can attribute to that device. The
-settings page can also find orphaned Lightkeeper Flows, and refuses to clean up when no
-controller is running — in that state every managed Flow looks orphaned and attribution
+settings page can also find orphaned Lightkeeper Flows, and refuses to clean up when no Lightkeeper
+device is running — in that state every managed Flow looks orphaned and attribution
 would be unsafe. Uninstalling the app removes its settings, including the stored key.
 
 ---
@@ -280,22 +280,19 @@ it adapts if a firmware update moves it.
 ```bash
 npm install
 npm test                          # 332 unit tests, no hardware needed
-npm run typecheck
+npm run typecheck                 # the app
+npm run typecheck:test            # the suite and scripts/
+npm run sync:views                # after editing any pair view — nothing runs it for you
+npm run validate                  # homey app validate --level publish
 npx homey app install             # persistent install — use this for anything interactive
-npx homey app validate --level publish
 ```
 
-**Use `homey app install` for interactive testing, not `homey app run`.** `run` creates a debug
-session and **uninstalls the app when the CLI exits**, taking its app settings with it — including
-the stored API key. Pairing against a session that has ended gives screens that render but do
-nothing, because the handlers are gone.
-
-**`--remote` is not optional on `run`.** Since CLI 3.x a bare `homey app run` runs the app in a
-local Docker container; `--remote` runs it on the Homey, which is the only faithful context for
-anything touching app-scoped permissions.
-
-**Do not share an API key between the app and an external script.** A key embeds a session id, and
-concurrent holders appear to invalidate one another.
+Three things that cost an afternoon each if you learn them the hard way, all explained in
+[CLAUDE.md](CLAUDE.md#working-on-this-codebase): use `homey app install` rather than `homey app run`,
+because `run` uninstalls the app when the CLI exits and takes the stored API key with it; never share
+one API key between the app and an external script; and edit a pair view in
+`drivers/controller/pair/` and then run `npm run sync:views`, because every `repair/` folder holds
+byte copies that Homey needs as real files.
 
 **A release writes the changelog twice.** `.homeychangelog.json` is what Homey shows in the store;
 [Changelog](#changelog) below is the same release for anyone reading the repo. Both go in the commit
@@ -305,41 +302,26 @@ checklist in [CLAUDE.md](CLAUDE.md#releasing-a-version).
 ### Layout
 
 ```
-app.ts                          app entry, bridge action listeners, validation on receipt
-api.ts                          app Web API consumed by the settings page
-lib/
-  homey-api-service.ts          both API clients, subscription teardown
-  credential-service.ts         the API key: storage, validation, failure classification
-  device-catalog.ts             devices, zones, owning apps, capability metadata
-  source-discovery-service.ts   trigger card discovery and event-surface fingerprints
-  inputs/                       input contract, normalizer, magnitude collapse
-  mapping/                      mapping engine, supersede gate, types
-  outputs/                      intents, perceptual curve, planner, scheduler, ramp engine
-  bridge/                       binding compiler, flow bridge manager
-  runtime/                      controller runtime, manager, health monitor, target health
-  profiles/                     profile schema, migrations
-  schedules/                    schedule types, window maths, local clock, runtime, manager
-  pairing/                      the light picker, shared by both drivers
-drivers/controller/             virtual device, driver, four pairing views
-drivers/schedule/               virtual device, driver, three pairing views
-scripts/sync-views.mjs          copies pair views into repair/, and shared views between drivers
-test/                           unit tests and fixtures transcribed from real hardware
-docs/                           review notes, privacy, localisation, artwork (not bundled)
+app.ts  api.ts        app entry, and the Web API the settings page calls
+lib/                  everything with no Homey device attached: discovery, inputs,
+                      mapping, outputs, the flow bridge, both runtimes, schedules
+drivers/              the two virtual device types and their pairing views
+settings/  locales/   the app settings page, and every user-facing string
+test/                 unit tests and fixtures transcribed from real hardware
+docs/                 review notes, privacy, localisation, artwork (not bundled)
 ```
 
-**Read [`CLAUDE.md`](CLAUDE.md) before changing anything.** It carries the architectural rules and a
-Homey platform reference — how flow card URIs are really shaped, how device trigger cards are
-actually discovered, how tokens are encoded, why API keys expire — established against real
-hardware and documented nowhere else.
+**Read [`CLAUDE.md`](CLAUDE.md) before changing anything.** It has the full file-by-file tree, the
+architectural rules, and a Homey platform reference — how flow card URIs are really shaped, how
+device trigger cards are actually discovered, how tokens are encoded, why API keys expire — all
+established against real hardware and documented nowhere else.
 
 ### Testing philosophy
 
-Fixtures in `test/fixtures/reference-devices.ts` are transcribed verbatim from four real remotes.
-The raw capture data is kept separate from the expected normalised catalogue, so the tests prove
-the normalizer rather than the fixture — a fixture that also encoded the expectation would pass
-against a normalizer that did nothing.
-
-Captures from a real home are never committed; see [`test/fixtures/README.md`](test/fixtures/README.md).
+Fixtures in `test/fixtures/reference-devices.ts` are transcribed verbatim from four real remotes, and
+the expected results are written by hand beside them so the tests prove the normalizer rather than
+the fixture. Captures from a real home are never committed —
+[`test/fixtures/README.md`](test/fixtures/README.md) has both arguments in full.
 
 ### Reference
 
@@ -347,7 +329,7 @@ Captures from a real home are never committed; see [`test/fixtures/README.md`](t
 - [`docs/homey-review-notes.md`](docs/homey-review-notes.md) — why `homey:manager:api` and a
   Personal API Key are both unavoidable, plus what is still untested
 - [`docs/localisation.md`](docs/localisation.md) — the app is English-only; how to add a language
-- [`docs/asset-spec.md`](docs/asset-spec.md) — every graphic the app ships, its size and its purpose
+- [`docs/asset-spec.md`](docs/asset-spec.md) — the artwork brief: every graphic the app ships, what it is for, and the prompts the photographs came from
 - [`docs/artwork/provenance.md`](docs/artwork/provenance.md) — where the artwork came from, the palette's source, and the rights register
 
 ---

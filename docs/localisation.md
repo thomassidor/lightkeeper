@@ -8,10 +8,10 @@ What was deliberately *not* removed is the machinery, because that is what makes
 adding a language cheap rather than a rewrite:
 
 - `lib/` still returns a locale key plus tokens via `StateDetail`
-  (`lib/profiles/controller-profile.ts`) instead of an English sentence, and
-  `drivers/controller/device.ts` resolves it. `lib/` has no access to `homey.__`,
-  so a string built there can *never* be translated — this indirection is the only
-  reason it can be.
+  (`lib/profiles/controller-profile.ts`) instead of an English sentence, and the
+  driver layer (`drivers/*/device.ts` — both of them) resolves it. `lib/` has no
+  access to `homey.__`, so a string built there can *never* be translated — this
+  indirection is the only reason it can be.
 - Every `data-i18n` / `data-i18n-placeholder` attribute and every `Homey.__()`
   call is still in place.
 - Manifest fields keep their `{ "en": … }` object form rather than collapsing to

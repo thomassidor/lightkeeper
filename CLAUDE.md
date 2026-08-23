@@ -38,11 +38,13 @@ lib/
   source-discovery-service.ts   trigger card discovery, event-surface fingerprints
   inputs/                       input contract, normalizer, magnitude collapse
   mapping/                      mapping engine, supersede gate, behaviour types
-  outputs/                      intents, perceptual curve, planner, scheduler, ramp engine
+  outputs/                      intents, perceptual curve, planner, scheduler, ramp engine,
+                                target resolver, target-state cache
   bridge/                       binding compiler, flow bridge manager
   runtime/                      controller runtime, manager, health monitor, shared target health
   profiles/                     profile schema, migrations
-  schedules/                    types, window maths, local clock, bindings, runtime, manager
+  schedules/                    types, window maths, local clock, bindings, runtime, manager,
+                                time-card discovery, migrations
   pairing/                      the light picker, shared by both drivers
 drivers/controller/             virtual device, driver, four pairing views
   pair/                         the four views, edited here
@@ -54,8 +56,13 @@ drivers/schedule/               virtual device, driver, three pairing views
 scripts/sync-views.mjs          makes every copy named above; nothing runs it for you
 settings/index.html             app settings page
 locales/en.json                 all user-facing strings
+.homeycompose/                  the manifest's SOURCE; app.json is generated from it
+assets/                         the app's own icon and store images, all generated
+README.txt                      the App Store long description — not README.md
 test/                           unit tests and hand-transcribed fixtures
-docs/                           review notes, privacy, localisation, artwork masters (not bundled)
+docs/                           review notes, privacy, localisation (not bundled)
+  artwork/masters/              every graphic's source
+  artwork/export-assets.py      builds every shipped icon and image from those
 ```
 
 ---
@@ -450,8 +457,9 @@ anything discoverable in this repo:
   - **Colour inside an icon is discarded; only alpha survives.** That is the mechanism behind
     `homey-lib`'s *"Icons are rendered white, so choose a darker color that has enough contrast"*,
     and it is why a filled two-colour mark becomes the single solid blob guideline 1.5 warns about.
-    All three of our icons are line art at `stroke-width="40"` — the app mark adds one filled
-    shape, the logo's sparkle, which is fine: `homey-lib`'s own stock icons mix stroked and filled
+    All three of our icons are line art RENDERING at 40 units on the 960 canvas — the authored
+    attribute is that divided by the fit scale, so grepping for `stroke-width="40"` finds nothing.
+    The app mark adds one filled shape, the logo's sparkle, which is fine: `homey-lib`'s own stock icons mix stroked and filled
     paths. They are generated from the SVG masters by `docs/artwork/export-assets.py`.
   - **A CLI-installed app shows NO icon, ever.** That CDN only holds icons from builds Athom
     published, so `homey app install` leaves the mask pointing at a 404 and the UI draws an empty
@@ -468,8 +476,8 @@ anything discoverable in this repo:
 - **A flat mark is rejected as an app or driver IMAGE.** Guideline 1.4: *"Images that consist of a
   single flat shape or icon on a plain, monochrome or transparent background are not approved."*
   Lifestyle photography is what Athom asks for, in those words — which is why the store image and
-  both driver pictures are photographs, and why the schedule driver's picture is a lamp rather than
-  its own clock icon.
+  both driver pictures are photographs, and why the schedule driver's picture is a photograph of a
+  plug-in timer rather than a rasterised icon.
 - **Three things simply do not exist**, so do not spend time looking for them: an icon on a flow
   card (the SDK's `icon` property belongs to argument *autocomplete results*), an icon on
   `capabilitiesOptions` (only app-defined custom capabilities can carry one), and any
@@ -521,6 +529,12 @@ Every user-visible change ships a changelog entry, in two places with two differ
 | `.homeychangelog.json` | what Homey shows in the app store. Keyed by the exact version string. Plain user language — what changed for them, never file names or internals |
 | `README.md` → `## Changelog` | the same release, for anyone reading the repo. May say *why*, and may name the mechanism |
 
+And one file that is not a changelog but drifts like one: **`README.txt` is the App Store long
+description**, which `homey app publish` uploads as the listing body (`README.<lang>.txt` per
+language). It is not `README.md`, no test touches it, and nothing else in the repo references it — so
+re-read it on every release that changes how the app is positioned, or the store says something the
+repo stopped saying.
+
 **The checklist, in one commit:**
 
 1. Bump `.homeycompose/app.json` and `package.json` to the same version. Patch for fixes, minor for
@@ -528,11 +542,14 @@ Every user-visible change ships a changelog entry, in two places with two differ
    instead.
 2. Add a `.homeychangelog.json` entry under that exact version.
 3. Mirror it under `## Changelog` in `README.md`, newest first.
-4. Run `npx homey app validate --level publish` — this is what regenerates `app.json`, so it is a
-   required step and not just a check. Commit the regenerated `app.json` with the rest.
-5. `npm test`. `test/unit/release-metadata.test.ts` fails if the three versions disagree, if either
-   changelog is missing the current version, or if `README.md` states a test count that no longer
-   matches the suite.
+4. Run `npm run validate` — this is what regenerates `app.json`, so it is a required step and not
+   just a check. Commit the regenerated `app.json` with the rest.
+5. Re-read `README.txt` if anything about what the app *is* changed.
+6. `npm test`. `test/unit/release-metadata.test.ts` fails if the four versions disagree
+   (`package-lock.json` counts), if either changelog is missing the current version, or if
+   `README.md` states a test count that no longer matches the suite.
+   `test/unit/compose-manifest.test.ts` fails if `app.json` has drifted from `.homeycompose/` —
+   which `validate` would otherwise repair silently in step 4.
 
 `.homeychangelog.json` keeps the `{ "en": … }` object form for the same reason every other
 user-facing string does: adding a language stays a sibling key (see the localisation note below).
@@ -594,7 +611,8 @@ type declarations. Everything of ours is strict — `strict: true`, `noImplicitO
 
 **Translation belongs to the device layer.** `lib/` has no access to `homey.__`, so anything
 user-facing produced there returns a locale key plus tokens via `StateDetail`
-(`lib/profiles/controller-profile.ts`), and `drivers/controller/device.ts` resolves it. A string
+(`lib/profiles/controller-profile.ts`) and the driver layer — `drivers/*/device.ts`, both of them —
+resolves it. A string
 hardcoded in `lib/` can never be translated, no matter what the locale files say.
 `test/unit/locales.test.ts` enforces the invariant in both directions: no defined key unused, no
 referenced key undefined.
@@ -611,8 +629,11 @@ English–Danish glossary kept from the removed translation.
 **Pair views share ONE document.** The views under `drivers/*/pair/` are injected into the pairing
 container's document rather than getting their own iframe. They must not load `homey.js` themselves,
 every CSS rule is scoped to the view's root id, and the boot guard lives on the root element rather
-than in a global. Each file's header explains this. The `~110`-line shared CSS base is byte-identical
-in every view, across both drivers, and `test/unit/pair-view-styles.test.ts` fails on any drift.
+than in a global. Each file's header explains this. The ~150-line shared CSS base is byte-identical
+in every view, across both drivers, and so are the `emit()`, `stabiliseScrollbar()` and
+`escapeHtml()` helpers beside it. `test/unit/pair-view-styles.test.ts` fails on any drift in either
+— it compared only the CSS until `emit()` was found carrying a timeout in one view and not the
+other four.
 
 **Edit a pair view, then run `npm run sync:views`.** Every `repair/` folder holds byte copies of its
 `pair/`, and the schedule driver's `credential.html` and `targets.html` are byte copies of the
@@ -639,8 +660,9 @@ Load-bearing product guarantees, not implementation details:
 - **Flows that look user-edited are never overwritten.** The controller is marked for repair instead.
 - **Deleting a controller deletes only the Flows demonstrably created by it.** Attribution is the
   controller id carried in the bridge action's arguments.
-- **The orphan sweep refuses to run when no controller is live**, because every managed Flow would
-  then look orphaned.
+- **The orphan sweep refuses to run when no Lightkeeper device of either kind is live**, because
+  every managed Flow would then look orphaned. The live set is the union of both registries — see
+  `liveDeviceIds()` below for why that is load-bearing rather than tidy.
 - **The API key is never logged, never returned over the app API, and never included in
   diagnostics.** Errors are classified before logging, because an error object can echo the token.
   `test/unit/diagnostics-redaction.test.ts` asserts this against serialised output.

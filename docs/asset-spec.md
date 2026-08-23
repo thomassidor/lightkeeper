@@ -1,66 +1,68 @@
-# Asset spec
+# Artwork brief
 
 **The app.** Lightkeeper does two things to lights you already own: it turns a remote, switch or dial
 you already have into a controller for them, and it puts them on a schedule. It writes the Homey Flows
 underneath so the user never opens the Flow editor.
 
-**So the photographs are about lit rooms, not technology.** Warm lamps at dusk in a calm Scandinavian
-interior; deep blue-hour shadows; a hand on a small unbranded remote for the controller, and lamps
-glowing with nobody in frame for the schedule. Brand colours are violet `#180E32` and lavender
-`#CCB0F3` — the dark and the light of the logo — and the lamplight in the photographs is the warmth
-inside that. No screens, no phones, no visible technology, no
-branding of any kind.
+**So the photographs are about lit rooms and ordinary objects, not technology.** Warm lamps at dusk in
+a calm Scandinavian interior for the app; a remote on white for the controller; a plug-in timer on
+white for the schedule. Brand colours are violet `#180E32` and lavender `#CCB0F3` — the dark and the
+light of the logo — and the lamplight in the banner is the warmth inside that. No people, no screens,
+no visible smart-home hardware, no branding of any kind.
 
-Twelve files. Generate each one at exactly the size given, at exactly the path given.
+Nothing shipped is drawn or cropped by hand. Every file below is built from a master in
+`artwork/masters/` by `artwork/export-assets.py`, and the exact pixel sizes Homey requires are
+asserted in `test/unit/assets.test.ts` rather than restated here. What Homey does with an icon, and
+which of these rules a validator enforces versus a human reviewer, is in
+[`../CLAUDE.md`](../CLAUDE.md) §10.
 
-| File | Size | What it is | Used for |
-|---|---|---|---|
-| `assets/icon.svg` | 960×960 | Line-art app icon | The app's icon inside Homey: app list, the app picker when adding a device, Flow cards, app settings |
-| `assets/images/small.png` | 250×175 | Photo | The app's card in App Store listings |
-| `assets/images/large.png` | 500×350 | Photo, same shot | Banner at the top of the app's App Store page |
-| `assets/images/xlarge.png` | 1000×700 | Photo, same shot | The same banner on high-resolution screens (optional file) |
-| `drivers/controller/assets/icon.svg` | 960×960 | Line-art remote control | This device type's icon when adding a device, and on its tile afterwards |
-| `drivers/controller/assets/images/small.png` | 75×75 | Photo of a remote | Device rows and lists |
-| `drivers/controller/assets/images/large.png` | 500×500 | Photo, same shot | The "supported devices" grid on the App Store page |
-| `drivers/controller/assets/images/xlarge.png` | 1000×1000 | Photo, same shot | The same grid on high-resolution screens (optional file) |
-| `drivers/schedule/assets/icon.svg` | 960×960 | Line-art clock | This device type's icon when adding a device, and on its tile afterwards |
-| `drivers/schedule/assets/images/small.png` | 75×75 | Photo of a timer plug | Device rows and lists |
-| `drivers/schedule/assets/images/large.png` | 500×500 | Photo, same shot | The "supported devices" grid on the App Store page |
-| `drivers/schedule/assets/images/xlarge.png` | 1000×1000 | Photo, same shot | The same grid on high-resolution screens (optional file) |
+| File | What it is | Used for |
+|---|---|---|
+| `assets/icon.svg` | Line-art app mark: open circle with a sparkle | The app's icon inside Homey: app list, the app picker when adding a device, the app's grouping in the Flow editor, app settings |
+| `assets/images/{small,large,xlarge}.png` | Photo, one shot at three sizes | The app's card and banner on its App Store page |
+| `drivers/controller/assets/icon.svg` | Line-art remote control | This device type's icon when adding a device, and on its tile afterwards |
+| `drivers/controller/assets/images/{small,large,xlarge}.png` | Photo of a remote | Device rows, and the "supported devices" grid on the App Store page |
+| `drivers/schedule/assets/icon.svg` | Line-art stopwatch | This device type's icon when adding a device, and on its tile afterwards |
+| `drivers/schedule/assets/images/{small,large,xlarge}.png` | Photo of a plug-in timer | The same two places |
+| `artwork/readme/banner.png` | The hero photograph with the logo on a rounded violet tile | The top of `README.md`. Ships nowhere; built by the same script |
 
-Rules:
+Rules, for whoever draws or generates the next set:
 
 - **Icons** are line art on a transparent, full 960 canvas — no gradients, no background shape. Homey
   paints them as a flat single-colour mask, so colour inside the file is discarded and only the
-  silhouette survives. Must read at 32 px. No two identical. They are **generated** from the SVG
-  masters by `docs/artwork/export-assets.py`, which centres each drawing on the canvas and normalises
-  its paint; edit the master, never the shipped file.
+  silhouette survives. Must read at 32 px. No two identical. Edit the master, never the shipped file:
+  an edit to a shipped file is lost on the next export.
 - **Images** must be photographic. A flat shape or icon on a plain background is rejected. Colour has
   to reach every edge — no borders, no letterboxing. No Homey logo, name or hardware.
-- Sizes are exact; a wrong one fails `homey app validate`. PNG or JPG, extension matching the format.
+- **`xlarge` is optional** and no validator ever opens it, but ship it: it is what a
+  high-resolution screen gets.
 
 ## Prompts for the three photographs
 
 The icons come from the SVG masters, so only the photographs need generating. Each prompt carries its
-own app context and palette, so one block can be pasted into a generator on its own. Make each one larger than its
-largest shipped size and loosely framed, so a crop can be moved later without regenerating; save into
-`docs/artwork/masters/` and let `docs/artwork/export-assets.py` cut the shipped sizes.
+own app context and palette, so one block can be pasted into a generator on its own. Generate larger
+than the biggest shipped size and loosely framed, so a crop can be moved later without regenerating;
+save into `artwork/masters/` and let `artwork/export-assets.py` cut the shipped sizes — it finds the
+subject against its ground, so replacing a master reframes the crop rather than silently
+mis-centring it.
 
-**1. App banner** — for `assets/images/*`. Generate at 1536×1024 or larger, 3:2, composed for a 10:7 crop.
+**1. App banner** — for `assets/images/*` and the README banner. Generate at 1536×1024 or larger,
+3:2, composed for a 10:7 crop.
 
 > Store banner for Lightkeeper, a smart-home app that turns a remote you already own into a
 > controller for your lights and puts those lights on a schedule — so its imagery is about lit rooms,
 > not technology.
 >
 > Photorealistic editorial interior photograph. A calm Scandinavian living room at blue hour, three
-> warm table and floor lamps glowing together as the only light sources, nobody in frame. Palette:
-> deep navy shadows (#1F3A5F) and warm amber lamplight (#F2A93B), with cool blue dusk light through a
-> window behind. Warm light pooling on pale plaster and wood. Lamps spread across the frame so the
+> warm table and floor lamps glowing together as the only light sources, nobody in frame. Warm amber
+> lamplight (around #F2A93B) against cool blue dusk light through a window behind — lamplight, not
+> brand colour. Warm light pooling on pale plaster and wood. Lamps spread across the frame so the
 > composition survives a 10:7 crop, generous margin on all sides. Shallow depth of field, natural
 > photography, still readable when scaled to 250×175. No people, no text, no logos, no trademarks, no
 > screens or displays, no visible smart-home hardware, no watermark.
 
-**2. Controller device** — for `drivers/controller/assets/images/*`. Generate at 1254×1254 or larger, square.
+**2. Controller device** — for `drivers/controller/assets/images/*`. Landscape, 1500×1050 or larger;
+the export finds the object and crops the square.
 
 > Device picture for one half of Lightkeeper, a smart-home app that turns a remote, switch or dial
 > you already own into a controller for your lights. This image stands for that device type, so it
@@ -70,11 +72,12 @@ largest shipped size and loosely framed, so a crop can be moved later without re
 > matte warm-white body, a charcoal rotary scroll wheel near the top, three round buttons below it.
 > Three-quarter view angled from the right to give the object dimension, soft even studio light,
 > subtle contact shadow. The app's palette is violet #180E32 and lavender #CCB0F3, so keep the object
-> neutral — warm white and charcoal — to sit beside them without competing. Whole device centred with
-> even margin, recognizable at 75×75. Photorealistic catalogue render. No text, no logos, no branding,
+> neutral — warm white and charcoal — to sit beside them without competing. Whole device with even
+> margin, recognizable at 75×75. Photorealistic catalogue render. No text, no logos, no branding,
 > no resemblance to any real product, no hand, no props, no packaging, no watermark.
 
-**3. Schedule device** — for `drivers/schedule/assets/images/*`. Generate at 1254×1254 or larger, square.
+**3. Schedule device** — for `drivers/schedule/assets/images/*`. Landscape, 1500×1050 or larger;
+same crop treatment.
 
 > Device picture for the other half of Lightkeeper, a smart-home app that puts lights on a schedule —
 > on at dusk, off at bedtime, without anyone touching a switch. The device that stands for it is a
@@ -84,7 +87,7 @@ largest shipped size and loosely framed, so a crop can be moved later without re
 > warm-white body, a round dial face on the front with a glowing warm-amber ring, a pass-through socket
 > below, plug pins visible at the side. Three-quarter view angled from the right, soft even studio
 > light, subtle contact shadow. The dial glows, so it reads as time rather than as a plain adapter.
-> Whole device centred with even margin, recognizable at 75×75. Photorealistic catalogue render,
+> Whole device with even margin, recognizable at 75×75. Photorealistic catalogue render,
 > matching the neutral white-ground studio look of the remote in the app's other device picture. No
 > numerals, no text, no logos, no branding, no hand, no props, no watermark.
 
@@ -97,5 +100,6 @@ Three things in those prompts are deliberate, so nobody "fixes" them:
 - **No hand in any frame, including the banner.** A hand on a remote describes only half of what the
   app does — that is exactly what the previous banner got wrong.
 
-Record any prompt you actually use in [`artwork/provenance.md`](artwork/provenance.md), with the date
-and the generator — the licence register depends on it.
+These prompts are the record: [`artwork/provenance.md`](artwork/provenance.md) links here rather than
+repeating them, and carries the date, the generator and the rights register. Update both when a
+master is replaced.
