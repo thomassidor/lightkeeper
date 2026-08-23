@@ -4,19 +4,24 @@ Everything a Homey Pro app must ship, for this app's two drivers: `controller` a
 
 ## 1. Files
 
-| Path | Size | |
-|---|---|---|
-| `assets/icon.svg` | 960×960 | required |
-| `assets/images/small.png` | 250×175 | required |
-| `assets/images/large.png` | 500×350 | required |
-| `assets/images/xlarge.png` | 1000×700 | optional |
-| `drivers/<id>/assets/icon.svg` | 960×960 | required, one per driver |
-| `drivers/<id>/assets/images/small.png` | 75×75 | required |
-| `drivers/<id>/assets/images/large.png` | 500×500 | required |
-| `drivers/<id>/assets/images/xlarge.png` | 1000×1000 | optional |
+| Path | Size | Used for | |
+|---|---|---|---|
+| `assets/icon.svg` | 960×960 | The app's icon everywhere inside Homey: app list, the app picker when adding a device, Flow cards, app settings | required |
+| `assets/images/small.png` | 250×175 | The app's card in App Store listings and category pages | required |
+| `assets/images/large.png` | 500×350 | The banner at the top of the app's App Store page | required |
+| `assets/images/xlarge.png` | 1000×700 | The same banner on large or high-resolution screens | optional |
+| `drivers/<id>/assets/icon.svg` | 960×960 | That device type's icon when adding a device, and on the device tile afterwards | required, one per driver |
+| `drivers/<id>/assets/images/small.png` | 75×75 | Device rows and lists | required |
+| `drivers/<id>/assets/images/large.png` | 500×500 | The "supported devices" grid on the App Store page | required |
+| `drivers/<id>/assets/images/xlarge.png` | 1000×1000 | The same, on high-resolution screens | optional |
 
 Images are PNG or JPG, and the extension must match the real format. Sizes are exact — a wrong one
 fails `homey app validate`.
+
+Athom documents only that images appear "prominently on the App Store page"; the surface-by-surface
+column above is from observing a live Homey and the public store, so treat it as a good guide rather
+than a contract. Icons are the documented case: the brand colour is the backdrop for them "in e.g.
+Flows, Add devices and the App Store".
 
 ## 2. Icons (SVG)
 
