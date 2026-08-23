@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"
+     fill="none" stroke="currentColor" stroke-width="6.7" stroke-linecap="round" stroke-linejoin="round"
+     role="img" aria-label="Remote control">
+  <rect x="186.5" y="50.7" width="139.0" height="411.8" rx="26.0"/>
+  <circle cx="256.0" cy="171.5" r="50.6"/>
+  <circle cx="256.0" cy="171.5" r="23.9"/>
+  <circle cx="256.0" cy="271.1" r="19.6"/>
+  <rect x="240.4" y="317.3" width="31.2" height="59.0" rx="12.6"/>
+</svg>

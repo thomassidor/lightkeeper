@@ -1,74 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 960" width="960" height="960">
   <title>Lightkeeper</title>
-  <desc>A lighthouse, its lamp room throwing beams to both sides.</desc>
+  <desc>An open circle with a four-pointed sparkle.</desc>
 
-  <!-- HOW HOMEY ACTUALLY DELIVERS THIS FILE, read off a live Homey's DOM:
+  <!-- GENERATED from docs/artwork/masters/logo-mark-master.svg by
+       docs/artwork/export-assets.py. Edit the master, then re-run the script;
+       an edit here is lost on the next export.
 
-           <span style="--prop-mask-image:
-                   url('https://icons-cdn.athom.com/<md5>.svg');
-                 --prop-size: 50px;
-                 --prop-color: var(--theme-color-white);">
+       Homey renders an icon as a CSS mask painted one flat colour, fetched from
+       icons-cdn.athom.com by this file's MD5, so colour inside it is discarded
+       and only the silhouette survives. It also means a CLI-installed app shows
+       no icon at all — that CDN only holds published builds. See CLAUDE.md §10.
 
-       The icon is a CSS MASK, painted with a theme colour, fetched from Athom's
-       icon CDN by the MD5 of this exact file — the hash the CLI writes into the
-       manifest as `iconHash`. Verified: md5(assets/icon.svg) matched the URL the
-       UI requested, character for character.
-
-       Two things follow, and both are easy to waste hours on:
-
-       1. Colour inside the icon is DISCARDED. Only alpha survives. That is the
-          mechanism behind homey-lib's "Icons are rendered white", and it is why a
-          filled two-colour mark becomes the single solid blob guideline 1.5 warns
-          about. Line art is not a style choice here; it is the only thing that
-          keeps internal detail.
-       2. A CLI-installed app shows NO icon at all. That CDN only holds icons from
-          builds Athom published, so `homey app install` leaves the mask pointing
-          at a 404 and the UI draws an empty brand-coloured circle. This is
-          expected on a dev install and is NOT a fault in this file — do not
-          redraw anything chasing it. It resolves on publish, including to the
-          test channel.
-
-       width/height are kept for any consumer that does need an intrinsic size;
-       the mask itself does not care, and homey-lib's own 226 stock icons omit
-       them. -->
-
-  <!-- LINE ART, and deliberately so. The previous mark was a filled two-colour
-       drawing — navy remote, amber bulb — which was wrong twice over.
-
-       Athom's guideline 1.5: "do not use images, filled illustrations, gradients,
-       or background colours in your app icon. Submitting a filled image or
-       illustration as an icon will cause it to appear as a solid shape, which is
-       not recognisable at small sizes and will not be approved."
-
-       And homey-lib's own validator says what Homey does with the icon, in the
-       error it raises for too-bright a brandColor: "Icons are rendered white, so
-       choose a darker color that has enough contrast." A navy body with an amber
-       detail collapses into one undifferentiated white shape in every surface
-       that recolours the icon — which is precisely the figure/ground separation
-       the old mark spent its effort establishing.
-
-       So: stroke only, no fills, transparent, full canvas, stroke-width 40, and
-       no width/height attributes — matching all 226 stock class icons that
-       homey-lib ships.
-
-       Rasterised at 32/40/56/80/140 px over white, over brandColor in white, and
-       over near-black. Two findings, both from the 32 px row: the beams are what
-       stop the tower reading as a pepper grinder, and the base line is what stops
-       it floating. -->
-  <g stroke="#000" fill="none" fill-rule="evenodd" stroke-width="40"
-     stroke-linejoin="round" stroke-linecap="round">
-    <!-- Tower, splayed, standing on the base line. -->
-    <path d="M395 300 L565 300 L655 862 L305 862 Z"/>
-    <!-- Lamp room. -->
-    <path d="M355 215 L605 215 L605 300 L355 300 Z"/>
-    <!-- Roof. -->
-    <path d="M480 120 L620 215 L340 215 Z"/>
-    <!-- Beams: two strokes a side, opening outward from the lamp room. -->
-    <path d="M330 238 L120 168"/>
-    <path d="M330 278 L120 348"/>
-    <path d="M630 238 L840 168"/>
-    <path d="M630 278 L840 348"/>
-    <!-- Ground. -->
-    <path d="M245 862 L715 862"/>
+       The transform centres the master's drawing and scales it to fill the
+       canvas, which guideline 1.5 asks for; stroke widths are pre-divided by the
+       scale so they render at 40 units on this 960 canvas. -->
+  <g transform="translate(-150.9 -102.9) scale(1.1871)" fill="#000" stroke-width="33.70">
+    <path d="M545.5 219.5 A 316 316 0 1 0 827.5 487.5"
+    fill="none" stroke="#000" stroke-width="33.70" stroke-linecap="round"/>
+    <path d="M755 119 Q755 261 879 261 Q755 261 755 403 Q755 261 631 261 Q755 261 755 119 Z"/>
   </g>
 </svg>

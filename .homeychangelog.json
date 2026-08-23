@@ -1,4 +1,7 @@
 {
+  "0.3.0": {
+    "en": "Changed\n- New look. The app has a new icon, new colours taken from it, and new pictures for both device types — including a proper timer for the schedule device.\n- Every screen in the app now uses the new colours, in both light and dark mode."
+  },
   "0.2.2": {
     "en": "Changed\n- New artwork throughout. The app icon is a lighthouse now, which suits the name better than the old remote-and-bulb, and the two device icons are drawn to match it.\n- The app’s picture in the store shows lamps lit in an evening room, instead of a hand holding a remote — the app does more than remotes.\n- The schedule device now has a picture of a lamp rather than a drawing of a clock face."
   },

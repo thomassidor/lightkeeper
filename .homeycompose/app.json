@@ -1,6 +1,6 @@
 {
   "id": "com.thomassidor.lightkeeper",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "compatibility": ">=12.9.0",
   "runtime": "nodejs",
   "sdk": 3,
@@ -18,7 +18,7 @@
     "en": ["remote control", "smart lights", "schedule", "timer", "time of day", "dimmer", "rotary dial",
       "button", "flow", "zigbee", "matter"]
   },
-  "brandColor": "#1F3A5F",
+  "brandColor": "#180E32",
   "permissions": [
     "homey:manager:api"
   ],

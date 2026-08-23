@@ -135,6 +135,26 @@ describe('shipped images', () => {
   });
 });
 
+describe('the palette', () => {
+  test('brandColor is the colour the artwork pipeline extracted', () => {
+    // #180E32 is 93% of docs/artwork/masters/logo-bitmap-original.png, read out by
+    // `export-assets.py --palette`. Tying the manifest to the script's constant is
+    // what stops the app's brand colour drifting away from its own logo.
+    const script = readFileSync(join(ROOT, 'docs', 'artwork', 'export-assets.py'), 'utf8');
+    const declared = /^BRAND = '(#[0-9A-Fa-f]{6})'/m.exec(script)?.[1];
+    assert.ok(declared, 'export-assets.py declares no BRAND colour');
+
+    const compose = JSON.parse(
+      readFileSync(join(ROOT, '.homeycompose', 'app.json'), 'utf8'),
+    ) as { brandColor?: string };
+
+    assert.equal(
+      compose.brandColor?.toLowerCase(), declared!.toLowerCase(),
+      'brandColor and the artwork pipeline disagree about the brand colour',
+    );
+  });
+});
+
 describe('icons', () => {
   test('the app and every driver has one', () => {
     // The app icon is checked by homey-lib at every level. Driver icons are NOT
@@ -158,23 +178,45 @@ describe('icons', () => {
     }
   });
 
-  test('each is line art: stroked, never filled', () => {
+  test('each is drawn, not painted into a block', () => {
     for (const target of iconTargets()) {
       const svg = readFileSync(target.path, 'utf8');
       const markup = svg.replace(/<!--[\s\S]*?-->/g, '');
 
-      assert.match(markup, /stroke="#000"/, `${target.label}: no stroke colour`);
-      assert.match(markup, /stroke-width="40"/, `${target.label}: not the house stroke width`);
-      assert.match(markup, /fill="none"/, `${target.label}: fill is not disabled`);
+      // The masters are line art and set their own stroke weight, so the weight
+      // itself is not asserted — only that one is declared, since an icon with no
+      // stroke width renders at 1 user unit and vanishes.
+      assert.match(markup, /stroke-width="[\d.]+"/, `${target.label}: no stroke width`);
 
-      // A colour fill is what guideline 1.5 rejects, and what collapses into one
-      // undifferentiated shape wherever Homey renders the icon white.
-      const fills = [...markup.matchAll(/fill="([^"]*)"/g)]
-        .map(match => match[1]!)
-        .filter(value => value !== 'none');
+      // Fills are allowed: the logo's sparkle is a filled path, and homey-lib's own
+      // stock icons mix `fill="#000"` shapes with stroked ones. What is not allowed
+      // is a background — guideline 1.5, "do not use background colours" — which as
+      // a mask would swallow the whole canvas into one opaque block.
+      const backgrounds = [...markup.matchAll(/<rect[^>]*>/g)]
+        .map(match => match[0])
+        .filter(rect => /width="9[0-9]{2}"/.test(rect) && /height="9[0-9]{2}"/.test(rect));
       assert.deepEqual(
-        fills, [],
-        `${target.label}: filled shapes (${fills.join(', ')}) — icons must be stroke-only`,
+        backgrounds, [],
+        `${target.label}: a full-canvas rect would mask as a solid block`,
+      );
+
+      // Colour inside the file is discarded by the mask, so anything non-black is
+      // either dead weight or a sign the master's palette leaked through.
+      const colours = [...markup.matchAll(/(?:fill|stroke)="(#[0-9a-fA-F]{3,6})"/g)]
+        .map(match => match[1]!.toLowerCase())
+        .filter(value => value !== '#000' && value !== '#000000');
+      assert.deepEqual(colours, [], `${target.label}: coloured paint (${colours.join(', ')})`);
+    }
+  });
+
+  test('each is generated from a master, and says so', () => {
+    // A hand-edit here is lost the next time the export script runs, so the file
+    // has to name where it came from.
+    for (const target of iconTargets()) {
+      const svg = readFileSync(target.path, 'utf8');
+      assert.match(
+        svg, /GENERATED from docs\/artwork\/masters\/[\w.-]+/,
+        `${target.label}: does not name the master it came from`,
       );
     }
   });

@@ -1,33 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 960" width="960" height="960">
   <title>Light schedule</title>
-  <desc>A clock face showing ten past four.</desc>
+  <desc>A stopwatch.</desc>
 
-  <!-- Delivered as a CSS mask painted with a theme colour, fetched from Athom's
-       icon CDN by this file's MD5 — see ../../../assets/icon.svg for the whole
-       mechanism, including why a CLI-installed app correctly shows no icon at
-       all and why colour inside an icon is discarded. -->
+  <!-- GENERATED from docs/artwork/masters/schedule-icon-master.svg by
+       docs/artwork/export-assets.py. Edit the master, then re-run the script;
+       an edit here is lost on the next export.
 
-  <!-- Line art, for the reasons recorded in ../../../assets/icon.svg.
+       Homey renders an icon as a CSS mask painted one flat colour, fetched from
+       icons-cdn.athom.com by this file's MD5, so colour inside it is discarded
+       and only the silhouette survives. It also means a CLI-installed app shows
+       no icon at all — that CDN only holds published builds. See CLAUDE.md §10.
 
-       Two earlier attempts died on the contact sheet, both at 32 px:
-
-       - A filled navy dial with an amber wedge for the on-stretch of the day.
-         Fills are out (guideline 1.5/1.6), and rendered white the wedge and the
-         dial became one shape.
-       - The same idea in outline: an inner arc from twelve round to half past
-         four. The arc closed against the two hands and the whole mark read as a
-         leaf. A variant with the arc pushed outside the rim read as a wifi
-         indicator instead.
-
-       So the mark is a plain clock, which says "time" with nothing to
-       misinterpret, and is unmistakably not the controller's remote beside it in
-       the add-device list. The hands point at ten past four rather than twelve
-       o'clock: an asymmetric time reads as a clock, where twelve reads as a
-       plus sign. -->
-  <g stroke="#000" fill="none" fill-rule="evenodd" stroke-width="40"
-     stroke-linejoin="round" stroke-linecap="round">
-    <circle cx="480" cy="480" r="360"/>
-    <path d="M480 480 L480 215"/>
-    <path d="M480 480 L672 620"/>
+       The transform centres the master's drawing and scales it to fill the
+       canvas, which guideline 1.5 asks for; stroke widths are pre-divided by the
+       scale so they render at 40 units on this 960 canvas. -->
+  <g transform="translate(-295.6 -267.6) scale(3.0298)" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="13.20">
+    <circle cx="256.0" cy="264.6" r="124.1"/>
+    <path d="M240.9 141.3 V 128.6 H 231.3 A 5.3 5.3 0 0 1 226.0 123.3 V 110.2 A 5.3 5.3 0 0 1 231.3 104.9 H 280.3 A 5.3 5.3 0 0 1 285.6 110.2 V 123.3 A 5.3 5.3 0 0 1 280.3 128.6 H 271.1 V 141.3"/>
+    <path d="M256.0 176.8 L256.0 164.5"/>
+    <path d="M343.8 264.6 L356.0 264.6"/>
+    <path d="M256.0 352.4 L256.0 364.6"/>
+    <path d="M168.2 264.6 L156.0 264.6"/>
+    <path d="M263.1 256.8 L315.2 200.1"/>
+    <circle cx="256.0" cy="264.6" r="10.5"/>
   </g>
 </svg>

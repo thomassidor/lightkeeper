@@ -428,7 +428,7 @@ Consequences worth not re-deriving:
 
 ## 10. Store assets: what is validated, what is reviewed, and what Homey does to your icon
 
-`docs/artwork.md` holds the full account. The four facts worth having here, because
+`docs/asset-spec.md` and `docs/artwork/provenance.md` hold the rest. The four facts worth having here, because
 each one was learned by reading `homey-lib` inside the CLI's own package rather than from
 anything discoverable in this repo:
 
@@ -445,8 +445,9 @@ anything discoverable in this repo:
   - **Colour inside an icon is discarded; only alpha survives.** That is the mechanism behind
     `homey-lib`'s *"Icons are rendered white, so choose a darker color that has enough contrast"*,
     and it is why a filled two-colour mark becomes the single solid blob guideline 1.5 warns about.
-    All three of our icons are stroke-only line art (`stroke="#000"`, `fill="none"`,
-    `stroke-width="40"`), which is what every one of `homey-lib`'s 226 stock class icons is.
+    All three of our icons are line art at `stroke-width="40"` — the app mark adds one filled
+    shape, the logo's sparkle, which is fine: `homey-lib`'s own stock icons mix stroked and filled
+    paths. They are generated from the SVG masters by `docs/artwork/export-assets.py`.
   - **A CLI-installed app shows NO icon, ever.** That CDN only holds icons from builds Athom
     published, so `homey app install` leaves the mask pointing at a 404 and the UI draws an empty
     `brandColor` circle. This cost a diagnosis: the SVGs render correctly inline, as a sized

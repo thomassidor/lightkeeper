@@ -1,5 +1,7 @@
 # Lightkeeper
 
+![Lightkeeper](docs/artwork/readme/banner.png)
+
 [![CI](https://github.com/thomassidor/lightkeeper/actions/workflows/ci.yml/badge.svg)](https://github.com/thomassidor/lightkeeper/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -269,7 +271,7 @@ covered by unit tests rather than by a week of waiting. The trigger card they ar
 resolved at runtime by enumerating what your Homey actually offers, rather than hardcoding an id, so
 it adapts if a firmware update moves it.
 
-307 unit tests, type-clean, validated at `publish` level.
+309 unit tests, type-clean, validated at `publish` level.
 
 ---
 
@@ -277,7 +279,7 @@ it adapts if a firmware update moves it.
 
 ```bash
 npm install
-npm test                          # 307 unit tests, no hardware needed
+npm test                          # 309 unit tests, no hardware needed
 npm run typecheck
 npx homey app install             # persistent install — use this for anything interactive
 npx homey app validate --level publish
@@ -345,11 +347,33 @@ Captures from a real home are never committed; see [`test/fixtures/README.md`](t
 - [`docs/homey-review-notes.md`](docs/homey-review-notes.md) — why `homey:manager:api` and a
   Personal API Key are both unavoidable, plus what is still untested
 - [`docs/localisation.md`](docs/localisation.md) — the app is English-only; how to add a language
-- [`docs/artwork.md`](docs/artwork.md) — palette, icon rules, and how to re-export the store images
+- [`docs/asset-spec.md`](docs/asset-spec.md) — every graphic the app ships, its size and its purpose
+- [`docs/artwork/provenance.md`](docs/artwork/provenance.md) — where the artwork came from, the palette's source, and the rights register
 
 ---
 
 ## Changelog
+
+### 0.3.0
+
+Changed:
+
+- **New artwork throughout, and a new palette to go with it.** The app's mark is the logo — an open
+  circle with a sparkle — and the two device icons are a remote and a stopwatch drawn in the same
+  hand. The brand colour is now the logo's own violet `#180E32`, with its lavender `#CCB0F3` as the
+  accent, and every screen the app draws follows: the settings page and all seven pairing views take
+  the violet in light mode and the lavender in dark. Both hexes are read out of the logo bitmap by
+  `docs/artwork/export-assets.py --palette`, and a test fails if the manifest ever disagrees with it.
+- **The store image and both device pictures are new photographs.** An evening room with two lamps
+  lit for the app, a remote for the controller, and — at last — a real device for the schedule: a
+  plug-in timer with a glowing dial, instead of a lamp standing in for hardware it does not have.
+- **The icons are generated now, not hand-drawn twice.** `export-assets.py` builds all three from the
+  SVG masters in `docs/artwork/masters/`: it centres each drawing on Homey's 960 canvas, normalises
+  the paint so the mask reads, and stamps the file with the master it came from. The device pictures
+  are cropped by finding the object against its white ground, so replacing a master reframes the crop
+  instead of silently mis-centring it. No hand-measured crop boxes remain.
+- **The README has a banner** — the hero photograph with the logo on a rounded violet tile, built by
+  the same script.
 
 ### 0.2.2
 
@@ -371,14 +395,14 @@ Changed:
   picture of the device it supports"*. A schedule has no hardware, so the device is the lamp.
 - **`test/unit/assets.test.ts`** now checks every shipped image for presence, real PNG bytes and
   exact dimensions, and every icon for the line-art invariants — the class of mistake that is
-  otherwise invisible until submission. `docs/artwork.md` gained the distinction between what the
+  otherwise invisible until submission, and the artwork docs gained the distinction between what the
   validator enforces and what a reviewer applies, with citations.
 
 Worth knowing if you install this over the CLI rather than from the store: **the app will show no
 icon at all.** Homey renders an icon as a CSS mask fetched from `icons-cdn.athom.com` by the file's
 MD5, and that CDN only holds icons from published builds — so a development install leaves an empty
 brand-colour circle where the icon belongs. Nothing is wrong; it appears once the app is published.
-The mechanism is written up in [`docs/artwork.md`](docs/artwork.md) and [CLAUDE.md](CLAUDE.md) §10.
+The mechanism is written up in [CLAUDE.md](CLAUDE.md) §10.
 
 ### 0.2.1
 

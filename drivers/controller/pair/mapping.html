@@ -14,18 +14,18 @@
      never rules. A colour written as a literal anywhere past this block is a
      token that is missing. */
   #map-root {
-    /* Brand. Navy is the manifest brandColor and carries both icons; amber is
-       the link accent. This flow previously used a generic #2f6fed for every
-       interactive state — a colour that appeared nowhere else the user had
-       seen, in the app or in the store listing. */
-    --lk-accent: #1f3a5f;
+    /* Brand. The violet is the manifest brandColor and the ground of the logo —
+       93% of its pixels — and the lavender is the logo's mark. Both are read
+       out of docs/artwork/masters/logo-bitmap-original.png by
+       `export-assets.py --palette`, so the UI cannot drift from the artwork.
+       The tints and lines are derived: the logo itself has no mid-tones. */
+    --lk-accent: #180e32;
     --lk-accent-ink: #ffffff;
-    --lk-accent-tint: #f1f5fa;
-    --lk-accent-wash: #fbfcfe;
-    --lk-accent-line: #cdd8e6;
-    --lk-accent-strong: #1f3a5f;
-    --lk-ring: rgba(31, 58, 95, .16);
-    --lk-amber: #f2a93b;
+    --lk-accent-tint: #f3eefc;
+    --lk-accent-wash: #fbf9fe;
+    --lk-accent-line: #d9cbf5;
+    --lk-accent-strong: #2b1a52;
+    --lk-ring: rgba(24, 14, 50, .16);
 
     --lk-ink: #16181d;
     --lk-sub: #6b7280;
@@ -57,19 +57,18 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  /* Values only. Note the accent inverts: #1f3a5f is a dark navy and cannot
-     carry white text on a dark ground, so dark mode lightens the accent and
-     darkens the ink on top of it. */
+  /* Values only. Note the accent inverts: #180e32 is nearly black and cannot
+     carry white text on a dark ground, so dark mode promotes the logo's own
+     lavender to the accent and darkens the ink on top of it. */
   @media (prefers-color-scheme: dark) {
     #map-root {
-      --lk-accent: #6fa0d8;
-      --lk-accent-ink: #10151b;
-      --lk-accent-tint: #1d2a3a;
-      --lk-accent-wash: #1a1e25;
-      --lk-accent-line: #3f5f86;
-      --lk-accent-strong: #9cc2ea;
-      --lk-ring: rgba(111, 160, 216, .28);
-      --lk-amber: #f5b75a;
+      --lk-accent: #ccb0f3;
+      --lk-accent-ink: #1b1230;
+      --lk-accent-tint: #251b40;
+      --lk-accent-wash: #1b1626;
+      --lk-accent-line: #4a3a75;
+      --lk-accent-strong: #e2d4fb;
+      --lk-ring: rgba(204, 176, 243, .28);
 
       --lk-ink: #f2f3f5;
       --lk-sub: #a6adb8;
