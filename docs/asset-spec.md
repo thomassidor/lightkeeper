@@ -71,5 +71,15 @@ largest shipped size and loosely framed, so a crop can be moved later without re
 > catalogue render. No clock, no numerals, no text, no logos, no branding, no hand, no props, no
 > watermark.
 
+Three things in those prompts are deliberate, so nobody "fixes" them:
+
+- **The lamp is a white-ground product shot, not a room scene**, so it matches the controller's photo
+  language and the two device pictures read as one app. It also satisfies the "device on a white
+  background" rule that the currently shipped crop bends.
+- **No clock in the lamp shot.** The icon carries the time idea; a clock in the photo reads as clipart,
+  which Athom rejects.
+- **No hand in any frame, including the banner.** A hand on a remote describes only half of what the
+  app does — that is exactly what the previous banner got wrong.
+
 Record any prompt you actually use in `artwork.md` under Provenance, with the date and the generator —
 the licence register depends on it.
