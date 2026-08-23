@@ -35,3 +35,41 @@ Rules:
 - **Images** must be photographic. A flat shape or icon on a plain background is rejected. Colour has
   to reach every edge — no borders, no letterboxing. No Homey logo, name or hardware.
 - Sizes are exact; a wrong one fails `homey app validate`. PNG or JPG, extension matching the format.
+
+## Prompts for the three photographs
+
+The icons are not generated — they are drawn as line art in the style `logo.svg` already sets, which
+also fixes the palette. Only the photographs below need generating. Make each one larger than its
+largest shipped size and loosely framed, so a crop can be moved later without regenerating; save into
+`docs/artwork/masters/` and let `docs/artwork/export-assets.py` cut the shipped sizes.
+
+**1. App banner** — for `assets/images/*`. Generate at 1536×1024 or larger, 3:2, composed for a 10:7 crop.
+
+> Photorealistic editorial interior photograph. A calm Scandinavian living room at blue hour, deep
+> navy shadows, three warm table and floor lamps glowing together as the only light sources. Nobody in
+> frame. Warm amber light pooling on pale plaster and wood; cool blue dusk light through a window
+> behind. Lamps spread across the frame so the composition survives a 10:7 crop, generous margin on
+> all sides. Shallow depth of field, natural photography, readable when scaled to 250×175. No people,
+> no text, no logos, no trademarks, no screens or displays, no visible smart-home hardware, no
+> watermark.
+
+**2. Controller device** — for `drivers/controller/assets/images/*`. Generate at 1254×1254 or larger, square.
+
+> Product photograph on a pure white background. One original generic handheld smart-light remote:
+> matte warm-white body, a charcoal rotary scroll wheel near the top, three round buttons below it.
+> Three-quarter view angled from the right to give the object dimension, soft even studio light, subtle
+> contact shadow. Whole device centred with even margin, recognizable at 75×75. Photorealistic
+> catalogue render. No text, no logos, no branding, no resemblance to any real product, no hand, no
+> props, no packaging, no watermark.
+
+**3. Schedule device** — for `drivers/schedule/assets/images/*`. Generate at 1254×1254 or larger, square.
+
+> Product photograph on a pure white background. One original generic table lamp, switched on: opal
+> glass or matte ceramic dome shade glowing warm amber, slim stem, simple round base. Three-quarter
+> view angled from the right, soft even studio light, subtle contact shadow. The lamp is clearly lit
+> and emitting warm light. Whole lamp centred with even margin, recognizable at 75×75. Photorealistic
+> catalogue render. No clock, no numerals, no text, no logos, no branding, no hand, no props, no
+> watermark.
+
+Record any prompt you actually use in `artwork.md` under Provenance, with the date and the generator —
+the licence register depends on it.
