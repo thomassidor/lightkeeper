@@ -357,6 +357,30 @@ Changed:
 - **The README has a banner** — the hero photograph with the logo on a rounded violet tile, built by
   the same script.
 
+Fixed:
+
+- **A pairing screen could hang forever.** `emit()` is the only path from a pair view to its driver,
+  and if Homey never called back the promise never settled: the screen sat there with no message and
+  no way forward but cancelling. The mapping view already had a 20-second timeout; the other four
+  views did not, and nothing compared them. It is in all of them now, and
+  `test/unit/pair-view-styles.test.ts` compares the shared script helpers as well as the shared CSS.
+- **"No usable events found" now says what was turned down.** A trigger card that matches a device
+  only through an unfiltered `device` argument accepts every device on the Homey — it once offered
+  "LG refrigerator error changed" as an input for a Tap Dial — so it must never reach the picker. But
+  discarding those matches silently left the one screen that reports nothing with nothing to report.
+  They are recorded as declined, with the reason, and reach the diagnostics export.
+
+Changed, under the hood:
+
+- **About 200 lines that nothing reached are gone**, including two whole modules and a per-row tuning
+  struct no screen ever set. The health monitor stopped keeping its own copy of the target check that
+  `lib/runtime/target-health.ts` was extracted to own — and whose docblock already claimed the move
+  had happened. The input key no longer travels inside a field documented as the event's own value.
+- **CI can now fail on things it used to repair.** `homey app validate` regenerates `app.json`, so a
+  stale committed manifest was being fixed in the runner and passing; the suite and `scripts/` were
+  never type-checked at all, which was ~5,200 lines. Both are checked now, and turning the second one
+  on found four real errors.
+
 ### 0.2.2
 
 Changed:

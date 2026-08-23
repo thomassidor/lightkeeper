@@ -1,6 +1,6 @@
 {
   "0.3.0": {
-    "en": "Changed\n- New look. The app has a new icon, new colours taken from it, and new pictures for both device types — including a proper timer for the schedule device.\n- Every screen in the app now uses the new colours, in both light and dark mode."
+    "en": "Changed\n- New look. The app has a new icon, new colours taken from it, and new pictures for both device types — including a proper timer for the schedule device.\n- Every screen in the app now uses the new colours, in both light and dark mode.\n\nFixed\n- A pairing or repair screen no longer waits forever when Homey does not answer. It now tells you, so you can try again instead of watching a screen that never finishes.\n- When a remote turns out to offer no usable events, a bug report now lists the trigger cards that were considered and why each was turned down."
   },
   "0.2.2": {
     "en": "Changed\n- New artwork throughout. The app icon is a lighthouse now, which suits the name better than the old remote-and-bulb, and the two device icons are drawn to match it.\n- The app’s picture in the store shows lamps lit in an evening room, instead of a hand holding a remote — the app does more than remotes.\n- The schedule device now has a picture of a lamp rather than a drawing of a clock face."
@@ -9,7 +9,7 @@
     "en": "Fixed\n- Warm and cold were the wrong way round. A schedule set to the warmest setting lit the room cold white, and on a remote the \"warmer\" button made the light colder. Both now go the way they say. If you set a warmth on a schedule before this update, open it and check the setting still reads the way you want it."
   },
   "0.2.0": {
-    "en": "Added\n- Light schedules. Add a schedule device, pick your lights, and say when they come on and when they go off — after a while, or at a set time. Up to twelve windows per device, on the days you choose, optionally at a brightness and warmth you set.\n- Each schedule device has its own switch, so you can pause the whole thing while you are away without losing any of it.\n- The app is now called Lightkeeper, because it does more than link a remote to a light.\n\nChanged\n- Editing a generated Flow by hand is now noticed in more cases, including changing the time on one. Lightkeeper leaves your edit alone and asks you to repair instead of quietly overwriting it."
+    "en": "Added\n- Light schedules. Add a schedule device, pick your lights, and say when they come on and when they go off — after a while, or at a set time. Up to twelve schedules per device, on the days you choose, optionally at a brightness and warmth you set.\n- Each schedule device has its own switch, so you can pause the whole thing while you are away without losing any of it.\n- The app is now called Lightkeeper, because it does more than link a remote to a light.\n\nChanged\n- Editing a generated Flow by hand is now noticed in more cases, including changing the time on one. Lightkeeper leaves your edit alone and asks you to repair instead of quietly overwriting it."
   },
   "0.1.0": {
     "en": "Added\n- Initial support for paired remotes, switches, buttons and rotary dials exposed through Homey.\n- Control of on/off, brightness and colour temperature across individual lights or zones.\n- Automatic creation and maintenance of the Flows behind each mapping.\n- Local connection for Homey Pro 2023 and later."
