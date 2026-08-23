@@ -184,7 +184,7 @@ function buildFlow(
  * Named so a user browsing their Flow list can tell what these are and which
  * controller owns them, without opening one.
  */
-export function flowName(request: CompileRequest, variantKey: string): string {
+function flowName(request: CompileRequest, variantKey: string): string {
   const suffix = variantKey.startsWith('range:') ? ` (${variantKey.slice(6)})` : '';
   return `Lightkeeper — ${request.sourceName}: ${request.label}${suffix}`;
 }

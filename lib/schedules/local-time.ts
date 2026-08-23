@@ -76,10 +76,6 @@ export function previousWeekday(day: IsoWeekday): IsoWeekday {
   return (day === 1 ? 7 : day - 1) as IsoWeekday;
 }
 
-export function nextWeekday(day: IsoWeekday): IsoWeekday {
-  return (day === 7 ? 1 : day + 1) as IsoWeekday;
-}
-
 const WEEKDAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
 
 /** English, for diagnostics and logs only — never for a device's status text. */

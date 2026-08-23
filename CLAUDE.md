@@ -39,9 +39,9 @@ lib/
   inputs/                       input contract, normalizer, magnitude collapse
   mapping/                      mapping engine, supersede gate, behaviour types
   outputs/                      intents, perceptual curve, planner, scheduler, ramp engine
-  bridge/                       binding compiler, flow bridge manager, reconciler
+  bridge/                       binding compiler, flow bridge manager
   runtime/                      controller runtime, manager, health monitor, shared target health
-  profiles/                     profile schema, repository, migrations
+  profiles/                     profile schema, migrations
   schedules/                    types, window maths, local clock, bindings, runtime, manager
   pairing/                      the light picker, shared by both drivers
 drivers/controller/             virtual device, driver, four pairing views

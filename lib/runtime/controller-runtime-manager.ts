@@ -133,15 +133,9 @@ export class ControllerRuntimeManager {
   }
 
   /**
-   * Route a validated bridge event. Returns false when no controller expects
-   * it, so the caller can fail closed.
+   * Route a validated bridge event, saying WHY it refused — the difference
+   * between a flow that fires and does nothing, and one we can diagnose.
    */
-  dispatch(controllerId: string, eventKey: string, extra: { magnitude?: number }): boolean {
-    return this.dispatchWithReason(controllerId, eventKey, extra).accepted;
-  }
-
-  /** As dispatch, but says WHY it refused — the difference between a flow that
-   *  fires and does nothing, and one we can actually diagnose. */
   dispatchWithReason(
     controllerId: string,
     eventKey: string,

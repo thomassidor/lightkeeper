@@ -87,7 +87,7 @@ export function classifyArgument(arg: CardArgument): ArgumentRole {
  * single numeric binding) from a control selector (button 1, 2, 3, which must
  * stay distinct events).
  */
-export function isContiguousNumericRange(ids: string[]): boolean {
+function isContiguousNumericRange(ids: string[]): boolean {
   if (ids.length < 2) return false;
   const numbers = ids.map(id => Number(id));
   if (numbers.some(n => !Number.isInteger(n))) return false;

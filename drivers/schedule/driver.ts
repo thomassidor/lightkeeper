@@ -5,10 +5,9 @@ import {
 } from '../../lib/pairing/target-picker';
 import { CURRENT_SCHEDULE_SCHEMA_VERSION } from '../../lib/schedules/schedule-migrations';
 import {
-  MAX_ENTRIES, formatMinutes, sanitiseEntries,
+  MAX_ENTRIES, sanitiseEntries,
   type ScheduleBoundary, type ScheduleEntry, type SchedulePlan,
 } from '../../lib/schedules/schedule-types';
-import { offMinuteOf } from '../../lib/schedules/schedule-window';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
 
 /**
@@ -219,11 +218,6 @@ module.exports = class ScheduleDriver extends Homey.Driver {
       entries: state.entries,
       managedFlows: [],
     };
-  }
-
-  /** English, for the app log only. */
-  static describeEntry(entry: ScheduleEntry): string {
-    return `${formatMinutes(entry.onAt)}–${formatMinutes(offMinuteOf(entry))}`;
   }
 
 };

@@ -172,10 +172,6 @@ export class CommandScheduler {
     }
   }
 
-  get queuedDeviceCount(): number {
-    return [...this.queues.values()].filter(q => q.pending.size > 0).length;
-  }
-
   stop(): void {
     this.stopped = true;
     for (const queue of this.queues.values()) {

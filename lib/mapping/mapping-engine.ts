@@ -36,13 +36,10 @@ export class MappingEngine {
     const rule = this.rules.find(r => r.inputKey === inputKey);
     if (!rule) return null;
 
-    const intent = this.intentFor(rule, event);
-    if (!intent) return null;
-
-    return { intent, rule, target: rule.target };
+    return { intent: this.intentFor(rule, event), rule, target: rule.target };
   }
 
-  private intentFor(rule: MappingRule, event: InputEvent): LightIntent | null {
+  private intentFor(rule: MappingRule, event: InputEvent): LightIntent {
     switch (rule.function) {
       case 'toggle':
         return { type: 'toggle' };
@@ -51,42 +48,35 @@ export class MappingEngine {
       case 'off':
         return { type: 'power', value: false };
       case 'brightness_up':
-        return { type: 'brightness_delta', delta: this.stepFor(rule, event, 'brightness') };
+        return { type: 'brightness_delta', delta: this.stepFor(event, 'brightness') };
       case 'brightness_down':
-        return { type: 'brightness_delta', delta: -this.stepFor(rule, event, 'brightness') };
+        return { type: 'brightness_delta', delta: -this.stepFor(event, 'brightness') };
       case 'warmer':
         // Warmer means a HIGHER value on Homey's normalised axis: 0 is the
         // coolest end, 1 the warmest. homey-lib's own capability hint says so —
-        // "A higher value means a warmer color" — and this comment used to claim
-        // the opposite, which is how a schedule set to "Warmest" wrote 0 and lit
-        // a room cold white on its first live run.
-        return { type: 'temperature_delta', delta: this.stepFor(rule, event, 'temperature') };
+        // "A higher value means a warmer color". Getting it backwards is what
+        // made a schedule set to "Warmest" write 0 and light a room cold white
+        // on its first live run.
+        return { type: 'temperature_delta', delta: this.stepFor(event, 'temperature') };
       case 'colder':
-        return { type: 'temperature_delta', delta: -this.stepFor(rule, event, 'temperature') };
-      default:
-        return null;
+        return { type: 'temperature_delta', delta: -this.stepFor(event, 'temperature') };
     }
+    // No default arm: the switch covers every LightFunction, and an added
+    // member must fail to compile here rather than silently resolve to null.
   }
 
   /**
-   * Step and sensitivity per row, magnitude used where available.
-   * Magnitude is forwarded from the binding, never chosen by the user.
+   * The step for one activation, scaled by magnitude where the source reports
+   * it. Magnitude is forwarded from the binding, never chosen by the user.
    */
-  private stepFor(rule: MappingRule, event: InputEvent, kind: 'brightness' | 'temperature'): number {
-    const options = rule.options ?? {};
-    const base = options.step
-      ?? (kind === 'brightness' ? this.behavior.brightnessStep : this.behavior.temperatureStep);
-    const sensitivity = options.sensitivity ?? 1;
+  private stepFor(event: InputEvent, kind: 'brightness' | 'temperature'): number {
+    const base = kind === 'brightness'
+      ? this.behavior.brightnessStep
+      : this.behavior.temperatureStep;
 
-    const useMagnitude = options.useMagnitude ?? true;
-    const magnitude = useMagnitude && typeof event.magnitude === 'number'
-      ? Math.abs(event.magnitude)
-      : 1;
-
+    const magnitude = typeof event.magnitude === 'number' ? Math.abs(event.magnitude) : 1;
     // A magnitude of zero would silently do nothing; treat it as one notch.
-    const notches = magnitude > 0 ? magnitude : 1;
-
-    return base * sensitivity * notches;
+    return base * (magnitude > 0 ? magnitude : 1);
   }
 }
 

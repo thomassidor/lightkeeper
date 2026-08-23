@@ -132,7 +132,7 @@ export function deviceIdOfScopedCard(cardId: string): string | null {
  * Every way this card can be bound to this device. Empty means no route, and
  * the card is not offered for this device.
  */
-export function matchRoutesFor(card: any, device: CatalogDevice): MatchRoute[] {
+function matchRoutesFor(card: any, device: CatalogDevice): MatchRoute[] {
   const routes: MatchRoute[] = [];
 
   if (deviceIdOfScopedCard(String(card.id ?? '')) === device.id) {
@@ -157,7 +157,7 @@ export function matchRoutesFor(card: any, device: CatalogDevice): MatchRoute[] {
  * semantics, and it is why 'device_arg_unfiltered' is tracked as a weaker
  * route than a filtered match.
  */
-export function deviceMatchesFilter(filter: unknown, device: CatalogDevice): boolean {
+function deviceMatchesFilter(filter: unknown, device: CatalogDevice): boolean {
   if (filter === undefined || filter === null || filter === '') return true;
   if (typeof filter !== 'string') return false;
 
@@ -232,7 +232,7 @@ function titleOf(title: unknown): string | null {
  * because it detects an integration changing an argument the flow happens not
  * to set.
  */
-export function fingerprintOf(device: CatalogDevice, cards: DiscoveredTriggerCard[]): string {
+function fingerprintOf(device: CatalogDevice, cards: DiscoveredTriggerCard[]): string {
   const shape = {
     ownerUri: device.ownerUri,
     driverId: device.driverId,

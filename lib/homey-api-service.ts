@@ -126,11 +126,6 @@ export class HomeyApiService {
     this.connecting = null;
   }
 
-  /** Inside an app this is http://127.0.0.1:80 — no LAN discovery needed. */
-  async localAddress(): Promise<string> {
-    return this.homey.api.getLocalUrl();
-  }
-
   static async createWriteClient(address: string, token: string): Promise<any> {
     const api = await HomeyAPI.createLocalAPI({ address, token });
     for (const name of ['flow', 'flowtoken']) {

@@ -8,9 +8,6 @@ export interface TargetRuntimeState {
   desiredOn?: boolean;
   desiredDim?: number;
   desiredTemperature?: number;
-  /** Restore-previous-brightness policy is reserved, but the value is cheap to keep. */
-  lastNonZeroDim?: number;
-  lastExternalUpdateAt?: number;
 }
 
 /** Capability metadata read per target — never assumed uniform. */
@@ -74,7 +71,6 @@ export class TargetStateCache {
     state.desiredOn = actual.onoff;
     state.desiredDim = actual.dim;
     state.desiredTemperature = actual.light_temperature;
-    if (actual.dim !== undefined && actual.dim > 0) state.lastNonZeroDim = actual.dim;
   }
 
   /**
@@ -102,7 +98,6 @@ export class TargetStateCache {
         break;
       case 'dim':
         state.actualDim = value as number;
-        if (typeof value === 'number' && value > 0) state.lastNonZeroDim = value;
         break;
       case 'light_temperature':
         state.actualTemperature = value as number;
@@ -118,7 +113,6 @@ export class TargetStateCache {
         : state.desiredTemperature === value;
 
     if (!matchesDesired) {
-      state.lastExternalUpdateAt = at;
       if (capability === 'onoff') state.desiredOn = value as boolean;
       if (capability === 'dim') state.desiredDim = value as number;
       if (capability === 'light_temperature') state.desiredTemperature = value as number;
@@ -151,14 +145,6 @@ export class TargetStateCache {
   currentOn(deviceId: string): boolean | undefined {
     const state = this.state(deviceId);
     return state.desiredOn ?? state.actualOn;
-  }
-
-  forget(deviceId: string): void {
-    this.states.delete(deviceId);
-    this.capabilities.delete(deviceId);
-    for (const key of [...this.recentEchoes.keys()]) {
-      if (key.startsWith(`${deviceId}:`)) this.recentEchoes.delete(key);
-    }
   }
 
   clear(): void {

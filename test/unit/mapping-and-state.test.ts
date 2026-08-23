@@ -98,15 +98,6 @@ describe('mapping engine', () => {
 
     assert.deepEqual(zero, { type: 'brightness_delta', delta: 0.1 });
   });
-
-  test('per-row step and sensitivity override the defaults', () => {
-    const engine = new MappingEngine([
-      rule({ function: 'brightness_up', inputKey: 'k1', options: { step: 0.2, sensitivity: 0.5 } }),
-    ], DEFAULT_BEHAVIOR);
-
-    assert.deepEqual(engine.resolve({ inputKey: 'k1', event: event() })!.intent,
-      { type: 'brightness_delta', delta: 0.1 });
-  });
 });
 
 describe('available functions', () => {

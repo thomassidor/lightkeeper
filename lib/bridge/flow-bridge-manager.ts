@@ -20,7 +20,7 @@ import type { LogicalSourceBinding } from '../inputs/selectable-input';
  */
 
 export const MANAGED_FOLDER_NAME = 'Lightkeeper';
-export const MANAGED_VERSION = 1;
+const MANAGED_VERSION = 1;
 
 /**
  * The minimum this manager needs to compile one flow.

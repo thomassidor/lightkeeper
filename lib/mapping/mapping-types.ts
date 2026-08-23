@@ -6,10 +6,6 @@ export type LightFunction =
   | 'brightness_up' | 'brightness_down'
   | 'warmer' | 'colder';
 
-export const ALL_FUNCTIONS: readonly LightFunction[] = [
-  'toggle', 'on', 'off', 'brightness_up', 'brightness_down', 'warmer', 'colder',
-] as const;
-
 /** Which capability a function needs — drives which rows appear. */
 export const FUNCTION_CAPABILITY: Record<LightFunction, 'onoff' | 'dim' | 'light_temperature'> = {
   toggle: 'onoff',
@@ -21,16 +17,6 @@ export const FUNCTION_CAPABILITY: Record<LightFunction, 'onoff' | 'dim' | 'light
   colder: 'light_temperature',
 };
 
-export const FUNCTION_CATEGORY: Record<LightFunction, 'power' | 'brightness' | 'temperature'> = {
-  toggle: 'power',
-  on: 'power',
-  off: 'power',
-  brightness_up: 'brightness',
-  brightness_down: 'brightness',
-  warmer: 'temperature',
-  colder: 'temperature',
-};
-
 export interface MappingRule {
   id: string;
   function: LightFunction;
@@ -38,19 +24,6 @@ export interface MappingRule {
   inputKey: string | null;
   /** null = inherit the controller's targets. Set per rule on the mapping screen. */
   target: TargetSpec | null;
-  options?: MappingOptions;
-}
-
-/** Per-row tuning. Everything optional; defaults live in ControllerBehavior. */
-export interface MappingOptions {
-  /** Perceptual step per activation, 0–1. */
-  step?: number;
-  /** Multiply magnitude before applying. */
-  sensitivity?: number;
-  useMagnitude?: boolean;
-  acceleration?: boolean;
-  minimum?: number;
-  maximum?: number;
 }
 
 /** Locked defaults. */
@@ -73,12 +46,8 @@ export interface ControllerBehavior {
    * The floor between two writes to the same target. This is the only
    * burst control: the scheduler flushes on the leading edge, so an isolated
    * press goes out immediately and only a genuine burst is held and coalesced.
-   * An earlier `burstWindowMs` delay was removed because it added its full
-   * duration to every single press to coalesce a burst that was not happening.
    */
   minWriteIntervalMs: number;
-  /** Off by default on lossy transports. */
-  acceleration: boolean;
 }
 
 export const DEFAULT_BEHAVIOR: ControllerBehavior = {
@@ -91,5 +60,4 @@ export const DEFAULT_BEHAVIOR: ControllerBehavior = {
   minimumBrightness: 0.01,
   supersedeMs: 250,
   minWriteIntervalMs: 200,
-  acceleration: false,
 };

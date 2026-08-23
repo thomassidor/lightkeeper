@@ -31,11 +31,11 @@ export interface InputEvent {
  * Which actions represent a sustained gesture rather than a discrete one.
  * The supersede gate only engages where a single control carries both.
  */
-export const HOLD_ACTIONS: ReadonlySet<InputAction> = new Set<InputAction>([
+const HOLD_ACTIONS: ReadonlySet<InputAction> = new Set<InputAction>([
   'long_press', 'rotate_start',
 ]);
 
-export const DISCRETE_ACTIONS: ReadonlySet<InputAction> = new Set<InputAction>([
+const DISCRETE_ACTIONS: ReadonlySet<InputAction> = new Set<InputAction>([
   'press', 'selection', 'rotate_delta',
 ]);
 

@@ -65,7 +65,7 @@ export interface NormalizeResult {
   rejected: Array<{ cardId: string; reason: string }>;
 }
 
-export const DEFAULT_RANGE_CEILING = 12;
+const DEFAULT_RANGE_CEILING = 12;
 
 export function normalizeCards(
   cards: DiscoveredTriggerCard[],
@@ -377,7 +377,7 @@ function isGenericBase(id: string): boolean {
  * entry. Collapse them, preferring the variant that carries magnitude — losing
  * magnitude would turn a proportional dimmer into a fixed step.
  */
-export function collapseSemanticDuplicates(
+function collapseSemanticDuplicates(
   inputs: SelectableInput[],
 ): { kept: SelectableInput[]; dropped: Array<{ key: string; inFavourOf: string }> } {
   const best = new Map<string, SelectableInput>();

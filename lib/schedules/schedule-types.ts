@@ -22,9 +22,9 @@ export const MINUTES_PER_DAY = 1440;
  */
 export const MAX_ENTRIES = 12;
 
-export const MIN_DURATION_MINUTES = 1;
+const MIN_DURATION_MINUTES = 1;
 /** A window of a full day would never switch anything off. */
-export const MAX_DURATION_MINUTES = MINUTES_PER_DAY - 1;
+const MAX_DURATION_MINUTES = MINUTES_PER_DAY - 1;
 
 /** ISO 8601 weekday numbering: 1 = Monday … 7 = Sunday. */
 export type IsoWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;

@@ -56,6 +56,7 @@ module.exports = class LightkeeperApp extends Homey.App {
         unset: key => this.homey.settings.unset(key),
       },
       createWriteClient: (address, token) => HomeyApiService.createWriteClient(address, token),
+      // Inside an app this is http://127.0.0.1:80 — no LAN discovery needed.
       getLocalAddress: () => this.homey.api.getLocalUrl(),
       log: (...args) => this.log(...args),
       onStatusChange: status => {

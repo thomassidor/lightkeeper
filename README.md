@@ -271,7 +271,7 @@ covered by unit tests rather than by a week of waiting. The trigger card they ar
 resolved at runtime by enumerating what your Homey actually offers, rather than hardcoding an id, so
 it adapts if a firmware update moves it.
 
-312 unit tests, type-clean, validated at `publish` level.
+311 unit tests, type-clean, validated at `publish` level.
 
 ---
 
@@ -279,7 +279,7 @@ it adapts if a firmware update moves it.
 
 ```bash
 npm install
-npm test                          # 312 unit tests, no hardware needed
+npm test                          # 311 unit tests, no hardware needed
 npm run typecheck
 npx homey app install             # persistent install — use this for anything interactive
 npx homey app validate --level publish
@@ -315,9 +315,9 @@ lib/
   inputs/                       input contract, normalizer, magnitude collapse
   mapping/                      mapping engine, supersede gate, types
   outputs/                      intents, perceptual curve, planner, scheduler, ramp engine
-  bridge/                       binding compiler, flow bridge manager, reconciler
+  bridge/                       binding compiler, flow bridge manager
   runtime/                      controller runtime, manager, health monitor, target health
-  profiles/                     profile schema, repository, migrations
+  profiles/                     profile schema, migrations
   schedules/                    schedule types, window maths, local clock, runtime, manager
   pairing/                      the light picker, shared by both drivers
 drivers/controller/             virtual device, driver, four pairing views

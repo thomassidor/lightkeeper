@@ -64,14 +64,6 @@ export interface ControllerProfile {
   catalogue?: SelectableInput[];
 }
 
-export function findMapping(profile: ControllerProfile, inputKey: string): MappingRule | undefined {
-  return profile.mappings.find(m => m.inputKey === inputKey);
-}
-
-export function assignedInputKeys(profile: ControllerProfile): string[] {
-  return profile.mappings.map(m => m.inputKey).filter((k): k is string => k !== null);
-}
-
 /**
  * Conflict rule: one lighting function per normalised event.
  * Returns the rule that would be displaced by assigning this input.
