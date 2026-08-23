@@ -39,37 +39,52 @@ Rules:
 ## Prompts for the three photographs
 
 The icons are not generated — they are drawn as line art in the style `logo.svg` already sets, which
-also fixes the palette. Only the photographs below need generating. Make each one larger than its
+also fixes the palette. Only the photographs below need generating. Each prompt carries its own app
+context and palette, so one block can be pasted into a generator on its own. Make each one larger than its
 largest shipped size and loosely framed, so a crop can be moved later without regenerating; save into
 `docs/artwork/masters/` and let `docs/artwork/export-assets.py` cut the shipped sizes.
 
 **1. App banner** — for `assets/images/*`. Generate at 1536×1024 or larger, 3:2, composed for a 10:7 crop.
 
-> Photorealistic editorial interior photograph. A calm Scandinavian living room at blue hour, deep
-> navy shadows, three warm table and floor lamps glowing together as the only light sources. Nobody in
-> frame. Warm amber light pooling on pale plaster and wood; cool blue dusk light through a window
-> behind. Lamps spread across the frame so the composition survives a 10:7 crop, generous margin on
-> all sides. Shallow depth of field, natural photography, readable when scaled to 250×175. No people,
-> no text, no logos, no trademarks, no screens or displays, no visible smart-home hardware, no
-> watermark.
+> Store banner for Lightkeeper, a smart-home app that turns a remote you already own into a
+> controller for your lights and puts those lights on a schedule — so its imagery is about lit rooms,
+> not technology.
+>
+> Photorealistic editorial interior photograph. A calm Scandinavian living room at blue hour, three
+> warm table and floor lamps glowing together as the only light sources, nobody in frame. Palette:
+> deep navy shadows (#1F3A5F) and warm amber lamplight (#F2A93B), with cool blue dusk light through a
+> window behind. Warm light pooling on pale plaster and wood. Lamps spread across the frame so the
+> composition survives a 10:7 crop, generous margin on all sides. Shallow depth of field, natural
+> photography, still readable when scaled to 250×175. No people, no text, no logos, no trademarks, no
+> screens or displays, no visible smart-home hardware, no watermark.
 
 **2. Controller device** — for `drivers/controller/assets/images/*`. Generate at 1254×1254 or larger, square.
 
+> Device picture for one half of Lightkeeper, a smart-home app that turns a remote, switch or dial
+> you already own into a controller for your lights. This image stands for that device type, so it
+> shows the remote itself.
+>
 > Product photograph on a pure white background. One original generic handheld smart-light remote:
 > matte warm-white body, a charcoal rotary scroll wheel near the top, three round buttons below it.
-> Three-quarter view angled from the right to give the object dimension, soft even studio light, subtle
-> contact shadow. Whole device centred with even margin, recognizable at 75×75. Photorealistic
-> catalogue render. No text, no logos, no branding, no resemblance to any real product, no hand, no
-> props, no packaging, no watermark.
+> Three-quarter view angled from the right to give the object dimension, soft even studio light,
+> subtle contact shadow. The app's palette is navy #1F3A5F and amber #F2A93B, so keep the object
+> neutral — warm white and charcoal — to sit beside them without competing. Whole device centred with
+> even margin, recognizable at 75×75. Photorealistic catalogue render. No text, no logos, no branding,
+> no resemblance to any real product, no hand, no props, no packaging, no watermark.
 
 **3. Schedule device** — for `drivers/schedule/assets/images/*`. Generate at 1254×1254 or larger, square.
 
+> Device picture for the other half of Lightkeeper, a smart-home app that puts lights on a schedule —
+> on at dusk, off at bedtime, without anyone touching a switch. A schedule has no hardware of its own,
+> so the subject is the lamp being scheduled.
+>
 > Product photograph on a pure white background. One original generic table lamp, switched on: opal
-> glass or matte ceramic dome shade glowing warm amber, slim stem, simple round base. Three-quarter
-> view angled from the right, soft even studio light, subtle contact shadow. The lamp is clearly lit
-> and emitting warm light. Whole lamp centred with even margin, recognizable at 75×75. Photorealistic
-> catalogue render. No clock, no numerals, no text, no logos, no branding, no hand, no props, no
-> watermark.
+> glass or matte ceramic dome shade glowing warm amber (#F2A93B), slim stem, simple round base.
+> Three-quarter view angled from the right, soft even studio light, subtle contact shadow. The lamp is
+> clearly lit and emitting warm light — that glow is the whole point of the picture. Whole lamp centred
+> with even margin, recognizable at 75×75. Photorealistic catalogue render, matching the neutral
+> white-ground studio look of the remote in the app's other device picture. No clock, no numerals, no
+> text, no logos, no branding, no hand, no props, no watermark.
 
 Three things in those prompts are deliberate, so nobody "fixes" them:
 
