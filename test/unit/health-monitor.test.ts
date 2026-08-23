@@ -91,7 +91,8 @@ describe('controller health states', () => {
     const assessment = await monitor.assess(profile());
 
     assert.equal(assessment.state, 'needs_repair');
-    assert.match(assessment.detail!, /different events/);
+    assert.equal(assessment.detail?.key, 'state.surfaceChanged');
+    assert.match(assessment.detail?.text ?? '', /different events/);
   });
 
   test('an invalid credential is its own state, not needs_repair', async () => {
@@ -125,6 +126,24 @@ describe('controller health states', () => {
     }));
 
     assert.equal(assessment.state, 'partial');
+    // Pinned because this arm is now DELEGATED to assessTargets(), which a light
+    // schedule calls too. HealthMonitor kept its own copy of it for a while, and
+    // two copies of a locale key plus its tokens is how they drift apart.
+    assert.equal(assessment.detail?.key, 'state.someTargets');
+    assert.deepEqual(assessment.detail?.tokens, { count: 1, total: 2 });
+  });
+
+  test('no reachable targets is needs_repair, with the shared verdict', async () => {
+    const monitor = harness({
+      devices: [device({ id: 'old-device' }), light('light-1', { available: false })],
+    });
+
+    const assessment = await monitor.assess(profile({
+      target: { kind: 'devices', deviceIds: ['light-1'] },
+    }));
+
+    assert.equal(assessment.state, 'needs_repair');
+    assert.equal(assessment.detail?.key, 'state.noTargets');
   });
 });
 

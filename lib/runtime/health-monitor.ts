@@ -1,7 +1,9 @@
 import type { DeviceCatalog, CatalogDevice } from '../device-catalog';
-import { countTargets } from './target-health';
+import { assessTargets } from './target-health';
 import type { SourceDiscoveryService } from '../source-discovery-service';
-import type { ControllerProfile, ControllerState } from '../profiles/controller-profile';
+import type {
+  ControllerProfile, ControllerState, StateDetail,
+} from '../profiles/controller-profile';
 
 /**
  * Detects missing sources and targets, broken flows and
@@ -10,11 +12,13 @@ import type { ControllerProfile, ControllerState } from '../profiles/controller-
 
 export interface HealthAssessment {
   state: ControllerState;
-  /** Locale key plus tokens, so the device layer can translate it. */
-  messageKey?: string;
-  tokens?: Record<string, string | number>;
-  /** English fallback, for logs and diagnostics. */
-  detail?: string;
+  /**
+   * Locale key plus tokens, so the device layer can translate it; `text` is the
+   * English fallback for logs. This is the same StateDetail every other verdict
+   * in the app speaks — it used to be three flat fields here plus an adapter in
+   * ControllerRuntime to convert them.
+   */
+  detail?: StateDetail;
   /** Set when the source device has gone but a re-attach candidate exists. */
   reattach?: ReattachCandidate;
 }
@@ -45,15 +49,19 @@ export class HealthMonitor {
       return candidate
         ? {
           state: 'needs_repair',
-          messageKey: 'source.reattach',
-          tokens: { name: candidate.deviceName },
-          detail: `"${candidate.deviceName}" looks like this remote, re-added. Re-attach in one tap.`,
+          detail: {
+            key: 'source.reattach',
+            tokens: { name: candidate.deviceName },
+            text: `"${candidate.deviceName}" looks like this remote, re-added. Re-attach in one tap.`,
+          },
           reattach: candidate,
         }
         : {
           state: 'needs_repair',
-          messageKey: 'state.sourceGone',
-          detail: 'The remote this controller uses is no longer paired.',
+          detail: {
+            key: 'state.sourceGone',
+            text: 'The remote this controller uses is no longer paired.',
+          },
         };
     }
 
@@ -62,8 +70,10 @@ export class HealthMonitor {
     if (discovered.fingerprint !== profile.source.eventSurfaceFingerprint) {
       return {
         state: 'needs_repair',
-        messageKey: 'state.surfaceChanged',
-        detail: 'This remote now exposes different events. Open repair to remap it.',
+        detail: {
+          key: 'state.surfaceChanged',
+          text: 'This remote now exposes different events. Open repair to remap it.',
+        },
       };
     }
 
@@ -71,29 +81,22 @@ export class HealthMonitor {
       // The mappings are fine; only the credential is not.
       return {
         state: 'needs_credential',
-        messageKey: 'state.needsCredential',
-        detail: 'Lightkeeper needs a valid API key to maintain its Flows.',
+        detail: {
+          key: 'state.needsCredential',
+          text: 'Lightkeeper needs a valid API key to maintain its Flows.',
+        },
       };
     }
 
-    const targets = await countTargets(this.catalog, profile.target);
-    if (targets.available === 0) {
-      return {
-        state: 'needs_repair',
-        messageKey: 'state.noTargets',
-        detail: 'None of this controller\'s lights are available.',
-      };
-    }
-    if (targets.available < targets.total) {
-      return {
-        state: 'partial',
-        messageKey: 'state.someTargets',
-        tokens: { count: targets.total - targets.available, total: targets.total },
-        detail: `${targets.total - targets.available} of ${targets.total} lights unavailable.`,
-      };
-    }
-
-    return { state: 'ready' };
+    // Delegated, not repeated: assessTargets() is the one place that turns a
+    // target count into a verdict, and a schedule asks it the same question.
+    // HealthMonitor kept its own copy of this arithmetic, down to the same
+    // locale keys and the same tokens, while target-health.ts claimed in its
+    // own docblock to have taken it over.
+    const targets = await assessTargets(this.catalog, profile.target);
+    return targets.detail
+      ? { state: targets.state, detail: targets.detail }
+      : { state: targets.state };
   }
 
   /**

@@ -5,26 +5,21 @@ export type InputAction =
   | 'rotate_delta' | 'rotate_start' | 'rotate_stop'
   | 'selection';
 
-export type Provenance =
-  | 'capability'
-  | 'flow_fixed'
-  | 'flow_argument'
-  | 'flow_token'
-  | 'derived';
-
+/**
+ * Deliberately only what something reads.
+ *
+ * It used to carry sourceDeviceId, controlLabel, direction, provenance and a
+ * timestamp as well — all populated on every event, none of them ever read
+ * again. Diagnostics record their own copy of what arrived (see
+ * `App.recentEvents`), so these were cost without a reader. The binding key
+ * travels beside the event as `GatedInput`, not inside it.
+ */
 export interface InputEvent {
-  sourceDeviceId: string;
   /** Stable id of the physical control, e.g. the top rocker or the dial. */
   controlId: string;
-  /** Human label for that control, e.g. 'Dial', 'Top button'. */
-  controlLabel: string;
   action: InputAction;
-  direction?: -1 | 1;
   /** Signed, normalised. Preserved from the source; never a user-facing choice. */
   magnitude?: number;
-  value?: string | number | boolean;
-  provenance: Provenance;
-  timestamp: number;
 }
 
 /**

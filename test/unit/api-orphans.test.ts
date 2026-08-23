@@ -18,10 +18,14 @@ const api = require('../../api') as {
  * because with one controller running the set is not empty. Hence this test.
  */
 
+type Write = { deviceId: string; capability: string; value: unknown; ok: boolean };
+
 function homey(options: {
   controllers?: string[];
   schedules?: string[];
   managed?: Array<{ flowId: string; name: string; controllerId: string }>;
+  /** Per device kind, so the getStatus fallback can actually be observed. */
+  writes?: { controller?: Write[]; schedule?: Write[] };
 }) {
   const swept: Array<Set<string>> = [];
 
@@ -35,7 +39,8 @@ function homey(options: {
       enabled: true,
       entries: [],
       managedFlows: [],
-      recentWrites: [],
+      recentWrites: (kind === 'controller' ? options.writes?.controller : options.writes?.schedule)
+        ?? [],
       schedulerReady: true,
       targetNames: [],
       timezone: 'Europe/Copenhagen',
@@ -47,7 +52,9 @@ function homey(options: {
     swept,
     // The handlers take the Homey argument object: { homey }.
     args: { homey: {
-      manifest: { id: 'com.thomassidor.lightkeeper', version: '0.2.0' },
+      // Any version: nothing here asserts one, and a hardcoded release number
+      // in a fake manifest only ever goes stale.
+      manifest: { id: 'com.thomassidor.lightkeeper', version: '0.0.0-test' },
       app: {
         recentEvents: [],
         credentials: { getStatus: () => ({ present: true, valid: true }) },
@@ -135,9 +142,26 @@ describe('the settings payload', () => {
   });
 
   test('recent writes fall back to a schedule when there is no controller', async () => {
-    const h = homey({ schedules: ['sched-1'] });
+    // "Did anything reach a light" must still answer on a Homey that has only
+    // schedules on it — otherwise the one list that distinguishes "never fired"
+    // from "fired and was refused" is permanently empty for those households.
+    const write = { deviceId: 'light-1', capability: 'onoff', value: true, ok: true };
+    const h = homey({ schedules: ['sched-1'], writes: { schedule: [write] } });
+
     const status = await api.getStatus(h.args);
-    assert.deepEqual(status.recentWrites, []);
     assert.equal(status.controllers.length, 0);
+    assert.deepEqual(status.recentWrites, [write]);
+  });
+
+  test("with a controller running, its writes win over a schedule's", async () => {
+    // Documented as "the FIRST controller only" — an indicator, not a merged log.
+    const ctrl = { deviceId: 'light-1', capability: 'dim', value: 0.5, ok: true };
+    const sched = { deviceId: 'light-2', capability: 'onoff', value: false, ok: true };
+    const h = homey({
+      controllers: ['ctrl-1'], schedules: ['sched-1'],
+      writes: { controller: [ctrl], schedule: [sched] },
+    });
+
+    assert.deepEqual((await api.getStatus(h.args)).recentWrites, [ctrl]);
   });
 });

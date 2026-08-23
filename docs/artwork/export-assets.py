@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Build every shipped graphic from the masters in docs/artwork/masters/.
 
-    python docs/artwork/export-assets.py              # icons + images + banner
-    python docs/artwork/export-assets.py --palette     # the brand hexes, from the logo
-    python docs/artwork/export-assets.py --measure     # recompute the icon fits
-    python docs/artwork/export-assets.py --weight homey
+    python docs/artwork/export-assets.py                # icons + images + banner
+    python docs/artwork/export-assets.py --palette      # the brand hexes, from the logo
+    python docs/artwork/export-assets.py --measure      # recompute the icon fits
+    python docs/artwork/export-assets.py --weight drawn # the masters' own stroke weights
+    python docs/artwork/export-assets.py --skip-banner  # everything Chrome is not needed for
 
 Why this exists: the shipped assets were once hand-cropped one at a time, which
 meant a crop could not be reproduced and a re-export at a new size would silently
@@ -144,7 +145,7 @@ def find_chrome() -> str:
     if found:
         return found
     raise SystemExit('Headless Chrome is needed for this step and was not found. '
-                     'Install Chrome, or run without --measure and --banner.')
+                     'Install Chrome, or pass --skip-banner (and do not pass --measure).')
 
 
 def rasterise_svg(svg: str, size: int, colour: str) -> Image.Image:

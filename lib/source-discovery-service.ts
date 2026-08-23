@@ -59,8 +59,9 @@ export class SourceDiscoveryService {
 
     // Strong matches only reach the picker. An unfiltered device argument
     // accepts every device on the Homey — it once offered "refrigerator error
-    // changed" as an input for a dial. Kept reachable via diagnostics, never
-    // ranked into the catalogue.
+    // changed" as an input for a dial. Never ranked into the catalogue, but the
+    // rule is rank-last, not hard-filter: they are reported as declined below,
+    // which is what makes "my remote shows no events" answerable.
     const strong = matched.filter(m =>
       m.routes.includes('device_scoped') || m.routes.includes('device_arg'));
 
@@ -68,10 +69,17 @@ export class SourceDiscoveryService {
       sourceDeviceId: device.id,
     });
 
+    const weak = matched
+      .filter(m => !strong.includes(m))
+      .map(m => ({
+        cardId: m.card.id,
+        reason: 'matched only on an unfiltered device argument, which accepts every device',
+      }));
+
     return {
       device,
       inputs,
-      rejected,
+      rejected: [...rejected, ...weak],
       fingerprint: fingerprintOf(device, strong.map(m => m.card)),
       matchRoutes: [...new Set(strong.flatMap(m => m.routes))],
       cardsInspected: allCards.length,

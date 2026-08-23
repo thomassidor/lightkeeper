@@ -4,7 +4,7 @@ import type { DeviceCatalog } from '../device-catalog';
 import type { SourceDiscoveryService } from '../source-discovery-service';
 import { FlowBridgeManager } from '../bridge/flow-bridge-manager';
 import { MappingEngine } from '../mapping/mapping-engine';
-import { SupersedeGate, contestedControls } from '../mapping/supersede-gate';
+import { SupersedeGate, contestedControls, type GatedInput } from '../mapping/supersede-gate';
 import { CommandScheduler } from '../outputs/command-scheduler';
 import { LightTargetAdapter } from '../outputs/light-target-adapter';
 import { TargetResolver } from '../outputs/target-resolver';
@@ -13,7 +13,7 @@ import { planIntent, type Capability } from '../outputs/intent-planner';
 import { RampEngine, canRamp } from '../outputs/ramp-engine';
 import type { LightIntent } from '../outputs/light-intent';
 import type { ControllerProfile, ControllerState, StateDetail } from '../profiles/controller-profile';
-import type { HealthAssessment, HealthMonitor } from './health-monitor';
+import type { HealthMonitor } from './health-monitor';
 import type { InputEvent } from '../inputs/input-event';
 import type { SelectableInput } from '../inputs/selectable-input';
 import type { ControllerBehavior, LightFunction } from '../mapping/mapping-types';
@@ -28,15 +28,6 @@ function rampFor(intent: LightIntent): { kind: 'brightness' | 'temperature'; dir
   }
   // Toggling or setting power has no continuous form.
   return null;
-}
-
-/** A health verdict as a StateDetail the device layer can translate. */
-function detailFor(assessment: HealthAssessment): StateDetail {
-  return {
-    ...(assessment.messageKey ? { key: assessment.messageKey } : {}),
-    ...(assessment.tokens ? { tokens: assessment.tokens } : {}),
-    ...(assessment.detail ? { text: assessment.detail } : {}),
-  };
 }
 
 /** The same function-to-intent mapping the engine uses, without a rule. */
@@ -150,7 +141,7 @@ export class ControllerRuntime {
       const assessment = await this.deps.health.assess(this.profile);
       if (assessment.state === 'ready') return;
 
-      this.setState(assessment.state, detailFor(assessment));
+      this.setState(assessment.state, assessment.detail);
     } catch (error) {
       // A health check that cannot run is not itself a controller fault.
       this.deps.log('Health assessment failed:', (error as Error)?.message);
@@ -180,7 +171,7 @@ export class ControllerRuntime {
 
     try {
       const assessment = await this.deps.health.assess(this.profile);
-      this.setState(assessment.state, detailFor(assessment));
+      this.setState(assessment.state, assessment.detail);
     } catch (error) {
       // Leave the controller where it is rather than guessing it is well.
       this.deps.log('Health re-check after a credential change failed:', (error as Error)?.message);
@@ -275,7 +266,7 @@ export class ControllerRuntime {
     this.gate = new SupersedeGate({
       supersedeMs: this.profile.behavior.supersedeMs,
       contestedControlIds: contestedControls(assignments),
-    }, event => void this.execute(event));
+    }, input => void this.execute(input));
 
     // A hold may only ramp where the source gives a reliable stop
     // signal. Everything else steps.
@@ -373,12 +364,10 @@ export class ControllerRuntime {
     this.lastEvent = { key: inputKey, at: Date.now() };
     if (!this.gate) return;
     // The gate re-enters via execute() once the supersede window resolves.
-    this.gate.submit({ ...event, value: inputKey });
+    this.gate.submit({ event, inputKey });
   }
 
-  private async execute(event: InputEvent): Promise<void> {
-    const inputKey = String(event.value ?? '');
-
+  private async execute({ event, inputKey }: GatedInput): Promise<void> {
     // ANY other input from this controller stops a running ramp.
     if (this.ramps) {
       const isStopSignal = event.action === 'release' || event.action === 'rotate_stop';

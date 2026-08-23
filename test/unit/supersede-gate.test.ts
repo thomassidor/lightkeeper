@@ -1,7 +1,9 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SupersedeGate, contestedControls } from '../../lib/mapping/supersede-gate';
+import {
+  SupersedeGate, contestedControls, type GatedInput,
+} from '../../lib/mapping/supersede-gate';
 import type { InputAction, InputEvent } from '../../lib/inputs/input-event';
 
 /** Controllable clock so the 250 ms window is exercised without waiting. */
@@ -31,18 +33,21 @@ class FakeClock {
   }
 }
 
-const event = (controlId: string, action: InputAction): InputEvent => ({
-  sourceDeviceId: 'src',
-  controlId,
-  controlLabel: controlId,
-  action,
-  provenance: 'flow_fixed',
-  timestamp: 0,
+/**
+ * The gate carries the binding key BESIDE the event, so every submission is a
+ * GatedInput. The key used to ride inside `InputEvent.value`, a field meant for
+ * the event's own value.
+ */
+const event = (
+  controlId: string, action: InputAction, inputKey = `${controlId}:${action}`,
+): GatedInput => ({
+  event: { controlId, action } satisfies InputEvent,
+  inputKey,
 });
 
 function harness(contested: string[]) {
   const clock = new FakeClock();
-  const dispatched: InputEvent[] = [];
+  const dispatched: GatedInput[] = [];
   const gate = new SupersedeGate({
     supersedeMs: 250,
     contestedControlIds: new Set(contested),
@@ -61,13 +66,13 @@ describe('supersede gate', () => {
     // narrows `dispatched` to never[] and the next assertion stops compiling.
     assert.equal(dispatched.length, 0, 'must not fire immediately on a contested control');
     clock.advance(250);
-    assert.deepEqual(dispatched.map(e => e.action), ['press']);
+    assert.deepEqual(dispatched.map(d => d.event.action), ['press']);
   });
 
   test('hold alone executes immediately', () => {
     const { dispatched, gate } = harness(['up']);
     gate.submit(event('up', 'long_press'));
-    assert.deepEqual(dispatched.map(e => e.action), ['long_press']);
+    assert.deepEqual(dispatched.map(d => d.event.action), ['long_press']);
   });
 
   test('press then hold INSIDE the window cancels the press — the STYRBAR fix', () => {
@@ -77,7 +82,7 @@ describe('supersede gate', () => {
     gate.submit(event('up', 'long_press'));
     clock.advance(500);
 
-    assert.deepEqual(dispatched.map(e => e.action), ['long_press'],
+    assert.deepEqual(dispatched.map(d => d.event.action), ['long_press'],
       'holding to dim must not also toggle the light');
   });
 
@@ -87,7 +92,7 @@ describe('supersede gate', () => {
     clock.advance(300);
     gate.submit(event('up', 'long_press'));
 
-    assert.deepEqual(dispatched.map(e => e.action), ['press', 'long_press']);
+    assert.deepEqual(dispatched.map(d => d.event.action), ['press', 'long_press']);
   });
 
   test('zero added latency when a control has only one mapping', () => {
@@ -95,7 +100,7 @@ describe('supersede gate', () => {
     const held = gate.submit(event('right', 'press'));
 
     assert.equal(held, false);
-    assert.deepEqual(dispatched.map(e => e.action), ['press'],
+    assert.deepEqual(dispatched.map(d => d.event.action), ['press'],
       'uncontested controls must dispatch synchronously');
   });
 
@@ -105,7 +110,7 @@ describe('supersede gate', () => {
     gate.submit(event('down', 'long_press'));
     clock.advance(250);
 
-    assert.deepEqual(dispatched.map(e => `${e.controlId}:${e.action}`),
+    assert.deepEqual(dispatched.map(d => `${d.event.controlId}:${d.event.action}`),
       ['down:long_press', 'up:press']);
   });
 
@@ -115,7 +120,7 @@ describe('supersede gate', () => {
     gate.cancelAll();
     clock.advance(500);
 
-    assert.deepEqual(dispatched, []);
+    assert.equal(dispatched.length, 0);
     assert.equal(gate.pendingCount, 0);
   });
 
@@ -127,6 +132,18 @@ describe('supersede gate', () => {
     clock.advance(250);
 
     assert.equal(dispatched.length, 1);
+  });
+
+  test('the binding key survives the supersede window, and the newer one wins', () => {
+    // The key is what MappingEngine resolves on, so losing or stalling it
+    // across the delay means a held press firing the wrong rule.
+    const { clock, dispatched, gate } = harness(['up']);
+    gate.submit(event('up', 'press', 'first'));
+    clock.advance(100);
+    gate.submit(event('up', 'press', 'second'));
+    clock.advance(250);
+
+    assert.deepEqual(dispatched.map(d => d.inputKey), ['second']);
   });
 });
 

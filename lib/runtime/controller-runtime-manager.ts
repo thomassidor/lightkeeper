@@ -171,14 +171,9 @@ export class ControllerRuntimeManager {
     const magnitude = normaliseMagnitude(extra.magnitude, input.magnitudePerTurn);
 
     const event: InputEvent = {
-      sourceDeviceId: runtime.currentProfile.source.deviceId,
       controlId: input.controlId,
-      controlLabel: input.label,
       action: input.action,
-      ...(input.direction !== undefined ? { direction: input.direction } : {}),
       ...(magnitude !== undefined ? { magnitude } : {}),
-      provenance: input.binding.kind === 'flow_token' ? 'flow_token' : 'flow_fixed',
-      timestamp: Date.now(),
     };
 
     runtime.handleInput(event, eventKey);

@@ -17,8 +17,7 @@ const rule = (over: Partial<MappingRule>): MappingRule => ({
 });
 
 const event = (over: Partial<InputEvent> = {}): InputEvent => ({
-  sourceDeviceId: 'src', controlId: 'c', controlLabel: 'C',
-  action: 'press', provenance: 'flow_fixed', timestamp: 0, ...over,
+  controlId: 'c', action: 'press', ...over,
 });
 
 describe('mapping engine', () => {

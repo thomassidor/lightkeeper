@@ -58,13 +58,9 @@ describe('Tap Dial end to end', () => {
       DEFAULT_BEHAVIOR,
     );
     const event: InputEvent = {
-      sourceDeviceId: TAP_DIAL_DEVICE_ID,
       controlId: right.controlId,
-      controlLabel: right.label,
       action: right.action,
       magnitude: normaliseMagnitude(151, right.magnitudePerTurn),
-      provenance: 'flow_token',
-      timestamp: 0,
     };
 
     const intent = engine.resolve({ inputKey: right.key, event })!.intent as { delta: number };

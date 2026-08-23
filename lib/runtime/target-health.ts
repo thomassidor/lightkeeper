@@ -6,12 +6,15 @@ import type { ControllerState, StateDetail } from '../profiles/controller-profil
  * "Are this thing's lights still there?" — the one health question both device
  * types ask.
  *
- * It used to live inside HealthMonitor as a private method taking a whole
+ * It lived inside HealthMonitor as a private method taking a whole
  * ControllerProfile, even though it only ever read `profile.target`. A light
  * schedule has targets and no source device, no event surface and no mappings,
  * so reaching HealthMonitor.assess() for this answer would have meant inventing
  * a fake source to get past its first three checks. Pulled out here instead:
  * the input is a TargetSpec, which is all it was ever about.
+ *
+ * HealthMonitor now calls this rather than keeping its own copy — it kept one
+ * for a while, which is exactly the drift this file was extracted to prevent.
  */
 
 export interface TargetCount {
@@ -46,15 +49,22 @@ export async function assessTargets(
   const count = await countTargets(catalog, target);
 
   if (count.available === 0) {
-    return { state: 'needs_repair', detail: { key: 'state.noTargets' }, count };
+    return {
+      state: 'needs_repair',
+      // `text` is the English fallback, for logs and diagnostics only.
+      detail: { key: 'state.noTargets', text: 'None of its lights are available.' },
+      count,
+    };
   }
 
   if (count.available < count.total) {
+    const missing = count.total - count.available;
     return {
       state: 'partial',
       detail: {
         key: 'state.someTargets',
-        tokens: { count: count.total - count.available, total: count.total },
+        tokens: { count: missing, total: count.total },
+        text: `${missing} of ${count.total} lights unavailable.`,
       },
       count,
     };

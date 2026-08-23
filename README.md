@@ -271,7 +271,7 @@ covered by unit tests rather than by a week of waiting. The trigger card they ar
 resolved at runtime by enumerating what your Homey actually offers, rather than hardcoding an id, so
 it adapts if a firmware update moves it.
 
-311 unit tests, type-clean, validated at `publish` level.
+318 unit tests, type-clean, validated at `publish` level.
 
 ---
 
@@ -279,7 +279,7 @@ it adapts if a firmware update moves it.
 
 ```bash
 npm install
-npm test                          # 311 unit tests, no hardware needed
+npm test                          # 318 unit tests, no hardware needed
 npm run typecheck
 npx homey app install             # persistent install — use this for anything interactive
 npx homey app validate --level publish

@@ -25,10 +25,24 @@ export interface SupersedeGateOptions {
   clearTimeout?: (handle: unknown) => void;
 }
 
-export type Dispatch = (event: InputEvent) => void;
+/**
+ * What goes through the gate: the normalised event, plus the binding key it
+ * arrived on.
+ *
+ * The key travels alongside the event rather than inside it. It used to ride in
+ * `InputEvent.value` — a field documented as the event's OWN value — which
+ * worked only for as long as nothing set a real one.
+ */
+export interface GatedInput {
+  event: InputEvent;
+  /** The binding key the event arrived on. */
+  inputKey: string;
+}
+
+export type Dispatch = (input: GatedInput) => void;
 
 interface Pending {
-  event: InputEvent;
+  input: GatedInput;
   handle: unknown;
 }
 
@@ -49,26 +63,27 @@ export class SupersedeGate {
    * Feed every normalised event through here. Returns true when the event was
    * held back pending the supersede window.
    */
-  submit(event: InputEvent): boolean {
+  submit(input: GatedInput): boolean {
+    const { event } = input;
     const contested = this.options.contestedControlIds.has(event.controlId);
 
     // Fast path: uncontested controls dispatch immediately. This is the
     // zero-added-latency guarantee.
     if (!contested) {
-      this.dispatch(event);
+      this.dispatch(input);
       return false;
     }
 
     if (isHoldAction(event.action)) {
       // The hold won the race — drop the discrete action that preceded it.
       this.cancelPending(event.controlId);
-      this.dispatch(event);
+      this.dispatch(input);
       return false;
     }
 
     if (!isDiscreteAction(event.action)) {
       // Releases and stops are neither; they never race a press.
-      this.dispatch(event);
+      this.dispatch(input);
       return false;
     }
 
@@ -76,10 +91,10 @@ export class SupersedeGate {
     this.cancelPending(event.controlId);
     const handle = this.setTimer(() => {
       this.pending.delete(event.controlId);
-      this.dispatch(event);
+      this.dispatch(input);
     }, this.options.supersedeMs);
 
-    this.pending.set(event.controlId, { event, handle });
+    this.pending.set(event.controlId, { input, handle });
     return true;
   }
 

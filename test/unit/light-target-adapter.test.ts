@@ -118,7 +118,6 @@ describe('capability subscriptions', () => {
   });
 
   test('a capability that refuses to subscribe does not lose the others', async () => {
-    const h = harness();
     let calls = 0;
     const api = {
       async read() {
