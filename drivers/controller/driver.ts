@@ -341,7 +341,10 @@ module.exports = class ControllerDriver extends Homey.Driver {
         created: true,
         device: {
           name: name || await this.deriveName(state),
-          data: { id: `ll-${Date.now()}-${Math.round(Math.random() * 1e6)}` },
+          // `lk-ctrl-`, matching the schedule driver's `lk-sched-`. The old
+          // `ll-` was Light Link, the name before this one. Nothing parses the
+          // prefix, so devices created under it keep working untouched.
+          data: { id: `lk-ctrl-${Date.now()}-${Math.round(Math.random() * 1e6)}` },
           store: { profile },
         },
       };

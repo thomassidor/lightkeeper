@@ -241,7 +241,7 @@
  * pairing flow — which silently blocked the second run from ever rendering.
  * A freshly injected root has no marker, so each injection boots exactly once.
  */
-function __llBootSch(Homey) {
+function __lkBootSch(Homey) {
   var __root = document.getElementById('sch-root');
   if (!__root || __root.dataset.llBooted === '1') return;
   __root.dataset.llBooted = '1';
@@ -706,10 +706,10 @@ function __llBootSch(Homey) {
 
 }
 
-window.onHomeyReady = __llBootSch;
+window.onHomeyReady = __lkBootSch;
 
 (function waitForHomey(attempt) {
-  if (window.Homey && typeof window.Homey.emit === 'function') return __llBootSch(window.Homey);
+  if (window.Homey && typeof window.Homey.emit === 'function') return __lkBootSch(window.Homey);
   if ((attempt || 0) > 100) {
     // The one literal-colour exception in this file, and the reason the style
     // test only inspects <style>: this banner has to render when nothing else

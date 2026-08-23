@@ -60,7 +60,7 @@ export function discoverTimeCard(triggers: unknown[]): TimeCardDiscovery {
   for (const raw of triggers as any[]) {
     const id = String(raw?.id ?? '');
     // Only Homey's own managers. An app-provided time card would work, but it
-    // exists only while that app runs (§3), which is not a dependency to take on
+    // exists only while that app runs (CLAUDE.md §3), which is not a dependency to take on
     // for something this load-bearing.
     if (!id.startsWith('homey:manager:')) continue;
 

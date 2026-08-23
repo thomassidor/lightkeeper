@@ -38,7 +38,7 @@ export function intentForFunction(func: LightFunction, behavior: ControllerBehav
     case 'off': return { type: 'power', value: false };
     case 'brightness_up': return { type: 'brightness_delta', delta: behavior.brightnessStep };
     case 'brightness_down': return { type: 'brightness_delta', delta: -behavior.brightnessStep };
-    // Higher is warmer on this axis (§6), so 'warmer' adds.
+    // Higher is warmer on this axis (CLAUDE.md §6), so 'warmer' adds.
     case 'warmer': return { type: 'temperature_delta', delta: behavior.temperatureStep };
     case 'colder': return { type: 'temperature_delta', delta: -behavior.temperatureStep };
   }

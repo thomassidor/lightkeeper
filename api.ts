@@ -37,7 +37,7 @@ module.exports = {
    *   controllers:  [{ id, state, sourceName, mappings, managedFlows,
    *                    schedulerReady, targetNames }],
    *   schedules:    [{ id, state, name, enabled, entries, managedFlows,
-   *                    localTime, timezone, targetNames }],
+   *                    timezone, localTime, targetNames, lastAction }],
    *   recentWrites: [{ at, deviceId, capability, value, ok, ms, error? }],
    * }
    * ```
@@ -170,7 +170,7 @@ module.exports = {
       controllers: app.controllers.all().map((runtime: any) => runtime.diagnostics()),
       schedules: app.schedules.all().map((runtime: any) => runtime.diagnostics()),
       // Which of Homey's own trigger cards the schedules are built on, and what
-      // else was on offer. A card URI may never be constructed (§3), so when a
+      // else was on offer. A card URI may never be constructed (CLAUDE.md §3), so when a
       // firmware moves this card the candidate list IS the investigation.
       timeCard: await app.schedules.timeCard().catch((error: any) => ({
         card: null,

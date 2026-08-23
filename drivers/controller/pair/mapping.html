@@ -236,7 +236,7 @@
  * share one document, and a global flag survives leaving and re-entering the
  * pairing flow — which silently blocked the second run from ever rendering.
  */
-function __llBootMap(Homey) {
+function __lkBootMap(Homey) {
   var __root = document.getElementById('map-root');
   if (!__root || __root.dataset.llBooted === '1') return;
   __root.dataset.llBooted = '1';
@@ -652,10 +652,10 @@ function __llBootMap(Homey) {
   });
 }
 
-window.onHomeyReady = __llBootMap;
+window.onHomeyReady = __lkBootMap;
 
 (function waitForHomey(attempt) {
-  if (window.Homey && typeof window.Homey.emit === 'function') return __llBootMap(window.Homey);
+  if (window.Homey && typeof window.Homey.emit === 'function') return __lkBootMap(window.Homey);
   // Homey never arrived, so Homey.__ does not exist and this one string cannot
   // go through a locale key: the failure mode IS "no Homey on the page". It is
   // also inserted into document.body, outside the view root, so the tokens

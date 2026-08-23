@@ -200,7 +200,7 @@
  * pairing flow — which silently blocked the second run from ever rendering.
  * A freshly injected root has no marker, so each injection boots exactly once.
  */
-function __llBootSrc(Homey) {
+function __lkBootSrc(Homey) {
   var __root = document.getElementById('src-root');
   if (!__root || __root.dataset.llBooted === '1') return;
   __root.dataset.llBooted = '1';
@@ -380,10 +380,10 @@ function __llBootSrc(Homey) {
   });
 }
 
-window.onHomeyReady = __llBootSrc;
+window.onHomeyReady = __lkBootSrc;
 
 (function waitForHomey(attempt) {
-  if (window.Homey && typeof window.Homey.emit === 'function') return __llBootSrc(window.Homey);
+  if (window.Homey && typeof window.Homey.emit === 'function') return __lkBootSrc(window.Homey);
   // Homey never arrived, so Homey.__ does not exist and this one string cannot
   // go through a locale key: the failure mode IS "no Homey on the page". It is
   // also inserted into document.body, outside the view root, so the tokens
