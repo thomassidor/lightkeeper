@@ -1,0 +1,29 @@
+{
+  // The suite and the build scripts are type-checked too — they were not, and
+  // `scripts/sync-views.mjs` is imported by a test, so a break there used to
+  // surface as a failing assertion rather than a type error.
+  //
+  // A separate file because these files are ESM and the app is not: import
+  // attributes (locales.test.ts) and `import.meta.dirname` (five meta tests)
+  // both need an ESM module target, while the app must keep emitting CommonJS
+  // for Homey. Nothing here is emitted.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "es2022",
+    "lib": ["es2023"],
+    "allowJs": true,
+    "checkJs": true,
+    "resolveJsonModule": true
+  },
+  "include": [
+    "test/**/*.ts",
+    "scripts/**/*.mjs"
+  ],
+  "exclude": [
+    "node_modules",
+    ".homeybuild"
+  ]
+}

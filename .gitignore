@@ -5,15 +5,15 @@
 # Dependencies
 /node_modules/
 
-# Build output
-*.tsbuildinfo
-
 # Logs
 *.log
 
 # Captures from a real Homey contain device names, zone names and the owner's
 # display name. They must never be committed — see test/fixtures/README.md.
 /test/fixtures/raw/
+
+# Local Claude Code settings — per-machine, not shared.
+.claude/settings.local.json
 
 # Editors and OS
 .vscode/

@@ -57,7 +57,9 @@ describe('supersede gate', () => {
     const { clock, dispatched, gate } = harness(['up']);
     gate.submit(event('up', 'press'));
 
-    assert.deepEqual(dispatched, [], 'must not fire immediately on a contested control');
+    // Length, not deepEqual against []: a deep-equal against an empty literal
+    // narrows `dispatched` to never[] and the next assertion stops compiling.
+    assert.equal(dispatched.length, 0, 'must not fire immediately on a contested control');
     clock.advance(250);
     assert.deepEqual(dispatched.map(e => e.action), ['press']);
   });

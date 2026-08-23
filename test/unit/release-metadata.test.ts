@@ -7,9 +7,10 @@ import { join } from 'node:path';
  * A release is coherent only when every copy of the version agrees and both
  * changelogs mention it. See CLAUDE.md → "Releasing a version".
  *
- * The version lives in three files because Homey wants it in the manifest and
- * npm wants it in package.json, and `app.json` is GENERATED from
- * `.homeycompose/app.json` by the CLI. Bumping one and forgetting another
+ * The version lives in four files because Homey wants it in the manifest and
+ * npm wants it in package.json, `app.json` is GENERATED from
+ * `.homeycompose/app.json` by the CLI, and npm rewrites package-lock.json only
+ * when it is asked to. Bumping one and forgetting another
  * produces an app that installs happily and then reports a version nobody can
  * match to a commit — invisible locally, and impossible to reason about from a
  * user's bug report. So the parity is asserted rather than remembered.
@@ -32,9 +33,12 @@ describe('release metadata', () => {
     assert.match(version, /^\d+\.\d+\.\d+$/, '.homeycompose/app.json version is not x.y.z');
   });
 
-  test('all three copies of the version agree', () => {
+  test('all four copies of the version agree', () => {
     const pkg = readJson('package.json') as { version: string };
     const manifest = readJson('app.json') as { version: string };
+    const lock = readJson('package-lock.json') as {
+      version: string; packages: Record<string, { version?: string }>;
+    };
 
     assert.equal(
       pkg.version, version,
@@ -43,7 +47,17 @@ describe('release metadata', () => {
     assert.equal(
       manifest.version, version,
       'app.json disagrees with .homeycompose/app.json — app.json is generated, so run '
-      + '`npx homey app validate --level publish` and commit the result rather than editing it',
+      + '`npm run validate` and commit the result rather than editing it',
+    );
+    // npm does not touch the lock on a hand-edited version bump, so this one
+    // drifts silently: it sat two releases behind before anything checked it.
+    assert.equal(
+      lock.version, version,
+      'package-lock.json disagrees — run `npm install --package-lock-only`',
+    );
+    assert.equal(
+      lock.packages['']?.version, version,
+      "package-lock.json's root package entry disagrees with package.json",
     );
   });
 

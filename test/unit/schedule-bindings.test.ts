@@ -116,7 +116,7 @@ describe('schedule bindings', () => {
     assert.equal(on!.key, 'sched:a:on');
     assert.equal(off!.key, 'sched:a:off');
     // Echoed verbatim: never `homey:app:<appId>`, never assembled here.
-    assert.equal(on!.binding.cardOwnerUri, TIME_CARD.uri);
+    assert.equal((on!.binding as any).cardOwnerUri, TIME_CARD.uri);
     assert.deepEqual((on!.binding as any).args, { time: '22:00' });
     assert.deepEqual((off!.binding as any).args, { time: '23:30' });
   });

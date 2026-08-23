@@ -4,7 +4,6 @@
 # Explicit for the file types this project actually contains, so a Windows
 # checkout and a CI runner on Linux agree on content hashes.
 *.ts      text eol=lf
-*.js      text eol=lf
 *.mjs     text eol=lf
 *.json    text eol=lf
 *.py      text eol=lf
@@ -16,4 +15,3 @@
 
 # Binary — never touch.
 *.png     binary
-*.pdf     binary

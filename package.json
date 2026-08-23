@@ -26,15 +26,16 @@
   ],
   "private": true,
   "engines": {
-    "node": ">=18"
+    "node": ">=20.11"
   },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "sync:views": "node scripts/sync-views.mjs",
     "test": "node --import tsx --test \"test/unit/**/*.test.ts\"",
     "test:watch": "node --import tsx --test --watch \"test/unit/**/*.test.ts\"",
-    "validate": "homey app validate --level publish"
+    "validate": "npx --yes homey@4.4.2 app validate --level publish"
   },
   "dependencies": {
     "homey-api": "3.19.2"

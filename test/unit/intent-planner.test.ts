@@ -25,8 +25,11 @@ function cacheWith(targets: Array<{
   return cache;
 }
 
-const dimWrites = (writes: { deviceId: string; capability: string; value: unknown }[]) =>
-  Object.fromEntries(writes.filter(w => w.capability === 'dim').map(w => [w.deviceId, w.value]));
+const dimWrites = (
+  writes: { deviceId: string; capability: string; value: unknown }[],
+): Record<string, number> => Object.fromEntries(
+  writes.filter(w => w.capability === 'dim').map(w => [w.deviceId, Number(w.value)]),
+);
 
 describe('group toggle', () => {
   test('any on → all off', () => {

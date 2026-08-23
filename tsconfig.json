@@ -1,9 +1,12 @@
 {
+  // The node16 base stays deliberately: `es2021`/`node16` is what the shipped
+  // build was compiled with on the hardware pass, and the emitted JS is what
+  // runs on the Homey. A newer base changes that output, so it is not a change
+  // to make on the strength of a version field. Tests and scripts do not ship,
+  // so tsconfig.test.json raises the bar there instead.
   "extends": "@tsconfig/node16/tsconfig.json",
   "compilerOptions": {
-    "allowJs": true,
     "outDir": ".homeybuild/",
-    "strict": true,
     "noImplicitOverride": true,
     "forceConsistentCasingInFileNames": true
   },

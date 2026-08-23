@@ -40,6 +40,11 @@ export const SHARED_SOURCE_DRIVER = 'controller';
 
 let copies = 0;
 
+/**
+ * @param {string} from
+ * @param {string} to
+ * @param {string} label
+ */
 function copy(from, to, label) {
   const before = existsSync(to) ? readFileSync(to) : null;
   const content = readFileSync(from);
@@ -61,7 +66,7 @@ for (const driverId of driverIds) {
   if (!existsSync(pairDir)) continue;
 
   const manifest = readManifest(driverId);
-  const declared = new Set((manifest.pair ?? []).map(view => `${view.id}.html`));
+  const declared = new Set((manifest.pair ?? []).map(/** @param {{ id: string }} view */ view => `${view.id}.html`));
 
   for (const view of SHARED_VIEWS) {
     if (!declared.has(view)) continue;
@@ -78,7 +83,7 @@ for (const driverId of driverIds) {
   const manifest = readManifest(driverId);
   // Read the view ids from the manifest rather than hardcoding them, so adding
   // another view cannot half-land.
-  const views = (manifest.repair ?? []).map(view => view.id);
+  const views = (manifest.repair ?? []).map(/** @param {{ id: string }} view */ view => view.id);
   if (views.length === 0) continue;
 
   const repairDir = join(DRIVERS, driverId, 'repair');
@@ -95,6 +100,10 @@ for (const driverId of driverIds) {
 
 console.log(copies === 0 ? 'Views already in sync.' : `Synced ${copies} view file(s).`);
 
+/**
+ * @param {string} driverId
+ * @returns {{ pair?: { id: string }[]; repair?: { id: string }[] }}
+ */
 function readManifest(driverId) {
   const path = join(DRIVERS, driverId, 'driver.compose.json');
   if (!existsSync(path)) return {};

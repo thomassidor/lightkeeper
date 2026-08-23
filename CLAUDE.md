@@ -10,14 +10,19 @@ controller for them, and it puts them on a schedule.
 
 ```bash
 npm test                       # unit tests via node --test + tsx. No hardware needed.
-npm run typecheck              # tsc --noEmit
-npm run build                  # tsc, emits to .homeybuild/
-npx homey app validate --level publish
+npm run typecheck              # tsc --noEmit, the app only
+npm run typecheck:test         # the suite and scripts/, via tsconfig.test.json
+npm run validate               # homey app validate --level publish, CLI pinned
 npx homey app install          # persistent install on a real Homey
 npx homey app run --remote     # live logs, TEMPORARY — see below
 npm run sync:views             # pair -> repair, and shared views between drivers. See §8
-python docs/artwork/export-assets.py   # re-export every shipped PNG from its master
+python docs/artwork/export-assets.py   # re-export every shipped icon, image and the banner
 ```
+
+**`package.json`'s `build` script is not ours to remove.** It looks unused — nothing in this repo
+calls it — but the Homey CLI shells out to `npm run build` itself whenever it detects TypeScript,
+so deleting it fails `validate`, `install` and `run` alike with `Missing script: "build"` reported
+as `× Typescript compilation failed`, which names neither the script nor npm.
 
 Run a single test file: `node --import tsx --test test/unit/ramp-engine.test.ts`
 

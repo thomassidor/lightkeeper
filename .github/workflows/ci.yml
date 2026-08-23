@@ -6,9 +6,19 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Read-only: nothing here writes to the repository or publishes anything.
+permissions:
+  contents: read
+
+# A second push to the same branch makes the first run's answer stale.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -27,14 +37,29 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
+      - name: Type-check tests and scripts
+        run: npm run typecheck:test
+
       - name: Unit tests
         run: npm test
 
       # Validates app.json, the compose sources, drivers, flow cards and
       # locales at the same level the App Store applies on submission.
       #
-      # The CLI is pinned: an unpinned `npx homey` silently changes what
-      # "publish-level valid" means between two runs of the same commit, so a
-      # green build stops being evidence of anything.
+      # The CLI is pinned inside the npm script: an unpinned `npx homey`
+      # silently changes what "publish-level valid" means between two runs of
+      # the same commit, so a green build stops being evidence of anything.
       - name: Validate Homey app
-        run: npx --yes homey@4.4.2 app validate --level publish
+        run: npm run validate
+
+      # `validate` REGENERATES app.json from .homeycompose/, so a stale
+      # committed manifest is silently repaired in the runner and the build
+      # goes green over it. This is the step that refuses that.
+      # (test/unit/compose-manifest.test.ts is the local equivalent.)
+      - name: Check app.json is in sync with .homeycompose/
+        run: git diff --exit-code -- app.json
+
+      # `npm run sync:views` is deliberately NOT run here. The repair/ and
+      # shared-view copies are committed files, and repair-views.test.ts above
+      # is the gate — a CI run that synced them would hide the drift it exists
+      # to catch.
