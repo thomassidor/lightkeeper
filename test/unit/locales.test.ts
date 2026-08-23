@@ -22,6 +22,19 @@ import en from '../../locales/en.json' with { type: 'json' };
  * edit here. That is deliberate — the mechanism for translating (locale keys
  * out of `lib/`, `data-i18n` attributes, `Homey.__`) is all still in place, so
  * the guard protecting it should not have to be rebuilt too.
+ *
+ * Three things this CANNOT see, so that nobody reads a green run as more than
+ * it is:
+ *
+ * - Matching is key-shaped, so a key quoted only inside a COMMENT counts as
+ *   referenced. A deleted call site whose comment survives keeps a dead key
+ *   green.
+ * - It scans lib/, drivers/, settings/, app.ts and api.ts. Nothing in scripts/,
+ *   which is correct today and silent if that changes.
+ * - The inline `{ "en": … }` strings in the manifests are outside its remit
+ *   entirely: driver names, capability titles, pair-view titles and the three
+ *   bridge cards' copy all live in `.homeycompose/` and `driver.compose.json`,
+ *   and can drift from en.json's wording with nothing failing.
  */
 
 const ROOT = join(import.meta.dirname, '..', '..');

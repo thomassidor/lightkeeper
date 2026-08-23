@@ -277,6 +277,17 @@ function __lkBootSch(Homey) {
 
   if (typeof Homey.ready === 'function') Homey.ready();
 
+  /**
+   * Homey.emit, as a promise that always settles.
+   *
+   * Both call styles are handled because the pairing bridge has used a callback
+   * and a promise at different times, and the 20 s timeout is what keeps a
+   * dropped callback from leaving the screen spinning with no message forever.
+   *
+   * Identical in every pair view, and it has to be: these files cannot import
+   * anything. It carried the timeout in the mapping view only until
+   * pair-view-styles.test.ts started comparing the copies.
+   */
   function emit(event, data) {
     return new Promise(function (resolve, reject) {
       var settled = false;
@@ -286,7 +297,6 @@ function __lkBootSch(Homey) {
         if (err) reject(err instanceof Error ? err : new Error(String(err)));
         else resolve(result);
       };
-      // A call that never comes back must not leave a blank screen.
       var timer = setTimeout(function () { finish(new Error('Homey did not respond to "' + event + '"')); }, 20000);
       var done = function (err, result) { clearTimeout(timer); finish(err, result); };
       try {

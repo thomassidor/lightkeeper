@@ -1,10 +1,15 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
   CredentialService,
   classifyCredentialError,
+  credentialFailureKey,
+  describeFailure,
   looksLikeApiKey,
+  type CredentialFailure,
 } from '../../lib/credential-service';
 
 /**
@@ -213,5 +218,57 @@ describe('one handshake per key', () => {
     await assert.rejects(pending, /changed while connecting/);
     // And the cleared state stands: no client was cached behind our back.
     await assert.rejects(() => h.service.getWriteClient(), /cannot create its Flows/);
+  });
+});
+
+/**
+ * The failure-to-locale-key map exists twice: credentialFailureKey() here, and
+ * a hand-written copy in settings/index.html's failureText(), which the pair
+ * views cannot import because they are plain browser script.
+ *
+ * The HTML comment says it "mirrors credentialFailureKey()" and nothing made
+ * that true. Adding a fifth CredentialFailure member would have updated one of
+ * them and left the settings page falling back to the English hint from lib/,
+ * which is the one thing that indirection exists to avoid.
+ */
+describe('the settings page mirrors the failure map', () => {
+  const FAILURES: CredentialFailure[] = [
+    'malformed', 'session_expired', 'insufficient_scope', 'unknown',
+  ];
+
+  const page = readFileSync(
+    join(import.meta.dirname, '..', '..', 'settings', 'index.html'), 'utf8',
+  );
+
+  const mirrored = new Map(
+    [...page.matchAll(/case '([a-z_]+)': return HomeyRef\.__\('([\w.]+)'\)/g)]
+      .map(m => [m[1]!, m[2]!]),
+  );
+
+  test('every failure the app can report is translated on the page', () => {
+    for (const failure of FAILURES) {
+      assert.equal(
+        mirrored.get(failure), credentialFailureKey(failure),
+        `settings/index.html does not translate "${failure}" the way `
+        + 'credentialFailureKey() does',
+      );
+    }
+  });
+
+  test('and the page translates nothing the app cannot report', () => {
+    for (const failure of mirrored.keys()) {
+      assert.ok(
+        (FAILURES as string[]).includes(failure),
+        `settings/index.html handles "${failure}", which is not a CredentialFailure`,
+      );
+    }
+  });
+
+  test('describeFailure covers the union too', () => {
+    // Its English is the last-resort fallback, so a missing arm returns
+    // undefined and the user is told nothing at all.
+    for (const failure of FAILURES) {
+      assert.equal(typeof describeFailure(failure), 'string', failure);
+    }
   });
 });

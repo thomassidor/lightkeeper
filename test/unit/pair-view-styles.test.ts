@@ -6,8 +6,9 @@ import { join } from 'node:path';
 /**
  * Pair views are injected into ONE document (see any view's script header), so
  * they cannot share a stylesheet — there is nowhere to serve one from — and every
- * CSS rule has to be scoped to the view's own root id. The consequence is ~110
- * lines of base CSS duplicated once per view.
+ * CSS rule has to be scoped to the view's own root id. The consequence is ~150
+ * lines of base CSS duplicated once per view, plus a handful of script helpers
+ * that cannot be imported either.
  *
  * That duplication cannot be removed, so it is made safe instead: this test
  * compares every copy with the root id normalised away. Without it the first
@@ -21,7 +22,9 @@ import { join } from 'node:path';
  * convention could be broken without anything failing.
  *
  * The other tests here enforce the rules that made the base block worth
- * extracting in the first place.
+ * extracting in the first place, and the last describe block does the same job
+ * for the shared SCRIPT helpers — which had no guard at all, so they could
+ * drift silently while the CSS beside them could not.
  */
 
 const ROOT = join(import.meta.dirname, '..', '..');
@@ -74,13 +77,23 @@ function styleBlock(view: string): string {
 }
 
 describe('pair view styles', () => {
-  test('every pair view in the repository is discovered', () => {
+  test('every pair view the manifests declare is discovered', () => {
     // A view the test cannot see is a view whose scoping and colours nobody
-    // checks. Both drivers' screens must be in the set.
-    const views = Object.keys(VIEWS);
-    assert.ok(views.length >= 5, `only ${views.length} pair view(s) discovered`);
-    assert.ok(views.some(v => v.startsWith('controller/')), 'no controller views discovered');
-    assert.ok(views.some(v => v.startsWith('schedule/')), 'no schedule views discovered');
+    // checks. The expected set comes from the driver manifests rather than a
+    // number written here: `>= 5` against a repo with seven views meant two
+    // could be deleted with nothing failing.
+    const declared = readdirSync(DRIVERS, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .flatMap(driver => {
+        const manifest = join(DRIVERS, driver.name, 'driver.compose.json');
+        if (!existsSync(manifest)) return [];
+        const views = JSON.parse(readFileSync(manifest, 'utf8')).pair ?? [];
+        return views.map((view: { id: string }) => `${driver.name}/${view.id}.html`);
+      })
+      .sort();
+
+    assert.ok(declared.length > 0, 'no driver declares any pair view');
+    assert.deepEqual(Object.keys(VIEWS).sort(), declared);
   });
 
   test('the shared base block is identical in every view', () => {
@@ -159,6 +172,79 @@ describe('pair view styles', () => {
         `${view}: the dark scheme does not restate the same tokens as the light one — `
         + 'a token defined in only one scheme keeps its light value in the dark',
       );
+    }
+  });
+});
+
+/**
+ * The same argument as the CSS, for the script.
+ *
+ * `stabiliseScrollbar` and `emit` are byte-identical in every view and have to
+ * be: a pair view is plain browser script in a shared document, so there is no
+ * module to import them from. Unlike the CSS they had no guard, so one of them
+ * could be fixed in one view and left wrong in the other four — and `emit` is
+ * the only path from a view to its driver, so a divergence there is a screen
+ * that renders and does nothing.
+ *
+ * Helpers that legitimately exist in only some views (escapeHtml, which only
+ * the list screens need) are compared across the views that DO have them.
+ */
+describe('pair view script helpers', () => {
+  /** A named function or IIFE, from its `function` keyword to its closing brace. */
+  function helper(view: string, name: string): string | null {
+    const text = read(view);
+    const at = text.indexOf(`function ${name}(`);
+    if (at === -1) return null;
+
+    let depth = 0;
+    for (let i = text.indexOf('{', at); i < text.length; i += 1) {
+      if (text[i] === '{') depth += 1;
+      else if (text[i] === '}') {
+        depth -= 1;
+        if (depth === 0) return text.slice(at, i + 1);
+      }
+    }
+    assert.fail(`${view}: ${name}() has unbalanced braces`);
+  }
+
+  /**
+   * Written out one test per helper rather than generated in a loop, so the
+   * count `npm test` reports is the count release-metadata.test.ts can derive
+   * from the source — which is what README.md quotes.
+   */
+  function assertIdentical(name: string): void {
+    const copies = Object.keys(VIEWS)
+      .map(view => ({ view, body: helper(view, name) }))
+      .filter((c): c is { view: string; body: string } => c.body !== null);
+
+    assert.ok(copies.length > 1, `${name}() appears in ${copies.length} view(s)`);
+
+    for (const copy of copies.slice(1)) {
+      assert.equal(
+        copy.body, copies[0]!.body,
+        `${copy.view}'s ${name}() has drifted from ${copies[0]!.view}'s — `
+        + 'these are copies because a pair view cannot import anything, '
+        + "so a fix has to be made in every file, including the other driver's",
+      );
+    }
+  }
+
+  test('stabiliseScrollbar() is identical everywhere it appears', () => {
+    assertIdentical('stabiliseScrollbar');
+  });
+
+  test('emit() is identical everywhere it appears', () => {
+    assertIdentical('emit');
+  });
+
+  test('escapeHtml() is identical in the views that have one', () => {
+    // Only the list screens need it; those that do must agree.
+    assertIdentical('escapeHtml');
+  });
+
+  test('emit() appears in every view, because it is the only way out', () => {
+    for (const view of Object.keys(VIEWS)) {
+      assert.ok(helper(view, 'emit'), `${view} has no emit() helper`);
     }
   });
 });
