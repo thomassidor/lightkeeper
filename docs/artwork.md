@@ -97,10 +97,9 @@ the hero is 420 px and not 270 or 520.
 The icons are **not** in that pipeline: they ship as SVG, so the only tool they need
 is the contact sheet above.
 
-| | small | large | xlarge |
-|---|---|---|---|
-| app (10:7) | 250×175 | 500×350 | 1000×700 |
-| driver (1:1) | 75×75 | 500×500 | 1000×1000 |
+Every path and pixel size lives in [`asset-spec.md`](asset-spec.md) — one file, so the numbers cannot
+drift apart. This page is the record of *why* our marks look as they do; that one is what to hand to
+anyone producing new ones.
 
 **Small and large are required; xlarge is optional.** This page used to say all
 three were mandatory. `homey-lib`'s `_validateImages` iterates `['small', 'large']`
