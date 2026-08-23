@@ -1,5 +1,15 @@
 # Asset spec
 
+**The app.** Lightkeeper does two things to lights you already own: it turns a remote, switch or dial
+you already have into a controller for them, and it puts them on a schedule. It writes the Homey Flows
+underneath so the user never opens the Flow editor.
+
+**So the photographs are about lit rooms, not technology.** Warm lamps at dusk in a calm Scandinavian
+interior; deep blue-hour shadows; a hand on a small unbranded remote for the controller, and lamps
+glowing with nobody in frame for the schedule. Brand colours are navy `#1F3A5F` and amber `#F2A93B`,
+which the light in the photographs should sit inside. No screens, no phones, no visible technology, no
+branding of any kind.
+
 Twelve files. Generate each one at exactly the size given, at exactly the path given.
 
 | File | Size | What it is | Used for |
