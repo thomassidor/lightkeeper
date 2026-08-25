@@ -12,9 +12,11 @@ to a shipped file is lost on the next export. What to produce, and why, is in
 | `logo-mark-master.svg` | `assets/icon.svg`, and the logo tile on the README banner |
 | `remote-remote-icon-master.svg` | `drivers/controller/assets/icon.svg` |
 | `schedule-icon-master.svg` | `drivers/schedule/assets/icon.svg` |
+| `circadian-icon-master.svg` | `drivers/circadian/assets/icon.svg` |
 | `app-hero-master.png` 1499×1049 | `assets/images/*` and `readme/banner.png` |
 | `remote-device-master.png` 1499×1049 | `drivers/controller/assets/images/*` |
 | `schedule-device-master.png` 1500×1049 | `drivers/schedule/assets/images/*` |
+| `circadian-device-master.png` 1500×1049 | `drivers/circadian/assets/images/*` — **PLACEHOLDER** |
 | `logo-bitmap-original.png` 1071² | nothing ships from it; it is the palette's source of truth |
 
 Supplied by the author on **23 August 2026**, replacing a set generated on 12 August 2026. The
@@ -24,14 +26,28 @@ trademarks, brand-recognisable hardware and text — Homey's review checks that 
 manufacturer photography, so that matters. The prompts live there and are not repeated here; this file
 carries the date, the tool and the rights.
 
+## `circadian-device-master.png` is a placeholder and MUST NOT ship
+
+Written on **25 August 2026** by `docs/artwork/masters/make-circadian-placeholder.py` — a warm-to-cool
+radial wash with the driver's own sun mark on it. It exists so the driver validates, the export runs
+and the suite is green while the real photograph is sourced; **it is not a photograph and Athom's
+guideline 1.4 rejects exactly this** ("images that consist of a single flat shape or icon on a plain,
+monochrome or transparent background are not approved"), which is why the schedule driver ships a
+photograph of a plug-in timer rather than a rasterised stopwatch.
+
+To finish it: put a landscape photograph at that path — a lamp in a room at golden hour reads the
+subject best — re-run `python docs/artwork/export-assets.py`, and delete this section along with the
+**PLACEHOLDER** note above. Nothing else changes: the crop is found by non-white detection, so a new
+master reframes itself.
+
 **The specific model is not recorded.** That is a gap rather than a decision: this file is where a
 reviewer or a future maintainer looks, and "an image model" is a weaker answer than a name. Whoever
 replaces a master next should write theirs in.
 
 ## Icon weight
 
-All three icons ship at `stroke-width` 40 on the 960 canvas, Homey's house weight. Fitted to the
-canvas the masters' own strokes are 31 (logo), 22 (stopwatch) and 14 (remote): three different
+All four icons ship at `stroke-width` 40 on the 960 canvas, Homey's house weight. Fitted to the
+canvas the masters' own strokes are 31 (logo), 22 (stopwatch), 20 (sun) and 14 (remote): four different
 weights, and the remote a hairline at the 32 px Homey renders. Judged from a contact sheet at
 32/40/56 px, on white and as a white mask on the brand violet — which is how Homey actually draws
 them. `export-assets.py --weight drawn` reproduces the masters' own weights if the decision is ever

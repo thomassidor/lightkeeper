@@ -58,7 +58,7 @@ the manifest's `>=12.9.0` is a firmware floor on top of it.
 
 ## Why schedules use Homey's own time trigger
 
-The app ships two device types and both generate Flows. A light schedule compiles to
+The app ships three device types and two of them generate Flows. A light schedule compiles to
 two Flows per window — one at each end — triggered by **Homey's own time card**,
 which the app locates by enumerating the trigger cards this Homey offers and echoing
 that card's `id` and `uri` back verbatim. It never constructs a card URI, and it does
@@ -76,6 +76,34 @@ Two consequences a reviewer may want to check:
   reason, in the app's own diagnostics.
 
 ---
+
+## Why the third device type asks for no key at all
+
+A reviewer opening the Add-device list will find three drivers, two of which start
+with an API-key screen and one — **Circadian light** — which does not. That is
+deliberate and worth checking against the code, because it is the one place the
+key is genuinely unnecessary.
+
+A circadian light makes lights follow the colour temperature of the day. It has no
+boundaries, so it has nothing to schedule and generates **no Flows at all**: it
+subscribes to its target lights' `onoff` and `light_temperature` (through the app's
+own token, the same subscription the controller already uses), and writes
+`light_temperature` when a light comes on and once a minute while it is on. There is
+no `createFlow` on that path, so there is nothing a Personal API Key would authorise.
+
+Three consequences a reviewer may want to verify:
+
+- It uses `homey.setInterval` — one interval for every circadian device on the Homey,
+  not one each — rather than the Flow engine. That is the opposite of the schedule
+  device's choice above, and the reason is that a curve has no boundary to miss: a
+  skipped tick is corrected by the next one. Expressing a smooth curve as Flows would
+  mean dozens of them per device in the user's own Flow list.
+- **It never switches a light on or off.** It only writes colour, and only to lights
+  that are already on — unless the user opts into pre-setting the colour of lights
+  that are off, which the pairing screen makes them prove on their own lamps first,
+  and which the app disables by itself if a lamp ever comes on from such a write.
+- It stands down for any light whose colour someone changes by hand, until that light
+  is switched off and on again.
 
 ## Test script
 
@@ -139,6 +167,12 @@ accident of implementation.
   a certainty rather than a risk.
 - Rotary behaviour differs by pairing path. Matter BILRESA exposes stepping with
   no release event, so no hold-ramp is offered for it.
+- Circadian lights are clock times only too — the stored anchor is a union with a
+  sunrise/sunset variant declared and deliberately refused, because real sun times
+  would need `homey:manager:geolocation`, which this app does not request.
+- A circadian light and a schedule pointed at the same lights will disagree: the
+  schedule sets a warmth at its boundary and the circadian light overwrites it within
+  minutes. Stated in the README rather than detected.
 - Schedules are clock times only; sunrise and sunset are not offered. They follow the
   Homey's own timezone, which the settings page displays next to each schedule.
 - Twelve schedules per schedule device — one schedule is one on/off window — which

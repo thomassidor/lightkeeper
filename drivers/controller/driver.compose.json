@@ -1,6 +1,6 @@
 {
   "name": {
-    "en": "Remote-to-light controller"
+    "en": "Light controller"
   },
   "class": "service",
   "capabilities": [],

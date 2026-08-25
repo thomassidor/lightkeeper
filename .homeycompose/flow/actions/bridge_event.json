@@ -1,19 +1,19 @@
 {
   "title": {
-    "en": "Receive controller event"
+    "en": "Receive Lightkeeper event"
   },
   "titleFormatted": {
-    "en": "Send event [[event_key]] to controller [[controller]]"
+    "en": "Send event [[event_key]] to Lightkeeper device [[controller]]"
   },
   "hint": {
-    "en": "Used internally by Lightkeeper. These cards appear in Flows that Lightkeeper creates and maintains for you — you do not need to add them by hand, and editing them will disconnect your controller."
+    "en": "Used internally by Lightkeeper. These cards appear in Flows that Lightkeeper creates and maintains for you — you do not need to add them by hand, and editing them will disconnect the device they belong to."
   },
   "args": [
     {
       "type": "text",
       "name": "controller",
       "title": {
-        "en": "Controller"
+        "en": "Device"
       }
     },
     {

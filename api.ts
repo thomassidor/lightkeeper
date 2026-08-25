@@ -12,6 +12,13 @@
  * Every device this app can attribute a generated Flow to — controllers AND
  * schedules.
  *
+ * Circadian lights are deliberately NOT here, and their absence is as
+ * load-bearing as the union below. They generate no Flows, so their ids appear in
+ * no bridge arguments and nothing can ever be attributed to them; adding them
+ * would inflate `liveControllers` and, worse, make the "nothing is running"
+ * refusal below stop firing on a Homey whose only Lightkeeper devices cannot own
+ * a Flow at all.
+ *
  * Load-bearing. `findManagedFlows()` groups by the device id in a Flow's bridge
  * arguments and cannot tell which registry that id belongs to, so a sweep run
  * against the controllers alone would find every schedule's Flows "orphaned" and
@@ -38,6 +45,8 @@ module.exports = {
    *                    schedulerReady, targetNames }],
    *   schedules:    [{ id, state, name, enabled, entries, managedFlows,
    *                    timezone, localTime, targetNames, lastAction }],
+   *   circadian:    [{ id, state, name, enabled, now, nextPoint, points,
+   *                    timezone, localTime, targetNames, overridden, preStage }],
    *   recentWrites: [{ at, deviceId, capability, value, ok, ms, error? }],
    * }
    * ```
@@ -77,11 +86,35 @@ module.exports = {
           lastAction: diagnostics.lastAction,
         };
       }),
+      circadian: app.circadian.all().map((runtime: any) => {
+        const diagnostics = runtime.diagnostics();
+        return {
+          id: runtime.controllerId,
+          state: runtime.currentState,
+          name: diagnostics.name,
+          enabled: diagnostics.enabled,
+          // Where the curve is right now, and where it goes next. The one pair of
+          // facts that says "this is working" without waiting for dusk.
+          now: diagnostics.now,
+          nextPoint: diagnostics.nextPoint,
+          points: diagnostics.points,
+          timezone: diagnostics.timezone,
+          localTime: diagnostics.localTime,
+          targetNames: diagnostics.targetNames,
+          // Lights somebody has taken over by hand. Shown because a light that
+          // has stopped following the curve on purpose looks exactly like one
+          // that has stopped following it by accident.
+          overridden: (diagnostics.targets as any[]).filter(t => t.overridden).length,
+          preStage: diagnostics.preStage,
+          preStageDisabled: diagnostics.preStageDisabled,
+        };
+      }),
       // Writes actually attempted against lights — the step after an event is
       // accepted, and where a working-looking app can still do nothing.
       recentWrites: (
         app.controllers.all()[0]?.diagnostics().recentWrites
         ?? app.schedules.all()[0]?.diagnostics().recentWrites
+        ?? app.circadian.all()[0]?.diagnostics().recentWrites
         ?? []
       ).slice(0, 10),
     };
@@ -150,6 +183,7 @@ module.exports = {
    *   recentEvents: [...],                  // every retained event, not just 12
    *   controllers:  [ControllerRuntime.diagnostics(), ...],
    *   schedules:    [ScheduleRuntime.diagnostics(), ...],
+   *   circadian:    [CircadianRuntime.diagnostics(), ...],
    *   timeCard:     { id, argument } | null, and every candidate considered,
    * }
    * ```
@@ -169,6 +203,7 @@ module.exports = {
       recentEvents: app.recentEvents,
       controllers: app.controllers.all().map((runtime: any) => runtime.diagnostics()),
       schedules: app.schedules.all().map((runtime: any) => runtime.diagnostics()),
+      circadian: app.circadian.all().map((runtime: any) => runtime.diagnostics()),
       // Which of Homey's own trigger cards the schedules are built on, and what
       // else was on offer. A card URI may never be constructed (CLAUDE.md §3), so when a
       // firmware moves this card the candidate list IS the investigation.

@@ -14,9 +14,11 @@ reframe the subject. Everything here is a function of the masters and this file.
     masters/logo-mark-master.svg          -> assets/icon.svg
     masters/remote-remote-icon-master.svg -> drivers/controller/assets/icon.svg
     masters/schedule-icon-master.svg      -> drivers/schedule/assets/icon.svg
+    masters/circadian-icon-master.svg     -> drivers/circadian/assets/icon.svg
     masters/app-hero-master.png           -> assets/images/*          + the README banner
     masters/remote-device-master.png      -> drivers/controller/assets/images/*
     masters/schedule-device-master.png    -> drivers/schedule/assets/images/*
+    masters/circadian-device-master.png   -> drivers/circadian/assets/images/*
     masters/logo-bitmap-original.png      -> nothing; it is the palette's source
 
 Homey's sizes, and which of them are actually enforced:
@@ -77,7 +79,7 @@ ICONS = [
     {
         'master': 'remote-remote-icon-master.svg',
         'out': ROOT / 'drivers' / 'controller' / 'assets' / 'icon.svg',
-        'title': 'Remote-to-light controller',
+        'title': 'Light controller',
         'desc': 'A handheld remote with a rotary wheel above two buttons.',
         'fit': (2.1079, -59.6, -60.7),
         'stroke': 6.7,
@@ -88,6 +90,14 @@ ICONS = [
         'title': 'Light schedule',
         'desc': 'A stopwatch.',
         'fit': (3.0298, -295.6, -267.6),
+        'stroke': 7.3,
+    },
+    {
+        'master': 'circadian-icon-master.svg',
+        'out': ROOT / 'drivers' / 'circadian' / 'assets' / 'icon.svg',
+        'title': 'Circadian light',
+        'desc': 'A rayed sun above two horizon lines.',
+        'fit': (2.6927, -209.3, -335.9),
         'stroke': 7.3,
     },
 ]
@@ -113,6 +123,10 @@ DEVICES = [
     {
         'master': 'schedule-device-master.png',
         'out': ROOT / 'drivers' / 'schedule' / 'assets' / 'images',
+    },
+    {
+        'master': 'circadian-device-master.png',
+        'out': ROOT / 'drivers' / 'circadian' / 'assets' / 'images',
     },
 ]
 DEVICE_SIZES = {'small.png': (75, 75), 'large.png': (500, 500), 'xlarge.png': (1000, 1000)}

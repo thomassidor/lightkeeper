@@ -37,7 +37,7 @@ Rules, for whoever draws or generates the next set:
 - **`xlarge` is optional** and no validator ever opens it, but ship it: it is what a
   high-resolution screen gets.
 
-## Prompts for the three photographs
+## Prompts for the four photographs
 
 The icons come from the SVG masters, so only the photographs need generating. Each prompt carries its
 own app context and palette, so one block can be pasted into a generator on its own. Generate larger
@@ -91,10 +91,30 @@ same crop treatment.
 > matching the neutral white-ground studio look of the remote in the app's other device picture. No
 > numerals, no text, no logos, no branding, no hand, no props, no watermark.
 
-Three things in those prompts are deliberate, so nobody "fixes" them:
+**4. Circadian device** — for `drivers/circadian/assets/images/*`. Landscape, 1500×1050 or larger;
+same crop treatment. **This one has not been generated yet** — `masters/circadian-device-master.png`
+is a placeholder that guideline 1.4 would reject, and replacing it is the last thing standing between
+this device type and a store submission. See [`artwork/provenance.md`](artwork/provenance.md).
 
-- **Both device shots are white-ground product photography**, so the two pictures read as one app and
-  both satisfy the "device on a white background" rule.
+> Device picture for the third part of Lightkeeper, a smart-home app that makes lights follow the
+> colour of the day — warm at dawn, cool through the middle, warm again at night. The object that
+> stands for it is a lamp whose light changes colour.
+>
+> Product photograph on a pure white background. One original generic frosted-globe smart bulb
+> standing upright on a slim matte warm-white base. The globe is lit from within and the colour shifts
+> across it: warm amber (around #F2A93B) low on the left, cool daylight white high on the right, a
+> smooth gradient between them rather than two halves. Three-quarter view angled from the right, soft
+> even studio light, subtle contact shadow. Whole object with even margin, the colour shift still
+> readable at 75×75. Photorealistic catalogue render, matching the neutral white-ground studio look of
+> the remote and the timer in the app's other device pictures. No text, no numerals, no logos, no
+> branding, no resemblance to any real product, no hand, no props, no packaging, no watermark.
+
+Four things in those prompts are deliberate, so nobody "fixes" them:
+
+- **Every device shot is white-ground product photography**, so the pictures read as one app and all
+  satisfy the "device on a white background" rule.
+- **The bulb's colour shift is a gradient, not two halves.** Two halves read as a novelty bulb; a
+  gradient reads as a colour temperature moving through the day, which is what the device does.
 - **The timer's dial glows but carries no numerals.** The glow says "time" at 75 px where digits would
   turn to mush, and printed numerals in a store image read as clipart.
 - **No hand in any frame, including the banner.** A hand on a remote describes only half of what the

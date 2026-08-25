@@ -2,12 +2,12 @@ import type { DeviceCatalog } from '../device-catalog';
 import type { TargetSpec } from '../outputs/light-intent';
 
 /**
- * The "choose lights" screen's data, shared by both device types.
+ * The "choose lights" screen's data, shared by every device type.
  *
- * The remote controller and the light schedule pick their lights from the same
- * view file, so they had better answer it with the same payload — this was
- * lifted verbatim out of the controller driver rather than reimplemented, and
- * both now call it.
+ * The remote controller, the light schedule and the circadian light pick their
+ * lights from the same view file, so they had better answer it with the same
+ * payload — this was lifted verbatim out of the controller driver rather than
+ * reimplemented, and all three now call it.
  */
 
 /** Only the capabilities this app acts on; the rest are noise on that screen. */

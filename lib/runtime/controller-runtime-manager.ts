@@ -78,6 +78,7 @@ export class ControllerRuntimeManager {
     profile: ControllerProfile,
     onStateChange: (state: ControllerState, detail?: StateDetail) => void,
     onProfileChange: (profile: ControllerProfile) => void = () => { },
+    displayName: () => string = () => 'controller',
   ): Promise<ControllerRuntime> {
     await this.unregister(controllerId);
 
@@ -87,6 +88,7 @@ export class ControllerRuntimeManager {
       discovery: this.deps.discovery,
       bridge: this.deps.bridge,
       ...(this.deps.health ? { health: this.deps.health } : {}),
+      displayName,
       log: this.deps.log,
       onStateChange,
       onProfileChange,
@@ -109,6 +111,7 @@ export class ControllerRuntimeManager {
       catalog: this.deps.catalog,
       discovery: this.deps.discovery,
       bridge: this.deps.bridge,
+      displayName: () => 'test',
       log: this.deps.log,
       onStateChange: () => { /* a test rig has no health state */ },
       onProfileChange: () => { /* ephemeral: nothing to persist */ },

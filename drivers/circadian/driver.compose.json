@@ -1,0 +1,41 @@
+{
+  "name": {
+    "en": "Circadian light"
+  },
+  "class": "service",
+  "capabilities": ["onoff"],
+  "capabilitiesOptions": {
+    "onoff": {
+      "title": {
+        "en": "Circadian active"
+      }
+    }
+  },
+  "platforms": ["local"],
+  "connectivity": ["lan"],
+  "images": {
+    "small": "/drivers/circadian/assets/images/small.png",
+    "large": "/drivers/circadian/assets/images/large.png",
+    "xlarge": "/drivers/circadian/assets/images/xlarge.png"
+  },
+  "pair": [
+    {
+      "id": "targets",
+      "navigation": { "next": "curve" }
+    },
+    {
+      "id": "curve",
+      "navigation": { "prev": "targets" }
+    }
+  ],
+  "repair": [
+    {
+      "id": "targets",
+      "navigation": { "next": "curve" }
+    },
+    {
+      "id": "curve",
+      "navigation": { "prev": "targets" }
+    }
+  ]
+}

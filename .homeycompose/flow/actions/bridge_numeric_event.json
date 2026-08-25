@@ -1,9 +1,9 @@
 {
   "title": {
-    "en": "Receive numeric controller event"
+    "en": "Receive numeric Lightkeeper event"
   },
   "titleFormatted": {
-    "en": "Send event [[event_key]] with value [[value]] to controller [[controller]]"
+    "en": "Send event [[event_key]] with value [[value]] to Lightkeeper device [[controller]]"
   },
   "hint": {
     "en": "Used internally by Lightkeeper, for events that carry an amount as a fixed value — for example one Flow per dial detent. Do not add or edit these by hand."
@@ -13,7 +13,7 @@
       "type": "text",
       "name": "controller",
       "title": {
-        "en": "Controller"
+        "en": "Device"
       }
     },
     {

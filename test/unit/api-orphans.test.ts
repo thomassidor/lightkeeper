@@ -23,9 +23,10 @@ type Write = { deviceId: string; capability: string; value: unknown; ok: boolean
 function homey(options: {
   controllers?: string[];
   schedules?: string[];
+  circadian?: string[];
   managed?: Array<{ flowId: string; name: string; controllerId: string }>;
   /** Per device kind, so the getStatus fallback can actually be observed. */
-  writes?: { controller?: Write[]; schedule?: Write[] };
+  writes?: { controller?: Write[]; schedule?: Write[]; circadian?: Write[] };
 }) {
   const swept: Array<Set<string>> = [];
 
@@ -39,8 +40,17 @@ function homey(options: {
       enabled: true,
       entries: [],
       managedFlows: [],
-      recentWrites: (kind === 'controller' ? options.writes?.controller : options.writes?.schedule)
-        ?? [],
+      // Circadian-only fields. Harmless on the other two: getStatus reads them
+      // per kind, and a fake that answers everything cannot show a mix-up.
+      now: { warmth: 0.9 },
+      nextPoint: { id: 'night', at: '23:00', inMinutes: 45 },
+      points: [],
+      targets: [],
+      preStage: false,
+      preStageDisabled: null,
+      recentWrites: (kind === 'controller' ? options.writes?.controller
+        : kind === 'schedule' ? options.writes?.schedule
+          : options.writes?.circadian) ?? [],
       schedulerReady: true,
       targetNames: [],
       timezone: 'Europe/Copenhagen',
@@ -63,6 +73,7 @@ function homey(options: {
           all: () => (options.schedules ?? []).map(id => runtime(id, 'schedule')),
           timeCard: async () => ({ card: null, candidates: [] }),
         },
+        circadian: { all: () => (options.circadian ?? []).map(id => runtime(id, 'circadian')) },
         bridge: {
           findManagedFlows: async () => options.managed ?? [],
           sweepOrphans: async (live: Set<string>) => {
@@ -110,6 +121,21 @@ describe('orphan counting across both device types', () => {
     assert.deepEqual([...h.swept[0]!].sort(), ['ctrl-1', 'sched-1', 'sched-2']);
   });
 
+  test('circadian devices are NOT in the live set, because they own no Flows', async () => {
+    // The union is deliberately of the two registries that can appear in a
+    // Flow's bridge arguments. A circadian light never does, so counting it
+    // would inflate liveControllers and — worse — stop the "nothing is running"
+    // refusal from firing on a Homey whose only Lightkeeper devices cannot own
+    // a Flow at all.
+    const h = homey({ circadian: ['circ-1'], managed: [flow('f1', 'ctrl-gone')] });
+
+    await api.sweepOrphans(h.args);
+    assert.deepEqual([...h.swept[0]!], []);
+
+    const result = await api.countOrphans(h.args);
+    assert.equal(result.refused, 'no_live_controllers');
+  });
+
   test('with only schedules running, the sweep is not refused', async () => {
     // A household that uses schedules and no remotes still has live devices, and
     // the "nothing is running" guard must not read that as an empty Homey.
@@ -129,6 +155,17 @@ describe('orphan counting across both device types', () => {
 });
 
 describe('the settings payload', () => {
+  test('reports circadian lights, with where their curve is now', async () => {
+    const h = homey({ circadian: ['circ-1'] });
+
+    const status = await api.getStatus(h.args);
+    assert.equal(status.circadian.length, 1);
+    assert.equal(status.circadian[0].name, 'circ-1');
+    // The pair of facts that says "this is working" without waiting for dusk.
+    assert.equal(status.circadian[0].now.warmth, 0.9);
+    assert.equal(status.circadian[0].nextPoint.at, '23:00');
+  });
+
   test('reports schedules alongside controllers', async () => {
     const h = homey({ controllers: ['ctrl-1'], schedules: ['sched-1'] });
 

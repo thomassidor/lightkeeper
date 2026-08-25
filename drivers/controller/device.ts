@@ -36,6 +36,7 @@ module.exports = class ControllerDevice extends Homey.Device {
       profile,
       (state: ControllerState, detail?: StateDetail) => void this.onRuntimeState(state, detail),
       (updated: ControllerProfile) => void this.persistProfile(updated),
+      () => this.getName(),
     );
   }
 
@@ -83,8 +84,17 @@ module.exports = class ControllerDevice extends Homey.Device {
       merged,
       (state: ControllerState, detail?: StateDetail) => void this.onRuntimeState(state, detail),
       (updated: ControllerProfile) => void this.persistProfile(updated),
+      () => this.getName(),
     );
     await this.setAvailable();
+  }
+
+  /**
+   * A device's name is the name of its Flow folder, so following a rename means
+   * reconciling. Cheap: every flow is reused, and only the folder is rewritten.
+   */
+  override async onRenamed() {
+    await this.app.controllers.get(this.controllerId)?.reconcileFlows();
   }
 
   /** Managed flow references must survive a restart, or they leak. */

@@ -106,6 +106,37 @@
     "saving": "Saving…",
     "timezone": "Times follow your Homey's own clock (__zone__)."
   },
+  "circadian": {
+    "title": "Follow the day",
+    "subtitle": "Set how warm your lights should be through the day. They are set the moment they come on, and follow the curve while they are on.",
+    "point": "Point __number__ · __time__",
+    "remove": "Remove",
+    "at": "At",
+    "warmth": "Warmth",
+    "brightness": "Brightness",
+    "nowIs": "Right now, at __time__, that is __warmth__.",
+    "alsoBrightness": "Follow brightness too",
+    "alsoBrightnessHelp": "Each point also sets how bright the lights are. Only lights that are already on are dimmed — this never switches anything on.",
+    "preStage": "Set the colour before the lights come on",
+    "preStageHelp": "Lights are then already the right colour the moment they are switched on, with no visible correction. Some lights switch themselves on when their colour is set, so test it here first.",
+    "preStageTest": "Test it",
+    "preStageTesting": "Testing on one light that is off…",
+    "preStageOk": "__name__ stayed off. Setting the colour in advance is safe on these lights.",
+    "preStageCameOn": "__name__ switched itself on, so it has been switched back off and this option turned off. Your lights will be corrected as they come on instead.",
+    "preStageCameOnStuck": "__name__ switched itself on and could not be switched back off. This option has been turned off — please switch that light off yourself.",
+    "preStageNoLight": "Every light is on right now, so there is nothing to test on. Switch one off and try again.",
+    "preview": "Try it now",
+    "previewing": "Setting your lights…",
+    "previewed": "Sent to __writes__ light(s).",
+    "add": "Add another point",
+    "atMost": "At most __max__ points on one curve.",
+    "needTwo": "A curve needs at least __min__ points.",
+    "droppedSome": "__count__ point(s) are incomplete. Check the times and try again.",
+    "summary": "__count__ point(s) across __lights__ light(s). No Flows are created — this one runs in the app.",
+    "save": "Save",
+    "saving": "Saving…",
+    "timezone": "Times follow your Homey's own clock (__zone__)."
+  },
   "functions": {
     "toggle": "On / off",
     "on": "Turn on",
@@ -126,7 +157,9 @@
     "someTargets": "__count__ of __total__ lights unavailable.",
     "flowEdited": "A Flow this app generated has been edited by hand. Open repair to rebuild it.",
     "noSchedule": "This schedule has no configuration. Repair it to set it up again.",
-    "noTimeCard": "This Homey does not offer a time trigger Lightkeeper can build on, so the schedule cannot be created. Please report this with your firmware version."
+    "noTimeCard": "This Homey does not offer a time trigger Lightkeeper can build on, so the schedule cannot be created. Please report this with your firmware version.",
+    "noCurve": "This circadian light has no configuration. Repair it to set it up again.",
+    "noWarmthTargets": "None of this device's lights can change colour temperature, so there is nothing for it to do."
   },
   "settings": {
     "apiKeyTitle": "API key",
@@ -155,11 +188,11 @@
     "noLights": "no lights",
     "notStarted": "not started",
     "flowsTitle": "Generated Flows",
-    "flowsExplain": "Lightkeeper creates a Flow for each mapped button. Flows whose controller no longer exists are orphans and can be deleted safely — only Flows this app created and can attribute to a missing controller are touched.",
+    "flowsExplain": "Lightkeeper creates a Flow for each mapped button, and two for each schedule window. Flows whose Lightkeeper device no longer exists are orphans and can be deleted safely — only Flows this app created and can attribute to a missing device are touched.",
     "noneOrphaned": "__total__ generated Flow(s), none orphaned.",
-    "orphansFound": "__orphans__ orphaned Flow(s) out of __total__ generated, across __live__ live controller(s).",
+    "orphansFound": "__orphans__ orphaned Flow(s) out of __total__ generated, across __live__ live Lightkeeper device(s).",
     "deleteOrphans": "Delete __count__ orphaned Flow(s)",
-    "sweepRefused": "__total__ generated Flow(s) found, but no controller is running right now. Every Flow would look orphaned, so nothing will be deleted. Check your Lightkeeper devices first.",
+    "sweepRefused": "__total__ generated Flow(s) found, but no Lightkeeper device is running right now. Every Flow would look orphaned, so nothing will be deleted. Check your Lightkeeper devices first.",
     "sweeping": "Deleting… this can take a while for hundreds of Flows.",
     "swept": "Deleted __deleted__, kept __kept__.",
     "sweptWithFailures": "Deleted __deleted__, kept __kept__, __failed__ failed.",
@@ -186,6 +219,11 @@
     "scheduleActiveNow": "on now",
     "scheduleEveryDay": "every day",
     "scheduleFlows": "__flows__ managed Flow(s)",
-    "scheduleClock": "Homey clock: __local__ (__zone__)"
+    "scheduleClock": "Homey clock: __local__ (__zone__)",
+    "circadian": "Circadian lights",
+    "noCircadian": "No circadian lights yet. Add one from Devices.",
+    "circadianNow": "Now at __warmth__% warmth, next point at __next__",
+    "circadianOverridden": "__count__ light(s) changed by hand",
+    "circadianPreStageOff": "Setting the colour before the lights come on was turned off automatically: one of these lights switched itself on."
   }
 }

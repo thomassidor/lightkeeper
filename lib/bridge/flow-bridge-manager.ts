@@ -10,6 +10,7 @@ import {
   type CompileRequest,
 } from './flow-binding-compiler';
 import type { LogicalSourceBinding } from '../inputs/selectable-input';
+import { FlowFolderManager, type FlowFolderInfo } from './flow-folder-manager';
 
 /**
  * Compiles bindings into generated flows and reconciles
@@ -17,9 +18,12 @@ import type { LogicalSourceBinding } from '../inputs/selectable-input';
  *
  * All writes go through the API-key client; reads use the app client. Creation
  * is idempotent, keyed on binding key plus variant key.
+ *
+ * Where the generated flows LIVE — one folder per device, nested under the
+ * app's own — is FlowFolderManager's business, not this file's. Folders are
+ * presentation: nothing here may treat one as evidence that a flow is ours.
  */
 
-export const MANAGED_FOLDER_NAME = 'Lightkeeper';
 const MANAGED_VERSION = 1;
 
 /**
@@ -42,7 +46,16 @@ export interface BindableInput {
 
 export interface SyncRequest {
   controllerId: string;
+  /**
+   * The name of the SOURCE — the remote a controller listens to. Feeds the
+   * generated flow's title, and is not the same thing as `deviceName`.
+   */
   sourceName: string;
+  /**
+   * The name of the Lightkeeper device itself, which names its flow folder.
+   * For a schedule the two are the same; for a controller they are not.
+   */
+  deviceName: string;
   fingerprint: string;
   /** Only the inputs actually mapped — never every discovered event. */
   mapped: BindableInput[];
@@ -60,15 +73,26 @@ export interface SyncResult {
   userEdited: string[];
 }
 
+/** One generated flow as found on the Homey, with what it can be cleaned up by. */
+export interface ManagedFlowSummary {
+  flowId: string;
+  name: string;
+  controllerId: string;
+  /** Carried so a sweep can remove the device folder it empties. */
+  folder: string | null;
+}
+
 export class FlowBridgeManager {
   private cardRefs: BridgeCardRefs | null = null;
-  private folderId: string | null = null;
+  private readonly folders: FlowFolderManager;
 
   constructor(
     private readonly api: HomeyApiService,
     private readonly appId: string,
     private readonly log: (...args: unknown[]) => void,
-  ) {}
+  ) {
+    this.folders = new FlowFolderManager(api, log);
+  }
 
   /**
    * Resolve this app's own bridge cards by enumeration. A card's uri
@@ -107,6 +131,20 @@ export class FlowBridgeManager {
     const cards = await this.bridgeCards();
     const client = await this.api.read();
     const liveFlows = await client.flow.getFlows();
+
+    // One folder read per reconcile, alongside the flow read that already
+    // happens. Deliberately not cached across reconciles: a folder the user
+    // deleted in the meantime would otherwise be written to forever.
+    const view = await this.folders.load();
+    const flowInfos = flowFolderInfos(Object.values(liveFlows) as any[], ourCardIds(cards));
+    const folder = await this.folders.resolveForDevice(
+      view, flowInfos, request.controllerId, request.deviceName,
+    );
+    if (folder) {
+      await this.folders.renameIfOurs(
+        view, flowInfos, folder, request.controllerId, request.deviceName,
+      );
+    }
 
     const result: SyncResult = {
       references: [], created: 0, deleted: 0, reused: 0, unsupported: [], userEdited: [],
@@ -168,7 +206,7 @@ export class FlowBridgeManager {
       // Missing, or the event surface moved under it — recreate.
       if (existing && !live) this.log(`Managed flow ${existing.flowId} has vanished; recreating`);
 
-      const created = await this.createFlow(flow);
+      const created = await this.createFlow(flow, folder);
       result.created += 1;
       result.references.push({
         flowId: created.id,
@@ -181,11 +219,36 @@ export class FlowBridgeManager {
     }
 
     // Anything we own that is no longer wanted.
+    const abandoned = new Set<string>();
     for (const [key, ref] of existingByKey) {
       if (wanted.has(key)) continue;
       if (result.references.some(r => r.flowId === ref.flowId)) continue;
-      if (await this.deleteFlow(ref.flowId)) result.deleted += 1;
+      const folderOf = flowInfos.find(f => f.id === ref.flowId)?.folder;
+      if (await this.deleteFlow(ref.flowId)) {
+        result.deleted += 1;
+        if (folderOf) abandoned.add(folderOf);
+      }
     }
+
+    // Flows that were reused rather than created still carry whatever folder
+    // they were made with — which, on an install that predates per-device
+    // folders, is the flat app folder. Move them; a flow the user filed
+    // somewhere of their own is left where they put it.
+    if (folder) {
+      // A flow we decided not to touch is not touched, filing included.
+      const edited = new Set(result.userEdited);
+      await this.folders.placeExisting(
+        view,
+        flowInfos,
+        new Set(result.references.map(r => r.flowId).filter(id => !edited.has(id))),
+        folder,
+      );
+    }
+
+    // A binding that lost its last flow can empty a folder — a remote swapped
+    // for one with fewer buttons, say. Never the device's current folder.
+    abandoned.delete(folder ?? '');
+    await this.folders.cleanUpEmpty(view, abandoned);
 
     return result;
   }
@@ -195,24 +258,23 @@ export class FlowBridgeManager {
    * controller id in its arguments. That id is what makes a flow provably ours
    * and provably attributable. Nothing else may be touched.
    */
-  async findManagedFlows(): Promise<Array<{ flowId: string; name: string; controllerId: string }>> {
+  async findManagedFlows(): Promise<ManagedFlowSummary[]> {
     const cards = await this.bridgeCards();
-    const ourCardIds = new Set([cards.event.id, cards.numeric.id, cards.token.id]);
+    const ids = ourCardIds(cards);
 
     const client = await this.api.read();
     const flows = Object.values(await client.flow.getFlows()) as any[];
 
-    const found: Array<{ flowId: string; name: string; controllerId: string }> = [];
+    const found: ManagedFlowSummary[] = [];
     for (const flow of flows) {
-      for (const action of (flow.actions ?? []) as any[]) {
-        if (!ourCardIds.has(String(action?.id ?? ''))) continue;
-        found.push({
-          flowId: flow.id,
-          name: flow.name ?? '',
-          controllerId: String(action?.args?.controller ?? ''),
-        });
-        break;
-      }
+      const controllerId = controllerIdOf(flow, ids);
+      if (controllerId === null) continue;
+      found.push({
+        flowId: String(flow.id),
+        name: flow.name ?? '',
+        controllerId,
+        folder: flow.folder ?? null,
+      });
     }
     return found;
   }
@@ -241,31 +303,57 @@ export class FlowBridgeManager {
     let deleted = 0;
     let kept = 0;
     let failed = 0;
+    const emptied = new Set<string>();
 
     for (const flow of managed) {
       if (flow.controllerId && liveControllerIds.has(flow.controllerId)) {
         kept += 1;
         continue;
       }
-      if (await this.deleteFlow(flow.flowId)) deleted += 1;
-      else failed += 1;
+      if (await this.deleteFlow(flow.flowId)) {
+        deleted += 1;
+        if (flow.folder) emptied.add(flow.folder);
+      } else failed += 1;
     }
+
+    if (deleted > 0) await this.folders.cleanUpEmpty(await this.folders.load(), emptied);
 
     this.log(`Orphan sweep: ${deleted} deleted, ${kept} kept, ${failed} failed`);
     return { deleted, kept, failed };
   }
 
-  /** Remove ONLY flows provably managed by this controller. */
+  /**
+   * Remove ONLY flows provably managed by this controller, and the device
+   * folder they leave behind.
+   *
+   * The folders are read BEFORE the deletes, because afterwards the flows that
+   * knew which folder they were in are gone.
+   */
   async removeAll(references: ManagedFlowReference[]): Promise<number> {
+    const emptied = new Set<string>();
+    try {
+      const client = await this.api.read();
+      const live = (await client.flow.getFlows()) as Record<string, any>;
+      for (const ref of references) {
+        const folder = live[ref.flowId]?.folder;
+        if (folder) emptied.add(String(folder));
+      }
+    } catch (error) {
+      // Losing the folder names only means an empty folder is left behind.
+      this.log('Could not read flow folders before deleting:',
+        redactKeyMaterial(String((error as Error)?.message ?? '')));
+    }
+
     let deleted = 0;
     for (const ref of references) {
       if (await this.deleteFlow(ref.flowId)) deleted += 1;
     }
+
+    if (deleted > 0) await this.folders.cleanUpEmpty(await this.folders.load(), emptied);
     return deleted;
   }
 
-  private async createFlow(flow: CompiledFlow): Promise<{ id: string }> {
-    const folder = await this.ensureFolder();
+  private async createFlow(flow: CompiledFlow, folder: string | undefined): Promise<{ id: string }> {
     return this.api.withWriteClient(async client => client.flow.createFlow({
       flow: {
         name: flow.name,
@@ -290,38 +378,47 @@ export class FlowBridgeManager {
     }
   }
 
-  /** Keep all managed flows in a clearly named app-managed folder. */
-  private async ensureFolder(): Promise<string | undefined> {
-    if (this.folderId) return this.folderId;
-    try {
-      const client = await this.api.read();
-      const folders = Object.values(await client.flow.getFlowFolders()) as any[];
-      const existing = folders.find(f => f.name === MANAGED_FOLDER_NAME);
-      if (existing) {
-        this.folderId = existing.id;
-        return existing.id;
-      }
-      const created = await this.api.withWriteClient(async write =>
-        write.flow.createFlowFolder({ flowfolder: { name: MANAGED_FOLDER_NAME } }));
-      this.folderId = created.id;
-      return created.id;
-    } catch (error) {
-      // Folders are organisational only — never let one block the real work.
-      this.log(
-        'Could not create the Lightkeeper folder; continuing without it:',
-        redactKeyMaterial(String((error as Error)?.message ?? '')),
-      );
-      return undefined;
-    }
+}
+
+function ourCardIds(cards: BridgeCardRefs): Set<string> {
+  return new Set([cards.event.id, cards.numeric.id, cards.token.id]);
+}
+
+/**
+ * The controller id a flow is attributed to, or null when the flow is not ours.
+ *
+ * That id — carried in our own bridge action's arguments — is the ONLY thing
+ * that makes a flow provably ours. Not its name, and emphatically not its
+ * folder: the user may move a generated flow anywhere.
+ */
+function controllerIdOf(flow: any, cardIds: Set<string>): string | null {
+  for (const action of (flow?.actions ?? []) as any[]) {
+    if (!cardIds.has(String(action?.id ?? ''))) continue;
+    return String(action?.args?.controller ?? '');
   }
+  return null;
+}
+
+/** Every live flow reduced to what folder decisions need. */
+function flowFolderInfos(flows: any[], cardIds: Set<string>): FlowFolderInfo[] {
+  return flows.map(flow => ({
+    id: String(flow?.id ?? ''),
+    folder: flow?.folder ?? null,
+    controllerId: controllerIdOf(flow, cardIds) ?? '',
+  }));
 }
 
 /**
  * Never overwrite a flow that appears materially user-edited.
  *
  * "Material" means the parts we generated: the trigger, and our own bridge
- * action with its arguments. A renamed flow, or one moved to another folder or
- * given extra actions, is left alone too — the user clearly took ownership.
+ * action with its arguments. A flow given extra actions counts as edited.
+ *
+ * A flow the user merely RENAMED or MOVED does not: neither is compared here,
+ * so such a flow is reused in place. That is deliberate and now load-bearing —
+ * it is what lets placeExisting() distinguish "still where we left it" from
+ * "the user filed this somewhere", and it is why a rename never drags a flow
+ * back into our folder.
  */
 export function hasBeenUserEdited(live: any, expected: CompiledFlow): boolean {
   if (!live) return false;

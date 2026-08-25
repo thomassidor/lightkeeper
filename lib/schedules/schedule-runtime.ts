@@ -161,6 +161,7 @@ export class ScheduleRuntime {
       const result = await this.deps.bridge.sync({
         controllerId: this.controllerId,
         sourceName: this.deps.displayName(),
+        deviceName: this.deps.displayName(),
         fingerprint: `time:${card.id}:${card.argument}`,
         mapped: bindingsForPlan(this.plan.entries, card),
         existing: this.plan.managedFlows,

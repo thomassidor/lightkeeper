@@ -60,7 +60,10 @@ function bridgeHarness(flows: Record<string, unknown> = {}, prefix = 'new') {
       getFlowCardActions: async () => actions,
       getFlows: async () => flows,
       getFlowFolders: async () => ({}),
-      createFlowFolder: async () => ({ id: 'folder' }),
+      createFlowFolder: async ({ flowfolder }: any) => ({ id: `folder-${flowfolder.name}`, ...flowfolder }),
+      updateFlowFolder: async () => ({}),
+      updateFlow: async () => ({}),
+      deleteFlowFolder: async () => ({}),
       createFlow: async ({ flow }: any) => {
         created.push(flow);
         return { id: `${prefix}-${created.length}` };
@@ -162,6 +165,7 @@ describe('retiming a schedule', () => {
     return h.bridge.sync({
       controllerId: 'sched-1',
       sourceName: 'Kitchen schedule',
+      deviceName: 'Kitchen schedule',
       fingerprint,
       mapped: bindingsForPlan([e], TIME_CARD),
       existing,

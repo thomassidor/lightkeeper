@@ -1,0 +1,780 @@
+<style>
+  /* ==== shared base: identical in every pair view ====
+     Scoped to this view's root because all views of a session share ONE
+     document, so unscoped class names bleed between screens (see the script
+     header).
+
+     That also means these ~110 lines cannot be de-duplicated into a stylesheet
+     — there is nowhere to put one. So the duplication is made safe instead:
+     test/unit/pair-view-styles.test.ts compares every copy with the root
+     id normalised and fails on any difference. Edit this block in all
+     files, or in none of them.
+
+     Colours are tokens so that the dark scheme below restates values only,
+     never rules. A colour written as a literal anywhere past this block is a
+     token that is missing. */
+  #cir-root {
+    /* Brand. The violet is the manifest brandColor and the ground of the logo —
+       93% of its pixels — and the lavender is the logo's mark. Both are read
+       out of docs/artwork/masters/logo-bitmap-original.png by
+       `export-assets.py --palette`, so the UI cannot drift from the artwork.
+       The tints and lines are derived: the logo itself has no mid-tones. */
+    --lk-accent: #180e32;
+    --lk-accent-ink: #ffffff;
+    --lk-accent-tint: #f3eefc;
+    --lk-accent-wash: #fbf9fe;
+    --lk-accent-line: #d9cbf5;
+    --lk-accent-strong: #2b1a52;
+    --lk-ring: rgba(24, 14, 50, .16);
+
+    --lk-ink: #16181d;
+    --lk-sub: #6b7280;
+    --lk-body: #4b5563;
+    --lk-muted: #8b929e;
+    --lk-faint: #9aa1ac;
+
+    /* transparent, not white: the pairing container paints the page behind us,
+       and claiming it in light mode would flatten every card against it. The
+       dark scheme does claim it, because a white card on a dark container is
+       the one combination that reads as broken rather than merely plain. */
+    --lk-page: transparent;
+    --lk-surface: #ffffff;
+    --lk-raised: #f7f8fa;
+    --lk-line: #eceef2;
+    --lk-field: #e3e6ec;
+    --lk-hover: #c9d2e0;
+    --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
+
+    --lk-ok-bg: #eaf7ef;   --lk-ok-ink: #10633a;
+    --lk-bad-bg: #fdeceb;  --lk-bad-ink: #8f1d18;
+    --lk-flat-bg: #f4f5f7; --lk-flat-ink: #5b616e;
+
+    background: var(--lk-page);
+    padding: 18px 16px 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", sans-serif;
+    color: var(--lk-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Values only. Note the accent inverts: #180e32 is nearly black and cannot
+     carry white text on a dark ground, so dark mode promotes the logo's own
+     lavender to the accent and darkens the ink on top of it. */
+  @media (prefers-color-scheme: dark) {
+    #cir-root {
+      --lk-accent: #ccb0f3;
+      --lk-accent-ink: #1b1230;
+      --lk-accent-tint: #251b40;
+      --lk-accent-wash: #1b1626;
+      --lk-accent-line: #4a3a75;
+      --lk-accent-strong: #e2d4fb;
+      --lk-ring: rgba(204, 176, 243, .28);
+
+      --lk-ink: #f2f3f5;
+      --lk-sub: #a6adb8;
+      --lk-body: #c3c9d2;
+      --lk-muted: #8b929e;
+      --lk-faint: #7c8390;
+
+      --lk-page: #16181b;
+      --lk-surface: #1f2126;
+      --lk-raised: #262a31;
+      --lk-line: #2c3037;
+      --lk-field: #3a3f48;
+      --lk-hover: #4a5160;
+      --lk-shadow: 0 1px 2px rgba(0, 0, 0, .4);
+
+      --lk-ok-bg: #14301f;   --lk-ok-ink: #7ddba4;
+      --lk-bad-bg: #3a1a19;  --lk-bad-ink: #f7a49e;
+      --lk-flat-bg: #262a31; --lk-flat-ink: #aeb5c0;
+    }
+  }
+
+  #cir-root h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+  #cir-root .sub { font-size: 14px; line-height: 1.5; color: var(--lk-sub); margin: 0 0 18px; }
+  #cir-root p { font-size: 14px; line-height: 1.55; color: var(--lk-body); }
+
+  #cir-root .card { background: var(--lk-surface); border: 1px solid var(--lk-line);
+              border-radius: 14px; box-shadow: var(--lk-shadow); padding: 14px;
+              margin-bottom: 10px; }
+
+  #cir-root .section { margin-bottom: 18px; }
+  #cir-root .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase;
+                       letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 8px 2px; }
+
+  /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
+  #cir-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+              border: 1.5px solid var(--lk-line); border-radius: 12px; padding: 13px 14px;
+              margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
+              color: var(--lk-ink);
+              transition: border-color .12s ease, background .12s ease; }
+  #cir-root .tile:hover { border-color: var(--lk-hover); }
+  #cir-root .tile.sel { border-color: var(--lk-accent); background: var(--lk-accent-tint); }
+  #cir-root .tile .name { font-size: 15px; font-weight: 500; line-height: 1.3; }
+  #cir-root .tile .meta { font-size: 12.5px; color: var(--lk-muted); margin-top: 3px; line-height: 1.35; }
+
+  #cir-root input[type=text], #cir-root input[type=password], #cir-root select {
+    width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
+    border: 1.5px solid var(--lk-field); border-radius: 11px; background: var(--lk-surface);
+    color: var(--lk-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
+  /* The chevron's fill stays a literal: #8b929e is --lk-muted, which is the one
+     token with the same value in both schemes, and a data URI cannot read a
+     custom property. */
+  #cir-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%238b929e' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+               background-repeat: no-repeat; background-position: right 13px center;
+               background-size: 11px; padding-right: 34px; }
+  #cir-root input:focus, #cir-root select:focus { outline: none; border-color: var(--lk-accent);
+                                      box-shadow: 0 0 0 3px var(--lk-ring); }
+
+  #cir-root .btn { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
+             border-radius: 10px; border: 1.5px solid var(--lk-field);
+             background: var(--lk-surface); color: var(--lk-ink); cursor: pointer;
+             min-height: 40px; }
+  #cir-root .btn:hover { border-color: var(--lk-hover); }
+  #cir-root .btn:disabled { opacity: .45; cursor: not-allowed; }
+  #cir-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
+                     border-radius: 12px; border: none; background: var(--lk-accent);
+                     color: var(--lk-accent-ink); cursor: pointer; min-height: 50px;
+                     margin-top: 16px; font-family: inherit; }
+  #cir-root .btn-primary:disabled { opacity: .5; cursor: progress; }
+
+  /* A default ground, so a .msg shown before any state class lands on it is
+     still a message rather than bare text on the page. */
+  #cir-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 11px; font-size: 13.5px;
+             line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+  #cir-root .ok { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
+  #cir-root .bad { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
+  #cir-root .muted { background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+
+  #cir-root ol { font-size: 14px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+           color: var(--lk-body); }
+  #cir-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  @media (max-width: 380px) { #cir-root .grid { grid-template-columns: 1fr; } }
+  #cir-root .empty { font-size: 14px; color: var(--lk-muted); padding: 12px 0; }
+  /* ==== end shared base ==== */
+#cir-root .rowhead { display: flex; align-items: baseline; justify-content: space-between;
+                  margin-bottom: 12px; }
+  #cir-root .rowhead .name { font-size: 15px; font-weight: 600; }
+  #cir-root .link { background: none; border: none; padding: 4px 0; font-family: inherit;
+               font-size: 13px; color: var(--lk-muted); cursor: pointer; }
+  #cir-root .link:hover { color: var(--lk-ink); }
+
+  #cir-root .field { margin-bottom: 14px; }
+  #cir-root .field:last-child { margin-bottom: 0; }
+  #cir-root .label { font-size: 12px; font-weight: 600; text-transform: uppercase;
+                letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 6px 2px; }
+
+  /* Hour and minute as two selects rather than <input type="time">: the pairing
+     webview renders the native picker differently on every platform it runs on,
+     and one of those renderings is a 13px field with no touch target. */
+  #cir-root .times { display: flex; align-items: center; gap: 6px; }
+  #cir-root .times select { width: auto; flex: 1 1 0; min-width: 0; }
+  #cir-root .times .sep { font-size: 15px; color: var(--lk-muted); flex: none; }
+
+  #cir-root .check { display: flex; align-items: center; gap: 10px; min-height: 44px;
+               font-size: 14px; color: var(--lk-body); cursor: pointer; }
+  #cir-root .check input { width: 22px; height: 22px; margin: 0; flex: none;
+                      accent-color: var(--lk-accent); cursor: pointer; }
+
+  #cir-root .slider { display: flex; align-items: center; gap: 10px; }
+  #cir-root .slider input[type=range] { flex: 1; min-width: 0; accent-color: var(--lk-accent);
+                                   height: 28px; }
+  #cir-root .slider .value { font-size: 13px; color: var(--lk-sub); flex: none;
+                        min-width: 62px; text-align: right; }
+
+  #cir-root .acts { display: flex; gap: 7px; }
+  #cir-root .acts .btn { flex: 1; }
+  #cir-root .result { font-size: 13px; color: var(--lk-sub); margin-top: 8px; }
+  #cir-root .help { font-size: 12.5px; line-height: 1.5; color: var(--lk-muted);
+               margin: 2px 0 10px 32px; }
+  #cir-root .add { width: 100%; }
+
+  /* The curve, drawn rather than described. A list of five times and five
+     warmths is not something anyone can picture, and picturing it is the whole
+     decision the screen is asking for. */
+  #cir-root .chart { position: relative; }
+  #cir-root .chart svg { display: block; width: 100%; height: 96px; overflow: visible; }
+  #cir-root .chart .line { fill: none; stroke: var(--lk-accent); stroke-width: 2;
+                      stroke-linejoin: round; stroke-linecap: round; }
+  #cir-root .chart .dot { fill: var(--lk-surface); stroke: var(--lk-accent); stroke-width: 2; }
+  #cir-root .chart .now { stroke: var(--lk-muted); stroke-width: 1; stroke-dasharray: 3 3; }
+  #cir-root .chart .axis { display: flex; justify-content: space-between; margin-top: 6px;
+                      font-size: 11px; color: var(--lk-faint); }
+  #cir-root .chart .legend { font-size: 12.5px; color: var(--lk-sub); margin-top: 8px; }
+</style>
+
+<div class="wrap" id="cir-root">
+  <h2 data-i18n="circadian.title"></h2>
+  <p class="sub" data-i18n="circadian.subtitle"></p>
+
+  <div class="card chart">
+    <svg id="cir-graph" viewBox="0 0 320 96" preserveAspectRatio="none" aria-hidden="true">
+      <line class="now" id="cir-now" x1="0" y1="0" x2="0" y2="96"></line>
+      <polyline class="line" id="cir-line" points=""></polyline>
+      <g id="cir-dots"></g>
+    </svg>
+    <div class="axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+    <div class="legend" id="cir-legend"></div>
+  </div>
+
+  <div id="cir-list"></div>
+
+  <button class="btn add" id="cir-add">Add another point</button>
+
+  <div class="card">
+    <label class="check"><input type="checkbox" id="cir-brightness" />
+      <span data-i18n="circadian.alsoBrightness"></span></label>
+    <div class="help" data-i18n="circadian.alsoBrightnessHelp"></div>
+
+    <label class="check"><input type="checkbox" id="cir-prestage" />
+      <span data-i18n="circadian.preStage"></span></label>
+    <div class="help" data-i18n="circadian.preStageHelp"></div>
+    <div class="acts"><button class="btn" id="cir-testPre" data-i18n="circadian.preStageTest"></button></div>
+    <div class="result" id="cir-preResult"></div>
+  </div>
+
+  <div class="acts"><button class="btn" id="cir-preview" data-i18n="circadian.preview"></button></div>
+  <div class="result" id="cir-previewResult"></div>
+
+  <div class="msg muted" id="cir-summary"></div>
+  <div class="msg" id="cir-msg" style="display:none;"></div>
+
+  <button id="cir-save" class="btn-primary">Save</button>
+</div>
+
+<script type="text/javascript">
+/**
+ * Pair views are INJECTED INTO the pairing container's document — they do not
+ * get their own iframe, and they must not load homey.js themselves (a second
+ * copy overwrites window.Homey with a base object that has no emit/showView).
+ *
+ * The container calls window.onHomeyReady once, at its own page load, long
+ * before this view's script exists, so waiting to be called never fires. The
+ * container's fully-equipped Homey is already on window by the time this runs,
+ * so take it directly — while still accepting onHomeyReady if it does arrive.
+ *
+ * All views of a session share ONE document. That is why every CSS rule here is
+ * scoped to this view's root id, and why the boot guard below lives on the root
+ * ELEMENT rather than in a global.
+ */
+/**
+ * The guard lives on the view's root ELEMENT, not in a global. All views
+ * share one document, and a global flag survives leaving and re-entering the
+ * pairing flow — which silently blocked the second run from ever rendering.
+ * A freshly injected root has no marker, so each injection boots exactly once.
+ */
+function __lkBootCir(Homey) {
+  var __root = document.getElementById('cir-root');
+  if (!__root || __root.dataset.llBooted === '1') return;
+  __root.dataset.llBooted = '1';
+
+  /**
+   * Reserve room for the scrollbar so expanding a section cannot resize the
+   * content.
+   *
+   * When the view grows past the pane height a scrollbar appears, the usable
+   * width drops by its thickness, and every percentage-width row re-wraps —
+   * text shifts as you expand and collapse. `scrollbar-gutter: stable` keeps
+   * the gutter reserved whether or not the bar is showing.
+   *
+   * The scrolling element belongs to the pairing container, not to us, so find
+   * it by walking up rather than guessing a selector.
+   */
+  (function stabiliseScrollbar() {
+    var scroller = null;
+    for (var el = __root.parentElement; el && el !== document.documentElement; el = el.parentElement) {
+      var overflowY = getComputedStyle(el).overflowY;
+      if (overflowY === 'auto' || overflowY === 'scroll') { scroller = el; break; }
+    }
+    var targets = scroller ? [scroller] : [document.documentElement, document.body];
+    var supported = window.CSS && CSS.supports && CSS.supports('scrollbar-gutter', 'stable');
+
+    targets.forEach(function (el) {
+      if (!el) return;
+      if (supported) el.style.scrollbarGutter = 'stable';
+      // Without gutter support, always showing the track is the stable option.
+      else if (el !== document.body) el.style.overflowY = 'scroll';
+    });
+  })();
+
+  if (typeof Homey.ready === 'function') Homey.ready();
+
+  /**
+   * Homey.emit, as a promise that always settles.
+   *
+   * Both call styles are handled because the pairing bridge has used a callback
+   * and a promise at different times, and the 20 s timeout is what keeps a
+   * dropped callback from leaving the screen spinning with no message forever.
+   *
+   * Identical in every pair view, and it has to be: these files cannot import
+   * anything. It carried the timeout in the mapping view only until
+   * pair-view-styles.test.ts started comparing the copies.
+   */
+  function emit(event, data) {
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var finish = function (err, result) {
+        if (settled) return;
+        settled = true;
+        if (err) reject(err instanceof Error ? err : new Error(String(err)));
+        else resolve(result);
+      };
+      var timer = setTimeout(function () { finish(new Error('Homey did not respond to "' + event + '"')); }, 20000);
+      var done = function (err, result) { clearTimeout(timer); finish(err, result); };
+      try {
+        var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
+        if (returned && typeof returned.then === 'function') {
+          returned.then(function (r) { done(null, r); }, function (e) { done(e); });
+        }
+      } catch (err) { done(err); }
+    });
+  }
+
+  document.querySelectorAll('[data-i18n]').forEach(function (el) {
+    // Belt and braces: the pairing container translates these itself, but a
+    // build that does not leaves the screen showing key names.
+    var translated = Homey.__(el.getAttribute('data-i18n'));
+    if (translated) el.textContent = translated;
+  });
+
+  var MINUTES_PER_DAY = 1440;
+
+  var model = {
+    points: [], support: { dim: 0, light_temperature: 0 },
+    minPoints: 2, maxPoints: 8, adjustBrightness: false, preStage: false,
+  };
+  var listEl = document.getElementById('cir-list');
+  var msgEl = document.getElementById('cir-msg');
+
+  function show(cls, text) {
+    msgEl.className = 'msg ' + cls;
+    msgEl.textContent = text;
+    msgEl.style.display = 'block';
+  }
+
+  function escapeHtml(text) {
+    return String(text == null ? '' : text).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function pad(value) { return (value < 10 ? '0' : '') + value; }
+  function formatMinutes(minutes) {
+    var wrapped = ((Math.round(minutes) % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+    return pad(Math.floor(wrapped / 60)) + ':' + pad(wrapped % 60);
+  }
+
+  function minuteOf(point) { return point.anchor.at; }
+  function sorted() {
+    return model.points.slice().sort(function (a, b) { return minuteOf(a) - minuteOf(b); });
+  }
+
+  /**
+   * Mirrors lib/circadian/circadian-curve.ts — cyclic, and eased with the same
+   * raised cosine, so the shape on screen is the shape the lights will follow.
+   * A pair view cannot import from lib/, so the two are kept in step by eye and
+   * by the fact that both are short.
+   */
+  function warmthAt(minute) {
+    var points = sorted();
+    if (points.length === 0) return 0;
+    if (points.length === 1) return points[0].warmth;
+
+    var now = ((Math.round(minute) % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+    var from = points[points.length - 1];
+    var to = points[0];
+
+    for (var i = 0; i < points.length - 1; i += 1) {
+      if (now >= minuteOf(points[i]) && now < minuteOf(points[i + 1])) {
+        from = points[i];
+        to = points[i + 1];
+        break;
+      }
+    }
+
+    var span = ((minuteOf(to) - minuteOf(from) + MINUTES_PER_DAY) % MINUTES_PER_DAY) || MINUTES_PER_DAY;
+    var elapsed = (now - minuteOf(from) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+    var eased = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, elapsed / span));
+    return from.warmth + (to.warmth - from.warmth) * eased;
+  }
+
+  /**
+   * Named steps rather than a percentage: nobody measures warmth in percent, and
+   * a number here contradicted the handle's position at least half the time.
+   *
+   * HIGHER IS WARMER, the same way round as the schedule screen and for the same
+   * reason — homey-lib's own capability hint says a higher value is a warmer
+   * colour, and assuming otherwise once lit a room cold white at bedtime. The
+   * five labels are the schedule screen's, deliberately: one axis, one set of
+   * words, one thing to translate.
+   */
+  function warmthText(value) {
+    if (value >= 0.9) return Homey.__('schedule.warmthWarmest');
+    if (value >= 0.65) return Homey.__('schedule.warmthWarm');
+    if (value >= 0.35) return Homey.__('schedule.warmthNeutral');
+    if (value >= 0.1) return Homey.__('schedule.warmthCool');
+    return Homey.__('schedule.warmthCoolest');
+  }
+
+  function brightnessText(point) {
+    return Homey.__('schedule.percent', { percent: Math.round((point.brightness || 0) * 100) });
+  }
+
+  function nowMinutes() {
+    var date = new Date();
+    return date.getHours() * 60 + date.getMinutes();
+  }
+
+  /** The curve, at one sample every ten minutes. */
+  function drawChart() {
+    var samples = [];
+    for (var minute = 0; minute <= MINUTES_PER_DAY; minute += 10) {
+      var x = (minute / MINUTES_PER_DAY) * 320;
+      // The warm end is 1 and belongs at the TOP, so the axis is inverted here
+      // exactly once, and nowhere else.
+      var y = 88 - warmthAt(minute % MINUTES_PER_DAY) * 80;
+      samples.push(x.toFixed(1) + ',' + y.toFixed(1));
+    }
+    document.getElementById('cir-line').setAttribute('points', samples.join(' '));
+
+    var dots = sorted().map(function (point) {
+      var x = (minuteOf(point) / MINUTES_PER_DAY) * 320;
+      var y = 88 - point.warmth * 80;
+      return '<circle class="dot" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="3.5"></circle>';
+    }).join('');
+    document.getElementById('cir-dots').innerHTML = dots;
+
+    var nowX = ((nowMinutes() / MINUTES_PER_DAY) * 320).toFixed(1);
+    var nowLine = document.getElementById('cir-now');
+    nowLine.setAttribute('x1', nowX);
+    nowLine.setAttribute('x2', nowX);
+
+    document.getElementById('cir-legend').textContent = Homey.__('circadian.nowIs', {
+      time: formatMinutes(nowMinutes()),
+      warmth: warmthText(warmthAt(nowMinutes())),
+    });
+  }
+
+  function options(count, selected, step) {
+    var values = [];
+    for (var value = 0; value < count; value += (step || 1)) values.push(value);
+    // A plan edited elsewhere can hold a minute this step does not land on — 06:37
+    // with a five-minute step. Showing 00 selected while the plan says 37 is the
+    // kind of quiet disagreement this app exists to avoid, so the odd value joins
+    // the list rather than being rounded behind the user's back.
+    if (values.indexOf(selected) === -1 && selected >= 0 && selected < count) {
+      values.push(selected);
+      values.sort(function (a, b) { return a - b; });
+    }
+    return values.map(function (value) {
+      return '<option value="' + value + '"' + (value === selected ? ' selected' : '') + '>'
+        + escapeHtml(pad(value)) + '</option>';
+    }).join('');
+  }
+
+  function pointHtml(point, index) {
+    var minutes = minuteOf(point);
+    var html = '<div class="card" data-id="' + escapeHtml(point.id) + '">'
+      + '<div class="rowhead"><div class="name">'
+      + escapeHtml(Homey.__('circadian.point', { number: index + 1, time: formatMinutes(minutes) }))
+      + '</div>'
+      + (model.points.length > model.minPoints
+        ? '<button class="link" data-act="remove">' + escapeHtml(Homey.__('circadian.remove')) + '</button>'
+        : '')
+      + '</div>'
+
+      + '<div class="field"><div class="label">'
+      + escapeHtml(Homey.__('circadian.at')) + '</div>'
+      + '<div class="times">'
+      + '<select data-act="hour">' + options(24, Math.floor(minutes / 60)) + '</select>'
+      + '<span class="sep">:</span>'
+      + '<select data-act="minute">' + options(60, minutes % 60, 5) + '</select>'
+      + '</div></div>'
+
+      + '<div class="field"><div class="label">'
+      + escapeHtml(Homey.__('circadian.warmth')) + '</div>'
+      + '<div class="slider">'
+      + '<input type="range" min="0" max="100" step="5" data-act="warmth" value="'
+      + Math.round(point.warmth * 100) + '" />'
+      + '<span class="value" data-role="warmthValue">' + escapeHtml(warmthText(point.warmth))
+      + '</span></div></div>';
+
+    if (model.adjustBrightness) {
+      html += '<div class="field"><div class="label">'
+        + escapeHtml(Homey.__('circadian.brightness')) + '</div>'
+        + '<div class="slider">'
+        + '<input type="range" min="5" max="100" step="5" data-act="brightness" value="'
+        + Math.round((point.brightness === undefined ? 0.6 : point.brightness) * 100) + '" />'
+        + '<span class="value" data-role="brightnessValue">' + escapeHtml(brightnessText(point))
+        + '</span></div></div>';
+    }
+
+    return html + '</div>';
+  }
+
+  function summary() {
+    document.getElementById('cir-summary').textContent = Homey.__('circadian.summary', {
+      count: model.points.length,
+      lights: model.lightCount || 0,
+    });
+    document.getElementById('cir-add').disabled = model.points.length >= model.maxPoints;
+  }
+
+  function render() {
+    listEl.innerHTML = sorted().map(pointHtml).join('');
+    drawChart();
+    summary();
+  }
+
+  function pointOf(element) {
+    var card = element.closest('.card');
+    if (!card) return null;
+    var id = card.getAttribute('data-id');
+    for (var i = 0; i < model.points.length; i += 1) {
+      if (model.points[i].id === id) return { point: model.points[i], card: card };
+    }
+    return null;
+  }
+
+  listEl.addEventListener('click', function (event) {
+    var target = event.target.closest('[data-act]');
+    if (!target || target.getAttribute('data-act') !== 'remove') return;
+    var found = pointOf(target);
+    if (!found) return;
+    // Never below the minimum: a curve of one point is a fixed colour, and it
+    // would look configured while doing nothing anyone asked for.
+    if (model.points.length <= model.minPoints) return;
+    model.points = model.points.filter(function (p) { return p.id !== found.point.id; });
+    render();
+  });
+
+  listEl.addEventListener('change', function (event) {
+    var target = event.target.closest('[data-act]');
+    if (!target) return;
+    var found = pointOf(target);
+    if (!found) return;
+    var act = target.getAttribute('data-act');
+    var value = Number(target.value);
+
+    if (act === 'hour') found.point.anchor = { kind: 'clock', at: value * 60 + (minuteOf(found.point) % 60) };
+    else if (act === 'minute') found.point.anchor = { kind: 'clock', at: Math.floor(minuteOf(found.point) / 60) * 60 + value };
+    else return;
+
+    // The row's own title carries its time, and moving a point can reorder the
+    // list, so this one is a full re-render rather than an in-place update.
+    render();
+  });
+
+  /**
+   * Sliders update in place; only structure re-renders. Re-rendering the list on
+   * a drag would drop the pointer capture mid-gesture, which reads as a slider
+   * that fights you — so the chart is redrawn and the row is left alone.
+   */
+  listEl.addEventListener('input', function (event) {
+    var target = event.target.closest('[data-act]');
+    if (!target) return;
+    var found = pointOf(target);
+    if (!found) return;
+    var act = target.getAttribute('data-act');
+
+    if (act === 'warmth') {
+      found.point.warmth = Number(target.value) / 100;
+      found.card.querySelector('[data-role="warmthValue"]').textContent = warmthText(found.point.warmth);
+      drawChart();
+    } else if (act === 'brightness') {
+      found.point.brightness = Number(target.value) / 100;
+      found.card.querySelector('[data-role="brightnessValue"]').textContent = brightnessText(found.point);
+      drawChart();
+    }
+  });
+
+  document.getElementById('cir-add').addEventListener('click', function () {
+    if (model.points.length >= model.maxPoints) {
+      return show('bad', Homey.__('circadian.atMost', { max: model.maxPoints }));
+    }
+    // In the largest gap in the day, so a new point lands somewhere useful
+    // rather than on top of an existing one — which the app would drop on save.
+    var points = sorted();
+    var bestAt = 0;
+    var bestGap = -1;
+    for (var i = 0; i < points.length; i += 1) {
+      var next = points[(i + 1) % points.length];
+      var gap = ((minuteOf(next) - minuteOf(points[i]) + MINUTES_PER_DAY) % MINUTES_PER_DAY) || MINUTES_PER_DAY;
+      if (gap > bestGap) {
+        bestGap = gap;
+        bestAt = (minuteOf(points[i]) + Math.round(gap / 2)) % MINUTES_PER_DAY;
+      }
+    }
+    // Onto the five-minute grid the selects offer.
+    bestAt = Math.round(bestAt / 5) * 5 % MINUTES_PER_DAY;
+
+    var added = {
+      id: 'p' + Date.now() + Math.round(Math.random() * 1000),
+      anchor: { kind: 'clock', at: bestAt },
+      warmth: Math.round(warmthAt(bestAt) * 20) / 20,
+    };
+    if (model.adjustBrightness) added.brightness = 0.6;
+    model.points.push(added);
+    render();
+  });
+
+  document.getElementById('cir-brightness').addEventListener('change', function (event) {
+    model.adjustBrightness = event.target.checked;
+    // All or nothing: the app refuses a half-dimmed curve rather than inventing
+    // the missing segments, so switching this on fills the gaps here where the
+    // user can see and change them.
+    if (model.adjustBrightness) {
+      model.points.forEach(function (point) {
+        if (point.brightness === undefined) point.brightness = 0.6;
+      });
+    }
+    render();
+  });
+
+  document.getElementById('cir-prestage').addEventListener('change', function (event) {
+    model.preStage = event.target.checked;
+  });
+
+  /** Both live controls push the curve to the driver first: the ephemeral runtime
+   *  is built from what the DRIVER holds, not from what the screen holds. */
+  function push() {
+    return emit('setCurve', {
+      points: model.points,
+      adjustBrightness: model.adjustBrightness,
+      preStage: model.preStage,
+    });
+  }
+
+  document.getElementById('cir-preview').addEventListener('click', function () {
+    var button = document.getElementById('cir-preview');
+    var result = document.getElementById('cir-previewResult');
+    button.disabled = true;
+    result.textContent = Homey.__('circadian.previewing');
+
+    push()
+      .then(function () { return emit('previewNow'); })
+      .then(function (outcome) {
+        result.textContent = Homey.__('circadian.previewed', { writes: outcome.writes });
+      })
+      .catch(function (err) { result.textContent = err.message || String(err); })
+      .then(function () { button.disabled = false; });
+  });
+
+  document.getElementById('cir-testPre').addEventListener('click', function () {
+    var button = document.getElementById('cir-testPre');
+    var result = document.getElementById('cir-preResult');
+    button.disabled = true;
+    result.textContent = Homey.__('circadian.preStageTesting');
+
+    push()
+      .then(function () { return emit('testPreStage'); })
+      .then(function (outcome) {
+        if (!outcome.deviceId) {
+          result.textContent = Homey.__('circadian.preStageNoLight');
+          return;
+        }
+        if (outcome.stayedOff) {
+          result.textContent = Homey.__('circadian.preStageOk', { name: outcome.name || outcome.deviceId });
+          return;
+        }
+        // The honest answer, and the toggle goes back off with it: this
+        // integration switches a lamp on when its colour is written.
+        model.preStage = false;
+        document.getElementById('cir-prestage').checked = false;
+        result.textContent = Homey.__(
+          outcome.restored ? 'circadian.preStageCameOn' : 'circadian.preStageCameOnStuck',
+          { name: outcome.name || outcome.deviceId });
+      })
+      .catch(function (err) { result.textContent = err.message || String(err); })
+      .then(function () { button.disabled = false; });
+  });
+
+  document.getElementById('cir-save').addEventListener('click', function () {
+    var button = document.getElementById('cir-save');
+    if (model.points.length < model.minPoints) {
+      return show('bad', Homey.__('circadian.needTwo', { min: model.minPoints }));
+    }
+
+    button.disabled = true;
+    show('muted', Homey.__('circadian.saving'));
+
+    push()
+      .then(function (result) {
+        if (result.dropped && result.dropped.length > 0) {
+          // Named rather than silently corrected: the user is looking at the row.
+          throw new Error(Homey.__('circadian.droppedSome', { count: result.dropped.length }));
+        }
+        return emit('save', '');
+      })
+      .then(function (result) {
+        if (!result.created) { Homey.done(); return; }
+        // createDevice alone does NOT add the device — the view must also emit
+        // 'add_device' with the device data.
+        return Homey.createDevice(result.device)
+          .then(function (deviceData) {
+            return emit('add_device', deviceData || result.device)
+              .catch(function () { /* some SDK builds add it for us */ });
+          })
+          .then(function () { Homey.done(); });
+      })
+      .catch(function (err) {
+        button.disabled = false;
+        show('bad', err.message || String(err));
+      });
+  });
+
+  document.getElementById('cir-add').textContent = Homey.__('circadian.add') || 'Add another point';
+  document.getElementById('cir-save').textContent = Homey.__('circadian.save') || 'Save';
+
+  emit('getCurve').then(function (data) {
+    model.support = data.support || model.support;
+    model.minPoints = data.minPoints || model.minPoints;
+    model.maxPoints = data.maxPoints || model.maxPoints;
+    model.lightCount = (data.lights || []).length;
+    model.preStage = data.preStage === true;
+    model.adjustBrightness = data.adjustBrightness === true;
+    model.points = (data.points || []).map(function (point) {
+      return {
+        id: point.id,
+        // Stored as a union so sunrise and sunset can join it later; the screen
+        // only offers, and only understands, a clock time.
+        anchor: { kind: 'clock', at: point.anchor && point.anchor.at !== undefined ? point.anchor.at : 0 },
+        warmth: point.warmth,
+        brightness: point.brightness,
+      };
+    });
+
+    document.getElementById('cir-prestage').checked = model.preStage;
+    document.getElementById('cir-brightness').checked = model.adjustBrightness;
+    // Nothing selected dims, so offering to follow brightness would be offering
+    // something that cannot happen.
+    if (!model.support.dim) {
+      model.adjustBrightness = false;
+      document.getElementById('cir-brightness').closest('.card')
+        .querySelector('.check').style.display = 'none';
+    }
+
+    render();
+
+    if (data.timezone) {
+      show('muted', Homey.__('circadian.timezone', { zone: data.timezone }));
+    }
+  }).catch(function (err) {
+    show('bad', err.message || String(err));
+  });
+}
+
+window.onHomeyReady = __lkBootCir;
+
+(function waitForHomey(attempt) {
+  if (window.Homey && typeof window.Homey.emit === 'function') return __lkBootCir(window.Homey);
+  if ((attempt || 0) > 100) {
+    // The one literal-colour exception in this file, and the reason the style
+    // test only inspects <style>: this banner has to render when nothing else
+    // in the view has booted, tokens included.
+    document.body.insertAdjacentHTML('afterbegin', '<div style="padding:12px;background:#fdeceb;color:#8f1d18;font-size:13px;">'
+      + 'Lightkeeper could not reach the Homey pairing API on this page.</div>');
+    return;
+  }
+  setTimeout(function () { waitForHomey((attempt || 0) + 1); }, 50);
+})(0);
+</script>

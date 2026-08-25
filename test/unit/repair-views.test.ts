@@ -47,12 +47,12 @@ const drivers = readdirSync(DRIVERS, { withFileTypes: true })
   }));
 
 describe('repair views', () => {
-  test('both drivers are discovered', () => {
+  test('every driver is discovered', () => {
     // The one hardcoded list in this file, and deliberately so: everything
     // below discovers its subjects, which means an empty `drivers` array would
     // make every other test here pass by having nothing to check. This is the
     // canary for that, not a second source of truth.
-    assert.deepEqual(drivers.map(d => d.id).sort(), ['controller', 'schedule']);
+    assert.deepEqual(drivers.map(d => d.id).sort(), ['circadian', 'controller', 'schedule']);
   });
 
   test('every driver declares repair views at all', () => {

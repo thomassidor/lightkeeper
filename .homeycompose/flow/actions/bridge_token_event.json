@@ -1,9 +1,9 @@
 {
   "title": {
-    "en": "Receive controller event with a token value"
+    "en": "Receive Lightkeeper event with a token value"
   },
   "titleFormatted": {
-    "en": "Send event [[event_key]] with value [[droptoken]] to controller [[controller]]"
+    "en": "Send event [[event_key]] with value [[droptoken]] to Lightkeeper device [[controller]]"
   },
   "hint": {
     "en": "Used internally by Lightkeeper, for events whose amount arrives as a Flow token — for example a dial reporting how far it turned. Do not add or edit these by hand."
@@ -14,7 +14,7 @@
       "type": "text",
       "name": "controller",
       "title": {
-        "en": "Controller"
+        "en": "Device"
       }
     },
     {

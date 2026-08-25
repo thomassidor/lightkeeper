@@ -91,7 +91,16 @@ function harness(flows: Record<string, unknown>) {
     flow: {
       getFlowCardActions: async () => actions,
       getFlows: async () => flows,
-      getFlowFolders: async () => ({ f: { id: 'folder-1', name: 'Lightkeeper' } }),
+      getFlowFolders: async () => ({
+        f: { id: 'folder-1', name: 'Lightkeeper', parent: null },
+      }),
+      createFlowFolder: async ({ flowfolder }: { flowfolder: any }) => {
+        nextId += 1;
+        return { id: `folder-${nextId}`, ...flowfolder };
+      },
+      updateFlowFolder: async () => ({}),
+      updateFlow: async () => ({}),
+      deleteFlowFolder: async () => ({}),
       createFlow: async ({ flow }: { flow: any }) => {
         created.push(flow);
         nextId += 1;
@@ -112,6 +121,7 @@ function harness(flows: Record<string, unknown>) {
 const syncRequest = (deviceId: string, existing: ManagedFlowReference[], fingerprint: string) => ({
   controllerId: CONTROLLER,
   sourceName: 'BILRESA',
+  deviceName: 'Hallway button',
   fingerprint,
   mapped: [inputOn(deviceId)],
   existing,

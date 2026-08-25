@@ -5,8 +5,8 @@
 [![CI](https://github.com/thomassidor/lightkeeper/actions/workflows/ci.yml/badge.svg)](https://github.com/thomassidor/lightkeeper/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Use any remote to control any lights, and put any lights on a timer — without writing a single
-Flow.**
+**Use any remote to control any lights, put any lights on a timer, and let them follow the colour
+of the day — without writing a single Flow.**
 
 A Homey Pro app.
 
@@ -32,16 +32,24 @@ every change means finding both again.
 
 ## What Lightkeeper does
 
-Two kinds of device, both built the same way.
+Three kinds of device.
 
 **A controller.** Pick a remote. Pick the lights. Say which button does what. Save.
 
 **A schedule.** Pick the lights. Say when they come on, and whether they go off after a while or at
 a set time. Add as many schedules as you need. Save.
 
-Lightkeeper writes the Flows for you, keeps them in a folder of their own, and maintains them as
-things change. If you add a lamp to a room a device points at, it follows. If you delete the device,
-its Flows go with it — and only its Flows.
+**A circadian light.** Pick the lights. Set how warm they should be through the day — warm at dawn,
+cool in the middle, warm again at night. They are set the moment they come on, and keep following
+the curve while they are on. It never switches anything on or off.
+
+For the first two, Lightkeeper writes the Flows for you, keeps them in a folder of their own — one
+per device, inside a Lightkeeper folder — and maintains them as things change. If you add a lamp to
+a room a device points at, it follows. If you delete the device, its Flows go with it — and only its
+Flows.
+
+A circadian light writes no Flows at all, so it needs no API key: it watches your lights and adjusts
+them directly.
 
 You never open the Flow editor.
 
@@ -87,7 +95,7 @@ a single mapping.
 
 ### 2. Add a controller
 
-Devices → Add → Lightkeeper → **Remote-to-light controller**. Then:
+Devices → Add → Lightkeeper → **Light controller**. Then:
 
 - **Choose a remote** — grouped by room, with a count of the events Homey exposes for each
 - **Choose lights** — individually, or a whole zone
@@ -108,6 +116,22 @@ Devices → Add → Lightkeeper → **Light schedule**. Then:
 Up to twelve schedules on one device. The device's own switch pauses the whole thing without losing
 anything — useful when you are away, or when you would rather it left the room alone tonight.
 
+### 4. Add a circadian light
+
+Devices → Add → Lightkeeper → **Circadian light**. **No API key is needed for this one** — it
+creates no Flows, so pairing starts straight at the lights.
+
+- **Choose lights** — the same picker
+- **Follow the day** — a curve of up to eight points, each a time and a warmth, drawn as you edit
+  it. It starts on a sensible default: warm at 06:00, cool through the day, warmest at 23:00
+- **Try it now** sets your lights to today's current warmth immediately, before you save anything
+- Optionally **follow brightness too**, and optionally **set the colour before the lights come on**
+  so there is no visible correction when they are switched on — with a **Test it** button, because
+  some lights switch themselves on when their colour is set
+
+Its own switch pauses it, like a schedule's. Change a light's colour by hand and it will leave that
+light alone until you switch it off and on again.
+
 ---
 
 ## How it works
@@ -124,7 +148,9 @@ keep working.
 
 ### What it writes
 
-Ordinary Flows, in a folder called **Lightkeeper**, each with one internal Lightkeeper action card:
+Ordinary Flows, each with one internal Lightkeeper action card, filed in a folder of their own:
+**Lightkeeper**, and inside it a folder per device named after the device itself. Rename the
+device and the folder follows.
 
 - **A controller** gets one Flow per mapped event, triggered by your remote's own trigger card, and
   only for events you actually mapped.
@@ -149,7 +175,9 @@ from 22:00 to 23:00 and the old pair is replaced, rather than left behind firing
   should have ended, the lights are left alone — see the limits below. Coming back up *inside* a
   window does switch them on, because that is the case where doing nothing means a dark evening.
 - **Pausing a schedule keeps its Flows.** Pausing means "do not act", not "throw the setup away", so
-  resuming is instant and any folder you moved those Flows into survives.
+  resuming is instant.
+- **A Flow you filed somewhere yourself stays there.** Lightkeeper tidies its own Flows into the
+  device's folder, but only ever out of the Lightkeeper folder — never out of one of yours.
 - **Nothing leaves your Homey.** No telemetry, opt-in or otherwise. The diagnostics export is
   generated locally and shared only if you choose to attach it to a report.
 
@@ -185,7 +213,20 @@ if you need more; the cap exists so your Flow list stays readable.
 **If the app is not running at the moment a window should end, that off is missed** and the lights
 stay on until the next one.
 
-**Times are clock times.** Sunrise and sunset are not offered yet.
+**Times are clock times.** Sunrise and sunset are not offered yet — for schedules or for circadian
+lights.
+
+**A circadian light never switches a light on or off.** It only changes the colour of lights that
+are already on, and — if you ask it to — sets the colour of lights that are off so they are right
+the moment they come on.
+
+**A circadian light and a schedule pointed at the same lights will disagree.** A schedule's warmth
+is applied at its boundary and then overwritten by the circadian light within a few minutes. Use one
+or the other on a given light.
+
+**A circadian light adjusts about once every few minutes**, only when the colour has moved enough to
+be visible, and only while the app is running. It does not catch up on time it was switched off
+for — it simply picks up wherever the day now is.
 
 ---
 
@@ -264,6 +305,10 @@ transports:
 | Philips Hue Tap Dial | Hue Bridge | rotation with a magnitude token |
 | IKEA BILRESA | Matter/Thread | scroll wheel, and cards that vanish on restart |
 
+Circadian lights have not yet run a full day on hardware. Their curve — including the segment that
+wraps midnight — and every rule about when a write is worth making are covered by unit tests, and the
+pairing screen's **Try it now** proves the whole write path against your own lamps before you save.
+
 Schedules were verified on the same Homey: a window switched three Hue spots on at its start minute,
 applied the brightness and warmth it was given, and switched them off again at its end minute, both
 boundaries firing within ~20 ms of the clock. Their day handling and midnight-crossing arithmetic is
@@ -271,7 +316,7 @@ covered by unit tests rather than by a week of waiting. The trigger card they ar
 resolved at runtime by enumerating what your Homey actually offers, rather than hardcoding an id, so
 it adapts if a firmware update moves it.
 
-332 unit tests, type-clean, validated at `publish` level.
+411 unit tests, type-clean, validated at `publish` level.
 
 ---
 
@@ -279,7 +324,7 @@ it adapts if a firmware update moves it.
 
 ```bash
 npm install
-npm test                          # 332 unit tests, no hardware needed
+npm test                          # 411 unit tests, no hardware needed
 npm run typecheck                 # the app
 npm run typecheck:test            # the suite and scripts/
 npm run sync:views                # after editing any pair view — nothing runs it for you
@@ -304,8 +349,9 @@ checklist in [CLAUDE.md](CLAUDE.md#releasing-a-version).
 ```
 app.ts  api.ts        app entry, and the Web API the settings page calls
 lib/                  everything with no Homey device attached: discovery, inputs,
-                      mapping, outputs, the flow bridge, both runtimes, schedules
-drivers/              the two virtual device types and their pairing views
+                      mapping, outputs, the flow bridge, every runtime, schedules,
+                      the circadian curve
+drivers/              the three virtual device types and their pairing views
 settings/  locales/   the app settings page, and every user-facing string
 test/                 unit tests and fixtures transcribed from real hardware
 docs/                 review notes, privacy, localisation, artwork (not bundled)
@@ -335,6 +381,47 @@ the fixture. Captures from a real home are never committed —
 ---
 
 ## Changelog
+
+### 0.4.0
+
+Added:
+
+- **A third kind of device: a circadian light.** Pick your lights, set how warm they should be
+  through the day, and they follow it — set the moment they come on, and adjusted while they stay
+  on. It never switches a light on or off.
+- **It needs no API key.** A circadian light creates no Flows at all, so pairing starts at the
+  lights. It also means it keeps working when a key expires.
+- The curve is drawn on screen as you edit it, up to eight points, and **Try it now** applies it to
+  your real lights before you save anything.
+- Optionally follows brightness as well as warmth, and optionally **sets the colour before the
+  lights come on** so there is no visible correction — with a test button, because some lights
+  switch themselves on when their colour is set. If that happens in normal use, the option turns
+  itself off.
+- Change a light's colour by hand and the circadian light leaves it alone until you switch that
+  light off and on again.
+
+### 0.3.1
+
+Changed:
+
+- **Generated Flows are grouped per device.** The single flat `Lightkeeper` folder now holds one
+  folder per Lightkeeper device, named after the device, so it is obvious at a glance which Flows a
+  controller or a schedule produced. Renaming the device renames its folder; deleting the device
+  takes the folder with it once it is empty.
+- **Existing Flows move themselves.** The next time a device reconciles, its Flows are moved out of
+  the flat folder into their own — but only from the Lightkeeper folder. A Flow you had dragged into
+  a folder of your own stays where you put it, which is why the move is safe to do unasked.
+- Folder work still never blocks a Flow write: a Homey that refuses a folder call gets its Flows
+  anyway, unfiled.
+- **A simpler name for the other device type.** "Remote-to-light controller" is now
+  **Light controller**. The old name described the wiring rather than naming the device, and
+  was the longest label in the Add-device list. The driver id did not move, so paired devices,
+  their mappings and their generated Flows are untouched.
+- **The shared Flow cards stopped calling everything a controller.** All three internal bridge
+  cards are used by schedules too, and the orphan sweep's live set is the union of both
+  registries — so "no controller is running right now" was wrong the moment a schedule existed.
+  Those titles, hints and the settings copy say "Lightkeeper device" now. The cards' argument
+  name is untouched: it is the wire format every generated Flow already carries.
 
 ### 0.3.0
 

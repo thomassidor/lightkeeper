@@ -145,8 +145,22 @@ export class LightTargetAdapter {
   /**
    * Subscribe to a target's capability changes so external changes — someone
    * using the vendor app, or a wall switch — reconcile into desired state.
+   *
+   * `onChange` is optional and additive. The cache already decides whether a
+   * change is genuinely external or the echo of our own write, and until the
+   * circadian runtime needed it that verdict was computed and thrown away —
+   * which is why this hands it on rather than making every caller re-derive it.
+   * A controller does not care (it reacts to remotes, not to lights); a
+   * circadian light cares about both edges of `onoff` and about someone
+   * overriding its colour by hand.
    */
-  async subscribe(deviceId: string, capabilities: Capability[]): Promise<void> {
+  async subscribe(
+    deviceId: string,
+    capabilities: Capability[],
+    onChange?: (
+      deviceId: string, capability: Capability, value: unknown, external: boolean,
+    ) => void,
+  ): Promise<void> {
     // Replace, never stack. See the `subscriptions` field for why.
     await this.unsubscribe(deviceId);
 
@@ -158,7 +172,14 @@ export class LightTargetAdapter {
       if (!this.cache.supports(deviceId, capability)) continue;
       try {
         const instance = device.makeCapabilityInstance(capability, (value: unknown) => {
-          this.cache.applyExternalChange(deviceId, capability, value);
+          const external = this.cache.applyExternalChange(deviceId, capability, value);
+          // Never let a listener's failure take the subscription down with it:
+          // this callback runs inside Homey's own event dispatch.
+          try {
+            onChange?.(deviceId, capability, value, external);
+          } catch (error) {
+            this.log(`Capability listener for ${capability} on ${deviceId} threw:`, (error as Error)?.message);
+          }
         });
         // track() hands back a wrapper that also removes itself from the
         // service's teardown set, so tearing down here does not leave a stale

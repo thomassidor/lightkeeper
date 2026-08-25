@@ -10,6 +10,7 @@ import { FlowBridgeManager } from './lib/bridge/flow-bridge-manager';
 import { ControllerRuntimeManager } from './lib/runtime/controller-runtime-manager';
 import { HealthMonitor } from './lib/runtime/health-monitor';
 import { ScheduleRuntimeManager } from './lib/schedules/schedule-runtime-manager';
+import { CircadianRuntimeManager } from './lib/circadian/circadian-runtime-manager';
 import { parseEventKey } from './lib/schedules/schedule-bindings';
 
 /**
@@ -28,6 +29,7 @@ module.exports = class LightkeeperApp extends Homey.App {
   bridge!: FlowBridgeManager;
   controllers!: ControllerRuntimeManager;
   schedules!: ScheduleRuntimeManager;
+  circadian!: CircadianRuntimeManager;
   health!: HealthMonitor;
 
   /**
@@ -66,6 +68,9 @@ module.exports = class LightkeeperApp extends Homey.App {
         // exactly the same way — and a recovered one must bring them back
         // without a restart.
         void this.schedules?.onCredentialChange();
+        // Circadian lights are deliberately absent from this fan-out: they
+        // generate no Flows, so no API key is involved in anything they do and
+        // there is nothing here for them to recover from.
       },
     });
 
@@ -107,15 +112,35 @@ module.exports = class LightkeeperApp extends Homey.App {
       log: (...args) => this.log(...args),
     });
 
+    this.circadian = new CircadianRuntimeManager({
+      api: this.api,
+      catalog: this.catalog,
+      timezone: () => {
+        try {
+          return this.homey.clock?.getTimezone();
+        } catch {
+          return undefined;
+        }
+      },
+      // The SDK's disposal-safe aliases: cleaned up with the Homey instance, so a
+      // reloaded app cannot leave a timer behind writing to somebody's lights.
+      // One interval for every circadian device — see the manager for why a curve
+      // may use a timer where a schedule may not (CLAUDE.md §9).
+      setInterval: (fn, ms) => this.homey.setInterval(fn, ms),
+      clearInterval: handle => this.homey.clearInterval(handle as any),
+      log: (...args) => this.log(...args),
+    });
+
     this.registerBridgeCard('bridge_event');
     this.registerBridgeCard('bridge_numeric_event', args => Number(args.value));
     this.registerBridgeCard('bridge_token_event', args => Number(args.droptoken));
 
-    // Zones and devices change under us; targets must follow. Both registries
-    // are notified: watch() takes a single consumer, so the fan-out lives here.
+    // Zones and devices change under us; targets must follow. Every registry is
+    // notified: watch() takes a single consumer, so the fan-out lives here.
     await this.catalog.watch(() => {
       void this.controllers.onCatalogChange();
       void this.schedules.onCatalogChange();
+      void this.circadian.onCatalogChange();
     });
 
     // A stored key must be re-checked after every restart, or pairing asks for
@@ -189,6 +214,9 @@ module.exports = class LightkeeperApp extends Homey.App {
   /**
    * Route a validated bridge event to the registry that owns it.
    *
+   * Two registries, not three: a circadian light has no Flows and therefore no
+   * bridge events. It reacts to the lights themselves.
+   *
    * Routed on the KEY'S SHAPE rather than by trying both registries: a schedule
    * boundary key is unmistakable, and asking the controller registry about one
    * first would produce a refusal reason about a missing mapping catalogue —
@@ -212,6 +240,7 @@ module.exports = class LightkeeperApp extends Homey.App {
     // Never leave a light mid-ramp, a timer running or a listener attached.
     await this.controllers?.destroyAll();
     await this.schedules?.destroyAll();
+    await this.circadian?.destroyAll();
     await this.api?.destroy();
   }
 

@@ -72,12 +72,12 @@ function imageTargets(): Array<{ label: string; key: string; path: string; kind:
 }
 
 describe('shipped images', () => {
-  test('both device types and the app declare images at all', () => {
+  test('every device type and the app declares images at all', () => {
     // Required at publish level: homey-lib throws "The property `images` is
     // required in order to publish an app" and the same per driver.
     assert.ok(appJson.images, 'app.json declares no images');
     const drivers = appJson.drivers ?? [];
-    assert.equal(drivers.length, 2, 'expected the controller and the schedule');
+    assert.equal(drivers.length, 3, 'expected the controller, the schedule and the circadian light');
     for (const driver of drivers) {
       assert.ok(driver.images, `driver ${driver.id} declares no images`);
     }
@@ -231,14 +231,18 @@ describe('icons', () => {
     }
   });
 
-  test('the two drivers do not share a mark', () => {
+  test('no two icons share a mark', () => {
     // The one icon rule the automated reviewer does enforce: reuse is a finding
     // when two SVGs are byte-equivalent. Visual family resemblance is fine.
-    const [, controller, schedule] = iconTargets();
-    assert.notEqual(
-      readFileSync(controller!.path, 'utf8'),
-      readFileSync(schedule!.path, 'utf8'),
-      'the two driver icons are byte-identical',
-    );
+    // Compared pairwise across every icon rather than between the two drivers
+    // that happened to exist when this was written — a third one copied from a
+    // second was exactly what that version could not see.
+    const seen = new Map<string, string>();
+    for (const target of iconTargets()) {
+      const svg = readFileSync(target.path, 'utf8');
+      const twin = seen.get(svg);
+      assert.equal(twin, undefined, `${target.label} and ${twin} are byte-identical icons`);
+      seen.set(svg, target.label);
+    }
   });
 });

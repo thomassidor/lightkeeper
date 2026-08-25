@@ -2,9 +2,12 @@
 
 Guidance for Claude Code (and any other agent) working in this repository.
 
-Lightkeeper is a Homey Pro app that does two things to already-paired lights, both by generating
-and maintaining the Flows underneath: it turns an already-paired remote, switch or dial into a
-controller for them, and it puts them on a schedule.
+Lightkeeper is a Homey Pro app that does three things to already-paired lights: it turns an
+already-paired remote, switch or dial into a controller for them, it puts them on a schedule, and it
+follows the colour of the day with them. The first two work by generating and maintaining the Flows
+underneath, which is why they need a Personal API Key (§1). **The third does not generate Flows at
+all** — a circadian light watches the lights themselves and writes to them directly (§12), so it
+needs no key, has no `needs_credential` state, and never appears in the orphan sweep's live set.
 
 ## Commands
 
@@ -40,14 +43,23 @@ lib/
   mapping/                      mapping engine, supersede gate, behaviour types
   outputs/                      intents, perceptual curve, planner, scheduler, ramp engine,
                                 target resolver, target-state cache
-  bridge/                       binding compiler, flow bridge manager
+  bridge/                       binding compiler, flow bridge manager, flow folders
   runtime/                      controller runtime, manager, health monitor, shared target health
   profiles/                     profile schema, migrations
   schedules/                    types, window maths, local clock, bindings, runtime, manager,
                                 time-card discovery, migrations
-  pairing/                      the light picker, shared by both drivers
+  circadian/                    curve types, cyclic interpolation, runtime, manager, migrations
+  pairing/                      the light picker, shared by all three drivers
 drivers/controller/             virtual device, driver, four pairing views
   pair/                         the four views, edited here
+  repair/                       exact copies of pair/, generated — see §8
+drivers/circadian/              virtual device, driver, two pairing views — NO credential screen
+  pair/                         targets.html is a COPY of the controller's; curve.html is its
+                                own — see §8
+  repair/                       exact copies of pair/, generated — see §8
+drivers/circadian/              virtual device, driver, two pairing views — NO credential screen
+  pair/                         targets.html is a COPY of the controller's; curve.html is its
+                                own — see §8
   repair/                       exact copies of pair/, generated — see §8
 drivers/schedule/               virtual device, driver, three pairing views
   pair/                         credential.html and targets.html are COPIES of the
@@ -253,7 +265,8 @@ a convention we chose — `homey-lib`'s own capability definition
 color."* It cost a real bug to learn: both the controller's `warmer`/`colder` mapping and the
 schedule screen's warmth labels assumed the opposite, so a schedule set to "Warmest" wrote 0 and
 lit a room cold white on the first live run. Anything that reasons about this axis — a delta's
-sign, a slider's labels, a default — must go the same way.
+sign, a slider's labels, a default, the direction a circadian curve rises in (§12) — must go the
+same way.
 
 A `setCapabilityValue` write to a Hue Bridge light acks in roughly 275 ms. That is the output leg
 only; radio time and flow-engine dispatch upstream of the bridge card are not observable from
@@ -420,6 +433,10 @@ Consequences worth not re-deriving:
   revisiting, the missing piece is that argument's `values` list from `getFlowCardTriggers()` — read
   it, do not guess it. The energy cards above are the reason the shape match requires the time to be
   the ONLY argument.
+- **A CIRCADIAN light is the one thing here that may use a timer, and §12 says why.** Everything
+  above is about a BOUNDARY: something that has to happen at 22:00 whether or not the app was
+  running a moment ago. A curve has no boundaries, so none of this applies to it — do not "fix" it
+  into Flows.
 - **`Intl` timezone data IS present on the Homey's Node build.** Verified on the same firmware:
   `homey.clock.getTimezone()` returned `Europe/Copenhagen` and `localNow()` resolved it to the right
   weekday and minute (`Sat 20:30`). The fallback in `localNow()` — a fixed `en-US` locale, and
@@ -483,6 +500,99 @@ anything discoverable in this repo:
   `capabilitiesOptions` (only app-defined custom capabilities can carry one), and any
   screenshot or promotional asset class. Widget previews are the one asset class we ship nothing
   for, and they are a hard build requirement the moment a widget is added.
+
+## 11. Flow folders nest, and every lookup must key on (name, parent)
+
+Generated flows are filed one folder per Lightkeeper device, inside the app's own folder:
+`Lightkeeper/<device name>/`. `lib/bridge/flow-folder-manager.ts` owns all of it, so
+`FlowBridgeManager` stays about flows.
+
+- **Nesting is real.** `FlowFolder` is `{ id, name, parent: string | null }`, and both
+  `createFlowFolder` and `updateFlowFolder` accept `parent`
+  (`homey-api/assets/specifications/HomeyAPIV3Local.json`, `managers.ManagerFlow`). `getFlowFolders()`
+  returns a map keyed by id, hence the `Object.values()`. A flow points at exactly ONE folder
+  (`flow.folder`), so there is no "in two places" to reason about.
+- **Match on name AND parent, never name alone.** The old code found the app folder with
+  `folders.find(f => f.name === 'Lightkeeper')`. With children in the tree that picks up a device
+  folder a user happened to name Lightkeeper, and nests everything inside one device. The root is
+  `name === MANAGED_FOLDER_NAME && parent === null`; a device folder is `parent === root`.
+- **`createFlow` is the only writer of `flow.folder`, and a reused flow is never rewritten.** So
+  moving flows that already exist takes an explicit `updateFlow({ id, flow: { folder } })` — which is
+  how installs predating per-device folders migrate themselves.
+- **Only ever move a flow OUT OF OUR OWN root.** A flow whose folder is something else was put there
+  by the user, and `README.md` promises it stays. `hasBeenUserEdited()` deliberately compares neither
+  `name` nor `folder`, so nothing else would notice — a moved flow is reused IN PLACE, which is the
+  distinction that makes the migration safe.
+- **A device's folder is resolved from its own live flows first**, and only then by name. That is why
+  nothing persists a folder id: after a rename the flows still sit in the folder we made, it merely
+  carries the old name, so `renameIfOurs()` renames the folder instead of moving every flow. The
+  rename is refused when the folder holds anything that is not this device's — two devices sharing a
+  name would otherwise rename it back and forth on every reconcile, forever.
+- **Never cache a folder id across reconciles.** The previous `folderId` field was set once for the
+  app's lifetime; deleting the folder on the Homey left every later `createFlow` writing to a dead id.
+  The view is read once per `sync()`, alongside the flow read that already happens.
+- **Folder work never blocks a flow write.** Every method catches its own failure and degrades to "no
+  folder" / "no change". `test/unit/flow-bridge-folders.test.ts` asserts a Homey that refuses every
+  folder call still gets its flows, and `test/unit/flow-bridge-sweep.test.ts`'s client stub has no
+  folder methods at all, which is the same contract from the other side.
+- **The empty `Lightkeeper` folder is left behind on purpose.** Device folders are deleted once
+  emptied; the root is the anchor the next device resolves against.
+
+---
+
+## 12. A circadian light generates no Flows, and that is the whole design
+
+The third device type follows the colour temperature of the day: warm at dawn, cool through the
+middle, warm again at night. It is not a schedule with more rows. A schedule fires AT a time; a
+circadian curve has a value at EVERY minute, and that difference decides everything below.
+
+- **It uses a timer, and §9 does not forbid it.** §9 is about boundaries — a 22:00 event has to fire
+  at 22:00 across DST, restarts and an app that was not running a moment ago, which only the Flow
+  engine can promise. A curve has nothing to miss: a skipped tick is corrected by the next one and a
+  restart just resumes. So `CircadianRuntimeManager` holds ONE `homey.setInterval` for every
+  circadian device on the Homey (60 s), and compiling ninety-six Flows to approximate a smooth curve
+  would be worse in every direction — including putting this device type back behind an API key.
+- **Which is the real prize: no Flows means no Personal API Key.** Pairing is the light picker and
+  the curve; there is no credential screen, `assessHealth()` has no credential leg, `app.ts` does
+  not notify it on a credential change, and `liveDeviceIds()` in `api.ts` deliberately excludes it —
+  a circadian device id can never appear in a Flow's bridge arguments, so counting it would only
+  inflate the sweep's "live" count and stop its "nothing is running" refusal from firing.
+- **Three things cause a write, and the first is the feature.** The rising edge of a target's
+  `onoff` — over the capability subscription the app already holds — is what makes a lamp the right
+  colour however it was switched on: the wall switch, the vendor app, another Flow. That write
+  deliberately SKIPS the "has the curve moved" gate, because the lamp has just restored whatever
+  colour it was last at. The other two are the tick and any change of plan or targets.
+- **`LightTargetAdapter.subscribe()` now hands on the cache's verdict.** `applyExternalChange()`
+  always knew whether a change was genuinely external or the echo of our own write, and always threw
+  the answer away. The optional third argument is that answer — and because echoes arrive duplicated
+  (§6), it is also what makes one power-on produce one write rather than two.
+- **The tick must not refresh.** Live values arrive over the subscriptions, so re-reading every
+  target every minute would add a round trip per light per minute to an app that otherwise only talks
+  to Homey when something happens. `ScheduleRuntime.apply()` does the opposite, correctly: it fires
+  twice a day off a cache that may be hours stale.
+- **The write gate is the capability's own resolution.** Across the steepest default segment the
+  curve moves about 0.003 a minute and `light_temperature` reports `decimals: 2` (§6), so a write
+  goes out roughly every third tick. Ticking faster changes nothing; the gate is what sets the rate.
+- **An external colour change stands the device down for that light.** Over a 0.03 tolerance — above
+  a bridge's rounding, far below a deliberate change — and outside a 3 s settle window after our own
+  write. Cleared by either edge of `onoff`, because "switch it off and on again" is the gesture
+  people already have for putting a light back to how it ought to be. Never persisted: a restart is a
+  clean slate, which is the right bias for a feature whose job is to be correct by default.
+- **Pre-staging is opt-in because a colour write can switch a lamp ON.** §6 measured that for `dim`
+  on Hue; whether `light_temperature` does the same is per-integration and untested. So writing to
+  lights that are off is off by default, provable from the pairing screen against the household's own
+  lamps, and self-disabling: `verifyStayedOff()` turns it off for the whole device and persists that
+  the first time a lamp comes on from one. It does NOT switch the lamp back off — by then our doing
+  and somebody walking in are indistinguishable, and switching off a room a person has just lit is
+  the worse failure. The screen's own probe does restore it, because there the user asked.
+- **Brightness is never pre-staged.** A `dim` write turns an off lamp on; that is measured, not
+  suspected. Pre-staging is a colour-only idea, and `planWrites()` splits its two legs for exactly
+  this reason.
+- **The anchor is a discriminated union from day one.** `{ kind: 'clock' }` is all that ships;
+  `{ kind: 'sun' }` is declared, refused by `sanitiseCurve()` and thrown on by `resolveAnchor()`, so
+  anchoring to real sunrise and sunset later is a new variant rather than a reshape of every stored
+  plan. What it needs is `homey:manager:geolocation` — which this app does not declare — and solar
+  maths the SDK does not provide (§9).
 
 ---
 
@@ -581,7 +691,9 @@ re-running the hardware pass list, not just re-running CI.
   proprietary to Athom B.V.; no warranty*. Bundling it in a Homey app is exactly the permitted use,
   but it does not inherit this repo's MIT licence and belongs in the rights register as its own line.
 
-## Two device types, one flow lifecycle
+## Two of the three device types share one flow lifecycle
+
+(The third, a circadian light, generates no Flows at all and appears nowhere below — see §12.)
 
 `FlowBridgeManager` takes `BindableInput` — `{ key, label, binding, variantKey? }` — not
 `SelectableInput`. A schedule has no physical control, no action and no magnitude, but it does have a
@@ -630,10 +742,11 @@ English–Danish glossary kept from the removed translation.
 container's document rather than getting their own iframe. They must not load `homey.js` themselves,
 every CSS rule is scoped to the view's root id, and the boot guard lives on the root element rather
 than in a global. Each file's header explains this. The ~150-line shared CSS base is byte-identical
-in every view, across both drivers, and so are the `emit()`, `stabiliseScrollbar()` and
+in every view, across every driver, and so are the `emit()`, `stabiliseScrollbar()` and
 `escapeHtml()` helpers beside it. `test/unit/pair-view-styles.test.ts` fails on any drift in either
 — it compared only the CSS until `emit()` was found carrying a timeout in one view and not the
-other four.
+others. Both tests discover views from disk, so a new driver's screens are covered the moment they
+exist.
 
 **Edit a pair view, then run `npm run sync:views`.** Every `repair/` folder holds byte copies of its
 `pair/`, and the schedule driver's `credential.html` and `targets.html` are byte copies of the

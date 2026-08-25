@@ -62,6 +62,12 @@ export interface ControllerRuntimeDeps {
    * lights before save has no health state to report.
    */
   health?: HealthMonitor;
+  /**
+   * The Lightkeeper device's own name, read live rather than captured — it
+   * names this controller's Flow folder, and the user may rename the device at
+   * any time. Mirrors ScheduleRuntimeDeps.displayName.
+   */
+  displayName: () => string;
   log: (...args: unknown[]) => void;
   onStateChange: (state: ControllerState, detail?: StateDetail) => void;
   /**
@@ -316,6 +322,7 @@ export class ControllerRuntime {
       const result = await this.deps.bridge.sync({
         controllerId: this.controllerId,
         sourceName: this.profile.source.name ?? 'remote',
+        deviceName: this.deps.displayName(),
         fingerprint: this.profile.source.eventSurfaceFingerprint,
         mapped,
         existing: this.profile.managedFlows,

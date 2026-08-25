@@ -160,6 +160,14 @@ module.exports = class ScheduleDevice extends Homey.Device {
     }
   }
 
+  /**
+   * A schedule's name is the name of its Flow folder. A paused schedule does
+   * not reconcile, and picks the new name up when it is resumed.
+   */
+  override async onRenamed() {
+    await this.app.schedules.get(this.scheduleId)?.reconcileFlows();
+  }
+
   /** Deleting a schedule removes only the Flows provably managed by it. */
   override async onDeleted() {
     const runtime = this.app.schedules.get(this.scheduleId);
