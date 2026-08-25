@@ -622,6 +622,15 @@ build directory is reused between runs, and a `validate` beforehand leaves one t
 disagree with. The error names nothing and comes from the Homey, so it reads like a corrupt package;
 reach for `--clean` before investigating anything else.
 
+**But `--clean` can also be the CAUSE of it.** Observed on 25 August 2026, installing 0.4.0 on the
+same Homey: `install --clean` failed with the same bare `× Missing File`, and the identical tree
+installed on the next attempt with a plain `install`. One trial each way, so this is a counter-example
+rather than a rule — but if `--clean` fails, try without it before believing anything about the tree.
+`preprocess()` wipes `.homeybuild` on every run regardless, so `--clean` is not what makes the build
+fresh: it is passed through to `devkit.runApp` as a flag about the app's data ON the Homey. Which is
+the other reason not to reach for it casually — a clean install is the one that can take the stored
+API key with it.
+
 ## Releasing a version
 
 The version lives in **three** places and a release is only coherent when all of them agree:
