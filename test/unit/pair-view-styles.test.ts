@@ -51,7 +51,7 @@ const VIEWS: Record<string, string> = Object.fromEntries(
 
 function read(view: string): string {
   const [driver, file] = view.split('/');
-  return readFileSync(join(DRIVERS, driver!, 'pair', file!), 'utf8');
+  return readFileSync(join(DRIVERS, driver, 'pair', file), 'utf8');
 }
 
 /** The shared base block, with this view's root id replaced by a placeholder. */
@@ -98,7 +98,7 @@ describe('pair view styles', () => {
 
   test('the shared base block is identical in every view', () => {
     const views = Object.keys(VIEWS);
-    const reference = baseBlock(views[0]!);
+    const reference = baseBlock(views[0]);
 
     for (const view of views.slice(1)) {
       assert.equal(
@@ -121,7 +121,7 @@ describe('pair view styles', () => {
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/@media[^{]+\{/g, '')
         .split('}')
-        .map(chunk => chunk.split('{')[0]!.trim())
+        .map(chunk => chunk.split('{')[0].trim())
         .filter(selector => selector.length > 0 && !selector.startsWith('<'));
 
       for (const selector of rules) {
@@ -165,7 +165,7 @@ describe('pair view styles', () => {
       const light = base.slice(0, base.indexOf('@media (prefers-color-scheme: dark)'));
 
       const names = (text: string) =>
-        [...new Set([...text.matchAll(/(--lk-[\w-]+)\s*:/g)].map(m => m[1]!))].sort();
+        [...new Set([...text.matchAll(/(--lk-[\w-]+)\s*:/g)].map(m => m[1]))].sort();
 
       assert.deepEqual(
         names(dark), names(light),
@@ -221,8 +221,8 @@ describe('pair view script helpers', () => {
 
     for (const copy of copies.slice(1)) {
       assert.equal(
-        copy.body, copies[0]!.body,
-        `${copy.view}'s ${name}() has drifted from ${copies[0]!.view}'s — `
+        copy.body, copies[0].body,
+        `${copy.view}'s ${name}() has drifted from ${copies[0].view}'s — `
         + 'these are copies because a pair view cannot import anything, '
         + "so a fix has to be made in every file, including the other driver's",
       );

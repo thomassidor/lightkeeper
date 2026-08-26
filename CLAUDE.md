@@ -15,7 +15,8 @@ needs no key, has no `needs_credential` state, and never appears in the orphan s
 npm test                       # unit tests via node --test + tsx. No hardware needed.
 npm run typecheck              # tsc --noEmit, the app only
 npm run typecheck:test         # the suite and scripts/, via tsconfig.test.json
-npm run validate               # homey app validate --level publish, CLI pinned
+npm run lint                   # eslint, type-checked. See eslint.config.mjs for what and why
+npm run validate               # homey app validate --level publish, CLI from the lockfile
 npx homey app install          # persistent install on a real Homey
 npx homey app run --remote     # live logs, TEMPORARY — see below
 npm run sync:views             # pair -> repair, and shared views between drivers. See §8
@@ -683,15 +684,21 @@ re-running the hardware pass list, not just re-running CI.
   (`EBADENGINE`); the package runs fine on the Node the Homey actually has and on Node 22 locally.
   A review recommended downgrading to `3.17.3` purely on the strength of that field — **do not**,
   on that evidence alone: it swaps a version proven on real hardware for one that never has been.
-- **CI runs Node 22**, to stay near current firmware, and pins the CLI as `homey@4.4.2`. An
-  unpinned `npx homey` changes what "publish-level valid" means between two runs of one commit.
+- **CI runs Node 22**, to stay near current firmware. The CLI is a devDependency at exactly
+  `homey@4.4.2` and `validate` runs it from the lockfile: an unpinned `npx homey` changes what
+  "publish-level valid" means between two runs of one commit, and even a pinned `npx homey@4.4.2`
+  leaves the CLI's own transitive tree free to move.
 - **`compatibility: >=12.9.0`** — the floor we can stand behind, rather than the older `>=12.3.0`
   that was never tested. Note this is a *firmware* floor; the real hardware floor is Homey Pro
   2023 and newer, because earlier models cannot mint an API Key at all (§1).
 - **`category: ["tools", "lights"]`.** Apps holding `homey:manager:api` are reviewed as Tools-style
   cross-app functionality — `homey app validate` says so itself: *"using the homey:manager:api
   permission will require a more thorough review"*. `lights` stays second for discoverability.
-- **`npm audit`: four moderate findings, zero high or critical, all accepted.** They are one chain —
+- **`npm audit --omit=dev`: four moderate findings, zero high or critical, all accepted.** The
+  `--omit=dev` matters: devDependencies are not bundled into a Homey app, and the pinned
+  `homey` CLI brings a large tool tree of its own (17 findings, 5 of them high, through `sharp`
+  and `libvips`) that never reaches a Homey. The four below are the SHIPPED tree, and they are
+  one chain —
   `parseuri` → `engine.io-client` → `socket.io-client` — reached only through `homey-api`, which is
   our single runtime dependency. There is no upstream fix to take, the endpoint being parsed is the
   fixed `http://127.0.0.1:80` from `getLocalUrl()`, and npm's suggested remediation is a downgrade

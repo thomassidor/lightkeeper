@@ -120,7 +120,7 @@ describe('partial capability', () => {
 
     assert.deepEqual(writes.map(w => w.deviceId), ['a']);
     assert.equal(skipped.length, 1);
-    assert.match(skipped[0]!.reason, /does not support dim/);
+    assert.match(skipped[0].reason, /does not support dim/);
   });
 
   test('a wholly unsupported intent yields no writes rather than an error', () => {
@@ -145,7 +145,7 @@ describe('while-off policy', () => {
     // onoff write would just add ~270 ms before the light responds. The
     // adapter verifies afterwards and only writes onoff if the lamp stayed off.
     assert.deepEqual(writes.map(w => w.capability), ['dim']);
-    assert.equal(writes[0]!.impliesOn, true, 'the dim write must be marked as carrying the on');
+    assert.equal(writes[0].impliesOn, true, 'the dim write must be marked as carrying the on');
   });
 
   test('decrease while off updates desired level without turning on', () => {
@@ -200,7 +200,7 @@ describe('clamping to each device\'s own range', () => {
     const { writes } = planIntent(
       { type: 'brightness_delta', delta: 0.031 }, ['a'], cache, DEFAULT_BEHAVIOR,
     );
-    const value = dimWrites(writes).a as number;
+    const value = dimWrites(writes).a;
 
     assert.equal(value, Number(value.toFixed(2)));
   });

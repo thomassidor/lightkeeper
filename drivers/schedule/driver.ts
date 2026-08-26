@@ -198,7 +198,7 @@ module.exports = class ScheduleDriver extends Homey.Driver {
 
     const lights = await targetLights(this.app.catalog, state.target);
     if (lights.length === 0) return 'Light schedule';
-    if (lights.length === 1) return `${lights[0]!.name} schedule`;
+    if (lights.length === 1) return `${lights[0].name} schedule`;
 
     // Where every light shares a room, the room reads better than a list.
     const zoneNames = new Set(lights.map(l => l.zoneName).filter(Boolean));

@@ -67,7 +67,7 @@ describe('source discovery', () => {
 
     const declined = result.rejected.find(r => r.cardId === 'homey:app:com.lg.thinq:error_changed');
     assert.ok(declined, 'but it must be reported, or "no events found" has no answer');
-    assert.match(declined!.reason, /unfiltered device argument/);
+    assert.match(declined.reason, /unfiltered device argument/);
   });
 
   test('a filtered device argument that matches is a real route', async () => {

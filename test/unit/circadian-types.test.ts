@@ -59,7 +59,7 @@ describe('sanitiseCurve', () => {
       clock(1080, 1),
     ]);
     assert.equal(result.points.length, 2);
-    assert.match(result.dropped[0]!.reason, /not supported yet/);
+    assert.match(result.dropped[0].reason, /not supported yet/);
   });
 
   test('drops a second point at the same minute', () => {
@@ -67,7 +67,7 @@ describe('sanitiseCurve', () => {
     // dressed up as a user preference.
     const result = sanitiseCurve([clock(360, 0.2), { at: '06:00', warmth: 0.9 }, clock(1080, 1)]);
     assert.equal(result.points.length, 2);
-    assert.match(result.dropped[0]!.reason, /already at 06:00/);
+    assert.match(result.dropped[0].reason, /already at 06:00/);
   });
 
   test('caps the curve and says what it refused', () => {
@@ -75,7 +75,7 @@ describe('sanitiseCurve', () => {
     const result = sanitiseCurve(many);
     assert.equal(result.points.length, MAX_POINTS);
     assert.equal(result.dropped.length, 3);
-    assert.match(result.dropped[0]!.reason, /over the limit/);
+    assert.match(result.dropped[0].reason, /over the limit/);
   });
 
   test('a curve of one point is dropped entirely', () => {
@@ -83,7 +83,7 @@ describe('sanitiseCurve', () => {
     // one colour for ever.
     const result = sanitiseCurve([clock(360, 0.2)]);
     assert.deepEqual(result.points, []);
-    assert.match(result.dropped[0]!.reason, new RegExp(`at least ${MIN_POINTS}`));
+    assert.match(result.dropped[0].reason, new RegExp(`at least ${MIN_POINTS}`));
   });
 
   test('nothing in, nothing out — and no complaint about a curve nobody wrote', () => {
@@ -98,7 +98,7 @@ describe('sanitiseCurve', () => {
 
   test('brightness of zero is treated as unset, not as darkness', () => {
     const result = sanitiseCurve([clock(360, 0.2, { brightness: 0 }), clock(1080, 1)]);
-    assert.equal(result.points[0]!.brightness, undefined);
+    assert.equal(result.points[0].brightness, undefined);
   });
 
   test('adjustBrightness survives only when every point carries a brightness', () => {
@@ -119,7 +119,7 @@ describe('sanitiseCurve', () => {
       { id: 'same', at: '18:00', warmth: 1 },
     ]);
     assert.equal(result.points.length, 0, 'one survivor is below the minimum, so the curve goes');
-    assert.match(result.dropped[0]!.reason, /duplicate point id/);
+    assert.match(result.dropped[0].reason, /duplicate point id/);
   });
 });
 

@@ -6,6 +6,7 @@ import type { FlowBridgeManager } from '../bridge/flow-bridge-manager';
 import type { HealthMonitor } from './health-monitor';
 import type { ControllerProfile, ControllerState, StateDetail } from '../profiles/controller-profile';
 import type { InputEvent } from '../inputs/input-event';
+import { fireAndForget } from '../support/async';
 
 /**
  * Registry of live controller runtimes.
@@ -197,7 +198,7 @@ export class ControllerRuntimeManager {
     // Coalesce a burst of device events into one pass.
     this.catalogChangeTimer = setTimeout(() => {
       this.catalogChangeTimer = null;
-      void (async () => {
+      fireAndForget((async () => {
         for (const runtime of this.runtimes.values()) {
           try {
             await runtime.refreshTargets();
@@ -205,7 +206,7 @@ export class ControllerRuntimeManager {
             this.deps.log('Failed to re-resolve targets:', (error as Error)?.message);
           }
         }
-      })();
+      })(), this.deps.log, 'Catalogue-change target refresh');
     }, 500);
   }
 

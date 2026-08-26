@@ -193,7 +193,7 @@ describe('circadian writes', () => {
 
     // 22:15 sits between the 12:00 (0.2) and 23:00 (1.0) points, close to the
     // warm end. Cooler than this at bedtime is the bug CLAUDE.md §6 records.
-    const value = temperatures(h.writes)[0]!.value as number;
+    const value = temperatures(h.writes)[0].value as number;
     assert.ok(value > 0.9, `wrote ${value} at 22:15`);
   });
 
@@ -385,7 +385,7 @@ describe('somebody changing a light by hand', () => {
     const h = harness({ now: MORNING });
     await h.runtime.start();
     await settle();
-    const written = temperatures(h.writes)[0]!.value as number;
+    const written = temperatures(h.writes)[0].value as number;
 
     // A hundredth off, and after the settle window: still ours.
     h.advance(10_000);

@@ -1,5 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { BoundedLog } from '../../lib/support/bounded-log';
 
 const api = require('../../api') as {
   countOrphans(args: any): Promise<any>;
@@ -66,7 +67,7 @@ function homey(options: {
       // in a fake manifest only ever goes stale.
       manifest: { id: 'com.thomassidor.lightkeeper', version: '0.0.0-test' },
       app: {
-        recentEvents: [],
+        recentEvents: new BoundedLog<never>(40),
         credentials: { getStatus: () => ({ present: true, valid: true }) },
         controllers: { all: () => (options.controllers ?? []).map(id => runtime(id, 'controller')) },
         schedules: {
@@ -118,7 +119,7 @@ describe('orphan counting across both device types', () => {
     const h = homey({ controllers: ['ctrl-1'], schedules: ['sched-1', 'sched-2'] });
 
     await api.sweepOrphans(h.args);
-    assert.deepEqual([...h.swept[0]!].sort(), ['ctrl-1', 'sched-1', 'sched-2']);
+    assert.deepEqual([...h.swept[0]].sort(), ['ctrl-1', 'sched-1', 'sched-2']);
   });
 
   test('circadian devices are NOT in the live set, because they own no Flows', async () => {
@@ -130,7 +131,7 @@ describe('orphan counting across both device types', () => {
     const h = homey({ circadian: ['circ-1'], managed: [flow('f1', 'ctrl-gone')] });
 
     await api.sweepOrphans(h.args);
-    assert.deepEqual([...h.swept[0]!], []);
+    assert.deepEqual([...h.swept[0]], []);
 
     const result = await api.countOrphans(h.args);
     assert.equal(result.refused, 'no_live_controllers');

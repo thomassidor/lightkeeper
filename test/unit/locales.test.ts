@@ -91,8 +91,8 @@ function sourceFiles(): string[] {
  */
 function referencedKeys(): Set<string> {
   const referenced = new Set<string>();
-  const allKeys = keysOf(en as Record<string, unknown>);
-  const groups = Object.keys(en as Record<string, unknown>);
+  const allKeys = keysOf(en);
+  const groups = Object.keys(en);
   const groupPattern = groups.join('|');
 
   // 'state.noTargets' | "state.noTargets" | `state.noTargets`
@@ -129,7 +129,7 @@ describe('locales', () => {
   });
 
   test('every translation covers exactly the same keys as English', () => {
-    const english = keysOf(en as Record<string, unknown>);
+    const english = keysOf(en);
 
     for (const [language, contents] of translations()) {
       const translated = keysOf(contents);
@@ -156,7 +156,7 @@ describe('locales', () => {
   });
 
   test('every referenced key is defined', () => {
-    const defined = new Set(keysOf(en as Record<string, unknown>));
+    const defined = new Set(keysOf(en));
     const missing = [...referencedKeys()].filter(k => !defined.has(k));
 
     assert.deepEqual(missing, [], 'referenced in source but absent from en.json');
@@ -164,7 +164,7 @@ describe('locales', () => {
 
   test('token placeholders match between English and every translation', () => {
     const tokensIn = (value: string) =>
-      [...value.matchAll(/__(\w+)__/g)].map(m => m[1]!).sort();
+      [...value.matchAll(/__(\w+)__/g)].map(m => m[1]).sort();
 
     for (const [language, contents] of translations()) {
       const walk = (a: Record<string, any>, b: Record<string, any>, path = '') => {

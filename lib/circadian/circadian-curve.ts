@@ -89,7 +89,7 @@ export function valueAt(
   const resolved = resolvePoints(points, context);
   if (resolved.length === 0) throw new Error('A circadian curve needs at least one point');
 
-  const first = resolved[0]!;
+  const first = resolved[0];
   if (resolved.length === 1) {
     return { warmth: first.warmth, ...(first.brightness !== undefined ? { brightness: first.brightness } : {}) };
   }
@@ -119,7 +119,7 @@ export function nextPointAfter(
   if (resolved.length === 0) return null;
 
   const now = wrap(minutesOfDay);
-  const next = resolved.find(point => point.minute > now) ?? resolved[0]!;
+  const next = resolved.find(point => point.minute > now) ?? resolved[0];
   return {
     id: next.id,
     minute: next.minute,
@@ -137,8 +137,8 @@ function bracket(
   resolved: ResolvedPoint[],
   now: number,
 ): { from: ResolvedPoint; to: ResolvedPoint; fraction: number } {
-  const last = resolved[resolved.length - 1]!;
-  const first = resolved[0]!;
+  const last = resolved[resolved.length - 1];
+  const first = resolved[0];
 
   // Before the first point of the day, or after the last: both are the segment
   // that spans midnight.
@@ -146,8 +146,8 @@ function bracket(
   let to = first;
 
   for (let index = 0; index < resolved.length - 1; index += 1) {
-    const candidate = resolved[index]!;
-    const following = resolved[index + 1]!;
+    const candidate = resolved[index];
+    const following = resolved[index + 1];
     if (now >= candidate.minute && now < following.minute) {
       from = candidate;
       to = following;

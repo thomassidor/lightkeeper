@@ -92,7 +92,7 @@ function isContiguousNumericRange(ids: string[]): boolean {
   const numbers = ids.map(id => Number(id));
   if (numbers.some(n => !Number.isInteger(n))) return false;
   const sorted = [...numbers].sort((a, b) => a - b);
-  return sorted.every((n, i) => i === 0 || n === sorted[i - 1]! + 1);
+  return sorted.every((n, i) => i === 0 || n === sorted[i - 1] + 1);
 }
 
 /** The [min, max] of a numeric argument's options, or null if any option is non-numeric. */

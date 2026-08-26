@@ -1,0 +1,31 @@
+# Two ecosystems, weekly.
+#
+# github-actions is the one that matters most here: ci.yml pins its actions to
+# commit SHAs (a mutable tag is a write-primitive into every run), and a pin
+# nobody moves is a pin that goes stale. Dependabot moves the SHA and the
+# trailing version comment together.
+#
+# npm is grouped into one PR per week deliberately. This app has exactly one
+# runtime dependency — homey-api, pinned EXACTLY at the version verified on
+# real hardware (see CLAUDE.md, "Pinned versions"). Its bumps are NOT routine:
+# taking one means re-running the hardware pass, so they are opened for a human
+# to judge rather than merged on green CI.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps
+    groups:
+      dev-dependencies:
+        dependency-type: development

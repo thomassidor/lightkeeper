@@ -5,6 +5,7 @@ import type { ControllerState, StateDetail } from '../profiles/controller-profil
 import { ScheduleRuntime, type ScheduleRuntimeDeps } from './schedule-runtime';
 import { discoverTimeCard, type TimeCardDiscovery } from './time-card-discovery';
 import type { SchedulePlan } from './schedule-types';
+import { fireAndForget } from '../support/async';
 
 /**
  * Registry of live schedule runtimes — the schedule half of what
@@ -141,7 +142,7 @@ export class ScheduleRuntimeManager {
 
     this.catalogChangeTimer = setTimeout(() => {
       this.catalogChangeTimer = null;
-      void (async () => {
+      fireAndForget((async () => {
         for (const runtime of this.runtimes.values()) {
           try {
             await runtime.refreshTargets();
@@ -149,7 +150,7 @@ export class ScheduleRuntimeManager {
             this.deps.log('Failed to re-resolve schedule targets:', (error as Error)?.message);
           }
         }
-      })();
+      })(), this.deps.log, 'Catalogue-change target refresh');
     }, 500);
   }
 

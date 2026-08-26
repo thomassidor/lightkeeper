@@ -35,7 +35,8 @@
     "sync:views": "node scripts/sync-views.mjs",
     "test": "node --import tsx --test \"test/unit/**/*.test.ts\"",
     "test:watch": "node --import tsx --test --watch \"test/unit/**/*.test.ts\"",
-    "validate": "npx --yes homey@4.4.2 app validate --level publish"
+    "validate": "homey app validate --level publish",
+    "lint": "eslint ."
   },
   "dependencies": {
     "homey-api": "3.19.2"
@@ -44,7 +45,10 @@
     "@tsconfig/node16": "^16.1.8",
     "@types/homey": "npm:homey-apps-sdk-v3-types@^0.3.12",
     "@types/node": "^20.0.0",
+    "eslint": "^9.39.5",
+    "homey": "4.4.2",
     "tsx": "^4.19.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "typescript-eslint": "^8.68.0"
   }
 }

@@ -1,6 +1,8 @@
 import type { HomeyApiService, Unsubscribe } from '../homey-api-service';
 import type { Capability } from './intent-planner';
 import type { TargetStateCache } from './target-state-cache';
+import { fireAndForget } from '../support/async';
+import { BoundedLog } from '../support/bounded-log';
 
 /**
  * Executes intents against targets and reconciles external changes.
@@ -18,7 +20,7 @@ export interface TargetFailure {
 }
 
 export class LightTargetAdapter {
-  private readonly recentFailures: TargetFailure[] = [];
+  private readonly recentFailures = new BoundedLog<TargetFailure>(50);
   /** Rate-limit repeated transient errors from the same target. */
   private readonly lastLoggedAt = new Map<string, number>();
 
@@ -73,21 +75,20 @@ export class LightTargetAdapter {
    * Every write actually attempted, with its outcome. "Planned N writes" told
    * us nothing about whether any reached a light — this does.
    */
-  private readonly recentWrites: Array<{
+  private readonly recentWrites = new BoundedLog<{
     at: number; deviceId: string; capability: Capability;
     value: boolean | number; ok: boolean; ms: number; error?: string;
-  }> = [];
+  }>(30);
 
   writes(): ReadonlyArray<Record<string, unknown>> {
-    return this.recentWrites;
+    return this.recentWrites.entries();
   }
 
   private noteWriteResult(entry: {
     deviceId: string; capability: Capability; value: boolean | number;
     ok: boolean; ms: number; error?: string;
   }): void {
-    this.recentWrites.unshift({ at: Date.now(), ...entry });
-    if (this.recentWrites.length > 30) this.recentWrites.pop();
+    this.recentWrites.add({ at: Date.now(), ...entry });
   }
 
   async write(
@@ -128,7 +129,7 @@ export class LightTargetAdapter {
   private verifyCameOn(deviceId: string): void {
     const timer = setTimeout(() => {
       this.pendingChecks.delete(timer);
-      void (async () => {
+      fireAndForget((async () => {
         if (this.cache.state(deviceId).actualOn === true) return;
         try {
           const device = await this.deviceHandle(deviceId);
@@ -137,7 +138,7 @@ export class LightTargetAdapter {
         } catch (error) {
           this.recordFailure(deviceId, 'onoff', error);
         }
-      })();
+      })(), this.log, `Implied-on check for ${deviceId}`);
     }, 1500);
     this.pendingChecks.add(timer);
   }
@@ -237,8 +238,9 @@ export class LightTargetAdapter {
 
   private recordFailure(deviceId: string, capability: Capability, error: unknown): void {
     const message = (error as Error)?.message ?? String(error);
-    this.recentFailures.push({ deviceId, capability, message, at: Date.now() });
-    if (this.recentFailures.length > 50) this.recentFailures.shift();
+    // Newest first, like every other diagnostic log — this one was the odd
+    // one out (push/shift), so the settings page rendered it backwards.
+    this.recentFailures.add({ deviceId, capability, message, at: Date.now() });
 
     const key = `${deviceId}:${capability}`;
     const now = Date.now();
@@ -250,6 +252,6 @@ export class LightTargetAdapter {
   }
 
   failures(): TargetFailure[] {
-    return [...this.recentFailures];
+    return [...this.recentFailures.entries()];
   }
 }

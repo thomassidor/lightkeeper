@@ -15,6 +15,7 @@ import { describeClock, localNow } from './local-time';
 import { bindingsForPlan, parseEventKey } from './schedule-bindings';
 import { activeWindowStartDay, boundaryDayMatches, offMinuteOf } from './schedule-window';
 import type { TimeCardDiscovery } from './time-card-discovery';
+import { fireAndForget } from '../support/async';
 import {
   formatMinutes,
   type ScheduleBoundary,
@@ -261,7 +262,7 @@ export class ScheduleRuntime {
     }
 
     const { entry, boundary } = outcome;
-    void this.apply(entry, boundary);
+    fireAndForget(this.apply(entry, boundary), this.deps.log, `Schedule boundary ${eventKey}`);
     return { accepted: true };
   }
 
@@ -367,7 +368,7 @@ export class ScheduleRuntime {
       writes: plans.flatMap(p => p.writes),
       // Only the power leg's skips are a real miss; a lamp that cannot dim is
       // not a failed schedule, it is a lamp.
-      skipped: plans[0]!.skipped.length,
+      skipped: plans[0].skipped.length,
     };
   }
 

@@ -142,7 +142,7 @@ describe('sync after a re-attach', () => {
       `homey:device:${NEW_DEVICE}:switch_initial_press_multi`,
       'the new flow must trigger on the re-added device',
     );
-    assert.equal(result.references[0]!.bindingKey, BINDING_KEY);
+    assert.equal(result.references[0].bindingKey, BINDING_KEY);
   });
 
   test('carrying the old references over is what produced the false "user edited"', async () => {
@@ -189,7 +189,7 @@ describe('carryForwardFlows', () => {
     const { profile: merged, obsolete } = carryForwardFlows(previous, next);
 
     assert.equal(merged.managedFlows.length, 1);
-    assert.equal(merged.managedFlows[0]!.flowId, 'flow-1');
+    assert.equal(merged.managedFlows[0].flowId, 'flow-1');
     assert.deepEqual(obsolete, [], 'nothing to delete when the remote has not moved');
   });
 
@@ -201,7 +201,7 @@ describe('carryForwardFlows', () => {
 
     assert.deepEqual(merged.managedFlows, [], 'the re-attached profile starts clean');
     assert.equal(obsolete.length, 1);
-    assert.equal(obsolete[0]!.flowId, 'flow-1');
+    assert.equal(obsolete[0].flowId, 'flow-1');
   });
 
   test('preserves mappings and targets across a re-attach', () => {

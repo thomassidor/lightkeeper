@@ -1,7 +1,7 @@
 import { CredentialService, sanitizedWriteError } from './credential-service';
 
 // homey-api ships JS with JSDoc rather than type declarations.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+ 
 const { HomeyAPI } = require('homey-api');
 
 /**

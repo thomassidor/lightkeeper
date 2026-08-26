@@ -39,19 +39,19 @@ describe('fixed bindings', () => {
   });
 
   test('echoes the trigger card id and uri verbatim, never constructing them', () => {
-    assert.equal(flows[0]!.trigger.id, CARD_ID);
-    assert.equal(flows[0]!.trigger.uri, CARD_URI);
+    assert.equal(flows[0].trigger.id, CARD_ID);
+    assert.equal(flows[0].trigger.uri, CARD_URI);
   });
 
   test('calls the bridge action with the controller and event key', () => {
-    assert.deepEqual(flows[0]!.actions[0]!.args, {
+    assert.deepEqual(flows[0].actions[0].args, {
       controller: 'ctrl-1',
       event_key: 'n2_on|press',
     });
   });
 
   test('names the flow so a user can tell what it is', () => {
-    assert.equal(flows[0]!.name, 'Lightkeeper — Kitchen STYRBAR: Higher brightness — Press');
+    assert.equal(flows[0].name, 'Lightkeeper — Kitchen STYRBAR: Higher brightness — Press');
   });
 });
 
@@ -66,7 +66,7 @@ describe('enum bindings', () => {
     }));
 
     assert.equal(flows.length, 1);
-    assert.deepEqual(flows[0]!.trigger.args, { button: 'on' });
+    assert.deepEqual(flows[0].trigger.args, { button: 'on' });
   });
 });
 
@@ -80,17 +80,17 @@ describe('token bindings', () => {
   }));
 
   test('uses the token bridge card', () => {
-    assert.equal(flows[0]!.actions[0]!.id, CARDS.token.id);
+    assert.equal(flows[0].actions[0].id, CARDS.token.id);
   });
 
   test('puts droptoken at the TOP LEVEL of the action, not inside args', () => {
-    const action = flows[0]!.actions[0]!;
+    const action = flows[0].actions[0];
     assert.equal(action.droptoken, 'steps');
     assert.equal('droptoken' in action.args, false);
   });
 
   test('references a trigger-owned token by its bare id', () => {
-    assert.equal(flows[0]!.actions[0]!.droptoken, 'steps',
+    assert.equal(flows[0].actions[0].droptoken, 'steps',
       'a local token is not "<ownerUri>|<tokenId>"');
   });
 });
@@ -109,12 +109,12 @@ describe('range expansion', () => {
 
     assert.equal(flows.length, 4);
     assert.deepEqual(flows.map(f => f.trigger.args.count), ['1', '2', '3', '4']);
-    assert.deepEqual(flows.map(f => f.actions[0]!.args.value), [1, 2, 3, 4]);
+    assert.deepEqual(flows.map(f => f.actions[0].args.value), [1, 2, 3, 4]);
   });
 
   test('every variant uses the numeric bridge card', () => {
     const flows = compileBinding(request(rangeBinding(1, 3)));
-    assert.ok(flows.every(f => f.actions[0]!.id === CARDS.numeric.id));
+    assert.ok(flows.every(f => f.actions[0].id === CARDS.numeric.id));
   });
 
   test('variant keys are distinct and stable', () => {

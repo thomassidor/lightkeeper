@@ -193,7 +193,7 @@ describe('command scheduler', () => {
     }, async (deviceId, capability, value) => { written.push({ deviceId, capability, value }); });
 
     scheduler.submit(Array.from({ length: 10 }, (_, i) => ({
-      deviceId: `d${i}`, capability: 'dim' as Capability, value: 0.5,
+      deviceId: `d${i}`, capability: 'dim', value: 0.5,
     })));
     await clock.advance(50);
 

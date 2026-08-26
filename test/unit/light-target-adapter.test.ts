@@ -114,7 +114,7 @@ describe('capability subscriptions', () => {
     await h.adapter.unsubscribeAll();
     await h.adapter.unsubscribeAll();
 
-    assert.equal(h.instances[0]!.destroyed, 1, 'destroy must not run a second time');
+    assert.equal(h.instances[0].destroyed, 1, 'destroy must not run a second time');
   });
 
   test('a capability that refuses to subscribe does not lose the others', async () => {

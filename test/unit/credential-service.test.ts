@@ -242,7 +242,7 @@ describe('the settings page mirrors the failure map', () => {
 
   const mirrored = new Map(
     [...page.matchAll(/case '([a-z_]+)': return HomeyRef\.__\('([\w.]+)'\)/g)]
-      .map(m => [m[1]!, m[2]!]),
+      .map(m => [m[1], m[2]]),
   );
 
   test('every failure the app can report is translated on the page', () => {

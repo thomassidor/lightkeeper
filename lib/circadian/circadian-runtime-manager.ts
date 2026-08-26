@@ -3,6 +3,7 @@ import type { DeviceCatalog } from '../device-catalog';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
 import { CircadianRuntime, type CircadianRuntimeDeps } from './circadian-runtime';
 import type { CircadianPlan } from './circadian-types';
+import { fireAndForget } from '../support/async';
 
 /**
  * Registry of live circadian runtimes — what ControllerRuntimeManager is for
@@ -144,7 +145,7 @@ export class CircadianRuntimeManager {
 
     this.catalogChangeTimer = setTimeout(() => {
       this.catalogChangeTimer = null;
-      void (async () => {
+      fireAndForget((async () => {
         for (const runtime of this.runtimes.values()) {
           try {
             await runtime.refreshTargets();
@@ -152,7 +153,7 @@ export class CircadianRuntimeManager {
             this.deps.log('Failed to re-resolve circadian targets:', (error as Error)?.message);
           }
         }
-      })();
+      })(), this.deps.log, 'Catalogue-change target refresh');
     }, 500);
   }
 

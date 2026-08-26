@@ -116,17 +116,17 @@ describe('schedule bindings', () => {
   test('one fixed-argument binding per boundary', () => {
     const [on, off] = bindingsFor(entry(), TIME_CARD);
 
-    assert.equal(on!.key, 'sched:a:on');
-    assert.equal(off!.key, 'sched:a:off');
+    assert.equal(on.key, 'sched:a:on');
+    assert.equal(off.key, 'sched:a:off');
     // Echoed verbatim: never `homey:app:<appId>`, never assembled here.
-    assert.equal((on!.binding as any).cardOwnerUri, TIME_CARD.uri);
-    assert.deepEqual((on!.binding as any).args, { time: '22:00' });
-    assert.deepEqual((off!.binding as any).args, { time: '23:30' });
+    assert.equal((on.binding as any).cardOwnerUri, TIME_CARD.uri);
+    assert.deepEqual((on.binding as any).args, { time: '22:00' });
+    assert.deepEqual((off.binding as any).args, { time: '23:30' });
   });
 
   test('the variant key carries the time', () => {
-    assert.equal(bindingsFor(entry(), TIME_CARD)[0]!.variantKey, 'at:22:00');
-    assert.equal(bindingsFor(entry({ onAt: 6 * 60 + 5 }), TIME_CARD)[0]!.variantKey, 'at:06:05');
+    assert.equal(bindingsFor(entry(), TIME_CARD)[0].variantKey, 'at:22:00');
+    assert.equal(bindingsFor(entry({ onAt: 6 * 60 + 5 }), TIME_CARD)[0].variantKey, 'at:06:05');
   });
 
   test('a whole plan compiles to two flows per schedule', () => {
@@ -138,9 +138,9 @@ describe('schedule bindings', () => {
     const [on] = bindingsFor(entry(), TIME_CARD);
     const flows = compileBinding({
       controllerId: 'sched-1',
-      bindingKey: on!.key,
-      binding: on!.binding,
-      variantKey: on!.variantKey!,
+      bindingKey: on.key,
+      binding: on.binding,
+      variantKey: on.variantKey!,
       cards: {
         event: { id: cardId('bridge_event'), uri: `homey:flowcardaction:${cardId('bridge_event')}` },
         numeric: { id: cardId('bridge_numeric_event'), uri: 'x' },
@@ -151,10 +151,10 @@ describe('schedule bindings', () => {
     });
 
     assert.equal(flows.length, 1);
-    assert.equal(flows[0]!.variantKey, 'at:22:00');
-    assert.equal(flows[0]!.name, 'Lightkeeper — Kitchen schedule: On at 22:00, every day');
-    assert.deepEqual(flows[0]!.trigger, { id: TIME_CARD.id, uri: TIME_CARD.uri, args: { time: '22:00' } });
-    assert.deepEqual(flows[0]!.actions[0]!.args, { controller: 'sched-1', event_key: 'sched:a:on' });
+    assert.equal(flows[0].variantKey, 'at:22:00');
+    assert.equal(flows[0].name, 'Lightkeeper — Kitchen schedule: On at 22:00, every day');
+    assert.deepEqual(flows[0].trigger, { id: TIME_CARD.id, uri: TIME_CARD.uri, args: { time: '22:00' } });
+    assert.deepEqual(flows[0].actions[0].args, { controller: 'sched-1', event_key: 'sched:a:on' });
   });
 });
 
@@ -300,7 +300,7 @@ describe('finding Homey\'s time trigger card', () => {
     // one, but where both are on offer the one seen on hardware wins.
     const { card } = discoverTimeCard([
       { id: 'homey:manager:somethingelse:at_time', uri: 'u1', args: [{ name: 'time', type: 'time' }] },
-      cards[0]!,
+      cards[0],
     ]);
     assert.equal(card!.id, 'homey:manager:cron:time_exactly');
   });
@@ -330,8 +330,8 @@ describe('finding Homey\'s time trigger card', () => {
       'homey:manager:cron:time_exactly_day',
       'homey:manager:energy:dynamic_electricity_price_period_lowest_start_between',
     ]);
-    assert.match(candidates[0]!.args, /time:time/);
-    assert.match(candidates[0]!.note, /usable/);
+    assert.match(candidates[0].args, /time:time/);
+    assert.match(candidates[0].note, /usable/);
   });
 
   test('the argument value is a wall-clock string', () => {

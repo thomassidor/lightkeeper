@@ -125,7 +125,7 @@ function harness(options: {
         return row;
       },
       updateFlow: async ({ id: flowId, flow }: any) => {
-        Object.assign(flows.get(flowId)!, flow);
+        Object.assign(flows.get(flowId), flow);
       },
       deleteFlow: async ({ id: flowId }: any) => { flows.delete(flowId); },
     },
@@ -207,7 +207,7 @@ describe('placing a generated flow', () => {
 
     const root = [...h.folders.values()].find(f => f.name === 'Lightkeeper' && f.parent === null);
     assert.ok(root, 'a real top-level app folder was created');
-    assert.equal(h.folderNamed('Kitchen dial')!.parent, root!.id);
+    assert.equal(h.folderNamed('Kitchen dial')!.parent, root.id);
   });
 });
 

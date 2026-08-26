@@ -115,7 +115,7 @@ describe('available functions', () => {
 
 describe('target state cache', () => {
   test('duplicate echoes are not treated as external changes', () => {
-    let now = 1000;
+    const now = 1000;
     const cache = new TargetStateCache(() => now);
     cache.setCapabilities('a', { onoff: true, dim: { min: 0, max: 1 } });
     cache.initialise('a', { onoff: true, dim: 0.5 });
@@ -211,9 +211,9 @@ describe('one rule per gesture', () => {
     ]);
 
     assert.equal(rules.length, 1);
-    assert.equal(rules[0]!.id, 'a', 'first wins, matching the engine');
+    assert.equal(rules[0].id, 'a', 'first wins, matching the engine');
     assert.equal(displaced.length, 1);
-    assert.equal(displaced[0]!.id, 'b');
+    assert.equal(displaced[0].id, 'b');
   });
 
   test('the same gesture aimed at two different lights is still one rule', () => {

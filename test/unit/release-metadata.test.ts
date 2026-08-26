@@ -67,8 +67,8 @@ describe('release metadata', () => {
 
     assert.ok(entry, `.homeychangelog.json has no entry for ${version}`);
     // The { "en": … } object form is what keeps adding a language a sibling key.
-    assert.equal(typeof entry!.en, 'string', `.homeychangelog.json ${version} has no "en" text`);
-    assert.ok(entry!.en!.trim().length > 0, `.homeychangelog.json ${version} is empty`);
+    assert.equal(typeof entry.en, 'string', `.homeychangelog.json ${version} has no "en" text`);
+    assert.ok(entry.en!.trim().length > 0, `.homeychangelog.json ${version} is empty`);
   });
 
   test('the README changelog has an entry for this version', () => {

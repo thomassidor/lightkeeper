@@ -9,6 +9,7 @@ import { toDevice } from '../outputs/light-intent';
 import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
 import { assessTargets } from '../runtime/target-health';
+import { fireAndForget } from '../support/async';
 // The Homey's own wall clock is not schedule-specific — it lives under
 // lib/schedules/ because that is where it was needed first. Importing it beats
 // a second copy of the Intl handling and its fallback.
@@ -210,7 +211,11 @@ export class CircadianRuntime {
         // The whole point of the feature. Forced past the "has the curve moved"
         // gate: the lamp has just restored whatever colour it was last at, so
         // what we wrote an hour ago says nothing about what it is showing now.
-        void this.applyNow('switched on', { deviceIds: [deviceId], force: true });
+        fireAndForget(
+          this.applyNow('switched on', { deviceIds: [deviceId], force: true }),
+          this.deps.log,
+          `Circadian apply on power-on for ${deviceId}`,
+        );
       } else {
         // Off: forget what we wrote, for the same reason.
         this.lastWritten.delete(deviceId);
@@ -483,7 +488,7 @@ export class CircadianRuntime {
       };
     }
 
-    const deviceId = this.targetIds[index]!;
+    const deviceId = this.targetIds[index];
     const name = this.targetNames[index];
     await this.adapter.write(deviceId, 'light_temperature', value.warmth);
     await new Promise(resolve => this.setTimer(() => resolve(null), waitMs));

@@ -368,13 +368,13 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
     const lights = await targetLights(this.app.catalog, state.target);
     if (lights.length === 0) return source;
-    if (lights.length === 1) return `${source} → ${lights[0]!.name}`;
+    if (lights.length === 1) return `${source} → ${lights[0].name}`;
 
     // Where every light shares a room, the room reads better than a list.
     const zoneNames = new Set(lights.map(l => l.zoneName).filter(Boolean));
     if (zoneNames.size === 1) return `${source} → ${[...zoneNames][0]}`;
 
-    if (lights.length === 2) return `${source} → ${lights[0]!.name} + ${lights[1]!.name}`;
+    if (lights.length === 2) return `${source} → ${lights[0].name} + ${lights[1].name}`;
     return `${source} → ${lights.length} lights`;
   }
 

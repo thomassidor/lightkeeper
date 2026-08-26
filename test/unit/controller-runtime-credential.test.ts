@@ -195,7 +195,7 @@ describe('recovering from needs_credential', () => {
     await h.manager.onCredentialChange();
 
     assert.equal(runtime.currentProfile.mappings.length, 1);
-    assert.equal(runtime.currentProfile.mappings[0]!.inputKey, BINDING_KEY);
+    assert.equal(runtime.currentProfile.mappings[0].inputKey, BINDING_KEY);
     assert.equal(runtime.currentProfile.managedFlows.length, 1);
 
     await h.manager.destroyAll();

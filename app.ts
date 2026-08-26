@@ -12,6 +12,8 @@ import { HealthMonitor } from './lib/runtime/health-monitor';
 import { ScheduleRuntimeManager } from './lib/schedules/schedule-runtime-manager';
 import { CircadianRuntimeManager } from './lib/circadian/circadian-runtime-manager';
 import { parseEventKey } from './lib/schedules/schedule-bindings';
+import { fireAndForget } from './lib/support/async';
+import { BoundedLog } from './lib/support/bounded-log';
 
 /**
  * Lightkeeper.
@@ -37,17 +39,33 @@ module.exports = class LightkeeperApp extends Homey.App {
    * light change is otherwise undiagnosable from outside: this records whether
    * the bridge card was reached at all, and if it was rejected, why.
    */
-  readonly recentEvents: Array<{
+  readonly recentEvents = new BoundedLog<{
     at: number; cardId: string; controller: string; eventKey: string;
     magnitude?: number; accepted: boolean; reason?: string;
-  }> = [];
+  }>(40);
 
   private recordEvent(entry: {
     cardId: string; controller: string; eventKey: string;
     magnitude?: number; accepted: boolean; reason?: string;
   }): void {
-    this.recentEvents.unshift({ at: Date.now(), ...entry });
-    if (this.recentEvents.length > 40) this.recentEvents.pop();
+    this.recentEvents.add({ at: Date.now(), ...entry });
+  }
+
+  /**
+   * Both Flow-writing registries, told once.
+   *
+   * Split out of onStatusChange because the status flip is itself a
+   * consequence of a write: the first reconcile of the boot storm proves the
+   * key, which fires this, which asks every runtime to reconcile again. See
+   * Phase 1 for the debounce that makes that converge.
+   */
+  private fanOutCredentialChange(): void {
+    const log = (...args: unknown[]) => this.log(...args);
+    if (this.controllers) fireAndForget(this.controllers.onCredentialChange(), log, 'Controller credential fan-out');
+    if (this.schedules) fireAndForget(this.schedules.onCredentialChange(), log, 'Schedule credential fan-out');
+    // Circadian lights are deliberately absent from this fan-out: they
+    // generate no Flows, so no API key is involved in anything they do and
+    // there is nothing here for them to recover from (CLAUDE.md §12).
   }
 
   override async onInit() {
@@ -63,11 +81,11 @@ module.exports = class LightkeeperApp extends Homey.App {
       log: (...args) => this.log(...args),
       onStatusChange: status => {
         this.log(`Credential status: ${status.valid ? 'valid' : status.failure ?? 'absent'}`);
-        void this.controllers?.onCredentialChange();
+        this.fanOutCredentialChange();
         // Schedules write Flows too, so a dead key degrades their maintenance in
         // exactly the same way — and a recovered one must bring them back
-        // without a restart.
-        void this.schedules?.onCredentialChange();
+        // without a restart. Both registries are notified from one debounced
+        // fan-out — see fanOutCredentialChange().
         // Circadian lights are deliberately absent from this fan-out: they
         // generate no Flows, so no API key is involved in anything they do and
         // there is nothing here for them to recover from.
@@ -138,15 +156,16 @@ module.exports = class LightkeeperApp extends Homey.App {
     // Zones and devices change under us; targets must follow. Every registry is
     // notified: watch() takes a single consumer, so the fan-out lives here.
     await this.catalog.watch(() => {
-      void this.controllers.onCatalogChange();
-      void this.schedules.onCatalogChange();
-      void this.circadian.onCatalogChange();
+      const l = (...args: unknown[]) => this.log(...args);
+      fireAndForget(this.controllers.onCatalogChange(), l, 'Controller catalogue change');
+      fireAndForget(this.schedules.onCatalogChange(), l, 'Schedule catalogue change');
+      fireAndForget(this.circadian.onCatalogChange(), l, 'Circadian catalogue change');
     });
 
     // A stored key must be re-checked after every restart, or pairing asks for
     // a key the user has already given. Deliberately not awaited: a slow or
     // unreachable Homey must not delay app start.
-    void this.revalidateCredential();
+    fireAndForget(this.revalidateCredential(), (...args) => this.log(...args), 'Stored-key revalidation');
 
     this.log('Lightkeeper initialised');
   }

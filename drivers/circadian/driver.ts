@@ -219,7 +219,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
 
     const lights = await targetLights(this.app.catalog, state.target);
     if (lights.length === 0) return 'Circadian light';
-    if (lights.length === 1) return `${lights[0]!.name} circadian`;
+    if (lights.length === 1) return `${lights[0].name} circadian`;
 
     // Where every light shares a room, the room reads better than a list.
     const zoneNames = new Set(lights.map(l => l.zoneName).filter(Boolean));

@@ -21,7 +21,7 @@ export const MIGRATIONS: Record<number, Migration> = {
     ...profile,
     schemaVersion: 1,
     enabled: profile.enabled ?? true,
-    behavior: { ...DEFAULT_BEHAVIOR, ...(profile.behavior as object ?? {}) },
+    behavior: { ...DEFAULT_BEHAVIOR, ...(profile.behavior ?? {}) },
     managedFlows: profile.managedFlows ?? [],
     mappings: profile.mappings ?? [],
   }),

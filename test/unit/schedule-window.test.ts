@@ -195,8 +195,8 @@ describe('sanitising what a screen sends', () => {
     ]);
     assert.equal(dropped.length, 0);
     // Every day IS the null case: one representation of one meaning.
-    assert.deepEqual(entries[0]!.days, null);
-    assert.equal(entries[0]!.onAt, 1320);
+    assert.deepEqual(entries[0].days, null);
+    assert.equal(entries[0].onAt, 1320);
   });
 
   test('drops rather than repairs an entry it cannot read', () => {
@@ -211,9 +211,9 @@ describe('sanitising what a screen sends', () => {
 
     assert.equal(entries.length, 0);
     assert.deepEqual(dropped.map(d => d.index), [0, 1, 2, 3, 4, 5]);
-    assert.match(dropped[1]!.reason, /shorter than a minute/);
-    assert.match(dropped[2]!.reason, /same as the on-time/);
-    assert.match(dropped[3]!.reason, /no days/);
+    assert.match(dropped[1].reason, /shorter than a minute/);
+    assert.match(dropped[2].reason, /same as the on-time/);
+    assert.match(dropped[3].reason, /no days/);
   });
 
   test('refuses a duplicate id, because it would collide in the flow keys', () => {
@@ -222,7 +222,7 @@ describe('sanitising what a screen sends', () => {
       { id: 'same', onAt: '08:00', end: { kind: 'duration', minutes: 30 } },
     ]);
     assert.equal(entries.length, 1);
-    assert.match(dropped[0]!.reason, /duplicate/);
+    assert.match(dropped[0].reason, /duplicate/);
   });
 
   test('caps the set, so the Flow list stays readable', () => {
@@ -232,23 +232,23 @@ describe('sanitising what a screen sends', () => {
     const { entries, dropped } = sanitiseEntries(many);
     assert.equal(entries.length, MAX_ENTRIES);
     assert.equal(dropped.length, 3);
-    assert.match(dropped[0]!.reason, /over the limit/);
+    assert.match(dropped[0].reason, /over the limit/);
   });
 
   test('a brightness of zero is unset, not "on at nothing"', () => {
     const { entries } = sanitiseEntries([
       { id: 'a', onAt: '07:00', end: { kind: 'duration', minutes: 30 }, brightness: 0, temperature: 0 },
     ]);
-    assert.equal(entries[0]!.brightness, undefined);
+    assert.equal(entries[0].brightness, undefined);
     // Temperature 0 is meaningful: it is the coolest end of the axis, not absence.
-    assert.equal(entries[0]!.temperature, 0);
+    assert.equal(entries[0].temperature, 0);
   });
 
   test('clamps a level that is out of range instead of writing it', () => {
     const { entries } = sanitiseEntries([
       { id: 'a', onAt: '07:00', end: { kind: 'duration', minutes: 30 }, brightness: 4, temperature: -2 },
     ]);
-    assert.equal(entries[0]!.brightness, 1);
-    assert.equal(entries[0]!.temperature, 0);
+    assert.equal(entries[0].brightness, 1);
+    assert.equal(entries[0].temperature, 0);
   });
 });

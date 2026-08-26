@@ -21,12 +21,16 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      # SHA-pinned, not tag-pinned: a mutable `v4` tag is a supply-chain
+      # write-primitive into every run of this workflow. Dependabot bumps the
+      # pin (see .github/dependabot.yml) so the comment and the SHA move
+      # together.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # 22, to stay close to what current Homey Pro firmware runs. homey-api
       # declares engines.node >= 24, which npm only warns about — 3.19.2 is the
       # version verified on real hardware and is pinned exactly in package.json.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -40,15 +44,20 @@ jobs:
       - name: Type-check tests and scripts
         run: npm run typecheck:test
 
+      - name: Lint
+        run: npm run lint
+
       - name: Unit tests
         run: npm test
 
       # Validates app.json, the compose sources, drivers, flow cards and
       # locales at the same level the App Store applies on submission.
       #
-      # The CLI is pinned inside the npm script: an unpinned `npx homey`
-      # silently changes what "publish-level valid" means between two runs of
-      # the same commit, so a green build stops being evidence of anything.
+      # The CLI is a devDependency at exactly 4.4.2 and runs from the
+      # lockfile: an unpinned `npx homey` silently changes what "publish-level
+      # valid" means between two runs of the same commit, so a green build
+      # stops being evidence of anything. It also means `npm ci` above is the
+      # only thing that reaches the network for it.
       - name: Validate Homey app
         run: npm run validate
 

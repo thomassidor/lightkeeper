@@ -149,7 +149,7 @@ describe('the palette', () => {
     ) as { brandColor?: string };
 
     assert.equal(
-      compose.brandColor?.toLowerCase(), declared!.toLowerCase(),
+      compose.brandColor?.toLowerCase(), declared.toLowerCase(),
       'brandColor and the artwork pipeline disagree about the brand colour',
     );
   });
@@ -203,7 +203,7 @@ describe('icons', () => {
       // Colour inside the file is discarded by the mask, so anything non-black is
       // either dead weight or a sign the master's palette leaked through.
       const colours = [...markup.matchAll(/(?:fill|stroke)="(#[0-9a-fA-F]{3,6})"/g)]
-        .map(match => match[1]!.toLowerCase())
+        .map(match => match[1].toLowerCase())
         .filter(value => value !== '#000' && value !== '#000000');
       assert.deepEqual(colours, [], `${target.label}: coloured paint (${colours.join(', ')})`);
     }

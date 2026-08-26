@@ -59,7 +59,7 @@ module.exports = {
     const app = homey.app;
     return {
       credential: app.credentials.getStatus(),
-      recentEvents: app.recentEvents.slice(0, 12),
+      recentEvents: app.recentEvents.entries().slice(0, 12),
       controllers: app.controllers.all().map((runtime: any) => ({
         id: runtime.controllerId,
         state: runtime.currentState,
@@ -200,7 +200,7 @@ module.exports = {
       credential: app.credentials.getStatus(),
       // Most recent first — the fastest way to tell a Flow that never fired
       // from one that fired and was refused.
-      recentEvents: app.recentEvents,
+      recentEvents: app.recentEvents.entries(),
       controllers: app.controllers.all().map((runtime: any) => runtime.diagnostics()),
       schedules: app.schedules.all().map((runtime: any) => runtime.diagnostics()),
       circadian: app.circadian.all().map((runtime: any) => runtime.diagnostics()),
