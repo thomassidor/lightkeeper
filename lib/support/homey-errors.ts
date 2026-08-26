@@ -59,3 +59,34 @@ export function isNotFound(error: unknown): boolean {
   // echoed back in some other error.
   return /(^|\D)404(\D|$)/.test(message) || /^not[ _-]?found\b/i.test(message.trim());
 }
+
+/**
+ * "We could not reach the Homey", as distinct from "the Homey said no".
+ *
+ * The sibling of `isNotFound()` and the mirror of its caution: that one is
+ * narrow because treating "we could not tell" as "it is gone" drops a reference
+ * to a live Flow. This one is narrow because the opposite mistake — reading a
+ * 404 or a 403 as a dead socket — throws away a working client and rebuilds it
+ * on every application error the Homey reports.
+ *
+ * So: any HTTP status at all means the transport worked, whatever the status
+ * says. Only a total absence of one, plus a message or a Node error code that
+ * names a connection problem, counts.
+ */
+export function isTransportFailure(error: unknown): boolean {
+  if (error === null || error === undefined) return false;
+  if (statusOf(error) !== null) return false;
+
+  const err = error as StatusCarrying & { code?: unknown };
+  const code = typeof err.code === 'string' ? err.code : '';
+  // Node's own connection failures. ENOTFOUND and EAI_AGAIN are DNS, which
+  // cannot happen against 127.0.0.1 but costs nothing to cover.
+  if (/^(ECONNRESET|ECONNREFUSED|ECONNABORTED|EPIPE|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|EAI_AGAIN)$/.test(code)) {
+    return true;
+  }
+
+  const message = String(err.message ?? '');
+  if (!message) return false;
+  return /socket hang up|connection (?:reset|refused|closed|lost)|not connected|disconnected|network|timed? ?out|ECONN|EPIPE|ETIMEDOUT/i
+    .test(message);
+}

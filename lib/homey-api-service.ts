@@ -1,4 +1,5 @@
 import { CredentialService, sanitizedWriteError } from './credential-service';
+import { isTransportFailure } from './support/homey-errors';
 
 // homey-api ships JS with JSDoc rather than type declarations.
  
@@ -78,6 +79,28 @@ export class HomeyApiService {
     return HomeyAPI.createAppAPI({ homey: this.homey });
   }
 
+  /**
+   * A read failed in a way that says the CLIENT is gone, not the request.
+   *
+   * The read client is cached for the app's lifetime, which is right for a
+   * socket that stays up and wrong for one that does not: after a Homey restart
+   * or a dropped websocket every later read failed identically, forever, and
+   * nothing rebuilt it short of restarting the app. Dropping the cache is safe
+   * because `read()` de-duplicates the rebuild.
+   *
+   * Deliberately narrow. A 4xx is the Homey answering — the client is fine and
+   * the request was not — and invalidating on those would tear the socket down
+   * and rebuild it on every not-found.
+   */
+  reportReadFailure(error: unknown): boolean {
+    if (!isTransportFailure(error)) return false;
+    if (!this.readApi && !this.connecting) return false;
+    this.readApi = null;
+    this.connecting = null;
+    this.homey?.app?.log?.('Dropped the read client after a transport failure; it will be rebuilt');
+    return true;
+  }
+
   /** The API-key client. Flow writes only. Throws if no key is stored. */
   async write(): Promise<any> {
     return this.credentials.getWriteClient() as Promise<any>;
@@ -93,10 +116,16 @@ export class HomeyApiService {
    * failed delete, and ControllerRuntime puts an unclassified message straight
    * into the device's unavailable text. An upstream error that quotes the request
    * back would carry the token into both. Do not "simplify" this to `throw error`.
+   *
+   * ACQUISITION is inside the boundary too. It used to sit above the `try`, so a
+   * handshake that failed — the one place the token is actually handed to
+   * `homey-api`, and therefore the likeliest error to quote it back — escaped
+   * both the redaction and the classification, reaching the device's unavailable
+   * text raw and leaving the credential status untouched.
    */
   async withWriteClient<T>(operation: (api: any) => Promise<T>): Promise<T> {
-    const api = await this.write();
     try {
+      const api = await this.write();
       const result = await operation(api);
       this.credentials.reportSuccess();
       return result;

@@ -40,6 +40,15 @@ export class DeviceCatalog {
   private devices: Map<string, CatalogDevice> | null = null;
   private zones: Map<string, CatalogZone> | null = null;
   private appNames = new Map<string, string>();
+  /**
+   * The refresh in flight, shared by every caller that arrives while it runs.
+   *
+   * A cold cache and a burst of questions — which is exactly what a boot with
+   * three devices is — used to fetch every device and zone on the Homey once per
+   * question. Nothing was wrong with the result; it was N round trips for one
+   * answer, and the pairing screen asks several in a row.
+   */
+  private refreshing: Promise<void> | null = null;
 
   constructor(private readonly api: HomeyApiService) {}
 
@@ -49,6 +58,10 @@ export class DeviceCatalog {
     const invalidate = () => {
       this.devices = null;
       this.zones = null;
+      // App names too: an integration installed or updated after boot would
+      // otherwise show as its raw `homey:app:<id>` URI for the rest of the app's
+      // life, because loadAppNames() returns early on a non-empty map.
+      this.appNames = new Map();
       onChange();
     };
 
@@ -123,11 +136,33 @@ export class DeviceCatalog {
   }
 
   private async refresh(): Promise<void> {
-    const client = await this.api.read();
-    const [rawDevices, rawZones] = await Promise.all([
-      client.devices.getDevices(),
-      client.zones.getZones(),
-    ]);
+    if (this.refreshing) return this.refreshing;
+    const attempt = this.refreshNow().finally(() => {
+      // Only retract our own attempt: a later caller may already have replaced
+      // it. Cleared on failure as well as success, or one transient failure
+      // caches its own rejection forever.
+      if (this.refreshing === attempt) this.refreshing = null;
+    });
+    this.refreshing = attempt;
+    return attempt;
+  }
+
+  private async refreshNow(): Promise<void> {
+    let client: any;
+    let rawDevices: any;
+    let rawZones: any;
+    try {
+      client = await this.api.read();
+      [rawDevices, rawZones] = await Promise.all([
+        client.devices.getDevices(),
+        client.zones.getZones(),
+      ]);
+    } catch (error) {
+      // A socket that has gone away answers every later read identically. Say so
+      // and let the next call rebuild the client rather than failing forever.
+      this.api.reportReadFailure(error);
+      throw error;
+    }
 
     this.zones = new Map(Object.values(rawZones).map((z: any) => [z.id, {
       id: z.id, name: z.name, parent: z.parent ?? null,

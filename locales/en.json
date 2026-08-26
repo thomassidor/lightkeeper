@@ -161,7 +161,8 @@
     "noSchedule": "This schedule has no configuration. Repair it to set it up again.",
     "noTimeCard": "This Homey does not offer a time trigger Lightkeeper can build on, so the schedule cannot be created. Please report this with your firmware version.",
     "noCurve": "This circadian light has no configuration. Repair it to set it up again.",
-    "noWarmthTargets": "None of this device's lights can change colour temperature, so there is nothing for it to do."
+    "noWarmthTargets": "None of this device's lights can change colour temperature, so there is nothing for it to do.",
+    "persistFailed": "Lightkeeper could not save what it learned about its Flows. Open repair to try again."
   },
   "settings": {
     "apiKeyTitle": "API key",

@@ -116,7 +116,7 @@ function harness(options: {
     clearTimeout: () => { /* nothing to cancel in a list */ },
     log: (...args: unknown[]) => logs.push(args.join(' ')),
     onStateChange: (state, detail) => states.push({ state, detail }),
-    onPlanChange: p => plans.push(p),
+    onPlanChange: async p => { plans.push(p); },
   });
 
   return {

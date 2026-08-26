@@ -90,7 +90,7 @@ export class ControllerRuntimeManager {
     controllerId: string,
     profile: ControllerProfile,
     onStateChange: (state: ControllerState, detail?: StateDetail) => void,
-    onProfileChange: (profile: ControllerProfile) => void = () => { },
+    onProfileChange: (profile: ControllerProfile) => Promise<void> = async () => { },
     displayName: () => string = () => 'controller',
   ): Promise<ControllerRuntime> {
     await this.unregister(controllerId);
@@ -109,8 +109,11 @@ export class ControllerRuntimeManager {
     };
 
     const runtime = new ControllerRuntime(controllerId, profile, runtimeDeps);
-    this.runtimes.set(controllerId, runtime);
+    // Start BEFORE inserting: a runtime whose start() threw is half-built —
+    // no scheduler, possibly no subscriptions — and a bridge event arriving in
+    // that window would be dispatched into it. Insert only what is running.
     await runtime.start();
+    this.runtimes.set(controllerId, runtime);
     return runtime;
   }
 
@@ -128,7 +131,7 @@ export class ControllerRuntimeManager {
       displayName: () => 'test',
       log: this.deps.log,
       onStateChange: () => { /* a test rig has no health state */ },
-      onProfileChange: () => { /* ephemeral: nothing to persist */ },
+      onProfileChange: async () => { /* ephemeral: nothing to persist */ },
     });
     await runtime.startWithoutFlows();
     return runtime;
@@ -137,8 +140,10 @@ export class ControllerRuntimeManager {
   async unregister(controllerId: string): Promise<void> {
     const runtime = this.runtimes.get(controllerId);
     if (!runtime) return;
-    await runtime.stop();
+    // Remove BEFORE awaiting stop(): dispatch reads this map, and a runtime
+    // that is tearing down must not be handed another event on the way out.
     this.runtimes.delete(controllerId);
+    await runtime.stop();
   }
 
   get(controllerId: string): ControllerRuntime | undefined {

@@ -7,6 +7,18 @@
  *
  * The key is never logged, never returned over the app API,
  * and never included in diagnostics or profile exports.
+ *
+ * Two properties this class exists to hold, both learned the hard way:
+ *
+ *  - **A candidate never disturbs the incumbent.** Trying a new key and having
+ *    it rejected used to publish that rejection as THE credential status, so a
+ *    typo in the settings box marked a perfectly good working key as broken and
+ *    every device went `needs_credential` until the next restart. A failed
+ *    `setCredential` now returns a candidate-scoped verdict and touches nothing.
+ *  - **Late answers are discarded.** A key holds a single live session
+ *    (CLAUDE.md §2), so a revalidation in flight while a new key is entered is
+ *    asking about a session that no longer matters. Every publish is gated on
+ *    the generation and the token being the ones it started with.
  */
 
 export type CredentialFailure =
@@ -153,6 +165,15 @@ export class CredentialService {
   /** The handshake in flight, so concurrent callers cannot start a second one. */
   private connecting: Promise<unknown> | null = null;
   private status: CredentialStatus = { present: false, valid: false };
+  /**
+   * Bumped whenever the stored key changes — set or cleared.
+   *
+   * A revalidation that started against the previous key must not publish its
+   * verdict: the answer is about a session nobody is using any more, and
+   * publishing it turns a freshly accepted key into "session expired" seconds
+   * after the user pasted it.
+   */
+  private generation = 0;
 
   constructor(private readonly options: CredentialServiceOptions) {
     this.status.present = Boolean(this.token);
@@ -183,16 +204,31 @@ export class CredentialService {
       return this.getStatus();
     }
 
+    const generation = this.generation;
+    const token = this.token;
+
     try {
       const client = await this.getWriteClient();
       await validate(client);
+      if (this.superseded(generation, token)) return this.getStatus();
       return this.succeed();
     } catch (error) {
       const failure = classifyCredentialError(error);
+      if (this.superseded(generation, token)) {
+        // The key changed under us. Saying nothing is the whole point: this
+        // verdict is about a session that is no longer the one in use.
+        this.options.log('Discarding a revalidation of a key that has since changed');
+        return this.getStatus();
+      }
       this.options.log(`Stored API key is not usable: ${failure}`);
       this.client = null;
       return this.fail(failure);
     }
+  }
+
+  /** Whether the key moved while an in-flight check was running. */
+  private superseded(generation: number, token: string | null): boolean {
+    return this.generation !== generation || this.token !== token;
   }
 
   hasCredential(): boolean {
@@ -207,8 +243,13 @@ export class CredentialService {
   async setCredential(rawToken: string, validate: (client: unknown) => Promise<void>): Promise<CredentialStatus> {
     const token = rawToken.trim();
 
+    // A rejected CANDIDATE is not a change of credential state. The verdict is
+    // returned to whoever is trying the key and nothing else moves: the active
+    // key's status, its cached client and every device's health are exactly as
+    // they were. Without this, one typo in the settings box marked a working key
+    // as broken for the rest of the app run.
     if (!looksLikeApiKey(token)) {
-      return this.fail('malformed');
+      return candidateStatus('malformed', this.token !== null);
     }
 
     let client: unknown;
@@ -219,13 +260,14 @@ export class CredentialService {
       // Deliberately not logging the error object — it can echo the token back.
       const failure = classifyCredentialError(error);
       this.options.log(`API key rejected: ${failure}`);
-      return this.fail(failure);
+      return candidateStatus(failure, this.token !== null);
     }
 
     this.options.settings.set(SETTINGS_KEY, token);
     this.client = client;
     // Any handshake still in flight belongs to the previous key.
     this.connecting = null;
+    this.generation += 1;
     return this.succeed();
   }
 
@@ -233,6 +275,7 @@ export class CredentialService {
     this.options.settings.unset(SETTINGS_KEY);
     this.client = null;
     this.connecting = null;
+    this.generation += 1;
     this.status = { present: false, valid: false };
     this.options.onStatusChange?.(this.getStatus());
   }
@@ -319,6 +362,25 @@ export class CredentialService {
     this.options.onStatusChange?.(this.getStatus());
     return this.getStatus();
   }
+}
+
+/**
+ * A verdict about a key that was OFFERED and refused.
+ *
+ * Same shape as a published status so the pairing views and the settings page
+ * render it unchanged — but it was never assigned to anything, so nothing
+ * downstream can mistake it for the state of the key actually in use. `present`
+ * describes the stored key, not the candidate: the settings page's "a key is
+ * saved" line must not blink off because a different string was rejected.
+ */
+function candidateStatus(failure: CredentialFailure, present: boolean): CredentialStatus {
+  return {
+    present,
+    valid: false,
+    failure,
+    hint: describeFailure(failure),
+    lastCheckedAt: Date.now(),
+  };
 }
 
 /**

@@ -81,8 +81,17 @@ export class LightTargetAdapter {
     let handle = this.handles.get(deviceId);
     if (!handle) {
       handle = (async () => {
-        const client = await this.api.read();
-        return client.devices.getDevice({ id: deviceId });
+        try {
+          const client = await this.api.read();
+          return await client.devices.getDevice({ id: deviceId });
+        } catch (error) {
+          // The handle is already dropped by the callers' own catch blocks. What
+          // was missing is the CLIENT: a socket that has gone away answers every
+          // later handle fetch identically, so every light on the Homey stays
+          // unreachable until the app restarts.
+          this.api.reportReadFailure(error);
+          throw error;
+        }
       })();
       this.handles.set(deviceId, handle);
     }

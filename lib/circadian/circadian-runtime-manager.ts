@@ -65,7 +65,7 @@ export class CircadianRuntimeManager {
     controllerId: string,
     plan: CircadianPlan,
     onStateChange: (state: ControllerState, detail?: StateDetail) => void,
-    onPlanChange: (plan: CircadianPlan) => void = () => { },
+    onPlanChange: (plan: CircadianPlan) => Promise<void> = async () => { },
     displayName: () => string = () => 'circadian',
   ): Promise<CircadianRuntime> {
     await this.unregister(controllerId);
@@ -77,8 +77,11 @@ export class CircadianRuntimeManager {
       onPlanChange,
     });
 
-    this.runtimes.set(controllerId, runtime);
+    // Start BEFORE inserting: a runtime whose start() threw is half-built —
+    // no scheduler, possibly no subscriptions — and a bridge event arriving in
+    // that window would be dispatched into it. Insert only what is running.
     await runtime.start();
+    this.runtimes.set(controllerId, runtime);
     this.startTicking();
     return runtime;
   }
@@ -92,7 +95,7 @@ export class CircadianRuntimeManager {
       ...this.baseDeps(),
       displayName: () => 'test',
       onStateChange: () => { /* a test rig has no health state */ },
-      onPlanChange: () => { /* ephemeral: nothing to persist */ },
+      onPlanChange: async () => { /* ephemeral: nothing to persist */ },
     });
     // Deliberately idle: the screen decides when to touch someone's lights, not
     // the act of opening it.
@@ -114,7 +117,7 @@ export class CircadianRuntimeManager {
   private startTicking(): void {
     if (this.ticker !== null || this.runtimes.size === 0) return;
     const start = this.deps.setInterval ?? ((fn, ms) => setInterval(fn, ms));
-    this.ticker = start(() => void this.tickAll(), TICK_MS);
+    this.ticker = start(() => fireAndForget(this.tickAll(), this.deps.log, 'Circadian tick'), TICK_MS);
   }
 
   private stopTicking(): void {
@@ -139,9 +142,11 @@ export class CircadianRuntimeManager {
   async unregister(controllerId: string): Promise<void> {
     const runtime = this.runtimes.get(controllerId);
     if (!runtime) return;
-    await runtime.stop();
+    // Remove BEFORE awaiting stop(): dispatch reads this map, and a runtime
+    // that is tearing down must not be handed another event on the way out.
     this.runtimes.delete(controllerId);
     if (this.runtimes.size === 0) this.stopTicking();
+    await runtime.stop();
   }
 
   get(controllerId: string): CircadianRuntime | undefined {

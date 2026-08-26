@@ -233,3 +233,73 @@ its own log for the per-device view in `getDiagnostics`.
 Phase 1's mechanical insert put `private unsupported` between
 `/** Never exposes secrets... */` and the `diagnostics()` it documents, in all
 three runtimes. Repaired here while editing the same region.
+
+---
+
+## Phase 3
+
+### 3.1/D2 — the base class is TWO classes, because `homey` does not resolve off-Homey
+
+The plan says "create `lib/devices/lightkeeper-device.ts`: `abstract class
+LightkeeperDevice<TPlan> extends Homey.Device`". That was written, and then could
+not be tested: `require('homey')` resolves to the CLI in `node_modules` (whose
+main executes the CLI), and the SDK module exists only on a Homey. `@types/homey`
+supplies the types, so `tsc` is happy — but any test that imports a file
+containing `extends Homey.Device` dies with `Class extends value undefined`.
+
+Which is exactly why the three device files had no tests at all, and why every
+ordering bug in this phase's findings survived to be found by review.
+
+So the extraction is:
+
+- `lib/devices/device-lifecycle.ts` — `DeviceLifecycle<TPlan, TRuntime>`, a plain
+  class taking a `DeviceOwner` (the SDK slice it uses plus the per-type hooks).
+  Every rule this phase adds lives here.
+- `lib/devices/lightkeeper-device.ts` — `LightkeeperDevice extends Homey.Device
+  implements DeviceOwner`, holding a `DeviceLifecycle` and forwarding the five SDK
+  entry points. Nothing in it branches.
+
+`Homey.Device` satisfies the SDK half of `DeviceOwner` structurally, so the shell
+adds only the two members the SDK spells differently: `translate()` for
+`homey.__` and `removeFlows()` for `app.bridge.removeAll`. `test/unit/device-
+transactions.test.ts` (18 tests) is what the single-class version could not have.
+
+### 3.1 — one hook, not two
+
+The plan named `beforeRegister(previous, next)` for the controller's obsolete-flow
+deletion, alonga merge step. Splitting them meant the controller computing
+`carryForwardFlows()` in the merge and needing its `obsolete` list in the hook
+afterwards — i.e. stashing it on the instance between two calls inside one
+mutex-held operation. `prepareApply(previous, incoming): Promise<TPlan>` is the
+single hook instead: it returns what to register and does whatever must happen
+first, in one place, with the ordering comment attached to the ordering.
+
+### 3.2 — a sequence number, not just an ordered queue
+
+"A late state callback cannot flip an unavailable device to available" does not
+follow from serialising the verdicts: the stale one is still *in* the queue and
+would be applied, just later. So each verdict takes a monotonic number at the
+moment it is issued and is dropped if a higher one has already been applied. The
+apply's own publish is issued last and therefore always wins. Both orders are
+tested, to show it is order and not severity that decides.
+
+### 3.3 — the persist failure is reported at the END of the reconcile
+
+A `return` on persistence failure would have skipped the user-edited and
+unsupported-mapping verdicts that come after it. `setState` is last-write-wins, so
+the flag is set and applied after them, with the comment saying why.
+
+### 3.6 — `isTransportFailure()` refuses anything carrying a status
+
+The plan asked for a classifier "on classified transport errors (connection
+reset/refused/timeout)". Written as: **any** numeric HTTP status at all means the
+transport worked, whatever that status says, so it is never a transport failure.
+Only a total absence of one plus a connection-shaped message or Node error code
+counts. Without the status check, `404 Not Found: connection closed` — a Homey
+message quoting a flow name — would tear down a working socket.
+
+No disconnect event on the read client was used: `homey-api`'s client is built by
+`createAppAPI` and the phase's brief says "inspect at runtime in a test", which
+cannot be done off-hardware. Report-on-failure covers the same ground from the
+call sites (`DeviceCatalog.refresh`, `FlowBridgeManager.sync`,
+`LightTargetAdapter.deviceHandle`) and needs no platform assumption.

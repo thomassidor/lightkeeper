@@ -71,7 +71,7 @@ export interface ScheduleRuntimeDeps {
    * apart: reconciliation can learn new managed-flow references while the state
    * never changes, and unpersisted references leak Flows on every restart.
    */
-  onPlanChange: (plan: SchedulePlan) => void;
+  onPlanChange: (plan: SchedulePlan) => Promise<void>;
 }
 
 export interface ScheduleAction {
@@ -115,6 +115,8 @@ export class ScheduleRuntime {
   }
 
   get currentState(): ControllerState { return this.state; }
+  /** The reason for that state, so the device layer can report it verbatim. */
+  get currentDetail(): StateDetail | undefined { return this.lastDetail; }
   get currentPlan(): SchedulePlan { return this.plan; }
 
   private now(): number {
@@ -199,7 +201,21 @@ export class ScheduleRuntime {
       // Persisting unconditionally emits device.update, which invalidates the
       // catalog, which lands back in onCatalogChange — the loop the controller
       // runtime documents at the same spot.
-      if (JSON.stringify(result.references) !== before) this.deps.onPlanChange(this.plan);
+      //
+      // AWAITED: references that never reached the store describe Flows nothing
+      // will find after a restart, and this device's Flows are the only thing
+      // that makes it fire at all. `flowsHealthy` false is what stops
+      // assessHealth() reporting 'ready' over the top of it.
+      let persistFailed = false;
+      if (JSON.stringify(result.references) !== before) {
+        try {
+          await this.deps.onPlanChange(this.plan);
+        } catch (error) {
+          persistFailed = true;
+          this.flowsHealthy = false;
+          this.deps.log('Could not persist managed Flow references:', (error as Error)?.message);
+        }
+      }
 
       if (result.userEdited.length > 0) {
         this.flowsHealthy = false;
@@ -234,6 +250,10 @@ export class ScheduleRuntime {
           + `and are still firing: ${result.staleReplacements.join(', ')}`,
         );
       }
+
+      // Last, so it wins over the verdicts above: whatever else this pass
+      // learned, a reference we could not store is the problem to report.
+      if (persistFailed) this.setState('needs_repair', { key: 'state.persistFailed' });
     } catch (error) {
       this.flowsHealthy = false;
       const credential = this.deps.api.credentials.getStatus();

@@ -256,8 +256,18 @@ export class FlowBridgeManager {
    */
   async sync(request: SyncRequest): Promise<SyncResult> {
     const cards = await this.bridgeCards();
-    const client = await this.api.read();
-    const liveFlows = await client.flow.getFlows();
+    // The reads come first and they are the ones that can fail on a dead socket
+    // rather than a dead key. Reported, so the next pass rebuilds the client
+    // instead of every reconcile for the rest of the app run failing the same
+    // way and reading as a credential problem.
+    let liveFlows: Record<string, any>;
+    try {
+      const client = await this.api.read();
+      liveFlows = await client.flow.getFlows();
+    } catch (error) {
+      this.api.reportReadFailure(error);
+      throw error;
+    }
 
     // One folder read per reconcile, alongside the flow read that already
     // happens. Deliberately not cached across reconciles: a folder the user

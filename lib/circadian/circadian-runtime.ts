@@ -73,7 +73,7 @@ export interface CircadianRuntimeDeps {
    * ITSELF off after observing a light come on, and that verdict has to survive a
    * restart or the same lamp gets switched on again tomorrow night.
    */
-  onPlanChange: (plan: CircadianPlan) => void;
+  onPlanChange: (plan: CircadianPlan) => Promise<void>;
 }
 
 export interface CircadianAction {
@@ -160,6 +160,8 @@ export class CircadianRuntime {
   }
 
   get currentState(): ControllerState { return this.state; }
+  /** The reason for that state, so the device layer can report it verbatim. */
+  get currentDetail(): StateDetail | undefined { return this.lastDetail; }
   get currentPlan(): CircadianPlan { return this.plan; }
 
   private now(): number {
@@ -538,7 +540,9 @@ export class CircadianRuntime {
       // that is no longer the last thing we did to this lamp.
       if ((this.writeGeneration.get(deviceId) ?? 0) !== generation) return;
       if (this.cache.state(deviceId).actualOn !== true) return;
-      this.disablePreStage(deviceId);
+      fireAndForget(
+        this.disablePreStage(deviceId), this.deps.log, 'Turning pre-staging off',
+      );
     }, PRE_STAGE_CHECK_MS);
     this.probes.set(deviceId, { timer, generation });
   }
@@ -551,7 +555,7 @@ export class CircadianRuntime {
     this.probes.delete(deviceId);
   }
 
-  private disablePreStage(deviceId: string): void {
+  private async disablePreStage(deviceId: string): Promise<void> {
     if (!this.plan.preStage) return;
     this.plan = { ...this.plan, preStage: false };
     this.preStageDisabled = { at: this.now(), deviceId };
@@ -559,7 +563,9 @@ export class CircadianRuntime {
       `${deviceId} switched itself on from a colour write, so pre-staging has been turned off `
       + 'for this device. Its lights will be corrected as they come on instead.',
     );
-    this.deps.onPlanChange(this.plan);
+    // AWAITED: this is the one verdict this device type persists, and a write
+    // that silently failed would switch the same lamp on again tomorrow night.
+    await this.deps.onPlanChange(this.plan);
   }
 
   /**

@@ -112,7 +112,7 @@ function harness(options: {
     now: () => options.now ?? Date.UTC(2026, 7, 18, 20, 15),
     log: (...args: unknown[]) => logs.push(args.join(' ')),
     onStateChange: (state, detail) => states.push({ state, detail }),
-    onPlanChange: () => { /* persistence is the device's job */ },
+    onPlanChange: async () => { /* persistence is the device's job */ },
   });
 
   return { runtime, writes, states, synced, logs };

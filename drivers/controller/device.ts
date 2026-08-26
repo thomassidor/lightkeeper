@@ -1,75 +1,56 @@
-import Homey from 'homey';
-
+import { LightkeeperDevice, type DeviceRegistry, type PlanMigration } from '../../lib/devices/lightkeeper-device';
 import { migrateProfile } from '../../lib/profiles/migrations';
 import { carryForwardFlows } from '../../lib/profiles/controller-profile';
-import type {
-  ControllerProfile, ControllerState, StateDetail,
-} from '../../lib/profiles/controller-profile';
+import type { ControllerProfile, ManagedFlowReference } from '../../lib/profiles/controller-profile';
+import type { ControllerRuntime } from '../../lib/runtime/controller-runtime';
 
 /**
- * One virtual device per configuration, and the lifecycle boundary for
- * the relationship: source reference, targets, mappings, managed flow
- * references, runtime status and diagnostics.
+ * One virtual device per configuration, and the lifecycle boundary for the
+ * relationship: source reference, targets, mappings, managed flow references,
+ * runtime status and diagnostics.
  *
- * The Device owns: profile loading, lifecycle registration,
- * status and deletion cleanup.
+ * Everything this shares with the other two device types — load-and-migrate,
+ * transactional apply, translated state text, teardown — lives in
+ * `LightkeeperDevice`. What is left below is what makes a controller a
+ * controller: `disabled` means unavailable (nothing on the tile does anything,
+ * unlike the two switchable types), and a change of SOURCE has to take the old
+ * remote's Flows with it.
  */
-module.exports = class ControllerDevice extends Homey.Device {
+module.exports = class ControllerDevice extends LightkeeperDevice<ControllerProfile, ControllerRuntime> {
 
-  private get app(): any {
-    return this.homey.app;
+  readonly storeKey = 'profile';
+  readonly missingKey = 'state.noConfiguration';
+
+  migrate(raw: unknown): PlanMigration<ControllerProfile> {
+    // The controller's migration module predates the shared shape and calls its
+    // payload `profile`. Renaming it would touch the whole migration suite for
+    // nothing, so the adaptation is here.
+    const { profile, migrated, fromVersion } = migrateProfile(raw);
+    return { plan: profile, migrated, fromVersion };
   }
 
-  private get controllerId(): string {
-    return this.getData().id;
+  registry(): DeviceRegistry<ControllerProfile, ControllerRuntime> {
+    return this.app.controllers;
   }
 
-  override async onInit() {
-    const profile = this.loadProfile();
-    if (!profile) {
-      await this.setUnavailable(this.homey.__('state.noConfiguration'));
-      return;
-    }
+  override planOf(runtime: ControllerRuntime): ControllerProfile {
+    return runtime.currentProfile;
+  }
 
-    await this.app.controllers.register(
-      this.controllerId,
-      profile,
-      (state: ControllerState, detail?: StateDetail) => void this.onRuntimeState(state, detail),
-      (updated: ControllerProfile) => void this.persistProfile(updated),
-      () => this.getName(),
-    );
+  override flowRefs(plan: ControllerProfile): ManagedFlowReference[] {
+    return plan.managedFlows ?? [];
   }
 
   /**
-   * Every profile carries schemaVersion and migrates deterministically
-   * at startup. A profile we cannot migrate must not silently become defaults.
+   * Carry forward the flows we already own, so reconciliation reuses them
+   * instead of orphaning a set and creating duplicates — but only while the
+   * source device is the same one. See carryForwardFlows().
    */
-  private loadProfile(): ControllerProfile | null {
-    const raw = this.getStoreValue('profile');
-    if (!raw) return null;
-
-    try {
-      const { profile, migrated, fromVersion } = migrateProfile(raw);
-      if (migrated) {
-        this.log(`Migrated profile from schema ${fromVersion}`);
-        void this.setStoreValue('profile', profile);
-      }
-      return profile;
-    } catch (error) {
-      this.error('Could not migrate profile:', (error as Error)?.message);
-      return null;
-    }
-  }
-
-  /** Called by the pair/repair session when the user saves. */
-  async applyProfile(profile: ControllerProfile): Promise<void> {
-    // Carry forward the flows we already own, so reconciliation reuses them
-    // instead of orphaning a set and creating duplicates — but only while the
-    // source device is the same one. See carryForwardFlows().
-    const previous: ControllerProfile | null = this.getStoreValue('profile') ?? null;
-    const { profile: merged, obsolete } = carryForwardFlows(previous, profile);
-
-    await this.setStoreValue('profile', merged);
+  override async prepareApply(
+    previous: ControllerProfile | null,
+    incoming: ControllerProfile,
+  ): Promise<ControllerProfile> {
+    const { profile: merged, obsolete } = carryForwardFlows(previous, incoming);
 
     // The source moved, so these flows trigger on a device that is gone. Delete
     // them BEFORE registering, or reconciliation recreates their replacements
@@ -79,89 +60,12 @@ module.exports = class ControllerDevice extends Homey.Device {
       this.log(`Source changed: removed ${removed} of ${obsolete.length} flow(s) from the old remote`);
     }
 
-    await this.app.controllers.register(
-      this.controllerId,
-      merged,
-      (state: ControllerState, detail?: StateDetail) => void this.onRuntimeState(state, detail),
-      (updated: ControllerProfile) => void this.persistProfile(updated),
-      () => this.getName(),
-    );
-    await this.setAvailable();
+    return merged;
   }
 
-  /**
-   * A device's name is the name of its Flow folder, so following a rename means
-   * reconciling. Cheap: every flow is reused, and only the folder is rewritten.
-   */
-  override async onRenamed() {
-    await this.app.controllers.get(this.controllerId)?.reconcileFlows();
-  }
-
-  /** Managed flow references must survive a restart, or they leak. */
-  private async persistProfile(profile: ControllerProfile): Promise<void> {
-    await this.setStoreValue('profile', profile);
-  }
-
-  /**
-   * Resolve a runtime's state reason into text for this Homey's language.
-   *
-   * lib/ has no access to `homey.__`, so it hands up a locale key plus tokens.
-   * Only strings we did not author — an API error, say — arrive as `text`, and
-   * those are shown verbatim because there is nothing to translate.
-   */
-  private describe(detail: StateDetail | undefined, fallbackKey: string): string {
-    if (detail?.key) return this.homey.__(detail.key, detail.tokens ?? {});
-    if (detail?.text) return detail.text;
-    return this.homey.__(fallbackKey);
-  }
-
-  private async onRuntimeState(state: ControllerState, detail?: StateDetail): Promise<void> {
-    // Persist whatever reconciliation learned about our managed flows.
-    const runtime = this.app.controllers.get(this.controllerId);
-    if (runtime) await this.setStoreValue('profile', runtime.currentProfile);
-
-    switch (state) {
-      case 'ready':
-        await this.setAvailable();
-        break;
-      case 'partial':
-        // Still working — a partial controller must not look broken.
-        await this.setAvailable();
-        this.log(`Partial: ${this.describe(detail, 'state.someTargets')}`);
-        break;
-      case 'needs_credential':
-        await this.setUnavailable(this.describe(detail, 'state.needsCredential'));
-        break;
-      case 'needs_repair':
-        await this.setUnavailable(this.describe(detail, 'state.needsRepair'));
-        break;
-      case 'disabled':
-        await this.setUnavailable(this.homey.__('state.disabled'));
-        break;
-    }
-  }
-
-  /**
-   * Deleting the controller removes only flows provably managed
-   * by it, plus its runtime subscriptions.
-   */
-  override async onDeleted() {
-    const runtime = this.app.controllers.get(this.controllerId);
-    if (runtime) {
-      await runtime.destroy();
-      await this.app.controllers.unregister(this.controllerId);
-    } else {
-      // The runtime never started, but its flows may still exist.
-      const profile: ControllerProfile | null = this.getStoreValue('profile') ?? null;
-      if (profile?.managedFlows?.length) {
-        await this.app.bridge.removeAll(profile.managedFlows);
-      }
-    }
-    this.log('Controller deleted and its Flows cleaned up');
-  }
-
-  override async onUninit() {
-    await this.app.controllers?.unregister(this.controllerId);
+  /** The name the pairing session has always called. */
+  async applyProfile(profile: ControllerProfile): Promise<void> {
+    return this.applyPlan(profile);
   }
 
 };

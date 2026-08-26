@@ -21,6 +21,7 @@ import type { HealthMonitor } from './health-monitor';
 import type { InputEvent } from '../inputs/input-event';
 import type { SelectableInput } from '../inputs/selectable-input';
 import type { ControllerBehavior, LightFunction } from '../mapping/mapping-types';
+import { fireAndForget } from '../support/async';
 
 /** Which ramp, if any, a resolved intent corresponds to. */
 function rampFor(intent: LightIntent): { kind: 'brightness' | 'temperature'; direction: -1 | 1 } | null {
@@ -95,7 +96,7 @@ export interface ControllerRuntimeDeps {
    * managedFlows: [], so every restart re-created every Flow and deleting the
    * device removed none of them.
    */
-  onProfileChange: (profile: ControllerProfile) => void;
+  onProfileChange: (profile: ControllerProfile) => Promise<void>;
 }
 
 const WATCHED: Capability[] = ['onoff', 'dim', 'light_temperature'];
@@ -130,6 +131,8 @@ export class ControllerRuntime {
   }
 
   get currentState(): ControllerState { return this.state; }
+  /** The reason for that state, so the device layer can report it verbatim. */
+  get currentDetail(): StateDetail | undefined { return this.lastDetail; }
   get currentProfile(): ControllerProfile { return this.profile; }
 
   async start(): Promise<void> {
@@ -231,7 +234,7 @@ export class ControllerRuntime {
       if (JSON.stringify(discovered.inputs) === JSON.stringify(this.profile.catalogue ?? [])) return;
 
       this.profile = { ...this.profile, catalogue: discovered.inputs };
-      this.deps.onProfileChange(this.profile);
+      await this.deps.onProfileChange(this.profile);
     } catch (error) {
       this.deps.log('Could not refresh the event catalogue:', (error as Error)?.message);
     }
@@ -288,7 +291,7 @@ export class ControllerRuntime {
     this.gate = new SupersedeGate({
       supersedeMs: this.profile.behavior.supersedeMs,
       contestedControlIds: contestedControls(assignments),
-    }, input => void this.execute(input));
+    }, input => fireAndForget(this.execute(input), this.deps.log, 'Executing an input'));
 
     // A hold may only ramp where the source gives a reliable stop
     // signal. Everything else steps.
@@ -299,7 +302,7 @@ export class ControllerRuntime {
     );
 
     this.ramps = new RampEngine(
-      intent => void this.runIntent(intent),
+      intent => fireAndForget(this.runIntent(intent), this.deps.log, 'A ramp tick'),
       (controlId, reason) => this.deps.log(`Ramp on ${controlId} stopped: ${reason}`),
     );
 
@@ -387,8 +390,22 @@ export class ControllerRuntime {
       // Persisting unconditionally would emit device.update, which invalidates
       // the catalog, which restarts this runtime, which reconciles again — a
       // loop that tore down the scheduler between submit and flush.
+      //
+      // AWAITED, and its failure is a state: references that never reached the
+      // store describe Flows nothing will find after a restart — the next pass
+      // creates a second set beside them. Repair is the honest verdict, and the
+      // Flows stay where they are: the journal in sync() is what makes the next
+      // pass adopt-or-recreate rather than duplicate.
+      let persistFailed = false;
       if (JSON.stringify(result.references) !== before) {
-        this.deps.onProfileChange(this.profile);
+        try {
+          await this.deps.onProfileChange(this.profile);
+        } catch (error) {
+          persistFailed = true;
+          this.deps.log(
+            'Could not persist managed Flow references:', (error as Error)?.message,
+          );
+        }
       }
 
       if (result.userEdited.length > 0) {
@@ -427,6 +444,10 @@ export class ControllerRuntime {
           + `and are still firing: ${result.staleReplacements.join(', ')}`,
         );
       }
+
+      // Last, so it wins over the verdicts above: whatever else this pass
+      // learned, a reference we could not store is the problem to report.
+      if (persistFailed) this.setState('needs_repair', { key: 'state.persistFailed' });
     } catch (error) {
       const failure = this.deps.api.credentials.getStatus();
       if (failure.present && !failure.valid) {
