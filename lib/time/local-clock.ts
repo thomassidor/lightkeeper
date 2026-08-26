@@ -1,4 +1,5 @@
-import { MINUTES_PER_DAY, type IsoWeekday } from './schedule-types';
+import { MINUTES_PER_DAY } from './wall-clock';
+import type { IsoWeekday } from '../schedules/schedule-types';
 
 /**
  * The Homey's own wall clock, reduced to the only two facts a schedule needs.
@@ -11,6 +12,10 @@ import { MINUTES_PER_DAY, type IsoWeekday } from './schedule-types';
  * Deliberately NOT here: any conversion from a wall-clock time to an absolute
  * instant. That is the code that DST breaks (a local time that does not exist,
  * or exists twice), and because the Flow engine owns firing we never need it.
+ *
+ * It lives under `lib/time/` rather than `lib/schedules/` because the circadian
+ * runtime reads it too, and its import used to carry an apology for the
+ * location. The apology is retired.
  */
 
 export interface LocalClock {

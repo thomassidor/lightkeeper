@@ -11,6 +11,7 @@ import {
 import type { LogicalSourceBinding } from '../../lib/inputs/selectable-input';
 import { migrateProfile } from '../../lib/profiles/migrations';
 import { CURRENT_SCHEMA_VERSION } from '../../lib/profiles/controller-profile';
+import { DEFAULT_BEHAVIOR } from '../../lib/mapping/mapping-types';
 
 /**
  * A binding's job is to say EXACTLY which event on which control this is, and
@@ -247,8 +248,8 @@ describe('the schema 1 to 2 migration', () => {
     enabled: true,
     source: { deviceId: 'remote-1', eventSurfaceFingerprint: 'fp' },
     target: { kind: 'devices', deviceIds: ['l1'] },
-    mappings: [{ inputKey: 'wheel|1|clock_wise|rotate_start', func: 'brightness_up' }],
-    behavior: {},
+    mappings: [{ id: 'r1', function: 'brightness_up', inputKey: 'wheel|1|clock_wise|rotate_start', target: null }],
+    behavior: { ...DEFAULT_BEHAVIOR },
     managedFlows: [],
     catalogue: [
       {
@@ -376,6 +377,15 @@ describe('the schema 1 to 2 migration', () => {
       argument: 'steps',
       values: [1, 3],
     };
+    // The other two entries are still in the OLD shape, which the chain no
+    // longer runs over — so bring them forward too, or the validator at the end
+    // rejects them (correctly).
+    (current.catalogue[1].binding as any).fixedArgs = {};
+    delete (current.catalogue[1].binding as any).args;
+    (current.catalogue[2].binding as any).fixedArgs =
+      (current.catalogue[2].binding as any).args;
+    delete (current.catalogue[2].binding as any).args;
+
     const { profile, migrated } = migrateProfile(current);
     assert.equal(migrated, false);
     assert.deepEqual((profile.catalogue ?? [])[0].binding as any, {

@@ -1,3 +1,5 @@
+import { withDefaults } from '../support/timers';
+
 import { isDiscreteAction, isHoldAction, type InputEvent } from '../inputs/input-event';
 
 /**
@@ -55,8 +57,11 @@ export class SupersedeGate {
     private readonly options: SupersedeGateOptions,
     private readonly dispatch: Dispatch,
   ) {
-    this.setTimer = options.setTimeout ?? ((fn, ms) => setTimeout(fn, ms));
-    this.clearTimer = options.clearTimeout ?? (handle => clearTimeout(handle as NodeJS.Timeout));
+    // See lib/support/timers.ts: the public options stay piecemeal because the
+    // tests stub them individually; the fallback is shared.
+    const timers = withDefaults(options);
+    this.setTimer = timers.setTimeout;
+    this.clearTimer = timers.clearTimeout;
   }
 
   /**

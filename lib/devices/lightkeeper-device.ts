@@ -7,7 +7,7 @@ import {
   type DeviceRuntime,
   type PlanMigration,
 } from './device-lifecycle';
-import type { ControllerState, ManagedFlowReference } from '../profiles/controller-profile';
+import type { ControllerState } from '../profiles/controller-profile';
 
 /**
  * The `Homey.Device` half of a Lightkeeper virtual device: the SDK entry points,
@@ -40,7 +40,8 @@ export abstract class LightkeeperDevice<
 
   planEnabled(_plan: TPlan): boolean { return true; }
   withEnabled(plan: TPlan, _enabled: boolean): TPlan { return plan; }
-  flowRefs(_plan: TPlan): ManagedFlowReference[] { return []; }
+  /** Overridden by the two types that own Flows. See DeviceOwner.rawFlowRefs. */
+  rawFlowRefs(): unknown { return []; }
   async prepareApply(_previous: TPlan | null, incoming: TPlan): Promise<TPlan> { return incoming; }
 
   /** Constructed here rather than in a subclass so every type gets it. */
@@ -60,7 +61,7 @@ export abstract class LightkeeperDevice<
     return this.homey.__(key, tokens ?? {});
   }
 
-  async removeFlows(refs: ManagedFlowReference[]): Promise<number> {
+  async removeFlows(refs: unknown[]): Promise<number> {
     return this.app.bridge.removeAll(refs);
   }
 

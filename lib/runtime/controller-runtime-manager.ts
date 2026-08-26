@@ -6,7 +6,7 @@ import type { FlowBridgeManager } from '../bridge/flow-bridge-manager';
 import type { HealthMonitor } from './health-monitor';
 import type { ControllerProfile, ControllerState, StateDetail } from '../profiles/controller-profile';
 import type { InputEvent } from '../inputs/input-event';
-import { fireAndForget } from '../support/async';
+import { RuntimeRegistry } from './runtime-registry';
 import type { WriteRecord } from '../outputs/light-target-adapter';
 
 /**
@@ -80,11 +80,17 @@ function clampNotches(notches: number): number {
 }
 
 export class ControllerRuntimeManager {
-  private readonly runtimes = new Map<string, ControllerRuntime>();
-  /** Held so shutdown can cancel a coalescing pass that has not fired yet. */
-  private catalogChangeTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * The Map, its ordering rules, the catalogue coalescer and the teardown all
+   * live in RuntimeRegistry — see that file for why they are shared and this is
+   * not a base class. What is left below is controller-specific: dispatch with a
+   * reason, magnitude scaling, and the credential fan-out.
+   */
+  private readonly registry: RuntimeRegistry<ControllerRuntime>;
 
-  constructor(private readonly deps: RuntimeManagerDeps) {}
+  constructor(private readonly deps: RuntimeManagerDeps) {
+    this.registry = new RuntimeRegistry({ log: deps.log, label: 'controller' });
+  }
 
   async register(
     controllerId: string,
@@ -93,8 +99,6 @@ export class ControllerRuntimeManager {
     onProfileChange: (profile: ControllerProfile) => Promise<void> = async () => { },
     displayName: () => string = () => 'controller',
   ): Promise<ControllerRuntime> {
-    await this.unregister(controllerId);
-
     const runtimeDeps: ControllerRuntimeDeps = {
       api: this.deps.api,
       catalog: this.deps.catalog,
@@ -108,13 +112,11 @@ export class ControllerRuntimeManager {
       onProfileChange,
     };
 
-    const runtime = new ControllerRuntime(controllerId, profile, runtimeDeps);
-    // Start BEFORE inserting: a runtime whose start() threw is half-built —
-    // no scheduler, possibly no subscriptions — and a bridge event arriving in
-    // that window would be dispatched into it. Insert only what is running.
-    await runtime.start();
-    this.runtimes.set(controllerId, runtime);
-    return runtime;
+    return this.registry.register(controllerId, async () => {
+      const runtime = new ControllerRuntime(controllerId, profile, runtimeDeps);
+      await runtime.start();
+      return runtime;
+    });
   }
 
   /**
@@ -138,20 +140,15 @@ export class ControllerRuntimeManager {
   }
 
   async unregister(controllerId: string): Promise<void> {
-    const runtime = this.runtimes.get(controllerId);
-    if (!runtime) return;
-    // Remove BEFORE awaiting stop(): dispatch reads this map, and a runtime
-    // that is tearing down must not be handed another event on the way out.
-    this.runtimes.delete(controllerId);
-    await runtime.stop();
+    return this.registry.unregister(controllerId);
   }
 
   get(controllerId: string): ControllerRuntime | undefined {
-    return this.runtimes.get(controllerId);
+    return this.registry.get(controllerId);
   }
 
   all(): ControllerRuntime[] {
-    return [...this.runtimes.values()];
+    return this.registry.all();
   }
 
   /**
@@ -163,11 +160,11 @@ export class ControllerRuntimeManager {
     eventKey: string,
     extra: { magnitude?: number },
   ): { accepted: boolean; reason?: string } {
-    const runtime = this.runtimes.get(controllerId);
+    const runtime = this.registry.get(controllerId);
     if (!runtime) {
       return {
         accepted: false,
-        reason: `no running controller "${controllerId}" (running: ${[...this.runtimes.keys()].join(', ') || 'none'})`,
+        reason: `no running controller "${controllerId}" (running: ${this.registry.ids.join(', ') || 'none'})`,
       };
     }
 
@@ -202,30 +199,9 @@ export class ControllerRuntimeManager {
     return { accepted: true };
   }
 
-  /**
-   * Devices or zones changed — targets may need re-resolving.
-   *
-   * This must NOT restart the runtimes. Our own virtual devices are devices
-   * too, so persisting a profile emits device.update and lands back here; a
-   * restart per event stopped the scheduler between submit and flush and no
-   * light ever changed.
-   */
+  /** Devices or zones changed. Coalesced, and it never restarts a runtime. */
   async onCatalogChange(): Promise<void> {
-    if (this.catalogChangeTimer !== null) return;
-
-    // Coalesce a burst of device events into one pass.
-    this.catalogChangeTimer = setTimeout(() => {
-      this.catalogChangeTimer = null;
-      fireAndForget((async () => {
-        for (const runtime of this.runtimes.values()) {
-          try {
-            await runtime.refreshTargets();
-          } catch (error) {
-            this.deps.log('Failed to re-resolve targets:', (error as Error)?.message);
-          }
-        }
-      })(), this.deps.log, 'Catalogue-change target refresh');
-    }, 500);
+    this.registry.onCatalogChange();
   }
 
   /**
@@ -239,7 +215,7 @@ export class ControllerRuntimeManager {
       // maintenance is dead is telling the user something untrue, and would go on
       // doing so until the next restart. assessHealth() never declares a
       // controller ready, so re-asking can only ever be honest.
-      for (const runtime of this.runtimes.values()) {
+      for (const runtime of this.registry.all()) {
         try {
           await runtime.assessHealth();
         } catch (error) {
@@ -249,7 +225,7 @@ export class ControllerRuntimeManager {
       return;
     }
 
-    for (const runtime of this.runtimes.values()) {
+    for (const runtime of this.registry.all()) {
       try {
         await runtime.reconcileFlows();
         // Reconciling is not enough on its own: a controller that went
@@ -265,16 +241,6 @@ export class ControllerRuntimeManager {
   }
 
   async destroyAll(): Promise<void> {
-    // Cancel first: a pending pass would otherwise re-resolve targets against
-    // runtimes that are being torn down.
-    if (this.catalogChangeTimer !== null) {
-      clearTimeout(this.catalogChangeTimer);
-      this.catalogChangeTimer = null;
-    }
-
-    for (const runtime of this.runtimes.values()) {
-      await runtime.stop();
-    }
-    this.runtimes.clear();
+    return this.registry.destroyAll();
   }
 }

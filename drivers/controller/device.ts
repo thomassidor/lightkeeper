@@ -1,7 +1,7 @@
 import { LightkeeperDevice, type DeviceRegistry, type PlanMigration } from '../../lib/devices/lightkeeper-device';
 import { migrateProfile } from '../../lib/profiles/migrations';
 import { carryForwardFlows } from '../../lib/profiles/controller-profile';
-import type { ControllerProfile, ManagedFlowReference } from '../../lib/profiles/controller-profile';
+import type { ControllerProfile } from '../../lib/profiles/controller-profile';
 import type { ControllerRuntime } from '../../lib/runtime/controller-runtime';
 
 /**
@@ -37,8 +37,13 @@ module.exports = class ControllerDevice extends LightkeeperDevice<ControllerProf
     return runtime.currentProfile;
   }
 
-  override flowRefs(plan: ControllerProfile): ManagedFlowReference[] {
-    return plan.managedFlows ?? [];
+  /**
+   * Read from the raw store, not from a validated profile: this feeds the delete
+   * path that runs when no profile could be loaded at all, and a profile that
+   * failed validation is exactly that case. The lifecycle shape-checks them.
+   */
+  override rawFlowRefs(): unknown {
+    return (this.getStoreValue(this.storeKey) as { managedFlows?: unknown } | undefined)?.managedFlows;
   }
 
   /**

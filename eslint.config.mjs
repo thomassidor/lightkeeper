@@ -125,6 +125,45 @@ export default tseslint.config(
     },
   },
 
+  /**
+   * `lib/` is ours, so `any` is a decision that has to be argued for.
+   *
+   * The listed files are the SEAMS: the two places `homey-api`'s untyped client
+   * is held, the normalisers that read its raw objects, and the device layer's
+   * `homey.app` / `getData()` boundary — which is the Homey SDK's own untyped
+   * surface, not ours. `lib/homey-api-types.ts` is what a normaliser should be
+   * reaching for instead of a fresh `any`.
+   *
+   * The rest of the family (`no-unsafe-assignment` and friends) stays off above:
+   * those fire on every USE of a value that crossed a seam, which is most of the
+   * app. This one fires only where the word is written, which is where the
+   * decision is being made.
+   */
+  {
+    files: ['lib/**/*.ts'],
+    ignores: [
+      // The two clients themselves.
+      'lib/homey-api-service.ts',
+      'lib/credential-service.ts',
+      // Normalisers reading raw client objects.
+      'lib/bridge/flow-bridge-manager.ts',
+      'lib/bridge/flow-folder-manager.ts',
+      'lib/device-catalog.ts',
+      'lib/source-discovery-service.ts',
+      'lib/schedules/time-card-discovery.ts',
+      'lib/outputs/light-target-adapter.ts',
+      'lib/pairing/target-picker.ts',
+      // The Homey SDK's own untyped device surface.
+      'lib/devices/lightkeeper-device.ts',
+      'lib/devices/device-lifecycle.ts',
+      // A generic FIFO whose resolvers are genuinely of any type.
+      'lib/support/keyed-mutex.ts',
+    ],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'error',
+    },
+  },
+
   {
     // The suite reaches into privates and builds deliberately malformed
     // fixtures; assertions about untrusted input are the subject matter.

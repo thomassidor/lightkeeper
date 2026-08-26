@@ -1,4 +1,5 @@
 import type { ControllerBehavior, MappingRule } from '../mapping/mapping-types';
+import { canonical } from '../support/same';
 import type { SelectableInput } from '../inputs/selectable-input';
 import type { TargetSpec } from '../outputs/light-intent';
 
@@ -168,5 +169,5 @@ export function sameDetail(a: StateDetail | undefined, b: StateDetail | undefine
   if (!a || !b) return false;
   if (a.key !== b.key) return false;
   if (a.text !== b.text) return false;
-  return JSON.stringify(a.tokens ?? null) === JSON.stringify(b.tokens ?? null);
+  return canonical(a.tokens ?? null) === canonical(b.tokens ?? null);
 }

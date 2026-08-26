@@ -5,7 +5,7 @@ import {
   activeWindowStartDay, boundaryDayMatches, crossesMidnight, dayMatches,
   isActive, offMinuteOf, windowLengthMinutes,
 } from '../../lib/schedules/schedule-window';
-import { describeClock, fromJsDay, localNow, previousWeekday } from '../../lib/schedules/local-time';
+import { describeClock, fromJsDay, localNow, previousWeekday } from '../../lib/time/local-clock';
 import {
   formatMinutes, parseMinutes, sanitiseEntries, MAX_ENTRIES,
   type ScheduleEntry,

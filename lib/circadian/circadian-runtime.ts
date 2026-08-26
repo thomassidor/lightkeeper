@@ -14,10 +14,11 @@ import {
   diffTargets, releaseTarget, resolveSnapshot, type TargetSnapshot,
 } from '../outputs/target-snapshot';
 import { fireAndForget } from '../support/async';
+import { withDefaults, type Timers } from '../support/timers';
 // The Homey's own wall clock is not schedule-specific — it lives under
 // lib/schedules/ because that is where it was needed first. Importing it beats
 // a second copy of the Intl handling and its fallback.
-import { describeClock, localNow } from '../schedules/local-time';
+import { describeClock, localNow } from '../time/local-clock';
 import { nextPointAfter, resolvePoints, valueAt, type CurveValue } from './circadian-curve';
 import { formatMinutes, type CircadianPlan } from './circadian-types';
 
@@ -105,6 +106,51 @@ const SETTLE_MS = 3000;
 /** Mirrors the adapter's own post-write check, in the opposite direction. */
 const PRE_STAGE_CHECK_MS = 1500;
 
+/**
+ * What `diagnostics()` returns. See ControllerDiagnostics for why it is typed.
+ *
+ * No `credential` field, and its absence is the feature: this device type
+ * generates no Flows, so no API key is involved in anything it does (CLAUDE.md
+ * §12).
+ */
+export interface CircadianDiagnostics {
+  controllerId: string;
+  kind: 'circadian';
+  /** See ControllerDiagnostics.stateRevision. */
+  stateRevision: number;
+  name: string;
+  state: ControllerState;
+  enabled: boolean;
+  /** "It went the wrong colour at the wrong time" is usually a timezone answer. */
+  timezone: string;
+  localTime: string;
+  points: Array<{ id: string; at: string; warmth: number; brightness?: number }>;
+  /** Where the curve is now, and where it goes next. */
+  now: CurveValue | null;
+  nextPoint: { id: string; at: string; inMinutes: number } | null;
+  adjustBrightness: boolean;
+  preStage: boolean;
+  preStageDisabled: { at: number; deviceId: string } | null;
+  targetIds: string[];
+  targetNames: string[];
+  targets: Array<{
+    id: string;
+    on: boolean | null;
+    canWarm: boolean;
+    /**
+     * A light somebody has taken over by hand. Reported because one that stopped
+     * following the curve on purpose looks exactly like one that stopped by
+     * accident.
+     */
+    overridden: boolean;
+    lastWritten: unknown;
+  }>;
+  lastAction: CircadianAction | null;
+  recentFailures: readonly unknown[];
+  recentWrites: readonly WriteRecord[];
+  schedulerReady: boolean;
+}
+
 export class CircadianRuntime {
   private readonly cache = new TargetStateCache();
   private readonly adapter: LightTargetAdapter;
@@ -154,6 +200,10 @@ export class CircadianRuntime {
     private plan: CircadianPlan,
     private readonly deps: CircadianRuntimeDeps,
   ) {
+    // In the constructor BODY, not a field initialiser: a field initialiser runs
+    // before the parameter property `deps` is assigned, so `withDefaults(this.deps)`
+    // there silently resolves to real timers and every injected clock is ignored.
+    this.timers = withDefaults(deps);
     this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log);
     if (deps.onWriteResult) this.adapter.setWriteSink(deps.onWriteResult);
     this.resolver = new TargetResolver(deps.catalog);
@@ -164,17 +214,28 @@ export class CircadianRuntime {
   get currentDetail(): StateDetail | undefined { return this.lastDetail; }
   get currentPlan(): CircadianPlan { return this.plan; }
 
+  /**
+   * One resolved set of timers, filled in by `withDefaults`.
+   *
+   * The public options stay piecemeal — `setTimeout`, `clearTimeout`, `now` as
+   * separate fields — because every test stubs one or two of them and
+   * `test/support/fake-timers.ts` is deliberately compatible with that shape.
+   * What is shared is the FALLBACK: four classes each had their own
+   * `deps.setTimeout ? ... : setTimeout(...)` line, and they had already drifted
+   * on how they cast the handle.
+   */
+  private timers!: Timers;
+
   private now(): number {
-    return this.deps.now ? this.deps.now() : Date.now();
+    return this.timers.now();
   }
 
   private setTimer(fn: () => void, ms: number): unknown {
-    return this.deps.setTimeout ? this.deps.setTimeout(fn, ms) : setTimeout(fn, ms);
+    return this.timers.setTimeout(fn, ms);
   }
 
   private clearTimer(handle: unknown): void {
-    if (this.deps.clearTimeout) this.deps.clearTimeout(handle);
-    else clearTimeout(handle as ReturnType<typeof setTimeout>);
+    this.timers.clearTimeout(handle);
   }
 
   async start(): Promise<void> {
@@ -743,7 +804,7 @@ export class CircadianRuntime {
   private stateRevision = 0;
 
   /** Never exposes secrets or unrelated Homey configuration. */
-  diagnostics(): Record<string, unknown> {
+  diagnostics(): CircadianDiagnostics {
     const timezone = this.deps.timezone();
     const clock = localNow(timezone, this.now());
     const value = this.plan.points.length > 0 ? this.currentValue() : null;

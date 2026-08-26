@@ -1,5 +1,6 @@
 import { KeyedMutex } from '../support/keyed-mutex';
 import { fireAndForget } from '../support/async';
+import { validManagedFlowRefs } from '../validation/plans';
 import type { ControllerState, StateDetail, ManagedFlowReference } from '../profiles/controller-profile';
 
 /**
@@ -118,10 +119,16 @@ export interface DeviceOwner<TPlan, TRuntime extends DeviceRuntime> {
   /** A copy of the plan with the pause switch moved. */
   withEnabled(plan: TPlan, enabled: boolean): TPlan;
   /**
-   * References to Flows this plan owns, for the delete path that runs when the
-   * runtime never started. Circadian returns none: it creates no Flows.
+   * Whatever the STORE says this device's Flow references are, unvalidated.
+   *
+   * Unvalidated on purpose, and read from the raw store rather than from a
+   * plan: the delete path that uses it runs precisely when no plan could be
+   * loaded, which includes the case where validation rejected one. The
+   * lifecycle filters the result through the shape check before any delete.
+   *
+   * Circadian returns nothing: it creates no Flows (CLAUDE.md §12).
    */
-  flowRefs(plan: TPlan): ManagedFlowReference[];
+  rawFlowRefs(): unknown;
   /**
    * Turn what the pairing session saved into what should actually be registered,
    * and do anything that has to happen BEFORE the register.
@@ -159,7 +166,7 @@ export class DeviceLifecycle<TPlan, TRuntime extends DeviceRuntime> {
   async init(): Promise<void> {
     const plan = await this.loadPlan();
     if (!plan) {
-      await this.owner.setUnavailable(this.owner.translate(this.owner.missingKey));
+      await this.owner.setUnavailable(this.owner.translate(this.quarantineKey));
       return;
     }
 
@@ -189,7 +196,10 @@ export class DeviceLifecycle<TPlan, TRuntime extends DeviceRuntime> {
    */
   async loadPlan(): Promise<TPlan | null> {
     const raw = this.owner.getStoreValue(this.owner.storeKey);
-    if (!raw) return null;
+    if (!raw) {
+      this.quarantineOverride = null;
+      return null;
+    }
 
     try {
       const { plan, migrated, fromVersion } = this.owner.migrate(raw);
@@ -197,11 +207,44 @@ export class DeviceLifecycle<TPlan, TRuntime extends DeviceRuntime> {
         this.owner.log(`Migrated ${this.owner.storeKey} from schema ${fromVersion}`);
         await this.owner.setStoreValue(this.owner.storeKey, plan);
       }
+      this.quarantineOverride = null;
       return plan;
     } catch (error) {
-      this.owner.error(`Could not migrate ${this.owner.storeKey}:`, (error as Error)?.message);
+      /**
+       * Quarantine, not repair-in-place.
+       *
+       * A plan we cannot migrate OR cannot validate must not silently become
+       * defaults — that would replace the user's configuration with one they
+       * never chose, and the difference is invisible from every screen. The
+       * device goes unavailable and the STORE IS LEFT ALONE, so a fix in a later
+       * version can still read whatever is there.
+       *
+       * The two failures get different text because they need different actions:
+       * a version this build cannot understand means "update Lightkeeper", while
+       * a plan whose shape is wrong means "set this device up again".
+       */
+      const validation = (error as Error)?.name === 'ValidationError';
+      this.quarantineOverride = validation ? 'state.invalidConfiguration' : null;
+      this.owner.error(
+        `Could not load ${this.owner.storeKey}:`, (error as Error)?.message,
+      );
       return null;
     }
+  }
+
+  /**
+   * Which locale key describes why there is no usable plan.
+   *
+   * Set by `loadPlan`, read by `init` and by the rollback that finds nothing to
+   * restore. A field rather than a return value because both readers are
+   * elsewhere and the alternative is threading it through four signatures — and
+   * null-until-set rather than pre-filled, because a first save that fails never
+   * calls `loadPlan` at all and must still say "not configured".
+   */
+  private quarantineOverride: string | null = null;
+
+  private get quarantineKey(): string {
+    return this.quarantineOverride ?? this.owner.missingKey;
   }
 
   private async registerPlan(plan: TPlan): Promise<TRuntime> {
@@ -265,7 +308,7 @@ export class DeviceLifecycle<TPlan, TRuntime extends DeviceRuntime> {
       }
       // Nothing was configured before, so there is nothing to put back.
       await this.owner.registry().unregister(this.deviceId);
-      await this.owner.setUnavailable(this.owner.translate(this.owner.missingKey));
+      await this.owner.setUnavailable(this.owner.translate(this.quarantineKey));
     } catch (error) {
       // Both the new plan and the old one failed to start. Say so with the
       // ORIGINAL failure: that is the one the user's change caused.
@@ -327,9 +370,17 @@ export class DeviceLifecycle<TPlan, TRuntime extends DeviceRuntime> {
       await runtime.destroy();
       await registry.unregister(this.deviceId);
     } else {
-      // The runtime never started, but its Flows may still exist.
-      const plan = this.storedPlan();
-      const refs = plan ? this.owner.flowRefs(plan) : [];
+      /**
+       * The runtime never started, but its Flows may still exist.
+       *
+       * The references come from the raw store, NOT from a validated plan —
+       * because a plan that failed validation is exactly the case where the
+       * runtime never started, and its Flows still need removing. So they are
+       * filtered through the shape check rather than trusted: a reference that
+       * fails it names a flow id nothing in this app wrote, and handing that to
+       * a delete is deleting a user's Flow on the strength of corrupted data.
+       */
+      const refs = validManagedFlowRefs(this.owner.rawFlowRefs());
       if (refs.length > 0) await this.owner.removeFlows(refs);
     }
     this.owner.log('Deleted and its Flows cleaned up');

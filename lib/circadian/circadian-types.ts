@@ -1,3 +1,5 @@
+import { MINUTES_PER_DAY, formatMinutes, parseMinutes } from '../time/wall-clock';
+import { sanitiseUnitInterval } from '../validation/unit-interval';
 import type { TargetSpec } from '../outputs/light-intent';
 
 /**
@@ -19,7 +21,9 @@ import type { TargetSpec } from '../outputs/light-intent';
  * Europe/Copenhagen", and that keeps DST out of the arithmetic entirely.
  */
 
-export const MINUTES_PER_DAY = 1440;
+// Re-exported because the curve module and the pairing screen both import
+// these from here. See lib/time/wall-clock for the minute-count contract.
+export { MINUTES_PER_DAY, formatMinutes, parseMinutes };
 
 /** Two points are the fewest that describe a cycle; eight is more than a day needs. */
 export const MIN_POINTS = 2;
@@ -95,29 +99,6 @@ export const DEFAULT_POINTS: readonly CircadianPoint[] = [
   { id: 'p4', anchor: { kind: 'clock', at: 20 * 60 }, warmth: 0.80 },
   { id: 'p5', anchor: { kind: 'clock', at: 23 * 60 }, warmth: 1.00 },
 ] as const;
-
-/** 'HH:MM', for the pairing screen, labels and diagnostics alike. */
-export function formatMinutes(minutes: number): string {
-  const wrapped = ((Math.round(minutes) % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
-  const hours = Math.floor(wrapped / 60);
-  const mins = wrapped % 60;
-  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
-}
-
-/** 'HH:MM' → minutes since midnight, or null if it is not a time. */
-export function parseMinutes(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    const rounded = Math.round(value);
-    return rounded >= 0 && rounded < MINUTES_PER_DAY ? rounded : null;
-  }
-  if (typeof value !== 'string') return null;
-  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
-  if (!match) return null;
-  const hours = Number(match[1]);
-  const mins = Number(match[2]);
-  if (hours > 23 || mins > 59) return null;
-  return hours * 60 + mins;
-}
 
 export interface SanitisedCurve {
   points: CircadianPoint[];
@@ -223,9 +204,12 @@ function sanitiseAnchor(raw: unknown): CircadianAnchor | string {
   return at === null ? 'the time is not a time of day' : { kind: 'clock', at };
 }
 
-function sanitiseUnit(raw: unknown): number | null {
-  if (raw === null || raw === undefined || raw === '') return null;
-  const value = Number(raw);
-  if (!Number.isFinite(value)) return null;
-  return Math.min(1, Math.max(0, value));
-}
+/**
+ * See lib/validation/unit-interval.ts.
+ *
+ * This file's policy differs from the schedule's on one point, and both are
+ * right: a warmth or brightness of 0 is meaningful here — 0 is the coolest end
+ * of the temperature axis (CLAUDE.md §6) — whereas a schedule reads a brightness
+ * of 0 as unset rather than "on, at nothing".
+ */
+const sanitiseUnit = sanitiseUnitInterval;

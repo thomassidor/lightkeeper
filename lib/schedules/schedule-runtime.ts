@@ -1,5 +1,6 @@
 import type { HomeyApiService } from '../homey-api-service';
-import { credentialFailureKey, redactKeyMaterial } from '../credential-service';
+import { classifyReconcileError } from '../runtime/reconcile-failure';
+import type { CredentialStatus } from '../credential-service';
 import type { DeviceCatalog } from '../device-catalog';
 import type { FlowBridgeManager } from '../bridge/flow-bridge-manager';
 import { CommandScheduler } from '../outputs/command-scheduler';
@@ -15,13 +16,14 @@ import { assessTargets } from '../runtime/target-health';
 import {
   diffTargets, releaseTarget, resolveSnapshot, type TargetSnapshot,
 } from '../outputs/target-snapshot';
-import { describeClock, localNowResolved, type LocalClock } from './local-time';
+import { describeClock, localNowResolved, type LocalClock } from '../time/local-clock';
 import { bindingsForPlan, eventKeyFor, parseEventKey } from './schedule-bindings';
 import {
   activeEntries, activeWindowStartDay, boundaryDayMatches, offMinuteOf,
 } from './schedule-window';
 import type { TimeCardDiscovery } from './time-card-discovery';
 import { fireAndForget } from '../support/async';
+import { sameManagedFlows } from '../support/same';
 import { BoundedLog } from '../support/bounded-log';
 import {
   formatMinutes,
@@ -84,6 +86,57 @@ export interface ScheduleAction {
   writes: number;
   skipped: number;
   note?: string;
+}
+
+/**
+ * What `diagnostics()` returns. See ControllerDiagnostics for why it is typed.
+ *
+ * Carries no key material — the export is meant to be attached to a bug report —
+ * and deliberately DOES carry device and zone names: a schedule quietly pointed
+ * at the wrong room looks identical to a broken one.
+ */
+export interface ScheduleDiagnostics {
+  controllerId: string;
+  kind: 'schedule';
+  name: string;
+  state: ControllerState;
+  enabled: boolean;
+  /** The Homey's own clock, echoed back. "It fired an hour late" is usually this. */
+  timezone: string;
+  /**
+   * Whether that zone was actually USED. A named zone the ICU build cannot
+   * resolve falls back silently, and this device type refuses to fire on a clock
+   * it does not trust — so the flag is the first thing to read.
+   */
+  timezoneResolved: boolean;
+  localTime: string;
+  entries: Array<{
+    id: string;
+    on: string;
+    off: string;
+    days: readonly number[] | 'every day';
+    brightness?: number;
+    temperature?: number;
+    active: boolean;
+  }>;
+  targetIds: string[];
+  targetNames: string[];
+  managedFlows: SchedulePlan['managedFlows'];
+  lastAction: ScheduleAction | null;
+  lastRejection: { at: number; eventKey: string; reason: string } | null;
+  /**
+   * Catch-ups this runtime declined, and why. Catch-up is the one path that
+   * switches lights on without a Flow having fired, so its refusals are what a
+   * "why did nothing happen at 22:01" report needs.
+   */
+  catchUpRefusals: readonly { at: number; entryId: string; reason: string }[];
+  unsupported: Array<{ bindingKey: string; reason: string }>;
+  /** See ControllerDiagnostics.stateRevision. */
+  stateRevision: number;
+  recentFailures: readonly unknown[];
+  recentWrites: readonly WriteRecord[];
+  schedulerReady: boolean;
+  credential: CredentialStatus;
 }
 
 export class ScheduleRuntime {
@@ -223,7 +276,7 @@ export class ScheduleRuntime {
         existing: this.plan.managedFlows,
       });
 
-      const before = JSON.stringify(this.plan.managedFlows);
+      const changed = !sameManagedFlows(this.plan.managedFlows, result.references);
       this.plan = { ...this.plan, managedFlows: result.references };
       // Persisting unconditionally emits device.update, which invalidates the
       // catalog, which lands back in onCatalogChange — the loop the controller
@@ -234,7 +287,7 @@ export class ScheduleRuntime {
       // that makes it fire at all. `flowsHealthy` false is what stops
       // assessHealth() reporting 'ready' over the top of it.
       let persistFailed = false;
-      if (JSON.stringify(result.references) !== before) {
+      if (changed) {
         try {
           await this.deps.onPlanChange(this.plan);
         } catch (error) {
@@ -283,19 +336,10 @@ export class ScheduleRuntime {
       if (persistFailed) this.setState('needs_repair', { key: 'state.persistFailed' });
     } catch (error) {
       this.flowsHealthy = false;
-      const credential = this.deps.api.credentials.getStatus();
-      if (credential.present && !credential.valid) {
-        this.setState('needs_credential', {
-          key: credentialFailureKey(credential.failure),
-          ...(credential.hint ? { text: credential.hint } : {}),
-        });
-      } else {
-        // Redacted: this text reaches the device's unavailable message, and an
-        // upstream error can quote the API key back inside its own message.
-        this.setState('needs_repair', {
-          text: redactKeyMaterial(String((error as Error)?.message ?? '')),
-        });
-      }
+      const { state, detail } = classifyReconcileError(
+        error, this.deps.api.credentials.getStatus(),
+      );
+      this.setState(state, detail);
     }
   }
 
@@ -676,7 +720,7 @@ export class ScheduleRuntime {
   /** The target set this runtime is built against. See the controller's. */
   private snapshot: TargetSnapshot | null = null;
 
-  diagnostics(): Record<string, unknown> {
+  diagnostics(): ScheduleDiagnostics {
     const timezone = this.deps.timezone();
     const { clock, resolved } = this.clock();
     return {

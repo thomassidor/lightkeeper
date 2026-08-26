@@ -8,7 +8,7 @@ import {
 } from '../../lib/schedules/schedule-types';
 import { activeEntries, entriesOverlap } from '../../lib/schedules/schedule-window';
 import { eventKeyFor, parseEventKey } from '../../lib/schedules/schedule-bindings';
-import { localNowResolved } from '../../lib/schedules/local-time';
+import { localNowResolved } from '../../lib/time/local-clock';
 import type { DeviceCatalog } from '../../lib/device-catalog';
 import type { FlowBridgeManager } from '../../lib/bridge/flow-bridge-manager';
 import type { HomeyApiService } from '../../lib/homey-api-service';

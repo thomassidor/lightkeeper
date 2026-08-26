@@ -88,7 +88,16 @@ export interface SyncResult {
 export interface ManagedFlowSummary {
   flowId: string;
   name: string;
-  controllerId: string;
+  /**
+   * Which Lightkeeper device owns this flow — a controller OR a schedule.
+   *
+   * Named `ownerDeviceId` INTERNALLY only. The flow argument it is read from is
+   * still `args.controller`, and that name is persisted in every generated Flow
+   * on every installed Homey: renaming the argument would make every existing
+   * flow unattributable, so the wire name stays and the boundary that reads it
+   * says so (see `ownerDeviceIdOf`).
+   */
+  ownerDeviceId: string;
   /** Carried so a sweep can remove the device folder it empties. */
   folder: string | null;
   /**
@@ -155,6 +164,11 @@ export interface OrphanPreview {
   orphans: number;
   /** Attributed to a dead device but NOT matching our template. Never deleted. */
   unmanaged: number;
+  /**
+   * How many Lightkeeper devices that can own a Flow are live — controllers AND
+   * schedules. The KEY keeps its old name because the settings page consumes it;
+   * see `liveDeviceIds` in api.ts for why the union is load-bearing.
+   */
   liveControllers: number;
   /** The exact candidates. Handed back to sweepOrphans as the approval. */
   flowIds: string[];
@@ -504,12 +518,12 @@ export class FlowBridgeManager {
 
     const found: ManagedFlowSummary[] = [];
     for (const flow of flows) {
-      const controllerId = controllerIdOf(flow, ids);
-      if (controllerId === null) continue;
+      const ownerDeviceId = ownerDeviceIdOf(flow, ids);
+      if (ownerDeviceId === null) continue;
       found.push({
         flowId: String(flow.id),
         name: flow.name ?? '',
-        controllerId,
+        ownerDeviceId,
         folder: flow.folder ?? null,
         generated: looksGenerated(flow, ids),
       });
@@ -605,7 +619,7 @@ export class FlowBridgeManager {
     const emptied = new Set<string>();
 
     for (const flow of managed) {
-      if (flow.controllerId && liveDeviceIds.has(flow.controllerId)) {
+      if (flow.ownerDeviceId && liveDeviceIds.has(flow.ownerDeviceId)) {
         kept += 1;
         continue;
       }
@@ -717,7 +731,7 @@ function orphansAmong(
   liveDeviceIds: Set<string>,
 ): ManagedFlowSummary[] {
   return managed.filter(flow =>
-    flow.generated && (!flow.controllerId || !liveDeviceIds.has(flow.controllerId)));
+    flow.generated && (!flow.ownerDeviceId || !liveDeviceIds.has(flow.ownerDeviceId)));
 }
 
 /**
@@ -757,7 +771,7 @@ function ourCardIds(cards: BridgeCardRefs): Set<string> {
  * that makes a flow provably ours. Not its name, and emphatically not its
  * folder: the user may move a generated flow anywhere.
  */
-function controllerIdOf(flow: any, cardIds: Set<string>): string | null {
+function ownerDeviceIdOf(flow: any, cardIds: Set<string>): string | null {
   for (const action of (flow?.actions ?? []) as any[]) {
     if (!cardIds.has(String(action?.id ?? ''))) continue;
     return String(action?.args?.controller ?? '');
@@ -770,7 +784,7 @@ function flowFolderInfos(flows: any[], cardIds: Set<string>): FlowFolderInfo[] {
   return flows.map(flow => ({
     id: String(flow?.id ?? ''),
     folder: flow?.folder ?? null,
-    controllerId: controllerIdOf(flow, cardIds) ?? '',
+    ownerDeviceId: ownerDeviceIdOf(flow, cardIds) ?? '',
   }));
 }
 

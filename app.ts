@@ -1,5 +1,6 @@
 'use strict';
 
+import type { LightkeeperApp } from './lib/app-contract';
 import Homey from 'homey';
 
 import { CredentialService } from './lib/credential-service';
@@ -24,7 +25,7 @@ import type { WriteRecord } from './lib/outputs/light-target-adapter';
  * bridge action listeners and runtime manager startup. Mapping logic and
  * source-specific parsing live in lib/.
  */
-module.exports = class LightkeeperApp extends Homey.App {
+const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
 
   credentials!: CredentialService;
   api!: HomeyApiService;
@@ -312,3 +313,21 @@ module.exports = class LightkeeperApp extends Homey.App {
   }
 
 };
+
+/**
+ * The class, and the proof it still satisfies what `api.ts` and the device layer
+ * are typed against.
+ *
+ * `module.exports = <class>` is required — a Homey entry point using
+ * `export default` is not loaded at all (I10) — so there is no exported class
+ * type for a consumer to import. `LightkeeperApp` in `lib/app-contract.ts` is
+ * that type written down by hand, and the assignment below is what keeps the two
+ * honest: removing or renaming a member the contract promises fails HERE, at
+ * compile time, rather than as `undefined` inside a settings-page handler.
+ *
+ * The class expression keeps its own name so the Homey's logs and stack traces
+ * still say `LightkeeperApp`.
+ */
+const contractCheck: new (...args: any[]) => LightkeeperApp = LightkeeperAppImpl;
+
+module.exports = contractCheck;

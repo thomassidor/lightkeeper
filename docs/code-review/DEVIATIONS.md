@@ -476,3 +476,145 @@ to what mattered for normalisation, and v2 now hashes things nobody was looking 
 when it was made — argument filters, numeric bounds, token titles. The corpus is
 good enough to test the normalizer and not good enough to settle a question about
 the platform. Replacement recipe: `test/fixtures/cards/README.md`.
+
+---
+
+## Phase 6
+
+### 6.1 — `RuntimeRegistry` is composed, and it found a drift
+
+The extraction is as planned. It also surfaced one: the circadian manager started
+its ticker BETWEEN the insert and the start, so a register that then threw left a
+60-second timer running over an empty map. The ticker now starts after the
+register resolves, and `unregister` stops it when the map empties.
+
+`destroyAll` moved to `Promise.allSettled` — new behaviour, deliberately. A
+sequential loop meant one runtime whose `stop()` rejected abandoned every runtime
+behind it in the map, leaving their subscriptions and timers alive for the rest of
+the process's life. On shutdown that is the whole point of the call.
+
+### 6.2 — the validators changed behaviour, as S4 predicted, and four fixtures were partial plans
+
+Every migration chain now ends in a validator rather than a cast. Four test
+fixtures had been passing partial objects — `{ schemaVersion: 1, points: [] }`,
+`{ schemaVersion: CURRENT, mappings: [] }` — which the cast accepted and the
+runtime then failed on at its first target resolve, with nothing anywhere saying
+which field was wrong. Those fixtures are now complete, and each has a sibling
+test asserting the partial form IS rejected, naming the field.
+
+Three deliberate departures from the plan's wording:
+
+- **Error paths are rooted at TYPE names** (`SchedulePlan.entries[0].onAt`), not
+  at `schedule.` / `circadian.`. `locales.test.ts` scans the source for string
+  literals shaped like `<localeGroup>.<key>`, and both of those ARE locale groups —
+  so a path rooted at either read as a locale key that does not exist. The type
+  name also reads better in the log line the message actually lands in.
+- **`validManagedFlowRefs()` filters and never throws**, alongside the throwing
+  `validateManagedFlows`. The delete path that uses it runs precisely when no plan
+  could be loaded — including when validation rejected one — so throwing there
+  would skip the cleanup and leak every OTHER reference's Flow. Filtering degrades
+  to "delete fewer things", which is the right direction.
+- **`rawFlowRefs()` reads the STORE, not a validated plan.** Same reason: the
+  never-registered delete path is the quarantine case. The lifecycle shape-checks
+  the result before any delete, and `device-transactions.test.ts` asserts a forged
+  reference never reaches it.
+
+The runner adds a `MAX_STEPS` guard the plan did not ask for. The non-advancing
+check catches a step that fails to move the version; it does not catch a TABLE
+that advances in a cycle (1 → 2 → 1), which would spin forever inside a device's
+`onInit` and take the app down.
+
+`state.invalidConfiguration` is the new quarantine message: a version this build
+cannot understand means "update Lightkeeper", while a plan whose shape is wrong
+means "set this device up again", and they needed different text.
+
+### 6.2 — pairing DTOs are checked against the CATALOGUE, not just for shape
+
+`selectTargets` in all three drivers now runs
+`validateTargetAgainstCatalog`: every device exists, is a light candidate
+(`onoff`, matching `lightCandidates()`), and appears once. `setRules` on the
+controller checks `groupKey` against the lights already chosen and `function`
+against what those lights actually support. Both reject a payload that would save
+as a row which can never move anything — the failure this app exists to prevent.
+
+### 6.3 — `localNow` keeps its name and moves house
+
+`lib/schedules/local-time.ts` → `lib/time/local-clock.ts` (a `git mv`, so the
+history follows). `MINUTES_PER_DAY`, `formatMinutes` and `parseMinutes` moved to
+`lib/time/wall-clock.ts` and are RE-EXPORTED from both feature modules rather than
+having every import rewritten: they are part of each feature's stated contract
+("everything about time here is a wall-clock minute count"), and the re-export is
+where that sentence lives. `support-primitives.test.ts` asserts import identity,
+so the re-export cannot quietly become a second copy.
+
+`sanitiseUnit` → `lib/validation/unit-interval.ts`, with the "0 means unset"
+policy left in the feature that owns it — the two features disagree about zero and
+both are right.
+
+### 6.4 — one intent translator, and the equivalence is now asserted
+
+`intentForLightFunction` in `mapping-engine.ts` is the only copy;
+`intentForFunction` in the controller runtime is a one-line delegate kept because
+the Test path imports it by that name. `mapping-and-state.test.ts` asserts both
+paths produce identical intents for every `LightFunction` — the Test control's
+entire purpose is to prove a row does what the user expects, so a Test that
+translates differently from the live path is worse than no Test.
+
+The timer migration is PARTIAL by design: the public options stay piecemeal
+(`setTimeout`, `clearTimeout`, `now` as separate fields) because every test stubs
+them individually and `test/support/fake-timers.ts` was built compatible with that
+shape on purpose. What is shared is the FALLBACK, which four classes each had
+their own drifting copy of.
+
+That change caught a real bug in the making: `private readonly timers =
+withDefaults(this.deps)` as a field initialiser runs BEFORE the parameter property
+`deps` is assigned, so every injected clock would have been silently ignored. It
+is assigned in the constructor body now, with the comment saying why.
+
+### 6.5 — `app.ts` keeps `module.exports`, and now proves the contract
+
+`LightkeeperApp` in `lib/app-contract.ts` is the app's public surface written by
+hand, because a Homey entry point using `export default` is not loaded at all
+(I10) and there is therefore no class type to import. `app.ts` assigns its class
+to a `new (...args) => LightkeeperApp` before exporting it, so removing or
+renaming a member the contract promises fails at compile time rather than as
+`undefined` inside a settings-page handler. The class expression keeps its own
+name so logs and stack traces still say `LightkeeperApp`.
+
+The three `diagnostics()` methods return typed shapes. `CircadianDiagnostics`
+deliberately has NO `credential` field, and its test now asserts the key is absent
+from the type rather than merely undefined at runtime.
+
+`no-explicit-any` is an error for `lib/**` with eleven seam files listed and each
+one's reason given. The rest of the unsafe-* family stays off: those fire on every
+USE of a value that crossed a seam, which is most of the app, whereas this one
+fires where the word is written — which is where the decision is being made.
+
+### 6.6 — D9's rename is internal only, and the wire names are commented
+
+`ManagedFlowSummary.controllerId` → `ownerDeviceId`, and the same in
+`FlowFolderInfo` and `controllerIdOf` → `ownerDeviceIdOf`. The flow ARGUMENT stays
+`args.controller` and `OrphanPreview.liveControllers` keeps its key: the argument
+is persisted in every generated Flow on every installed Homey, and the response
+key is consumed by the settings page. Both boundaries carry a comment saying the
+name is historical.
+
+D9's orthogonal health model is NOT done and is not planned: `ControllerState`
+conflates "is it configured", "can it reach its lights" and "can it maintain its
+Flows" into one enum, and splitting it touches every device, runtime, view and
+locale key. Deferred as future work, recorded here rather than left implied.
+
+`JSON.stringify` equality is retired into `lib/support/same.ts`. It was never an
+equality test — key ORDER decides the answer, and every one of these comparisons
+gates a persist, where a false "changed" emits `device.update`, invalidates the
+catalogue and lands back in `onCatalogChange`. `sameManagedFlows` and
+`sameCatalogue` are field-wise and each says which fields it ignores and why;
+`canonical()` is the sorted-key serialiser used where the value genuinely is an
+open-ended union (a binding's `fixedArgs`).
+
+`presentation-maps.test.ts` is D11's requirement: it DISCOVERS every copy of the
+credential-failure map from disk — settings page plus every driver's pair and
+repair credential view — and asserts each is exhaustive over `CredentialFailure`,
+that none handles anything the app cannot report, and that the copies agree with
+each other. Full generation (LK-064 territory) is not done; the exhaustiveness
+test was the requirement.

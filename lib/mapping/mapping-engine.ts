@@ -20,6 +20,44 @@ export interface MappingEngineInput {
   event: InputEvent;
 }
 
+/**
+ * A light function plus a magnitude becomes a light intent. THE one translator.
+ *
+ * There were two, and they had to agree: this one, reached when a real gesture
+ * arrives, and `intentForFunction` in the controller runtime, reached by the Test
+ * control on the mapping screen. The Test control exists precisely so a user can
+ * confirm before saving that a row does what they expect, so a Test that
+ * translates differently from the live path is worse than no Test at all.
+ *
+ * The direction of `warmer` is the one line in this app most worth reading twice:
+ * warmer means a HIGHER value on Homey's normalised axis — 0 is the coolest end,
+ * 1 the warmest. homey-lib's own capability hint says so ("A higher value means a
+ * warmer color"), and getting it backwards is what made a schedule set to
+ * "Warmest" write 0 and light a room cold white on its first live run
+ * (CLAUDE.md §6).
+ */
+export function intentForLightFunction(
+  func: LightFunction,
+  behavior: ControllerBehavior,
+  magnitude: number = 1,
+): LightIntent {
+  const scale = Number.isFinite(magnitude) && Math.abs(magnitude) > 0 ? Math.abs(magnitude) : 1;
+  const brightness = behavior.brightnessStep * scale;
+  const temperature = behavior.temperatureStep * scale;
+
+  switch (func) {
+    case 'toggle': return { type: 'toggle' };
+    case 'on': return { type: 'power', value: true };
+    case 'off': return { type: 'power', value: false };
+    case 'brightness_up': return { type: 'brightness_delta', delta: brightness };
+    case 'brightness_down': return { type: 'brightness_delta', delta: -brightness };
+    case 'warmer': return { type: 'temperature_delta', delta: temperature };
+    case 'colder': return { type: 'temperature_delta', delta: -temperature };
+  }
+  // No default arm: the switch covers every LightFunction, and an added member
+  // must fail to compile here rather than silently resolve to undefined.
+}
+
 export class MappingEngine {
   constructor(
     private rules: MappingRule[],
@@ -39,44 +77,13 @@ export class MappingEngine {
     return { intent: this.intentFor(rule, event), rule, target: rule.target };
   }
 
-  private intentFor(rule: MappingRule, event: InputEvent): LightIntent {
-    switch (rule.function) {
-      case 'toggle':
-        return { type: 'toggle' };
-      case 'on':
-        return { type: 'power', value: true };
-      case 'off':
-        return { type: 'power', value: false };
-      case 'brightness_up':
-        return { type: 'brightness_delta', delta: this.stepFor(event, 'brightness') };
-      case 'brightness_down':
-        return { type: 'brightness_delta', delta: -this.stepFor(event, 'brightness') };
-      case 'warmer':
-        // Warmer means a HIGHER value on Homey's normalised axis: 0 is the
-        // coolest end, 1 the warmest. homey-lib's own capability hint says so —
-        // "A higher value means a warmer color". Getting it backwards is what
-        // made a schedule set to "Warmest" write 0 and light a room cold white
-        // on its first live run.
-        return { type: 'temperature_delta', delta: this.stepFor(event, 'temperature') };
-      case 'colder':
-        return { type: 'temperature_delta', delta: -this.stepFor(event, 'temperature') };
-    }
-    // No default arm: the switch covers every LightFunction, and an added
-    // member must fail to compile here rather than silently resolve to null.
-  }
-
   /**
-   * The step for one activation, scaled by magnitude where the source reports
-   * it. Magnitude is forwarded from the binding, never chosen by the user.
+   * Magnitude is forwarded from the binding, never chosen by the user, and a
+   * magnitude of zero would silently do nothing — so it becomes one notch.
    */
-  private stepFor(event: InputEvent, kind: 'brightness' | 'temperature'): number {
-    const base = kind === 'brightness'
-      ? this.behavior.brightnessStep
-      : this.behavior.temperatureStep;
-
-    const magnitude = typeof event.magnitude === 'number' ? Math.abs(event.magnitude) : 1;
-    // A magnitude of zero would silently do nothing; treat it as one notch.
-    return base * (magnitude > 0 ? magnitude : 1);
+  private intentFor(rule: MappingRule, event: InputEvent): LightIntent {
+    const magnitude = typeof event.magnitude === 'number' ? event.magnitude : 1;
+    return intentForLightFunction(rule.function, this.behavior, magnitude);
   }
 }
 

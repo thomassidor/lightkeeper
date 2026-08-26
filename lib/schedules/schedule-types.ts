@@ -2,7 +2,13 @@ import { randomUUID } from 'node:crypto';
 
 import type { TargetSpec } from '../outputs/light-intent';
 import type { ManagedFlowReference } from '../profiles/controller-profile';
+import { MINUTES_PER_DAY, formatMinutes, parseMinutes } from '../time/wall-clock';
+import { sanitiseUnitInterval } from '../validation/unit-interval';
 import { entriesOverlap } from './schedule-window';
+
+// Re-exported because half the app imports these from here, and because the
+// minute-count contract below is the reason they exist. See lib/time/wall-clock.
+export { MINUTES_PER_DAY, formatMinutes, parseMinutes };
 
 /**
  * What a light schedule is, as persisted in its virtual device's store.
@@ -15,8 +21,6 @@ import { entriesOverlap } from './schedule-window';
  * count is exactly that question's shape, and it is immune to every DST bug that
  * absolute-instant arithmetic invites.
  */
-
-export const MINUTES_PER_DAY = 1440;
 
 /**
  * Two flows per schedule, so twelve schedules is twenty-four generated Flows.
@@ -67,29 +71,6 @@ export interface SchedulePlan {
   target: TargetSpec;
   entries: ScheduleEntry[];
   managedFlows: ManagedFlowReference[];
-}
-
-/** 'HH:MM', for flow arguments, labels and the pairing screen alike. */
-export function formatMinutes(minutes: number): string {
-  const wrapped = ((Math.round(minutes) % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
-  const hours = Math.floor(wrapped / 60);
-  const mins = wrapped % 60;
-  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
-}
-
-/** 'HH:MM' → minutes since midnight, or null if it is not a time. */
-export function parseMinutes(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    const rounded = Math.round(value);
-    return rounded >= 0 && rounded < MINUTES_PER_DAY ? rounded : null;
-  }
-  if (typeof value !== 'string') return null;
-  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
-  if (!match) return null;
-  const hours = Number(match[1]);
-  const mins = Number(match[2]);
-  if (hours > 23 || mins > 59) return null;
-  return hours * 60 + mins;
 }
 
 /**
@@ -229,9 +210,5 @@ function sanitiseEnd(raw: unknown, onAt: number): ScheduleEnd | string {
   return 'the off-time is neither a duration nor a time';
 }
 
-function sanitiseUnit(raw: unknown): number | null {
-  if (raw === null || raw === undefined || raw === '') return null;
-  const value = Number(raw);
-  if (!Number.isFinite(value)) return null;
-  return Math.min(1, Math.max(0, value));
-}
+/** See lib/validation/unit-interval.ts. "0 means unset" is this file's policy. */
+const sanitiseUnit = sanitiseUnitInterval;

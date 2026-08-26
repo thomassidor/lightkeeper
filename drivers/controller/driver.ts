@@ -4,6 +4,7 @@ import { DEFAULT_BEHAVIOR, FUNCTION_CAPABILITY, type LightFunction, type Mapping
 import {
   CURRENT_SCHEMA_VERSION, dedupeByInputKey, type ControllerProfile,
 } from '../../lib/profiles/controller-profile';
+import { validateMappingRules, validateTargetAgainstCatalog } from '../../lib/validation/pairing-dto';
 import { availableFunctions } from '../../lib/mapping/mapping-engine';
 import { groupByControl, type SelectableInput } from '../../lib/inputs/selectable-input';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
@@ -11,7 +12,7 @@ import { HealthMonitor } from '../../lib/runtime/health-monitor';
 import { flowWriteProbe } from '../../lib/credential-service';
 import { findUncompilableBindings } from '../../lib/bridge/flow-binding-compiler';
 import {
-  listTargetsPayload, resolveSummary, targetLights,
+  listTargetsPayload, resolveSummary, targetDeviceIds, targetLights,
 } from '../../lib/pairing/target-picker';
 
 /**
@@ -225,10 +226,14 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
     handler('listTargets', async () => listTargetsPayload(this.app.catalog, state.target));
 
-    handler('selectTargets', async (spec: TargetSpec) => {
-      state.target = spec;
-      const resolved = await resolveSummary(this.app.catalog, spec);
-      return resolved;
+    handler('selectTargets', async (spec: unknown) => {
+      // The pairing channel is a webview, so this is the same class of boundary
+      // as a generated Flow's arguments: shape AND membership are checked before
+      // anything is persisted. A well-formed id naming something that is not a
+      // light saves a device that resolves to nothing.
+      const target = await validateTargetAgainstCatalog(spec, this.app.catalog);
+      state.target = target;
+      return resolveSummary(this.app.catalog, target);
     });
 
     // -------------------------------------------------------------- mapping
@@ -291,14 +296,25 @@ module.exports = class ControllerDriver extends Homey.Driver {
      * Each rule may aim at a subset of the controller's lights. null means
      * "inherit" — all of them.
      */
-    handler('setRules', async (rules: Array<{
-      id: string; function: LightFunction; inputKey: string | null; groupKey: string;
-    }>) => {
+    handler('setRules', async (raw: unknown) => {
+      if (!state.target) throw new Error('Choose some lights first.');
+
+      /**
+       * Checked against what is ALREADY chosen, not against the whole Homey.
+       *
+       * A rule aimed at a light this controller does not target, or at a function
+       * the chosen lamps cannot perform, is a row that saves and can never move
+       * anything — which is the exact failure this app exists to prevent.
+       */
+      const summary = await resolveSummary(this.app.catalog, state.target);
+      const selected = new Set(await targetDeviceIds(this.app.catalog, state.target));
+      const rules = validateMappingRules(raw, selected, availableFunctions(summary.support));
+
       // One rule per gesture. The mapping screen already displaces a duplicate
       // visibly; this is the net behind it, because a gesture assigned twice
       // reaches the engine's first-match resolve() and the second assignment
       // silently does nothing.
-      const { rules: unique, displaced } = dedupeByInputKey(rules ?? []);
+      const { rules: unique, displaced } = dedupeByInputKey(rules);
       for (const dropped of displaced) {
         this.log(`Dropped duplicate assignment of "${dropped.inputKey}" to ${dropped.function}`);
       }

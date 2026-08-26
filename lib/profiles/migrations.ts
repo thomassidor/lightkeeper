@@ -1,14 +1,24 @@
 import { CURRENT_SCHEMA_VERSION, type ControllerProfile } from './controller-profile';
 import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
-
+import { runMigrationChain, type MigrationStep } from '../support/migrations';
+import { validateControllerProfile } from '../validation/plans';
 /**
  * Every profile carries schemaVersion and migrates
  * deterministically at startup. Every historical schema
  * fixture migrates without data loss, so each step is a pure function and the
  * chain is exhaustive.
+ *
+ * The RUNNER lives in `lib/support/migrations.ts` — the object check, the
+ * version read, the refuse-newer and the step loop were three byte-identical
+ * copies. The table below stays here, verbatim and immutable: add an entry,
+ * never edit one, because an installed base is already carrying the old shape.
+ *
+ * What the shared runner adds is the validator at the end. A migration chain
+ * ending in a cast is a chain ending in a hope: persisted data is JSON in a
+ * device store, and the code downstream reads it without asking.
  */
 
-export type Migration = (profile: Record<string, unknown>) => Record<string, unknown>;
+export type Migration = MigrationStep;
 
 /**
  * Keyed by the version being migrated FROM. Add a new entry, never edit an
@@ -110,39 +120,18 @@ export interface MigrationResult {
 }
 
 export function migrateProfile(raw: unknown): MigrationResult {
-  if (!raw || typeof raw !== 'object') {
-    throw new Error('Cannot migrate a profile that is not an object');
-  }
-
-  let working = { ...(raw as Record<string, unknown>) };
-  const fromVersion = typeof working.schemaVersion === 'number' ? working.schemaVersion : 0;
-  const steps: number[] = [];
-
-  if (fromVersion > CURRENT_SCHEMA_VERSION) {
-    // Downgrade is not something we can do safely; refusing beats corrupting.
-    throw new Error(
-      `Profile schema version ${fromVersion} is newer than this app understands `
-      + `(${CURRENT_SCHEMA_VERSION}). Update Lightkeeper.`,
-    );
-  }
-
-  let version = fromVersion;
-  while (version < CURRENT_SCHEMA_VERSION) {
-    const migration = MIGRATIONS[version];
-    if (!migration) {
-      throw new Error(`No migration registered from schema version ${version}`);
-    }
-    working = migration(working);
-    steps.push(version);
-    const next = typeof working.schemaVersion === 'number' ? working.schemaVersion : version + 1;
-    if (next <= version) throw new Error(`Migration from ${version} did not advance the version`);
-    version = next;
-  }
-
+  const result = runMigrationChain(raw, {
+    label: 'Profile',
+    current: CURRENT_SCHEMA_VERSION,
+    table: MIGRATIONS,
+    validate: validateControllerProfile,
+  });
+  // `profile` rather than `value`: the name predates the shared runner and half
+  // the app destructures it.
   return {
-    profile: working as unknown as ControllerProfile,
-    migrated: steps.length > 0,
-    fromVersion,
-    steps,
+    profile: result.value,
+    migrated: result.migrated,
+    fromVersion: result.fromVersion,
+    steps: result.steps,
   };
 }

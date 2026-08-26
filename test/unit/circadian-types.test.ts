@@ -139,12 +139,25 @@ describe('circadian migrations', () => {
   });
 
   test('pre-staging is never enabled by a migration', () => {
-    assert.equal(migrateCircadianPlan({ preStage: 'yes' }).plan.preStage, false);
-    assert.equal(migrateCircadianPlan({ preStage: true }).plan.preStage, true);
+    const withPreStage = (preStage: unknown) => migrateCircadianPlan({
+      target: { kind: 'devices', deviceIds: ['l1'] }, preStage,
+    }).plan.preStage;
+
+    assert.equal(withPreStage('yes'), false);
+    assert.equal(withPreStage(true), true);
   });
 
   test('a current plan is left alone', () => {
-    const { migrated } = migrateCircadianPlan({ schemaVersion: 1, points: [] });
+    // A COMPLETE plan. The migration chain now ends in a validator, so a partial
+    // one is refused rather than cast — see the test below.
+    const { migrated } = migrateCircadianPlan({
+      schemaVersion: 1,
+      enabled: true,
+      target: { kind: 'devices', deviceIds: ['l1'] },
+      points: [],
+      adjustBrightness: false,
+      preStage: false,
+    });
     assert.equal(migrated, false);
   });
 
@@ -154,5 +167,18 @@ describe('circadian migrations', () => {
 
   test('something that is not a plan at all is refused', () => {
     assert.throws(() => migrateCircadianPlan(null), /not an object/);
+  });
+
+  test('a plan that survived migration but is not a plan is refused too', () => {
+    // The chain used to end in a cast, so a plan missing its target reached the
+    // runtime and failed at the first resolve — with nothing saying why.
+    assert.throws(
+      () => migrateCircadianPlan({ schemaVersion: 1, enabled: true, points: [], adjustBrightness: false }),
+      /CircadianPlan\.target is not an object/,
+    );
+    assert.throws(
+      () => migrateCircadianPlan({ schemaVersion: '1' }),
+      /schema version is malformed/,
+    );
   });
 });

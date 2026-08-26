@@ -256,3 +256,43 @@ describe('failNth', () => {
     assert.equal(wrapped.calls, 3);
   });
 });
+
+describe('one wall clock, shared', () => {
+  test('both features format and parse through the same functions', async () => {
+    // An import-identity assertion, not a behaviour one. Two copies of a parser
+    // are two chances for the schedule screen and the curve screen to disagree
+    // about what "7:30" means — which is precisely the kind of thing nobody
+    // would think to test, so this is the test.
+    const wall = await import('../../lib/time/wall-clock');
+    const schedule = await import('../../lib/schedules/schedule-types');
+    const circadian = await import('../../lib/circadian/circadian-types');
+
+    assert.equal(schedule.formatMinutes, wall.formatMinutes);
+    assert.equal(circadian.formatMinutes, wall.formatMinutes);
+    assert.equal(schedule.parseMinutes, wall.parseMinutes);
+    assert.equal(circadian.parseMinutes, wall.parseMinutes);
+    assert.equal(schedule.MINUTES_PER_DAY, wall.MINUTES_PER_DAY);
+    assert.equal(circadian.MINUTES_PER_DAY, wall.MINUTES_PER_DAY);
+  });
+
+  test('formatMinutes wraps and parseMinutes does not', async () => {
+    const { formatMinutes, parseMinutes } = await import('../../lib/time/wall-clock');
+    // An off-time past midnight is computed by addition, so 24:30 must read as
+    // 00:30. Nothing computes an INPUT, so 1470 arriving as one is a bug.
+    assert.equal(formatMinutes(1470), '00:30');
+    assert.equal(parseMinutes(1470), null);
+    assert.equal(parseMinutes('7:30'), 450);
+    assert.equal(parseMinutes('24:00'), null);
+  });
+
+  test('the unit interval clamps rather than rejecting', async () => {
+    const { sanitiseUnitInterval } = await import('../../lib/validation/unit-interval');
+    // A slider reporting 1.0000001 is a slider at maximum.
+    assert.equal(sanitiseUnitInterval(1.0000001), 1);
+    assert.equal(sanitiseUnitInterval(-0.2), 0);
+    assert.equal(sanitiseUnitInterval('0.4'), 0.4);
+    assert.equal(sanitiseUnitInterval(''), null);
+    assert.equal(sanitiseUnitInterval(null), null);
+    assert.equal(sanitiseUnitInterval('warm'), null);
+  });
+});

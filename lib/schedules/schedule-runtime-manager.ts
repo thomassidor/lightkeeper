@@ -5,7 +5,7 @@ import type { ControllerState, StateDetail } from '../profiles/controller-profil
 import { ScheduleRuntime, type ScheduleRuntimeDeps } from './schedule-runtime';
 import { discoverTimeCard, type TimeCardDiscovery } from './time-card-discovery';
 import type { SchedulePlan } from './schedule-types';
-import { fireAndForget } from '../support/async';
+import { RuntimeRegistry } from '../runtime/runtime-registry';
 import type { WriteRecord } from '../outputs/light-target-adapter';
 
 /**
@@ -42,8 +42,8 @@ export interface ScheduleManagerDeps {
 }
 
 export class ScheduleRuntimeManager {
-  private readonly runtimes = new Map<string, ScheduleRuntime>();
-  private catalogChangeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** See RuntimeRegistry: the Map, its ordering rules and the coalescer. */
+  private readonly registry: RuntimeRegistry<ScheduleRuntime>;
   /**
    * One enumeration of ~1700 trigger cards per app run, shared by every
    * schedule. Memoised as the in-flight PROMISE, so two schedules starting at
@@ -51,7 +51,9 @@ export class ScheduleRuntimeManager {
    */
   private timeCardLookup: Promise<TimeCardDiscovery> | null = null;
 
-  constructor(private readonly deps: ScheduleManagerDeps) {}
+  constructor(private readonly deps: ScheduleManagerDeps) {
+    this.registry = new RuntimeRegistry({ log: deps.log, label: 'schedule' });
+  }
 
   async timeCard(): Promise<TimeCardDiscovery> {
     if (!this.timeCardLookup) {
@@ -80,21 +82,16 @@ export class ScheduleRuntimeManager {
     onPlanChange: (plan: SchedulePlan) => Promise<void> = async () => { },
     displayName: () => string = () => 'schedule',
   ): Promise<ScheduleRuntime> {
-    await this.unregister(controllerId);
-
-    const runtime = new ScheduleRuntime(controllerId, plan, {
-      ...this.baseDeps(),
-      displayName,
-      onStateChange,
-      onPlanChange,
+    return this.registry.register(controllerId, async () => {
+      const runtime = new ScheduleRuntime(controllerId, plan, {
+        ...this.baseDeps(),
+        displayName,
+        onStateChange,
+        onPlanChange,
+      });
+      await runtime.start();
+      return runtime;
     });
-
-    // Start BEFORE inserting: a runtime whose start() threw is half-built —
-    // no scheduler, possibly no subscriptions — and a bridge event arriving in
-    // that window would be dispatched into it. Insert only what is running.
-    await runtime.start();
-    this.runtimes.set(controllerId, runtime);
-    return runtime;
   }
 
   /**
@@ -126,29 +123,24 @@ export class ScheduleRuntimeManager {
   }
 
   async unregister(controllerId: string): Promise<void> {
-    const runtime = this.runtimes.get(controllerId);
-    if (!runtime) return;
-    // Remove BEFORE awaiting stop(): dispatch reads this map, and a runtime
-    // that is tearing down must not be handed another event on the way out.
-    this.runtimes.delete(controllerId);
-    await runtime.stop();
+    return this.registry.unregister(controllerId);
   }
 
   get(controllerId: string): ScheduleRuntime | undefined {
-    return this.runtimes.get(controllerId);
+    return this.registry.get(controllerId);
   }
 
   all(): ScheduleRuntime[] {
-    return [...this.runtimes.values()];
+    return this.registry.all();
   }
 
   /** Route a boundary event. Says WHY it refused, so a silent Flow is diagnosable. */
   dispatchWithReason(controllerId: string, eventKey: string): { accepted: boolean; reason?: string } {
-    const runtime = this.runtimes.get(controllerId);
+    const runtime = this.registry.get(controllerId);
     if (!runtime) {
       return {
         accepted: false,
-        reason: `no running schedule "${controllerId}" (running: ${[...this.runtimes.keys()].join(', ') || 'none'})`,
+        reason: `no running schedule "${controllerId}" (running: ${this.registry.ids.join(', ') || 'none'})`,
       };
     }
     return runtime.handleEvent(eventKey);
@@ -156,20 +148,7 @@ export class ScheduleRuntimeManager {
 
   /** As with controllers, this must NOT restart the runtimes. */
   async onCatalogChange(): Promise<void> {
-    if (this.catalogChangeTimer !== null) return;
-
-    this.catalogChangeTimer = setTimeout(() => {
-      this.catalogChangeTimer = null;
-      fireAndForget((async () => {
-        for (const runtime of this.runtimes.values()) {
-          try {
-            await runtime.refreshTargets();
-          } catch (error) {
-            this.deps.log('Failed to re-resolve schedule targets:', (error as Error)?.message);
-          }
-        }
-      })(), this.deps.log, 'Catalogue-change target refresh');
-    }, 500);
+    this.registry.onCatalogChange();
   }
 
   /**
@@ -179,7 +158,7 @@ export class ScheduleRuntimeManager {
    */
   async onCredentialChange(): Promise<void> {
     const valid = this.deps.api.credentials.getStatus().valid;
-    for (const runtime of this.runtimes.values()) {
+    for (const runtime of this.registry.all()) {
       try {
         if (valid) await runtime.reconcileFlows();
         await runtime.assessHealth();
@@ -190,13 +169,6 @@ export class ScheduleRuntimeManager {
   }
 
   async destroyAll(): Promise<void> {
-    if (this.catalogChangeTimer !== null) {
-      clearTimeout(this.catalogChangeTimer);
-      this.catalogChangeTimer = null;
-    }
-    for (const runtime of this.runtimes.values()) {
-      await runtime.stop();
-    }
-    this.runtimes.clear();
+    return this.registry.destroyAll();
   }
 }

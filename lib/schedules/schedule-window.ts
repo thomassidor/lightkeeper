@@ -1,4 +1,4 @@
-import { previousWeekday, type LocalClock } from './local-time';
+import { previousWeekday, type LocalClock } from '../time/local-clock';
 import {
   ALL_WEEKDAYS,
   MINUTES_PER_DAY,

@@ -1,4 +1,5 @@
 import type { HomeyApiService } from './homey-api-service';
+import type { RawDevice, RawZone } from './homey-api-types';
 
 /** Devices, zones, owning apps and drivers, and target capabilities. */
 
@@ -164,28 +165,33 @@ export class DeviceCatalog {
       throw error;
     }
 
-    this.zones = new Map(Object.values(rawZones).map((z: any) => [z.id, {
-      id: z.id, name: z.name, parent: z.parent ?? null,
+    // The seam: `homey-api` is untyped JS, so `any` stops HERE. RawZone says
+    // which fields we expect, and nothing past this line reads an unknown one.
+    this.zones = new Map((Object.values(rawZones) as RawZone[]).map(z => [String(z.id), {
+      id: String(z.id),
+      name: String(z.name ?? ''),
+      parent: typeof z.parent === 'string' ? z.parent : null,
     }]));
 
     await this.loadAppNames(client);
 
-    this.devices = new Map(Object.values(rawDevices).map((d: any) => {
-      const ownerUri: string | null = d.ownerUri ?? null;
-      return [d.id, {
-        id: d.id,
-        name: d.name,
-        class: d.class,
-        virtualClass: d.virtualClass ?? null,
-        zone: d.zone,
-        zoneName: this.zones!.get(d.zone)?.name ?? '',
+    this.devices = new Map((Object.values(rawDevices) as RawDevice[]).map(d => {
+      const ownerUri = typeof d.ownerUri === 'string' ? d.ownerUri : null;
+      const zone = String(d.zone ?? '');
+      return [String(d.id), {
+        id: String(d.id),
+        name: String(d.name ?? ''),
+        class: String(d.class ?? ''),
+        virtualClass: typeof d.virtualClass === 'string' ? d.virtualClass : null,
+        zone,
+        zoneName: this.zones!.get(zone)?.name ?? '',
         // Device.driverUri and Device.zoneName are deprecated in homey-api 3.19
         // and log a warning on every access — resolve both ourselves instead.
-        driverId: d.driverId ?? null,
+        driverId: typeof d.driverId === 'string' ? d.driverId : null,
         ownerUri,
         ownerName: this.appNameFor(ownerUri),
         available: d.available !== false,
-        capabilities: d.capabilities ?? [],
+        capabilities: Array.isArray(d.capabilities) ? d.capabilities.map(String) : [],
         capabilitiesObj: normaliseCapabilities(d.capabilitiesObj),
       }];
     }));

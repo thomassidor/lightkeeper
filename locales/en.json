@@ -164,7 +164,8 @@
     "noTimezone": "Lightkeeper cannot read this Homey's timezone, so it cannot tell which day a schedule belongs to. Restart the app, and report this if it persists.",
     "noCurve": "This circadian light has no configuration. Repair it to set it up again.",
     "noWarmthTargets": "None of this device's lights can change colour temperature, so there is nothing for it to do.",
-    "persistFailed": "Lightkeeper could not save what it learned about its Flows. Open repair to try again."
+    "persistFailed": "Lightkeeper could not save what it learned about its Flows. Open repair to try again.",
+    "invalidConfiguration": "This device's stored configuration is not one Lightkeeper can read. Repair it to set it up again."
   },
   "settings": {
     "apiKeyTitle": "API key",

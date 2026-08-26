@@ -70,7 +70,14 @@ export interface FlowFolderInfo {
   id: string;
   folder: string | null | undefined;
   /** The controller id from our bridge action, or '' when the flow is not ours. */
-  controllerId: string;
+  /**
+   * Which Lightkeeper device owns this flow — controller or schedule.
+   *
+   * Internal name only: the flow ARGUMENT it is read from is still
+   * `args.controller`, which is persisted in every generated Flow on every
+   * installed Homey. See ManagedFlowSummary.ownerDeviceId.
+   */
+  ownerDeviceId: string;
 }
 
 export class FlowFolderManager {
@@ -138,13 +145,13 @@ export class FlowFolderManager {
   async resolveForDevice(
     view: FolderView,
     flows: FlowFolderInfo[],
-    controllerId: string,
+    ownerDeviceId: string,
     deviceName: string,
   ): Promise<string | undefined> {
     if (!view.root) return undefined;
 
     const ourFolder = flows
-      .filter(f => f.controllerId === controllerId)
+      .filter(f => f.ownerDeviceId === ownerDeviceId)
       .map(f => (f.folder ? view.folders.get(f.folder) : undefined))
       .find(folder => folder !== undefined && folder.parent === view.root);
     if (ourFolder) return ourFolder.id;
@@ -192,7 +199,7 @@ export class FlowFolderManager {
     view: FolderView,
     flows: FlowFolderInfo[],
     folderId: string,
-    controllerId: string,
+    ownerDeviceId: string,
     deviceName: string,
   ): Promise<void> {
     const folder = view.folders.get(folderId);
@@ -200,7 +207,7 @@ export class FlowFolderManager {
     if (!name || !folder || folder.parent !== view.root || folder.name === name) return;
 
     const occupants = flows.filter(f => f.folder === folderId);
-    if (occupants.some(f => f.controllerId !== controllerId)) return;
+    if (occupants.some(f => f.ownerDeviceId !== ownerDeviceId)) return;
 
     try {
       await this.api.withWriteClient(async write =>

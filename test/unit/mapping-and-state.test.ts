@@ -1,9 +1,16 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { MappingEngine, availableFunctions } from '../../lib/mapping/mapping-engine';
+import {
+  MappingEngine, availableFunctions, intentForLightFunction,
+} from '../../lib/mapping/mapping-engine';
 import { intentForFunction } from '../../lib/runtime/controller-runtime';
-import { DEFAULT_BEHAVIOR, type MappingRule } from '../../lib/mapping/mapping-types';
+import { DEFAULT_BEHAVIOR, type LightFunction, type MappingRule } from '../../lib/mapping/mapping-types';
+
+/** Every member, so an added one fails this file rather than passing quietly. */
+const LIGHT_FUNCTIONS: readonly LightFunction[] = [
+  'toggle', 'on', 'off', 'brightness_up', 'brightness_down', 'warmer', 'colder',
+];
 import { TargetStateCache } from '../../lib/outputs/target-state-cache';
 import { migrateProfile } from '../../lib/profiles/migrations';
 import {
@@ -189,10 +196,33 @@ describe('migrations', () => {
   });
 
   test('a current profile is left alone', () => {
-    const current = { schemaVersion: CURRENT_SCHEMA_VERSION, mappings: [] };
+    // A COMPLETE profile. The chain now ends in a validator rather than a cast,
+    // so a partial one is refused — which is the next test.
+    const current = {
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      enabled: true,
+      source: { deviceId: 'src', eventSurfaceFingerprint: 'fp' },
+      target: { kind: 'devices', deviceIds: ['a'] },
+      mappings: [],
+      behavior: { ...DEFAULT_BEHAVIOR },
+      managedFlows: [],
+    };
     const { migrated } = migrateProfile(current);
 
     assert.equal(migrated, false);
+  });
+
+  test('a profile that survived migration but is not a profile is refused', () => {
+    // It used to reach the runtime and fail at the first target resolve, with
+    // nothing anywhere saying which field was wrong.
+    assert.throws(
+      () => migrateProfile({ schemaVersion: CURRENT_SCHEMA_VERSION, mappings: [] }),
+      /ControllerProfile\.source is not an object/,
+    );
+    assert.throws(
+      () => migrateProfile({ schemaVersion: 1.5 }),
+      /schema version is malformed/,
+    );
   });
 
   test('a future profile is refused rather than corrupted', () => {
@@ -281,5 +311,65 @@ describe('one rule per gesture', () => {
     assert.equal(conflictingRule(profile, 'k1', 'b')?.id, 'a');
     assert.equal(conflictingRule(profile, 'k1', 'a'), undefined, 'a rule cannot conflict with itself');
     assert.equal(conflictingRule(profile, 'k3', 'a'), undefined);
+  });
+});
+
+describe('live and Test resolve to the same intent', () => {
+  test('every LightFunction, both paths, identical', () => {
+    // The Test control on the mapping screen exists precisely so a user can
+    // confirm before saving that a row does what they expect. A Test that
+    // translates differently from the live path is worse than no Test at all —
+    // so there is now one translator and this is the assertion that keeps it.
+    const rules: MappingRule[] = LIGHT_FUNCTIONS.map((fn, i) => ({
+      id: `r${i}`, function: fn, inputKey: `k${i}`, target: null,
+    }));
+    const engine = new MappingEngine(rules, DEFAULT_BEHAVIOR);
+
+    for (const [i, fn] of LIGHT_FUNCTIONS.entries()) {
+      const live = engine.resolve({
+        inputKey: `k${i}`,
+        event: { controlId: 'c', action: 'press' },
+      });
+      assert.ok(live, fn);
+      assert.deepEqual(live.intent, intentForFunction(fn, DEFAULT_BEHAVIOR), fn);
+      assert.deepEqual(live.intent, intentForLightFunction(fn, DEFAULT_BEHAVIOR), fn);
+    }
+  });
+
+  test('magnitude scales the step and never zeroes it', () => {
+    const engine = new MappingEngine(
+      [{ id: 'r', function: 'brightness_up', inputKey: 'k', target: null }],
+      DEFAULT_BEHAVIOR,
+    );
+    const deltaFor = (magnitude?: number) => {
+      const resolved = engine.resolve({
+        inputKey: 'k',
+        event: { controlId: 'c', action: 'rotate_stop', ...(magnitude !== undefined ? { magnitude } : {}) },
+      });
+      return (resolved!.intent as { delta: number }).delta;
+    };
+
+    assert.equal(deltaFor(), DEFAULT_BEHAVIOR.brightnessStep);
+    assert.equal(deltaFor(3), DEFAULT_BEHAVIOR.brightnessStep * 3);
+    // A magnitude of zero would silently do nothing; it becomes one notch.
+    assert.equal(deltaFor(0), DEFAULT_BEHAVIOR.brightnessStep);
+    // A negative magnitude is a distance, not a direction: the FUNCTION decides
+    // the sign, and a dial turned left is a separate binding key.
+    assert.equal(deltaFor(-2), DEFAULT_BEHAVIOR.brightnessStep * 2);
+    assert.equal(deltaFor(Number.NaN), DEFAULT_BEHAVIOR.brightnessStep);
+  });
+
+  test('warmer adds and colder subtracts, on both paths', () => {
+    // The one line most worth reading twice: higher is warmer (CLAUDE.md §6).
+    // Getting it backwards lit a room cold white at bedtime on a first live run.
+    for (const behavior of [DEFAULT_BEHAVIOR, { ...DEFAULT_BEHAVIOR, temperatureStep: 0.25 }]) {
+      assert.deepEqual(intentForLightFunction('warmer', behavior), {
+        type: 'temperature_delta', delta: behavior.temperatureStep,
+      });
+      assert.deepEqual(intentForLightFunction('colder', behavior), {
+        type: 'temperature_delta', delta: -behavior.temperatureStep,
+      });
+      assert.deepEqual(intentForFunction('warmer', behavior), intentForLightFunction('warmer', behavior));
+    }
   });
 });

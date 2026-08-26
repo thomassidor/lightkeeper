@@ -1,3 +1,4 @@
+import { validateTargetAgainstCatalog } from '../../lib/validation/pairing-dto';
 import Homey from 'homey';
 
 import {
@@ -84,9 +85,14 @@ module.exports = class CircadianDriver extends Homey.Driver {
 
     handler('listTargets', async () => listTargetsPayload(this.app.catalog, state.target));
 
-    handler('selectTargets', async (spec: TargetSpec) => {
-      state.target = spec;
-      return resolveSummary(this.app.catalog, spec);
+    handler('selectTargets', async (spec: unknown) => {
+      // The pairing channel is a webview, so this is the same class of boundary
+      // as a generated Flow's arguments: shape AND membership are checked before
+      // anything is persisted. A well-formed id naming something that is not a
+      // light saves a device that resolves to nothing.
+      const target = await validateTargetAgainstCatalog(spec, this.app.catalog);
+      state.target = target;
+      return resolveSummary(this.app.catalog, target);
     });
 
     // ---------------------------------------------------------------- curve

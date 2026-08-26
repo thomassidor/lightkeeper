@@ -1,5 +1,6 @@
 import type { CircadianPlan } from './circadian-types';
-
+import { runMigrationChain, type MigrationStep } from '../support/migrations';
+import { validateCircadianPlan } from '../validation/plans';
 /**
  * A circadian plan's own migration chain — a third store, a third schema.
  *
@@ -8,11 +9,15 @@ import type { CircadianPlan } from './circadian-types';
  * old shape; and refuse a plan from a newer build rather than guessing at it.
  * Keeping the three chains separate is what stops a controller-only change from
  * bumping a circadian device's schema and vice versa.
+ *
+ * The three chains stay separate; the RUNNER does not. It lives in
+ * `lib/support/migrations.ts`, and it is what now ends every chain in a
+ * validator rather than a cast.
  */
 
 export const CURRENT_CIRCADIAN_SCHEMA_VERSION = 1;
 
-export type CircadianMigration = (plan: Record<string, unknown>) => Record<string, unknown>;
+export type CircadianMigration = MigrationStep;
 
 /** Keyed by the version being migrated FROM. */
 export const CIRCADIAN_MIGRATIONS: Record<number, CircadianMigration> = {
@@ -37,37 +42,16 @@ export interface CircadianMigrationResult {
 }
 
 export function migrateCircadianPlan(raw: unknown): CircadianMigrationResult {
-  if (!raw || typeof raw !== 'object') {
-    throw new Error('Cannot migrate a circadian plan that is not an object');
-  }
-
-  let working = { ...(raw as Record<string, unknown>) };
-  const fromVersion = typeof working.schemaVersion === 'number' ? working.schemaVersion : 0;
-  const steps: number[] = [];
-
-  if (fromVersion > CURRENT_CIRCADIAN_SCHEMA_VERSION) {
-    // Refusing beats corrupting: the newer shape is one this build cannot know.
-    throw new Error(
-      `Circadian schema version ${fromVersion} is newer than this app understands `
-      + `(${CURRENT_CIRCADIAN_SCHEMA_VERSION}). Update Lightkeeper.`,
-    );
-  }
-
-  let version = fromVersion;
-  while (version < CURRENT_CIRCADIAN_SCHEMA_VERSION) {
-    const migration = CIRCADIAN_MIGRATIONS[version];
-    if (!migration) throw new Error(`No circadian migration registered from version ${version}`);
-    working = migration(working);
-    steps.push(version);
-    const next = typeof working.schemaVersion === 'number' ? working.schemaVersion : version + 1;
-    if (next <= version) throw new Error(`Circadian migration from ${version} did not advance the version`);
-    version = next;
-  }
-
+  const result = runMigrationChain(raw, {
+    label: 'Circadian',
+    current: CURRENT_CIRCADIAN_SCHEMA_VERSION,
+    table: CIRCADIAN_MIGRATIONS,
+    validate: validateCircadianPlan,
+  });
   return {
-    plan: working as unknown as CircadianPlan,
-    migrated: steps.length > 0,
-    fromVersion,
-    steps,
+    plan: result.value,
+    migrated: result.migrated,
+    fromVersion: result.fromVersion,
+    steps: result.steps,
   };
 }

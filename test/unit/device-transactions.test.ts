@@ -167,7 +167,7 @@ class FakeOwner implements DeviceOwner<Plan, FakeRuntime> {
   planOf(runtime: FakeRuntime): Plan { return runtime.plan; }
   planEnabled(plan: Plan): boolean { return plan.enabled; }
   withEnabled(plan: Plan, enabled: boolean): Plan { return { ...plan, enabled }; }
-  flowRefs(plan: Plan): ManagedFlowReference[] { return plan.refs ?? []; }
+  rawFlowRefs(): unknown { return (this.store.get('plan') as Plan | undefined)?.refs; }
   async prepareApply(_previous: Plan | null, incoming: Plan): Promise<Plan> { return incoming; }
 }
 
@@ -378,6 +378,36 @@ describe('pause, rename and delete', () => {
     await lifecycle.deleted();
 
     assert.deepEqual(owner.removedFlows, [[REF]]);
+  });
+
+  test('a forged Flow reference never reaches the delete', async () => {
+    // The attack this guards: a reference whose flowId names a Flow nothing in
+    // this app wrote. Deleting on the strength of corrupted data is deleting
+    // somebody's Flow. Filtered, not thrown on — throwing would skip the
+    // cleanup entirely and leak every OTHER reference's Flow.
+    const { owner, lifecycle } = harness();
+    owner.store.set('plan', {
+      enabled: true,
+      value: 'v',
+      refs: [
+        { flowId: 'victim-flow' },
+        { ...REF, managedVersion: 'one' },
+        { ...REF, flowId: '' },
+        'not-even-an-object',
+        REF,
+      ] as any,
+    });
+
+    await lifecycle.deleted();
+
+    assert.deepEqual(owner.removedFlows, [[REF]], 'only the well-formed one');
+  });
+
+  test('a store holding nonsense where references should be deletes nothing', async () => {
+    const { owner, lifecycle } = harness();
+    owner.store.set('plan', { enabled: true, value: 'v', refs: 'all of them' as any });
+    await lifecycle.deleted();
+    assert.deepEqual(owner.removedFlows, []);
   });
 
   test('deleting a running device destroys the runtime and unregisters it', async () => {

@@ -1,7 +1,6 @@
 import { LightkeeperDevice, type DeviceRegistry, type PlanMigration } from '../../lib/devices/lightkeeper-device';
 import { migrateSchedulePlan } from '../../lib/schedules/schedule-migrations';
 import type { SchedulePlan } from '../../lib/schedules/schedule-types';
-import type { ManagedFlowReference } from '../../lib/profiles/controller-profile';
 import type { ScheduleRuntime } from '../../lib/schedules/schedule-runtime';
 
 /**
@@ -47,8 +46,9 @@ module.exports = class ScheduleDevice extends LightkeeperDevice<SchedulePlan, Sc
     return { ...plan, enabled };
   }
 
-  override flowRefs(plan: SchedulePlan): ManagedFlowReference[] {
-    return plan.managedFlows ?? [];
+  /** See the controller's: raw, because the plan may have failed validation. */
+  override rawFlowRefs(): unknown {
+    return (this.getStoreValue(this.storeKey) as { managedFlows?: unknown } | undefined)?.managedFlows;
   }
 
   override async prepareApply(

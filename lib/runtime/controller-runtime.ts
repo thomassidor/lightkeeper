@@ -1,9 +1,10 @@
 import type { HomeyApiService } from '../homey-api-service';
-import { credentialFailureKey, redactKeyMaterial } from '../credential-service';
+import { classifyReconcileError } from './reconcile-failure';
+import type { CredentialStatus } from '../credential-service';
 import type { DeviceCatalog } from '../device-catalog';
 import type { SourceDiscoveryService } from '../source-discovery-service';
 import { FlowBridgeManager } from '../bridge/flow-bridge-manager';
-import { MappingEngine } from '../mapping/mapping-engine';
+import { MappingEngine, intentForLightFunction } from '../mapping/mapping-engine';
 import { SupersedeGate, contestedControls, type GatedInput } from '../mapping/supersede-gate';
 import { CommandScheduler } from '../outputs/command-scheduler';
 import { LightTargetAdapter, type WriteRecord } from '../outputs/light-target-adapter';
@@ -22,6 +23,7 @@ import type { InputEvent } from '../inputs/input-event';
 import type { SelectableInput } from '../inputs/selectable-input';
 import type { ControllerBehavior, LightFunction } from '../mapping/mapping-types';
 import { fireAndForget } from '../support/async';
+import { sameCatalogue, sameManagedFlows } from '../support/same';
 
 /** Which ramp, if any, a resolved intent corresponds to. */
 function rampFor(intent: LightIntent): { kind: 'brightness' | 'temperature'; direction: -1 | 1 } | null {
@@ -35,18 +37,17 @@ function rampFor(intent: LightIntent): { kind: 'brightness' | 'temperature'; dir
   return null;
 }
 
-/** The same function-to-intent mapping the engine uses, without a rule. */
+/**
+ * What the Test control on the mapping screen drives.
+ *
+ * A thin re-export, and that is the point: it used to be a second copy of the
+ * switch, so the Test path and the live path could disagree about what a row
+ * does — in a control whose entire purpose is to prove they agree.
+ * `test/unit/mapping-and-state.test.ts` asserts the equivalence for every
+ * function.
+ */
 export function intentForFunction(func: LightFunction, behavior: ControllerBehavior): LightIntent {
-  switch (func) {
-    case 'toggle': return { type: 'toggle' };
-    case 'on': return { type: 'power', value: true };
-    case 'off': return { type: 'power', value: false };
-    case 'brightness_up': return { type: 'brightness_delta', delta: behavior.brightnessStep };
-    case 'brightness_down': return { type: 'brightness_delta', delta: -behavior.brightnessStep };
-    // Higher is warmer on this axis (CLAUDE.md §6), so 'warmer' adds.
-    case 'warmer': return { type: 'temperature_delta', delta: behavior.temperatureStep };
-    case 'colder': return { type: 'temperature_delta', delta: -behavior.temperatureStep };
-  }
+  return intentForLightFunction(func, behavior);
 }
 
 /**
@@ -97,6 +98,52 @@ export interface ControllerRuntimeDeps {
    * device removed none of them.
    */
   onProfileChange: (profile: ControllerProfile) => Promise<void>;
+}
+
+/**
+ * What `diagnostics()` returns.
+ *
+ * Typed rather than `Record<string, unknown>` because the settings page and the
+ * bug-report export are both built from it, and neither had anything to check
+ * against: a field renamed here failed silently, as an empty row.
+ *
+ * It must never carry key material — users are invited to attach the export to a
+ * bug report. It DOES carry device and zone names by design: a device quietly
+ * pointed at the wrong room looks identical to a broken one.
+ */
+export interface ControllerDiagnostics {
+  controllerId: string;
+  state: ControllerState;
+  /**
+   * How many times the VISIBLE state has moved. A device stuck on a stale
+   * message with a rising revision means the device layer is not rendering what
+   * it is being told.
+   */
+  stateRevision: number;
+  /**
+   * Empty on a healthy controller. Non-empty is the only place a declined
+   * control is visible from outside the app log.
+   */
+  unsupported: Array<{ bindingKey: string; reason: string }>;
+  source: ControllerProfile['source'];
+  targetIds: string[];
+  /** Names, not just ids. See the interface comment. */
+  targetNames: string[];
+  mappings: ControllerProfile['mappings'];
+  managedFlows: ControllerProfile['managedFlows'];
+  catalogueSize: number;
+  lastEvent: { key: string; at: number } | null;
+  lastIntent: {
+    intent: LightIntent; at: number; writes: number; skipped: number; note?: string;
+  } | null;
+  recentFailures: readonly unknown[];
+  /**
+   * Planned versus actually attempted: the distinction that matters when a
+   * controller reports activity and no light moves.
+   */
+  recentWrites: readonly WriteRecord[];
+  schedulerReady: boolean;
+  credential: CredentialStatus;
 }
 
 const WATCHED: Capability[] = ['onoff', 'dim', 'light_temperature'];
@@ -231,7 +278,7 @@ export class ControllerRuntime {
       // otherwise leave the stored one alone and let health assessment decide.
       if (existingKeys.size > 0 && stillPresent.length < existingKeys.size) return;
 
-      if (JSON.stringify(discovered.inputs) === JSON.stringify(this.profile.catalogue ?? [])) return;
+      if (sameCatalogue(discovered.inputs, this.profile.catalogue ?? [])) return;
 
       this.profile = { ...this.profile, catalogue: discovered.inputs };
       await this.deps.onProfileChange(this.profile);
@@ -385,7 +432,7 @@ export class ControllerRuntime {
         existing: this.profile.managedFlows,
       });
 
-      const before = JSON.stringify(this.profile.managedFlows);
+      const changed = !sameManagedFlows(this.profile.managedFlows, result.references);
       this.profile = { ...this.profile, managedFlows: result.references };
       // Persisting unconditionally would emit device.update, which invalidates
       // the catalog, which restarts this runtime, which reconciles again — a
@@ -397,7 +444,7 @@ export class ControllerRuntime {
       // Flows stay where they are: the journal in sync() is what makes the next
       // pass adopt-or-recreate rather than duplicate.
       let persistFailed = false;
-      if (JSON.stringify(result.references) !== before) {
+      if (changed) {
         try {
           await this.deps.onProfileChange(this.profile);
         } catch (error) {
@@ -449,22 +496,12 @@ export class ControllerRuntime {
       // learned, a reference we could not store is the problem to report.
       if (persistFailed) this.setState('needs_repair', { key: 'state.persistFailed' });
     } catch (error) {
-      const failure = this.deps.api.credentials.getStatus();
-      if (failure.present && !failure.valid) {
-        // The mappings are fine; only the credential is not. The failure
-        // CODE carries the translation; `hint` is English and only a fallback.
-        this.setState('needs_credential', {
-          key: credentialFailureKey(failure.failure),
-          ...(failure.hint ? { text: failure.hint } : {}),
-        });
-      } else {
-        // Not our string to translate — an API error, shown verbatim. Verbatim
-        // means redacted: this text reaches setUnavailable() on the device, and
-        // an upstream error can quote the API key back inside its own message.
-        this.setState('needs_repair', {
-          text: redactKeyMaterial(String((error as Error)?.message ?? '')),
-        });
-      }
+      // See classifyReconcileError: a dead key is not a broken mapping, and an
+      // unclassified platform error keeps its own words.
+      const { state, detail } = classifyReconcileError(
+        error, this.deps.api.credentials.getStatus(),
+      );
+      this.setState(state, detail);
     }
   }
 
@@ -655,7 +692,7 @@ export class ControllerRuntime {
    */
   private snapshot: TargetSnapshot | null = null;
 
-  diagnostics(): Record<string, unknown> {
+  diagnostics(): ControllerDiagnostics {
     return {
       controllerId: this.controllerId,
       state: this.state,

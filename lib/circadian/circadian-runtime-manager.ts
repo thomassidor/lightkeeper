@@ -4,6 +4,7 @@ import type { ControllerState, StateDetail } from '../profiles/controller-profil
 import { CircadianRuntime, type CircadianRuntimeDeps } from './circadian-runtime';
 import type { CircadianPlan } from './circadian-types';
 import { fireAndForget } from '../support/async';
+import { RuntimeRegistry } from '../runtime/runtime-registry';
 import type { WriteRecord } from '../outputs/light-target-adapter';
 
 /**
@@ -55,11 +56,13 @@ export interface CircadianManagerDeps {
 export const TICK_MS = 60_000;
 
 export class CircadianRuntimeManager {
-  private readonly runtimes = new Map<string, CircadianRuntime>();
-  private catalogChangeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** See RuntimeRegistry: the Map, its ordering rules and the coalescer. */
+  private readonly registry: RuntimeRegistry<CircadianRuntime>;
   private ticker: unknown = null;
 
-  constructor(private readonly deps: CircadianManagerDeps) {}
+  constructor(private readonly deps: CircadianManagerDeps) {
+    this.registry = new RuntimeRegistry({ log: deps.log, label: 'circadian' });
+  }
 
   async register(
     controllerId: string,
@@ -68,20 +71,19 @@ export class CircadianRuntimeManager {
     onPlanChange: (plan: CircadianPlan) => Promise<void> = async () => { },
     displayName: () => string = () => 'circadian',
   ): Promise<CircadianRuntime> {
-    await this.unregister(controllerId);
-
-    const runtime = new CircadianRuntime(controllerId, plan, {
-      ...this.baseDeps(),
-      displayName,
-      onStateChange,
-      onPlanChange,
+    const runtime = await this.registry.register(controllerId, async () => {
+      const built = new CircadianRuntime(controllerId, plan, {
+        ...this.baseDeps(),
+        displayName,
+        onStateChange,
+        onPlanChange,
+      });
+      await built.start();
+      return built;
     });
-
-    // Start BEFORE inserting: a runtime whose start() threw is half-built —
-    // no scheduler, possibly no subscriptions — and a bridge event arriving in
-    // that window would be dispatched into it. Insert only what is running.
-    await runtime.start();
-    this.runtimes.set(controllerId, runtime);
+    // After the insert, not before: the ticker's guard is "is anything
+    // registered", and starting it around a register that then threw left a
+    // timer running over an empty map.
     this.startTicking();
     return runtime;
   }
@@ -115,7 +117,7 @@ export class CircadianRuntimeManager {
 
   /** One timer for every circadian device, started with the first of them. */
   private startTicking(): void {
-    if (this.ticker !== null || this.runtimes.size === 0) return;
+    if (this.ticker !== null || this.registry.size === 0) return;
     const start = this.deps.setInterval ?? ((fn, ms) => setInterval(fn, ms));
     this.ticker = start(() => fireAndForget(this.tickAll(), this.deps.log, 'Circadian tick'), TICK_MS);
   }
@@ -129,7 +131,7 @@ export class CircadianRuntimeManager {
 
   /** Public so tests advance the day without waiting on wall time. */
   async tickAll(): Promise<void> {
-    for (const runtime of this.runtimes.values()) {
+    for (const runtime of this.registry.all()) {
       try {
         await runtime.tick();
       } catch (error) {
@@ -140,50 +142,27 @@ export class CircadianRuntimeManager {
   }
 
   async unregister(controllerId: string): Promise<void> {
-    const runtime = this.runtimes.get(controllerId);
-    if (!runtime) return;
-    // Remove BEFORE awaiting stop(): dispatch reads this map, and a runtime
-    // that is tearing down must not be handed another event on the way out.
-    this.runtimes.delete(controllerId);
-    if (this.runtimes.size === 0) this.stopTicking();
-    await runtime.stop();
+    await this.registry.unregister(controllerId);
+    // One timer for every circadian device on the Homey, so the last one out
+    // turns it off.
+    if (this.registry.size === 0) this.stopTicking();
   }
 
   get(controllerId: string): CircadianRuntime | undefined {
-    return this.runtimes.get(controllerId);
+    return this.registry.get(controllerId);
   }
 
   all(): CircadianRuntime[] {
-    return [...this.runtimes.values()];
+    return this.registry.all();
   }
 
   /** As with the other registries, this must NOT restart the runtimes. */
   async onCatalogChange(): Promise<void> {
-    if (this.catalogChangeTimer !== null) return;
-
-    this.catalogChangeTimer = setTimeout(() => {
-      this.catalogChangeTimer = null;
-      fireAndForget((async () => {
-        for (const runtime of this.runtimes.values()) {
-          try {
-            await runtime.refreshTargets();
-          } catch (error) {
-            this.deps.log('Failed to re-resolve circadian targets:', (error as Error)?.message);
-          }
-        }
-      })(), this.deps.log, 'Catalogue-change target refresh');
-    }, 500);
+    this.registry.onCatalogChange();
   }
 
   async destroyAll(): Promise<void> {
-    if (this.catalogChangeTimer !== null) {
-      clearTimeout(this.catalogChangeTimer);
-      this.catalogChangeTimer = null;
-    }
     this.stopTicking();
-    for (const runtime of this.runtimes.values()) {
-      await runtime.stop();
-    }
-    this.runtimes.clear();
+    return this.registry.destroyAll();
   }
 }

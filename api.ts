@@ -10,6 +10,22 @@
  */
 
 import { flowWriteProbe } from './lib/credential-service';
+import type {
+  DiagnosticsResponse, LightkeeperApp, StatusResponse,
+} from './lib/app-contract';
+
+/**
+ * `homey.app` is the running app instance, and this is the one place it is
+ * named.
+ *
+ * `app.ts` must stay `module.exports = class …` — a Homey entry point using
+ * `export default` is not loaded at all — so there is no class to import a type
+ * from. `LightkeeperApp` in `lib/app-contract.ts` is that type written down, and
+ * one cast at the top of each handler is what retires eleven `any` lambdas.
+ */
+function appOf(homey: any): LightkeeperApp {
+  return homey.app as LightkeeperApp;
+}
 /**
  * Every device this app can attribute a generated Flow to — controllers AND
  * schedules.
@@ -27,10 +43,10 @@ import { flowWriteProbe } from './lib/credential-service';
  * delete the lot. The guard below ("no live controllers, refuse") would not have
  * caught it either: with one controller running, the set is not empty.
  */
-function liveDeviceIds(app: any, homey: any): Set<string> {
+function liveDeviceIds(app: LightkeeperApp, homey: any): Set<string> {
   const ids = new Set<string>([
-    ...app.controllers.all().map((r: any) => r.controllerId),
-    ...app.schedules.all().map((r: any) => r.controllerId),
+    ...app.controllers.all().map(runtime => runtime.controllerId),
+    ...app.schedules.all().map(runtime => runtime.controllerId),
   ]);
 
   /**
@@ -88,21 +104,24 @@ module.exports = {
    * made it permanently empty on a Homey running nothing but schedules. The
    * per-device view is in getDiagnostics, where each runtime keeps its own.
    */
-  async getStatus({ homey }: any) {
-    const app = homey.app;
+  async getStatus({ homey }: any): Promise<StatusResponse> {
+    const app = appOf(homey);
     return {
       credential: app.credentials.getStatus(),
       recentEvents: app.recentEvents.entries().slice(0, 12),
-      controllers: app.controllers.all().map((runtime: any) => ({
-        id: runtime.controllerId,
-        state: runtime.currentState,
-        sourceName: runtime.currentProfile?.source?.name ?? null,
-        mappings: runtime.currentProfile?.mappings?.filter((m: any) => m.inputKey).length ?? 0,
-        managedFlows: runtime.currentProfile?.managedFlows?.length ?? 0,
-        schedulerReady: runtime.diagnostics().schedulerReady,
-        targetNames: runtime.diagnostics().targetNames,
-      })),
-      schedules: app.schedules.all().map((runtime: any) => {
+      controllers: app.controllers.all().map(runtime => {
+        const diagnostics = runtime.diagnostics();
+        return {
+          id: runtime.controllerId,
+          state: runtime.currentState,
+          sourceName: runtime.currentProfile.source.name ?? null,
+          mappings: runtime.currentProfile.mappings.filter(rule => rule.inputKey).length,
+          managedFlows: runtime.currentProfile.managedFlows.length,
+          schedulerReady: diagnostics.schedulerReady,
+          targetNames: diagnostics.targetNames,
+        };
+      }),
+      schedules: app.schedules.all().map(runtime => {
         const diagnostics = runtime.diagnostics();
         return {
           id: runtime.controllerId,
@@ -110,16 +129,19 @@ module.exports = {
           name: diagnostics.name,
           enabled: diagnostics.enabled,
           entries: diagnostics.entries,
-          managedFlows: diagnostics.managedFlows?.length ?? 0,
+          managedFlows: diagnostics.managedFlows.length,
           // The Homey's own clock, echoed back. "It fired an hour late" is
           // almost always a timezone answer, and this is where it is visible.
           timezone: diagnostics.timezone,
+          // And whether that zone was actually resolved: a schedule refuses to
+          // fire on a clock it does not trust, so this is the first thing to read.
+          timezoneResolved: diagnostics.timezoneResolved,
           localTime: diagnostics.localTime,
           targetNames: diagnostics.targetNames,
           lastAction: diagnostics.lastAction,
         };
       }),
-      circadian: app.circadian.all().map((runtime: any) => {
+      circadian: app.circadian.all().map(runtime => {
         const diagnostics = runtime.diagnostics();
         return {
           id: runtime.controllerId,
@@ -137,7 +159,7 @@ module.exports = {
           // Lights somebody has taken over by hand. Shown because a light that
           // has stopped following the curve on purpose looks exactly like one
           // that has stopped following it by accident.
-          overridden: (diagnostics.targets as any[]).filter(t => t.overridden).length,
+          overridden: diagnostics.targets.filter(target => target.overridden).length,
           preStage: diagnostics.preStage,
           preStageDisabled: diagnostics.preStageDisabled,
         };
@@ -160,18 +182,19 @@ module.exports = {
    * English fallback from describeFailure().
    */
   async setCredential({ homey, body }: any) {
+    const app = appOf(homey);
     const token = String(body?.token ?? '');
     // Validate with a WRITE: reads succeed on credentials that cannot write,
     // so a read-based check gives false confidence.
-    return homey.app.credentials.setCredential(
+    return app.credentials.setCredential(
       token,
-      (client: any) => flowWriteProbe(client, (...args: unknown[]) => homey.app.log(...args)),
+      (client: any) => flowWriteProbe(client, (...args: unknown[]) => app.log(...args)),
     );
   },
 
   /** Forget the stored key. Returns `{ cleared: true }`. */
   async deleteCredential({ homey }: any) {
-    homey.app.credentials.clearCredential();
+    appOf(homey).credentials.clearCredential();
     return { cleared: true };
   },
 
@@ -182,6 +205,9 @@ module.exports = {
    * Returns `{ total, orphans, unmanaged, liveControllers, flowIds, examples,
    * token, refused? }`.
    *
+   * `liveControllers` counts live Flow OWNERS — controllers and schedules both.
+   * The key keeps its original name because the settings page consumes it.
+   *
    * `refused` is set when nothing is running: every managed flow then LOOKS
    * orphaned, and the count must not be presented as if it were trustworthy.
    * `unmanaged` counts flows attributed to a dead device that do NOT match the
@@ -190,7 +216,7 @@ module.exports = {
    * one: the user approved a specific set, not a number.
    */
   async countOrphans({ homey }: any) {
-    const app = homey.app;
+    const app = appOf(homey);
     return app.bridge.countOrphans(liveDeviceIds(app, homey));
   },
 
@@ -204,7 +230,7 @@ module.exports = {
    * moved since. See countOrphans in the bridge manager.
    */
   async sweepOrphans({ homey, body }: any) {
-    const app = homey.app;
+    const app = appOf(homey);
     const token = typeof body?.token === 'string' ? body.token : null;
     const flowIds = Array.isArray(body?.flowIds) ? body.flowIds.map(String) : null;
 
@@ -233,8 +259,8 @@ module.exports = {
    * key material. It DOES carry device and zone names by design — a controller
    * quietly pointed at the wrong room looks identical to a broken one.
    */
-  async getDiagnostics({ homey }: any) {
-    const app = homey.app;
+  async getDiagnostics({ homey }: any): Promise<DiagnosticsResponse> {
+    const app = appOf(homey);
     return {
       generatedAt: Date.now(),
       app: { id: homey.manifest.id, version: homey.manifest.version },
@@ -242,15 +268,15 @@ module.exports = {
       // Most recent first — the fastest way to tell a Flow that never fired
       // from one that fired and was refused.
       recentEvents: app.recentEvents.entries(),
-      controllers: app.controllers.all().map((runtime: any) => runtime.diagnostics()),
-      schedules: app.schedules.all().map((runtime: any) => runtime.diagnostics()),
-      circadian: app.circadian.all().map((runtime: any) => runtime.diagnostics()),
+      controllers: app.controllers.all().map(runtime => runtime.diagnostics()),
+      schedules: app.schedules.all().map(runtime => runtime.diagnostics()),
+      circadian: app.circadian.all().map(runtime => runtime.diagnostics()),
       // Which of Homey's own trigger cards the schedules are built on, and what
       // else was on offer. A card URI may never be constructed (CLAUDE.md §3), so when a
       // firmware moves this card the candidate list IS the investigation.
-      timeCard: await app.schedules.timeCard().catch((error: any) => ({
-        card: null,
-        error: String(error?.message ?? error),
+      timeCard: await app.schedules.timeCard().catch((error: unknown) => ({
+        card: null as null,
+        error: String((error as Error)?.message ?? error),
       })),
     };
   },

@@ -553,7 +553,9 @@ describe('health', () => {
     const h = harness();
     await h.runtime.start();
     assert.ok(!h.states.some(s => s.state === 'needs_credential'));
-    assert.equal(h.runtime.diagnostics().credential, undefined);
+    // Not merely undefined: CircadianDiagnostics has no such field at all, so a
+    // future change that adds one fails to compile here rather than passing.
+    assert.equal('credential' in h.runtime.diagnostics(), false);
   });
 });
 
