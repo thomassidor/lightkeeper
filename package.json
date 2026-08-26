@@ -33,6 +33,7 @@
     "typecheck": "tsc --noEmit",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "sync:views": "node scripts/sync-views.mjs",
+    "sync:views:check": "node scripts/sync-views.mjs --check",
     "test": "node --import tsx --test \"test/unit/**/*.test.ts\"",
     "test:watch": "node --import tsx --test --watch \"test/unit/**/*.test.ts\"",
     "validate": "homey app validate --level publish",

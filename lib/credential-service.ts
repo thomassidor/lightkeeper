@@ -8,6 +8,16 @@
  * The key is never logged, never returned over the app API,
  * and never included in diagnostics or profile exports.
  *
+ * **That is not the whole perimeter, and it is worth being blunt about where the
+ * rest of it is.** The key is stored in `homey.settings`, which means the app's
+ * OWN settings webview can read it back with `Homey.get` — the SDK's own design,
+ * and nothing this class can prevent. So the guarantee above bounds what LEAVES
+ * the app deliberately; what bounds the accidental route is `settings/index.html`
+ * and the pairing views never executing markup they did not author.
+ * `test/unit/webview-safety.test.ts` is that half of the perimeter: no
+ * interpolated value reaches an HTML parser in any privileged view, and no view
+ * so much as names this setting.
+ *
  * Two properties this class exists to hold, both learned the hard way:
  *
  *  - **A candidate never disturbs the incumbent.** Trying a new key and having

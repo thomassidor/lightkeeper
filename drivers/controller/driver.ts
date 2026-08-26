@@ -1,3 +1,4 @@
+import { mintDeviceId } from '../../lib/bridge/flow-bridge-manager';
 import Homey from 'homey';
 
 import { DEFAULT_BEHAVIOR, FUNCTION_CAPABILITY, type LightFunction, type MappingRule } from '../../lib/mapping/mapping-types';
@@ -366,7 +367,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
           // `lk-ctrl-`, matching the schedule driver's `lk-sched-`. The old
           // `ll-` was Light Link, the name before this one. Nothing parses the
           // prefix, so devices created under it keep working untouched.
-          data: { id: `lk-ctrl-${Date.now()}-${Math.round(Math.random() * 1e6)}` },
+          data: { id: mintDeviceId('ctrl') },
           store: { profile },
         },
       };

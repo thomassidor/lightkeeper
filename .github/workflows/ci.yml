@@ -68,7 +68,12 @@ jobs:
       - name: Check app.json is in sync with .homeycompose/
         run: git diff --exit-code -- app.json
 
-      # `npm run sync:views` is deliberately NOT run here. The repair/ and
-      # shared-view copies are committed files, and repair-views.test.ts above
-      # is the gate — a CI run that synced them would hide the drift it exists
-      # to catch.
+      # `npm run sync:views` is deliberately NOT run here — a CI run that synced
+      # the copies would repair the drift in the runner and go green over it,
+      # exactly as an unchecked `homey app validate` does to app.json.
+      #
+      # `--check` is the other half: it reports what WOULD be copied and exits
+      # non-zero, writing nothing. repair-views.test.ts covers the same ground
+      # from the test side; this names the files and the command to fix them.
+      - name: Check pair/repair and shared views are in sync
+        run: npm run sync:views:check

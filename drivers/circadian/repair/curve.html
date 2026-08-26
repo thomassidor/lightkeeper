@@ -436,12 +436,19 @@ function __lkBootCir(Homey) {
     }
     document.getElementById('cir-line').setAttribute('points', samples.join(' '));
 
-    var dots = sorted().map(function (point) {
-      var x = (minuteOf(point) / MINUTES_PER_DAY) * 320;
-      var y = 88 - point.warmth * 80;
-      return '<circle class="dot" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="3.5"></circle>';
-    }).join('');
-    document.getElementById('cir-dots').innerHTML = dots;
+    // Built with createElementNS rather than parsed: SVG needs its namespace
+    // explicitly, and the rule this view is held to is simpler with one fewer
+    // exception. Only numbers are interpolated here either way.
+    var group = document.getElementById('cir-dots');
+    while (group.firstChild) group.removeChild(group.firstChild);
+    sorted().forEach(function (point) {
+      var dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('class', 'dot');
+      dot.setAttribute('cx', ((minuteOf(point) / MINUTES_PER_DAY) * 320).toFixed(1));
+      dot.setAttribute('cy', (88 - point.warmth * 80).toFixed(1));
+      dot.setAttribute('r', '3.5');
+      group.appendChild(dot);
+    });
 
     var nowX = ((nowMinutes() / MINUTES_PER_DAY) * 320).toFixed(1);
     var nowLine = document.getElementById('cir-now');

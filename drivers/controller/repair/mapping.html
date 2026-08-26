@@ -283,6 +283,32 @@ function __lkBootMap(Homey) {
    * anything. It carried the timeout in the mapping view only until
    * pair-view-styles.test.ts started comparing the copies.
    */
+  /**
+   * A DOM node, BUILT rather than parsed.
+   *
+   * Every interpolated value in this view reaches the document through
+   * `textContent`, never through an HTML parser. The values are device names,
+   * zone names and text from other people's integrations — none of it authored by
+   * us — and a light named `"><img src=x onerror=…>` was one string concatenation
+   * away from executing inside a pairing webview.
+   *
+   * A copy, like every helper in these files: a pair view is injected into the
+   * pairing container's document and can import nothing, so a fix here has to be
+   * made in every view. `test/unit/pair-view-styles.test.ts` fails on any drift.
+   */
+  function node(tag, className, text) {
+    var el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined && text !== null) el.textContent = String(text);
+    return el;
+  }
+
+  /** Remove every child. What `innerHTML = ''` did, without the parser. */
+  function clear(el) {
+    while (el.firstChild) el.removeChild(el.firstChild);
+    return el;
+  }
+
   function emit(event, data) {
     return new Promise(function (resolve, reject) {
       var settled = false;
@@ -589,11 +615,29 @@ function __lkBootMap(Homey) {
     summary.appendChild(badge);
     widgets.badges.push({ groupKey: group.key, el: badge });
 
-    var chevron = document.createElement('span');
-    chevron.className = 'chevron';
-    chevron.innerHTML = '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true">'
-      + '<path d="M5 8l5 5 5-5" stroke="currentColor" stroke-width="2.2"'
-      + ' stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    /**
+     * Built with `createElementNS`, not parsed from a string.
+     *
+     * SVG needs the namespace explicitly — `createElement('svg')` produces an
+     * HTML element of that name, which renders as nothing. The markup here is
+     * entirely static and would have been safe as `innerHTML`, but the rule this
+     * view is now held to is simpler if it has no exceptions: no `innerHTML`
+     * anywhere, so `webview-safety.test.ts` needs no allowlist to maintain.
+     */
+    var SVG_NS = 'http://www.w3.org/2000/svg';
+    var chevron = node('span', 'chevron');
+    var svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 20 20');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('aria-hidden', 'true');
+    var path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', 'M5 8l5 5 5-5');
+    path.setAttribute('stroke', 'currentColor');
+    path.setAttribute('stroke-width', '2.2');
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(path);
+    chevron.appendChild(svg);
     summary.appendChild(chevron);
 
     card.appendChild(summary);
@@ -607,8 +651,7 @@ function __lkBootMap(Homey) {
   }
 
   function render() {
-    var container = document.getElementById('map-groups');
-    container.innerHTML = '';
+    var container = clear(document.getElementById('map-groups'));
     // The registries address elements that are about to be discarded.
     widgets = { selects: [], badges: [], notes: [] };
     model.groups.forEach(function (group) { container.appendChild(renderGroup(group)); });

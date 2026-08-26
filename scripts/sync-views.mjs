@@ -25,6 +25,12 @@
  *
  * test/unit/repair-views.test.ts fails if any of these copies has drifted, and
  * nothing runs this script for you.
+ *
+ * `--check` reports what WOULD be copied and exits non-zero instead of writing.
+ * That is what CI runs: it detects drift without hiding it, which is the opposite
+ * of running the sync there (a CI run that synced would repair the drift in the
+ * runner and go green over it, exactly as an unchecked `homey app validate` does
+ * to `app.json`).
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
@@ -38,7 +44,14 @@ const DRIVERS = join(ROOT, 'drivers');
 export const SHARED_VIEWS = ['credential.html', 'targets.html'];
 export const SHARED_SOURCE_DRIVER = 'controller';
 
+/**
+ * Report rather than write. See the header: CI checks, it never syncs.
+ */
+const CHECK_ONLY = process.argv.includes('--check');
+
 let copies = 0;
+/** @type {string[]} What --check found, so the exit can name every file at once. */
+const drifted = [];
 
 /**
  * @param {string} from
@@ -49,6 +62,11 @@ function copy(from, to, label) {
   const before = existsSync(to) ? readFileSync(to) : null;
   const content = readFileSync(from);
   if (before && before.equals(content)) return;
+  if (CHECK_ONLY) {
+    drifted.push(label);
+    copies += 1;
+    return;
+  }
   writeFileSync(to, content);
   copies += 1;
   console.log(label);
@@ -87,7 +105,8 @@ for (const driverId of driverIds) {
   if (views.length === 0) continue;
 
   const repairDir = join(DRIVERS, driverId, 'repair');
-  mkdirSync(repairDir, { recursive: true });
+  // Not in --check: creating the folder is a write, and a check writes nothing.
+  if (!CHECK_ONLY) mkdirSync(repairDir, { recursive: true });
 
   for (const id of views) {
     copy(
@@ -98,7 +117,18 @@ for (const driverId of driverIds) {
   }
 }
 
-console.log(copies === 0 ? 'Views already in sync.' : `Synced ${copies} view file(s).`);
+if (CHECK_ONLY) {
+  if (copies === 0) {
+    console.log('Views are in sync.');
+  } else {
+    console.error(`${copies} view file(s) have drifted from their source:`);
+    for (const label of drifted) console.error(`  ${label}`);
+    console.error('\nRun `npm run sync:views` and commit the result.');
+    process.exit(1);
+  }
+} else {
+  console.log(copies === 0 ? 'Views already in sync.' : `Synced ${copies} view file(s).`);
+}
 
 /**
  * @param {string} driverId

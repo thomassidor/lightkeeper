@@ -618,3 +618,91 @@ repair credential view — and asserts each is exhaustive over `CredentialFailur
 that none handles anything the app cannot report, and that the copies agree with
 each other. Full generation (LK-064 territory) is not done; the exhaustiveness
 test was the requirement.
+
+---
+
+## Phase 7
+
+### 7.1 — the settings page has NO `innerHTML` and no `escapeHtml`, and two views keep both
+
+The settings page and the four screens that render third-party strings — the light
+picker (shared by all three drivers) and the source picker — are fully converted to
+`document.createElement` + `textContent`, through a shared `node()` / `clear()`
+helper pair. `escapeHtml()` is GONE from the settings page: it existed to make
+concatenation safe, and there is no concatenation left to make safe.
+
+Two views still assign `innerHTML`, allowlisted by name in
+`webview-safety.test.ts` with the argument written out there:
+`schedule.html`'s `entryHtml` and `curve.html`'s `pointHtml`. Both build a FORM —
+selects, range inputs, checkboxes — from our own `Homey.__()` strings, integers,
+and an id that Phase 4 made server-generated and constrained to
+`ENTRY_ID_SHAPE`. There is no third-party string in either: no device name, no
+zone name, no error text. Converting them means rewriting `timeSelects`,
+`durationSelects` and `options` as well, in two screens that cannot be exercised
+without hardware, to remove a risk that is provably absent. The test asserts the
+allowance's own preconditions — that those files still escape what they
+interpolate, and that a hostile id cannot match `ENTRY_ID_SHAPE`.
+
+The two SVG builds (`mapping.html`'s chevron, `curve.html`'s dots) were static
+markup and would have been safe as `innerHTML`. They are `createElementNS` now
+anyway, because the rule is easier to hold with no exceptions than with four —
+and `createElement('svg')` produces an HTML element of that name, which renders
+as nothing, so the namespace had to be explicit either way.
+
+No DOM-shim test was added. The structural guard is the stronger check here: a
+rendering test proves one hostile string lands as text, while the guard proves
+there is no parser for any string to reach.
+
+### 7.2 — the perimeter is documented at both ends, and the key's NAME is a forbidden token
+
+`lib/credential-service.ts`'s header now says plainly that "never returned over
+the app API" bounds what leaves deliberately, and that the accidental route is
+bounded by the webviews — the key is in `homey.settings`, so a settings webview
+can read it with `Homey.get`, which is the SDK's design and not something the app
+can prevent.
+
+`webview-safety.test.ts` forbids the string `flowWriteApiKey` in any privileged
+view. That is stricter than the plan asked (which named the `Homey.get` call) and
+simpler: a webview never needs the token, so it never needs the name. The settings
+page's own comment had to be reworded because the test caught it quoting the key.
+It also asserts `api.ts` mentions neither the setting nor `getWriteClient`.
+
+### 7.3 — the legacy id shape is PERMANENT, not deprecated
+
+`mintDeviceId(kind)` uses `crypto.randomUUID()`, and `LIGHTKEEPER_DEVICE_ID`
+matches both shapes. The old `lk-<kind>-<timestamp>-<random>` form can never be
+retired: a device id is baked into the `controller` argument of every Flow that
+device owns and into the device's own `data`, neither of which can be rewritten.
+A pattern that stopped matching it would make every existing device's Flows
+unattributable, which the sweep reads as ORPHANED. The regex comment says so, and
+`flow-bridge-sweep.test.ts` asserts both shapes plus a set of near-misses.
+
+The collision this fixes is not cosmetic: two devices created in the same
+millisecond could share an id, and the id is what attributes a Flow — so each
+could delete the other's Flows.
+
+### 7.4 — the module-system note, and what it explains
+
+`CLAUDE.md`'s conventions now carry the `module.exports` rule (I10) with the two
+consequences that look like awkwardness and are not: there is no class type to
+import from `app.ts` (hence `lib/app-contract.ts`), and a file containing
+`extends Homey.Device` cannot be imported by a test at all (hence the
+`device-lifecycle` / `lightkeeper-device` split). Both were already true and
+neither was written down.
+
+### 7.5 — LK-064 DECLINED, and the cheap half taken
+
+Build-time view fragments are not adopted. The review's own recommendation was
+"not yet", and this phase is evidence for it rather than against: every shared
+block edited here — `node()`, `clear()`, the `escapeHtml` removal — was applied to
+the source view and propagated by `sync:views`, and the drift tests caught the one
+file that fell out of step (a stray `git checkout` reverted `targets.html` after
+its copies had been written; `sync:views:check` named all three copies and the
+command to fix them).
+
+The cheap half is in: `npm run sync:views:check` reports what WOULD be copied,
+writes nothing, and exits non-zero. CI runs it. That does not contradict the
+workflow's existing "sync is deliberately NOT run here" comment — the comment is
+extended rather than replaced, because the distinction is the whole point: a CI
+run that SYNCED would repair the drift in the runner and go green over it, exactly
+as an unchecked `homey app validate` does to `app.json`.

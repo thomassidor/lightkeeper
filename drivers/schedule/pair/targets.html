@@ -300,10 +300,30 @@ function __lkBootTg(Homey) {
   var mode = 'devices';
   var selected = new Set();
 
-  function escapeHtml(text) {
-    return String(text == null ? '' : text).replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
+  /**
+   * A DOM node, BUILT rather than parsed.
+   *
+   * Every interpolated value in this view reaches the document through
+   * `textContent`, never through an HTML parser. The values are device names,
+   * zone names and text from other people's integrations — none of it authored by
+   * us — and a light named `"><img src=x onerror=…>` was one string concatenation
+   * away from executing inside a pairing webview.
+   *
+   * A copy, like every helper in these files: a pair view is injected into the
+   * pairing container's document and can import nothing, so a fix here has to be
+   * made in every view. `test/unit/pair-view-styles.test.ts` fails on any drift.
+   */
+  function node(tag, className, text) {
+    var el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined && text !== null) el.textContent = String(text);
+    return el;
+  }
+
+  /** Remove every child. What `innerHTML = ''` did, without the parser. */
+  function clear(el) {
+    while (el.firstChild) el.removeChild(el.firstChild);
+    return el;
   }
 
   function spec() {
@@ -351,8 +371,7 @@ function __lkBootTg(Homey) {
   }
 
   emit('listTargets').then(function (data) {
-    var container = document.getElementById('tg-rooms');
-    container.innerHTML = '';
+    var container = clear(document.getElementById('tg-rooms'));
 
     var rooms = (data && data.rooms) || [];
     if (!rooms.length) {
@@ -362,27 +381,20 @@ function __lkBootTg(Homey) {
 
     // Grouped per room — a flat grid of every light in the house is unusable.
     rooms.forEach(function (room) {
-      var section = document.createElement('div');
-      section.className = 'section';
+      var section = node('div', 'section');
+      section.appendChild(node('div', 'section-title', room.zoneName));
 
-      var heading = document.createElement('div');
-      heading.className = 'section-title';
-      heading.textContent = room.zoneName;
-      section.appendChild(heading);
-
-      var grid = document.createElement('div');
-      grid.className = 'grid';
+      var grid = node('div', 'grid');
 
       room.lights.forEach(function (light) {
         if (light.selected) selected.add(light.id);
-        var el = document.createElement('div');
-        el.className = 'tile' + (light.selected ? ' sel' : '');
+        var el = node('div', 'tile' + (light.selected ? ' sel' : ''));
         // Showing what each light supports here explains the "2 of 3" notes on
         // the next screen before they appear.
         var caps = (light.capabilities || []).map(function (c) { return CAP_LABEL[c] || c; }).join(', ');
-        el.innerHTML = '<div class="name">' + escapeHtml(light.name) + '</div>'
-          + '<div class="meta">' + escapeHtml(caps)
-          + (light.available === false ? ' &middot; ' + escapeHtml(Homey.__('targets.unavailable')) : '') + '</div>';
+        if (light.available === false) caps += ' \u00b7 ' + Homey.__('targets.unavailable');
+        el.appendChild(node('div', 'name', light.name));
+        el.appendChild(node('div', 'meta', caps));
         el.addEventListener('click', function () {
           if (selected.has(light.id)) { selected.delete(light.id); el.classList.remove('sel'); }
           else { selected.add(light.id); el.classList.add('sel'); }
@@ -395,8 +407,7 @@ function __lkBootTg(Homey) {
       container.appendChild(section);
     });
 
-    var zoneSelect = document.getElementById('tg-zone');
-    zoneSelect.innerHTML = '';
+    var zoneSelect = clear(document.getElementById('tg-zone'));
     (data.zones || []).forEach(function (zone) {
       var option = document.createElement('option');
       option.value = zone.id;

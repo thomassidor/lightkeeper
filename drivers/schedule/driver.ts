@@ -1,3 +1,4 @@
+import { mintDeviceId } from '../../lib/bridge/flow-bridge-manager';
 import { validateTargetAgainstCatalog } from '../../lib/validation/pairing-dto';
 import Homey from 'homey';
 
@@ -173,7 +174,7 @@ module.exports = class ScheduleDriver extends Homey.Driver {
         created: true,
         device: {
           name: name || await this.deriveName(state),
-          data: { id: `lk-sched-${Date.now()}-${Math.round(Math.random() * 1e6)}` },
+          data: { id: mintDeviceId('sched') },
           store: { schedule: plan },
         },
       };

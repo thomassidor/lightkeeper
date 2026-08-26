@@ -269,10 +269,30 @@ function __lkBootSrc(Homey) {
 
   var rooms = [];
 
-  function escapeHtml(text) {
-    return String(text == null ? '' : text).replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
+  /**
+   * A DOM node, BUILT rather than parsed.
+   *
+   * Every interpolated value in this view reaches the document through
+   * `textContent`, never through an HTML parser. The values are device names,
+   * zone names and text from other people's integrations — none of it authored by
+   * us — and a light named `"><img src=x onerror=…>` was one string concatenation
+   * away from executing inside a pairing webview.
+   *
+   * A copy, like every helper in these files: a pair view is injected into the
+   * pairing container's document and can import nothing, so a fix here has to be
+   * made in every view. `test/unit/pair-view-styles.test.ts` fails on any drift.
+   */
+  function node(tag, className, text) {
+    var el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined && text !== null) el.textContent = String(text);
+    return el;
+  }
+
+  /** Remove every child. What `innerHTML = ''` did, without the parser. */
+  function clear(el) {
+    while (el.firstChild) el.removeChild(el.firstChild);
+    return el;
   }
 
   function choose(device, el) {
@@ -300,8 +320,7 @@ function __lkBootSrc(Homey) {
   }
 
   function render(query) {
-    var container = document.getElementById('src-rooms');
-    container.innerHTML = '';
+    var container = clear(document.getElementById('src-rooms'));
     var needle = (query || '').trim().toLowerCase();
     var shown = 0;
 
@@ -313,26 +332,22 @@ function __lkBootSrc(Homey) {
       });
       if (!matches.length) return;
 
-      var section = document.createElement('div');
-      section.className = 'section';
-      var heading = document.createElement('div');
-      heading.className = 'section-title';
-      heading.textContent = room.zoneName;
-      section.appendChild(heading);
+      var section = node('div', 'section');
+      section.appendChild(node('div', 'section-title', room.zoneName));
 
       matches.forEach(function (device) {
         shown++;
-        var el = document.createElement('div');
-        el.className = 'tile' + (device.selected ? ' sel' : '');
+        var el = node('div', 'tile' + (device.selected ? ' sel' : ''));
         // The event count is the honest signal for whether a device can act as
         // a controller. Showing it beats guessing a "remotes" category and
         // getting it wrong.
         var events = device.eventCount > 0
           ? device.eventCount + ' event' + (device.eventCount === 1 ? '' : 's')
           : 'no events';
-        el.innerHTML = '<div class="name">' + escapeHtml(device.name) + '</div>'
-          + '<div class="meta">' + escapeHtml(device.ownerName || '') + ' &middot; ' + events
-          + (device.available === false ? ' &middot; unavailable' : '') + '</div>';
+        var meta = (device.ownerName || '') + ' · ' + events
+          + (device.available === false ? ' · unavailable' : '');
+        el.appendChild(node('div', 'name', device.name));
+        el.appendChild(node('div', 'meta', meta));
         el.addEventListener('click', function () { choose(device, el); });
         section.appendChild(el);
       });

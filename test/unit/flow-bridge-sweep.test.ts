@@ -1,7 +1,9 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { FlowBridgeManager } from '../../lib/bridge/flow-bridge-manager';
+import {
+  FlowBridgeManager, mintDeviceId, LIGHTKEEPER_DEVICE_ID,
+} from '../../lib/bridge/flow-bridge-manager';
 import type { HomeyApiService } from '../../lib/homey-api-service';
 
 /**
@@ -266,5 +268,50 @@ describe('the sweep only deletes what the user was shown', () => {
     assert.equal(preview.orphans, 1, 'only one is a candidate for deletion');
     assert.equal(preview.unmanaged, 1);
     assert.deepEqual(preview.flowIds, ['f1']);
+  });
+});
+
+describe('the device-id pattern accepts both shapes, forever', () => {
+  test('a freshly minted id matches, per kind', () => {
+    for (const kind of ['ctrl', 'sched', 'circ'] as const) {
+      const id = mintDeviceId(kind);
+      assert.match(id, LIGHTKEEPER_DEVICE_ID, id);
+      assert.ok(id.startsWith(`lk-${kind}-`));
+    }
+  });
+
+  test('and so does the legacy timestamp-and-random shape', () => {
+    // Not deprecated — PERMANENT. A device id is baked into the `controller`
+    // argument of every Flow that device owns and into the device's own `data`,
+    // neither of which can be rewritten. A pattern that stopped matching it would
+    // make every existing device's Flows unattributable, which the sweep reads
+    // as orphaned.
+    for (const id of ['lk-ctrl-1755500000000-123456', 'lk-sched-1-1', 'lk-circ-1755500000000-9']) {
+      assert.match(id, LIGHTKEEPER_DEVICE_ID, id);
+    }
+  });
+
+  test('nothing else does', () => {
+    for (const id of [
+      'lk-light-1755500000000-1',
+      'ctrl-1755500000000-1',
+      'lk-ctrl-',
+      'lk-ctrl-not-a-uuid',
+      'lk-ctrl-1755500000000',
+      // A hand-typed value in a Flow argument, which is the whole point of the
+      // pattern: it is the sweep's proof that WE wrote the id.
+      'my-controller',
+      '',
+    ]) {
+      assert.doesNotMatch(id, LIGHTKEEPER_DEVICE_ID, id);
+    }
+  });
+
+  test('two minted ids never collide', () => {
+    // Date.now() plus Math.random() had a real, if small, chance of colliding for
+    // two devices created in the same millisecond — and a collision means each
+    // device can delete the other's Flows.
+    const ids = new Set(Array.from({ length: 500 }, () => mintDeviceId('ctrl')));
+    assert.equal(ids.size, 500);
   });
 });

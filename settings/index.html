@@ -6,7 +6,16 @@
     /* Tokens mirror the pair views' shared base (drivers/controller/pair/*.html)
        so the app looks like one product across pairing and settings. This page
        is a document of its own, so they can live on :root — the pair views have
-       to scope theirs to a root id because all four share one document. */
+       to scope theirs to a root id because all four share one document.
+
+       THIS PAGE IS PRIVILEGED. The API key is stored in `homey.settings`, so a
+       settings webview can read it back through Homey.get — that is the SDK's own
+       design and not something the app can prevent. Two rules follow, and both
+       are enforced by test/unit/webview-safety.test.ts: nothing here ever asks
+       Homey.get for that setting (the test forbids even naming it, which is why
+       this comment does not), and no interpolated value reaches the document
+       through an HTML parser. See lib/credential-service.ts for the perimeter
+       this page sits inside. */
     :root {
       --lk-accent: #180e32;
       --lk-accent-ink: #ffffff;
@@ -219,10 +228,38 @@
     return HomeyRef.__('settings.' + key, tokens || {});
   }
 
-  function escapeHtml(text) {
-    return String(text == null ? '' : text).replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
+  /**
+   * A DOM node, BUILT rather than parsed.
+   *
+   * Every interpolated value on this page now reaches the document through
+   * `textContent`, never through an HTML parser. That matters here more than
+   * almost anywhere else in the app: this page is privileged — it can read the
+   * stored API key through `Homey.get` — and the values it renders are device
+   * names, zone names and error text from other people's integrations. None of
+   * that is authored by us, and a device named `"><img src=x onerror=…>` was one
+   * string concatenation away from executing in a webview that can read a secret.
+   *
+   * There is no `escapeHtml()` on this page any more, and that is the point: it
+   * existed to make concatenation safe, and there is no concatenation left to
+   * make safe. `test/unit/webview-safety.test.ts` fails on any new interpolated
+   * `innerHTML`.
+   */
+  function node(tag, className, text) {
+    var el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined && text !== null) el.textContent = String(text);
+    return el;
+  }
+
+  /** Remove every child. What `innerHTML = ''` did, without the parser. */
+  function clear(el) {
+    while (el.firstChild) el.removeChild(el.firstChild);
+    return el;
+  }
+
+  /** ` · ` between two facts on one line. */
+  function separator() {
+    return document.createTextNode(' \u00b7 ');
   }
 
   function stateClass(state) {
@@ -282,44 +319,40 @@
       // supposed to work and does not.
       credText.className = 'msg ' + (cred.valid ? 'ready' : cred.present ? 'broken' : 'partial');
 
-      var events = document.getElementById('events');
-      events.innerHTML = '';
+      var events = clear(document.getElementById('events'));
       if (!status.recentEvents || !status.recentEvents.length) {
         events.textContent = t('noPresses');
       } else {
         status.recentEvents.forEach(function (e) {
-          var row = document.createElement('div');
-          row.className = 'entry';
-          var when = new Date(e.at).toLocaleTimeString();
-          row.innerHTML = '<span class="state ' + (e.accepted ? 'ready' : 'broken') + '">'
-            + escapeHtml(e.accepted ? t('eventHandled') : t('eventIgnored')) + '</span> '
-            + escapeHtml(when) + ' &middot; <code>' + escapeHtml(e.eventKey) + '</code>'
-            + (e.magnitude !== undefined
-              ? ' &middot; ' + escapeHtml(t('eventValue', { value: e.magnitude }))
-              : '')
-            + (e.reason
-              ? '<div class="entry-error">' + escapeHtml(e.reason) + '</div>'
-              : '');
+          var row = node('div', 'entry');
+          row.appendChild(node('span', 'state ' + (e.accepted ? 'ready' : 'broken'),
+            e.accepted ? t('eventHandled') : t('eventIgnored')));
+          row.appendChild(document.createTextNode(' ' + new Date(e.at).toLocaleTimeString()));
+          row.appendChild(separator());
+          row.appendChild(node('code', null, e.eventKey));
+          if (e.magnitude !== undefined) {
+            row.appendChild(separator());
+            row.appendChild(document.createTextNode(t('eventValue', { value: e.magnitude })));
+          }
+          if (e.reason) row.appendChild(node('div', 'entry-error', e.reason));
           events.appendChild(row);
         });
       }
 
-      var writes = document.getElementById('writes');
-      writes.innerHTML = '';
+      var writes = clear(document.getElementById('writes'));
       if (!status.recentWrites || !status.recentWrites.length) {
         writes.textContent = t('noWrites');
       } else {
         status.recentWrites.forEach(function (w) {
-          var row = document.createElement('div');
-          row.className = 'entry';
-          row.innerHTML = '<span class="state ' + (w.ok ? 'ready' : 'broken') + '">'
-            + escapeHtml(w.ok ? t('writeSent') : t('writeFailed')) + '</span> '
-            + escapeHtml(new Date(w.at).toLocaleTimeString())
-            + ' &middot; <code>' + escapeHtml(w.capability) + ' = ' + escapeHtml(String(w.value)) + '</code>'
-            + ' &middot; ' + escapeHtml(String(w.ms)) + ' ms'
-            + (w.error
-              ? '<div class="entry-error">' + escapeHtml(w.error) + '</div>'
-              : '');
+          var row = node('div', 'entry');
+          row.appendChild(node('span', 'state ' + (w.ok ? 'ready' : 'broken'),
+            w.ok ? t('writeSent') : t('writeFailed')));
+          row.appendChild(document.createTextNode(' ' + new Date(w.at).toLocaleTimeString()));
+          row.appendChild(separator());
+          row.appendChild(node('code', null, w.capability + ' = ' + String(w.value)));
+          row.appendChild(separator());
+          row.appendChild(document.createTextNode(String(w.ms) + ' ms'));
+          if (w.error) row.appendChild(node('div', 'entry-error', w.error));
           writes.appendChild(row);
         });
       }
@@ -331,34 +364,30 @@
   }
 
   function renderControllers(controllers) {
-    var list = document.getElementById('controllers');
-    list.innerHTML = '';
+    var list = clear(document.getElementById('controllers'));
     if (!controllers.length) {
-      var empty = document.createElement('p');
-      empty.textContent = t('noControllers');
-      list.appendChild(empty);
+      list.appendChild(node('p', null, t('noControllers')));
       return;
     }
     controllers.forEach(function (controller) {
-      var el = document.createElement('div');
-      el.className = 'card';
-      el.innerHTML = '<span class="state ' + stateClass(controller.state) + '">'
-        + escapeHtml(stateLabel(controller.state)) + '</span> '
-        + '<strong>' + escapeHtml(controller.sourceName || t('controllerFallback')) + '</strong>'
-        + '<p class="entry-meta">'
-        + escapeHtml(t('mappingsAndFlows', {
-          mappings: controller.mappings,
-          flows: controller.managedFlows,
-        }))
-        + (controller.schedulerReady === false
-          ? ' &middot; <strong>' + escapeHtml(t('notStarted')) + '</strong>'
-          : '')
-        + '</p>'
-        + '<p class="entry-sub">'
-        + escapeHtml(t('controls', {
-          names: (controller.targetNames || []).join(', ') || t('noLights'),
-        }))
-        + '</p>';
+      var el = node('div', 'card');
+      el.appendChild(node('span', 'state ' + stateClass(controller.state), stateLabel(controller.state)));
+      el.appendChild(document.createTextNode(' '));
+      el.appendChild(node('strong', null, controller.sourceName || t('controllerFallback')));
+
+      var meta = node('p', 'entry-meta', t('mappingsAndFlows', {
+        mappings: controller.mappings,
+        flows: controller.managedFlows,
+      }));
+      if (controller.schedulerReady === false) {
+        meta.appendChild(separator());
+        meta.appendChild(node('strong', null, t('notStarted')));
+      }
+      el.appendChild(meta);
+
+      el.appendChild(node('p', 'entry-sub', t('controls', {
+        names: (controller.targetNames || []).join(', ') || t('noLights'),
+      })));
       list.appendChild(el);
     });
   }
@@ -375,12 +404,9 @@
   }
 
   function renderSchedules(schedules) {
-    var list = document.getElementById('schedules');
-    list.innerHTML = '';
+    var list = clear(document.getElementById('schedules'));
     if (!schedules.length) {
-      var empty = document.createElement('p');
-      empty.textContent = t('noSchedules');
-      list.appendChild(empty);
+      list.appendChild(node('p', null, t('noSchedules')));
       return;
     }
     schedules.forEach(function (schedule) {
@@ -389,30 +415,39 @@
       var label = schedule.enabled === false ? t('statePaused') : stateLabel(schedule.state);
       var cls = schedule.enabled === false ? 'flat' : stateClass(schedule.state);
 
-      var rows = (schedule.entries || []).map(function (entry) {
-        return escapeHtml(t('scheduleWindow', { on: entry.on, off: entry.off }))
-          + ' &middot; ' + escapeHtml(daysText(entry.days))
-          + (entry.active ? ' &middot; <strong>' + escapeHtml(t('scheduleActiveNow')) + '</strong>' : '');
-      }).join('<br />');
+      var el = node('div', 'card');
+      el.appendChild(node('span', 'state ' + cls, label));
+      el.appendChild(document.createTextNode(' '));
+      el.appendChild(node('strong', null, schedule.name || t('controllerFallback')));
 
-      var el = document.createElement('div');
-      el.className = 'card';
-      el.innerHTML = '<span class="state ' + cls + '">' + escapeHtml(label) + '</span> '
-        + '<strong>' + escapeHtml(schedule.name || t('controllerFallback')) + '</strong>'
-        + '<p class="entry-meta">' + (rows || escapeHtml(t('noSchedules'))) + '</p>'
-        + '<p class="entry-sub">'
-        + escapeHtml(t('controls', {
-          names: (schedule.targetNames || []).join(', ') || t('noLights'),
-        }))
-        + ' &middot; ' + escapeHtml(t('scheduleFlows', { flows: schedule.managedFlows }))
-        + '</p>'
-        // Which clock the times above are read against. "It fired an hour out"
-        // is almost always this line.
-        + '<p class="entry-sub">'
-        + escapeHtml(t('scheduleClock', {
-          local: schedule.localTime || '?', zone: schedule.timezone || '?',
-        }))
-        + '</p>';
+      var meta = node('p', 'entry-meta');
+      var entries = schedule.entries || [];
+      if (!entries.length) meta.textContent = t('noSchedules');
+      entries.forEach(function (entry, index) {
+        if (index > 0) meta.appendChild(document.createElement('br'));
+        meta.appendChild(document.createTextNode(
+          t('scheduleWindow', { on: entry.on, off: entry.off }) + ' \u00b7 ' + daysText(entry.days),
+        ));
+        if (entry.active) {
+          meta.appendChild(separator());
+          meta.appendChild(node('strong', null, t('scheduleActiveNow')));
+        }
+      });
+      el.appendChild(meta);
+
+      el.appendChild(node('p', 'entry-sub',
+        t('controls', { names: (schedule.targetNames || []).join(', ') || t('noLights') })
+        + ' \u00b7 ' + t('scheduleFlows', { flows: schedule.managedFlows })));
+
+      // Which clock the times above are read against. "It fired an hour out" is
+      // almost always this line — and `timezoneResolved: false` means the app
+      // could not use the Homey's own zone, which blocks a schedule outright.
+      var clock = t('scheduleClock', {
+        local: schedule.localTime || '?', zone: schedule.timezone || '?',
+      });
+      if (schedule.timezoneResolved === false) clock += ' \u00b7 ' + t('clockUnresolved');
+      el.appendChild(node('p', 'entry-sub', clock));
+
       list.appendChild(el);
     });
   }
@@ -424,12 +459,9 @@
    * on purpose looks exactly like one that has stopped by accident.
    */
   function renderCircadian(devices) {
-    var list = document.getElementById('circadian');
-    list.innerHTML = '';
+    var list = clear(document.getElementById('circadian'));
     if (!devices.length) {
-      var empty = document.createElement('p');
-      empty.textContent = t('noCircadian');
-      list.appendChild(empty);
+      list.appendChild(node('p', null, t('noCircadian')));
       return;
     }
     devices.forEach(function (device) {
@@ -438,32 +470,33 @@
       var label = device.enabled === false ? t('statePaused') : stateLabel(device.state);
       var cls = device.enabled === false ? 'flat' : stateClass(device.state);
 
-      var el = document.createElement('div');
-      el.className = 'card';
-      el.innerHTML = '<span class="state ' + cls + '">' + escapeHtml(label) + '</span> '
-        + '<strong>' + escapeHtml(device.name || t('controllerFallback')) + '</strong>'
-        + '<p class="entry-meta">'
-        + escapeHtml(t('circadianNow', {
-          warmth: device.now ? Math.round(device.now.warmth * 100) : '?',
-          next: device.nextPoint ? device.nextPoint.at : '?',
-        }))
-        + (device.overridden
-          ? ' &middot; ' + escapeHtml(t('circadianOverridden', { count: device.overridden }))
-          : '')
-        + '</p>'
-        + '<p class="entry-sub">'
-        + escapeHtml(t('controls', {
-          names: (device.targetNames || []).join(', ') || t('noLights'),
-        }))
-        + '</p>'
-        + (device.preStageDisabled
-          ? '<p class="entry-sub">' + escapeHtml(t('circadianPreStageOff')) + '</p>'
-          : '')
-        + '<p class="entry-sub">'
-        + escapeHtml(t('scheduleClock', {
-          local: device.localTime || '?', zone: device.timezone || '?',
-        }))
-        + '</p>';
+      var el = node('div', 'card');
+      el.appendChild(node('span', 'state ' + cls, label));
+      el.appendChild(document.createTextNode(' '));
+      el.appendChild(node('strong', null, device.name || t('controllerFallback')));
+
+      var meta = node('p', 'entry-meta', t('circadianNow', {
+        warmth: device.now ? Math.round(device.now.warmth * 100) : '?',
+        next: device.nextPoint ? device.nextPoint.at : '?',
+      }));
+      if (device.overridden) {
+        meta.appendChild(separator());
+        meta.appendChild(document.createTextNode(
+          t('circadianOverridden', { count: device.overridden }),
+        ));
+      }
+      el.appendChild(meta);
+
+      el.appendChild(node('p', 'entry-sub', t('controls', {
+        names: (device.targetNames || []).join(', ') || t('noLights'),
+      })));
+      if (device.preStageDisabled) {
+        el.appendChild(node('p', 'entry-sub', t('circadianPreStageOff')));
+      }
+      el.appendChild(node('p', 'entry-sub', t('scheduleClock', {
+        local: device.localTime || '?', zone: device.timezone || '?',
+      })));
+
       list.appendChild(el);
     });
   }

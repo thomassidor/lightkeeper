@@ -12,6 +12,8 @@ import {
 import type { LogicalSourceBinding } from '../inputs/selectable-input';
 import { FlowFolderManager, type FlowFolderInfo } from './flow-folder-manager';
 import { isNotFound } from '../support/homey-errors';
+import { randomUUID } from 'node:crypto';
+
 import { KeyedMutex, SingleFlight } from '../support/keyed-mutex';
 
 /**
@@ -114,17 +116,44 @@ export interface ManagedFlowSummary {
 }
 
 /**
- * The shape of a Lightkeeper device id, as the three drivers generate it:
- * `lk-<kind>-<timestamp>-<random>`.
+ * The shape of a Lightkeeper device id.
  *
- * One exported constant because two things must agree on it and they live
- * apart: the drivers that mint ids, and the sweep's proof that a flow's
- * `controller` argument was written by us rather than typed in by hand.
- * `circ` is included for completeness even though a circadian light owns no
- * flows — an id that turned up in a flow's arguments would be evidence of
- * something we would want to see rather than delete.
+ * TWO shapes, and both must keep matching forever:
+ *
+ *  - `lk-<kind>-<uuid>` — what `mintDeviceId()` produces now;
+ *  - `lk-<kind>-<timestamp>-<random>` — what earlier versions produced.
+ *
+ * The legacy form is not deprecated, it is PERMANENT: a device id is baked into
+ * the `controller` argument of every Flow that device owns, and into the device's
+ * own `data`, neither of which can be rewritten. A pattern that stopped matching
+ * it would make every existing device's Flows unattributable — which the sweep
+ * reads as orphaned.
+ *
+ * One exported constant because two things must agree on it and they live apart:
+ * the drivers that mint ids, and the sweep's proof that a flow's `controller`
+ * argument was written by us rather than typed in by hand. `circ` is included for
+ * completeness even though a circadian light owns no flows — an id that turned up
+ * in a flow's arguments would be evidence of something we would want to see
+ * rather than delete.
  */
-export const LIGHTKEEPER_DEVICE_ID = /^lk-(ctrl|sched|circ)-\d+-\d+$/;
+export const LIGHTKEEPER_DEVICE_ID =
+  /^lk-(ctrl|sched|circ)-(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d+-\d+)$/i;
+
+/**
+ * A new device id.
+ *
+ * `crypto.randomUUID()` rather than `Date.now()` plus `Math.random()`: two
+ * devices created in the same millisecond had a real, if small, chance of
+ * colliding, and a collision is not a cosmetic problem — the id is what
+ * attributes a Flow to a device, so two devices sharing one means each can delete
+ * the other's Flows.
+ *
+ * The prefix stays, because it is what tells a human reading a Flow's arguments
+ * what they are looking at.
+ */
+export function mintDeviceId(kind: 'ctrl' | 'sched' | 'circ'): string {
+  return `lk-${kind}-${randomUUID()}`;
+}
 
 /**
  * Does this flow match, in full, the template `compileBinding` produces?

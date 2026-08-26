@@ -176,6 +176,7 @@
     "saveKey": "Save key",
     "removeKey": "Remove key",
     "keyRemoved": "Key removed.",
+    "clockUnresolved": "Lightkeeper could not read the Homey's timezone, so this schedule will not fire.",
     "newKeyPlaceholder": "Paste a new API key",
     "controllers": "Controllers",
     "noControllers": "No controllers yet. Add one from Devices.",

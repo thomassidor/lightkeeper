@@ -734,6 +734,25 @@ Two traps in that shared path, both now covered by tests:
 **Comments explain why.** Module headers give the rationale, and inline comments record which bug a
 guard prevents. Match that density — it is the main reason this code is navigable.
 
+**Every Homey entry point uses `module.exports`.** `app.ts`, `api.ts` and every `driver.ts` and
+`device.ts` are loaded by the Homey runtime with `require()`, and it reads the module's export
+directly — `export default` produces `{ default: … }`, which the loader does not unwrap, and the app
+simply does not start. `lib/` is ordinary ESM-syntax TypeScript and exports normally; the boundary is
+exactly the files Homey loads by convention rather than by import.
+
+Two consequences that look like awkwardness and are not:
+
+- **There is no class type to import from `app.ts`.** `lib/app-contract.ts` writes the app's public
+  surface down by hand instead, and `app.ts` assigns its class to that type before exporting it — so
+  removing a member the contract promises fails at compile time rather than as `undefined` inside a
+  settings-page handler.
+- **A file containing `extends Homey.Device` cannot be imported by a test.** `require('homey')`
+  resolves to the CLI in `node_modules`, whose main executes the CLI; the SDK module exists only on a
+  Homey. `@types/homey` supplies the types, so `tsc` is happy and any test that imports such a file
+  dies with `Class extends value undefined`. That is why the device layer is split:
+  `lib/devices/device-lifecycle.ts` holds every rule and takes its host as an argument, and
+  `lib/devices/lightkeeper-device.ts` is the `Homey.Device` shell that forwards five entry points.
+
 **`any` at Homey API boundaries is deliberate.** `homey-api` ships JavaScript with JSDoc rather than
 type declarations. Everything of ours is strict — `strict: true`, `noImplicitOverride: true`.
 
