@@ -25,7 +25,7 @@ jobs:
       # write-primitive into every run of this workflow. Dependabot bumps the
       # pin (see .github/dependabot.yml) so the comment and the SHA move
       # together.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # 22, to stay close to what current Homey Pro firmware runs. homey-api
       # declares engines.node >= 24, which npm only warns about — 3.19.2 is the
