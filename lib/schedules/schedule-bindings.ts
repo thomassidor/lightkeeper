@@ -92,7 +92,7 @@ export function bindingsFor(entry: ScheduleEntry, card: TimeCardRef): BindableIn
         kind: 'flow_fixed' as const,
         cardId: card.id,
         cardOwnerUri: card.uri,
-        args: { [card.argument]: timeArgumentValue(minute) },
+        fixedArgs: { [card.argument]: timeArgumentValue(minute) },
       },
     };
   });

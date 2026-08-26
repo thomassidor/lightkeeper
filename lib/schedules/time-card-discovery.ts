@@ -94,5 +94,25 @@ export function discoverTimeCard(triggers: unknown[]): TimeCardDiscovery {
   // A card with no uri is unusable: we may not invent one.
   if (!best || !best.card.uri) return { card: null, candidates };
 
+  /**
+   * Two cards of the same shape and the same score: refuse rather than pick.
+   *
+   * `sort` is stable, so a tie resolves to whichever the Homey happened to list
+   * first — a firmware-dependent coin toss deciding what every schedule on the
+   * Homey triggers on. Refusing surfaces `state.noTimeCard`, which already asks
+   * the user to report their firmware version, and `candidates` names both. That
+   * is a schedule that says it cannot be built; the alternative is one that fires
+   * from an unknown card and looks fine.
+   */
+  const tied = scored.filter(s => s.score === best.score);
+  if (tied.length > 1) {
+    for (const candidate of candidates) {
+      if (tied.some(t => t.card.id === candidate.id)) {
+        candidate.note += ` — tied with ${tied.length - 1} other card(s), so none was chosen`;
+      }
+    }
+    return { card: null, candidates };
+  }
+
   return { card: best.card, candidates };
 }

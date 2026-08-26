@@ -31,7 +31,7 @@ const CARD_URI = 'homey:flowcardtrigger:homey:device:abc:n2_on';
 
 describe('fixed bindings', () => {
   const flows = compileBinding(request({
-    kind: 'flow_fixed', cardId: CARD_ID, cardOwnerUri: CARD_URI, args: {},
+    kind: 'flow_fixed', cardId: CARD_ID, cardOwnerUri: CARD_URI, fixedArgs: {},
   }));
 
   test('produces exactly one flow', () => {
@@ -61,6 +61,7 @@ describe('enum bindings', () => {
       kind: 'flow_enum',
       cardId: 'homey:device:def:dimmerswitch_button_pressed',
       cardOwnerUri: 'homey:flowcardtrigger:homey:device:def:dimmerswitch_button_pressed',
+      fixedArgs: {},
       argument: 'button',
       value: 'on',
     }));
@@ -75,7 +76,7 @@ describe('token bindings', () => {
     kind: 'flow_token',
     cardId: 'homey:device:ghi:tapdial_dial_rotation_stopped',
     cardOwnerUri: 'homey:flowcardtrigger:homey:device:ghi:tapdial_dial_rotation_stopped',
-    args: { rotate_direction: 'clock_wise' },
+    fixedArgs: { rotate_direction: 'clock_wise' },
     tokenId: 'steps',
   }));
 
@@ -96,12 +97,17 @@ describe('token bindings', () => {
 });
 
 describe('range expansion', () => {
+  /** The contiguous case, which is what a `[from, to]` pair could express. */
+  const rangeValues = (from: number, to: number) =>
+    Array.from({ length: to - from + 1 }, (_, i) => from + i);
+
   const rangeBinding = (from: number, to: number): LogicalSourceBinding => ({
     kind: 'flow_range',
     cardId: 'homey:device:jkl:wheel',
     cardOwnerUri: 'homey:flowcardtrigger:homey:device:jkl:wheel',
+    fixedArgs: {},
     argument: 'count',
-    valueRange: [from, to],
+    values: rangeValues(from, to),
   });
 
   test('compiles one flow per value, each carrying its own literal amount', () => {
@@ -142,7 +148,7 @@ describe('range expansion', () => {
 describe('idempotency', () => {
   test('compilation is deterministic', () => {
     const binding: LogicalSourceBinding = {
-      kind: 'flow_fixed', cardId: CARD_ID, cardOwnerUri: CARD_URI, args: {},
+      kind: 'flow_fixed', cardId: CARD_ID, cardOwnerUri: CARD_URI, fixedArgs: {},
     };
     assert.deepEqual(compileBinding(request(binding)), compileBinding(request(binding)));
   });

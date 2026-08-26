@@ -45,7 +45,7 @@ const INPUT: SelectableInput = {
     kind: 'flow_fixed',
     cardId: TRIGGER_ID,
     cardOwnerUri: `homey:flowcardtrigger:${TRIGGER_ID}`,
-    args: {},
+    fixedArgs: {},
   },
 };
 

@@ -5,7 +5,7 @@ import {
   classifyArgument,
   dedupeByKey,
   directionOf,
-  numericRangeOf,
+  numericValuesOf,
 } from './magnitude-collapser';
 
 export interface CardToken {
@@ -81,9 +81,24 @@ export function normalizeCards(
     const roles = card.args.map(arg => ({ arg, role: classifyArgument(arg) }));
 
     if (roles.some(r => r.role === 'unsupported')) {
+      const offending = roles.find(r => r.role === 'unsupported')!.arg;
+      /**
+       * The type is NAMED, and for one type in particular.
+       *
+       * `type: "device"` is how an app-level card says "which device?" — a
+       * filtered one is discovery's rank-2 route (CLAUDE.md §4), and reaching
+       * here means the card was matched to this device and then declined for the
+       * very argument that matched it. Pre-binding that argument would make the
+       * card usable, and is deliberately NOT done: a `device` argument's accepted
+       * VALUE shape is not something we can enumerate ahead of time, and §9's
+       * `time_exactly_day` is the standing example of what guessing one costs — a
+       * Flow that validates and never fires. "not enumerable" gave no way to tell
+       * this case from an autocomplete; the type does.
+       */
       rejected.push({
         cardId: card.id,
-        reason: `argument "${roles.find(r => r.role === 'unsupported')!.arg.name}" is not enumerable`,
+        reason: `argument "${offending.name}" is of type "${offending.type}", `
+          + 'which this app cannot enumerate into events',
       });
       continue;
     }
@@ -108,8 +123,8 @@ export function normalizeCards(
     // Range expansion is bounded: silently generating fifty flows is
     // worse than declining.
     if (magnitude) {
-      const range = numericRangeOf(magnitude.arg);
-      const variants = range ? range[1] - range[0] + 1 : Number.MAX_SAFE_INTEGER;
+      const values = numericValuesOf(magnitude.arg);
+      const variants = values ? values.length : Number.MAX_SAFE_INTEGER;
       if (variants > ceiling) {
         rejected.push({
           cardId: card.id,
@@ -145,7 +160,15 @@ export function normalizeCards(
     inputs.push(...built);
   }
 
-  const { kept, dropped } = collapseSemanticDuplicates(dedupeByKey(inputs));
+  const { kept: unique, collisions } = dedupeByKey(inputs);
+  for (const collision of collisions) {
+    rejected.push({
+      cardId: collision.key,
+      reason: `key collision — another gesture already claims "${collision.key}"`,
+    });
+  }
+
+  const { kept, dropped } = collapseSemanticDuplicates(unique);
   for (const d of dropped) {
     rejected.push({ cardId: d.key, reason: `duplicate gesture, superseded by ${d.inFavourOf}` });
   }
@@ -240,9 +263,19 @@ function bindingFor(
 ): LogicalSourceBinding {
   const { card, selector, direction } = ctx;
 
-  const args: Record<string, unknown> = {};
-  if (selector && selectorValue !== null) args[selector.arg.name] = selectorValue;
-  if (direction && directionValue !== null) args[direction.arg.name] = directionValue;
+  /**
+   * The arguments that pin this event to one control, built ONCE and carried
+   * into every kind below.
+   *
+   * It used to be built here and then reach only three of the four flow kinds:
+   * `flow_range` took the magnitude argument and nothing else. A card with a
+   * button selector, a direction and an enumerated step therefore compiled into
+   * one flow per step, none of them naming the button or the direction — so
+   * every variant fired on every control of the remote.
+   */
+  const fixedArgs: Record<string, unknown> = {};
+  if (selector && selectorValue !== null) fixedArgs[selector.arg.name] = selectorValue;
+  if (direction && directionValue !== null) fixedArgs[direction.arg.name] = directionValue;
 
   // A number token carries the amount — the token bridge card handles it.
   if (tokenMagnitude) {
@@ -250,21 +283,22 @@ function bindingFor(
       kind: 'flow_token',
       cardId: card.id,
       cardOwnerUri: card.uri,
-      args,
+      fixedArgs,
       tokenId: tokenMagnitude.id,
     };
   }
 
   // A fixed enum magnitude means one flow per value, each passing its own
-  // literal amount to the numeric bridge card (range expansion).
+  // literal amount to the numeric bridge card (range expansion). The values are
+  // the card's own, exactly: a dropdown offering 1 and 3 does not accept 2.
   if (magnitude) {
-    const range = numericRangeOf(magnitude.arg) ?? [1, 1];
     return {
       kind: 'flow_range',
       cardId: card.id,
       cardOwnerUri: card.uri,
+      fixedArgs,
       argument: magnitude.arg.name,
-      valueRange: range,
+      values: numericValuesOf(magnitude.arg) ?? [1],
     };
   }
 
@@ -273,6 +307,9 @@ function bindingFor(
       kind: 'flow_enum',
       cardId: card.id,
       cardOwnerUri: card.uri,
+      // The selector is the enum here, so it belongs to the variant rather than
+      // to the fixed set — the compiler merges the two and would set it twice.
+      fixedArgs: {},
       argument: selector.arg.name,
       value: selectorValue,
     };
@@ -282,7 +319,7 @@ function bindingFor(
     kind: 'flow_fixed',
     cardId: card.id,
     cardOwnerUri: card.uri,
-    args,
+    fixedArgs,
   };
 }
 

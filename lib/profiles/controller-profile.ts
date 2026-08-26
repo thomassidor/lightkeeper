@@ -2,7 +2,12 @@ import type { ControllerBehavior, MappingRule } from '../mapping/mapping-types';
 import type { SelectableInput } from '../inputs/selectable-input';
 import type { TargetSpec } from '../outputs/light-intent';
 
-export const CURRENT_SCHEMA_VERSION = 1;
+/**
+ * 1 → 2: every flow binding carries `fixedArgs` (renamed from `args`, and now
+ * present on all kinds), and `flow_range` stores the card's exact `values`
+ * instead of a `[min, max]` pair. See `lib/profiles/migrations.ts`.
+ */
+export const CURRENT_SCHEMA_VERSION = 2;
 
 /** How a controller reports itself: working, degraded, or needing attention. */
 export type ControllerState = 'ready' | 'partial' | 'needs_repair' | 'needs_credential' | 'disabled';
@@ -49,6 +54,16 @@ export interface ControllerProfile {
     driverId?: string;
     /** What makes repair safe after an integration update. */
     eventSurfaceFingerprint: string;
+    /**
+     * The wider fingerprint, absent on profiles saved before it existed.
+     *
+     * Its absence is meaningful and is why this is optional rather than
+     * defaulted: `HealthMonitor` compares v2 only when the profile carries one,
+     * so an installed controller keeps v1 semantics until it is next saved or
+     * repaired. Widening v1 in place would have marked every device on every
+     * Homey needs_repair on the upgrade, about a surface that had not moved.
+     */
+    eventSurfaceFingerprintV2?: string;
     /** Display-only cache. */
     name?: string;
   };

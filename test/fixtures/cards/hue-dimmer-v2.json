@@ -1,0 +1,48 @@
+{
+  "provenance": "reconstructed",
+  "note": "Rebuilt from test/fixtures/reference-devices.ts, which was hand-transcribed from a live Homey Pro 2023 on firmware 13.4.0. Replace with a real capture when one is available — see README.md in this folder.",
+  "driverId": "nl.philips.hue:dimmerswitch",
+  "deviceId": "huedimmer-0000-0000-0000-000000000002",
+  "cards": [
+    {
+      "id": "homey:device:huedimmer-0000-0000-0000-000000000002:dimmerswitch_button_pressed",
+      "shortId": "dimmerswitch_button_pressed",
+      "uri": "homey:flowcardtrigger:homey:device:huedimmer-0000-0000-0000-000000000002:dimmerswitch_button_pressed",
+      "title": "A button is pressed",
+      "args": [
+        {
+          "name": "button",
+          "type": "dropdown",
+          "values": [
+            {
+              "id": "on"
+            },
+            {
+              "id": "increase_brightness"
+            },
+            {
+              "id": "decrease_brightness"
+            },
+            {
+              "id": "off"
+            }
+          ]
+        }
+      ],
+      "tokens": []
+    },
+    {
+      "id": "homey:device:huedimmer-0000-0000-0000-000000000002:measure_battery_threshold_below",
+      "shortId": "measure_battery_threshold_below",
+      "uri": "homey:flowcardtrigger:homey:device:huedimmer-0000-0000-0000-000000000002:measure_battery_threshold_below",
+      "title": "Battery (%) becomes less than…",
+      "args": [
+        {
+          "name": "threshold",
+          "type": "number"
+        }
+      ],
+      "tokens": []
+    }
+  ]
+}

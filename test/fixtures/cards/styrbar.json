@@ -1,0 +1,82 @@
+{
+  "provenance": "reconstructed",
+  "note": "Rebuilt from test/fixtures/reference-devices.ts, which was hand-transcribed from a live Homey Pro 2023 on firmware 13.4.0. Replace with a real capture when one is available — see README.md in this folder.",
+  "driverId": "com.ikea.tradfri:remote_control_n2",
+  "deviceId": "styrbar-0000-0000-0000-000000000001",
+  "cards": [
+    {
+      "id": "homey:device:styrbar-0000-0000-0000-000000000001:n2_on",
+      "shortId": "n2_on",
+      "uri": "homey:flowcardtrigger:homey:device:styrbar-0000-0000-0000-000000000001:n2_on",
+      "title": "Higher brightness was pressed",
+      "args": [],
+      "tokens": []
+    },
+    {
+      "id": "homey:device:styrbar-0000-0000-0000-000000000001:n2_off",
+      "shortId": "n2_off",
+      "uri": "homey:flowcardtrigger:homey:device:styrbar-0000-0000-0000-000000000001:n2_off",
+      "title": "Lower brightness was pressed",
+      "args": [],
+      "tokens": []
+    },
+    {
+      "id": "homey:device:styrbar-0000-0000-0000-000000000001:n2_dim_up",
+      "shortId": "n2_dim_up",
+      "uri": "homey:flowcardtrigger:homey:device:styrbar-0000-0000-0000-000000000001:n2_dim_up",
+      "title": "Higher brightness was long pressed",
+      "args": [],
+      "tokens": []
+    },
+    {
+      "id": "homey:device:styrbar-0000-0000-0000-000000000001:n2_dim_down",
+      "shortId": "n2_dim_down",
+      "uri": "homey:flowcardtrigger:homey:device:styrbar-0000-0000-0000-000000000001:n2_dim_down",
+      "title": "Lower brightness was long pressed",
+      "args": [],
+      "tokens": []
+    },
+    {
+      "id": "homey:device:styrbar-0000-0000-0000-000000000001:n2_scene_up",
+      "shortId": "n2_scene_up",
+      "uri": "homey:flowcardtrigger:homey:device:styrbar-0000-0000-0000-000000000001:n2_scene_up",
+      "title": "Right button was pressed",
+      "args": [],
+      "tokens": []
+    },
+    {
+      "id": "homey:device:styrbar-0000-0000-0000-000000000001:n2_scene_down",
+      "shortId": "n2_scene_down",
+      "uri": "homey:flowcardtrigger:homey:device:styrbar-0000-0000-0000-000000000001:n2_scene_down",
+      "title": "Left button was pressed",
+      "args": [],
+      "tokens": []
+    },
+    {
+      "id": "homey:device:styrbar-0000-0000-0000-000000000001:measure_battery_threshold_above",
+      "shortId": "measure_battery_threshold_above",
+      "uri": "homey:flowcardtrigger:homey:device:styrbar-0000-0000-0000-000000000001:measure_battery_threshold_above",
+      "title": "Battery (%) becomes greater than…",
+      "args": [
+        {
+          "name": "threshold",
+          "type": "number"
+        }
+      ],
+      "tokens": []
+    },
+    {
+      "id": "homey:device:styrbar-0000-0000-0000-000000000001:measure_battery_changed",
+      "shortId": "measure_battery_changed",
+      "uri": "homey:flowcardtrigger:homey:device:styrbar-0000-0000-0000-000000000001:measure_battery_changed",
+      "title": "The battery level changed",
+      "args": [],
+      "tokens": [
+        {
+          "id": "value",
+          "type": "number"
+        }
+      ]
+    }
+  ]
+}

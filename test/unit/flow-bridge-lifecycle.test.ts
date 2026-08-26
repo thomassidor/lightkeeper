@@ -129,7 +129,7 @@ function scheduleInput(key: string, time: string) {
       kind: 'flow_fixed' as const,
       cardId: 'homey:manager:cron:time_exactly',
       cardOwnerUri: 'homey:flowcardtrigger:homey:manager:cron:time_exactly',
-      args: { time },
+      fixedArgs: { time },
     },
   };
 }
@@ -145,7 +145,7 @@ function asLiveFlow(id: string, controllerId: string, input: ReturnType<typeof s
     trigger: {
       id: input.binding.cardId,
       uri: input.binding.cardOwnerUri,
-      args: { ...input.binding.args },
+      args: { ...(input.binding as any).fixedArgs },
     },
     actions: [{
       id: cardId('bridge_event'),

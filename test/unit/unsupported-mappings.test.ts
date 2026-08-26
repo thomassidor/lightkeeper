@@ -40,7 +40,7 @@ function rangeInput(key: string, from: number, to: number): SelectableInput {
       cardId: 'homey:device:bilresa:switch_multi_press_multi',
       cardOwnerUri: 'homey:flowcardtrigger:homey:device:bilresa:switch_multi_press_multi',
       argument: 'count',
-      valueRange: [from, to],
+      values: Array.from({ length: to - from + 1 }, (_, i) => from + i),
     },
   } as SelectableInput;
 }

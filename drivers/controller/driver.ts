@@ -31,6 +31,7 @@ interface SessionState {
   target?: TargetSpec;
   catalogue: SelectableInput[];
   fingerprint?: string;
+  fingerprintV2?: string;
   mappings: MappingRule[];
   /** Set during repair. */
   existingDeviceId?: string;
@@ -58,6 +59,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
       sourceOwnerUri: profile?.source?.ownerAppId,
       sourceName: profile?.source?.name,
       fingerprint: profile?.source?.eventSurfaceFingerprint,
+      fingerprintV2: profile?.source?.eventSurfaceFingerprintV2,
       target: profile?.target,
       catalogue: profile?.catalogue ?? [],
       mappings: profile?.mappings ?? [],
@@ -195,6 +197,9 @@ module.exports = class ControllerDriver extends Homey.Driver {
       state.sourceDeviceId = deviceId;
       state.catalogue = result.inputs;
       state.fingerprint = result.fingerprint;
+      // Written on every save and repair, which is what makes the v1-to-v2
+      // upgrade one-way. See surfaceMoved() in health-monitor.ts.
+      state.fingerprintV2 = result.fingerprintV2;
       // Recorded for one-tap re-attach, which matches on owner app plus
       // driver plus fingerprint — never on model name alone.
       state.sourceDriverId = device.driverId ?? undefined;
@@ -425,6 +430,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
         ...(state.sourceDriverId ? { driverId: state.sourceDriverId } : {}),
         ...(state.sourceName ? { name: state.sourceName } : {}),
         eventSurfaceFingerprint: state.fingerprint ?? '',
+        ...(state.fingerprintV2 ? { eventSurfaceFingerprintV2: state.fingerprintV2 } : {}),
       },
       target: state.target,
       mappings: state.mappings.filter(m => m.inputKey !== null),

@@ -68,6 +68,9 @@ describe('Philips Hue Dimmer v2', () => {
       kind: 'flow_enum',
       cardId: `homey:device:${HUE_DIMMER_DEVICE_ID}:dimmerswitch_button_pressed`,
       cardOwnerUri: `homey:flowcardtrigger:homey:device:${HUE_DIMMER_DEVICE_ID}:dimmerswitch_button_pressed`,
+      // The selector IS the enum here, so it belongs to the variant rather than
+      // to the fixed set — the compiler merges the two and would set it twice.
+      fixedArgs: {},
       argument: 'button',
       value: 'on',
     });

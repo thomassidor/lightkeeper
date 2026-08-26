@@ -1,0 +1,242 @@
+{
+  "provenance": "reconstructed",
+  "note": "Rebuilt from test/fixtures/reference-devices.ts, which was hand-transcribed from a live Homey Pro 2023 on firmware 13.4.0. Replace with a real capture when one is available — see README.md in this folder.",
+  "driverId": "com.ikea.tradfri:matter_bilresa_scroll_wheel",
+  "deviceId": "bilresa-0000-0000-0000-000000000004",
+  "cards": [
+    {
+      "id": "homey:device:bilresa-0000-0000-0000-000000000004:switch_initial_press_multi",
+      "shortId": "switch_initial_press_multi",
+      "uri": "homey:flowcardtrigger:homey:device:bilresa-0000-0000-0000-000000000004:switch_initial_press_multi",
+      "title": "A button was pressed",
+      "args": [
+        {
+          "name": "button",
+          "type": "dropdown",
+          "values": [
+            {
+              "id": "1"
+            },
+            {
+              "id": "2"
+            },
+            {
+              "id": "3"
+            },
+            {
+              "id": "4"
+            },
+            {
+              "id": "5"
+            },
+            {
+              "id": "6"
+            },
+            {
+              "id": "7"
+            },
+            {
+              "id": "8"
+            },
+            {
+              "id": "9"
+            }
+          ]
+        }
+      ],
+      "tokens": []
+    },
+    {
+      "id": "homey:device:bilresa-0000-0000-0000-000000000004:switch_press_multi",
+      "shortId": "switch_press_multi",
+      "uri": "homey:flowcardtrigger:homey:device:bilresa-0000-0000-0000-000000000004:switch_press_multi",
+      "title": "A button was clicked",
+      "args": [
+        {
+          "name": "button",
+          "type": "dropdown",
+          "values": [
+            {
+              "id": "1"
+            },
+            {
+              "id": "2"
+            },
+            {
+              "id": "3"
+            },
+            {
+              "id": "4"
+            },
+            {
+              "id": "5"
+            },
+            {
+              "id": "6"
+            },
+            {
+              "id": "7"
+            },
+            {
+              "id": "8"
+            },
+            {
+              "id": "9"
+            }
+          ]
+        }
+      ],
+      "tokens": []
+    },
+    {
+      "id": "homey:device:bilresa-0000-0000-0000-000000000004:switch_long_press_multi",
+      "shortId": "switch_long_press_multi",
+      "uri": "homey:flowcardtrigger:homey:device:bilresa-0000-0000-0000-000000000004:switch_long_press_multi",
+      "title": "A button was long pressed and released",
+      "args": [
+        {
+          "name": "button",
+          "type": "dropdown",
+          "values": [
+            {
+              "id": "3"
+            },
+            {
+              "id": "6"
+            },
+            {
+              "id": "9"
+            }
+          ]
+        }
+      ],
+      "tokens": []
+    },
+    {
+      "id": "homey:device:bilresa-0000-0000-0000-000000000004:switch_long_press2_multi",
+      "shortId": "switch_long_press2_multi",
+      "uri": "homey:flowcardtrigger:homey:device:bilresa-0000-0000-0000-000000000004:switch_long_press2_multi",
+      "title": "A button was long pressed",
+      "args": [
+        {
+          "name": "button",
+          "type": "dropdown",
+          "values": [
+            {
+              "id": "3"
+            },
+            {
+              "id": "6"
+            },
+            {
+              "id": "9"
+            }
+          ]
+        }
+      ],
+      "tokens": []
+    },
+    {
+      "id": "homey:device:bilresa-0000-0000-0000-000000000004:switch_multi_press_multi",
+      "shortId": "switch_multi_press_multi",
+      "uri": "homey:flowcardtrigger:homey:device:bilresa-0000-0000-0000-000000000004:switch_multi_press_multi",
+      "title": "A button was pressed multiple times",
+      "args": [
+        {
+          "name": "button",
+          "type": "dropdown",
+          "values": [
+            {
+              "id": "1"
+            },
+            {
+              "id": "2"
+            },
+            {
+              "id": "3"
+            },
+            {
+              "id": "4"
+            },
+            {
+              "id": "5"
+            },
+            {
+              "id": "6"
+            },
+            {
+              "id": "7"
+            },
+            {
+              "id": "8"
+            },
+            {
+              "id": "9"
+            }
+          ]
+        },
+        {
+          "name": "count",
+          "type": "dropdown",
+          "values": [
+            {
+              "id": "1"
+            },
+            {
+              "id": "2"
+            },
+            {
+              "id": "3"
+            },
+            {
+              "id": "4"
+            },
+            {
+              "id": "5"
+            },
+            {
+              "id": "6"
+            },
+            {
+              "id": "7"
+            },
+            {
+              "id": "8"
+            },
+            {
+              "id": "9"
+            },
+            {
+              "id": "10"
+            },
+            {
+              "id": "11"
+            },
+            {
+              "id": "12"
+            },
+            {
+              "id": "13"
+            },
+            {
+              "id": "14"
+            },
+            {
+              "id": "15"
+            },
+            {
+              "id": "16"
+            },
+            {
+              "id": "17"
+            },
+            {
+              "id": "18"
+            }
+          ]
+        }
+      ],
+      "tokens": []
+    }
+  ]
+}

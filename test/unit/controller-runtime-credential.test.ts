@@ -43,7 +43,7 @@ function input(): SelectableInput {
       kind: 'flow_fixed',
       cardId: `homey:device:${SOURCE_ID}:n2_on`,
       cardOwnerUri: `homey:flowcardtrigger:homey:device:${SOURCE_ID}:n2_on`,
-      args: {},
+      fixedArgs: {},
     },
   };
 }

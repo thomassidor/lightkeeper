@@ -67,7 +67,7 @@ export class HealthMonitor {
 
     // An integration update can change the event surface under us.
     const discovered = await this.discovery.discover(source);
-    if (discovered.fingerprint !== profile.source.eventSurfaceFingerprint) {
+    if (surfaceMoved(profile, discovered)) {
       return {
         state: 'needs_repair',
         detail: {
@@ -122,7 +122,7 @@ export class HealthMonitor {
 
     for (const device of plausible) {
       const discovered = await this.discovery.discover(device);
-      if (discovered.fingerprint === profile.source.eventSurfaceFingerprint) {
+      if (!surfaceMoved(profile, discovered)) {
         return {
           deviceId: device.id,
           deviceName: device.name,
@@ -168,4 +168,28 @@ export function matchesOwnerAndDriver(device: CatalogDevice, profile: Controller
   if (profile.source.driverId && device.driverId !== profile.source.driverId) return false;
   if (profile.source.ownerAppId && device.ownerUri !== profile.source.ownerAppId) return false;
   return Boolean(profile.source.driverId || profile.source.ownerAppId);
+}
+
+/**
+ * Has the remote's event surface moved since this controller was configured?
+ *
+ * Versioned on purpose. `fingerprintV2` hashes more than v1 does — argument
+ * filters, numeric bounds, a token's title (which carries the scale, and
+ * therefore the difference between a nudge and a slam), the card's full id and
+ * uri, and the normalizer's own version. Comparing v2 against a profile that
+ * only ever stored v1 would disagree every time, so every installed controller
+ * would report needs_repair on the upgrade — a mass false alarm about a surface
+ * that had not moved.
+ *
+ * So: a profile that carries a v2 hash is compared on v2, and one that does not
+ * keeps v1 semantics until it is next saved or repaired. That upgrade is
+ * one-way; nothing writes a profile without a v2 any more.
+ */
+export function surfaceMoved(
+  profile: ControllerProfile,
+  discovered: { fingerprint: string; fingerprintV2?: string },
+): boolean {
+  const storedV2 = profile.source.eventSurfaceFingerprintV2;
+  if (storedV2 && discovered.fingerprintV2) return discovered.fingerprintV2 !== storedV2;
+  return discovered.fingerprint !== profile.source.eventSurfaceFingerprint;
 }

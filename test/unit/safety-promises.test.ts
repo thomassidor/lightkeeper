@@ -257,7 +257,7 @@ describe('safety promises', () => {
         kind: 'flow_fixed' as const,
         cardId: 'homey:device:remote-1:n2_on',
         cardOwnerUri: 'homey:flowcardtrigger:homey:device:remote-1:n2_on',
-        args: {},
+        fixedArgs: {},
       },
     };
 

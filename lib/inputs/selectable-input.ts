@@ -3,17 +3,53 @@ import type { InputAction } from './input-event';
 /**
  * How a normalised event is bound back to its raw source.
  * Persisted in the controller profile; the compiler turns it into flows.
+ *
+ * **`fixedArgs` is on every flow kind, and that is the point.** It carries the
+ * trigger arguments that pin the event down — which button fired, which way the
+ * dial turned — and they are needed whatever ELSE the card does. Three of the
+ * five kinds used to have somewhere to put them and `flow_range` did not, so a
+ * card with a selector AND a direction AND an enumerated magnitude compiled into
+ * flows that set only the magnitude: a Flow per detent, none of them saying which
+ * button or which direction. Every variant fired on every turn of every control
+ * on the remote.
+ *
+ * `flow_enum` keeps its `argument`/`value` pair ON TOP of `fixedArgs` rather than
+ * folding into `flow_fixed`, because that pair is also what its variant key is
+ * built from (`enum:<value>`) — see DEVIATIONS.md for the fold that was
+ * considered and why it cannot keep that key stable.
  */
 export type LogicalSourceBinding =
   | { kind: 'direct_capability'; capabilityId: string; interpreter: ValueInterpreter }
-  | { kind: 'flow_fixed'; cardId: string; cardOwnerUri: string; args: Record<string, unknown> }
-  | { kind: 'flow_enum'; cardId: string; cardOwnerUri: string; argument: string; value: unknown }
-  | { kind: 'flow_range'; cardId: string; cardOwnerUri: string; argument: string; valueRange: [number, number] }
+  | { kind: 'flow_fixed'; cardId: string; cardOwnerUri: string; fixedArgs: Record<string, unknown> }
+  | {
+    kind: 'flow_enum';
+    cardId: string;
+    cardOwnerUri: string;
+    fixedArgs: Record<string, unknown>;
+    argument: string;
+    value: unknown;
+  }
+  | {
+    kind: 'flow_range';
+    cardId: string;
+    cardOwnerUri: string;
+    fixedArgs: Record<string, unknown>;
+    argument: string;
+    /**
+     * The EXACT values the card offers, sorted and de-duplicated.
+     *
+     * Not a `[min, max]` pair. A dropdown offering {1, 3} is two detents, and
+     * expanding a range invented a flow for a value the card never accepts —
+     * which fails at create time with a 404 that reads like a permission
+     * problem. Decimal sets ({0.5, 1.0}) could not be expressed at all.
+     */
+    values: number[];
+  }
   | {
     kind: 'flow_token';
     cardId: string;
     cardOwnerUri: string;
-    args: Record<string, unknown>;
+    fixedArgs: Record<string, unknown>;
     /**
      * The token's `id`, not its `name`; using `name` silently produces broken
      * flows. For a token

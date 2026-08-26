@@ -325,7 +325,7 @@ describe('flow reconciliation', () => {
     assert.deepEqual(request.mapped.map((m: any) => m.variantKey), ['at:22:00', 'at:23:30']);
     // The trigger argument is the wall-clock time, and the card is echoed back
     // from enumeration rather than constructed.
-    assert.deepEqual(request.mapped[0].binding.args, { time: '22:00' });
+    assert.deepEqual(request.mapped[0].binding.fixedArgs, { time: '22:00' });
     assert.equal(request.mapped[0].binding.cardId, 'homey:manager:cron:time_exactly');
     assert.equal(h.runtime.currentPlan.managedFlows.length, 2);
   });

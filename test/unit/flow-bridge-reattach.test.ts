@@ -46,7 +46,7 @@ function inputOn(deviceId: string): SelectableInput {
       kind: 'flow_fixed',
       cardId: triggerId,
       cardOwnerUri: `homey:flowcardtrigger:${triggerId}`,
-      args: {},
+      fixedArgs: {},
     },
   };
 }

@@ -374,3 +374,105 @@ complete and the times are exactly what the user meant. So there is a second key
 `schedule.droppedOverlap`, and the view picks it when any drop reason begins with
 `overlaps`. The reasons themselves stay English strings built in `lib/` (which has
 no `homey.__`), which is why the discrimination happens in the view.
+
+---
+
+## Phase 5
+
+### 5.1 — `flow_enum` was NOT folded into `flow_fixed`
+
+The plan prefers the fold, "keeping `variantKey` semantics identical:
+`enum:<value>`". Those two are not simultaneously satisfiable. After the fold the
+enum value sits in `fixedArgs` alongside any selector and direction, and nothing
+distinguishes which entry was "the enum" — so the compiler cannot rebuild
+`enum:<value>`. The alternatives were a variant key derived from a hash of
+`fixedArgs` (not the stated key, and it churns every installed controller's Flows,
+since reuse is keyed on the variant key) or storing a redundant `variantKey`
+inside the binding (one more field than the kind it removes).
+
+So there are still five kinds. `fixedArgs` is on all of them, which is the actual
+finding: `bindingFor()` built the selector/direction object and then handed it to
+three of four kinds. `flow_range` got the magnitude argument alone, so a card with
+a selector AND a direction AND an enumerated step compiled to one Flow per step,
+none naming the button or the direction — every variant fired on every control.
+`binding-shape.test.ts` asserts twelve distinct triggers where there were three.
+
+An enum binding's `fixedArgs` is `{}` and its value lives in the variant: the
+compiler merges the two, so putting the selector in both would set it twice.
+
+### 5.2 — the ceiling now counts values, and a corrupted range refuses
+
+`numericRangeOf` becomes `numericValuesOf`, and `flow_range.values` is the card's
+exact sorted, de-duplicated set. Two consequences worth stating:
+
+- The ceiling counts `values.length`, so {1, 1000} is two Flows rather than a
+  thousand. Previously the SPAN was compared against the ceiling, which declined
+  a two-detent control as if it needed a thousand variants.
+- The old count-up loop between two NaN endpoints was not an error, it was an
+  empty loop — the control silently compiled to nothing. Hence
+  `InvalidRangeError`, surfaced through the same `unsupported` path the ceiling
+  refusal uses, so the device reports repair and names the control.
+
+The migration derives `values` from the stored endpoints rather than from the live
+card, because a migration must be a pure function of what is on disk. Contiguous
+integer ranges therefore produce identical `range:<value>` variant keys and no
+Flow churns; the next discovery pass corrects a sparse set and the fingerprint
+notices it moved.
+
+### 5.3 — LK-007 is CONFIRMED, and deliberately left declining
+
+An app-level card with a filtered `type: "device"` argument IS matched to the
+device (route `device_arg`) and then declined, because `classifyArgument` returns
+`unsupported` for any non-dropdown type. The plan's fix — pre-bind the device
+argument into `fixedArgs` — is now trivial mechanically. The blocker is the VALUE:
+a `device` argument's accepted serialisation is not something we can enumerate
+ahead of time. CLAUDE.md §5 already records that autocomplete arguments serialise
+as the whole selected object rather than an id, and §9's `time_exactly_day` is the
+standing example of what guessing an argument shape costs — a Flow that validates
+and never fires, which is the single worst failure this app has.
+
+Repo law is not to guess a platform shape. So the decline stands, and what changed
+is that it now NAMES the type — `argument "device" is of type "device", which this
+app cannot enumerate into events` — instead of the undifferentiated "is not
+enumerable". Every reference device resolves through `device_scoped`, so nothing
+shipped depends on this route.
+
+**What a fix needs:** one `getFlowCardTriggers()` capture of such a card, plus one
+hand-built Flow through the Web API setting that argument, to read back how the
+value serialises. Until then, do not implement it.
+
+### 5.3/LK-031 — failing closed contradicts an existing comment, on purpose
+
+`deviceMatchesFilter`'s old default branch said unknown keys "are ignored rather
+than treated as a mismatch: failing closed here would silently hide usable cards."
+That reasoning is now inverted, and the new comment says why: ignoring a
+restriction we cannot evaluate reads as "the filter does not restrict on that",
+which is the opposite of what a filter is. The concern the old comment protected —
+a silently absent card — is met by REPORTING the decline with the key named, which
+`discover()` now returns in `rejected`. `device_scoped` does not go through a
+filter at all, so no reference device is affected.
+
+### 5.3/LK-029 — v2 is computed alongside, and adopted only on save
+
+Both hashes are computed on every discovery. `surfaceMoved()` compares v2 only
+when the profile carries one; profiles saved before it existed keep v1 semantics.
+Every save and repair writes a v2, so the upgrade is one-way and silent. Widening
+v1 in place would have marked every device on every Homey `needs_repair` on the
+upgrade — a mass false alarm about a surface that had not moved.
+
+v2 adds: the card's full id and uri, argument `filter`, `min`/`max`/`step`, token
+TITLES (the Tap Dial's "Steps (1000/turn)" is the scale, so relabelling it to
+"(500/turn)" is the same shape and a different remote), and `NORMALIZER_VERSION`.
+
+### 5.3 — the fixture corpus is `reconstructed`, and says so
+
+`test/fixtures/cards/*.json` are generated from `reference-devices.ts` by
+`scripts/dump-card-fixtures.mjs`, and each carries `"provenance":
+"reconstructed"`. `card-fixtures.test.ts` fails if the JSON and the TS drift, and
+asserts no file carries a real device id.
+
+**This is a hardware gap, not a completed task.** The transcription was faithful
+to what mattered for normalisation, and v2 now hashes things nobody was looking at
+when it was made — argument filters, numeric bounds, token titles. The corpus is
+good enough to test the normalizer and not good enough to settle a question about
+the platform. Replacement recipe: `test/fixtures/cards/README.md`.

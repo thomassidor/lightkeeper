@@ -39,7 +39,7 @@ function scheduleInput(key: string, time: string) {
       kind: 'flow_fixed' as const,
       cardId: 'homey:manager:cron:time_exactly',
       cardOwnerUri: 'homey:flowcardtrigger:homey:manager:cron:time_exactly',
-      args: { time },
+      fixedArgs: { time },
     },
   };
 }

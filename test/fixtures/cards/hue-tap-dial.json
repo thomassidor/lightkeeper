@@ -1,0 +1,103 @@
+{
+  "provenance": "reconstructed",
+  "note": "Rebuilt from test/fixtures/reference-devices.ts, which was hand-transcribed from a live Homey Pro 2023 on firmware 13.4.0. Replace with a real capture when one is available — see README.md in this folder.",
+  "driverId": "nl.philips.hue:tapdial",
+  "deviceId": "tapdial-0000-0000-0000-000000000003",
+  "cards": [
+    {
+      "id": "homey:device:tapdial-0000-0000-0000-000000000003:tapdial_button_pressed",
+      "shortId": "tapdial_button_pressed",
+      "uri": "homey:flowcardtrigger:homey:device:tapdial-0000-0000-0000-000000000003:tapdial_button_pressed",
+      "title": "A button is pressed",
+      "args": [
+        {
+          "name": "button",
+          "type": "dropdown",
+          "values": [
+            {
+              "id": "button1"
+            },
+            {
+              "id": "button2"
+            },
+            {
+              "id": "button3"
+            },
+            {
+              "id": "button4"
+            }
+          ]
+        }
+      ],
+      "tokens": []
+    },
+    {
+      "id": "homey:device:tapdial-0000-0000-0000-000000000003:tapdial_dial_rotation_started",
+      "shortId": "tapdial_dial_rotation_started",
+      "uri": "homey:flowcardtrigger:homey:device:tapdial-0000-0000-0000-000000000003:tapdial_dial_rotation_started",
+      "title": "Dial rotated",
+      "args": [
+        {
+          "name": "rotate_direction",
+          "type": "dropdown",
+          "values": [
+            {
+              "id": "either"
+            },
+            {
+              "id": "counter_clock_wise"
+            },
+            {
+              "id": "clock_wise"
+            }
+          ]
+        }
+      ],
+      "tokens": []
+    },
+    {
+      "id": "homey:device:tapdial-0000-0000-0000-000000000003:tapdial_dial_rotation_stopped",
+      "shortId": "tapdial_dial_rotation_stopped",
+      "uri": "homey:flowcardtrigger:homey:device:tapdial-0000-0000-0000-000000000003:tapdial_dial_rotation_stopped",
+      "title": "Dial stops rotating",
+      "args": [
+        {
+          "name": "rotate_direction",
+          "type": "dropdown",
+          "values": [
+            {
+              "id": "either"
+            },
+            {
+              "id": "counter_clock_wise"
+            },
+            {
+              "id": "clock_wise"
+            }
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "id": "steps",
+          "type": "number",
+          "title": "Steps (1000/turn)"
+        }
+      ]
+    },
+    {
+      "id": "homey:device:tapdial-0000-0000-0000-000000000003:tapdial_dial_rotation_dimmed",
+      "shortId": "tapdial_dial_rotation_dimmed",
+      "uri": "homey:flowcardtrigger:homey:device:tapdial-0000-0000-0000-000000000003:tapdial_dial_rotation_dimmed",
+      "title": "Dial dimmed",
+      "args": [],
+      "tokens": [
+        {
+          "id": "dim_level",
+          "type": "number",
+          "title": "Resulting dim level"
+        }
+      ]
+    }
+  ]
+}

@@ -85,6 +85,23 @@ export class RangeExpansionTooLargeError extends Error {
 }
 
 /**
+ * Raised when a stored range carries nothing usable — no values, or a value that
+ * is not a finite number.
+ *
+ * Reached only through corrupted persistence, which is exactly why it exists: a
+ * count-up loop between two NaN endpoints is not an error, it is an empty loop,
+ * and the control quietly stops working with nothing anywhere to read. This
+ * surfaces through the same `unsupported` path the ceiling refusal does, so the
+ * device reports repair and names the control.
+ */
+export class InvalidRangeError extends Error {
+  constructor(readonly reason: string) {
+    super(`This control's range cannot be expanded into flows: ${reason}`);
+    this.name = 'InvalidRangeError';
+  }
+}
+
+/**
  * Create only the variants needed by mapped events, never every discovered
  * event.
  */
@@ -94,14 +111,14 @@ export function compileBinding(request: CompileRequest): CompiledFlow[] {
   switch (binding.kind) {
     case 'flow_fixed':
       return [buildFlow(request, request.variantKey ?? 'fixed', binding.cardId, binding.cardOwnerUri,
-        binding.args, request.cards.event, {})];
+        {}, request.cards.event, {})];
 
     case 'flow_enum':
       return [buildFlow(request, `enum:${String(binding.value)}`, binding.cardId, binding.cardOwnerUri,
         { [binding.argument]: binding.value }, request.cards.event, {})];
 
     case 'flow_token':
-      return [buildFlow(request, 'token', binding.cardId, binding.cardOwnerUri, binding.args,
+      return [buildFlow(request, 'token', binding.cardId, binding.cardOwnerUri, {},
         request.cards.token, { droptoken: binding.tokenId })];
 
     case 'flow_range':
@@ -120,45 +137,61 @@ export function compileBinding(request: CompileRequest): CompiledFlow[] {
  * its own literal amount to the numeric bridge card. This is what makes a
  * single "Dial — Turn right" entry work against an integration that models
  * detents as separate argument values.
+ *
+ * The values are the card's OWN, not a range walked between two endpoints: a
+ * dropdown offering 1 and 3 accepts 1 and 3, and a flow asking for 2 is refused
+ * at create time by a 404 that reads like a permission problem.
  */
 function compileRange(
   request: CompileRequest,
   binding: Extract<LogicalSourceBinding, { kind: 'flow_range' }>,
 ): CompiledFlow[] {
   const ceiling = request.ceiling ?? RANGE_EXPANSION_CEILING;
-  const [from, to] = binding.valueRange;
-  const variants = to - from + 1;
+  const values = binding.values ?? [];
+
+  if (values.length === 0) throw new InvalidRangeError('it lists no values');
+  if (values.some(value => !Number.isFinite(value))) {
+    throw new InvalidRangeError('one of its values is not a number');
+  }
 
   // Beyond the ceiling, mark unsupported and log — silently generating fifty
   // flows is worse than declining.
-  if (variants > ceiling || variants <= 0) {
-    throw new RangeExpansionTooLargeError(variants, ceiling);
+  if (values.length > ceiling) {
+    throw new RangeExpansionTooLargeError(values.length, ceiling);
   }
 
-  const flows: CompiledFlow[] = [];
-  for (let value = from; value <= to; value++) {
-    flows.push(buildFlow(
-      request,
-      `range:${value}`,
-      binding.cardId,
-      binding.cardOwnerUri,
-      { [binding.argument]: String(value) },
-      request.cards.numeric,
-      { extraArgs: { value } },
-    ));
-  }
-  return flows;
+  return values.map(value => buildFlow(
+    request,
+    `range:${value}`,
+    binding.cardId,
+    binding.cardOwnerUri,
+    { [binding.argument]: String(value) },
+    request.cards.numeric,
+    { extraArgs: { value } },
+  ));
 }
 
+/**
+ * `variantArgs` are merged OVER the binding's own `fixedArgs`, in one place.
+ *
+ * One place is the whole point: the selector and direction that pin an event to
+ * one control live in `fixedArgs`, and the per-variant argument — an enum value,
+ * a detent — is what distinguishes the flows of one binding from each other. A
+ * kind that assembled its own trigger arguments would be a kind that could
+ * forget the selector, which is the bug this shape exists to make impossible.
+ */
 function buildFlow(
   request: CompileRequest,
   variantKey: string,
   cardId: string,
   cardUri: string,
-  triggerArgs: Record<string, unknown>,
+  variantArgs: Record<string, unknown>,
   bridgeCard: { id: string; uri: string },
   options: { droptoken?: string; extraArgs?: Record<string, unknown> },
 ): CompiledFlow {
+  const fixedArgs = 'fixedArgs' in request.binding ? request.binding.fixedArgs ?? {} : {};
+  const triggerArgs = { ...fixedArgs, ...variantArgs };
+
   const action: FlowAction = {
     id: bridgeCard.id,
     uri: bridgeCard.uri,
@@ -230,7 +263,7 @@ export function findUncompilableBindings(
         sourceName,
       });
     } catch (error) {
-      if (error instanceof RangeExpansionTooLargeError) {
+      if (error instanceof RangeExpansionTooLargeError || error instanceof InvalidRangeError) {
         declined.push({ bindingKey: input.key, label: input.label, reason: error.message });
         continue;
       }

@@ -95,11 +95,23 @@ function isContiguousNumericRange(ids: string[]): boolean {
   return sorted.every((n, i) => i === 0 || n === sorted[i - 1] + 1);
 }
 
-/** The [min, max] of a numeric argument's options, or null if any option is non-numeric. */
-export function numericRangeOf(arg: CardArgument): [number, number] | null {
+/**
+ * The EXACT numeric values a dropdown offers, sorted and de-duplicated, or null
+ * if any option is not a finite number.
+ *
+ * Not `[min, max]`. The endpoints are the same for {1, 2, 3} and for {1, 3}, and
+ * expanding the second as a range invents a flow whose trigger asks for a value
+ * the card does not accept — `createFlow` refuses it with a 404 that reads like a
+ * permission problem. It also could not express a decimal set at all: {0.5, 1.0}
+ * walked as integers is one variant, at 0.5.
+ *
+ * Sorted so the compiled flows come out in a stable order, and de-duplicated
+ * because a repeated option is one value, not two flows.
+ */
+export function numericValuesOf(arg: CardArgument): number[] | null {
   const ids = (arg.values ?? []).map(v => Number(v.id));
   if (!ids.length || ids.some(n => !Number.isFinite(n))) return null;
-  return [Math.min(...ids), Math.max(...ids)];
+  return [...new Set(ids)].sort((a, b) => a - b);
 }
 
 export type Direction = -1 | 1;
@@ -123,13 +135,23 @@ export function directionOf(valueId: string): Direction | null {
  * ship a card shape nobody anticipated, and a duplicated picker entry is a
  * visible bug where a silently dropped one is not.
  */
-export function dedupeByKey<T extends { key: string }>(items: T[]): T[] {
+export function dedupeByKey<T extends { key: string }>(
+  items: T[],
+): { kept: T[]; collisions: T[] } {
   const seen = new Set<string>();
-  const out: T[] = [];
+  const kept: T[] = [];
+  const collisions: T[] = [];
   for (const item of items) {
-    if (seen.has(item.key)) continue;
+    if (seen.has(item.key)) {
+      // Reported rather than dropped in silence. A key is what a MappingRule
+      // stores, so two inputs sharing one means the second can never be mapped
+      // and never be diagnosed — the picker shows one row where the remote has
+      // two gestures, with nothing anywhere saying which was lost.
+      collisions.push(item);
+      continue;
+    }
     seen.add(item.key);
-    out.push(item);
+    kept.push(item);
   }
-  return out;
+  return { kept, collisions };
 }
