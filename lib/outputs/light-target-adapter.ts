@@ -1,5 +1,5 @@
 import type { HomeyApiService, Unsubscribe } from '../homey-api-service';
-import type { Capability } from './intent-planner';
+import type { Capability, WriteValue } from './intent-planner';
 import type { TargetStateCache } from './target-state-cache';
 import { fireAndForget } from '../support/async';
 import { BoundedLog } from '../support/bounded-log';
@@ -24,7 +24,7 @@ export interface WriteRecord {
   at: number;
   deviceId: string;
   capability: Capability;
-  value: boolean | number;
+  value: WriteValue;
   ok: boolean;
   ms: number;
   error?: string;
@@ -122,7 +122,7 @@ export class LightTargetAdapter {
   }
 
   private noteWriteResult(entry: {
-    deviceId: string; capability: Capability; value: boolean | number;
+    deviceId: string; capability: Capability; value: WriteValue;
     ok: boolean; ms: number; error?: string;
   }): void {
     const record = { at: Date.now(), ...entry };
@@ -133,7 +133,7 @@ export class LightTargetAdapter {
   async write(
     deviceId: string,
     capability: Capability,
-    value: boolean | number,
+    value: WriteValue,
     options: { impliesOn?: boolean } = {},
   ): Promise<void> {
     // The echo registration goes BEFORE dispatch: a fast integration can call

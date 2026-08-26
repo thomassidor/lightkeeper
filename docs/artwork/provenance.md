@@ -5,6 +5,26 @@ to a shipped file is lost on the next export. What to produce, and why, is in
 [`../asset-spec.md`](../asset-spec.md); how Homey consumes it is in
 [`../../CLAUDE.md`](../../CLAUDE.md) §10.
 
+## The Curve light's artwork is a PLACEHOLDER
+
+The Curve light split out of the circadian light in 0.5.0 and ships with its
+artwork: `drivers/curve/assets/` is exported from `circadian-icon-master.svg` and
+`circadian-device-master.png`, the same two masters the circadian light uses.
+
+That is a real review finding rather than a cosmetic shortcut — Athom's automated
+reviewer flags byte-identical icons between drivers as reuse — so it is recorded
+in three places rather than tolerated silently:
+
+- `docs/artwork/export-assets.py`, at both target entries, marked PLACEHOLDER;
+- `test/unit/assets.test.ts`, as the single entry in `PENDING_ARTWORK`;
+- here.
+
+**Definition of done:** draw `curve-icon-master.svg` and `curve-device-master.png`,
+point both entries in the export script at them, re-export, and delete the
+`PENDING_ARTWORK` entry. The test that asserts every pending entry names a real
+icon target is what stops the list outliving what it excuses.
+
+
 ## The masters
 
 | Master | Feeds |

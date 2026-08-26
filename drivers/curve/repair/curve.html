@@ -152,6 +152,16 @@
   @media (max-width: 380px) { #cir-root .grid { grid-template-columns: 1fr; } }
   #cir-root .empty { font-size: 14px; color: var(--lk-muted); padding: 12px 0; }
   /* ==== end shared base ==== */
+
+  #cir-root .colour {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--lk-field);
+    border-radius: 8px;
+    background: var(--lk-surface);
+    color: var(--lk-ink);
+    font-size: 14px;
+  }
 #cir-root .rowhead { display: flex; align-items: baseline; justify-content: space-between;
                   margin-bottom: 12px; }
   #cir-root .rowhead .name { font-size: 15px; font-weight: 600; }
@@ -204,8 +214,9 @@
 </style>
 
 <div class="wrap" id="cir-root">
-  <h2 data-i18n="circadian.title"></h2>
-  <p class="sub" data-i18n="circadian.subtitle"></p>
+  <h2 data-i18n="curve.title"></h2>
+  <p class="sub" data-i18n="curve.subtitle"></p>
+  <p class="sub" data-i18n="circadian.colourHelp"></p>
 
   <div class="card chart">
     <svg id="cir-graph" viewBox="0 0 320 96" preserveAspectRatio="none" aria-hidden="true">
@@ -341,6 +352,8 @@ function __lkBootCir(Homey) {
 
   var model = {
     points: [], support: { dim: 0, light_temperature: 0 },
+    /** Filled from getCurve; see colourOptions for why the labels arrive ready. */
+    palette: [],
     minPoints: 2, maxPoints: 8, adjustBrightness: false, preStage: false,
   };
   var listEl = document.getElementById('cir-list');
@@ -425,6 +438,26 @@ function __lkBootCir(Homey) {
   }
 
   /** The curve, at one sample every ten minutes. */
+  function palette(id) {
+    for (var i = 0; i < model.palette.length; i += 1) {
+      if (model.palette[i].id === id) return model.palette[i];
+    }
+    return null;
+  }
+
+  /**
+   * A palette colour as CSS, for the chart only.
+   *
+   * Homey's hue is 0-1 and CSS wants degrees; lightness is fixed at 55% because
+   * these dots sit on a light and a dark background and have to be visible on
+   * both. Nothing is written to a lamp from this — it is the swatch, not the
+   * value.
+   */
+  function hsl(colour) {
+    return 'hsl(' + Math.round(colour.hue * 360) + ', '
+      + Math.round(colour.saturation * 100) + '%, 55%)';
+  }
+
   function drawChart() {
     var samples = [];
     for (var minute = 0; minute <= MINUTES_PER_DAY; minute += 10) {
@@ -443,10 +476,14 @@ function __lkBootCir(Homey) {
     while (group.firstChild) group.removeChild(group.firstChild);
     sorted().forEach(function (point) {
       var dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      // A coloured point is drawn in ITS colour, because a chart of identical
+      // dots cannot show the one thing this screen added.
+      var colour = point.color && palette(point.color);
       dot.setAttribute('class', 'dot');
+      if (colour) dot.setAttribute('fill', hsl(colour));
       dot.setAttribute('cx', ((minuteOf(point) / MINUTES_PER_DAY) * 320).toFixed(1));
       dot.setAttribute('cy', (88 - point.warmth * 80).toFixed(1));
-      dot.setAttribute('r', '3.5');
+      dot.setAttribute('r', colour ? '4.5' : '3.5');
       group.appendChild(dot);
     });
 
@@ -478,6 +515,24 @@ function __lkBootCir(Homey) {
     }).join('');
   }
 
+  /**
+   * The palette as <option>s, plus "colour temperature" at the top.
+   *
+   * The palette arrives from the driver with its labels already translated:
+   * `lib/` has no access to `Homey.__`, so the colours carry locale keys and the
+   * driver layer resolves them — the same rule as every other user-facing string
+   * produced in `lib/`.
+   */
+  function colourOptions(selected) {
+    var html = '<option value=""' + (selected ? '' : ' selected') + '>'
+      + escapeHtml(Homey.__('circadian.colourNone')) + '</option>';
+    return html + model.palette.map(function (colour) {
+      return '<option value="' + escapeHtml(colour.id) + '"'
+        + (colour.id === selected ? ' selected' : '') + '>'
+        + escapeHtml(colour.label) + '</option>';
+    }).join('');
+  }
+
   function pointHtml(point, index) {
     var minutes = minuteOf(point);
     var html = '<div class="card" data-id="' + escapeHtml(point.id) + '">'
@@ -497,6 +552,19 @@ function __lkBootCir(Homey) {
       + '<select data-act="minute">' + options(60, minutes % 60, 5) + '</select>'
       + '</div></div>'
 
+      + '<div class="field"><div class="label">'
+      + escapeHtml(Homey.__('circadian.colour')) + '</div>'
+      + '<select data-act="colour" class="colour">' + colourOptions(point.color) + '</select>'
+      + '</div>'
+
+      /**
+       * Warmth is shown even on a coloured point, and is not redundant.
+       *
+       * It is what a lamp with no colour capability is written to instead, and
+       * what the neighbouring temperature segments interpolate towards — so the
+       * shape of the curve does not depend on which of the household's lamps can
+       * do colour. `circadian.colourHelp` says as much on screen.
+       */
       + '<div class="field"><div class="label">'
       + escapeHtml(Homey.__('circadian.warmth')) + '</div>'
       + '<div class="slider">'
@@ -576,6 +644,23 @@ function __lkBootCir(Homey) {
    * a drag would drop the pointer capture mid-gesture, which reads as a slider
    * that fights you — so the chart is redrawn and the row is left alone.
    */
+  /**
+   * `change` as well as `input`.
+   *
+   * A `<select>` fires `change` on every engine and `input` on only some, so a
+   * colour chosen from the dropdown would have been silently ignored on the
+   * others — the class of bug that makes a screen look like it is working.
+   */
+  listEl.addEventListener('change', function (event) {
+    var target = event.target.closest('[data-act="colour"]');
+    if (!target) return;
+    var found = pointOf(target);
+    if (!found) return;
+    if (target.value) found.point.color = target.value;
+    else delete found.point.color;
+    drawChart();
+  });
+
   listEl.addEventListener('input', function (event) {
     var target = event.target.closest('[data-act]');
     if (!target) return;
@@ -583,7 +668,14 @@ function __lkBootCir(Homey) {
     if (!found) return;
     var act = target.getAttribute('data-act');
 
-    if (act === 'warmth') {
+    if (act === 'colour') {
+      // '' is the "colour temperature" option, which means no colour at all —
+      // deleted rather than stored as an empty string, because the plan's shape
+      // is "absent or a palette id" and the sanitiser refuses anything else.
+      if (target.value) found.point.color = target.value;
+      else delete found.point.color;
+      drawChart();
+    } else if (act === 'warmth') {
       found.point.warmth = Number(target.value) / 100;
       found.card.querySelector('[data-role="warmthValue"]').textContent = warmthText(found.point.warmth);
       drawChart();
@@ -747,8 +839,12 @@ function __lkBootCir(Homey) {
         anchor: { kind: 'clock', at: point.anchor && point.anchor.at !== undefined ? point.anchor.at : 0 },
         warmth: point.warmth,
         brightness: point.brightness,
+        // Absent stays absent: the plan's shape is "no colour, or a palette id",
+        // and an empty string is neither.
+        ...(point.color ? { color: point.color } : {}),
       };
     });
+    model.palette = data.palette || [];
 
     document.getElementById('cir-prestage').checked = model.preStage;
     document.getElementById('cir-brightness').checked = model.adjustBrightness;

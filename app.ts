@@ -34,7 +34,18 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
   bridge!: FlowBridgeManager;
   controllers!: ControllerRuntimeManager;
   schedules!: ScheduleRuntimeManager;
-  circadian!: CircadianRuntimeManager;
+  /**
+   * ONE registry, TWO device types.
+   *
+   * A circadian light and a curve light are the same engine — the difference is
+   * only what each stores and which pairing screen it shows. Sharing the registry
+   * is what keeps §12's "one `setInterval` for every circadian device on the
+   * Homey" true across both, rather than two timers over two maps.
+   *
+   * Named `curves` because a curve is what both of them run; `circadian` stays as
+   * an alias because the settings page and the diagnostics export both read it.
+   */
+  curves!: CircadianRuntimeManager;
   health!: HealthMonitor;
 
   /**
@@ -175,7 +186,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       log: (...args) => this.log(...args),
     });
 
-    this.circadian = new CircadianRuntimeManager({
+    this.curves = new CircadianRuntimeManager({
       api: this.api,
       onWriteResult,
       catalog: this.catalog,
@@ -205,7 +216,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       const l = (...args: unknown[]) => this.log(...args);
       fireAndForget(this.controllers.onCatalogChange(), l, 'Controller catalogue change');
       fireAndForget(this.schedules.onCatalogChange(), l, 'Schedule catalogue change');
-      fireAndForget(this.circadian.onCatalogChange(), l, 'Circadian catalogue change');
+      fireAndForget(this.curves.onCatalogChange(), l, 'Circadian and curve catalogue change');
     });
 
     // A stored key must be re-checked after every restart, or pairing asks for
@@ -308,7 +319,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     }
     await this.controllers?.destroyAll();
     await this.schedules?.destroyAll();
-    await this.circadian?.destroyAll();
+    await this.curves?.destroyAll();
     await this.api?.destroy();
   }
 

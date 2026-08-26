@@ -10,10 +10,18 @@ export type LightIntent =
   | { type: 'brightness_delta'; delta: number }
   | { type: 'brightness_absolute'; value: number }
   | { type: 'temperature_delta'; delta: number }
-  | { type: 'temperature_absolute'; value: number };
+  | { type: 'temperature_absolute'; value: number }
+  /**
+   * A colour, from the curve controller's palette.
+   *
+   * Hue and saturation together, never separately: half a colour is a colour
+   * nobody chose. `light_mode` is written alongside them because a lamp sitting
+   * in temperature mode ignores a hue it is given — see planColor().
+   */
+  | { type: 'color_absolute'; hue: number; saturation: number };
 
 /** Which capability an intent needs. Drives the partial-support disclosure. */
-export function requiredCapability(intent: LightIntent): 'onoff' | 'dim' | 'light_temperature' {
+export function requiredCapability(intent: LightIntent): 'onoff' | 'dim' | 'light_temperature' | 'light_hue' {
   switch (intent.type) {
     case 'toggle':
     case 'power':
@@ -24,6 +32,18 @@ export function requiredCapability(intent: LightIntent): 'onoff' | 'dim' | 'ligh
     case 'temperature_delta':
     case 'temperature_absolute':
       return 'light_temperature';
+    /**
+     * Hue, not saturation and not `light_mode`.
+     *
+     * The planner uses this ONE capability to decide whether a target can take
+     * the intent at all, and hue is the honest test: `homey-lib` pairs hue and
+     * saturation on every colour-capable light, while `light_mode` exists only
+     * on lamps that ALSO have a temperature mode to switch out of. Testing for
+     * `light_mode` would skip a colour-only lamp that can do exactly what was
+     * asked.
+     */
+    case 'color_absolute':
+      return 'light_hue';
   }
 }
 

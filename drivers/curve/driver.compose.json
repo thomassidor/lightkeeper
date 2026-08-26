@@ -1,40 +1,40 @@
 {
   "name": {
-    "en": "Circadian light"
+    "en": "Curve light"
   },
   "class": "service",
   "capabilities": ["onoff"],
   "capabilitiesOptions": {
     "onoff": {
       "title": {
-        "en": "Circadian active"
+        "en": "Curve active"
       }
     }
   },
   "platforms": ["local"],
   "connectivity": ["lan"],
   "images": {
-    "small": "/drivers/circadian/assets/images/small.png",
-    "large": "/drivers/circadian/assets/images/large.png",
-    "xlarge": "/drivers/circadian/assets/images/xlarge.png"
+    "small": "/drivers/curve/assets/images/small.png",
+    "large": "/drivers/curve/assets/images/large.png",
+    "xlarge": "/drivers/curve/assets/images/xlarge.png"
   },
   "pair": [
     {
       "id": "targets",
-      "navigation": { "next": "ends" }
+      "navigation": { "next": "curve" }
     },
     {
-      "id": "ends",
+      "id": "curve",
       "navigation": { "prev": "targets" }
     }
   ],
   "repair": [
     {
       "id": "targets",
-      "navigation": { "next": "ends" }
+      "navigation": { "next": "curve" }
     },
     {
-      "id": "ends",
+      "id": "curve",
       "navigation": { "prev": "targets" }
     }
   ]

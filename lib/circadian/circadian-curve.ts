@@ -3,6 +3,7 @@ import {
   type CircadianAnchor,
   type CircadianPoint,
 } from './circadian-types';
+import { mixColors, paletteColor } from './palette';
 
 /**
  * The curve itself: where the day's warmth is at any given minute.
@@ -42,6 +43,13 @@ export interface CurveValue {
   warmth: number;
   /** Perceptual 0–1. Only present when both bracketing points carry one. */
   brightness?: number;
+  /**
+   * A colour to write INSTEAD of the warmth, where the lamp can take one.
+   *
+   * `warmth` is always present alongside it, and is what a lamp with no colour
+   * capability gets instead — see CircadianPoint.color.
+   */
+  color?: { hue: number; saturation: number };
 }
 
 /** Minutes since local midnight, 0–1439. */
@@ -63,19 +71,21 @@ interface ResolvedPoint {
   minute: number;
   warmth: number;
   brightness?: number;
+  color?: string;
 }
 
 /** Points as minutes, in day order. Exported for the diagnostics and the tests. */
 export function resolvePoints(
   points: readonly CircadianPoint[],
   context: AnchorContext = {},
-): Array<{ id: string; minute: number; warmth: number; brightness?: number }> {
+): Array<{ id: string; minute: number; warmth: number; brightness?: number; color?: string }> {
   return points
     .map(point => ({
       id: point.id,
       minute: resolveAnchor(point.anchor, context),
       warmth: point.warmth,
       ...(point.brightness !== undefined ? { brightness: point.brightness } : {}),
+      ...(point.color !== undefined ? { color: point.color } : {}),
     }))
     .sort((a, b) => a.minute - b.minute);
 }
@@ -91,7 +101,11 @@ export function valueAt(
 
   const first = resolved[0];
   if (resolved.length === 1) {
-    return { warmth: first.warmth, ...(first.brightness !== undefined ? { brightness: first.brightness } : {}) };
+    return {
+      warmth: first.warmth,
+      ...(first.brightness !== undefined ? { brightness: first.brightness } : {}),
+      ...colorOf(first, first, 0),
+    };
   }
 
   const now = wrap(minutesOfDay);
@@ -106,7 +120,46 @@ export function valueAt(
     ...(from.brightness !== undefined && to.brightness !== undefined
       ? { brightness: mix(from.brightness, to.brightness, eased) }
       : {}),
+    ...colorOf(from, to, eased),
   };
+}
+
+/**
+ * The colour a segment holds, if it holds one at all.
+ *
+ * Three cases, and the middle one is the interesting decision:
+ *
+ *  - **Both ends coloured** → blend, hue the short way round the wheel. Amber at
+ *    21:00 and rose at 23:00 passes through the shades between them, which is
+ *    what a curve is for.
+ *  - **One end coloured** → that colour, held flat across the whole segment. NOT
+ *    blended towards the temperature end, because there is nothing to blend
+ *    towards: a colour temperature is a point on a different axis, and fading
+ *    "amber" into "4000 K" means inventing a shade nobody chose. Inventing a
+ *    colour for someone's living room is the one thing this feature must not do
+ *    (CLAUDE.md §12 makes the same argument about brightness).
+ *  - **Neither** → no colour, and the warmth is written as a colour temperature
+ *    exactly as it always was.
+ *
+ * The consequence, stated so it is not a surprise: ONE coloured point colours the
+ * two segments either side of it. "Amber at 21:00" with temperature points at
+ * 19:00 and 23:00 means amber from 19:00 to 23:00, not an amber instant. That is
+ * the honest reading of a curve — a point is a value the day passes through, and
+ * a colour cannot be passed through in a single minute without a step.
+ */
+function colorOf(
+  from: ResolvedPoint,
+  to: ResolvedPoint,
+  fraction: number,
+): { color?: { hue: number; saturation: number } } {
+  const start = from.color ? paletteColor(from.color) : undefined;
+  const end = to.color ? paletteColor(to.color) : undefined;
+
+  if (start && end) return { color: mixColors(start, end, fraction) };
+  // Held flat, not blended. See the comment above.
+  if (start) return { color: { hue: start.hue, saturation: start.saturation } };
+  if (end) return { color: { hue: end.hue, saturation: end.saturation } };
+  return {};
 }
 
 /** The next point due after this minute, and how far off it is. For diagnostics. */

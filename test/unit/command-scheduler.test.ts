@@ -2,7 +2,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { CommandScheduler } from '../../lib/outputs/command-scheduler';
-import type { Capability } from '../../lib/outputs/intent-planner';
+import type { Capability, WriteValue } from '../../lib/outputs/intent-planner';
 
 class FakeClock {
   private seq = 0;
@@ -33,7 +33,12 @@ class FakeClock {
   }
 }
 
-interface Recorded { deviceId: string; capability: Capability; value: boolean | number }
+/**
+ * `WriteValue`, not `boolean | number`: `light_mode` is a string, and widening it
+ * here rather than casting at each call site is what keeps a colour write
+ * recordable by the same harness as every other write.
+ */
+interface Recorded { deviceId: string; capability: Capability; value: WriteValue }
 
 function harness(overrides: Partial<{ failOn: string }> = {}) {
   const clock = new FakeClock();

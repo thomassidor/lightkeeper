@@ -141,7 +141,10 @@ module.exports = {
           lastAction: diagnostics.lastAction,
         };
       }),
-      circadian: app.circadian.all().map(runtime => {
+      // Both device types, in one list: they are the same engine and the
+      // settings page shows them the same way. `kind` in each runtime's own
+      // diagnostics is what distinguishes a circadian light from a curve one.
+      circadian: app.curves.all().map(runtime => {
         const diagnostics = runtime.diagnostics();
         return {
           id: runtime.controllerId,
@@ -270,7 +273,7 @@ module.exports = {
       recentEvents: app.recentEvents.entries(),
       controllers: app.controllers.all().map(runtime => runtime.diagnostics()),
       schedules: app.schedules.all().map(runtime => runtime.diagnostics()),
-      circadian: app.circadian.all().map(runtime => runtime.diagnostics()),
+      circadian: app.curves.all().map(runtime => runtime.diagnostics()),
       // Which of Homey's own trigger cards the schedules are built on, and what
       // else was on offer. A card URI may never be constructed (CLAUDE.md §3), so when a
       // firmware moves this card the candidate list IS the investigation.

@@ -4,11 +4,13 @@ import {
   requireString, requireUnitInterval,
 } from './guards';
 import { MINUTES_PER_DAY } from '../time/wall-clock';
+import { isPaletteColor } from '../circadian/palette';
 import type { TargetSpec } from '../outputs/light-intent';
 import type { ControllerBehavior, LightFunction, MappingRule } from '../mapping/mapping-types';
 import type { ControllerProfile, ManagedFlowReference } from '../profiles/controller-profile';
 import type { SchedulePlan, ScheduleEntry, ScheduleEnd, IsoWeekday } from '../schedules/schedule-types';
 import type { CircadianPlan, CircadianPoint, CircadianAnchor } from '../circadian/circadian-types';
+import type { CircadianEnd, SimpleCircadianPlan } from '../circadian/simple-curve';
 import type { LogicalSourceBinding, SelectableInput } from '../inputs/selectable-input';
 import type { InputAction } from '../inputs/input-event';
 
@@ -55,6 +57,7 @@ const ROOT = {
   profile: 'ControllerProfile',
   schedule: 'SchedulePlan',
   circadian: 'CircadianPlan',
+  simple: 'SimpleCircadianPlan',
 } as const;
 
 /** Well above the app's own limits — 64 mapping rows, 12 windows, 8 curve points. */
@@ -383,12 +386,28 @@ function validateAnchor(raw: unknown, path: string): CircadianAnchor {
 
 function validateCircadianPoint(raw: unknown, path: string): CircadianPoint {
   const point = requireRecord(raw, path);
+
+  /**
+   * A colour this build does not offer is refused, not defaulted.
+   *
+   * Only reachable through a downgrade — a plan saved by a version with a larger
+   * palette. Quarantining the device is the honest outcome: the alternative is a
+   * curve that runs at a colour nobody chose, which looks like it is working.
+   */
+  let color: string | undefined;
+  if (point.color !== undefined) {
+    const id = requireString(point.color, `${path}.color`);
+    if (!isPaletteColor(id)) fail(`${path}.color`, 'is not a colour this version offers');
+    color = id;
+  }
+
   return {
     id: requireString(point.id, `${path}.id`),
     anchor: validateAnchor(point.anchor, `${path}.anchor`),
     warmth: requireUnitInterval(point.warmth, `${path}.warmth`),
     ...(point.brightness !== undefined
       ? { brightness: requireUnitInterval(point.brightness, `${path}.brightness`) } : {}),
+    ...(color !== undefined ? { color } : {}),
   };
 }
 
@@ -415,6 +434,51 @@ export function validateCircadianPlan(raw: unknown): CircadianPlan {
     adjustBrightness,
     // Opt-in, so anything other than a real `true` is a no. Matching the 0 → 1
     // migration, which reads `preStage === true` for the same reason.
+    preStage: plan.preStage === true,
+  };
+}
+
+// ---------------------------------------------------- simple circadian plan
+
+function validateEnd(raw: unknown, path: string): CircadianEnd {
+  const end = requireRecord(raw, path);
+  return {
+    temperature: requireUnitInterval(end.temperature, `${path}.temperature`),
+    ...(end.brightness !== undefined
+      ? { brightness: requireUnitInterval(end.brightness, `${path}.brightness`) } : {}),
+  };
+}
+
+/**
+ * The two-ended plan a circadian light stores.
+ *
+ * The SHAPE is not validated because it is not stored: `expandSimplePlan` derives
+ * the four points from a constant every time (see `simple-curve.ts` for why). What
+ * is here is the two answers only the user can give.
+ */
+export function validateSimpleCircadianPlan(raw: unknown): SimpleCircadianPlan {
+  const plan = requireRecord(raw, ROOT.simple);
+  const warmest = validateEnd(plan.warmest, `${ROOT.simple}.warmest`);
+  const coolest = validateEnd(plan.coolest, `${ROOT.simple}.coolest`);
+  const adjustBrightness = requireBoolean(plan.adjustBrightness, `${ROOT.simple}.adjustBrightness`);
+
+  // Both ends or neither, which is the curve engine's own rule: it interpolates
+  // brightness only where both bracketing points carry one, and half a brightness
+  // curve would have to invent the other half.
+  if (adjustBrightness && (warmest.brightness === undefined || coolest.brightness === undefined)) {
+    fail(`${ROOT.simple}.adjustBrightness`, 'is set while an end carries no brightness');
+  }
+
+  return {
+    schemaVersion: requireNumber(plan.schemaVersion, `${ROOT.simple}.schemaVersion`, {
+      min: 0, integer: true,
+    }),
+    enabled: requireBoolean(plan.enabled, `${ROOT.simple}.enabled`),
+    target: validateTarget(plan.target, `${ROOT.simple}.target`),
+    warmest,
+    coolest,
+    adjustBrightness,
+    // Opt-in, so anything other than a real `true` is a no.
     preStage: plan.preStage === true,
   };
 }

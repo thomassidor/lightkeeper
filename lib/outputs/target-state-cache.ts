@@ -1,4 +1,5 @@
 import { clamp01 } from './light-intent';
+import type { Capability } from './intent-planner';
 
 /** Optimistic desired state, per target. */
 export interface TargetRuntimeState {
@@ -8,6 +9,18 @@ export interface TargetRuntimeState {
   desiredOn?: boolean;
   desiredDim?: number;
   desiredTemperature?: number;
+  /**
+   * Hue and saturation, tracked but never used for arithmetic.
+   *
+   * Nothing in the app plans a RELATIVE colour change — there is no "a bit more
+   * blue" gesture and no colour ramp — so these exist for the echo dedupe and
+   * for diagnostics, not for a delta. `light_mode` is a string and has no
+   * numeric state at all; see the switch below.
+   */
+  actualHue?: number;
+  actualSaturation?: number;
+  desiredHue?: number;
+  desiredSaturation?: number;
 }
 
 /** Capability metadata read per target — never assumed uniform. */
@@ -22,6 +35,15 @@ export interface TargetCapabilities {
   onoff: boolean;
   dim?: CapabilityOptions;
   light_temperature?: CapabilityOptions;
+  light_hue?: CapabilityOptions;
+  light_saturation?: CapabilityOptions;
+  /**
+   * Whether the lamp can be switched between colour and colour-temperature
+   * modes. A boolean rather than options because it is an enum capability with
+   * no range — and a lamp that has hue and saturation but no `light_mode` simply
+   * has no temperature mode to switch out of.
+   */
+  light_mode?: boolean;
 }
 
 /**
@@ -56,10 +78,13 @@ export class TargetStateCache {
     return this.capabilities.get(deviceId);
   }
 
-  supports(deviceId: string, capability: 'onoff' | 'dim' | 'light_temperature'): boolean {
+  supports(deviceId: string, capability: Capability): boolean {
     const caps = this.capabilities.get(deviceId);
     if (!caps) return false;
-    return capability === 'onoff' ? caps.onoff : caps[capability] !== undefined;
+    if (capability === 'onoff') return caps.onoff;
+    // `light_mode` is a boolean, not options: it is an enum with no range.
+    if (capability === 'light_mode') return caps.light_mode === true;
+    return caps[capability] !== undefined;
   }
 
   state(deviceId: string): TargetRuntimeState {
@@ -72,14 +97,24 @@ export class TargetStateCache {
   }
 
   /** Seed from live device values at startup — never from persisted queues. */
-  initialise(deviceId: string, actual: { onoff?: boolean; dim?: number; light_temperature?: number }): void {
+  initialise(deviceId: string, actual: {
+    onoff?: boolean;
+    dim?: number;
+    light_temperature?: number;
+    light_hue?: number;
+    light_saturation?: number;
+  }): void {
     const state = this.state(deviceId);
     state.actualOn = actual.onoff;
     state.actualDim = actual.dim;
     state.actualTemperature = actual.light_temperature;
+    state.actualHue = actual.light_hue;
+    state.actualSaturation = actual.light_saturation;
     state.desiredOn = actual.onoff;
     state.desiredDim = actual.dim;
     state.desiredTemperature = actual.light_temperature;
+    state.desiredHue = actual.light_hue;
+    state.desiredSaturation = actual.light_saturation;
   }
 
   /**
@@ -88,7 +123,7 @@ export class TargetStateCache {
    */
   applyExternalChange(
     deviceId: string,
-    capability: 'onoff' | 'dim' | 'light_temperature',
+    capability: Capability,
     value: unknown,
   ): boolean {
     const at = this.now();
@@ -115,20 +150,34 @@ export class TargetStateCache {
       case 'light_temperature':
         state.actualTemperature = value as number;
         break;
+      case 'light_hue':
+        state.actualHue = value as number;
+        break;
+      case 'light_saturation':
+        state.actualSaturation = value as number;
+        break;
+      case 'light_mode':
+        // A string with no arithmetic behind it. Tracked only through the echo
+        // dedupe above, which is the only reason this arm exists at all — and it
+        // exists explicitly so an added capability cannot fall through silently.
+        break;
     }
 
     if (isDuplicate) return false;
 
     // A real external change (someone used the Hue app) must win, or desired
     // state drifts permanently out of step with the room.
-    const matchesDesired = capability === 'onoff' ? state.desiredOn === value
-      : capability === 'dim' ? state.desiredDim === value
-        : state.desiredTemperature === value;
+    const matchesDesired = desiredOf(state, capability) === value;
 
     if (!matchesDesired) {
       if (capability === 'onoff') state.desiredOn = value as boolean;
       if (capability === 'dim') state.desiredDim = value as number;
       if (capability === 'light_temperature') state.desiredTemperature = value as number;
+      if (capability === 'light_hue') state.desiredHue = value as number;
+      if (capability === 'light_saturation') state.desiredSaturation = value as number;
+      // `light_mode` has no desired state, so a change to it is reported as
+      // external every time — which is right: it is either our write's echo
+      // (caught above) or somebody switching the lamp's mode by hand.
       return true;
     }
 
@@ -150,7 +199,7 @@ export class TargetStateCache {
    * `commitDesired` and a write that lost a race cannot clobber the newer
    * value that beat it home.
    */
-  noteEcho(deviceId: string, capability: 'onoff' | 'dim' | 'light_temperature', value: unknown): number {
+  noteEcho(deviceId: string, capability: Capability, value: unknown): number {
     const key = `${deviceId}:${capability}`;
     this.recentEchoes.set(key, { value, at: this.now() });
     const seq = (this.writeSeq.get(key) ?? 0) + 1;
@@ -173,7 +222,7 @@ export class TargetStateCache {
    */
   commitDesired(
     deviceId: string,
-    capability: 'onoff' | 'dim' | 'light_temperature',
+    capability: Capability,
     value: unknown,
     seq?: number,
   ): void {
@@ -191,6 +240,9 @@ export class TargetStateCache {
     }
     if (capability === 'dim') state.desiredDim = clamp01(value as number);
     if (capability === 'light_temperature') state.desiredTemperature = clamp01(value as number);
+    if (capability === 'light_hue') state.desiredHue = clamp01(value as number);
+    if (capability === 'light_saturation') state.desiredSaturation = clamp01(value as number);
+    // `light_mode` deliberately absent: a string, and nothing plans from it.
   }
 
   /**
@@ -248,5 +300,24 @@ export class TargetStateCache {
     this.recentEchoes.clear();
     this.writeSeq.clear();
     this.onOffObservedAt.clear();
+  }
+}
+
+/**
+ * The desired value for one capability, or undefined where none is tracked.
+ *
+ * Extracted from a nested ternary that had grown a silent default: with three
+ * capabilities, `else` meant `light_temperature`, so adding a fourth would have
+ * compared a hue against a colour temperature and quietly decided they matched.
+ */
+function desiredOf(state: TargetRuntimeState, capability: Capability): unknown {
+  switch (capability) {
+    case 'onoff': return state.desiredOn;
+    case 'dim': return state.desiredDim;
+    case 'light_temperature': return state.desiredTemperature;
+    case 'light_hue': return state.desiredHue;
+    case 'light_saturation': return state.desiredSaturation;
+    // No desired state, so nothing can match it. See applyExternalChange.
+    case 'light_mode': return undefined;
   }
 }

@@ -1,6 +1,7 @@
-import type { CircadianPlan } from './circadian-types';
+import { sanitiseCurve } from './circadian-types';
+import { DEFAULT_SIMPLE_PLAN, endsFromPoints, type SimpleCircadianPlan } from './simple-curve';
 import { runMigrationChain, type MigrationStep } from '../support/migrations';
-import { validateCircadianPlan } from '../validation/plans';
+import { validateSimpleCircadianPlan } from '../validation/plans';
 /**
  * A circadian plan's own migration chain — a third store, a third schema.
  *
@@ -15,7 +16,14 @@ import { validateCircadianPlan } from '../validation/plans';
  * validator rather than a cast.
  */
 
-export const CURRENT_CIRCADIAN_SCHEMA_VERSION = 1;
+/**
+ * 1 → 2 is the version where this device type STOPPED being the curve editor.
+ *
+ * A circadian light is now two ends of the day and a fixed shape; the point-based
+ * editor moved to its own device type (`drivers/curve/`). See the step below for
+ * what that costs an installed device and why it is the honest trade.
+ */
+export const CURRENT_CIRCADIAN_SCHEMA_VERSION = 2;
 
 export type CircadianMigration = MigrationStep;
 
@@ -32,10 +40,51 @@ export const CIRCADIAN_MIGRATIONS: Record<number, CircadianMigration> = {
     // Opt-in, so an unknown value is a no, never a yes.
     preStage: plan.preStage === true,
   }),
+
+  /**
+   * 1 → 2: a curve of points becomes two ends of the day.
+   *
+   * This device type was the curve editor. It is now the simple one — warmest and
+   * coolest, with the shape supplied — and the editor lives in its own device
+   * type, because a five-point editor is a lot of screen for "warm at night, cool
+   * in the day" and that is what most people want.
+   *
+   * The migration keeps the WARMEST and COOLEST points, which are the two values
+   * the user actually chose and the two the new shape is built to hold. Anything
+   * they set between them is lost, and it has to be: there is nowhere in the new
+   * plan to put it. That is stated in the changelog rather than hidden, and a
+   * Curve light is where such a curve can be rebuilt.
+   *
+   * `sanitiseCurve` runs first because a plan stored at version 1 has never been
+   * validated — the chain ended in a cast until Phase 6 — so `points` may be
+   * anything at all, and `endsFromPoints` reads `warmth` off every entry.
+   */
+  1: plan => {
+    const { points } = sanitiseCurve(plan.points, plan.adjustBrightness === true);
+    const { warmest, coolest } = endsFromPoints(points);
+    return {
+      schemaVersion: 2,
+      enabled: plan.enabled ?? true,
+      target: plan.target,
+      warmest,
+      coolest,
+      // Carried forward only if BOTH derived ends have a brightness, which is the
+      // engine's all-or-nothing rule.
+      adjustBrightness: plan.adjustBrightness === true
+        && warmest.brightness !== undefined && coolest.brightness !== undefined,
+      // The one verdict this device type persists about itself (CLAUDE.md §12),
+      // and it is about the integration rather than about the curve — so it
+      // survives the reshape.
+      preStage: plan.preStage === true,
+    };
+  },
 };
 
+/** What a plan with no stored ends falls back to. Exported for the driver. */
+export { DEFAULT_SIMPLE_PLAN };
+
 export interface CircadianMigrationResult {
-  plan: CircadianPlan;
+  plan: SimpleCircadianPlan;
   migrated: boolean;
   fromVersion: number;
   steps: number[];
@@ -46,7 +95,7 @@ export function migrateCircadianPlan(raw: unknown): CircadianMigrationResult {
     label: 'Circadian',
     current: CURRENT_CIRCADIAN_SCHEMA_VERSION,
     table: CIRCADIAN_MIGRATIONS,
-    validate: validateCircadianPlan,
+    validate: validateSimpleCircadianPlan,
   });
   return {
     plan: result.value,

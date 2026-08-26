@@ -2,7 +2,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { CommandScheduler, type WriteOutcome } from '../../lib/outputs/command-scheduler';
-import type { Capability } from '../../lib/outputs/intent-planner';
+import type { Capability, WriteValue } from '../../lib/outputs/intent-planner';
 import { deferred, settle } from '../support/deferred';
 import { FakeTimers } from '../support/fake-timers';
 
@@ -16,7 +16,7 @@ import { FakeTimers } from '../support/fake-timers';
  * symptom of one missing fact — whether the light actually moved.
  */
 
-interface Recorded { deviceId: string; capability: Capability; value: boolean | number }
+interface Recorded { deviceId: string; capability: Capability; value: WriteValue }
 
 function harness(options: {
   minWriteIntervalMs?: number;

@@ -58,7 +58,7 @@ the manifest's `>=12.9.0` is a firmware floor on top of it.
 
 ## Why schedules use Homey's own time trigger
 
-The app ships three device types and two of them generate Flows. A light schedule compiles to
+The app ships four device types and two of them generate Flows. A light schedule compiles to
 two Flows per window — one at each end — triggered by **Homey's own time card**,
 which the app locates by enumerating the trigger cards this Homey offers and echoing
 that card's `id` and `uri` back verbatim. It never constructs a card URI, and it does
@@ -79,21 +79,29 @@ Two consequences a reviewer may want to check:
 
 ## Why the third device type asks for no key at all
 
-A reviewer opening the Add-device list will find three drivers, two of which start
+A reviewer opening the Add-device list will find four drivers, two of which start
 with an API-key screen and one — **Circadian light** — which does not. That is
 deliberate and worth checking against the code, because it is the one place the
 key is genuinely unnecessary.
 
-A circadian light makes lights follow the colour temperature of the day. It has no
-boundaries, so it has nothing to schedule and generates **no Flows at all**: it
-subscribes to its target lights' `onoff` and `light_temperature` (through the app's
-own token, the same subscription the controller already uses), and writes
-`light_temperature` when a light comes on and once a minute while it is on. There is
-no `createFlow` on that path, so there is nothing a Personal API Key would authorise.
+A circadian light and a Curve light both make lights follow the colour temperature of
+the day, and they are one engine: the circadian light asks what the lights should look
+like at their warmest and coolest and supplies the shape of the day itself, while a
+Curve light exposes every point and lets any of them carry a colour from a closed
+palette instead of a warmth. A lamp that cannot show a colour is written the point's
+warmth instead, so the shape of the day is the same on every lamp.
+
+Neither has boundaries, so neither has anything to schedule and both generate **no
+Flows at all**: they subscribe to their target lights' `onoff` and `light_temperature`
+(through the app's own token, the same subscription the controller already uses), plus
+`light_hue` where a point carries a colour, and write the day's value when a light
+comes on and once a minute while it is on. There is no `createFlow` on that path, so
+there is nothing a Personal API Key would authorise.
 
 Three consequences a reviewer may want to verify:
 
-- It uses `homey.setInterval` — one interval for every circadian device on the Homey,
+- It uses `homey.setInterval` — one interval for every curve-driven device on the Homey
+  (both device types share one registry and therefore one timer),
   not one each — rather than the Flow engine. That is the opposite of the schedule
   device's choice above, and the reason is that a curve has no boundary to miss: a
   skipped tick is corrected by the next one. Expressing a smooth curve as Flows would

@@ -15,10 +15,18 @@ reframe the subject. Everything here is a function of the masters and this file.
     masters/remote-remote-icon-master.svg -> drivers/controller/assets/icon.svg
     masters/schedule-icon-master.svg      -> drivers/schedule/assets/icon.svg
     masters/circadian-icon-master.svg     -> drivers/circadian/assets/icon.svg
+                                          -> drivers/curve/assets/icon.svg   (PLACEHOLDER)
     masters/app-hero-master.png           -> assets/images/*          + the README banner
     masters/remote-device-master.png      -> drivers/controller/assets/images/*
     masters/schedule-device-master.png    -> drivers/schedule/assets/images/*
     masters/circadian-device-master.png   -> drivers/circadian/assets/images/*
+                                          -> drivers/curve/assets/images/*   (PLACEHOLDER)
+
+The curve light split out of the circadian light and ships with its artwork until
+its own is drawn. That is a real review finding — Athom's reviewer flags
+byte-identical icons as reuse — so it is listed here and in
+test/unit/assets.test.ts's PENDING_ARTWORK rather than tolerated silently.
+Removing both entries is the definition of done for that artwork.
     masters/logo-bitmap-original.png      -> nothing; it is the palette's source
 
 Homey's sizes, and which of them are actually enforced:
@@ -100,6 +108,19 @@ ICONS = [
         'fit': (2.6927, -209.3, -335.9),
         'stroke': 7.3,
     },
+    {
+        # PLACEHOLDER: the same master as the circadian light's, because the curve
+        # light split out of it and has no artwork of its own yet. Byte-identical
+        # icons are a review finding, which is why the pair is listed in
+        # test/unit/assets.test.ts's PENDING_ARTWORK. Give this its own master and
+        # delete that entry.
+        'master': 'circadian-icon-master.svg',
+        'out': ROOT / 'drivers' / 'curve' / 'assets' / 'icon.svg',
+        'title': 'Circadian light',
+        'desc': 'A rayed sun above two horizon lines.',
+        'fit': (2.6927, -209.3, -335.9),
+        'stroke': 7.3,
+    },
 ]
 
 # ---------------------------------------------------------------------- images
@@ -127,6 +148,11 @@ DEVICES = [
     {
         'master': 'circadian-device-master.png',
         'out': ROOT / 'drivers' / 'circadian' / 'assets' / 'images',
+    },
+    {
+        # PLACEHOLDER, as above.
+        'master': 'circadian-device-master.png',
+        'out': ROOT / 'drivers' / 'curve' / 'assets' / 'images',
     },
 ]
 DEVICE_SIZES = {'small.png': (75, 75), 'large.png': (500, 500), 'xlarge.png': (1000, 1000)}

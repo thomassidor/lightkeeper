@@ -4,10 +4,16 @@ Guidance for Claude Code (and any other agent) working in this repository.
 
 Lightkeeper is a Homey Pro app that does three things to already-paired lights: it turns an
 already-paired remote, switch or dial into a controller for them, it puts them on a schedule, and it
-follows the colour of the day with them. The first two work by generating and maintaining the Flows
-underneath, which is why they need a Personal API Key (§1). **The third does not generate Flows at
-all** — a circadian light watches the lights themselves and writes to them directly (§12), so it
-needs no key, has no `needs_credential` state, and never appears in the orphan sweep's live set.
+follows the colour of the day with them.
+
+**Four device types, three jobs.** The first two — a light controller and a light schedule — work by
+generating and maintaining the Flows underneath, which is why they need a Personal API Key (§1). The
+third job has TWO device types, and they are the same engine: a **circadian light** asks what the
+lights should look like at their warmest and coolest and supplies the shape of the day itself, and a
+**Curve light** exposes the whole curve — every point, every time, and a colour from a closed palette
+instead of a warmth at any point. **Neither generates Flows at all** (§12): they watch the lights
+themselves and write to them directly, so neither needs a key, neither has a `needs_credential`
+state, and neither appears in the orphan sweep's live set.
 
 ## Commands
 
@@ -20,6 +26,7 @@ npm run validate               # homey app validate --level publish, CLI from th
 npx homey app install          # persistent install on a real Homey
 npx homey app run --remote     # live logs, TEMPORARY — see below
 npm run sync:views             # pair -> repair, and shared views between drivers. See §8
+npm run sync:views:check       # what sync WOULD copy; writes nothing, exits 1 on drift. CI runs it
 python docs/artwork/export-assets.py   # re-export every shipped icon, image and the banner
 ```
 
@@ -49,18 +56,25 @@ lib/
   profiles/                     profile schema, migrations
   schedules/                    types, window maths, local clock, bindings, runtime, manager,
                                 time-card discovery, migrations
-  circadian/                    curve types, cyclic interpolation, runtime, manager, migrations
-  pairing/                      the light picker, shared by all three drivers
+  circadian/                    the curve ENGINE, shared by two device types: curve types and
+                                cyclic interpolation, the palette, the two-ended simple plan,
+                                runtime, manager, and one migration chain per store
+  devices/                      the device layer: DeviceLifecycle (plain, testable) and
+                                LightkeeperDevice (the Homey.Device shell) — see §13
+  time/                         wall-clock minutes and the Homey's local clock
+  validation/                   guards, the three plan validators, pairing DTO checks
+  pairing/                      the light picker, shared by every driver
+app-contract.ts                 what api.ts and the device layer may use of the app
+homey-api-types.ts              the shapes homey-api returns, at the normalisation seams
 drivers/controller/             virtual device, driver, four pairing views
   pair/                         the four views, edited here
   repair/                       exact copies of pair/, generated — see §8
-drivers/circadian/              virtual device, driver, two pairing views — NO credential screen
-  pair/                         targets.html is a COPY of the controller's; curve.html is its
-                                own — see §8
+drivers/circadian/              the SIMPLE one: two ends of the day. NO credential screen
+  pair/                         targets.html is a COPY of the controller's; ends.html is its own
   repair/                       exact copies of pair/, generated — see §8
-drivers/circadian/              virtual device, driver, two pairing views — NO credential screen
-  pair/                         targets.html is a COPY of the controller's; curve.html is its
-                                own — see §8
+drivers/curve/                  the FULL one: every point, and a colour per point. NO credential
+                                screen. Placeholder artwork — see assets.test.ts
+  pair/                         targets.html is a COPY of the controller's; curve.html is its own
   repair/                       exact copies of pair/, generated — see §8
 drivers/schedule/               virtual device, driver, three pairing views
   pair/                         credential.html and targets.html are COPIES of the
@@ -543,21 +557,76 @@ Generated flows are filed one folder per Lightkeeper device, inside the app's ow
 
 ## 12. A circadian light generates no Flows, and that is the whole design
 
-The third device type follows the colour temperature of the day: warm at dawn, cool through the
-middle, warm again at night. It is not a schedule with more rows. A schedule fires AT a time; a
-circadian curve has a value at EVERY minute, and that difference decides everything below.
+Two device types follow the colour temperature of the day — warm at dawn, cool through the middle,
+warm again at night — and they are ONE engine:
+
+| Device type | Stores | Asks for |
+|---|---|---|
+| **Circadian light** (`drivers/circadian/`) | two ends of the day | what warmest and coolest look like |
+| **Curve light** (`drivers/curve/`) | a list of points | every point, every time, and a colour per point |
+
+Neither is a schedule with more rows. A schedule fires AT a time; a curve has a value at EVERY
+minute, and that difference decides everything below.
+
+**The split, and why the shape is not a setting.** A five-point editor is a lot of screen for "warm
+at night, cool in the day", which is what most people want — so the circadian light asks two
+questions and supplies the shape itself (`SIMPLE_SHAPE` in `lib/circadian/simple-curve.ts`: warmest
+at 06:00, coolest at 11:00 and 15:00, warmest again at 21:00). Four points, not two, so each end is
+HELD: two points would have the curve only ever AT one of them for an instant, cooling all night on
+its way to midday. The segment from 21:00 round to 06:00 is warmest at both ends, so the whole night
+is flat — which cyclic interpolation makes true with no special case.
+
+The shape is a CONSTANT, derived on every register rather than stored. Two consequences, both
+deliberate: an installed device picks up an improved shape, and the moment the times become editable
+this device type is the Curve light with fewer fields. Somebody who wants their own times has one.
+
+**One registry serves both.** `app.curves` — a single `CircadianRuntimeManager` — because they are
+the same runtime, and sharing it is what keeps "ONE `setInterval` for every circadian device on the
+Homey" true across two device types rather than two timers over two maps. The circadian device's own
+`registry()` is a small adapter that expands its two ends into points on the way in and folds
+`enabled` and `preStage` back on the way out; `kind` in each runtime's diagnostics is what tells the
+two apart on a settings page and in a bug report.
+
+**A point may carry a COLOUR instead of a colour temperature** (Curve light only). The palette is
+closed (`lib/circadian/palette.ts`) and that is a decision, not a limitation: hue and saturation are
+a two-dimensional choice with one good answer per intent, most of the plane is a bad idea in a living
+room at 21:00, and a name survives being read back on a settings page a year later where a pair of
+coordinates does not. Three rules hold the feature together:
+
+- **`warmth` stays required even on a coloured point.** It is what a lamp with no colour capability
+  is written to instead, and what the neighbouring temperature segments interpolate towards — so the
+  SHAPE of the curve does not depend on which of the household's lamps can do colour.
+- **A colour is never blended with a colour temperature.** Both ends coloured blends, hue the short
+  way round the wheel. One end coloured HOLDS that colour flat across the whole segment. Fading
+  "amber" into "4000 K" means inventing a shade nobody chose. The consequence, stated because a user
+  notices it: ONE coloured point colours the two segments either side of it — "amber at 21:00" with
+  temperature points at 19:00 and 23:00 is amber from 19:00 to 23:00, not an amber instant.
+- **`light_mode` is written before hue and saturation.** A lamp sitting in temperature mode ignores a
+  hue it is given — not an error, just no visible effect, which is the worst failure this app can
+  produce. `WRITE_ORDER` in the scheduler puts mode ahead of hue for the same reason it puts `onoff`
+  ahead of `dim`. The capability tested for is `light_hue`, NOT `light_mode`: `homey-lib` pairs hue
+  and saturation on every colour-capable light, while `light_mode` exists only on a lamp that also
+  has a temperature mode to switch out of, so testing for it would skip a colour-only lamp that can
+  do exactly what was asked.
+
+**A colour override is detected on the hue axis.** `subscribeAll` adds `light_hue` to the
+subscription only when a point actually declares a colour — a lamp in a coloured segment is one whose
+colour a person changes on that axis, not the temperature one, so without it taking such a lamp over
+by hand went unnoticed and the next tick took it back.
 
 - **It uses a timer, and §9 does not forbid it.** §9 is about boundaries — a 22:00 event has to fire
   at 22:00 across DST, restarts and an app that was not running a moment ago, which only the Flow
   engine can promise. A curve has nothing to miss: a skipped tick is corrected by the next one and a
   restart just resumes. So `CircadianRuntimeManager` holds ONE `homey.setInterval` for every
-  circadian device on the Homey (60 s), and compiling ninety-six Flows to approximate a smooth curve
-  would be worse in every direction — including putting this device type back behind an API key.
+  curve-driven device on the Homey (60 s) — both device types, one timer — and compiling ninety-six
+  Flows to approximate a smooth curve would be worse in every direction, including putting these
+  device types back behind an API key.
 - **Which is the real prize: no Flows means no Personal API Key.** Pairing is the light picker and
-  the curve; there is no credential screen, `assessHealth()` has no credential leg, `app.ts` does
-  not notify it on a credential change, and `liveDeviceIds()` in `api.ts` deliberately excludes it —
-  a circadian device id can never appear in a Flow's bridge arguments, so counting it would only
-  inflate the sweep's "live" count and stop its "nothing is running" refusal from firing.
+  then the curve (or the two ends); there is no credential screen, `assessHealth()` has no credential
+  leg, `app.ts` does not notify either on a credential change, and `liveDeviceIds()` in `api.ts`
+  deliberately excludes BOTH — neither kind of id can appear in a Flow's bridge arguments, so
+  counting them would only inflate the sweep's "live" count and stop its "nothing is running"
+  refusal from firing.
 - **Three things cause a write, and the first is the feature.** The rising edge of a target's
   `onoff` — over the capability subscription the app already holds — is what makes a lamp the right
   colour however it was switched on: the wall switch, the vendor app, another Flow. That write
@@ -574,6 +643,11 @@ circadian curve has a value at EVERY minute, and that difference decides everyth
 - **The write gate is the capability's own resolution.** Across the steepest default segment the
   curve moves about 0.003 a minute and `light_temperature` reports `decimals: 2` (§6), so a write
   goes out roughly every third tick. Ticking faster changes nothing; the gate is what sets the rate.
+  **Colour has its own gate and a fixed threshold**, because `light_hue` carries no `decimals` in
+  `homey-lib`: there is no declared resolution below which a hue write is provably a no-op. 0.01 of a
+  turn is about 3.6° — finer than the eye on a wall, coarse enough that a two-hour blend costs a
+  handful of writes rather than a hundred and twenty. Hue is compared the SHORT way round, for the
+  same reason it is blended that way.
 - **An external colour change stands the device down for that light.** Over a 0.03 tolerance — above
   a bridge's rounding, far below a deliberate change — and outside a 3 s settle window after our own
   write. Cleared by either edge of `onoff`, because "switch it off and on again" is the gesture
@@ -589,6 +663,15 @@ circadian curve has a value at EVERY minute, and that difference decides everyth
 - **Brightness is never pre-staged.** A `dim` write turns an off lamp on; that is measured, not
   suspected. Pre-staging is a colour-only idea, and `planWrites()` splits its two legs for exactly
   this reason.
+- **A circadian light's schema 1 → 2 is where this device type stopped being the curve editor.** The
+  step keeps the WARMEST and COOLEST points — the two values the user actually chose, and the two the
+  new shape is built to hold — and drops everything between them, because there is nowhere in the new
+  plan to put it. That is in the changelog rather than hidden, and a Curve light is where such a curve
+  can be rebuilt. The step runs `sanitiseCurve` first: a plan stored at version 1 was never
+  validated (the chain ended in a cast until the validators landed), so `points` may be anything.
+- **There is no migration BETWEEN the two device types**, and there cannot be: Homey has no way to
+  change a device's driver. An existing circadian light becomes the simple one; a curve is a new
+  device. Adding one is cheap — no API key, no Flows — which is what makes that acceptable.
 - **The anchor is a discriminated union from day one.** `{ kind: 'clock' }` is all that ships;
   `{ kind: 'sun' }` is declared, refused by `sanitiseCurve()` and thrown on by `resolveAnchor()`, so
   anchoring to real sunrise and sunset later is a new variant rather than a reshape of every stored
@@ -596,6 +679,53 @@ circadian curve has a value at EVERY minute, and that difference decides everyth
   maths the SDK does not provide (§9).
 
 ---
+
+---
+
+## 13. `require('homey')` only resolves ON a Homey, and that shapes the device layer
+
+The `homey` package in `node_modules` is the **CLI**, not the SDK: its `main` is `bin/homey.js`, so
+`require('homey')` outside a Homey either runs the CLI or hands back something with no `Device` on
+it. The SDK module exists only in the app's runtime on the device.
+
+`@types/homey` supplies the types, so `tsc` is perfectly happy — and any test that imports a file
+containing `extends Homey.Device` dies with
+
+```
+TypeError: Class extends value undefined is not a constructor or null
+```
+
+That is not a detail about testing. It is the reason the three device files had no tests at all, and
+therefore the reason every ordering bug in them survived to be found by review: a lifecycle whose
+only test harness is a real Homey Pro is a lifecycle nobody tests twice.
+
+So the device layer is split, and the split is load-bearing:
+
+| File | What it is |
+|---|---|
+| `lib/devices/device-lifecycle.ts` | `DeviceLifecycle<TPlan, TRuntime>` — a plain class taking its host as an argument. Every rule lives here: the transactional apply, the rollback, the per-device FIFO, the sequenced availability verdicts, load-and-migrate, quarantine, the delete gate. |
+| `lib/devices/lightkeeper-device.ts` | `LightkeeperDevice extends Homey.Device implements DeviceOwner` — holds a `DeviceLifecycle` and forwards five SDK entry points. Nothing in it branches. |
+
+`Homey.Device` satisfies the SDK half of `DeviceOwner` structurally, so the shell adds only the two
+members the SDK spells differently: `translate()` for `homey.__` and `removeFlows()` for
+`app.bridge.removeAll`. `test/unit/device-transactions.test.ts` is what the single-class version
+could not have had.
+
+The same constraint explains `lib/app-contract.ts`. `app.ts` must stay `module.exports = <class>` —
+a Homey entry point using `export default` is not loaded at all — so there is no class type for
+`api.ts` to import. The contract is that type written by hand, and `app.ts` assigns its class to it
+before exporting, so removing a member the contract promises fails at compile time rather than as
+`undefined` inside a settings-page handler.
+
+Two ordering rules the lifecycle owns, both of which cost a real bug:
+
+- **A verdict carries a sequence number.** Serialising the availability updates is not enough: a
+  stale verdict is still IN the queue and would be applied, just later. Each one takes a monotonic
+  number when it is issued and is dropped if a higher one has already been applied, so a register's
+  callback landing after the apply that superseded it cannot flip an unavailable device to available.
+- **An apply persists only after `register()` resolves**, and the managers insert into their maps
+  only after `start()` resolves. A runtime whose start threw is half-built — no scheduler, possibly
+  no subscriptions — and a bridge event arriving in that window would be dispatched into it.
 
 # Working on this codebase
 
@@ -707,9 +837,10 @@ re-running the hardware pass list, not just re-running CI.
   proprietary to Athom B.V.; no warranty*. Bundling it in a Homey app is exactly the permitted use,
   but it does not inherit this repo's MIT licence and belongs in the rights register as its own line.
 
-## Two of the three device types share one flow lifecycle
+## Two of the four device types share one flow lifecycle
 
-(The third, a circadian light, generates no Flows at all and appears nowhere below — see §12.)
+(The other two — a circadian light and a Curve light — generate no Flows at all and appear nowhere
+below. See §12.)
 
 `FlowBridgeManager` takes `BindableInput` — `{ key, label, binding, variantKey? }` — not
 `SelectableInput`. A schedule has no physical control, no action and no magnitude, but it does have a
@@ -757,10 +888,11 @@ Two consequences that look like awkwardness and are not:
 type declarations. Everything of ours is strict — `strict: true`, `noImplicitOverride: true`.
 
 **Translation belongs to the device layer.** `lib/` has no access to `homey.__`, so anything
-user-facing produced there returns a locale key plus tokens via `StateDetail`
-(`lib/profiles/controller-profile.ts`) and the driver layer — `drivers/*/device.ts`, both of them —
-resolves it. A string
-hardcoded in `lib/` can never be translated, no matter what the locale files say.
+user-facing produced there returns a locale key plus tokens — `StateDetail` in
+`lib/profiles/controller-profile.ts`, `labelKey` on a `PaletteColor` — and the driver or device layer
+resolves it. A string hardcoded in `lib/` can never be translated, no matter what the locale files
+say. `DeviceOwner.translate()` is that boundary for the device layer; a driver calls `homey.__`
+directly.
 `test/unit/locales.test.ts` enforces the invariant in both directions: no defined key unused, no
 referenced key undefined.
 
@@ -808,9 +940,11 @@ Load-bearing product guarantees, not implementation details:
 - **Flows that look user-edited are never overwritten.** The controller is marked for repair instead.
 - **Deleting a controller deletes only the Flows demonstrably created by it.** Attribution is the
   controller id carried in the bridge action's arguments.
-- **The orphan sweep refuses to run when no Lightkeeper device of either kind is live**, because
-  every managed Flow would then look orphaned. The live set is the union of both registries — see
-  `liveDeviceIds()` below for why that is load-bearing rather than tidy.
+- **The orphan sweep refuses to run when no Flow-owning Lightkeeper device is live**, because every
+  managed Flow would then look orphaned. The live set is the union of the controller and schedule
+  registries PLUS every installed device of those two drivers — see `liveDeviceIds()` below for why
+  that is load-bearing rather than tidy. A circadian or Curve light is deliberately absent: neither
+  owns a Flow, so counting them would only inflate the count and stop the refusal firing.
 - **The API key is never logged, never returned over the app API, and never included in
   diagnostics.** Errors are classified before logging, because an error object can echo the token.
   `test/unit/diagnostics-redaction.test.ts` asserts this against serialised output.

@@ -569,7 +569,9 @@ describe('diagnostics', () => {
     h.report('l1', 'light_temperature', 0.05);
 
     const diagnostics = h.runtime.diagnostics() as any;
-    assert.equal(diagnostics.kind, 'circadian');
+    // The registry serves both device types; a runtime registered without a
+    // kind is a curve light's, which is what this harness builds.
+    assert.equal(diagnostics.kind, 'curve');
     assert.equal(diagnostics.localTime, 'Tue 22:15');
     assert.ok(diagnostics.now.warmth > 0.9);
     assert.equal(diagnostics.nextPoint.at, '23:00');

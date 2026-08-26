@@ -132,12 +132,12 @@ export interface ManagedFlowSummary {
  * One exported constant because two things must agree on it and they live apart:
  * the drivers that mint ids, and the sweep's proof that a flow's `controller`
  * argument was written by us rather than typed in by hand. `circ` is included for
- * completeness even though a circadian light owns no flows — an id that turned up
- * in a flow's arguments would be evidence of something we would want to see
- * rather than delete.
+ * completeness — as is `curv` — even though neither a circadian nor a curve light
+ * owns any flows. An id of either kind turning up in a flow's arguments would be
+ * evidence of something we would want to SEE rather than delete.
  */
 export const LIGHTKEEPER_DEVICE_ID =
-  /^lk-(ctrl|sched|circ)-(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d+-\d+)$/i;
+  /^lk-(ctrl|sched|circ|curv)-(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d+-\d+)$/i;
 
 /**
  * A new device id.
@@ -151,7 +151,7 @@ export const LIGHTKEEPER_DEVICE_ID =
  * The prefix stays, because it is what tells a human reading a Flow's arguments
  * what they are looking at.
  */
-export function mintDeviceId(kind: 'ctrl' | 'sched' | 'circ'): string {
+export function mintDeviceId(kind: 'ctrl' | 'sched' | 'circ' | 'curv'): string {
   return `lk-${kind}-${randomUUID()}`;
 }
 

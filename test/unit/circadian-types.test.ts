@@ -4,7 +4,13 @@ import assert from 'node:assert/strict';
 import {
   MAX_POINTS, MIN_POINTS, sanitiseCurve,
 } from '../../lib/circadian/circadian-types';
-import { migrateCircadianPlan } from '../../lib/circadian/circadian-migrations';
+import {
+  migrateCircadianPlan, CURRENT_CIRCADIAN_SCHEMA_VERSION,
+} from '../../lib/circadian/circadian-migrations';
+import {
+  DEFAULT_SIMPLE_PLAN, SIMPLE_SHAPE, expandSimplePlan, sanitiseSimplePlan,
+} from '../../lib/circadian/simple-curve';
+import { valueAt } from '../../lib/circadian/circadian-curve';
 
 /**
  * Everything the curve screen sends arrives from a webview and is therefore
@@ -123,38 +129,100 @@ describe('sanitiseCurve', () => {
   });
 });
 
+/**
+ * The circadian light's own chain, which at version 2 STOPPED storing points.
+ *
+ * A circadian light is now two ends of the day with the shape supplied; the
+ * point-based editor is its own device type (`drivers/curve/`), with its own store
+ * and its own chain. So every test here is about the reshape, and the point-based
+ * chain is tested through `migrateCurvePlan`.
+ */
 describe('circadian migrations', () => {
+  const TARGET = { kind: 'devices', deviceIds: ['l1'] };
+
   test('a plan with no schemaVersion is brought forward with safe defaults', () => {
-    const { plan, migrated, fromVersion } = migrateCircadianPlan({
-      target: { kind: 'devices', deviceIds: ['l1'] },
-    });
+    const { plan, migrated, fromVersion } = migrateCircadianPlan({ target: TARGET });
+
     assert.equal(migrated, true);
     assert.equal(fromVersion, 0);
-    assert.equal(plan.schemaVersion, 1);
+    assert.equal(plan.schemaVersion, CURRENT_CIRCADIAN_SCHEMA_VERSION);
     assert.equal(plan.enabled, true);
-    assert.deepEqual(plan.points, []);
+    // No points survived, so the ends fall back to the defaults rather than being
+    // derived from nothing.
+    assert.deepEqual(plan.warmest, DEFAULT_SIMPLE_PLAN.warmest);
+    assert.deepEqual(plan.coolest, DEFAULT_SIMPLE_PLAN.coolest);
     assert.equal(plan.adjustBrightness, false);
     // Opt-in, so an absent value is a no.
     assert.equal(plan.preStage, false);
   });
 
   test('pre-staging is never enabled by a migration', () => {
-    const withPreStage = (preStage: unknown) => migrateCircadianPlan({
-      target: { kind: 'devices', deviceIds: ['l1'] }, preStage,
-    }).plan.preStage;
+    const withPreStage = (preStage: unknown) =>
+      migrateCircadianPlan({ target: TARGET, preStage }).plan.preStage;
 
     assert.equal(withPreStage('yes'), false);
     assert.equal(withPreStage(true), true);
   });
 
-  test('a current plan is left alone', () => {
-    // A COMPLETE plan. The migration chain now ends in a validator, so a partial
-    // one is refused rather than cast — see the test below.
-    const { migrated } = migrateCircadianPlan({
+  test('1 to 2 keeps the warmest and coolest points and drops the rest', () => {
+    // The two values the user actually chose, and the two the new shape holds.
+    // Whatever they set between them is lost, and the changelog says so.
+    const { plan, migrated } = migrateCircadianPlan({
       schemaVersion: 1,
       enabled: true,
-      target: { kind: 'devices', deviceIds: ['l1'] },
-      points: [],
+      target: TARGET,
+      points: [
+        { id: 'p1', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.9, brightness: 0.5 },
+        { id: 'p2', anchor: { kind: 'clock', at: 12 * 60 }, warmth: 0.2, brightness: 0.9 },
+        { id: 'p3', anchor: { kind: 'clock', at: 18 * 60 }, warmth: 0.6, brightness: 0.7 },
+        { id: 'p4', anchor: { kind: 'clock', at: 23 * 60 }, warmth: 1, brightness: 0.4 },
+      ],
+      adjustBrightness: true,
+      preStage: true,
+    });
+
+    assert.equal(migrated, true);
+    assert.deepEqual(plan.warmest, { temperature: 1, brightness: 0.4 });
+    assert.deepEqual(plan.coolest, { temperature: 0.2, brightness: 0.9 });
+    assert.equal(plan.adjustBrightness, true);
+    // The one verdict this device type persists about ITSELF rather than about
+    // the curve, so it survives the reshape.
+    assert.equal(plan.preStage, true);
+  });
+
+  test('and drops brightness-following when the derived ends have none', () => {
+    const { plan } = migrateCircadianPlan({
+      schemaVersion: 1,
+      enabled: true,
+      target: TARGET,
+      points: [
+        { id: 'p1', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.2 },
+        { id: 'p2', anchor: { kind: 'clock', at: 23 * 60 }, warmth: 1 },
+      ],
+      adjustBrightness: true,
+      preStage: false,
+    });
+    assert.equal(plan.adjustBrightness, false);
+  });
+
+  test('an unusable point list migrates to the defaults, not to a crash', () => {
+    // A version-1 plan was never validated — the chain ended in a cast until
+    // Phase 6 — so `points` may be anything at all.
+    for (const points of [null, 'lots', [{}], [{ warmth: 'warm' }], []]) {
+      const { plan } = migrateCircadianPlan({
+        schemaVersion: 1, enabled: true, target: TARGET, points, adjustBrightness: false,
+      });
+      assert.deepEqual(plan.warmest, DEFAULT_SIMPLE_PLAN.warmest, JSON.stringify(points));
+    }
+  });
+
+  test('a current plan is left alone', () => {
+    const { migrated } = migrateCircadianPlan({
+      schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION,
+      enabled: true,
+      target: TARGET,
+      warmest: { temperature: 1, brightness: 0.6 },
+      coolest: { temperature: 0.15, brightness: 0.9 },
       adjustBrightness: false,
       preStage: false,
     });
@@ -165,6 +233,86 @@ describe('circadian migrations', () => {
     assert.throws(() => migrateCircadianPlan({ schemaVersion: 99 }), /newer than this app understands/);
   });
 
+  test('the two ends expand into the shape, and the night is flat', () => {
+    const plan = {
+      schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION,
+      enabled: true,
+      target: TARGET as any,
+      warmest: { temperature: 1, brightness: 0.5 },
+      coolest: { temperature: 0.1, brightness: 0.9 },
+      adjustBrightness: true,
+      preStage: false,
+    };
+    const expanded = expandSimplePlan(plan);
+
+    assert.equal(expanded.points.length, 4);
+    // 21:00 round to 06:00 is warmest at both ends, which is what makes the whole
+    // night flat without a special case. Two points would have it cooling all
+    // night on its way to midday.
+    assert.equal(valueAt(expanded.points, 0).warmth, 1);
+    assert.equal(valueAt(expanded.points, 3 * 60).warmth, 1);
+    assert.equal(valueAt(expanded.points, 23 * 60).warmth, 1);
+    // And flat through the middle of the day, for the same reason.
+    assert.equal(valueAt(expanded.points, 13 * 60).warmth, 0.1);
+    // Between the two it is neither, and strictly between them.
+    const morning = valueAt(expanded.points, 8 * 60).warmth;
+    assert.ok(morning > 0.1 && morning < 1, `${morning}`);
+  });
+
+  test('brightness is all-or-nothing across the expansion', () => {
+    const base = {
+      schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION,
+      enabled: true,
+      target: TARGET as any,
+      preStage: false,
+    };
+    const withOne = expandSimplePlan({
+      ...base,
+      warmest: { temperature: 1, brightness: 0.5 },
+      coolest: { temperature: 0.1 },
+      adjustBrightness: true,
+    });
+    assert.equal(withOne.adjustBrightness, false);
+    assert.ok(withOne.points.every(point => point.brightness === undefined));
+
+    const withBoth = expandSimplePlan({
+      ...base,
+      warmest: { temperature: 1, brightness: 0.5 },
+      coolest: { temperature: 0.1, brightness: 0.9 },
+      adjustBrightness: true,
+    });
+    assert.equal(withBoth.adjustBrightness, true);
+    assert.ok(withBoth.points.every(point => point.brightness !== undefined));
+  });
+
+  test('the shape is derived, never stored', () => {
+    // So an installed device picks up an improved shape. What is persisted is
+    // only the two answers the user gave.
+    assert.equal(SIMPLE_SHAPE.length, 4);
+    assert.deepEqual(
+      SIMPLE_SHAPE.map(point => point.end),
+      ['warmest', 'coolest', 'coolest', 'warmest'],
+    );
+  });
+
+  test('a screen sending nonsense falls back per FIELD, and says which', () => {
+    // Falling back rather than dropping, unlike the curve's sanitiser: two ends
+    // are not a list, and a device with one end has no curve at all.
+    const result = sanitiseSimplePlan({
+      warmest: { temperature: 'very' },
+      coolest: { temperature: 0.2, brightness: 0.8 },
+      adjustBrightness: true,
+    });
+    assert.deepEqual(result.warmest, DEFAULT_SIMPLE_PLAN.warmest);
+    assert.deepEqual(result.coolest, { temperature: 0.2, brightness: 0.8 });
+    assert.deepEqual(result.corrected, ['warmest temperature']);
+
+    const empty = sanitiseSimplePlan(null);
+    assert.deepEqual(empty.warmest, DEFAULT_SIMPLE_PLAN.warmest);
+    assert.deepEqual(empty.coolest, DEFAULT_SIMPLE_PLAN.coolest);
+    assert.equal(empty.adjustBrightness, false);
+  });
+
   test('something that is not a plan at all is refused', () => {
     assert.throws(() => migrateCircadianPlan(null), /not an object/);
   });
@@ -173,8 +321,14 @@ describe('circadian migrations', () => {
     // The chain used to end in a cast, so a plan missing its target reached the
     // runtime and failed at the first resolve — with nothing saying why.
     assert.throws(
-      () => migrateCircadianPlan({ schemaVersion: 1, enabled: true, points: [], adjustBrightness: false }),
-      /CircadianPlan\.target is not an object/,
+      () => migrateCircadianPlan({
+        schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION,
+        enabled: true,
+        warmest: { temperature: 1 },
+        coolest: { temperature: 0 },
+        adjustBrightness: false,
+      }),
+      /SimpleCircadianPlan\.target is not an object/,
     );
     assert.throws(
       () => migrateCircadianPlan({ schemaVersion: '1' }),

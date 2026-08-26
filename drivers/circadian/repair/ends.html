@@ -1,0 +1,513 @@
+<style>
+/* ==== shared base: identical in every pair view ====
+     Scoped to this view's root because all views of a session share ONE
+     document, so unscoped class names bleed between screens (see the script
+     header).
+
+     That also means these ~110 lines cannot be de-duplicated into a stylesheet
+     — there is nowhere to put one. So the duplication is made safe instead:
+     test/unit/pair-view-styles.test.ts compares every copy with the root
+     id normalised and fails on any difference. Edit this block in all
+     files, or in none of them.
+
+     Colours are tokens so that the dark scheme below restates values only,
+     never rules. A colour written as a literal anywhere past this block is a
+     token that is missing. */
+  #end-root {
+    /* Brand. The violet is the manifest brandColor and the ground of the logo —
+       93% of its pixels — and the lavender is the logo's mark. Both are read
+       out of docs/artwork/masters/logo-bitmap-original.png by
+       `export-assets.py --palette`, so the UI cannot drift from the artwork.
+       The tints and lines are derived: the logo itself has no mid-tones. */
+    --lk-accent: #180e32;
+    --lk-accent-ink: #ffffff;
+    --lk-accent-tint: #f3eefc;
+    --lk-accent-wash: #fbf9fe;
+    --lk-accent-line: #d9cbf5;
+    --lk-accent-strong: #2b1a52;
+    --lk-ring: rgba(24, 14, 50, .16);
+
+    --lk-ink: #16181d;
+    --lk-sub: #6b7280;
+    --lk-body: #4b5563;
+    --lk-muted: #8b929e;
+    --lk-faint: #9aa1ac;
+
+    /* transparent, not white: the pairing container paints the page behind us,
+       and claiming it in light mode would flatten every card against it. The
+       dark scheme does claim it, because a white card on a dark container is
+       the one combination that reads as broken rather than merely plain. */
+    --lk-page: transparent;
+    --lk-surface: #ffffff;
+    --lk-raised: #f7f8fa;
+    --lk-line: #eceef2;
+    --lk-field: #e3e6ec;
+    --lk-hover: #c9d2e0;
+    --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
+
+    --lk-ok-bg: #eaf7ef;   --lk-ok-ink: #10633a;
+    --lk-bad-bg: #fdeceb;  --lk-bad-ink: #8f1d18;
+    --lk-flat-bg: #f4f5f7; --lk-flat-ink: #5b616e;
+
+    background: var(--lk-page);
+    padding: 18px 16px 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", sans-serif;
+    color: var(--lk-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Values only. Note the accent inverts: #180e32 is nearly black and cannot
+     carry white text on a dark ground, so dark mode promotes the logo's own
+     lavender to the accent and darkens the ink on top of it. */
+  @media (prefers-color-scheme: dark) {
+    #end-root {
+      --lk-accent: #ccb0f3;
+      --lk-accent-ink: #1b1230;
+      --lk-accent-tint: #251b40;
+      --lk-accent-wash: #1b1626;
+      --lk-accent-line: #4a3a75;
+      --lk-accent-strong: #e2d4fb;
+      --lk-ring: rgba(204, 176, 243, .28);
+
+      --lk-ink: #f2f3f5;
+      --lk-sub: #a6adb8;
+      --lk-body: #c3c9d2;
+      --lk-muted: #8b929e;
+      --lk-faint: #7c8390;
+
+      --lk-page: #16181b;
+      --lk-surface: #1f2126;
+      --lk-raised: #262a31;
+      --lk-line: #2c3037;
+      --lk-field: #3a3f48;
+      --lk-hover: #4a5160;
+      --lk-shadow: 0 1px 2px rgba(0, 0, 0, .4);
+
+      --lk-ok-bg: #14301f;   --lk-ok-ink: #7ddba4;
+      --lk-bad-bg: #3a1a19;  --lk-bad-ink: #f7a49e;
+      --lk-flat-bg: #262a31; --lk-flat-ink: #aeb5c0;
+    }
+  }
+
+  #end-root h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+  #end-root .sub { font-size: 14px; line-height: 1.5; color: var(--lk-sub); margin: 0 0 18px; }
+  #end-root p { font-size: 14px; line-height: 1.55; color: var(--lk-body); }
+
+  #end-root .card { background: var(--lk-surface); border: 1px solid var(--lk-line);
+              border-radius: 14px; box-shadow: var(--lk-shadow); padding: 14px;
+              margin-bottom: 10px; }
+
+  #end-root .section { margin-bottom: 18px; }
+  #end-root .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase;
+                       letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 8px 2px; }
+
+  /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
+  #end-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+              border: 1.5px solid var(--lk-line); border-radius: 12px; padding: 13px 14px;
+              margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
+              color: var(--lk-ink);
+              transition: border-color .12s ease, background .12s ease; }
+  #end-root .tile:hover { border-color: var(--lk-hover); }
+  #end-root .tile.sel { border-color: var(--lk-accent); background: var(--lk-accent-tint); }
+  #end-root .tile .name { font-size: 15px; font-weight: 500; line-height: 1.3; }
+  #end-root .tile .meta { font-size: 12.5px; color: var(--lk-muted); margin-top: 3px; line-height: 1.35; }
+
+  #end-root input[type=text], #end-root input[type=password], #end-root select {
+    width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
+    border: 1.5px solid var(--lk-field); border-radius: 11px; background: var(--lk-surface);
+    color: var(--lk-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
+  /* The chevron's fill stays a literal: #8b929e is --lk-muted, which is the one
+     token with the same value in both schemes, and a data URI cannot read a
+     custom property. */
+  #end-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%238b929e' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+               background-repeat: no-repeat; background-position: right 13px center;
+               background-size: 11px; padding-right: 34px; }
+  #end-root input:focus, #end-root select:focus { outline: none; border-color: var(--lk-accent);
+                                      box-shadow: 0 0 0 3px var(--lk-ring); }
+
+  #end-root .btn { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
+             border-radius: 10px; border: 1.5px solid var(--lk-field);
+             background: var(--lk-surface); color: var(--lk-ink); cursor: pointer;
+             min-height: 40px; }
+  #end-root .btn:hover { border-color: var(--lk-hover); }
+  #end-root .btn:disabled { opacity: .45; cursor: not-allowed; }
+  #end-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
+                     border-radius: 12px; border: none; background: var(--lk-accent);
+                     color: var(--lk-accent-ink); cursor: pointer; min-height: 50px;
+                     margin-top: 16px; font-family: inherit; }
+  #end-root .btn-primary:disabled { opacity: .5; cursor: progress; }
+
+  /* A default ground, so a .msg shown before any state class lands on it is
+     still a message rather than bare text on the page. */
+  #end-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 11px; font-size: 13.5px;
+             line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+  #end-root .ok { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
+  #end-root .bad { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
+  #end-root .muted { background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+
+  #end-root ol { font-size: 14px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+           color: var(--lk-body); }
+  #end-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  @media (max-width: 380px) { #end-root .grid { grid-template-columns: 1fr; } }
+  #end-root .empty { font-size: 14px; color: var(--lk-muted); padding: 12px 0; }
+  /* ==== end shared base ==== */
+  /* ---- this view only ---- */
+  #end-root .end {
+    border: 1px solid var(--lk-line);
+    border-radius: 12px;
+    background: var(--lk-surface);
+    box-shadow: var(--lk-shadow);
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+  #end-root .end .rowhead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  #end-root .end .name { font-weight: 600; font-size: 15px; }
+  #end-root .when { color: var(--lk-muted); font-size: 12px; }
+  #end-root .field { margin-top: 12px; }
+  #end-root .label {
+    font-size: 12px;
+    color: var(--lk-sub);
+    margin-bottom: 6px;
+  }
+  #end-root .slider { display: flex; align-items: center; gap: 10px; }
+  #end-root .slider input[type=range] { flex: 1; }
+  #end-root .slider .value {
+    min-width: 84px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--lk-body);
+    font-size: 13px;
+  }
+  #end-root .check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  #end-root .acts { display: flex; gap: 8px; margin-top: 14px; }
+  #end-root .result { margin-top: 8px; font-size: 12px; color: var(--lk-muted); }
+
+</style>
+
+<div class="wrap" id="end-root">
+  <div class="head">
+    <div class="title" data-i18n="circadian.endsTitle"></div>
+    <div class="sub" data-i18n="circadian.endsIntro"></div>
+  </div>
+
+  <div id="end-summary" class="sub"></div>
+
+  <div id="end-list"></div>
+
+  <label class="check" id="end-brightnessRow" style="display:none;">
+    <input type="checkbox" id="end-adjustBrightness" />
+    <span data-i18n="circadian.alsoBrightness"></span>
+  </label>
+
+  <label class="check" style="margin-top:10px;">
+    <input type="checkbox" id="end-preStage" />
+    <span data-i18n="circadian.preStage"></span>
+  </label>
+  <div class="sub" data-i18n="circadian.preStageHelp"></div>
+
+  <div class="acts">
+    <button class="btn" id="end-preview" data-i18n="circadian.preview"></button>
+    <button class="btn" id="end-testPreStage" data-i18n="circadian.preStageTest"></button>
+  </div>
+  <div class="result" id="end-result"></div>
+
+  <div class="foot">
+    <button class="btn primary" id="end-save" data-i18n="circadian.save"></button>
+  </div>
+  <div class="msg" id="end-msg" style="display:none;"></div>
+</div>
+
+<script type="text/javascript">
+/**
+ * Pair views are INJECTED INTO the pairing container's document — they do not
+ * get their own iframe, and they must not load homey.js themselves (a second
+ * copy overwrites window.Homey with a base object that has no emit/showView).
+ *
+ * The container calls window.onHomeyReady once, at its own page load, long
+ * before this view's script exists, so waiting to be called never fires. The
+ * container's fully-equipped Homey is already on window by the time this runs,
+ * so take it directly — while still accepting onHomeyReady if it does arrive.
+ *
+ * All views of a session share ONE document. That is why every CSS rule here is
+ * scoped to this view's root id, and why the boot guard below lives on the root
+ * ELEMENT rather than in a global.
+ */
+(function () {
+  var root = document.getElementById('end-root');
+  if (!root || root.getAttribute('data-booted') === '1') return;
+  root.setAttribute('data-booted', '1');
+
+  function emit(event, data) {
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var finish = function (err, result) {
+        if (settled) return;
+        settled = true;
+        if (err) reject(err instanceof Error ? err : new Error(String(err)));
+        else resolve(result);
+      };
+      var timer = setTimeout(function () { finish(new Error('Homey did not respond to "' + event + '"')); }, 20000);
+      var done = function (err, result) { clearTimeout(timer); finish(err, result); };
+      try {
+        var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
+        if (returned && typeof returned.then === 'function') {
+          returned.then(function (r) { done(null, r); }, function (e) { done(e); });
+        }
+      } catch (err) { done(err); }
+    });
+  }
+
+  function stabiliseScrollbar() {
+    var scroller = null;
+    for (var el = __root.parentElement; el && el !== document.documentElement; el = el.parentElement) {
+      var overflowY = getComputedStyle(el).overflowY;
+      if (overflowY === 'auto' || overflowY === 'scroll') { scroller = el; break; }
+    }
+    var targets = scroller ? [scroller] : [document.documentElement, document.body];
+    var supported = window.CSS && CSS.supports && CSS.supports('scrollbar-gutter', 'stable');
+
+    targets.forEach(function (el) {
+      if (!el) return;
+      if (supported) el.style.scrollbarGutter = 'stable';
+      // Without gutter support, always showing the track is the stable option.
+      else if (el !== document.body) el.style.overflowY = 'scroll';
+    });
+  }
+
+  function node(tag, className, text) {
+    var el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined && text !== null) el.textContent = String(text);
+    return el;
+  }
+
+  function clear(el) {
+    while (el.firstChild) el.removeChild(el.firstChild);
+    return el;
+  }
+
+  /**
+   * Two ends of the day, and the shape between them is not ours to choose.
+   *
+   * This screen deliberately has no times on it. The shape is a constant in
+   * lib/circadian/simple-curve.ts, and the moment it becomes editable this device
+   * type is the Curve light with fewer fields. What the shape IS gets shown —
+   * `model.shape` names the hours each end applies at — because a slider called
+   * "warmest" with no hours beside it is a slider whose effect has to be guessed.
+   */
+  var model = {
+    warmest: { temperature: 1, brightness: 0.6 },
+    coolest: { temperature: 0.15, brightness: 0.9 },
+    adjustBrightness: false,
+    preStage: false,
+    support: { dim: 0, light_temperature: 0 },
+    shape: [],
+    lights: [],
+    timezone: null
+  };
+
+  /**
+   * The two ends, with their labels named explicitly.
+   *
+   * A literal per end rather than a key assembled from a prefix, because
+   * test/unit/locales.test.ts scans the source for locale keys as string
+   * literals: a key assembled at runtime is a key it cannot see, and an unused or
+   * missing translation then passes silently.
+   */
+  var ENDS = [
+    { key: 'warmest', label: 'circadian.end_warmest' },
+    { key: 'coolest', label: 'circadian.end_coolest' }
+  ];
+
+  function warmthText(value) {
+    if (value >= 0.9) return Homey.__('schedule.warmthWarmest');
+    if (value >= 0.65) return Homey.__('schedule.warmthWarm');
+    if (value >= 0.35) return Homey.__('schedule.warmthNeutral');
+    if (value >= 0.1) return Homey.__('schedule.warmthCool');
+    return Homey.__('schedule.warmthCoolest');
+  }
+
+  /** The hours this end applies at, from the shape the driver sent. */
+  function whenText(end) {
+    var hours = model.shape.filter(function (point) { return point.end === end; })
+      .map(function (point) { return point.at; });
+    if (!hours.length) return '';
+    return Homey.__('circadian.endWhen', { hours: hours.join(', ') });
+  }
+
+  function show(kind, text) {
+    var msg = document.getElementById('end-msg');
+    msg.className = 'msg ' + kind;
+    msg.textContent = text;
+    msg.style.display = 'block';
+  }
+
+  function slider(end, field, min, max) {
+    var wrap = node('div', 'slider');
+    var input = document.createElement('input');
+    input.type = 'range';
+    input.min = String(min);
+    input.max = String(max);
+    input.step = '5';
+    input.value = String(Math.round((model[end][field] || 0) * 100));
+
+    var value = node('span', 'value', field === 'temperature'
+      ? warmthText(model[end].temperature)
+      : Math.round((model[end].brightness || 0) * 100) + '%');
+
+    input.addEventListener('input', function () {
+      var next = Number(input.value) / 100;
+      model[end][field] = next;
+      value.textContent = field === 'temperature'
+        ? warmthText(next)
+        : Math.round(next * 100) + '%';
+    });
+    input.addEventListener('change', push);
+
+    wrap.appendChild(input);
+    wrap.appendChild(value);
+    return wrap;
+  }
+
+  function render() {
+    var list = clear(document.getElementById('end-list'));
+
+    ENDS.forEach(function (which) {
+      var end = which.key;
+      var card = node('div', 'end');
+
+      var head = node('div', 'rowhead');
+      head.appendChild(node('div', 'name', Homey.__(which.label)));
+      head.appendChild(node('div', 'when', whenText(end)));
+      card.appendChild(head);
+
+      var temperature = node('div', 'field');
+      temperature.appendChild(node('div', 'label', Homey.__('circadian.warmth')));
+      // The warm end is 100 and sits to the right: higher is warmer on Homey's
+      // axis (CLAUDE.md section 6), and every screen in this app agrees.
+      temperature.appendChild(slider(end, 'temperature', 0, 100));
+      card.appendChild(temperature);
+
+      if (model.support.dim > 0) {
+        var brightness = node('div', 'field');
+        brightness.appendChild(node('div', 'label', Homey.__('circadian.brightness')));
+        brightness.appendChild(slider(end, 'brightness', 5, 100));
+        card.appendChild(brightness);
+      }
+
+      list.appendChild(card);
+    });
+
+    document.getElementById('end-brightnessRow').style.display =
+      model.support.dim > 0 ? 'flex' : 'none';
+    document.getElementById('end-adjustBrightness').checked = model.adjustBrightness;
+    document.getElementById('end-preStage').checked = model.preStage;
+
+    document.getElementById('end-summary').textContent = Homey.__('circadian.endsSummary', {
+      lights: model.lights.length,
+      zone: model.timezone || '?'
+    });
+  }
+
+  /** Send both ends. The server sanitises and tells us what it corrected. */
+  function push() {
+    return emit('setEnds', {
+      warmest: model.warmest,
+      coolest: model.coolest,
+      adjustBrightness: model.adjustBrightness,
+      preStage: model.preStage
+    }).then(function (result) {
+      if (result && result.corrected && result.corrected.length) {
+        show('bad', Homey.__('circadian.endsCorrected', { fields: result.corrected.join(', ') }));
+      }
+      return result;
+    });
+  }
+
+  document.getElementById('end-adjustBrightness').addEventListener('change', function (e) {
+    model.adjustBrightness = e.target.checked;
+    push();
+  });
+
+  document.getElementById('end-preStage').addEventListener('change', function (e) {
+    model.preStage = e.target.checked;
+    push();
+  });
+
+  document.getElementById('end-preview').addEventListener('click', function () {
+    var result = document.getElementById('end-result');
+    result.textContent = Homey.__('circadian.previewing');
+    push()
+      .then(function () { return emit('previewNow'); })
+      .then(function (outcome) {
+        result.textContent = Homey.__('circadian.previewed', {
+          writes: (outcome && outcome.writes) || 0
+        });
+      })
+      .catch(function (err) { result.textContent = err.message || String(err); });
+  });
+
+  document.getElementById('end-testPreStage').addEventListener('click', function () {
+    var result = document.getElementById('end-result');
+    result.textContent = Homey.__('circadian.preStageTesting');
+    push()
+      .then(function () { return emit('testPreStage'); })
+      .then(function (outcome) {
+        if (!outcome || !outcome.deviceId) {
+          result.textContent = Homey.__('circadian.preStageNoLight');
+          return;
+        }
+        result.textContent = outcome.stayedOff
+          ? Homey.__('circadian.preStageOk', { name: outcome.name || outcome.deviceId })
+          : Homey.__('circadian.preStageCameOn', { name: outcome.name || outcome.deviceId });
+      })
+      .catch(function (err) { result.textContent = err.message || String(err); });
+  });
+
+  document.getElementById('end-save').addEventListener('click', function () {
+    var button = document.getElementById('end-save');
+    button.disabled = true;
+    show('muted', Homey.__('circadian.saving'));
+
+    push()
+      .then(function () { return emit('save', ''); })
+      .then(function (result) {
+        if (!result.created) { Homey.done(); return; }
+        // createDevice alone does NOT add the device — the view must also emit
+        // 'add_device' with the device data.
+        return Homey.createDevice(result.device)
+          .then(function (deviceData) {
+            return emit('add_device', deviceData || result.device);
+          })
+          .then(function () { Homey.done(); });
+      })
+      .catch(function (err) {
+        button.disabled = false;
+        show('bad', err.message || String(err));
+      });
+  });
+
+  stabiliseScrollbar();
+
+  emit('getEnds').then(function (data) {
+    model.warmest = data.warmest || model.warmest;
+    model.coolest = data.coolest || model.coolest;
+    model.adjustBrightness = data.adjustBrightness === true;
+    model.preStage = data.preStage === true;
+    model.support = data.support || model.support;
+    model.shape = data.shape || [];
+    model.lights = data.lights || [];
+    model.timezone = data.timezone;
+    render();
+  }).catch(function (err) {
+    show('bad', err.message || String(err));
+  });
+})();
+</script>

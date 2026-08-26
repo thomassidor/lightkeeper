@@ -34,7 +34,11 @@ export interface LightkeeperApp {
   readonly bridge: FlowBridgeManager;
   readonly controllers: ControllerRuntimeManager;
   readonly schedules: ScheduleRuntimeManager;
-  readonly circadian: CircadianRuntimeManager;
+  /**
+   * One registry for BOTH curve-driven device types — the circadian light and
+   * the curve light. See app.ts for why they share it.
+   */
+  readonly curves: CircadianRuntimeManager;
   readonly health: HealthMonitor;
   readonly recentEvents: BoundedLog<BridgeEventRecord>;
   readonly recentWrites: BoundedLog<WriteRecord>;

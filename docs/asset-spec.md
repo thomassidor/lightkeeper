@@ -91,7 +91,13 @@ same crop treatment.
 > matching the neutral white-ground studio look of the remote in the app's other device picture. No
 > numerals, no text, no logos, no branding, no hand, no props, no watermark.
 
-**4. Circadian device** — for `drivers/circadian/assets/images/*`. Landscape, 1500×1050 or larger;
+**4. Circadian device** — for `drivers/circadian/assets/images/*`, and currently ALSO
+for `drivers/curve/assets/images/*` as a placeholder. The Curve light split out of the
+circadian light in 0.5.0 and has no artwork of its own yet; byte-identical driver
+images are a review finding, so the pair is recorded in `docs/artwork/provenance.md`
+and listed in `test/unit/assets.test.ts`'s `PENDING_ARTWORK`. A fifth prompt for the
+Curve light — the same room, a lamp showing a distinctly coloured light rather than a
+warm white — is what closes it. Landscape, 1500×1050 or larger;
 same crop treatment. **This one has not been generated yet** — `masters/circadian-device-master.png`
 is a placeholder that guideline 1.4 would reject, and replacing it is the last thing standing between
 this device type and a store submission. See [`artwork/provenance.md`](artwork/provenance.md).

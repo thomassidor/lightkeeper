@@ -6,6 +6,7 @@ import {
   type LightIntent,
 } from './light-intent';
 import type { TargetStateCache } from './target-state-cache';
+import { clamp01 } from './light-intent';
 import type { ControllerBehavior } from '../mapping/mapping-types';
 
 /**
@@ -16,12 +17,38 @@ import type { ControllerBehavior } from '../mapping/mapping-types';
  * them unit-testable. The adapter executes the plan this produces.
  */
 
-export type Capability = 'onoff' | 'dim' | 'light_temperature';
+/**
+ * Every capability this app writes.
+ *
+ * The three colour ones arrived with the curve controller's palette (a point may
+ * declare a colour instead of a colour temperature). They behave differently from
+ * the first three in one way worth knowing: nothing in the app ever plans a
+ * RELATIVE change to them. There is no "a bit more blue" gesture and no colour
+ * ramp, so they need no desired-vs-actual arithmetic — only the echo dedupe (Hue
+ * echoes duplicate for every capability, CLAUDE.md §6) and the write log.
+ *
+ * `light_mode` is a string (`'color'` | `'temperature'`), which is why it is the
+ * one capability with no numeric state tracked anywhere.
+ */
+export type Capability =
+  | 'onoff' | 'dim' | 'light_temperature'
+  | 'light_mode' | 'light_hue' | 'light_saturation';
+
+/**
+ * What a write may carry.
+ *
+ * `string` arrived with `light_mode` ('color' | 'temperature'), which is the one
+ * capability this app writes that is neither a number nor a boolean. Kept as a
+ * bare `string` rather than a union of the two modes: the value is echoed to
+ * `setCapabilityValue`, and narrowing it here would make a third mode on some
+ * future firmware a compile error in six files rather than a value that works.
+ */
+export type WriteValue = boolean | number | string;
 
 export interface PlannedWrite {
   deviceId: string;
   capability: Capability;
-  value: boolean | number;
+  value: WriteValue;
   /**
    * This dim write is expected to switch the light on by itself, so no separate
    * onoff write was planned. Measured on Hue: a dim write to an off lamp turns
@@ -80,6 +107,9 @@ export function planIntent(
         writes.push({ deviceId, capability: 'dim', value: clampDim(deviceId, intent.value, cache) });
       }
       return { writes, skipped };
+
+    case 'color_absolute':
+      return { writes: planColor(intent.hue, intent.saturation, supported, cache), skipped };
 
     case 'temperature_delta':
       return planTemperatureDelta(intent.delta, supported, cache, skipped);
@@ -244,4 +274,43 @@ function clampTemperature(deviceId: string, value: number, cache: TargetStateCac
   const min = options?.min ?? 0;
   const max = options?.max ?? 1;
   return quantise(clampToRange(value, min, max), options?.decimals);
+}
+
+/**
+ * A colour: mode, then hue, then saturation.
+ *
+ * `light_mode` comes first and only where the lamp has one. A lamp sitting in
+ * temperature mode ignores a hue it is given — it is not an error, the write
+ * simply has no visible effect, which is the worst kind of failure this app can
+ * produce. `WRITE_ORDER` in the scheduler puts mode ahead of hue for the same
+ * reason it puts `onoff` ahead of `dim`: the value has to land on a lamp that is
+ * in a state to show it.
+ *
+ * Hue and saturation always go together. Half a colour is a colour nobody chose:
+ * a hue written onto yesterday's saturation is a shade the user never selected.
+ *
+ * No `hasMoved`-style gate here — that is the caller's business, and the curve
+ * runtime has its own. Unlike a colour temperature, a hue has no meaningful
+ * resolution to compare against: `homey-lib` gives `light_hue` no `decimals`, so
+ * there is no step below which a write is provably a no-op.
+ */
+function planColor(
+  hue: number,
+  saturation: number,
+  deviceIds: string[],
+  cache: TargetStateCache,
+): PlannedWrite[] {
+  const writes: PlannedWrite[] = [];
+  for (const deviceId of deviceIds) {
+    if (cache.supports(deviceId, 'light_mode')) {
+      writes.push({ deviceId, capability: 'light_mode', value: 'color' });
+    }
+    writes.push({ deviceId, capability: 'light_hue', value: clamp01(hue) });
+    // A lamp with hue but no saturation is not a shape homey-lib produces, but
+    // skipping the write costs nothing and asserting it would be a guess.
+    if (cache.supports(deviceId, 'light_saturation')) {
+      writes.push({ deviceId, capability: 'light_saturation', value: clamp01(saturation) });
+    }
+  }
+  return writes;
 }

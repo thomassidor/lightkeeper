@@ -1,4 +1,4 @@
-import type { Capability, PlannedWrite } from './intent-planner';
+import type { Capability, PlannedWrite, WriteValue } from './intent-planner';
 import { withDefaults, type Timers } from '../support/timers';
 
 /**
@@ -32,7 +32,7 @@ import { withDefaults, type Timers } from '../support/timers';
 export type Executor = (
   deviceId: string,
   capability: Capability,
-  value: boolean | number,
+  value: WriteValue,
   options?: { impliesOn?: boolean },
 ) => Promise<void>;
 
@@ -44,7 +44,7 @@ export type Executor = (
  * try again.
  */
 export type WriteOutcome =
-  | { status: 'succeeded'; deviceId: string; capability: Capability; value: boolean | number; ms: number }
+  | { status: 'succeeded'; deviceId: string; capability: Capability; value: WriteValue; ms: number }
   /** `error` is the SANITISED message only — never an error object (I2). */
   | { status: 'failed'; deviceId: string; capability: Capability; error: string }
   /** A later value replaced this one before it was flushed. */
@@ -82,7 +82,7 @@ interface Waiter {
 }
 
 interface PendingWrite {
-  value: boolean | number;
+  value: WriteValue;
   impliesOn: boolean;
   waiters: Waiter[];
 }
@@ -110,7 +110,16 @@ const DEFAULT_MAX_QUEUED_DEVICES = 64;
  * switch on first so the dim lands on a lit lamp, and switch off last so the
  * light does not visibly jump before going dark.
  */
-const WRITE_ORDER: Capability[] = ['onoff', 'dim', 'light_temperature'];
+/**
+ * The order writes to one device go out in.
+ *
+ * `onoff` first so a level lands on a lit lamp; `light_mode` before hue and
+ * saturation for the same reason — a lamp in temperature mode ignores a hue it
+ * is given, silently. Everything after that is independent.
+ */
+const WRITE_ORDER: Capability[] = [
+  'onoff', 'dim', 'light_temperature', 'light_mode', 'light_hue', 'light_saturation',
+];
 
 export class CommandScheduler {
   private readonly queues = new Map<string, DeviceQueue>();

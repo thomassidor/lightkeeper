@@ -70,6 +70,7 @@ export class CircadianRuntimeManager {
     onStateChange: (state: ControllerState, detail?: StateDetail) => void,
     onPlanChange: (plan: CircadianPlan) => Promise<void> = async () => { },
     displayName: () => string = () => 'circadian',
+    kind: 'circadian' | 'curve' = 'curve',
   ): Promise<CircadianRuntime> {
     const runtime = await this.registry.register(controllerId, async () => {
       const built = new CircadianRuntime(controllerId, plan, {
@@ -77,6 +78,7 @@ export class CircadianRuntimeManager {
         displayName,
         onStateChange,
         onPlanChange,
+        kind,
       });
       await built.start();
       return built;

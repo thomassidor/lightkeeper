@@ -32,23 +32,30 @@ every change means finding both again.
 
 ## What Lightkeeper does
 
-Three kinds of device.
+Four kinds of device, three jobs.
 
 **A controller.** Pick a remote. Pick the lights. Say which button does what. Save.
 
 **A schedule.** Pick the lights. Say when they come on, and whether they go off after a while or at
 a set time. Add as many schedules as you need. Save.
 
-**A circadian light.** Pick the lights. Set how warm they should be through the day — warm at dawn,
-cool in the middle, warm again at night. They are set the moment they come on, and keep following
-the curve while they are on. It never switches anything on or off.
+**A circadian light.** Pick the lights. Say what they should look like at their warmest and at their
+coolest. Lightkeeper handles the day between them — warm overnight, cooling through the morning, cool
+through the middle, warming again from mid-afternoon. They are set the moment they come on, and keep
+following while they are on. It never switches anything on or off.
+
+**A Curve light.** The same thing with the day open to you: every point, every time, and **a colour
+instead of a warmth at any point** — candle, amber, peach, rose, lavender, ocean, forest, ember. A
+lamp that cannot show a colour follows the warmth instead, so the day is the same shape on every
+lamp. Pick this one when you want a specific evening; pick a circadian light when you just want
+"warm at night, cool in the day".
 
 For the first two, Lightkeeper writes the Flows for you, keeps them in a folder of their own — one
 per device, inside a Lightkeeper folder — and maintains them as things change. If you add a lamp to
 a room a device points at, it follows. If you delete the device, its Flows go with it — and only its
 Flows.
 
-A circadian light writes no Flows at all, so it needs no API key: it watches your lights and adjusts
+The other two write no Flows at all, so neither needs an API key: they watch your lights and adjust
 them directly.
 
 You never open the Flow editor.
@@ -316,7 +323,7 @@ covered by unit tests rather than by a week of waiting. The trigger card they ar
 resolved at runtime by enumerating what your Homey actually offers, rather than hardcoding an id, so
 it adapts if a firmware update moves it.
 
-723 unit tests, type-clean, validated at `publish` level.
+757 unit tests, type-clean, validated at `publish` level.
 
 ---
 
@@ -324,7 +331,7 @@ it adapts if a firmware update moves it.
 
 ```bash
 npm install
-npm test                          # 723 unit tests, no hardware needed
+npm test                          # 757 unit tests, no hardware needed
 npm run typecheck                 # the app
 npm run typecheck:test            # the suite and scripts/
 npm run sync:views                # after editing any pair view — nothing runs it for you
@@ -381,6 +388,79 @@ the fixture. Captures from a real home are never committed —
 ---
 
 ## Changelog
+
+### 0.5.0
+
+Added:
+
+- **A fourth kind of device: a Curve light.** It is the circadian engine with the whole day open —
+  every point, every time, and **a colour instead of a warmth at any point**, from a closed palette
+  (candle, amber, peach, rose, lavender, ocean, forest, ember). A lamp that cannot show a colour is
+  written the point's warmth instead, so the shape of the day is the same on every lamp.
+- Colour writes go out as `light_mode`, then `light_hue`, then `light_saturation`, in that order —
+  a lamp sitting in temperature mode ignores a hue it is given, silently.
+
+Changed:
+
+- **The circadian light is now the simple one.** It asks what your lights should look like at their
+  warmest and at their coolest, and supplies the shape between them itself: warm overnight, cooling
+  through the morning, held cool through the middle of the day, warming again from mid-afternoon.
+  The shape is deliberately not a setting — once the times are editable it is the Curve light with
+  fewer fields, and the two device types stop being different products.
+- **An existing circadian light keeps its warmest and coolest points and drops the ones between**
+  (schema 1 → 2). Nothing stops working and nothing needs pairing again. A curve you want back is a
+  Curve light away.
+- One registry serves both, so there is still exactly one 60-second timer for every curve-driven
+  device on the Homey.
+- The Curve light ships with the circadian light's artwork as a placeholder. `assets.test.ts` lists
+  the pair as pending rather than tolerating it silently; removing that entry is the definition of
+  done for the artwork.
+
+Fixed — schedules:
+
+- **Overlapping windows no longer fight.** Two schedules over the same lights used to go dark when
+  the first ended, while the second still believed the lights were on. A clashing window is now
+  refused at save (a week is treated as a circle, so Friday 23:30 + 2h against Saturday 00:30 + 1h
+  is caught), and a plan saved by an earlier version has its off boundary suppressed while another
+  window is still running — re-applying that window's own brightness and warmth.
+- **Catch-up after a restart is gated.** It switches lights on only when the plan is enabled, the
+  Flows are trustworthy, the timezone resolved, AND a reference to *that entry's* off Flow exists —
+  its whole licence rests on something being scheduled to switch them off again. Refusals are
+  recorded in diagnostics rather than only logged.
+- A schedule refuses to fire at all when Homey's timezone cannot be read, instead of guessing the
+  day. A circadian or Curve light still degrades gracefully on the same fallback.
+- A `days` value that is not a list drops the row instead of silently meaning *every day*.
+- Schedule row ids are server-generated and shape-checked, so nothing can break the Flow argument
+  they are embedded in.
+- An overnight off Flow's name now says which day the window started on.
+
+Fixed — remotes:
+
+- **A card with a button, a direction and a step count now compiles one Flow per combination.**
+  It used to produce one Flow per step with neither the button nor the direction set, so every
+  variant fired on every control of the remote.
+- A range stores the card's exact values rather than two endpoints: a dropdown offering 1 and 3 is
+  two Flows and no invented 2, and decimal steps work at all.
+- A card whose device filter names a truncated app id, or a filter key Lightkeeper cannot evaluate,
+  is no longer offered for the wrong device — and says why it was declined.
+- Two gestures that would share one binding key are reported instead of one silently vanishing.
+- Homey's time trigger card is chosen only when the choice is unambiguous; a tie is refused and
+  both candidates are named.
+
+Fixed — everywhere:
+
+- Entering a new API key that turns out to be bad no longer marks the working key as broken, and a
+  key check still in flight cannot publish its verdict after the key has been replaced.
+- Saving a device whose runtime fails to start now restores the previous setup instead of leaving a
+  half-saved one, and a device's status can no longer be flipped back to healthy by a stale update.
+- What Lightkeeper learns about its own Flows is now written to disk before the save is treated as
+  done; a failure reports repair rather than success.
+- A dropped connection to Homey is now recognised and the client rebuilt, instead of every later
+  read failing identically until the app restarts.
+- Persisted configuration is validated on load. A device whose stored setup cannot be read says so
+  and leaves the data alone, rather than quietly starting with defaults.
+- Nothing in the settings page or the pairing screens builds HTML out of names that came from other
+  apps any more.
 
 ### 0.4.0
 

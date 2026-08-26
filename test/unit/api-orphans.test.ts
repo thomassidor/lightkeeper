@@ -167,7 +167,12 @@ function homey(options: {
           all: () => (options.schedules ?? []).map(id => runtime(id, 'schedule')),
           timeCard: async () => ({ card: null, candidates: [] }),
         },
-        circadian: { all: () => (options.circadian ?? []).map(id => runtime(id, 'circadian')) },
+        /**
+         * One registry for BOTH curve-driven device types. Named `curves`
+         * because a curve is what both of them run — and its absence from
+         * `liveDeviceIds` is what these tests are about.
+         */
+        curves: { all: () => (options.circadian ?? []).map(id => runtime(id, 'circadian')) },
         bridge,
         log: () => { /* the api's own best-effort log */ },
       },

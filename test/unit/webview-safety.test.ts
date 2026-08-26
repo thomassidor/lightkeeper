@@ -42,8 +42,8 @@ const ROOT = join(import.meta.dirname, '..', '..');
 const ALLOWED = new Map<string, string>([
   ['drivers/schedule/pair/schedule.html', 'entryHtml'],
   ['drivers/schedule/repair/schedule.html', 'entryHtml'],
-  ['drivers/circadian/pair/curve.html', 'pointHtml'],
-  ['drivers/circadian/repair/curve.html', 'pointHtml'],
+  ['drivers/curve/pair/curve.html', 'pointHtml'],
+  ['drivers/curve/repair/curve.html', 'pointHtml'],
 ]);
 
 /** Every privileged webview on disk: the settings page and every pairing view. */

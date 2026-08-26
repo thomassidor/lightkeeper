@@ -53,9 +53,12 @@ export class TargetResolver {
     for (const device of devices) {
       const capabilities: TargetCapabilities = { onoff: device.capabilities.includes('onoff') };
 
-      for (const capability of ['dim', 'light_temperature'] as const) {
+      for (const capability of ['dim', 'light_temperature', 'light_hue', 'light_saturation'] as const) {
         if (!device.capabilities.includes(capability)) continue;
         const options = device.capabilitiesObj[capability];
+        // Read, never assumed: capability options are not uniform (CLAUDE.md §6
+        // — `onoff` has none at all, `dim` carries units and decimals,
+        // `light_temperature` carries decimals and no units).
         capabilities[capability] = {
           min: options?.min ?? 0,
           max: options?.max ?? 1,
@@ -64,11 +67,23 @@ export class TargetResolver {
         };
       }
 
+      /**
+       * `light_mode` is a boolean rather than a range.
+       *
+       * It is an enum ('color' | 'temperature'), so there is nothing to clamp
+       * against — only whether the lamp HAS a temperature mode to be switched out
+       * of. A colour-only lamp has hue and saturation and no mode, and must still
+       * be given a colour.
+       */
+      if (device.capabilities.includes('light_mode')) capabilities.light_mode = true;
+
       cache.setCapabilities(device.id, capabilities);
       cache.initialise(device.id, {
         onoff: device.capabilitiesObj.onoff?.value as boolean | undefined,
         dim: device.capabilitiesObj.dim?.value as number | undefined,
         light_temperature: device.capabilitiesObj.light_temperature?.value as number | undefined,
+        light_hue: device.capabilitiesObj.light_hue?.value as number | undefined,
+        light_saturation: device.capabilitiesObj.light_saturation?.value as number | undefined,
       });
     }
   }

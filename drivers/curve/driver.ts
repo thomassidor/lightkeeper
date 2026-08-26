@@ -1,68 +1,63 @@
-import Homey from 'homey';
-
 import { mintDeviceId } from '../../lib/bridge/flow-bridge-manager';
 import { validateTargetAgainstCatalog } from '../../lib/validation/pairing-dto';
+import Homey from 'homey';
+
 import {
   listTargetsPayload, resolveSummary, targetLights,
 } from '../../lib/pairing/target-picker';
-import { CURRENT_CIRCADIAN_SCHEMA_VERSION } from '../../lib/circadian/circadian-migrations';
+import { CURRENT_CURVE_SCHEMA_VERSION } from '../../lib/circadian/curve-migrations';
 import {
-  DEFAULT_SIMPLE_PLAN, SIMPLE_SHAPE, expandSimplePlan, sanitiseSimplePlan,
-  type CircadianEnd, type SimpleCircadianPlan,
-} from '../../lib/circadian/simple-curve';
-import { formatMinutes } from '../../lib/time/wall-clock';
+  DEFAULT_POINTS, MAX_POINTS, MIN_POINTS, sanitiseCurve,
+  type CircadianPlan, type CircadianPoint,
+} from '../../lib/circadian/circadian-types';
+import { PALETTE } from '../../lib/circadian/palette';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
 
 /**
- * The circadian light's driver: two screens, and the second one asks two
- * questions.
+ * The curve controller's driver: pair/repair session handlers, the data its two
+ * screens need, and virtual device creation.
  *
- * **What this device type is, and what it deliberately is not.** It follows the
- * colour of the day — warm at night, cool through the middle — and the only thing
- * it asks is what those two ends should look like. The SHAPE is a constant
- * (`SIMPLE_SHAPE`), not a setting: once the times are adjustable this is the curve
- * controller with fewer fields, and the two device types stop being different
- * products. Somebody who wants their own times, or a colour at a particular hour,
- * adds a Curve light instead.
+ * **This device type is the circadian engine with the curve exposed.** Every
+ * point, every time, and a colour per point from a closed palette. Its sibling —
+ * `drivers/circadian/` — is the same engine asking two questions and supplying
+ * the shape itself, and is the right first experience for "warm at night, cool in
+ * the day". This one is for somebody who wants a specific evening.
  *
- * **Neither screen asks for an API key.** The controller and the schedule both
- * open with the credential view because both generate Flows and an app's own token
- * cannot write one (CLAUDE.md §1). This device type generates none, so pairing is
- * the light picker — shared byte-for-byte with the other drivers — and then the
- * two ends.
+ * **Neither asks for an API key.** The controller and the schedule both open with
+ * the credential view because both generate Flows and an app's own token cannot
+ * write one (CLAUDE.md §1). Neither of these generates any, so pairing is the
+ * light picker — shared byte-for-byte with the other drivers — and then the curve.
  *
- * The same views serve pairing and repair; repair arrives with the existing values
- * already selected.
+ * The same views serve pairing and repair; repair arrives with the existing
+ * values already selected.
  */
 
 interface SessionState {
   target?: TargetSpec;
-  warmest: CircadianEnd;
-  coolest: CircadianEnd;
+  points: CircadianPoint[];
   adjustBrightness: boolean;
   preStage: boolean;
 }
 
-module.exports = class CircadianDriver extends Homey.Driver {
+module.exports = class CurveDriver extends Homey.Driver {
 
   private get app(): any {
     return this.homey.app;
   }
 
   override async onInit() {
-    this.log('Circadian driver initialised');
+    this.log('Curve driver initialised');
   }
 
   override async onPair(session: any) {
-    await this.bindSession(session, {});
+    await this.bindSession(session, { points: [...DEFAULT_POINTS] });
   }
 
   override async onRepair(session: any, device: any) {
-    const plan: SimpleCircadianPlan = device.getStoreValue('circadian');
+    const plan: CircadianPlan = device.getStoreValue('curve');
     await this.bindSession(session, {
       target: plan?.target,
-      warmest: plan?.warmest ?? DEFAULT_SIMPLE_PLAN.warmest,
-      coolest: plan?.coolest ?? DEFAULT_SIMPLE_PLAN.coolest,
+      points: plan?.points?.length ? plan.points : [...DEFAULT_POINTS],
       adjustBrightness: plan?.adjustBrightness ?? false,
       preStage: plan?.preStage ?? false,
     }, device);
@@ -70,11 +65,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
 
   private async bindSession(session: any, initial: Partial<SessionState>, device?: any) {
     const state: SessionState = {
-      warmest: DEFAULT_SIMPLE_PLAN.warmest,
-      coolest: DEFAULT_SIMPLE_PLAN.coolest,
-      adjustBrightness: DEFAULT_SIMPLE_PLAN.adjustBrightness,
-      preStage: DEFAULT_SIMPLE_PLAN.preStage,
-      ...initial,
+      points: [...DEFAULT_POINTS], adjustBrightness: false, preStage: false, ...initial,
     };
 
     /**
@@ -111,9 +102,9 @@ module.exports = class CircadianDriver extends Homey.Driver {
       return resolveSummary(this.app.catalog, target);
     });
 
-    // ----------------------------------------------------------------- ends
+    // ---------------------------------------------------------------- curve
 
-    handler('getEnds', async () => {
+    handler('getCurve', async () => {
       if (!state.target) throw new Error('Choose some lights first.');
       const [summary, lights] = await Promise.all([
         resolveSummary(this.app.catalog, state.target),
@@ -121,54 +112,58 @@ module.exports = class CircadianDriver extends Homey.Driver {
       ]);
 
       return {
+        minPoints: MIN_POINTS,
+        maxPoints: MAX_POINTS,
         // Which controls to offer at all: brightness is hidden rather than
         // shown-and-ignored when nothing selected supports it.
         support: summary.support,
         lights,
-        warmest: state.warmest,
-        coolest: state.coolest,
+        points: state.points,
+        /**
+         * The colours a point may be set to, with their labels resolved HERE.
+         *
+         * `lib/` has no access to `homey.__`, so the palette carries locale keys
+         * and the driver layer turns them into words — the same rule as every
+         * other user-facing string produced in `lib/`.
+         */
+        palette: PALETTE.map(color => ({
+          id: color.id,
+          label: this.homey.__(color.labelKey),
+          hue: color.hue,
+          saturation: color.saturation,
+        })),
         adjustBrightness: state.adjustBrightness,
         preStage: state.preStage,
-        /**
-         * The shape, read-only, so the screen can say WHEN each end applies.
-         *
-         * A slider labelled "warmest" with no times beside it is a slider whose
-         * effect the user has to guess at. Sent rather than hardcoded in the view
-         * because the shape is a constant in one place and this is that place's
-         * only consumer.
-         */
-        shape: SIMPLE_SHAPE.map(point => ({ at: formatMinutes(point.minute), end: point.end })),
-        // Shown on screen, because "warm at 21:00" is meaningless without saying
-        // whose 21:00 — and a Homey in the wrong timezone is a real support case.
+        // Shown on screen, because "warm at 20:00" is meaningless without saying
+        // whose 20:00 — and a Homey in the wrong timezone is a real support case.
         timezone: this.timezone(),
       };
     });
 
     /**
-     * Replace both ends at once, like the curve's `setCurve` and the schedule's
-     * `setSchedules`. Everything arriving here is untrusted — it comes from a
-     * webview — so it goes through `sanitiseSimplePlan`, which falls back per
-     * FIELD and reports which fields it had to correct.
+     * Replace the whole curve, like the controller's setRules and the schedule's
+     * setSchedules: simpler and less racy than per-row edits, and the list is at
+     * most eight long.
      *
-     * Falling back rather than dropping, unlike the curve's sanitiser, because
-     * there is nothing droppable: two ends are not a list, and a device with one
-     * end is not a degraded device — it is a device with no curve at all.
+     * Everything arriving here is untrusted — it comes from a webview — so it goes
+     * through sanitiseCurve(), which DROPS an invalid point and says why rather
+     * than repairing it into a curve the user never asked for.
      */
-    handler('setEnds', async (payload: unknown) => {
-      const result = sanitiseSimplePlan(payload);
-      for (const field of result.corrected) {
-        this.log(`Corrected ${field} to its default: the screen sent something unusable`);
+    handler('setCurve', async (payload: {
+      points: unknown; adjustBrightness?: boolean; preStage?: boolean;
+    }) => {
+      const result = sanitiseCurve(payload?.points, payload?.adjustBrightness === true);
+      for (const drop of result.dropped) {
+        this.log(`Dropped point ${drop.index + 1}: ${drop.reason}`);
       }
-      state.warmest = result.warmest;
-      state.coolest = result.coolest;
+      state.points = result.points;
       state.adjustBrightness = result.adjustBrightness;
-      state.preStage = (payload as { preStage?: unknown })?.preStage === true;
+      state.preStage = payload?.preStage === true;
 
       return {
-        warmest: state.warmest,
-        coolest: state.coolest,
-        adjustBrightness: state.adjustBrightness,
-        corrected: result.corrected,
+        count: result.points.length,
+        adjustBrightness: result.adjustBrightness,
+        dropped: result.dropped,
       };
     });
 
@@ -178,7 +173,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
      * configured and does nothing.
      */
     handler('previewNow', async () => {
-      const runtime = await this.app.curves.ephemeral(expandSimplePlan(this.buildPlan(state)));
+      const runtime = await this.app.curves.ephemeral(this.buildPlan(state));
       try {
         // Forced: the user pressed a button and is owed a visible change, even
         // where the lights happen to be close to the curve already.
@@ -198,7 +193,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
      * (CLAUDE.md §6), and this is the only way to find out which.
      */
     handler('testPreStage', async () => {
-      const runtime = await this.app.curves.ephemeral(expandSimplePlan(this.buildPlan(state)));
+      const runtime = await this.app.curves.ephemeral(this.buildPlan(state));
       try {
         return await runtime.probePreStage();
       } finally {
@@ -220,8 +215,8 @@ module.exports = class CircadianDriver extends Homey.Driver {
         created: true,
         device: {
           name: name || await this.deriveName(state),
-          data: { id: mintDeviceId('circ') },
-          store: { circadian: plan },
+          data: { id: mintDeviceId('curv') },
+          store: { curve: plan },
         },
       };
     });
@@ -240,34 +235,36 @@ module.exports = class CircadianDriver extends Homey.Driver {
    * the user rename a device afterwards, which is the natural place for it.
    */
   private async deriveName(state: SessionState): Promise<string> {
-    if (!state.target) return 'Circadian light';
+    if (!state.target) return 'Curve light';
 
     if (state.target.kind === 'zone') {
       const zones = await this.app.catalog.allZones();
       const zone = zones.find((z: any) => z.id === (state.target as any).zoneId);
-      return `${zone?.name ?? 'Zone'} circadian`;
+      return `${zone?.name ?? 'Zone'} curve`;
     }
 
     const lights = await targetLights(this.app.catalog, state.target);
-    if (lights.length === 0) return 'Circadian light';
-    if (lights.length === 1) return `${lights[0].name} circadian`;
+    if (lights.length === 0) return 'Curve light';
+    if (lights.length === 1) return `${lights[0].name} curve`;
 
     // Where every light shares a room, the room reads better than a list.
     const zoneNames = new Set(lights.map(l => l.zoneName).filter(Boolean));
-    if (zoneNames.size === 1) return `${[...zoneNames][0]} circadian`;
+    if (zoneNames.size === 1) return `${[...zoneNames][0]} curve`;
 
-    return `${lights.length} lights circadian`;
+    return `${lights.length} lights curve`;
   }
 
-  private buildPlan(state: SessionState): SimpleCircadianPlan {
+  private buildPlan(state: SessionState): CircadianPlan {
     if (!state.target) throw new Error('Choose some lights first.');
+    if (state.points.length < MIN_POINTS) {
+      throw new Error(`A curve needs at least ${MIN_POINTS} points.`);
+    }
 
     return {
-      schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION,
+      schemaVersion: CURRENT_CURVE_SCHEMA_VERSION,
       enabled: true,
       target: state.target,
-      warmest: state.warmest,
-      coolest: state.coolest,
+      points: state.points,
       adjustBrightness: state.adjustBrightness,
       preStage: state.preStage,
     };

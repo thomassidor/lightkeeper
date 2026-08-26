@@ -109,8 +109,6 @@
     "timezone": "Times follow your Homey's own clock (__zone__)."
   },
   "circadian": {
-    "title": "Follow the day",
-    "subtitle": "Set how warm your lights should be through the day. They are set the moment they come on, and follow the curve while they are on.",
     "point": "Point __number__ · __time__",
     "remove": "Remove",
     "at": "At",
@@ -137,7 +135,33 @@
     "summary": "__count__ point(s) across __lights__ light(s). No Flows are created — this one runs in the app.",
     "save": "Save",
     "saving": "Saving…",
-    "timezone": "Times follow your Homey's own clock (__zone__)."
+    "timezone": "Times follow your Homey's own clock (__zone__).",
+    "endsTitle": "The two ends of the day",
+    "endsIntro": "Choose how your lights should look at their warmest and their coolest. Lightkeeper moves them between the two through the day, and sets them the moment they come on.",
+    "endsSummary": "__lights__ light(s), on your Homey's own clock (__zone__). No Flows are created — this one runs in the app.",
+    "end_warmest": "Warmest",
+    "end_coolest": "Coolest",
+    "endWhen": "Around __hours__",
+    "endsCorrected": "Lightkeeper could not use what was sent for __fields__, so the default is shown instead.",
+    "colour": "Colour",
+    "colourNone": "Colour temperature",
+    "colourHelp": "A colour replaces this point's warmth on lights that can show one. Lights that cannot are set to the warmth instead, so the shape of the curve is the same on every lamp."
+  },
+
+  "curve": {
+    "title": "Draw the day",
+    "subtitle": "Set what your lights should look like at each point of the day, and Lightkeeper moves them smoothly between those points. Any point can be a colour instead of a warmth."
+  },
+
+  "palette": {
+    "candle": "Candle",
+    "amber": "Amber",
+    "peach": "Peach",
+    "rose": "Rose",
+    "lavender": "Lavender",
+    "ocean": "Ocean",
+    "forest": "Forest",
+    "ember": "Ember"
   },
   "functions": {
     "toggle": "On / off",

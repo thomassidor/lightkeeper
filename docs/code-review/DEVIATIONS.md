@@ -706,3 +706,154 @@ workflow's existing "sync is deliberately NOT run here" comment — the comment 
 extended rather than replaced, because the distinction is the whole point: a CI
 run that SYNCED would repair the drift in the runner and go green over it, exactly
 as an unchecked `homey app validate` does to `app.json`.
+
+---
+
+## Phase 8
+
+### 8.1 — the curve engine is SHARED, not copied
+
+The task says "copy the current implementation to a new device called Curve
+controller". Copied literally that is `lib/circadian/` twice — two runtimes, two
+managers, two write paths, two tickers — and every fix from Phases 2, 3 and 6
+would then have to be made twice or silently would not be.
+
+What is actually duplicated is the DRIVER and the DEVICE (`drivers/curve/`), which
+is where the two differ: the store key, the pairing screen, the plan shape. The
+engine is one copy, and both device types register into ONE
+`CircadianRuntimeManager` (`app.curves`). That is not tidiness — it is what keeps
+§12's stated property true: "ONE `homey.setInterval` for every circadian device on
+the Homey". Two managers would be two timers over two maps.
+
+The circadian device's `registry()` is a small adapter that expands its two ends
+into points on the way in and folds `enabled` and `preStage` back on the way out.
+Only those two fields can move at runtime; everything else in the expanded plan is
+derived, so reading it back would be reading back a constant. `kind` on the
+runtime's diagnostics is what distinguishes the two on a settings page.
+
+Names: the manager is `app.curves` because a curve is what both device types run.
+`liveDeviceIds()` in `api.ts` still excludes both, for the reason §12 gives.
+
+### 8.3 — the SHAPE is four points, and is deliberately not a setting
+
+"Just set temperature and brightness when it's at its warmest and it's coldest"
+leaves the times to us. Two points — coolest at midday, warmest at midnight — is
+the obvious reading and is wrong: the curve would only ever be AT either of them
+for an instant, and would spend the night cooling on its way to daylight.
+
+`SIMPLE_SHAPE` is four: warmest at 06:00, coolest at 11:00 AND 15:00, warmest
+again at 21:00. Each end is HELD, so the whole night is flat (21:00 round to 06:00
+is warmest at both ends — cyclic interpolation makes that true with no special
+case) and so is the middle of the day.
+
+It is a constant, derived on every register rather than stored. Two consequences,
+both deliberate: an installed device picks up an improved shape, and the moment
+the times become editable this device type IS the curve controller with fewer
+fields — at which point they stop being different products. Somebody who wants
+their own times has one.
+
+### 8.3 — schema 1 → 2 loses the middle of an existing curve, and says so
+
+There is no migration BETWEEN device types and there cannot be: Homey has no way
+to change a device's driver. So an existing circadian light becomes the simple
+one, keeping its warmest and coolest points — the two values the user actually
+chose, and the two the new shape holds — and dropping everything between them.
+That is in `.homeychangelog.json` and `README.md` in the user's own words rather
+than hidden, and a Curve light is where such a curve can be rebuilt.
+
+The step runs `sanitiseCurve` first, because a plan stored at version 1 was never
+validated (the chain ended in a cast until Phase 6) and `points` may be anything
+at all — including a string, which `endsFromPoints` would otherwise read `warmth`
+off.
+
+### 8.2 — a colour is never blended with a colour temperature
+
+The task says a point may be "either a temperature or a colour from a predefined
+palette". Three decisions follow that the task does not settle, and each is the
+same judgement: do not invent a colour for somebody's living room.
+
+- **`warmth` stays REQUIRED on a coloured point.** It is what a lamp with no colour
+  capability is written to instead, and what the neighbouring temperature segments
+  interpolate towards. Without it, the SHAPE of the curve would depend on which of
+  the household's lamps happen to do colour.
+- **A segment with a colour at only ONE end holds that colour flat.** Blending
+  towards the temperature end means fading "amber" into "4000 K", which is a shade
+  nobody chose. The consequence is stated in the code, in CLAUDE.md and in a test
+  because a user notices it: one coloured point colours the two segments either
+  side of it, so "amber at 21:00" between temperature points at 19:00 and 23:00 is
+  amber from 19:00 to 23:00.
+- **Hue blends the SHORT way round the wheel.** Rose (0.96) to peach (0.04) is 0.08
+  forward through red, not 0.92 backward through green.
+
+The palette is closed, and that is also a decision rather than a limitation: hue
+and saturation are a two-dimensional choice with one good answer per intent, most
+of the plane is a bad idea in a living room at 21:00, and a NAME survives being
+read back on a settings page a year later where a pair of coordinates does not.
+Removing a colour from `PALETTE` is not safe — a stored plan names it, and the
+sanitiser drops a point whose colour it cannot resolve, which would silently
+delete a point from somebody's curve. Deprecate by leaving it in place.
+
+### 8.2 — the write path widened, deliberately, rather than being bypassed
+
+`Capability` gained `light_mode`, `light_hue` and `light_saturation`, and the cache,
+the planner, the scheduler and the adapter all widened with it. The alternative —
+a side channel that writes colour without going through the cache — was rejected:
+Hue echoes duplicate for EVERY capability (§6), so a colour write needs the same
+echo dedupe as any other, and the write log is what answers "did anything reach a
+light".
+
+Three points where the widening is not mechanical:
+
+- **`light_mode` is written FIRST**, and only where the lamp has one. A lamp sitting
+  in temperature mode ignores a hue it is given — not an error, just no visible
+  effect, which is the worst failure this app can produce. `WRITE_ORDER` puts mode
+  ahead of hue for the same reason it puts `onoff` ahead of `dim`.
+- **The capability tested for is `light_hue`, NOT `light_mode`.** `homey-lib` pairs
+  hue and saturation on every colour-capable light; `light_mode` exists only where
+  there is also a temperature mode to switch out of. Testing for it would skip a
+  colour-only lamp that can do exactly what was asked.
+- **`light_mode` has no desired state.** It is a string with no arithmetic behind
+  it, so it is tracked only through the echo dedupe. `desiredOf()` was extracted
+  from a nested ternary at the same time: with three capabilities, `else` meant
+  `light_temperature`, so a fourth would have compared a hue against a colour
+  temperature and quietly decided they matched.
+
+The colour write gate is a FIXED 0.01 of the wheel rather than the capability's own
+resolution, because `light_hue` carries no `decimals` in `homey-lib` — there is no
+declared step below which a write is provably a no-op. Documented at the constant.
+
+### 8.2 — an external colour change is detected on the hue axis
+
+§12 promises "an external colour change stands the device down for that light". A
+lamp in a coloured segment is one whose colour a person changes on the HUE axis, so
+`subscribeAll` now adds `light_hue` — but only when a point actually declares a
+colour, because subscribing every target to a capability the plan never writes is a
+callback per lamp per change for nothing.
+
+### 8.1 — the artwork is a PLACEHOLDER, recorded in three places
+
+"Graphics will be added later, so don't generate it" — but `homey app validate
+--level publish` requires `images` per driver (§10: `_validateImages` iterates
+`['small', 'large']`), and without them `install` fails too. So the curve driver
+ships the circadian light's artwork.
+
+Byte-identical driver icons are a review finding, so the pair is recorded rather
+than tolerated silently: `PENDING_ARTWORK` in `assets.test.ts` (with a sibling test
+asserting every entry still names a real icon target, so the list cannot outlive
+what it excuses), both target entries in `export-assets.py`, and
+`docs/artwork/provenance.md`. Removing those entries is the definition of done.
+
+### Locale keys are shared between the two screens
+
+`circadian.*` is the feature's namespace and both screens draw from it — the warmth
+words, the brightness label, the pre-staging copy, the preview strings. Only what
+genuinely differs is new: `circadian.ends*` and `circadian.end_*` for the simple
+screen, `curve.title`/`curve.subtitle` for the full one, and `palette.*` for the
+colour names. Duplicating twenty-nine identical strings under a second prefix would
+be two names for one sentence.
+
+One thing the locales test forces: **a key must appear as a string LITERAL.**
+`'circadian.end_' + end` is a key the scanner cannot see, so an unused or missing
+translation would pass silently. The ends screen carries an explicit
+`{ key, label }` pair per end instead, and the comment explaining it had to be
+reworded because the scanner read the example inside it.

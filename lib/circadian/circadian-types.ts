@@ -1,5 +1,6 @@
 import { MINUTES_PER_DAY, formatMinutes, parseMinutes } from '../time/wall-clock';
 import { sanitiseUnitInterval } from '../validation/unit-interval';
+import { isPaletteColor } from './palette';
 import type { TargetSpec } from '../outputs/light-intent';
 
 /**
@@ -59,6 +60,25 @@ export interface CircadianPoint {
    * `adjustBrightness`.
    */
   brightness?: number;
+  /**
+   * A palette colour id, INSTEAD of this point's colour temperature.
+   *
+   * Absent on most points, and absent is the normal case: a curve of colour
+   * temperatures is what this device type is for. A colour is the exception —
+   * "amber at nine, and let the rest of the day be white".
+   *
+   * `warmth` stays REQUIRED even on a coloured point, and that is not
+   * redundancy. It is what a lamp with no colour capability is written to
+   * instead, and what the neighbouring temperature segments interpolate towards.
+   * Removing it would mean a curve whose shape depends on which of the
+   * household's lamps can do colour.
+   *
+   * The id is validated against `PALETTE` on the way in: a colour this version
+   * does not know drops the point rather than being written as some default,
+   * because a point at the wrong colour is worse than a point that is visibly
+   * missing.
+   */
+  color?: string;
 }
 
 export interface CircadianPlan {
@@ -148,6 +168,21 @@ export function sanitiseCurve(raw: unknown, adjustBrightness = false): Sanitised
 
     const brightness = sanitiseUnit(source.brightness);
 
+    /**
+     * A colour, or nothing. Never a fallback.
+     *
+     * An unknown id drops the POINT rather than the colour: a curve that
+     * silently reverted one point to white at 21:00 would look like it was
+     * working, and finding out why means noticing a colour that is subtly not
+     * the one you chose. A missing point is visible on the screen and in the
+     * chart.
+     */
+    let color: string | undefined;
+    if (source.color !== undefined && source.color !== null && source.color !== '') {
+      if (!isPaletteColor(source.color)) return drop('that colour is not one this version offers');
+      color = String(source.color);
+    }
+
     points.push({
       id,
       anchor,
@@ -155,6 +190,7 @@ export function sanitiseCurve(raw: unknown, adjustBrightness = false): Sanitised
       // A brightness of 0 would be "on, at nothing" — treated as unset here, as
       // it is in a schedule entry.
       ...(brightness !== null && brightness > 0 ? { brightness } : {}),
+      ...(color !== undefined ? { color } : {}),
     });
   });
 

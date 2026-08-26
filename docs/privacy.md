@@ -6,7 +6,8 @@ generates is transmitted anywhere.
 ## What it reads
 
 Paired device and zone metadata, the events your remotes report, the capability
-state of the lights you point a controller, a schedule or a circadian light at,
+state of the lights you point a controller, a schedule, a circadian light or a
+Curve light at,
 your Homey's own timezone, and the Flows it generated itself. All of it through
 Homey's local Web API, all of it needed to do the three things the app does.
 
@@ -16,7 +17,8 @@ Two things, in two places on your own Homey.
 
 **With each device you add:** a controller's profile — which remote, which
 lights, which gesture does what; a schedule's plan: which lights, the times, the
-days, and any brightness and warmth you set; or a circadian light's curve: which
+days, and any brightness and warmth you set; or a circadian light's two ends and a
+Curve light's points — including which palette colour a point carries, if any: which
 lights, and the warmth you chose at each time of day. Each is stored with that
 virtual device, so removing the device removes it.
 
@@ -37,9 +39,9 @@ report yourself.
 
 ## How long it keeps things
 
-Until you remove them. Deleting any of the three removes its own configuration,
+Until you remove them. Deleting any of the four removes its own configuration,
 and — for a controller or a schedule — the Flows demonstrably created for it. A
-circadian light creates none. Removing the API key in
+a circadian light and a Curve light create none. Removing the API key in
 settings deletes the key. Uninstalling the app removes its settings, the stored
 key included.
 

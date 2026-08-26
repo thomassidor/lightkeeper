@@ -75,6 +75,12 @@ export interface CircadianRuntimeDeps {
    * restart or the same lamp gets switched on again tomorrow night.
    */
   onPlanChange: (plan: CircadianPlan) => Promise<void>;
+  /**
+   * Which device type registered this runtime. Defaults to 'curve', because a
+   * plan of points is what this runtime natively takes — a circadian light's two
+   * ends are expanded into points by its device layer before they get here.
+   */
+  kind?: 'circadian' | 'curve';
 }
 
 export interface CircadianAction {
@@ -85,6 +91,17 @@ export interface CircadianAction {
   writes: number;
   skipped: number;
 }
+
+/**
+ * How far a colour must move on the wheel before a write is worth making.
+ *
+ * `light_hue` carries no `decimals` in `homey-lib`, so unlike a colour
+ * temperature there is no declared resolution to compare against. 0.01 of a turn
+ * is about 3.6 degrees of hue — finer than the eye on a wall, and coarse enough
+ * that a two-hour blend between two palette colours costs a handful of writes
+ * rather than one per tick.
+ */
+const COLOR_STEP = 0.01;
 
 /**
  * How far a reported colour must be from the one we wrote before it counts as
@@ -115,7 +132,15 @@ const PRE_STAGE_CHECK_MS = 1500;
  */
 export interface CircadianDiagnostics {
   controllerId: string;
-  kind: 'circadian';
+  /**
+   * Which DEVICE TYPE this runtime belongs to.
+   *
+   * One registry serves both — a circadian light and a curve light are the same
+   * engine, and sharing the registry is what keeps §12's one-timer property true
+   * across two device types. This is what tells them apart on a settings page and
+   * in a bug report.
+   */
+  kind: 'circadian' | 'curve';
   /** See ControllerDiagnostics.stateRevision. */
   stateRevision: number;
   name: string;
@@ -238,6 +263,16 @@ export class CircadianRuntime {
     this.timers.clearTimeout(handle);
   }
 
+  /**
+   * The last colour written per device, for `colorHasMoved`.
+   *
+   * Separate from `lastWritten`, which holds warmth and brightness: a lamp is
+   * written to on ONE of the two axes, never both, so folding them into one
+   * record would mean a lamp that switched from temperature to colour comparing
+   * a hue against a colour temperature.
+   */
+  private readonly lastColorWritten = new Map<string, { hue: number; saturation: number }>();
+
   async start(): Promise<void> {
     await this.buildRuntime();
     await this.assessHealth();
@@ -276,6 +311,22 @@ export class CircadianRuntime {
   private async subscribeAll(): Promise<void> {
     const capabilities: Capability[] = ['onoff', 'light_temperature'];
     if (this.plan.adjustBrightness) capabilities.push('dim');
+    /**
+     * Hue too, wherever the curve carries a colour.
+     *
+     * Subscribed for ONE reason: the override check. "An external colour change
+     * stands the device down for that light" is the promise (CLAUDE.md §12), and
+     * a lamp sitting in a coloured segment is one whose colour a person changes
+     * on the hue axis, not the temperature axis — so without this, taking such a
+     * lamp over by hand went unnoticed and the next tick took it back.
+     *
+     * Only when a point actually declares a colour: subscribing every target to
+     * a capability the plan never writes is a callback per lamp per change for
+     * nothing.
+     */
+    if (this.plan.points.some(point => point.color !== undefined)) {
+      capabilities.push('light_hue');
+    }
 
     for (const deviceId of this.targetIds) {
       await this.adapter.subscribe(deviceId, capabilities, (id, capability, value, external) =>
@@ -312,14 +363,55 @@ export class CircadianRuntime {
           `Circadian apply on power-on for ${deviceId}`,
         );
       } else {
-        // Off: forget what we wrote, for the same reason.
+        // Off: forget what we wrote, for the same reason. The colour too — a lamp
+        // restores whatever it was last showing, which our record no longer
+        // describes.
         this.lastWritten.delete(deviceId);
+        this.lastColorWritten.delete(deviceId);
+        this.pendingColor.delete(deviceId);
       }
       return;
     }
 
     if (capability === 'light_temperature') this.noteOverride(deviceId, 'warmth', value);
     if (capability === 'dim' && this.plan.adjustBrightness) this.noteOverride(deviceId, 'brightness', value);
+    if (capability === 'light_hue') this.noteColorOverride(deviceId, value);
+  }
+
+  /**
+   * Somebody changed a lamp's COLOUR by hand.
+   *
+   * The same rule as `noteOverride` and for the same reason — over a tolerance,
+   * outside the settle window after our own write, cleared by either edge of
+   * `onoff` — but compared against `lastColorWritten` and on the hue wheel,
+   * where the distance from 0.99 to 0.01 is small rather than large.
+   *
+   * Only reached where the curve actually declares a colour: `subscribeAll` does
+   * not subscribe to hue otherwise.
+   */
+  private noteColorOverride(deviceId: string, value: unknown): void {
+    const reported = Number(value);
+    if (!Number.isFinite(reported)) return;
+
+    const last = this.lastWritten.get(deviceId);
+    // The settle window is shared with the temperature path: it is about how
+    // long ago WE touched this lamp, not about which axis we touched.
+    if (last && this.now() - last.at < SETTLE_MS) return;
+
+    const ours = this.lastColorWritten.get(deviceId);
+    if (ours) {
+      let delta = Math.abs(reported - ours.hue);
+      if (delta > 0.5) delta = 1 - delta;
+      if (delta <= OVERRIDE_TOLERANCE) return;
+    }
+
+    if (!this.overrides.has(deviceId)) {
+      this.deps.log(
+        `${deviceId}'s colour was changed by hand (hue ${reported}); circadian will leave it `
+        + 'alone until it is switched off and on again',
+      );
+    }
+    this.overrides.set(deviceId, { at: this.now(), value: reported });
   }
 
   /** Somebody changed this light's colour or level by hand. Stand down for it. */
@@ -500,15 +592,47 @@ export class CircadianRuntime {
     const planned: PlannedWrite[] = [];
 
     if (eligible.length > 0) {
-      const temperature = planIntent(
-        { type: 'temperature_absolute', value: value.warmth },
-        eligible, this.cache, DEFAULT_BEHAVIOR,
-      );
-      // planIntent has already clamped and quantised against each target's OWN
-      // capability options, so this compares the value that would actually be
-      // sent — not the curve's idea of it.
-      planned.push(...temperature.writes.filter(write =>
-        force || this.hasMoved(write.deviceId, 'warmth', write.value as number)));
+      /**
+       * Colour and colour temperature are the SAME leg, split by what each lamp
+       * can do.
+       *
+       * A curve point may declare a palette colour instead of a temperature. A
+       * lamp that can take one gets hue and saturation; a lamp that cannot gets
+       * the point's `warmth` as a colour temperature, which is why `warmth`
+       * stays required even on a coloured point (see CircadianPoint.color). The
+       * curve's shape therefore does not depend on which of the household's
+       * lamps happen to do colour — which is the whole reason the split is here
+       * and not in the plan.
+       */
+      const colorCapable = value.color
+        ? eligible.filter(id => this.cache.supports(id, 'light_hue'))
+        : [];
+      const temperatureOnly = eligible.filter(id => !colorCapable.includes(id));
+
+      if (value.color && colorCapable.length > 0) {
+        const color = planIntent(
+          { type: 'color_absolute', hue: value.color.hue, saturation: value.color.saturation },
+          colorCapable, this.cache, DEFAULT_BEHAVIOR,
+        );
+        const wanted = color.writes.filter(write =>
+          force || this.colorHasMoved(write.deviceId, value.color!));
+        for (const write of wanted) {
+          if (write.capability === 'light_hue') this.pendingColor.set(write.deviceId, value.color);
+        }
+        planned.push(...wanted);
+      }
+
+      if (temperatureOnly.length > 0) {
+        const temperature = planIntent(
+          { type: 'temperature_absolute', value: value.warmth },
+          temperatureOnly, this.cache, DEFAULT_BEHAVIOR,
+        );
+        // planIntent has already clamped and quantised against each target's OWN
+        // capability options, so this compares the value that would actually be
+        // sent — not the curve's idea of it.
+        planned.push(...temperature.writes.filter(write =>
+          force || this.hasMoved(write.deviceId, 'warmth', write.value as number)));
+      }
     }
 
     if (this.plan.adjustBrightness && value.brightness !== undefined && lit.length > 0) {
@@ -537,6 +661,30 @@ export class CircadianRuntime {
    * lamp (CLAUDE.md §6). In practice this is one write per light every few
    * minutes.
    */
+  /**
+   * Has the colour moved enough to be worth a write?
+   *
+   * A separate gate from `hasMoved` because there is nothing to compare against
+   * per-lamp: `homey-lib` gives `light_hue` no `decimals`, so unlike
+   * `light_temperature` there is no declared resolution below which a write is
+   * provably a no-op. So this is a fixed threshold on the wheel, chosen to be
+   * finer than the eye and coarser than the tick: across a two-hour blend
+   * between two palette colours a lamp is written to a handful of times rather
+   * than a hundred and twenty.
+   *
+   * Hue is compared the short way round, for the same reason it is BLENDED that
+   * way: 0.99 to 0.01 is a small change, not a large one.
+   */
+  private colorHasMoved(deviceId: string, next: { hue: number; saturation: number }): boolean {
+    const last = this.lastColorWritten.get(deviceId);
+    if (!last) return true;
+
+    let hueDelta = Math.abs(next.hue - last.hue);
+    if (hueDelta > 0.5) hueDelta = 1 - hueDelta;
+
+    return hueDelta >= COLOR_STEP || Math.abs(next.saturation - last.saturation) >= COLOR_STEP;
+  }
+
   private hasMoved(deviceId: string, field: 'warmth' | 'brightness', next: number): boolean {
     const last = this.lastWritten.get(deviceId);
     const previous = last?.[field];
@@ -571,10 +719,34 @@ export class CircadianRuntime {
       if (outcome.status !== 'succeeded') continue;
       const entry = this.lastWritten.get(outcome.deviceId) ?? { at: this.now() };
       if (outcome.capability === 'light_temperature') entry.warmth = outcome.value as number;
+      if (outcome.capability === 'light_hue') {
+        // Saturation is written in the same batch, so recording it from the hue
+        // outcome would be recording a value that has not landed yet. The pair
+        // is recorded from the PLAN instead — see noteColorWritten.
+        this.noteColorWritten(outcome.deviceId);
+      }
       if (outcome.capability === 'dim') entry.brightness = outcome.value as number;
       entry.at = this.now();
       this.lastWritten.set(outcome.deviceId, entry);
     }
+  }
+
+  /**
+   * The colour this pass planned, per device, held until its hue write lands.
+   *
+   * Saturation goes out in the same batch as the hue, so recording the pair from
+   * the hue's own outcome would record a saturation that has not landed. This
+   * holds the planned pair and `noteColorWritten` commits it when the hue
+   * succeeds — the same "only what LANDED counts" rule as `noteOutcomes`, which
+   * is the entire recovery mechanism this runtime has.
+   */
+  private readonly pendingColor = new Map<string, { hue: number; saturation: number }>();
+
+  private noteColorWritten(deviceId: string): void {
+    const planned = this.pendingColor.get(deviceId);
+    if (!planned) return;
+    this.lastColorWritten.set(deviceId, planned);
+    this.pendingColor.delete(deviceId);
   }
 
   /**
@@ -812,7 +984,7 @@ export class CircadianRuntime {
 
     return {
       controllerId: this.controllerId,
-      kind: 'circadian',
+      kind: this.deps.kind ?? 'curve',
       // How many times the VISIBLE state has moved. A device stuck on a
       // stale message with a rising revision means the device layer is not
       // rendering what it is being told.
