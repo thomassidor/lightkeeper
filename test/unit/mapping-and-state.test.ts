@@ -120,7 +120,9 @@ describe('target state cache', () => {
     cache.setCapabilities('a', { onoff: true, dim: { min: 0, max: 1 } });
     cache.initialise('a', { onoff: true, dim: 0.5 });
 
-    cache.noteWrite('a', 'dim', 0.42);
+    // noteEcho alone — the write has not landed yet, and registering the echo
+    // before dispatch is the point of the split.
+    cache.noteEcho('a', 'dim', 0.42);
     const first = cache.applyExternalChange('a', 'dim', 0.42);
     const second = cache.applyExternalChange('a', 'dim', 0.42);
 
@@ -146,8 +148,15 @@ describe('target state cache', () => {
     cache.setCapabilities('a', { onoff: true, dim: { min: 0, max: 1 } });
     cache.initialise('a', { onoff: true, dim: 0.5 });
 
-    cache.noteWrite('a', 'dim', 0.8);
-    assert.equal(cache.currentDim('a'), 0.8, 'the in-flight desired value must be used');
+    const seq = cache.noteEcho('a', 'dim', 0.8);
+    assert.equal(
+      cache.currentDim('a'), 0.5,
+      'a write that has not landed yet is not the desired value — that fiction is what '
+      + 'made a failed write leave the app planning from a level nothing had ever shown',
+    );
+
+    cache.commitDesired('a', 'dim', 0.8, seq);
+    assert.equal(cache.currentDim('a'), 0.8, 'the landed value wins over the stale actual');
   });
 
   test('tracks capability support per target', () => {

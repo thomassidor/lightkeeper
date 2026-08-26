@@ -135,3 +135,23 @@ export function carryForwardFlows(
 
   return { profile: { ...next, managedFlows: [] }, obsolete: existing };
 }
+
+/**
+ * Do two state details say the same thing to a user?
+ *
+ * Compared field by field rather than by identity, because every caller builds
+ * a fresh object literal — `{ key: 'state.someTargets', tokens: { count: 2 } }`
+ * on one reconcile is a different object from the identical one on the next,
+ * and treating that as a change would notify the device layer on every pass.
+ * The tokens are compared as JSON: they are a flat bag of primitives by
+ * construction (they are substituted into a locale string), so key order is
+ * the only thing that could differ, and every one of them is built in one
+ * place with a fixed shape.
+ */
+export function sameDetail(a: StateDetail | undefined, b: StateDetail | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.key !== b.key) return false;
+  if (a.text !== b.text) return false;
+  return JSON.stringify(a.tokens ?? null) === JSON.stringify(b.tokens ?? null);
+}

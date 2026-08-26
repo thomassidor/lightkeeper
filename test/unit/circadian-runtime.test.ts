@@ -90,9 +90,15 @@ function harness(options: {
     track: (unsubscribe: unknown) => unsubscribe,
   } as unknown as HomeyApiService;
 
+  /**
+   * Mutable, because that is how a target actually stops being one: the user
+   * moves a light out of the zone, or deletes it. The plan's spec does not
+   * change — `refreshTargets()` re-resolves it against a catalogue that has.
+   */
+  let inCatalogue = [...devices];
   const catalog = {
-    async device(id: string) { return devices.find(d => d.id === id); },
-    async devicesInZone() { return devices; },
+    async device(id: string) { return inCatalogue.find(d => d.id === id); },
+    async devicesInZone() { return inCatalogue; },
   } as unknown as DeviceCatalog;
 
   const runtime = new CircadianRuntime('circ-1', options.plan ?? plan(), {
@@ -128,6 +134,18 @@ function harness(options: {
     },
     advance(ms: number) { now += ms; },
     at(ms: number) { now = ms; },
+    /**
+     * Writes now go out behind the scheduler's completion promise (Phase 2),
+     * so bookkeeping and the pre-stage probe land a few microtasks after
+     * applyNow() resolves rather than inside it.
+     */
+    async settle() {
+      for (let i = 0; i < 12; i += 1) await new Promise(resolve => setImmediate(resolve));
+    },
+    /** The user moves a light out of the zone, or deletes it. */
+    removeFromCatalogue(deviceId: string) {
+      inCatalogue = inCatalogue.filter(device => device.id !== deviceId);
+    },
   };
 }
 
@@ -554,5 +572,82 @@ describe('diagnostics', () => {
     assert.ok(diagnostics.now.warmth > 0.9);
     assert.equal(diagnostics.nextPoint.at, '23:00');
     assert.deepEqual(diagnostics.targets.map((t: any) => t.overridden), [true, false]);
+  });
+});
+
+/**
+ * The acceptance bar for target release.
+ *
+ * A circadian light watches its targets' `onoff` and writes on the rising edge
+ * — that IS the feature (CLAUDE.md §12), and it is why leaving a subscription
+ * behind is worse here than anywhere else in the app. A light dropped from the
+ * plan kept its subscription, so the next time somebody switched it on, this
+ * runtime dutifully wrote a colour to a lamp that was no longer any of its
+ * business.
+ */
+describe('a light removed from the plan is released', () => {
+
+  test('switching an ex-target on produces ZERO writes', async () => {
+    const h = harness({ plan: plan({ target: { kind: 'zone', zoneId: 'z1', includeSubzones: false } }) });
+    await h.runtime.start();
+    await h.settle();
+
+    // Prove the subscription is live BEFORE removing it, or this would pass
+    // against a runtime that never subscribed at all.
+    h.report('l2', 'onoff', false);
+    h.report('l2', 'onoff', true);
+    await h.settle();
+    assert.ok(
+      h.writes.some(w => w.deviceId === 'l2'),
+      'the rising edge reaches a light that IS a target',
+    );
+
+    h.removeFromCatalogue('l2');
+    await h.runtime.refreshTargets();
+    await h.settle();
+
+    const afterRefresh = h.writes.filter(w => w.deviceId === 'l2').length;
+    h.report('l2', 'onoff', false);
+    h.report('l2', 'onoff', true);
+    await h.settle();
+
+    assert.equal(
+      h.writes.filter(w => w.deviceId === 'l2').length, afterRefresh,
+      'not one write to a light that has left the plan',
+    );
+  });
+
+  test('the remaining targets still work', async () => {
+    const h = harness({ plan: plan({ target: { kind: 'zone', zoneId: 'z1', includeSubzones: false } }) });
+    await h.runtime.start();
+    await h.settle();
+
+    h.removeFromCatalogue('l2');
+    await h.runtime.refreshTargets();
+    await h.settle();
+
+    const before = h.writes.filter(w => w.deviceId === 'l1').length;
+    h.report('l1', 'onoff', false);
+    h.report('l1', 'onoff', true);
+    // drain(), not just settle: l1 was written to during the refresh, so the
+    // rising edge's write is inside the rate window and waiting on a timer.
+    await applied(h);
+
+    assert.ok(
+      h.writes.filter(w => w.deviceId === 'l1').length > before,
+      'removing one light must not stand the whole device down',
+    );
+  });
+
+  test('an unchanged target set is a no-op', async () => {
+    const h = harness({ plan: plan({ target: { kind: 'zone', zoneId: 'z1', includeSubzones: false } }) });
+    await h.runtime.start();
+    await h.settle();
+
+    const before = h.writes.length;
+    await h.runtime.refreshTargets();
+    await h.settle();
+
+    assert.equal(h.writes.length, before, 'no churn when nothing has changed');
   });
 });

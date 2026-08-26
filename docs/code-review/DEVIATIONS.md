@@ -161,3 +161,75 @@ type into the argument field is not proof the flow was generated. Three existing
 suites used placeholders (`'ctrl-1'`, `'alive'`, `'ctrl-vanished'`) and went
 green by deleting nothing at all. They now use real-shaped ids, with a comment
 saying why.
+
+---
+
+## Phase 2
+
+### 2.7/B9 — evicting an idle queue costs the rate limit, so eviction is lazy
+
+The plan says to evict a scheduler queue "when it has no pending, no timer, no
+in-flight flush", checked at the end of `flush()`. Implemented literally, that
+**breaks the rate cap**, and the existing suite caught it immediately: an idle
+queue's only remaining state is `lastWriteAt`, which is the one thing stopping
+the next write to that device going out at once. Dropping it and rebuilding it
+means every write is a "first" write.
+
+So eviction is `reclaimIdleQueues()`, called lazily from `queueFor` when the cap
+is actually reached, and a queue is evictable only once its rate window has
+ALSO passed — the point at which dropping it and rebuilding it are
+indistinguishable. On any normal Homey it never runs at all.
+
+### 2.6a/B1 — `desiredOn === false` is the wrong guard, and would have disabled the feature
+
+The plan's guard is: stand down "if `cache.state(deviceId).desiredOn === false`
+**or** any `onoff` change was observed after the originating write". The first
+half is wrong, and writing the test proved it: `desiredOn === false` is the
+STARTING state of every dim-with-`impliesOn`. That is what `impliesOn` means —
+the lamp is off and the dim write is expected to light it. Shipping that guard
+would have turned the corrective write off entirely on the integrations it
+exists for.
+
+Implemented as the timestamp alone, and generalised: `lastOnOffChangeAt` records
+when a device's `onoff` last MOVED from any cause — a change observed over the
+subscription, or one we committed ourselves. Both alternatives are wrong for
+reasons now recorded in the code:
+
+- the desired value is the starting state (above);
+- the actual value cannot see it either — off and on again leaves the lamp
+  exactly where our write wanted it, while the user has very much spoken.
+
+### 2.5/B3 — targets change because the CATALOGUE changes, not because the plan does
+
+The plan's circadian acceptance test is "after removing light B from the plan's
+zone, an external power-on of B must produce zero writes". A plan's target spec
+is immutable while a runtime lives; `refreshTargets()` re-resolves that fixed
+spec against a catalogue that has moved (a light moved out of a zone, or
+deleted). Editing the plan goes through `updatePlan`, which stops and restarts
+the runtime and so releases everything anyway — testing that would have proved
+nothing.
+
+The acceptance test therefore uses a zone target and mutates the catalogue,
+which is the path the bug actually took.
+
+### 2.3/B16 — the write sequence is per (device, capability), not per device
+
+The plan says "a per-key monotonically increasing write seq captured at
+dispatch". Made explicit: the key is `deviceId:capability`. A per-device counter
+would have `dim` and `light_temperature` writes to one lamp invalidating each
+other's commits, which is the normal case for a composed intent (§9's
+on-boundary writes `onoff`, then `dim`, then `light_temperature` per device).
+
+### 2.7/B27g — `recentWrites` is a merged log, and one test's premise had to be retired
+
+`api-orphans.test.ts` asserted "with a controller running, its writes win over a
+schedule's", which was a faithful test of the documented "FIRST controller only"
+behaviour. That behaviour is what B27g removes, so the test is replaced by two:
+writes from different runtimes merge newest-first, and each runtime still keeps
+its own log for the per-device view in `getDiagnostics`.
+
+### The `unsupported` field landed between a docblock and its method
+
+Phase 1's mechanical insert put `private unsupported` between
+`/** Never exposes secrets... */` and the `diagnostics()` it documents, in all
+three runtimes. Repaired here while editing the same region.

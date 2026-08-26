@@ -3,14 +3,18 @@ import { credentialFailureKey, redactKeyMaterial } from '../credential-service';
 import type { DeviceCatalog } from '../device-catalog';
 import type { FlowBridgeManager } from '../bridge/flow-bridge-manager';
 import { CommandScheduler } from '../outputs/command-scheduler';
-import { LightTargetAdapter } from '../outputs/light-target-adapter';
+import { LightTargetAdapter, type WriteRecord } from '../outputs/light-target-adapter';
 import { TargetResolver } from '../outputs/target-resolver';
 import { TargetStateCache } from '../outputs/target-state-cache';
 import { planIntent, type PlannedWrite } from '../outputs/intent-planner';
 import { toDevice } from '../outputs/light-intent';
 import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
+import { sameDetail } from '../profiles/controller-profile';
 import { assessTargets } from '../runtime/target-health';
+import {
+  diffTargets, releaseTarget, resolveSnapshot, type TargetSnapshot,
+} from '../outputs/target-snapshot';
 import { describeClock, localNow } from './local-time';
 import { bindingsForPlan, parseEventKey } from './schedule-bindings';
 import { activeWindowStartDay, boundaryDayMatches, offMinuteOf } from './schedule-window';
@@ -39,6 +43,17 @@ import {
  */
 
 export interface ScheduleRuntimeDeps {
+  /**
+   * One app-wide log of every write attempted by ANY runtime.
+   *
+   * Optional so the pairing screen's ephemeral rigs (which have no app) still
+   * work unchanged. Its consumer is the settings page: "did anything reach a
+   * light" is a question about the whole Homey, and answering it from the
+   * FIRST controller's log — which is what api.ts did — made it permanently
+   * empty for a household that runs only schedules, and permanently
+   * misleading for one that runs both.
+   */
+  onWriteResult?: (entry: WriteRecord) => void;
   api: HomeyApiService;
   catalog: DeviceCatalog;
   bridge: FlowBridgeManager;
@@ -95,6 +110,7 @@ export class ScheduleRuntime {
     private readonly deps: ScheduleRuntimeDeps,
   ) {
     this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log);
+    if (deps.onWriteResult) this.adapter.setWriteSink(deps.onWriteResult);
     this.resolver = new TargetResolver(deps.catalog);
   }
 
@@ -413,14 +429,28 @@ export class ScheduleRuntime {
 
   /** Devices or zones changed: re-resolve without tearing the queue down. */
   async refreshTargets(): Promise<void> {
-    const resolved = await this.resolver.resolve(this.plan.target);
-    const ids = resolved.devices.map(d => d.id);
-    if (JSON.stringify(ids) === JSON.stringify(this.targetIds)) return;
+    const next = await resolveSnapshot(this.resolver, this.plan.target);
+    // See target-snapshot.ts: the id list cannot see a light re-paired under
+    // the same id with a different dim range, and a schedule that clamps to
+    // the old range writes the wrong level twice a day for as long as it runs.
+    if (this.snapshot && this.snapshot.fingerprint === next.fingerprint) return;
 
-    this.targetIds = ids;
-    this.targetNames = resolved.devices.map(d => `${d.name} (${d.zoneName})`);
-    this.resolver.primeCache(resolved.devices, this.cache);
-    this.deps.log(`Schedule targets re-resolved: ${ids.length} light(s)`);
+    const { removed } = diffTargets(this.snapshot, next);
+    for (const deviceId of removed) {
+      await releaseTarget(deviceId, {
+        unsubscribe: id => this.adapter.unsubscribe(id),
+        cancelPending: id => this.adapter.cancelPending(id),
+        cache: this.cache,
+      });
+    }
+
+    this.snapshot = next;
+    this.targetIds = next.ids;
+    this.targetNames = next.names;
+    this.resolver.primeCache(next.devices, this.cache);
+    this.deps.log(`Schedule targets re-resolved: ${next.ids.length} light(s)`);
+
+    await this.assessHealth();
   }
 
   async updatePlan(plan: SchedulePlan): Promise<void> {
@@ -447,13 +477,30 @@ export class ScheduleRuntime {
     await this.deps.bridge.removeAll(this.plan.managedFlows);
   }
 
+  /**
+   * Adopt a state, and tell the device layer when anything a user could SEE
+   * has changed.
+   *
+   * The comparison used to be `state === state` alone, which is not what the
+   * device layer renders: it renders the state AND its detail, and the detail
+   * is where the sentence lives. So a device that went from "the API key
+   * expired" to "the API key has no Flow permission" — both `needs_credential`
+   * — kept showing the first message, and the user re-minted a key with the
+   * same problem because the app never stopped telling them to.
+   */
   private setState(state: ControllerState, detail?: StateDetail): void {
-    if (this.state === state) return;
+    if (this.state === state && sameDetail(this.lastDetail, detail)) return;
     this.state = state;
+    this.lastDetail = detail;
+    this.stateRevision += 1;
     this.deps.onStateChange(state, detail);
   }
 
-  /** Never exposes secrets or unrelated Homey configuration. */
+  /** The detail last handed to the device layer, for the comparison above. */
+  private lastDetail: StateDetail | undefined;
+  /** Diagnostics only: how many times the visible state has actually moved. */
+  private stateRevision = 0;
+
   /**
    * Controls the flow compiler declined, from the last reconcile.
    *
@@ -462,6 +509,11 @@ export class ScheduleRuntime {
    * and only the second one will ever move a light.
    */
   private unsupported: Array<{ bindingKey: string; reason: string }> = [];
+
+  /** Never exposes secrets or unrelated Homey configuration. */
+
+  /** The target set this runtime is built against. See the controller's. */
+  private snapshot: TargetSnapshot | null = null;
 
   diagnostics(): Record<string, unknown> {
     const timezone = this.deps.timezone();
@@ -491,6 +543,10 @@ export class ScheduleRuntime {
       lastAction: this.lastAction,
       lastRejection: this.lastRejection,
       unsupported: this.unsupported,
+      // How many times the VISIBLE state has moved. A device stuck on a
+      // stale message with a rising revision means the device layer is not
+      // rendering what it is being told.
+      stateRevision: this.stateRevision,
       recentFailures: this.adapter.failures(),
       recentWrites: this.adapter.writes(),
       schedulerReady: this.scheduler !== null,

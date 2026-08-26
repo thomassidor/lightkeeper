@@ -4,6 +4,7 @@ import type { ControllerState, StateDetail } from '../profiles/controller-profil
 import { CircadianRuntime, type CircadianRuntimeDeps } from './circadian-runtime';
 import type { CircadianPlan } from './circadian-types';
 import { fireAndForget } from '../support/async';
+import type { WriteRecord } from '../outputs/light-target-adapter';
 
 /**
  * Registry of live circadian runtimes — what ControllerRuntimeManager is for
@@ -24,6 +25,17 @@ import { fireAndForget } from '../support/async';
  */
 
 export interface CircadianManagerDeps {
+  /**
+   * One app-wide log of every write attempted by ANY runtime.
+   *
+   * Optional so the pairing screen's ephemeral rigs (which have no app) still
+   * work unchanged. Its consumer is the settings page: "did anything reach a
+   * light" is a question about the whole Homey, and answering it from the
+   * FIRST controller's log — which is what api.ts did — made it permanently
+   * empty for a household that runs only schedules, and permanently
+   * misleading for one that runs both.
+   */
+  onWriteResult?: (entry: WriteRecord) => void;
   api: HomeyApiService;
   catalog: DeviceCatalog;
   /** The Homey's IANA timezone. */
@@ -92,6 +104,7 @@ export class CircadianRuntimeManager {
     return {
       api: this.deps.api,
       catalog: this.deps.catalog,
+      ...(this.deps.onWriteResult ? { onWriteResult: this.deps.onWriteResult } : {}),
       timezone: this.deps.timezone,
       log: this.deps.log,
     };

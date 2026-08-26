@@ -6,6 +6,7 @@ import { ScheduleRuntime, type ScheduleRuntimeDeps } from './schedule-runtime';
 import { discoverTimeCard, type TimeCardDiscovery } from './time-card-discovery';
 import type { SchedulePlan } from './schedule-types';
 import { fireAndForget } from '../support/async';
+import type { WriteRecord } from '../outputs/light-target-adapter';
 
 /**
  * Registry of live schedule runtimes — the schedule half of what
@@ -21,6 +22,17 @@ import { fireAndForget } from '../support/async';
  */
 
 export interface ScheduleManagerDeps {
+  /**
+   * One app-wide log of every write attempted by ANY runtime.
+   *
+   * Optional so the pairing screen's ephemeral rigs (which have no app) still
+   * work unchanged. Its consumer is the settings page: "did anything reach a
+   * light" is a question about the whole Homey, and answering it from the
+   * FIRST controller's log — which is what api.ts did — made it permanently
+   * empty for a household that runs only schedules, and permanently
+   * misleading for one that runs both.
+   */
+  onWriteResult?: (entry: WriteRecord) => void;
   api: HomeyApiService;
   catalog: DeviceCatalog;
   bridge: FlowBridgeManager;
@@ -104,6 +116,7 @@ export class ScheduleRuntimeManager {
       catalog: this.deps.catalog,
       bridge: this.deps.bridge,
       timeCard: () => this.timeCard(),
+      ...(this.deps.onWriteResult ? { onWriteResult: this.deps.onWriteResult } : {}),
       timezone: this.deps.timezone,
       log: this.deps.log,
     };

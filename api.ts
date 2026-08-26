@@ -82,9 +82,11 @@ module.exports = {
    * }
    * ```
    *
-   * `recentWrites` comes from the FIRST controller only — it is a "did anything
-   * reach a light" indicator, not a per-controller log. The full per-controller
-   * view is in getDiagnostics.
+   * `recentWrites` is EVERY runtime's writes in one time-ordered log — a "did
+   * anything reach a light" indicator for the whole Homey, capped at 20 here
+   * and 50 in the app. It used to come from the first controller only, which
+   * made it permanently empty on a Homey running nothing but schedules. The
+   * per-device view is in getDiagnostics, where each runtime keeps its own.
    */
   async getStatus({ homey }: any) {
     const app = homey.app;
@@ -142,12 +144,11 @@ module.exports = {
       }),
       // Writes actually attempted against lights — the step after an event is
       // accepted, and where a working-looking app can still do nothing.
-      recentWrites: (
-        app.controllers.all()[0]?.diagnostics().recentWrites
-        ?? app.schedules.all()[0]?.diagnostics().recentWrites
-        ?? app.circadian.all()[0]?.diagnostics().recentWrites
-        ?? []
-      ).slice(0, 10),
+      // Every runtime's writes, in one time-ordered log (App.recentWrites).
+      // This used to be the FIRST controller's own log, so it was permanently
+      // empty on a Homey that runs only schedules — the one list that tells
+      // "never fired" from "fired and could not reach the light".
+      recentWrites: app.recentWrites.entries().slice(0, 20)
     };
   },
 

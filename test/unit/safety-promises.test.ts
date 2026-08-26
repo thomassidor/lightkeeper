@@ -6,6 +6,9 @@ import { join, relative } from 'node:path';
 
 import { FlowBridgeManager, hasBeenUserEdited } from '../../lib/bridge/flow-bridge-manager';
 import type { HomeyApiService } from '../../lib/homey-api-service';
+import { TargetStateCache } from '../../lib/outputs/target-state-cache';
+import { planIntent } from '../../lib/outputs/intent-planner';
+import { DEFAULT_BEHAVIOR } from '../../lib/mapping/mapping-types';
 
 /**
  * One named test per PROMISE the app makes in prose.
@@ -346,6 +349,85 @@ describe('safety promises', () => {
 
     assert.equal(result.refused, 'stale_preview');
     assert.deepEqual(h.deleted, []);
+  });
+
+  /**
+   * The docblock on `planTemperatureDelta` has said this since it was written:
+   * "A temperature change must never implicitly turn a light on." It was a
+   * comment describing code that did not do it — the plan wrote colour to off
+   * lamps, and on an integration where a `light_temperature` write lights the
+   * lamp (which is per-integration and untested — CLAUDE.md §12), pressing
+   * "warmer" in a dark room turned the lights on.
+   */
+  test('a temperature change never implicitly turns a light on', () => {
+    const cache = new TargetStateCache();
+    for (const id of ['off-lamp', 'on-lamp']) {
+      cache.setCapabilities(id, {
+        onoff: true, light_temperature: { min: 0, max: 1, decimals: 2 },
+      });
+    }
+    cache.initialise('off-lamp', { onoff: false, light_temperature: 0.5 });
+    cache.initialise('on-lamp', { onoff: true, light_temperature: 0.5 });
+
+    const plan = planIntent(
+      { type: 'temperature_delta', delta: 0.2 },
+      ['off-lamp', 'on-lamp'],
+      cache,
+      DEFAULT_BEHAVIOR,
+    );
+
+    assert.deepEqual(
+      plan.writes.map(write => write.deviceId), ['on-lamp'],
+      'the dark room stays dark',
+    );
+    assert.equal(
+      plan.writes.some(write => write.capability === 'onoff'), false,
+      'and nothing sneaks an onoff write in either',
+    );
+  });
+
+  /**
+   * README.md: "Lightkeeper never overrides something you have just done."
+   * The implied-on probe was the one place it did — it fires 1.5 s after a dim
+   * write, which is long enough for somebody to reach a wall switch.
+   */
+  test('the app never switches a light back on that the user has just switched off', () => {
+    // The decision the probe makes, asserted at the cache boundary it makes it
+    // from. The end-to-end version, through a real adapter and a real timer,
+    // is implied-on-probe.test.ts.
+    let now = 1_000;
+    const cache = new TargetStateCache(() => now);
+    cache.setCapabilities('lamp', { onoff: true, dim: { min: 0, max: 1, decimals: 2 } });
+    cache.initialise('lamp', { onoff: false, dim: 0.3 });
+
+    const writtenAt = now;
+    cache.noteEcho('lamp', 'dim', 0.6);
+
+    // The user reaches the switch inside the window.
+    now += 400;
+    cache.applyExternalChange('lamp', 'onoff', false);
+
+    const changedAt = cache.lastOnOffChangeAt('lamp');
+    assert.ok(changedAt !== undefined && changedAt > writtenAt,
+      'the probe can tell the lamp’s power was touched after our write, which is the whole question');
+  });
+
+  test('and the probe still corrects a lamp nobody touched', () => {
+    // The promise above must not become "the feature never fires".
+    let now = 1_000;
+    const cache = new TargetStateCache(() => now);
+    cache.setCapabilities('lamp', { onoff: true, dim: { min: 0, max: 1, decimals: 2 } });
+    cache.initialise('lamp', { onoff: false, dim: 0.3 });
+
+    const writtenAt = now;
+    cache.noteEcho('lamp', 'dim', 0.6);
+    now += 1_600;
+
+    const changedAt = cache.lastOnOffChangeAt('lamp');
+    assert.ok(
+      changedAt === undefined || changedAt <= writtenAt,
+      'nothing was heard from the lamp, so the corrective write goes out',
+    );
   });
 });
 

@@ -1,14 +1,18 @@
 import type { HomeyApiService } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
-import { CommandScheduler } from '../outputs/command-scheduler';
-import { LightTargetAdapter } from '../outputs/light-target-adapter';
+import { CommandScheduler, type WriteOutcome } from '../outputs/command-scheduler';
+import { LightTargetAdapter, type WriteRecord } from '../outputs/light-target-adapter';
 import { TargetResolver } from '../outputs/target-resolver';
 import { TargetStateCache } from '../outputs/target-state-cache';
 import { planIntent, type Capability, type PlannedWrite } from '../outputs/intent-planner';
 import { toDevice } from '../outputs/light-intent';
 import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
+import { sameDetail } from '../profiles/controller-profile';
 import { assessTargets } from '../runtime/target-health';
+import {
+  diffTargets, releaseTarget, resolveSnapshot, type TargetSnapshot,
+} from '../outputs/target-snapshot';
 import { fireAndForget } from '../support/async';
 // The Homey's own wall clock is not schedule-specific — it lives under
 // lib/schedules/ because that is where it was needed first. Importing it beats
@@ -41,6 +45,17 @@ import { formatMinutes, type CircadianPlan } from './circadian-types';
  */
 
 export interface CircadianRuntimeDeps {
+  /**
+   * One app-wide log of every write attempted by ANY runtime.
+   *
+   * Optional so the pairing screen's ephemeral rigs (which have no app) still
+   * work unchanged. Its consumer is the settings page: "did anything reach a
+   * light" is a question about the whole Homey, and answering it from the
+   * FIRST controller's log — which is what api.ts did — made it permanently
+   * empty for a household that runs only schedules, and permanently
+   * misleading for one that runs both.
+   */
+  onWriteResult?: (entry: WriteRecord) => void;
   api: HomeyApiService;
   catalog: DeviceCatalog;
   /** The Homey's IANA timezone, or undefined to fall back to process-local. */
@@ -116,7 +131,23 @@ export class CircadianRuntime {
   /** Set when pre-staging disabled itself; reported in diagnostics, never hidden. */
   private preStageDisabled: { at: number; deviceId: string } | null = null;
 
-  private readonly probes = new Set<unknown>();
+  /**
+   * Pre-stage probes, keyed BY DEVICE and carrying the write generation that
+   * started each one.
+   *
+   * A flat Set could not be reached by device, so a probe could not be
+   * cancelled by a newer write or by the light leaving the plan — and a probe
+   * that fires late disables pre-staging for the whole device, PERSISTED. The
+   * generation is what makes the verdict correlated rather than circumstantial:
+   * an old probe must not blame our write for a lamp that a newer write, or a
+   * person, switched on.
+   */
+  private readonly probes = new Map<string, { timer: unknown; generation: number }>();
+  /** Monotonic per device; bumped on every write that could start a probe. */
+  private readonly writeGeneration = new Map<string, number>();
+
+  /** The target set this runtime is built against. See the controller's. */
+  private snapshot: TargetSnapshot | null = null;
 
   constructor(
     readonly controllerId: string,
@@ -124,6 +155,7 @@ export class CircadianRuntime {
     private readonly deps: CircadianRuntimeDeps,
   ) {
     this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log);
+    if (deps.onWriteResult) this.adapter.setWriteSink(deps.onWriteResult);
     this.resolver = new TargetResolver(deps.catalog);
   }
 
@@ -327,16 +359,52 @@ export class CircadianRuntime {
     }
 
     if (writes.length > 0) {
-      this.scheduler.submit(writes);
-      this.noteWrites(writes);
-      // Only the colour of an off light can be a pre-stage write; brightness is
-      // never sent to one.
+      /**
+       * Which lights this batch is PRE-STAGING: off now, and being sent a
+       * colour. Captured before dispatch, because by the time the outcomes
+       * arrive the lamp may well be on — which is the entire question the
+       * probe exists to answer.
+       *
+       * A generation per device, bumped here, is what correlates a probe to
+       * the write that started it: a probe cannot survive a newer write and
+       * then blame it (see verifyStayedOff).
+       */
+      const preStaged = new Map<string, number>();
       for (const write of writes) {
-        if (write.capability === 'light_temperature'
-          && this.cache.state(write.deviceId).actualOn !== true) {
-          this.verifyStayedOff(write.deviceId);
-        }
+        // Only the colour of an off light can be a pre-stage write; brightness
+        // is never sent to one (CLAUDE.md §12).
+        if (write.capability !== 'light_temperature') continue;
+        if (this.cache.state(write.deviceId).actualOn === true) continue;
+        const generation = (this.writeGeneration.get(write.deviceId) ?? 0) + 1;
+        this.writeGeneration.set(write.deviceId, generation);
+        preStaged.set(write.deviceId, generation);
       }
+
+      const { completion } = this.scheduler.submit(writes);
+
+      /**
+       * Bookkeeping moves behind the completion, and so does the probe.
+       *
+       * `lastWritten` used to be recorded the moment the batch was submitted,
+       * so a write the scheduler coalesced away — or one that failed — was
+       * recorded as done, and the "has the curve moved far enough" gate then
+       * suppressed every retry. The lamp stayed at the colour it was.
+       *
+       * The probe used to start on the same optimism, which is worse: it
+       * decides whether to DISABLE pre-staging for the whole device, and
+       * persists that. Starting its 5 s window before the write had left meant
+       * the window could close before the lamp had even been asked.
+       */
+      fireAndForget(completion.then(outcomes => {
+        this.noteOutcomes(outcomes);
+        for (const outcome of outcomes) {
+          if (outcome.status !== 'succeeded') continue;
+          if (outcome.capability !== 'light_temperature') continue;
+          const generation = preStaged.get(outcome.deviceId);
+          if (generation === undefined) continue;
+          this.verifyStayedOff(outcome.deviceId, generation);
+        }
+      }), this.deps.log, 'Circadian write bookkeeping');
     }
 
     this.lastAction = {
@@ -421,13 +489,28 @@ export class CircadianRuntime {
     return Math.pow(10, -Math.max(0, Math.floor(decimals)));
   }
 
-  private noteWrites(writes: PlannedWrite[]): void {
-    for (const write of writes) {
-      const entry = this.lastWritten.get(write.deviceId) ?? { at: this.now() };
-      if (write.capability === 'light_temperature') entry.warmth = write.value as number;
-      if (write.capability === 'dim') entry.brightness = write.value as number;
+  /**
+   * Record what actually LANDED, from the batch's outcomes.
+   *
+   * `lastWritten` is what the "has the curve moved far enough to be worth a
+   * write" gate compares against, so recording a value that never reached the
+   * lamp tells the gate the lamp is already where it needs to be — and the
+   * next tick, and every tick after it, agrees. A coalesced-away write is the
+   * quiet version of the same thing: a newer batch owns that capability, and
+   * claiming this one landed would suppress the retry that batch IS.
+   *
+   * So only `succeeded` counts. `failed`, `dropped_capacity` and `cancelled`
+   * all leave the device eligible again on the next tick, which is the whole
+   * recovery mechanism this runtime has.
+   */
+  private noteOutcomes(outcomes: WriteOutcome[]): void {
+    for (const outcome of outcomes) {
+      if (outcome.status !== 'succeeded') continue;
+      const entry = this.lastWritten.get(outcome.deviceId) ?? { at: this.now() };
+      if (outcome.capability === 'light_temperature') entry.warmth = outcome.value as number;
+      if (outcome.capability === 'dim') entry.brightness = outcome.value as number;
       entry.at = this.now();
-      this.lastWritten.set(write.deviceId, entry);
+      this.lastWritten.set(outcome.deviceId, entry);
     }
   }
 
@@ -443,13 +526,29 @@ export class CircadianRuntime {
    * two. The pairing screen's probe DOES restore it, because there the user
    * asked for the test and is standing in front of the lamp.
    */
-  private verifyStayedOff(deviceId: string): void {
+  private verifyStayedOff(deviceId: string, generation: number): void {
+    // One probe per device: a newer write cancels the older one's, because the
+    // older one can no longer tell us anything about a lamp the newer write
+    // has since touched.
+    this.cancelProbe(deviceId);
+
     const timer = this.setTimer(() => {
-      this.probes.delete(timer);
+      this.probes.delete(deviceId);
+      // Superseded between scheduling and firing: this probe is about a write
+      // that is no longer the last thing we did to this lamp.
+      if ((this.writeGeneration.get(deviceId) ?? 0) !== generation) return;
       if (this.cache.state(deviceId).actualOn !== true) return;
       this.disablePreStage(deviceId);
     }, PRE_STAGE_CHECK_MS);
-    this.probes.add(timer);
+    this.probes.set(deviceId, { timer, generation });
+  }
+
+  /** Drop a device's outstanding pre-stage probe, if it has one. */
+  private cancelProbe(deviceId: string): void {
+    const existing = this.probes.get(deviceId);
+    if (!existing) return;
+    this.clearTimer(existing.timer);
+    this.probes.delete(deviceId);
   }
 
   private disablePreStage(deviceId: string): void {
@@ -543,26 +642,44 @@ export class CircadianRuntime {
 
   /** Devices or zones changed: re-resolve without tearing the queue down. */
   async refreshTargets(): Promise<void> {
-    const resolved = await this.resolver.resolve(this.plan.target);
-    const ids = resolved.devices.map(d => d.id);
-    if (JSON.stringify(ids) === JSON.stringify(this.targetIds)) return;
+    const next = await resolveSnapshot(this.resolver, this.plan.target);
+    // The fingerprint, not the id list — see target-snapshot.ts. This runtime
+    // is the one where it matters most: it clamps every write to the target's
+    // own light_temperature range, so a lamp re-paired under the same id with
+    // a different range gets the wrong colour on every tick, forever.
+    if (this.snapshot && this.snapshot.fingerprint === next.fingerprint) return;
 
-    for (const deviceId of this.targetIds) {
-      if (!ids.includes(deviceId)) {
-        await this.adapter.unsubscribe(deviceId);
-        this.overrides.delete(deviceId);
-        this.lastWritten.delete(deviceId);
-      }
+    const { removed } = diffTargets(this.snapshot, next);
+    for (const deviceId of removed) {
+      /**
+       * The acceptance bar for the whole task: after a light leaves the plan,
+       * switching it on must produce ZERO writes.
+       *
+       * It kept its capability subscription, so the rising edge of `onoff`
+       * still arrived — and the rising edge is THE feature (CLAUDE.md §12), so
+       * the runtime dutifully wrote a colour to a lamp that was no longer any
+       * of its business.
+       */
+      await releaseTarget(deviceId, {
+        unsubscribe: id => this.adapter.unsubscribe(id),
+        cancelPending: id => this.adapter.cancelPending(id),
+        cache: this.cache,
+      });
+      this.overrides.delete(deviceId);
+      this.lastWritten.delete(deviceId);
+      this.cancelProbe(deviceId);
     }
 
-    this.targetIds = ids;
-    this.targetNames = resolved.devices.map(d => `${d.name} (${d.zoneName})`);
-    this.resolver.primeCache(resolved.devices, this.cache);
-    await Promise.all(ids.map(id => this.adapter.refresh(id)));
+    this.snapshot = next;
+    this.targetIds = next.ids;
+    this.targetNames = next.names;
+    this.resolver.primeCache(next.devices, this.cache);
+    await Promise.all(next.ids.map(id => this.adapter.refresh(id)));
     await this.subscribeAll();
-    this.deps.log(`Circadian targets re-resolved: ${ids.length} light(s)`);
+    this.deps.log(`Circadian targets re-resolved: ${next.ids.length} light(s)`);
 
     await this.applyNow('targets changed');
+    await this.assessHealth();
   }
 
   async updatePlan(plan: CircadianPlan): Promise<void> {
@@ -572,8 +689,9 @@ export class CircadianRuntime {
   }
 
   async stop(): Promise<void> {
-    for (const timer of this.probes) this.clearTimer(timer);
+    for (const probe of this.probes.values()) this.clearTimer(probe.timer);
     this.probes.clear();
+    this.writeGeneration.clear();
     this.scheduler?.stop();
     this.scheduler = null;
     // The adapter's own pending checks outlive this runtime unless released.
@@ -594,11 +712,29 @@ export class CircadianRuntime {
     await this.stop();
   }
 
+  /**
+   * Adopt a state, and tell the device layer when anything a user could SEE
+   * has changed.
+   *
+   * The comparison used to be `state === state` alone, which is not what the
+   * device layer renders: it renders the state AND its detail, and the detail
+   * is where the sentence lives. So a device that went from "the API key
+   * expired" to "the API key has no Flow permission" — both `needs_credential`
+   * — kept showing the first message, and the user re-minted a key with the
+   * same problem because the app never stopped telling them to.
+   */
   private setState(state: ControllerState, detail?: StateDetail): void {
-    if (this.state === state) return;
+    if (this.state === state && sameDetail(this.lastDetail, detail)) return;
     this.state = state;
+    this.lastDetail = detail;
+    this.stateRevision += 1;
     this.deps.onStateChange(state, detail);
   }
+
+  /** The detail last handed to the device layer, for the comparison above. */
+  private lastDetail: StateDetail | undefined;
+  /** Diagnostics only: how many times the visible state has actually moved. */
+  private stateRevision = 0;
 
   /** Never exposes secrets or unrelated Homey configuration. */
   diagnostics(): Record<string, unknown> {
@@ -610,6 +746,10 @@ export class CircadianRuntime {
     return {
       controllerId: this.controllerId,
       kind: 'circadian',
+      // How many times the VISIBLE state has moved. A device stuck on a
+      // stale message with a rising revision means the device layer is not
+      // rendering what it is being told.
+      stateRevision: this.stateRevision,
       name: this.deps.displayName(),
       state: this.state,
       enabled: this.plan.enabled,

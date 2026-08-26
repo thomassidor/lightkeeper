@@ -19,6 +19,17 @@ export interface TargetFailure {
   at: number;
 }
 
+/** One attempted write and what became of it. */
+export interface WriteRecord {
+  at: number;
+  deviceId: string;
+  capability: Capability;
+  value: boolean | number;
+  ok: boolean;
+  ms: number;
+  error?: string;
+}
+
 export class LightTargetAdapter {
   private readonly recentFailures = new BoundedLog<TargetFailure>(50);
   /** Rate-limit repeated transient errors from the same target. */
@@ -37,11 +48,18 @@ export class LightTargetAdapter {
   private readonly subscriptions = new Map<string, Unsubscribe[]>();
 
   /**
-   * Pending post-write onoff checks (see verifyCameOn). Tracked so stop() can
-   * cancel them — a timer that fires after teardown would switch a light on
-   * 1.5 s after the controller was told to stand down.
+   * Pending post-write onoff checks (see verifyCameOn), keyed BY DEVICE.
+   *
+   * Tracked so stop() can cancel them — a timer that fires after teardown
+   * would switch a light on 1.5 s after the controller was told to stand
+   * down. Keyed rather than a flat set so ONE device'''s probe can be cancelled
+   * too: by a newer write, and by the device ceasing to be a target, which
+   * previously there was no way to reach.
    */
-  private readonly pendingChecks = new Set<ReturnType<typeof setTimeout>>();
+  private readonly pendingChecks = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /** See setImpliedOnFallback. */
+  private onImpliedOnFallback: ((deviceId: string) => Promise<void>) | null = null;
 
   constructor(
     private readonly api: HomeyApiService,
@@ -75,20 +93,32 @@ export class LightTargetAdapter {
    * Every write actually attempted, with its outcome. "Planned N writes" told
    * us nothing about whether any reached a light — this does.
    */
-  private readonly recentWrites = new BoundedLog<{
-    at: number; deviceId: string; capability: Capability;
-    value: boolean | number; ok: boolean; ms: number; error?: string;
-  }>(30);
+  private readonly recentWrites = new BoundedLog<WriteRecord>(30);
 
-  writes(): ReadonlyArray<Record<string, unknown>> {
+  writes(): readonly WriteRecord[] {
     return this.recentWrites.entries();
+  }
+
+  /**
+   * A sink shared by every runtime in the app, so the settings page can show
+   * "did anything reach a light" across all of them.
+   *
+   * Optional: the pairing screen's ephemeral rigs have no app to report to,
+   * and the per-runtime log below is unaffected either way.
+   */
+  private onWriteResult: ((entry: WriteRecord) => void) | null = null;
+
+  setWriteSink(sink: (entry: WriteRecord) => void): void {
+    this.onWriteResult = sink;
   }
 
   private noteWriteResult(entry: {
     deviceId: string; capability: Capability; value: boolean | number;
     ok: boolean; ms: number; error?: string;
   }): void {
-    this.recentWrites.add({ at: Date.now(), ...entry });
+    const record = { at: Date.now(), ...entry };
+    this.recentWrites.add(record);
+    this.onWriteResult?.(record);
   }
 
   async write(
@@ -97,17 +127,24 @@ export class LightTargetAdapter {
     value: boolean | number,
     options: { impliesOn?: boolean } = {},
   ): Promise<void> {
-    // Record the intended value first so the resulting echo is recognised as
-    // ours rather than as an external change.
-    this.cache.noteWrite(deviceId, capability, value);
+    // The echo registration goes BEFORE dispatch: a fast integration can call
+    // back before setCapabilityValue resolves, and an unrecognised echo reads
+    // as somebody using the Hue app.
+    const seq = this.cache.noteEcho(deviceId, capability, value);
     const startedAt = Date.now();
 
     try {
       const device = await this.deviceHandle(deviceId);
       await device.setCapabilityValue({ capabilityId: capability, value });
+      // The desired value goes AFTER, and only on success. Committing it up
+      // front left the app believing a lamp was at a level it had never
+      // reached whenever a write failed — and the next relative step planned
+      // from the fiction, so "a bit brighter" moved from a number nothing in
+      // the room had ever shown.
+      this.cache.commitDesired(deviceId, capability, value, seq);
       this.noteWriteResult({ deviceId, capability, value, ok: true, ms: Date.now() - startedAt });
 
-      if (options.impliesOn) this.verifyCameOn(deviceId);
+      if (options.impliesOn) this.verifyCameOn(deviceId, startedAt);
     } catch (error) {
       this.noteWriteResult({
         deviceId, capability, value, ok: false, ms: Date.now() - startedAt,
@@ -126,11 +163,52 @@ export class LightTargetAdapter {
    * afterwards and write onoff only if the lamp really did stay dark. Costs
    * nothing in the normal case and cannot leave a light stuck off.
    */
-  private verifyCameOn(deviceId: string): void {
+  private verifyCameOn(deviceId: string, writtenAt: number): void {
+    // Per device, so a burst does not stack probes and a newer write cancels
+    // the older one's. The set of loose timers it replaced could not be
+    // cancelled per device at all, which is what made removing a target
+    // unable to release its pending work.
+    this.cancelPending(deviceId);
+
     const timer = setTimeout(() => {
-      this.pendingChecks.delete(timer);
+      this.pendingChecks.delete(deviceId);
       fireAndForget((async () => {
         if (this.cache.state(deviceId).actualOn === true) return;
+
+        /**
+         * Stand down if this lamp's power has been touched since our write.
+         *
+         * 1.5 s is long enough for a person to reach a wall switch, and
+         * without this the app corrected them: dim with impliesOn, user
+         * decides against it and switches the lamp off, and a second and a
+         * half later the app switched it back on. Nothing about that is
+         * recoverable from the user's side except doing it again and hoping.
+         *
+         * A TIMESTAMP, not a value, and both alternatives are wrong for a
+         * reason worth keeping:
+         *
+         *  - `desiredOn === false` would stand down on the normal case. The
+         *    lamp being off is the STARTING state of every dim-with-impliesOn;
+         *    that is what impliesOn means.
+         *  - `actualOn` cannot see it either: switched off and on again leaves
+         *    the lamp exactly where our write wanted it, while the user has
+         *    very much spoken.
+         */
+        const changedAt = this.cache.lastOnOffChangeAt(deviceId);
+        if (changedAt !== undefined && changedAt > writtenAt) {
+          this.log(`${deviceId} had its power changed after the dim write; leaving it alone`);
+          return;
+        }
+
+        // Through the runtime's own scheduler where one is wired, so the
+        // corrective write inherits ordering, the rate cap, outcomes and the
+        // noteEcho/commitDesired pairing rather than going around all four.
+        if (this.onImpliedOnFallback) {
+          this.log(`${deviceId} did not switch on from a dim write; sending onoff`);
+          await this.onImpliedOnFallback(deviceId);
+          return;
+        }
+
         try {
           const device = await this.deviceHandle(deviceId);
           await device.setCapabilityValue({ capabilityId: 'onoff', value: true });
@@ -140,7 +218,32 @@ export class LightTargetAdapter {
         }
       })(), this.log, `Implied-on check for ${deviceId}`);
     }, 1500);
-    this.pendingChecks.add(timer);
+    this.pendingChecks.set(deviceId, timer);
+  }
+
+  /**
+   * Drop any outstanding implied-on probe for one device.
+   *
+   * Called when a device stops being a target, and by a newer write to the
+   * same device. Before this the probes were a flat Set with no way to reach
+   * one by device, so a light removed from a plan could still be switched on
+   * a second and a half later by a probe nobody could cancel.
+   */
+  cancelPending(deviceId: string): void {
+    const timer = this.pendingChecks.get(deviceId);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    this.pendingChecks.delete(deviceId);
+  }
+
+  /**
+   * Route the corrective on-write through the runtime that owns this adapter.
+   *
+   * Optional: the pairing screen's ephemeral rigs have no scheduler, and the
+   * direct write above is the honest fallback there.
+   */
+  setImpliedOnFallback(fallback: (deviceId: string) => Promise<void>): void {
+    this.onImpliedOnFallback = fallback;
   }
 
   /**
@@ -212,7 +315,7 @@ export class LightTargetAdapter {
    * outlives the controller that created it.
    */
   async unsubscribeAll(): Promise<void> {
-    for (const timer of this.pendingChecks) clearTimeout(timer);
+    for (const timer of this.pendingChecks.values()) clearTimeout(timer);
     this.pendingChecks.clear();
 
     for (const deviceId of [...this.subscriptions.keys()]) {

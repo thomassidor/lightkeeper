@@ -8,6 +8,7 @@ const api = require('../../api') as {
   countOrphans(args: any): Promise<any>;
   sweepOrphans(args: any): Promise<any>;
   getStatus(args: any): Promise<any>;
+  getDiagnostics(args: any): Promise<any>;
 };
 
 /**
@@ -59,11 +60,27 @@ function homey(options: {
    * bad migration, a restart in progress.
    */
   installedOnly?: { controller?: string[]; schedule?: string[] };
-  /** Per device kind, so the getStatus fallback can actually be observed. */
-  writes?: { controller?: Write[]; schedule?: Write[]; circadian?: Write[] };
+  /**
+   * Per device kind for the per-runtime diagnostics, plus `interleaved` for
+   * the app-level log the settings page actually reads.
+   */
+  writes?: {
+    controller?: Write[]; schedule?: Write[]; circadian?: Write[];
+    interleaved?: Write[];
+  };
 }) {
   const swept: Array<Set<string>> = [];
   const deleted: string[] = [];
+
+  /**
+   * The app-level write log every runtime's adapter feeds.
+   *
+   * Seeded here from `options.writes` in the order they would have arrived, so
+   * the payload assertions below are about what the settings page renders
+   * rather than about which runtime happened to be first.
+   */
+  const writeLog = new BoundedLog<Write>(50);
+  for (const write of options.writes?.interleaved ?? []) writeLog.add(write);
 
   const runtime = (id: string, kind: string) => ({
     controllerId: id,
@@ -143,6 +160,7 @@ function homey(options: {
       manifest: { id: 'com.thomassidor.lightkeeper', version: '0.0.0-test' },
       app: {
         recentEvents: new BoundedLog<never>(40),
+        recentWrites: writeLog,
         credentials: { getStatus: () => ({ present: true, valid: true }) },
         controllers: { all: () => (options.controllers ?? []).map(id => runtime(id, 'controller')) },
         schedules: {
@@ -339,27 +357,46 @@ describe('the settings payload', () => {
     assert.equal(status.schedules[0].localTime, 'Tue 22:15');
   });
 
-  test('recent writes fall back to a schedule when there is no controller', async () => {
-    // "Did anything reach a light" must still answer on a Homey that has only
-    // schedules on it — otherwise the one list that distinguishes "never fired"
-    // from "fired and was refused" is permanently empty for those households.
+  test('recent writes answer on a Homey that has only schedules', async () => {
+    // "Did anything reach a light" must answer for a household that uses no
+    // remotes at all. Reading the FIRST CONTROLLER's log — which is what this
+    // did — left the one list that tells "never fired" from "fired and could
+    // not reach the light" permanently empty for them.
     const write = { deviceId: 'light-1', capability: 'onoff', value: true, ok: true };
-    const h = homey({ schedules: [ID.sched], writes: { schedule: [write] } });
+    const h = homey({
+      schedules: [ID.sched],
+      writes: { schedule: [write], interleaved: [write] },
+    });
 
     const status = await api.getStatus(h.args);
     assert.equal(status.controllers.length, 0);
     assert.deepEqual(status.recentWrites, [write]);
   });
 
-  test("with a controller running, its writes win over a schedule's", async () => {
-    // Documented as "the FIRST controller only" — an indicator, not a merged log.
+  test('writes from different runtimes are merged, newest first', async () => {
+    // One time-ordered log for the whole app, not whichever runtime happened
+    // to be first in the list.
     const ctrl = { deviceId: 'light-1', capability: 'dim', value: 0.5, ok: true };
     const sched = { deviceId: 'light-2', capability: 'onoff', value: false, ok: true };
     const h = homey({
       controllers: [ID.ctrl], schedules: [ID.sched],
-      writes: { controller: [ctrl], schedule: [sched] },
+      writes: { controller: [ctrl], schedule: [sched], interleaved: [ctrl, sched] },
     });
 
-    assert.deepEqual((await api.getStatus(h.args)).recentWrites, [ctrl]);
+    assert.deepEqual(
+      (await api.getStatus(h.args)).recentWrites, [sched, ctrl],
+      'newest first — the schedule wrote after the controller did',
+    );
+  });
+
+  test('a runtime keeps its OWN write log for per-device diagnostics', async () => {
+    // The merged log answers "did anything reach a light"; the per-runtime one
+    // answers "which of my devices cannot reach its lights", and both are
+    // needed. Nothing here replaced the second with the first.
+    const ctrl = { deviceId: 'light-1', capability: 'dim', value: 0.5, ok: true };
+    const h = homey({ controllers: [ID.ctrl], writes: { controller: [ctrl] } });
+
+    const diagnostics = await api.getDiagnostics(h.args);
+    assert.deepEqual(diagnostics.controllers[0].recentWrites, [ctrl]);
   });
 });

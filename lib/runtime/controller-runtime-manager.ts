@@ -7,6 +7,7 @@ import type { HealthMonitor } from './health-monitor';
 import type { ControllerProfile, ControllerState, StateDetail } from '../profiles/controller-profile';
 import type { InputEvent } from '../inputs/input-event';
 import { fireAndForget } from '../support/async';
+import type { WriteRecord } from '../outputs/light-target-adapter';
 
 /**
  * Registry of live controller runtimes.
@@ -16,6 +17,17 @@ import { fireAndForget } from '../support/async';
  */
 
 export interface RuntimeManagerDeps {
+  /**
+   * One app-wide log of every write attempted by ANY runtime.
+   *
+   * Optional so the pairing screen's ephemeral rigs (which have no app) still
+   * work unchanged. Its consumer is the settings page: "did anything reach a
+   * light" is a question about the whole Homey, and answering it from the
+   * FIRST controller's log — which is what api.ts did — made it permanently
+   * empty for a household that runs only schedules, and permanently
+   * misleading for one that runs both.
+   */
+  onWriteResult?: (entry: WriteRecord) => void;
   api: HomeyApiService;
   catalog: DeviceCatalog;
   discovery: SourceDiscoveryService;
@@ -90,6 +102,7 @@ export class ControllerRuntimeManager {
       bridge: this.deps.bridge,
       ...(this.deps.health ? { health: this.deps.health } : {}),
       displayName,
+      ...(this.deps.onWriteResult ? { onWriteResult: this.deps.onWriteResult } : {}),
       log: this.deps.log,
       onStateChange,
       onProfileChange,

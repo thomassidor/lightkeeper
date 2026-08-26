@@ -145,9 +145,14 @@ function planBrightnessDelta(
         skipped.push({ deviceId, reason: 'off, and decrease-while-off is set to ignore' });
         continue;
       } else {
-        // Update desired level only — no write, so the light stays off.
+        // Update desired level only — no write, so the light stays off. The
+        // one place a desired value is adopted with no write behind it, and it
+        // is deliberate: the next press should carry on from where this one
+        // left the level, not from where the lamp last physically was.
+        // commitDesired without a seq, because there is no write to lose a
+        // race to.
         const next = clampDim(deviceId, applyPerceptualDelta(current, delta), cache);
-        cache.noteWrite(deviceId, 'dim', next);
+        cache.commitDesired(deviceId, 'dim', next);
         skipped.push({ deviceId, reason: 'off — desired level updated without turning on' });
         continue;
       }
@@ -203,6 +208,23 @@ function planTemperatureDelta(
 ): IntentPlan {
   const writes: PlannedWrite[] = [];
   for (const deviceId of deviceIds) {
+    /**
+     * An off lamp is skipped, and the docblock above is why.
+     *
+     * A `dim` write turns an off Hue lamp on — that is measured (CLAUDE.md §6)
+     * — and whether `light_temperature` does the same is per-integration and
+     * untested. So "a temperature change must never implicitly turn a light
+     * on" was a promise the code did not keep on any integration where it
+     * does: press "warmer" in a dark room and the lights come up.
+     *
+     * The circadian runtime's pre-staging writes colour to off lamps on
+     * purpose, and is unaffected — it plans its own writes and carries its own
+     * probe and its own opt-in for exactly this uncertainty (§12).
+     */
+    if (cache.currentOn(deviceId) === false) {
+      skipped.push({ deviceId, reason: 'off — temperature never turns a light on' });
+      continue;
+    }
     const current = cache.currentTemperature(deviceId) ?? 0.5;
     const next = clampTemperature(deviceId, current + delta, cache);
     writes.push({ deviceId, capability: 'light_temperature', value: next });

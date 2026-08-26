@@ -15,6 +15,7 @@ import { parseEventKey } from './lib/schedules/schedule-bindings';
 import { flowWriteProbe } from './lib/credential-service';
 import { fireAndForget } from './lib/support/async';
 import { BoundedLog } from './lib/support/bounded-log';
+import type { WriteRecord } from './lib/outputs/light-target-adapter';
 
 /**
  * Lightkeeper.
@@ -44,6 +45,21 @@ module.exports = class LightkeeperApp extends Homey.App {
     at: number; cardId: string; controller: string; eventKey: string;
     magnitude?: number; accepted: boolean; reason?: string;
   }>(40);
+
+  /**
+   * Every write attempted by every runtime, newest first.
+   *
+   * The settings page's "did anything reach a light" indicator used to read
+   * the FIRST controller's own log, which is empty on a Homey that runs only
+   * schedules and misleading on one that runs both — a household could watch
+   * their schedule fire, look at the page, and see nothing. This is the whole
+   * app's, in time order.
+   *
+   * Each runtime keeps its own log too, unchanged, because getDiagnostics
+   * reports per device and "which of my four devices cannot reach its lights"
+   * is a different question.
+   */
+  readonly recentWrites = new BoundedLog<WriteRecord>(50);
 
   private recordEvent(entry: {
     cardId: string; controller: string; eventKey: string;
@@ -123,8 +139,13 @@ module.exports = class LightkeeperApp extends Homey.App {
       this.discovery,
       () => this.credentials.getStatus().valid,
     );
+    // One shared sink, so a write from any runtime lands in one time-ordered
+    // log. Wired here because this is the only place that can see all three.
+    const onWriteResult = (entry: WriteRecord) => this.recentWrites.add(entry);
+
     this.controllers = new ControllerRuntimeManager({
       api: this.api,
+      onWriteResult,
       catalog: this.catalog,
       discovery: this.discovery,
       bridge: this.bridge,
@@ -137,6 +158,7 @@ module.exports = class LightkeeperApp extends Homey.App {
 
     this.schedules = new ScheduleRuntimeManager({
       api: this.api,
+      onWriteResult,
       catalog: this.catalog,
       bridge: this.bridge,
       // The SDK's only timezone primitive, and the one every schedule decision
@@ -154,6 +176,7 @@ module.exports = class LightkeeperApp extends Homey.App {
 
     this.circadian = new CircadianRuntimeManager({
       api: this.api,
+      onWriteResult,
       catalog: this.catalog,
       timezone: () => {
         try {
