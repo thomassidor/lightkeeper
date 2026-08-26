@@ -1,5 +1,8 @@
+import { randomUUID } from 'node:crypto';
+
 import type { TargetSpec } from '../outputs/light-intent';
 import type { ManagedFlowReference } from '../profiles/controller-profile';
+import { entriesOverlap } from './schedule-window';
 
 /**
  * What a light schedule is, as persisted in its virtual device's store.
@@ -114,20 +117,19 @@ export function sanitiseEntries(
     if (onAt === null) return drop('the on-time is not a time of day');
 
     const days = sanitiseDays(source.days);
+    if (days === 'invalid') return drop('days is not a list');
     if (days !== null && days.length === 0) return drop('no days are selected');
 
     const end = sanitiseEnd(source.end, onAt);
     if (typeof end === 'string') return drop(end);
 
-    const id = typeof source.id === 'string' && source.id.trim() !== ''
-      ? source.id.trim()
-      : `s${index}`;
+    const id = sanitiseEntryId(source.id);
     if (entries.some(e => e.id === id)) return drop(`duplicate schedule id "${id}"`);
 
     const brightness = sanitiseUnit(source.brightness);
     const temperature = sanitiseUnit(source.temperature);
 
-    entries.push({
+    const entry: ScheduleEntry = {
       id,
       onAt,
       days,
@@ -136,15 +138,60 @@ export function sanitiseEntries(
       // than writing a lamp to zero and calling it lit.
       ...(brightness !== null && brightness > 0 ? { brightness } : {}),
       ...(temperature !== null ? { temperature } : {}),
-    });
+    };
+
+    /**
+     * Two windows over the same lights fight: the one that ends first switches
+     * them off while the other still believes them on, and no screen in the app
+     * admits to it. Refusing at save is the honest half of the fix — the runtime
+     * handles the pairs that earlier versions already stored.
+     *
+     * The LATER row is the one dropped, because the earlier one is the one the
+     * user can already see working.
+     */
+    const clash = entries.find(existing => entriesOverlap(existing, entry));
+    if (clash) return drop(`overlaps schedule "${clash.id}"`);
+
+    entries.push(entry);
   });
 
   return { entries, dropped };
 }
 
-function sanitiseDays(raw: unknown): IsoWeekday[] | null {
+/**
+ * The pattern a schedule entry id must match.
+ *
+ * Load-bearing rather than cosmetic: the id goes into `sched:<id>:<boundary>`,
+ * which is a generated Flow's `event_key` argument, and `parseEventKey` splits it
+ * on `:`. An id containing a colon parses as a different entry — or as nothing —
+ * so a schedule the user could see would silently never fire.
+ */
+export const ENTRY_ID_SHAPE = /^[A-Za-z0-9_-]{1,32}$/;
+
+/**
+ * Ids are SERVER-generated. A client-sent id is honoured only if it round-trips
+ * through repair intact and matches the shape above; anything else gets a fresh
+ * one, and because the binding key changes with it, the Flow lifecycle replaces
+ * that entry's Flows cleanly rather than leaving a pair that can never fire.
+ */
+export function sanitiseEntryId(raw: unknown): string {
+  const candidate = typeof raw === 'string' ? raw.trim() : '';
+  if (ENTRY_ID_SHAPE.test(candidate)) return candidate;
+  return `s${randomUUID().slice(0, 8)}`;
+}
+
+/**
+ * `null` for "every day" — and ONLY for the two values that mean it.
+ *
+ * Anything else non-array used to become `null` too, so a string, an object or a
+ * `false` sent by a half-broken view turned a Mon–Fri schedule into a
+ * seven-day one. That is the opposite of failing closed: it does MORE than the
+ * user asked for. Now it is 'invalid', and the caller drops the entry with a
+ * reason the pairing screen already knows how to show.
+ */
+function sanitiseDays(raw: unknown): IsoWeekday[] | null | 'invalid' {
   if (raw === null || raw === undefined) return null;
-  if (!Array.isArray(raw)) return null;
+  if (!Array.isArray(raw)) return 'invalid';
 
   const days = [...new Set(raw.map(Number))]
     .filter((day): day is IsoWeekday => Number.isInteger(day) && day >= 1 && day <= 7)

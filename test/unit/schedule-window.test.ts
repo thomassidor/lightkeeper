@@ -226,8 +226,12 @@ describe('sanitising what a screen sends', () => {
   });
 
   test('caps the set, so the Flow list stays readable', () => {
+    // Staggered an hour apart: the CAP is what has to drop these, not the
+    // overlap rule, and fifteen rows at the same 07:00 would all overlap.
     const many = Array.from({ length: MAX_ENTRIES + 3 }, (_, index) => ({
-      id: `s${index}`, onAt: '07:00', end: { kind: 'duration', minutes: 30 },
+      id: `s${index}`,
+      onAt: `${String(index).padStart(2, '0')}:00`,
+      end: { kind: 'duration', minutes: 30 },
     }));
     const { entries, dropped } = sanitiseEntries(many);
     assert.equal(entries.length, MAX_ENTRIES);

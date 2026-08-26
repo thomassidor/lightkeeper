@@ -30,6 +30,23 @@ const ISO_WEEKDAY: Record<string, IsoWeekday> = {
  * name would be a bug that only appears on someone else's Homey.
  */
 export function localNow(timezone: string | undefined, nowMs: number): LocalClock {
+  return localNowResolved(timezone, nowMs).clock;
+}
+
+/**
+ * The same clock, plus whether the Homey's own timezone was actually used.
+ *
+ * The fallback below is right for a circadian light — a curve an hour out is
+ * still a curve, and refusing to run would be worse. It is NOT right for a
+ * schedule: the generated Flows fire on the HOMEY's clock, so a day check run
+ * against a different clock refuses legitimate boundaries around midnight, and a
+ * wrong-DAY refusal means a window that simply never happens. So the two callers
+ * need different answers to "did that work", and this is where they get it.
+ */
+export function localNowResolved(
+  timezone: string | undefined,
+  nowMs: number,
+): { clock: LocalClock; resolved: boolean } {
   if (timezone) {
     try {
       const parts = new Intl.DateTimeFormat('en-US', {
@@ -47,9 +64,12 @@ export function localNow(timezone: string | undefined, nowMs: number): LocalCloc
 
       if (isoWeekday && Number.isFinite(hour) && Number.isFinite(minute)) {
         return {
-          // Some ICU builds render midnight as hour 24 under hour12: false.
-          minutesOfDay: ((hour % 24) * 60 + minute) % MINUTES_PER_DAY,
-          isoWeekday,
+          clock: {
+            // Some ICU builds render midnight as hour 24 under hour12: false.
+            minutesOfDay: ((hour % 24) * 60 + minute) % MINUTES_PER_DAY,
+            isoWeekday,
+          },
+          resolved: true,
         };
       }
     } catch {
@@ -62,8 +82,11 @@ export function localNow(timezone: string | undefined, nowMs: number): LocalCloc
 
   const local = new Date(nowMs);
   return {
-    minutesOfDay: local.getHours() * 60 + local.getMinutes(),
-    isoWeekday: fromJsDay(local.getDay()),
+    clock: {
+      minutesOfDay: local.getHours() * 60 + local.getMinutes(),
+      isoWeekday: fromJsDay(local.getDay()),
+    },
+    resolved: false,
   };
 }
 

@@ -1,5 +1,5 @@
 import type { BindableInput } from '../bridge/flow-bridge-manager';
-import { offMinuteOf } from './schedule-window';
+import { crossesMidnight, offMinuteOf } from './schedule-window';
 import { timeArgumentValue, type TimeCardRef } from './time-card-discovery';
 import {
   formatMinutes,
@@ -59,6 +59,24 @@ export function daysLabel(days: IsoWeekday[] | null): string {
 export function boundaryLabel(entry: ScheduleEntry, boundary: ScheduleBoundary): string {
   const minute = boundary === 'on' ? entry.onAt : offMinuteOf(entry);
   const verb = boundary === 'on' ? 'On' : 'Off';
+
+  /**
+   * The off Flow of a midnight-crossing window fires on the NEXT day.
+   *
+   * "Off at 01:30, Fri" is a Flow that does not fire on a Friday: the window
+   * starts on Friday and ends in the small hours of Saturday, and the day-set is
+   * the STARTING day throughout the app (see boundaryDayMatches). A user reading
+   * their Flow list has no way to know that, so the label says which day the
+   * window began on instead of implying the Flow runs on it.
+   *
+   * Safe to change: names are never compared in edit detection (a Flow the user
+   * renamed is reused in place), and a reused Flow is never renamed — only newly
+   * created or replaced Flows carry the new wording.
+   */
+  if (boundary === 'off' && crossesMidnight(entry)) {
+    return `Off at ${formatMinutes(minute)} (starts ${daysLabel(entry.days)})`;
+  }
+
   return `${verb} at ${formatMinutes(minute)}, ${daysLabel(entry.days)}`;
 }
 

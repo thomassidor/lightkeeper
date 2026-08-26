@@ -663,7 +663,16 @@ function __lkBootSch(Homey) {
       .then(function (result) {
         if (result.dropped && result.dropped.length > 0) {
           // Named rather than silently corrected: the user is looking at the row.
-          throw new Error(Homey.__('schedule.droppedSome', { count: result.dropped.length }));
+          //
+          // An overlap gets its own sentence because it is the one drop reason
+          // where the row itself looks complete — two windows over the same
+          // lights fight, and "check the times" would read as a typo hunt.
+          var overlapping = result.dropped.filter(function (drop) {
+            return String(drop.reason || '').indexOf('overlaps') === 0;
+          });
+          throw new Error(overlapping.length > 0
+            ? Homey.__('schedule.droppedOverlap', { count: overlapping.length })
+            : Homey.__('schedule.droppedSome', { count: result.dropped.length }));
         }
         return emit('save', '');
       })

@@ -303,3 +303,74 @@ No disconnect event on the read client was used: `homey-api`'s client is built b
 cannot be done off-hardware. Report-on-failure covers the same ground from the
 call sites (`DeviceCatalog.refresh`, `FlowBridgeManager.sync`,
 `LightTargetAdapter.deviceHandle`) and needs no platform assumption.
+
+---
+
+## Phase 4
+
+### 4.1a — overlap is a WEEKLY question, and the plan's day-set framing hides that
+
+"Two entries overlap when their `[onAt, onAt+windowLengthMinutes)` intervals
+intersect on any shared day" misses the case that matters most: "Friday 23:30 for
+two hours" and "Saturday 00:30 for one hour" share NO day and overlap completely.
+So `entriesOverlap` lays each entry out as one arc per start day on a
+10 080-minute circle (the week) and asks whether any pair of arcs intersects.
+The circular test needs no midnight or Sunday-night special case, and a sanitised
+window is at most 1439 minutes, so neither arc can swallow the other.
+
+`MINUTES_PER_WEEK` is computed per call, not as a module constant:
+`schedule-types.ts` now imports `entriesOverlap`, and this file already imported
+`MINUTES_PER_DAY` from there, so a top-level `7 * MINUTES_PER_DAY` is evaluated
+mid-cycle and throws `Cannot access 'MINUTES_PER_DAY' before initialization`. The
+comment at the constant says so.
+
+### 4.1a — one test fixture's premise was retired
+
+`schedule-window.test.ts`'s "caps the set, so the Flow list stays readable" built
+fifteen rows all at `07:00`, which under the new rule all overlap — so one
+survived and the cap never came into play. The fixture is now staggered an hour
+apart, with a comment saying which rule is under test. The assertion is unchanged.
+
+### 4.1b — the Test control is exempt from overlap suppression
+
+Not in the plan, but required by I9: `testEntry` exists so the user can prove a
+boundary does what they expect, before save. Suppressing its off write because
+another window happens to be running would make the Test lie about the thing it
+was built to demonstrate. The suppression is keyed on the internal `note`, and
+catch-up is unaffected because it only ever plans an `on`.
+
+### 4.2 — the off-boundary proof is per ENTRY, and refusals are per entry too
+
+`hasTrustedOffBoundary` looks for a reference whose `bindingKey` is exactly
+`sched:<thisEntry>:off`. A different entry's off reference does not stand in for
+it — that is asserted in `safety-promises.test.ts`, because it is the mistake a
+"do we have any off Flows" check would make.
+
+The two whole-runtime refusals (unresolved timezone, untrustworthy Flows) are
+recorded under entry id `*`: they are not about one entry, and inventing a
+per-entry row for each would fill the cap of 10 with duplicates on a plan with
+twelve windows.
+
+### 4.3 — `localNow` keeps its signature
+
+The plan describes `localNowResolved` as gaining an "out-param-style variant".
+Implemented the other way round: `localNowResolved` holds the logic and
+`localNow` is a one-line wrapper returning `.clock`. Every existing caller and
+test is untouched, and there is one copy of the ICU handling rather than two.
+
+### 4.5 — the overnight off label drops the verb
+
+`Off at 01:00 (starts Fri)` rather than `Off at 01:00, Sat`. The shifted-day form
+would be accurate about when the Flow fires and wrong about what the user
+selected — they chose Friday, and every other screen in the app says Friday. The
+parenthetical is the only form that is true in both directions.
+
+### 4.4 — the pairing screen did NOT already render drop reasons
+
+The plan says "the pairing screen already renders drop reasons". It renders a
+COUNT: `schedule.droppedSome` — "__count__ schedule(s) are incomplete. Check the
+times and try again." That sentence is wrong for an overlap, where every row is
+complete and the times are exactly what the user meant. So there is a second key,
+`schedule.droppedOverlap`, and the view picks it when any drop reason begins with
+`overlaps`. The reasons themselves stay English strings built in `lib/` (which has
+no `homey.__`), which is why the discrimination happens in the view.

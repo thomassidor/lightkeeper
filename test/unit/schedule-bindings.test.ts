@@ -106,9 +106,21 @@ describe('schedule labels', () => {
   });
 
   test('a boundary label names the time it actually fires at', () => {
-    const e = entry({ onAt: 23 * 60, end: { kind: 'duration', minutes: 120 }, days: [5] });
-    assert.equal(boundaryLabel(e, 'on'), 'On at 23:00, Fri');
-    assert.equal(boundaryLabel(e, 'off'), 'Off at 01:00, Fri');
+    const sameDay = entry({ onAt: 7 * 60, end: { kind: 'duration', minutes: 60 }, days: [5] });
+    assert.equal(boundaryLabel(sameDay, 'on'), 'On at 07:00, Fri');
+    assert.equal(boundaryLabel(sameDay, 'off'), 'Off at 08:00, Fri');
+  });
+
+  test('an overnight off label names the day the window STARTED on', () => {
+    // Friday 23:00 + 2h fires its off Flow at 01:00 on the SATURDAY. Labelling
+    // it "Off at 01:00, Fri" describes a Flow that does not fire on a Friday.
+    const overnight = entry({ onAt: 23 * 60, end: { kind: 'duration', minutes: 120 }, days: [5] });
+    assert.equal(boundaryLabel(overnight, 'on'), 'On at 23:00, Fri');
+    assert.equal(boundaryLabel(overnight, 'off'), 'Off at 01:00 (starts Fri)');
+
+    // Every day is every day either way; the wording still says which is which.
+    const nightly = entry({ onAt: 23 * 60 + 30, end: { kind: 'duration', minutes: 90 }, days: null });
+    assert.equal(boundaryLabel(nightly, 'off'), 'Off at 01:00 (starts every day)');
   });
 });
 

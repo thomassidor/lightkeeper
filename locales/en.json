@@ -102,6 +102,7 @@
     "atMost": "At most __max__ schedules on one device. Add a second schedule device for more.",
     "needOne": "Add at least one schedule.",
     "droppedSome": "__count__ schedule(s) are incomplete. Check the times and try again.",
+    "droppedOverlap": "__count__ schedule(s) overlap another one on the same lights, so they were not saved. Two windows over the same lights fight — the first to end switches them off.",
     "summary": "__count__ schedule(s) — __flows__ Flow(s) will be created.",
     "save": "Save",
     "saving": "Saving…",
@@ -160,6 +161,7 @@
     "flowEdited": "A Flow this app generated has been edited by hand. Open repair to rebuild it.",
     "noSchedule": "This schedule has no configuration. Repair it to set it up again.",
     "noTimeCard": "This Homey does not offer a time trigger Lightkeeper can build on, so the schedule cannot be created. Please report this with your firmware version.",
+    "noTimezone": "Lightkeeper cannot read this Homey's timezone, so it cannot tell which day a schedule belongs to. Restart the app, and report this if it persists.",
     "noCurve": "This circadian light has no configuration. Repair it to set it up again.",
     "noWarmthTargets": "None of this device's lights can change colour temperature, so there is nothing for it to do.",
     "persistFailed": "Lightkeeper could not save what it learned about its Flows. Open repair to try again."

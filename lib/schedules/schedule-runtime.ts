@@ -15,11 +15,14 @@ import { assessTargets } from '../runtime/target-health';
 import {
   diffTargets, releaseTarget, resolveSnapshot, type TargetSnapshot,
 } from '../outputs/target-snapshot';
-import { describeClock, localNow } from './local-time';
-import { bindingsForPlan, parseEventKey } from './schedule-bindings';
-import { activeWindowStartDay, boundaryDayMatches, offMinuteOf } from './schedule-window';
+import { describeClock, localNowResolved, type LocalClock } from './local-time';
+import { bindingsForPlan, eventKeyFor, parseEventKey } from './schedule-bindings';
+import {
+  activeEntries, activeWindowStartDay, boundaryDayMatches, offMinuteOf,
+} from './schedule-window';
 import type { TimeCardDiscovery } from './time-card-discovery';
 import { fireAndForget } from '../support/async';
+import { BoundedLog } from '../support/bounded-log';
 import {
   formatMinutes,
   type ScheduleBoundary,
@@ -103,6 +106,16 @@ export class ScheduleRuntime {
    * refusal to let a health check declare a failed runtime ready.
    */
   private flowsHealthy = true;
+  /**
+   * Catch-ups this runtime declined, and why.
+   *
+   * Catch-up is the one path that switches lights ON without a Flow having
+   * fired, so its refusals are the ones a "why did nothing happen at 22:01"
+   * report needs — and a refusal that is only logged is invisible from the
+   * settings page. Ten is plenty: they arrive at start and on resume, not
+   * continuously.
+   */
+  private readonly catchUpRefusals = new BoundedLog<{ at: number; entryId: string; reason: string }>(10);
 
   constructor(
     readonly controllerId: string,
@@ -121,6 +134,20 @@ export class ScheduleRuntime {
 
   private now(): number {
     return this.deps.now ? this.deps.now() : Date.now();
+  }
+
+  /**
+   * The Homey's wall clock, and whether it really is the Homey's.
+   *
+   * A schedule's generated Flows fire on the Homey's clock. Validating their day
+   * against a DIFFERENT clock is only harmless in the middle of the day: around
+   * midnight the two disagree about which day it is, and the refusal that
+   * follows means a window that simply never happens. So an unresolved timezone
+   * blocks this device type, while a circadian light degrades on the same
+   * fallback quite happily (CLAUDE.md §12).
+   */
+  private clock(): { clock: LocalClock; resolved: boolean } {
+    return localNowResolved(this.deps.timezone(), this.now());
   }
 
   async start(): Promise<void> {
@@ -283,6 +310,14 @@ export class ScheduleRuntime {
     // until a later reconcile succeeds.
     if (!this.flowsHealthy) return;
 
+    // Ahead of the credential leg: a key can be re-entered, but a schedule whose
+    // day check runs on the wrong clock cannot be trusted to fire on the right
+    // day at all, and that is the more serious of the two.
+    if (!this.clock().resolved) {
+      this.setState('needs_repair', { key: 'state.noTimezone' });
+      return;
+    }
+
     if (this.plan.managedFlows.length > 0 && !this.deps.api.credentials.getStatus().valid) {
       this.setState('needs_credential', { key: 'state.needsCredential' });
       return;
@@ -306,15 +341,68 @@ export class ScheduleRuntime {
   async catchUp(): Promise<void> {
     if (!this.plan.enabled) return;
 
-    const clock = localNow(this.deps.timezone(), this.now());
-    for (const entry of this.plan.entries) {
-      if (activeWindowStartDay(entry, clock) === null) continue;
-      this.deps.log(
-        `Catching up schedule ${entry.id}: ${formatMinutes(entry.onAt)}–`
-        + `${formatMinutes(offMinuteOf(entry))} contains ${describeClock(clock)}`,
-      );
-      await this.apply(entry, 'on', 'catch-up');
+    const { clock, resolved } = this.clock();
+    if (!resolved) {
+      this.refuseCatchUp('*', 'timezone unresolved — Homey clock and app clock may disagree');
+      return;
     }
+    if (!this.flowsHealthy) {
+      this.refuseCatchUp('*', 'the last reconcile left the Flows untrustworthy');
+      return;
+    }
+
+    /**
+     * Overlapping windows: apply the LATEST-STARTED one only.
+     *
+     * `activeEntries` sorts by elapsed, so the first is the one whose values the
+     * room should be showing. Applying every active entry in array order — which
+     * is what this did — meant a restart inside two overlapping windows landed on
+     * whichever the user happened to have added second.
+     */
+    const active = activeEntries(this.plan.entries, clock);
+    if (active.length === 0) return;
+
+    const [{ entry }, ...superseded] = active;
+
+    if (!this.hasTrustedOffBoundary(entry)) {
+      // The window's OFF Flow is what will eventually switch these lights off
+      // again. Without a reference to it, catching up means switching a
+      // household's lights on with nothing scheduled to switch them off.
+      this.refuseCatchUp(entry.id, 'no off boundary Flow is recorded for this schedule');
+      return;
+    }
+
+    if (superseded.length > 0) {
+      this.deps.log(
+        `${superseded.length} other schedule(s) are also active; `
+        + `applying ${entry.id}, the latest to have started`,
+      );
+    }
+
+    this.deps.log(
+      `Catching up schedule ${entry.id}: ${formatMinutes(entry.onAt)}–`
+      + `${formatMinutes(offMinuteOf(entry))} contains ${describeClock(clock)}`,
+    );
+    await this.apply(entry, 'on', 'catch-up');
+  }
+
+  /**
+   * Is there a stored reference to this entry's OFF Flow?
+   *
+   * The whole of catch-up's licence to switch lights on rests on something else
+   * switching them off later. A missing off reference — a half-finished
+   * reconcile, a Flow the user deleted, a dead key at first save — means there is
+   * nothing to end the window, so catch-up declines rather than lighting a room
+   * indefinitely.
+   */
+  private hasTrustedOffBoundary(entry: ScheduleEntry): boolean {
+    const wanted = eventKeyFor(entry.id, 'off');
+    return this.plan.managedFlows.some(ref => ref.bindingKey === wanted);
+  }
+
+  private refuseCatchUp(entryId: string, reason: string): void {
+    this.catchUpRefusals.add({ at: this.now(), entryId, reason });
+    this.deps.log(`Not catching up ${entryId === '*' ? 'any schedule' : entryId}: ${reason}`);
   }
 
   /**
@@ -352,7 +440,13 @@ export class ScheduleRuntime {
       };
     }
 
-    const clock = localNow(this.deps.timezone(), this.now());
+    const { clock, resolved } = this.clock();
+    if (!resolved) {
+      return {
+        accepted: false,
+        reason: 'timezone unresolved — Homey clock and app clock may disagree',
+      };
+    }
     if (!boundaryDayMatches(entry, parsed.boundary, clock.isoWeekday)) {
       return {
         accepted: false,
@@ -388,6 +482,37 @@ export class ScheduleRuntime {
     // up deciding "nothing is on" hours after the fact.
     await Promise.all(this.targetIds.map(id => this.adapter.refresh(id)));
 
+    /**
+     * An off boundary while ANOTHER window is still running.
+     *
+     * The save-time check refuses overlapping windows, but plans stored by
+     * earlier versions already contain them and a repair is not something we can
+     * demand. So: 17:00–23:00 alongside 20:00–01:00 must not go dark at 23:00.
+     * The surviving window's own values are re-applied, because the room should
+     * be showing them and not whatever the window that just ended left behind.
+     *
+     * Deliberately NOT applied to a Test, whose whole point is to do exactly
+     * what was asked, and not to catch-up, which only ever plans an on.
+     */
+    if (boundary === 'off' && note !== 'test') {
+      const survivor = this.survivingWindow(entry);
+      if (survivor) {
+        const kept = survivor.brightness !== undefined || survivor.temperature !== undefined
+          ? this.planOn(survivor)
+          : { writes: [], skipped: 0 };
+        if (kept.writes.length > 0) this.scheduler?.submit(kept.writes);
+        this.lastAction = {
+          at: this.now(), entryId: entry.id, boundary,
+          writes: kept.writes.length, skipped: 0,
+          note: `kept on — schedule "${survivor.id}" still active`,
+        };
+        this.deps.log(
+          `Not switching off for ${entry.id}: schedule ${survivor.id} is still running`,
+        );
+        return { writes: kept.writes.length, skipped: 0 };
+      }
+    }
+
     const plan = boundary === 'on' ? this.planOn(entry) : this.planOff();
 
     if (!this.scheduler) {
@@ -408,6 +533,22 @@ export class ScheduleRuntime {
       ...(note ? { note } : {}),
     };
     return { writes: plan.writes.length, skipped: plan.skipped };
+  }
+
+  /**
+   * Another window that is still running at the moment `firing` ends.
+   *
+   * The latest-started one, for the same reason catch-up picks it: it is the one
+   * whose values the room should be showing. Returns nothing when the clock
+   * cannot be resolved — an off event we cannot place in time is not a reason to
+   * leave a household's lights on.
+   */
+  private survivingWindow(firing: ScheduleEntry): ScheduleEntry | null {
+    const { clock, resolved } = this.clock();
+    if (!resolved) return null;
+
+    const others = this.plan.entries.filter(entry => entry.id !== firing.id);
+    return activeEntries(others, clock)[0]?.entry ?? null;
   }
 
   /**
@@ -537,7 +678,7 @@ export class ScheduleRuntime {
 
   diagnostics(): Record<string, unknown> {
     const timezone = this.deps.timezone();
-    const clock = localNow(timezone, this.now());
+    const { clock, resolved } = this.clock();
     return {
       controllerId: this.controllerId,
       kind: 'schedule',
@@ -547,6 +688,10 @@ export class ScheduleRuntime {
       // The two facts every "it fired at the wrong time" report needs, and the
       // only place the resolved timezone is visible at all.
       timezone: timezone ?? 'process-local',
+      // Whether that zone was actually USED. A named zone the ICU build cannot
+      // resolve falls back silently, and this device type refuses to fire on a
+      // clock it does not trust — so the flag is the first thing to read.
+      timezoneResolved: resolved,
       localTime: describeClock(clock),
       entries: this.plan.entries.map(entry => ({
         id: entry.id,
@@ -562,6 +707,7 @@ export class ScheduleRuntime {
       managedFlows: this.plan.managedFlows,
       lastAction: this.lastAction,
       lastRejection: this.lastRejection,
+      catchUpRefusals: this.catchUpRefusals.entries(),
       unsupported: this.unsupported,
       // How many times the VISIBLE state has moved. A device stuck on a
       // stale message with a rising revision means the device layer is not
