@@ -308,15 +308,38 @@ export class ControllerRuntime {
     }
   }
 
-  /** Run on app start, controller start, repair and source change. */
+  /**
+   * Run on app start, controller start, repair and source change.
+   *
+   * Single-flighted through the bridge, per controller: at boot all four of
+   * those can arrive at once, and two passes interleaving over one set of
+   * stored references leaves the loser's flows live and unreferenced. A
+   * request that arrives mid-pass gets a fresh trailing pass, never this
+   * one's result — it asked because the state changed.
+   */
   async reconcileFlows(): Promise<void> {
+    return this.deps.bridge.reconcile(this.controllerId, () => this.reconcileFlowsNow());
+  }
+
+  private async reconcileFlowsNow(): Promise<void> {
     const catalogue = this.profile.catalogue ?? [];
     const mappedKeys = new Set(
       this.profile.mappings.map(m => m.inputKey).filter((k): k is string => k !== null),
     );
     const mapped = catalogue.filter(input => mappedKeys.has(input.key));
 
-    if (mapped.length === 0) return;
+    /**
+     * Nothing mapped AND nothing stored: the cold-start case, and the only one
+     * that may skip the pass.
+     *
+     * It used to skip whenever nothing was mapped, which is a different thing.
+     * A user who unmapped every gesture — repair, remap to nothing, save —
+     * left every generated Flow live and every reference in the profile, and
+     * the remote went on driving the lights from Flows the app no longer
+     * believed in. `sync()` with an empty `mapped` is exactly the right call
+     * there: everything stored becomes un-wanted and is deleted.
+     */
+    if (mapped.length === 0 && this.profile.managedFlows.length === 0) return;
 
     try {
       const result = await this.deps.bridge.sync({
@@ -340,9 +363,39 @@ export class ControllerRuntime {
       if (result.userEdited.length > 0) {
         this.setState('needs_repair', { key: 'state.flowEdited' });
       }
+
+      /**
+       * A control the compiler declined — a range needing more flow variants
+       * than the ceiling allows (CLAUDE.md §7: BILRESA's 162 combinations are
+       * what the ceiling is for).
+       *
+       * It was logged and nowhere else. The mapping row stayed on screen
+       * looking configured, the gesture did nothing, and the only evidence was
+       * a line in the app log. Repair is the right state: the fix is to map
+       * that control to something else, which is what repair is for.
+       */
+      if (result.unsupported.length > 0) {
+        this.unsupported = result.unsupported;
+        this.setState('needs_repair', {
+          key: 'state.unsupportedMapping',
+          tokens: { controls: result.unsupported.map(u => u.bindingKey).join(', ') },
+        });
+      } else {
+        this.unsupported = [];
+      }
+
       this.deps.log(
         `Flows reconciled: ${result.created} created, ${result.reused} reused, ${result.deleted} deleted`,
       );
+      if (result.staleReplacements.length > 0) {
+        // The replacements are correct and live; the flows they replaced are
+        // ALSO still live and still firing. Not a repair — nothing is broken
+        // and a remap would not help — but it must not pass for a clean run.
+        this.deps.log(
+          `${result.staleReplacements.length} superseded flow(s) could not be deleted `
+          + `and are still firing: ${result.staleReplacements.join(', ')}`,
+        );
+      }
     } catch (error) {
       const failure = this.deps.api.credentials.getStatus();
       if (failure.present && !failure.valid) {
@@ -493,10 +546,22 @@ export class ControllerRuntime {
   }
 
   /** Never exposes secrets or unrelated Homey configuration. */
+  /**
+   * Controls the flow compiler declined, from the last reconcile.
+   *
+   * Kept as state rather than only logged: it is the difference between a
+   * mapping row that is configured and one that is configured AND compiles,
+   * and only the second one will ever move a light.
+   */
+  private unsupported: Array<{ bindingKey: string; reason: string }> = [];
+
   diagnostics(): Record<string, unknown> {
     return {
       controllerId: this.controllerId,
       state: this.state,
+      // Empty on a healthy controller. Non-empty is the only place a declined
+      // control is visible from outside the app log.
+      unsupported: this.unsupported,
       source: this.profile.source,
       targetIds: this.targetIds,
       // Names, not just ids: a controller quietly pointed at the wrong room

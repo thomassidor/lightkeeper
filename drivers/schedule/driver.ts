@@ -9,6 +9,7 @@ import {
   type ScheduleBoundary, type ScheduleEntry, type SchedulePlan,
 } from '../../lib/schedules/schedule-types';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
+import { flowWriteProbe } from '../../lib/credential-service';
 
 /**
  * The schedule driver owns: pair/repair session handlers, the data its two
@@ -81,12 +82,10 @@ module.exports = class ScheduleDriver extends Homey.Driver {
     handler('setCredential', async (token: string) => {
       // Validating with a READ is not enough: reads succeed on credentials that
       // cannot write. Prove a write, then immediately clean it up.
-      return this.app.credentials.setCredential(token, async (client: any) => {
-        const folder = await client.flow.createFlowFolder({
-          flowfolder: { name: 'Lightkeeper (checking permissions)' },
-        });
-        await client.flow.deleteFlowFolder({ id: folder.id });
-      });
+      return this.app.credentials.setCredential(
+        token,
+        (client: any) => flowWriteProbe(client, (...args: unknown[]) => this.log(...args)),
+      );
     });
 
     handler('add_device', async () => true);

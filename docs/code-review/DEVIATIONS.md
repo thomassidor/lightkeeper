@@ -61,3 +61,103 @@ the old piecemeal options), so none may depend on its receiver.
 word boundary, and README.md quotes that count. A nested `await t.test(...)`
 runs but is not counted, so the two numbers diverge silently. New suites follow
 the repo's existing `describe(...)` + `test(...)` shape.
+
+---
+
+## Phase 1
+
+### 1.2 — `homey-api` really does carry a status code, so `isNotFound` reads it first
+
+The plan said to inspect the error shape before hardcoding. It is
+`APIError extends Error` with a numeric `statusCode` taken off the HTTP
+response (`node_modules/homey-api/lib/APIError.js`, thrown from
+`HomeyAPIV3.js`), and the message is the server's own text — `404 Not Found:
+FlowCardAction with ID <x>` being the one CLAUDE.md §3 records.
+
+`sanitizedWriteError()`, which every write error crosses on its way to us,
+carries `statusCode` forward deliberately. So `lib/support/homey-errors.ts`
+reads the status first and matches the message only as a fallback for errors
+that arrive from somewhere else with only their text intact. Both routes are
+tested.
+
+### 1.3 — the plan's example scenario was already correct; the real bug is narrower
+
+The plan describes B12 as "a schedule retimed from 22:00 to 23:00 keeps its old
+Flow". That specific case was **already handled**: the time lives in the variant
+key (CLAUDE.md's own note on `variantKey` says exactly why), so retiming makes
+the old key un-wanted and the abandonment loop removes it.
+
+The bug is the case where the variant key does **not** move and only the
+fingerprint does — a re-paired remote, or any event-surface change under an
+unchanged binding. The key stays wanted, so the abandonment loop's
+`if (wanted.has(key)) continue;` skips it, while the new flow's reference
+overwrites the old one in the profile. Live flow, no reference, invisible.
+
+Both routes are now pinned by tests, and the test file says which is which so
+the distinction is not lost again.
+
+### 1.6 — single-flight alone is not enough; the caller must re-read its state
+
+Writing the test made this explicit and it is worth recording. `SingleFlight`
+guarantees the two passes do not interleave, but a second pass that was handed
+`existing` captured **before** the first pass ran still creates duplicates. What
+makes it work is that `reconcileFlowsNow()` reads `this.profile.managedFlows`
+at the top of each pass — so serialising the passes is what makes the second
+one's read fresh.
+
+`flow-bridge-concurrency.test.ts` therefore models the device store, and carries
+an explicit counter-example ("without serialisation the same two passes WOULD
+duplicate") so the guarantee is not mistaken for something the surrounding code
+would give anyway.
+
+### 1.7a — done, and it is the one thing in this phase that needs hardware
+
+`deprecated` is a real, schema-validated flow-card property: homey-lib's app
+schema declares it at `definitions.flowCard.properties.deprecated`
+(`{ type: boolean, enum: [true] }`). All three bridge cards now carry it,
+`app.json` regenerates with it, and `npm run validate --level publish` passes.
+`test/unit/compose-manifest.test.ts` pins it.
+
+**HARDWARE CHECKLIST — required before releasing this change.** The whole app
+depends on (c):
+
+1. The three bridge cards no longer appear in the Flow editor's action picker.
+2. An existing generated Flow still fires — press a mapped button, watch the
+   lights.
+3. **`createFlow` through the API-key client still creates a Flow using a
+   deprecated card id.** Add a schedule window and confirm two Flows appear.
+
+If (3) fails, revert the `"deprecated": true` line in all three files under
+`.homeycompose/flow/actions/`, drop the compose-manifest test that pins it, and
+re-run `npm run validate`. Nothing else depends on it: the sub-tasks that make
+attribution *provable* (1.7b, 1.7c) stand alone, and they are the stronger of
+the two guarantees — this one only makes the card harder to reach by hand.
+
+### 1.7c — the preview token is not a security boundary, and does not pretend to be
+
+`previewToken()` is a djb2 hash of (sorted candidate ids, sorted live set). It
+defends against a set that moved between the count and the click, not against a
+constructed collision — the same user is on both ends of the round trip. The
+approval carries the explicit `flowIds` as well, and the sweep deletes only the
+intersection, so an id that was never shown is never deleted whatever the hash
+says.
+
+### 1.8b — the preflight's decision moved to `lib/`, its sentence stayed in the driver
+
+The plan put the whole preflight in the driver's save handler. Half of it had to
+move: a driver module cannot be unit-tested (importing it pulls in `homey`), and
+a message built in `lib/` can never be translated — CLAUDE.md's own convention.
+
+So `findUncompilableBindings()` in the flow binding compiler decides and returns
+the declined inputs with no prose, and `ControllerDriver.preflightBindings()`
+turns that into `mapping.unsupportedControl`. Tested at the lib boundary, plus a
+test that the locale template still carries both the control name and the fix.
+
+### Existing test fixtures needed real-shaped device ids
+
+`looksGenerated` requires a flow's `controller` argument to match
+`/^lk-(ctrl|sched|circ)-\d+-\d+$/`, which is the point: an id a person could
+type into the argument field is not proof the flow was generated. Three existing
+suites used placeholders (`'ctrl-1'`, `'alive'`, `'ctrl-vanished'`) and went
+green by deleting nothing at all. They now use real-shaped ids, with a comment
+saying why.

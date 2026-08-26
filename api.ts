@@ -8,6 +8,8 @@
  * Every handler's return shape is documented below, because the settings page
  * is the only consumer and there is no schema between the two.
  */
+
+import { flowWriteProbe } from './lib/credential-service';
 /**
  * Every device this app can attribute a generated Flow to — controllers AND
  * schedules.
@@ -25,11 +27,40 @@
  * delete the lot. The guard below ("no live controllers, refuse") would not have
  * caught it either: with one controller running, the set is not empty.
  */
-function liveDeviceIds(app: any): Set<string> {
-  return new Set([
+function liveDeviceIds(app: any, homey: any): Set<string> {
+  const ids = new Set<string>([
     ...app.controllers.all().map((r: any) => r.controllerId),
     ...app.schedules.all().map((r: any) => r.controllerId),
   ]);
+
+  /**
+   * Every INSTALLED device of both kinds, not merely every registered runtime.
+   *
+   * A runtime registers when its device inits successfully. A device whose
+   * store failed to migrate, whose init threw, or that is simply mid-restart
+   * has no runtime — and every Flow it owns then reads as orphaned, on a Homey
+   * where other devices are running so the "nothing is live" refusal does not
+   * fire either. The device is still there; the user can still see it and
+   * repair it; its Flows are still its own. Existing is the right test, not
+   * having started.
+   *
+   * Best-effort per driver: a driver that will not enumerate must not silently
+   * SHRINK the protected set, so a failure is logged and the runtime ids stand.
+   *
+   * Circadian is deliberately absent, as above.
+   */
+  for (const driverId of ['controller', 'schedule']) {
+    try {
+      for (const device of homey.drivers.getDriver(driverId).getDevices()) {
+        const id = device?.getData?.()?.id;
+        if (typeof id === 'string' && id) ids.add(id);
+      }
+    } catch (error) {
+      app.log?.(`Could not enumerate installed ${driverId} devices:`, (error as Error)?.message);
+    }
+  }
+
+  return ids;
 }
 
 module.exports = {
@@ -131,12 +162,10 @@ module.exports = {
     const token = String(body?.token ?? '');
     // Validate with a WRITE: reads succeed on credentials that cannot write,
     // so a read-based check gives false confidence.
-    return homey.app.credentials.setCredential(token, async (client: any) => {
-      const folder = await client.flow.createFlowFolder({
-        flowfolder: { name: 'Lightkeeper (checking permissions)' },
-      });
-      await client.flow.deleteFlowFolder({ id: folder.id });
-    });
+    return homey.app.credentials.setCredential(
+      token,
+      (client: any) => flowWriteProbe(client, (...args: unknown[]) => homey.app.log(...args)),
+    );
   },
 
   /** Forget the stored key. Returns `{ cleared: true }`. */
@@ -149,28 +178,39 @@ module.exports = {
    * Generated Flows whose controller no longer exists. Reported before deleting
    * so the user sees the scale of it rather than being asked to trust a button.
    *
-   * Returns `{ total, orphans, liveControllers, examples, refused? }`. `refused`
-   * is set when no controller is running: every managed flow then LOOKS
+   * Returns `{ total, orphans, unmanaged, liveControllers, flowIds, examples,
+   * token, refused? }`.
+   *
+   * `refused` is set when nothing is running: every managed flow then LOOKS
    * orphaned, and the count must not be presented as if it were trustworthy.
+   * `unmanaged` counts flows attributed to a dead device that do NOT match the
+   * template this app generates — found, reported, never deleted.
+   * `token` and `flowIds` are handed back to the sweep, which refuses a stale
+   * one: the user approved a specific set, not a number.
    */
   async countOrphans({ homey }: any) {
     const app = homey.app;
-    const live = liveDeviceIds(app);
-    const managed = await app.bridge.findManagedFlows();
-    const orphans = managed.filter((f: any) => !f.controllerId || !live.has(f.controllerId));
-    return {
-      total: managed.length,
-      orphans: orphans.length,
-      liveControllers: live.size,
-      examples: orphans.slice(0, 5).map((f: any) => f.name),
-      ...(live.size === 0 && managed.length > 0 ? { refused: 'no_live_controllers' } : {}),
-    };
+    return app.bridge.countOrphans(liveDeviceIds(app, homey));
   },
 
-  /** Returns `{ deleted, kept, failed, refused? }`. See countOrphans. */
-  async sweepOrphans({ homey }: any) {
+  /**
+   * Returns `{ deleted, kept, failed, unmanaged, refused? }`.
+   *
+   * The body carries back the `token` and `flowIds` from the count the user
+   * was actually shown. Without them the sweep still runs — the settings page
+   * always sends them, and an older page must not be broken by a newer app —
+   * but with them it can refuse (`refused: 'stale_preview'`) when the set has
+   * moved since. See countOrphans in the bridge manager.
+   */
+  async sweepOrphans({ homey, body }: any) {
     const app = homey.app;
-    return app.bridge.sweepOrphans(liveDeviceIds(app));
+    const token = typeof body?.token === 'string' ? body.token : null;
+    const flowIds = Array.isArray(body?.flowIds) ? body.flowIds.map(String) : null;
+
+    return app.bridge.sweepOrphans(
+      liveDeviceIds(app, homey),
+      token && flowIds ? { token, flowIds } : undefined,
+    );
   },
 
   /**

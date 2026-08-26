@@ -24,7 +24,11 @@ import type { SelectableInput } from '../../lib/inputs/selectable-input';
  */
 
 const APP_ID = 'com.thomassidor.lightkeeper';
-const CONTROLLER = 'ctrl-1';
+// Real-shaped, as the drivers mint them: the orphan sweep will only delete a
+// flow whose controller argument matches `lk-<kind>-<ms>-<rand>`, so a
+// placeholder id here would make the sweep test silently pass by deleting
+// nothing at all.
+const CONTROLLER = 'lk-ctrl-1755500000000-100001';
 const DEVICE = 'device-1';
 const BINDING_KEY = 'n2_on|press';
 const TRIGGER_ID = `homey:device:${DEVICE}:n2_on`;
@@ -277,7 +281,7 @@ describe('renaming the device', () => {
     // Without this guard each renames it back on every reconcile, forever.
     const h = harness({
       folders: [ROOT, { id: 'shared', name: 'Dial', parent: 'root' }],
-      flows: [liveFlow('flow-1', 'shared'), liveFlow('flow-2', 'shared', 'ctrl-2')],
+      flows: [liveFlow('flow-1', 'shared'), liveFlow('flow-2', 'shared', 'lk-ctrl-1755500000000-100002')],
     });
 
     await h.bridge.sync(syncRequest('Hallway dial', [reference('flow-1')]));
@@ -304,7 +308,7 @@ describe('cleaning up after a deletion', () => {
   test('a folder that still holds something is never deleted', async () => {
     const h = harness({
       folders: [ROOT, { id: 'kitchen', name: 'Kitchen dial', parent: 'root' }],
-      flows: [liveFlow('flow-1', 'kitchen'), liveFlow('flow-2', 'kitchen', 'ctrl-2')],
+      flows: [liveFlow('flow-1', 'kitchen'), liveFlow('flow-2', 'kitchen', 'lk-ctrl-1755500000000-100002')],
     });
 
     await h.bridge.removeAll([reference('flow-1')]);
@@ -315,7 +319,7 @@ describe('cleaning up after a deletion', () => {
   test('the orphan sweep clears the folders it empties', async () => {
     const h = harness({
       folders: [ROOT, { id: 'gone', name: 'Deleted dial', parent: 'root' }],
-      flows: [liveFlow('flow-1', 'gone', 'ctrl-vanished')],
+      flows: [liveFlow('flow-1', 'gone', 'lk-ctrl-1755500000000-999999')],
     });
 
     const result = await h.bridge.sweepOrphans(new Set([CONTROLLER]));

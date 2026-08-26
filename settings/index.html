@@ -502,10 +502,16 @@
       }).catch(function (e) { showMsg('broken', e.message); });
     });
 
+    // The exact set the user was last SHOWN, handed back when they click.
+    // The app refuses a delete whose approval no longer matches what it can
+    // see now: a count is not consent, a specific list is.
+    var approvedSweep = null;
+
     function refreshOrphans() {
       return api('GET', '/orphans').then(function (info) {
         var text = document.getElementById('orphanText');
         var button = document.getElementById('sweep');
+        approvedSweep = null;
 
         // With no controller running, EVERY managed Flow looks orphaned. The
         // count is meaningless in that state, so say so and hide the button
@@ -516,17 +522,25 @@
           return;
         }
 
+        // Flows that call a Lightkeeper card but were not built by this app.
+        // Mentioned so the totals add up on screen — they are never deleted.
+        var aside = info.unmanaged
+          ? ' ' + t('sweepUnmanaged', { unmanaged: info.unmanaged })
+          : '';
+
         if (info.orphans === 0) {
-          text.textContent = t('noneOrphaned', { total: info.total });
+          text.textContent = t('noneOrphaned', { total: info.total }) + aside;
           button.style.display = 'none';
           return;
         }
+
+        approvedSweep = { token: info.token, flowIds: info.flowIds };
 
         text.textContent = t('orphansFound', {
           orphans: info.orphans,
           total: info.total,
           live: info.liveControllers,
-        });
+        }) + aside;
         button.style.display = 'inline-block';
         button.textContent = t('deleteOrphans', { count: info.orphans });
       }).catch(function (e) {
@@ -543,8 +557,13 @@
       msg.textContent = t('sweeping');
       msg.style.display = 'block';
 
-      api('POST', '/orphans').then(function (result) {
-        if (result.refused) {
+      api('POST', '/orphans', approvedSweep || {}).then(function (result) {
+        if (result.refused === 'stale_preview') {
+          // Something changed between the count and the click. Nothing was
+          // deleted; refreshOrphans() below re-reads and re-arms the approval.
+          msg.className = 'msg partial';
+          msg.textContent = t('sweepStale');
+        } else if (result.refused) {
           msg.className = 'msg partial';
           msg.textContent = t('sweepRefused', { total: result.kept });
         } else {

@@ -77,6 +77,12 @@ function harness(options: {
   } as unknown as DeviceCatalog;
 
   const bridge = {
+    /**
+     * The real one single-flights per device (see FlowBridgeManager). Straight
+     * through here on purpose: coalescing has its own tests against the real
+     * class, and a double that reimplemented it would be testing the double.
+     */
+    reconcile: async (_deviceId: string, pass: () => Promise<unknown>) => pass(),
     async sync(request: unknown) {
       synced.push(request);
       return {
@@ -88,7 +94,7 @@ function harness(options: {
           managedVersion: 1,
           createdAt: 0,
         })),
-        created: 2, deleted: 0, reused: 0, unsupported: [], userEdited: [],
+        created: 2, deleted: 0, reused: 0, unsupported: [], userEdited: [], staleReplacements: [],
       };
     },
     async removeAll() { return 0; },
@@ -378,5 +384,43 @@ describe('teardown', () => {
       id: 'a', on: '22:00', off: '23:30', days: 'every day', active: true,
     }]);
     assert.ok(!JSON.stringify(diagnostics).includes('token'));
+  });
+});
+
+/**
+ * A schedule whose last window the user deleted.
+ *
+ * `reconcileFlows()` used to return early on an empty entry list, so the two
+ * generated Flows of the window that had just been removed stayed live and the
+ * plan went on referencing them. The lights kept switching at a time the app's
+ * own screens no longer showed — and because the references were still there,
+ * nothing read as orphaned either.
+ */
+describe('a schedule emptied of every window', () => {
+
+  test('reconciles its flows away instead of returning early', async () => {
+    const h = harness({
+      plan: plan({
+        entries: [],
+        managedFlows: [
+          { flowId: 'f0', bindingKey: 'sched:a:on', variantKey: 'at:22:00', fingerprint: 'fp', managedVersion: 1, createdAt: 1 },
+          { flowId: 'f1', bindingKey: 'sched:a:off', variantKey: 'at:23:30', fingerprint: 'fp', managedVersion: 1, createdAt: 1 },
+        ] as any,
+      }),
+    });
+
+    await h.runtime.reconcileFlows();
+
+    assert.equal(h.synced.length, 1, 'the bridge was asked to reconcile');
+    assert.deepEqual((h.synced[0] as any).mapped, [], 'with nothing wanted');
+    assert.equal((h.synced[0] as any).existing.length, 2, 'and both stored references handed over');
+  });
+
+  test('nothing scheduled AND nothing stored still costs no pass', async () => {
+    const h = harness({ plan: plan({ entries: [], managedFlows: [] }) });
+
+    await h.runtime.reconcileFlows();
+
+    assert.deepEqual(h.synced, [], 'the cold-start case must not pay a flow and folder read');
   });
 });

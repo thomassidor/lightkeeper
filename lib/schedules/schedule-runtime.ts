@@ -143,7 +143,17 @@ export class ScheduleRuntime {
    * silently pointing at a card that no longer exists.
    */
   async reconcileFlows(): Promise<void> {
-    if (this.plan.entries.length === 0) return;
+    // Single-flighted per device through the bridge — see the controller
+    // runtime for the boot storm this converges.
+    return this.deps.bridge.reconcile(this.controllerId, () => this.reconcileFlowsNow());
+  }
+
+  private async reconcileFlowsNow(): Promise<void> {
+    // Nothing scheduled AND nothing stored — see controller-runtime for why
+    // the second half of that is not optional. A schedule emptied of every
+    // window otherwise kept its Flows, and went on switching the lights at
+    // times no screen in the app showed any more.
+    if (this.plan.entries.length === 0 && this.plan.managedFlows.length === 0) return;
 
     try {
       this.flowsHealthy = true;
@@ -180,10 +190,34 @@ export class ScheduleRuntime {
         this.setState('needs_repair', { key: 'state.flowEdited' });
       }
 
+      // A boundary the compiler declined. Vanishingly unlikely for a schedule
+      // — its bindings are fixed and carry no range — but "unlikely" is not
+      // "impossible", and a window silently not firing is the same failure it
+      // is for a controller. `flowsHealthy` false is what stops assessHealth()
+      // from reporting 'ready' straight over the top of it.
+      if (result.unsupported.length > 0) {
+        this.unsupported = result.unsupported;
+        this.flowsHealthy = false;
+        this.setState('needs_repair', {
+          key: 'state.unsupportedMapping',
+          tokens: { controls: result.unsupported.map(u => u.bindingKey).join(', ') },
+        });
+      } else {
+        this.unsupported = [];
+      }
+
       this.deps.log(
         `Schedule flows reconciled: ${result.created} created, ${result.reused} reused, `
         + `${result.deleted} deleted`,
       );
+      if (result.staleReplacements.length > 0) {
+        // Both the new boundary flow and the one it replaced are live, so this
+        // schedule now fires at two times. See the controller runtime.
+        this.deps.log(
+          `${result.staleReplacements.length} superseded flow(s) could not be deleted `
+          + `and are still firing: ${result.staleReplacements.join(', ')}`,
+        );
+      }
     } catch (error) {
       this.flowsHealthy = false;
       const credential = this.deps.api.credentials.getStatus();
@@ -420,6 +454,15 @@ export class ScheduleRuntime {
   }
 
   /** Never exposes secrets or unrelated Homey configuration. */
+  /**
+   * Controls the flow compiler declined, from the last reconcile.
+   *
+   * Kept as state rather than only logged: it is the difference between a
+   * mapping row that is configured and one that is configured AND compiles,
+   * and only the second one will ever move a light.
+   */
+  private unsupported: Array<{ bindingKey: string; reason: string }> = [];
+
   diagnostics(): Record<string, unknown> {
     const timezone = this.deps.timezone();
     const clock = localNow(timezone, this.now());
@@ -447,6 +490,7 @@ export class ScheduleRuntime {
       managedFlows: this.plan.managedFlows,
       lastAction: this.lastAction,
       lastRejection: this.lastRejection,
+      unsupported: this.unsupported,
       recentFailures: this.adapter.failures(),
       recentWrites: this.adapter.writes(),
       schedulerReady: this.scheduler !== null,

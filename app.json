@@ -92,6 +92,7 @@
         "hint": {
           "en": "Used internally by Lightkeeper. These cards appear in Flows that Lightkeeper creates and maintains for you — you do not need to add them by hand, and editing them will disconnect the device they belong to."
         },
+        "deprecated": true,
         "args": [
           {
             "type": "text",
@@ -120,6 +121,7 @@
         "hint": {
           "en": "Used internally by Lightkeeper, for events that carry an amount as a fixed value — for example one Flow per dial detent. Do not add or edit these by hand."
         },
+        "deprecated": true,
         "args": [
           {
             "type": "text",
@@ -161,6 +163,7 @@
         "droptoken": [
           "number"
         ],
+        "deprecated": true,
         "args": [
           {
             "type": "text",

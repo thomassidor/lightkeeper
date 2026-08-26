@@ -58,20 +58,47 @@ function generatedFlow(options: {
 
 function bridgeHarness(flows: Record<string, unknown>) {
   const deleted: string[] = [];
+  const folders: Record<string, any> = {};
+  let nextFlowId = 1;
+  let nextFolderId = 1;
   const actions = {
     a: { id: cardId('bridge_event'), uri: `homey:flowcardaction:${cardId('bridge_event')}` },
     b: { id: cardId('bridge_numeric_event'), uri: `homey:flowcardaction:${cardId('bridge_numeric_event')}` },
     c: { id: cardId('bridge_token_event'), uri: `homey:flowcardaction:${cardId('bridge_token_event')}` },
   };
-  const live = { ...flows };
+  const live: Record<string, any> = { ...flows };
   const client = {
     flow: {
       getFlowCardActions: async () => actions,
       getFlows: async () => live,
+      getFlowFolders: async () => folders,
+      createFlow: async ({ flow }: { flow: any }) => {
+        const id = `made-${nextFlowId++}`;
+        live[id] = { id, ...flow };
+        return { id };
+      },
+      createFlowFolder: async ({ flowfolder }: { flowfolder: any }) => {
+        const id = `folder-${nextFolderId++}`;
+        folders[id] = { id, name: flowfolder.name, parent: flowfolder.parent ?? null };
+        return folders[id];
+      },
+      updateFlowFolder: async ({ id, flowfolder }: { id: string; flowfolder: any }) => {
+        folders[id] = { ...folders[id], ...flowfolder };
+        return folders[id];
+      },
+      deleteFlowFolder: async ({ id }: { id: string }) => { delete folders[id]; },
+      updateFlow: async ({ id, flow }: { id: string; flow: any }) => {
+        live[id] = { ...live[id], ...flow };
+        return live[id];
+      },
       deleteFlow: async ({ id }: { id: string }) => {
-        if (!(id in live)) throw new Error(`404 Not Found: Flow with ID ${id}`);
+        if (!(id in live)) {
+          const error = new Error(`404 Not Found: Flow with ID ${id}`) as Error & { statusCode: number };
+          error.statusCode = 404;
+          throw error;
+        }
         deleted.push(id);
-        delete (live as Record<string, unknown>)[id];
+        delete live[id];
       },
     },
   };
@@ -96,9 +123,9 @@ describe('safety promises', () => {
    */
   test('deleting a device removes only the flows carrying its own id', async () => {
     const h = bridgeHarness({
-      'f-mine-1': generatedFlow({ id: 'f-mine-1', controller: 'lk-ctrl-1-1', eventKey: 'press:up' }),
-      'f-mine-2': generatedFlow({ id: 'f-mine-2', controller: 'lk-ctrl-1-1', eventKey: 'press:down' }),
-      'f-theirs': generatedFlow({ id: 'f-theirs', controller: 'lk-ctrl-2-2', eventKey: 'press:up' }),
+      'f-mine-1': generatedFlow({ id: 'f-mine-1', controller: 'lk-ctrl-1755500000000-100001', eventKey: 'press:up' }),
+      'f-mine-2': generatedFlow({ id: 'f-mine-2', controller: 'lk-ctrl-1755500000000-100001', eventKey: 'press:down' }),
+      'f-theirs': generatedFlow({ id: 'f-theirs', controller: 'lk-ctrl-1755500000000-100002', eventKey: 'press:up' }),
       'f-user': {
         id: 'f-user',
         name: 'Somebody else’s flow',
@@ -132,12 +159,12 @@ describe('safety promises', () => {
       actions: [{
         id: cardId('bridge_event'),
         uri: `homey:flowcardaction:${cardId('bridge_event')}`,
-        args: { controller: 'lk-ctrl-1-1', event_key: 'press:up' },
+        args: { controller: 'lk-ctrl-1755500000000-100001', event_key: 'press:up' },
       }],
     } as any;
 
     const renamedAndMoved = generatedFlow({
-      id: 'f1', controller: 'lk-ctrl-1-1', eventKey: 'press:up',
+      id: 'f1', controller: 'lk-ctrl-1755500000000-100001', eventKey: 'press:up',
       name: 'My kitchen up button', folder: 'some-folder-the-user-picked',
     });
 
@@ -159,11 +186,11 @@ describe('safety promises', () => {
       actions: [{
         id: cardId('bridge_event'),
         uri: `homey:flowcardaction:${cardId('bridge_event')}`,
-        args: { controller: 'lk-ctrl-1-1', event_key: 'press:up' },
+        args: { controller: 'lk-ctrl-1755500000000-100001', event_key: 'press:up' },
       }],
     } as any;
 
-    const repointed = generatedFlow({ id: 'f1', controller: 'lk-ctrl-1-1', eventKey: 'press:DOWN' });
+    const repointed = generatedFlow({ id: 'f1', controller: 'lk-ctrl-1755500000000-100001', eventKey: 'press:DOWN' });
     assert.equal(hasBeenUserEdited(repointed, expected), true);
   });
 
@@ -174,8 +201,8 @@ describe('safety promises', () => {
    */
   test('the sweep refuses outright when nothing is running', async () => {
     const h = bridgeHarness({
-      'f1': generatedFlow({ id: 'f1', controller: 'lk-ctrl-1-1', eventKey: 'press:up' }),
-      'f2': generatedFlow({ id: 'f2', controller: 'lk-sched-2-2', eventKey: 'sched:0:on' }),
+      'f1': generatedFlow({ id: 'f1', controller: 'lk-ctrl-1755500000000-100001', eventKey: 'press:up' }),
+      'f2': generatedFlow({ id: 'f2', controller: 'lk-sched-1755500000000-200001', eventKey: 'sched:0:on' }),
     });
 
     const result = await h.bridge.sweepOrphans(new Set<string>());
@@ -194,15 +221,130 @@ describe('safety promises', () => {
    */
   test('a live device does not license deleting another kind of device’s flows', async () => {
     const h = bridgeHarness({
-      'f-ctrl': generatedFlow({ id: 'f-ctrl', controller: 'lk-ctrl-1-1', eventKey: 'press:up' }),
-      'f-sched': generatedFlow({ id: 'f-sched', controller: 'lk-sched-2-2', eventKey: 'sched:0:on' }),
+      'f-ctrl': generatedFlow({ id: 'f-ctrl', controller: 'lk-ctrl-1755500000000-100001', eventKey: 'press:up' }),
+      'f-sched': generatedFlow({ id: 'f-sched', controller: 'lk-sched-1755500000000-200001', eventKey: 'sched:0:on' }),
     });
 
     // The union, as liveDeviceIds() builds it.
-    const result = await h.bridge.sweepOrphans(new Set(['lk-ctrl-1-1', 'lk-sched-2-2']));
+    const result = await h.bridge.sweepOrphans(new Set(['lk-ctrl-1755500000000-100001', 'lk-sched-1755500000000-200001']));
 
     assert.equal(result.deleted, 0);
     assert.equal(result.kept, 2);
+    assert.deepEqual(h.deleted, []);
+  });
+
+  /**
+   * README.md: "Change a mapping and the old Flow is replaced, not left
+   * beside the new one." The failure this phase fixed: a binding whose
+   * fingerprint moved got a new flow while the old one stayed live and
+   * unreferenced, so the lights did the old thing AND the new thing.
+   */
+  test('a changed binding leaves exactly one live flow', async () => {
+    const controller = 'lk-ctrl-1755500000000-100001';
+    const before = generatedFlow({ id: 'f-before', controller, eventKey: 'press:up' });
+    const h = bridgeHarness({ 'f-before': before });
+
+    const input = {
+      key: 'press:up',
+      label: 'Up — Press',
+      binding: {
+        kind: 'flow_fixed' as const,
+        cardId: 'homey:device:remote-1:n2_on',
+        cardOwnerUri: 'homey:flowcardtrigger:homey:device:remote-1:n2_on',
+        args: {},
+      },
+    };
+
+    const result = await h.bridge.sync({
+      controllerId: controller,
+      sourceName: 'STYRBAR',
+      deviceName: 'Kitchen',
+      // The event surface moved under an unchanged binding — a re-paired
+      // remote. Same key, same variant, new fingerprint.
+      fingerprint: 'fingerprint-AFTER',
+      mapped: [input],
+      existing: [{
+        flowId: 'f-before', bindingKey: 'press:up', variantKey: 'fixed',
+        fingerprint: 'fingerprint-BEFORE', managedVersion: 1, createdAt: 1,
+      }] as any,
+    });
+
+    assert.equal(result.created, 1);
+    assert.equal(result.deleted, 1);
+    assert.deepEqual(h.deleted, ['f-before']);
+    assert.equal(
+      Object.keys(h.live).length, 1,
+      'one binding, one flow — never the old behaviour firing beside the new',
+    );
+  });
+
+  /**
+   * CLAUDE.md, I3: "Nothing owned by the user is ever deleted on a heuristic."
+   * Attribution — the flow calls one of our cards — is not the same thing as
+   * proof we made it. The cards are ordinary action cards in the user's own
+   * Flow editor.
+   */
+  test('the sweep never deletes a flow that does not match the generated template', async () => {
+    const h = bridgeHarness({
+      // Ours: a device that is gone, matching the template exactly.
+      'f-ours': generatedFlow({
+        id: 'f-ours', controller: 'lk-ctrl-1755500000000-999999', eventKey: 'press:up',
+      }),
+      // Theirs: our card, a controller argument a person typed.
+      'f-theirs': {
+        id: 'f-theirs',
+        name: 'My own shortcut',
+        enabled: true,
+        conditions: [],
+        trigger: { id: 'homey:manager:cron:time_exactly', args: { time: '07:00' } },
+        actions: [{ id: cardId('bridge_event'), args: { controller: 'kitchen', event_key: 'x' } }],
+      },
+      // Also theirs: our card, our id, but a second action beside it.
+      'f-extended': {
+        id: 'f-extended',
+        name: 'Lightkeeper, plus a notification',
+        enabled: true,
+        conditions: [],
+        trigger: { id: 'homey:device:remote-1:n2_on', args: {} },
+        actions: [
+          {
+            id: cardId('bridge_event'),
+            args: { controller: 'lk-ctrl-1755500000000-999999', event_key: 'press:up' },
+          },
+          { id: 'homey:manager:notifications:create_notification', args: {} },
+        ],
+      },
+    });
+
+    const result = await h.bridge.sweepOrphans(new Set(['lk-ctrl-1755500000000-100001']));
+
+    assert.deepEqual(h.deleted, ['f-ours'], 'only what we can prove we made');
+    assert.equal(result.unmanaged, 2, 'the other two are reported, not removed');
+    assert.ok('f-theirs' in h.live);
+    assert.ok('f-extended' in h.live);
+  });
+
+  /**
+   * The same promise at the other end of the round trip: the user approves a
+   * SET, not a number, and a set that moved while the dialog was on screen is
+   * not the one they approved.
+   */
+  test('the sweep refuses an approval that no longer matches what it can see', async () => {
+    const alive = 'lk-ctrl-1755500000000-100001';
+    const gone = 'lk-ctrl-1755500000000-999999';
+    const h = bridgeHarness({
+      'f-alive': generatedFlow({ id: 'f-alive', controller: alive, eventKey: 'press:up' }),
+      'f-gone': generatedFlow({ id: 'f-gone', controller: gone, eventKey: 'press:up' }),
+    });
+
+    const preview = await h.bridge.countOrphans(new Set([alive]));
+    // The absent device finished registering between the count and the click.
+    const result = await h.bridge.sweepOrphans(new Set([alive, gone]), {
+      token: preview.token,
+      flowIds: preview.flowIds,
+    });
+
+    assert.equal(result.refused, 'stale_preview');
     assert.deepEqual(h.deleted, []);
   });
 });

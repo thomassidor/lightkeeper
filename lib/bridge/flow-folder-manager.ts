@@ -1,5 +1,6 @@
 import type { HomeyApiService } from '../homey-api-service';
 import { redactKeyMaterial } from '../credential-service';
+import { KeyedMutex } from '../support/keyed-mutex';
 
 /**
  * Everything this app knows about Homey's Flow FOLDERS.
@@ -53,6 +54,14 @@ export interface FolderView {
   folders: Map<string, FolderRecord>;
 }
 
+/**
+ * One lock key for the app root, app-wide.
+ *
+ * A constant rather than the folder name so that renaming MANAGED_FOLDER_NAME
+ * cannot silently split the lock in two.
+ */
+const ROOT_FOLDER_LOCK = 'flow-root';
+
 /** A view that resolves to no folder at all — the non-fatal degraded state. */
 export const NO_FOLDERS: FolderView = { root: undefined, folders: new Map() };
 
@@ -65,9 +74,23 @@ export interface FlowFolderInfo {
 }
 
 export class FlowFolderManager {
+  /**
+   * Serialises the two read-then-create sequences in this file.
+   *
+   * Both are the same shape and the same bug: read every folder, fail to find
+   * the one we want, create it. Two callers reaching that at once — and they
+   * do, because every registered device reconciles at boot and the credential
+   * fan-out kicks them all off again — both read "absent" and both create,
+   * leaving two folders of the same name and a tree where each device's flows
+   * are in a different one.
+   *
+   * Owned by FlowBridgeManager and passed in, because it has to be app-wide:
+   * a mutex per manager instance serialises nothing that was racing.
+   */
   constructor(
     private readonly api: HomeyApiService,
     private readonly log: (...args: unknown[]) => void,
+    private readonly mutex: KeyedMutex = new KeyedMutex(),
   ) { }
 
   /**
@@ -78,24 +101,29 @@ export class FlowFolderManager {
    * and every device's flows would nest inside one device's folder.
    */
   async load(): Promise<FolderView> {
-    try {
-      const client = await this.api.read();
-      const records = (Object.values(await client.flow.getFlowFolders()) as any[])
-        .map(toRecord);
-      const folders = new Map(records.map(f => [f.id, f]));
+    // The whole read-then-create is inside the lock, not just the create: a
+    // second caller that read "absent" before the first one's create landed
+    // would still create a duplicate however well-guarded the write was.
+    return this.mutex.run(ROOT_FOLDER_LOCK, async () => {
+      try {
+        const client = await this.api.read();
+        const records = (Object.values(await client.flow.getFlowFolders()) as any[])
+          .map(toRecord);
+        const folders = new Map(records.map(f => [f.id, f]));
 
-      const existing = records.find(f => f.name === MANAGED_FOLDER_NAME && f.parent === null);
-      if (existing) return { root: existing.id, folders };
+        const existing = records.find(f => f.name === MANAGED_FOLDER_NAME && f.parent === null);
+        if (existing) return { root: existing.id, folders };
 
-      const created = await this.api.withWriteClient(async write =>
-        write.flow.createFlowFolder({ flowfolder: { name: MANAGED_FOLDER_NAME } }));
-      const record = toRecord(created);
-      folders.set(record.id, record);
-      return { root: record.id, folders };
-    } catch (error) {
-      this.warn('Could not read or create the Lightkeeper folder', error);
-      return NO_FOLDERS;
-    }
+        const created = await this.api.withWriteClient(async write =>
+          write.flow.createFlowFolder({ flowfolder: { name: MANAGED_FOLDER_NAME } }));
+        const record = toRecord(created);
+        folders.set(record.id, record);
+        return { root: record.id, folders };
+      } catch (error) {
+        this.warn('Could not read or create the Lightkeeper folder', error);
+        return NO_FOLDERS;
+      }
+    });
   }
 
   /**
@@ -127,20 +155,28 @@ export class FlowFolderManager {
     // worse than no subfolder.
     if (!name) return view.root;
 
-    const byName = [...view.folders.values()]
-      .find(f => f.parent === view.root && f.name === name);
-    if (byName) return byName.id;
+    // Keyed by NAME rather than by device: two devices the user gave the same
+    // name resolve to one folder by design (see renameIfOurs), so they are the
+    // pair that must not race each other into creating it twice.
+    return this.mutex.run(`folder:${name}`, async () => {
+      // Re-checked inside the lock. The `view` we were handed was read before
+      // the queue formed, so a caller ahead of us may have created this folder
+      // since — its record is in the same live `view.folders` map.
+      const byName = [...view.folders.values()]
+        .find(f => f.parent === view.root && f.name === name);
+      if (byName) return byName.id;
 
-    try {
-      const created = await this.api.withWriteClient(async write =>
-        write.flow.createFlowFolder({ flowfolder: { name, parent: view.root } }));
-      const record = toRecord(created);
-      view.folders.set(record.id, record);
-      return record.id;
-    } catch (error) {
-      this.warn(`Could not create the folder for "${name}"`, error);
-      return undefined;
-    }
+      try {
+        const created = await this.api.withWriteClient(async write =>
+          write.flow.createFlowFolder({ flowfolder: { name, parent: view.root } }));
+        const record = toRecord(created);
+        view.folders.set(record.id, record);
+        return record.id;
+      } catch (error) {
+        this.warn(`Could not create the folder for "${name}"`, error);
+        return undefined;
+      }
+    });
   }
 
   /**

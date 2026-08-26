@@ -8,6 +8,8 @@ import { availableFunctions } from '../../lib/mapping/mapping-engine';
 import { groupByControl, type SelectableInput } from '../../lib/inputs/selectable-input';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
 import { HealthMonitor } from '../../lib/runtime/health-monitor';
+import { flowWriteProbe } from '../../lib/credential-service';
+import { findUncompilableBindings } from '../../lib/bridge/flow-binding-compiler';
 import {
   listTargetsPayload, resolveSummary, targetLights,
 } from '../../lib/pairing/target-picker';
@@ -100,12 +102,10 @@ module.exports = class ControllerDriver extends Homey.Driver {
     handler('setCredential', async (token: string) => {
       // Validating with a READ is not enough: reads succeed on credentials that
       // cannot write. Prove a write, then immediately clean it up.
-      return this.app.credentials.setCredential(token, async (client: any) => {
-        const folder = await client.flow.createFlowFolder({
-          flowfolder: { name: 'Lightkeeper (checking permissions)' },
-        });
-        await client.flow.deleteFlowFolder({ id: folder.id });
-      });
+      return this.app.credentials.setCredential(
+        token,
+        (client: any) => flowWriteProbe(client, (...args: unknown[]) => this.log(...args)),
+      );
     });
 
     // The pairing view must emit 'add_device' after createDevice for the
@@ -331,6 +331,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
     handler('save', async (name: string) => {
       const profile = this.buildProfile(state);
+      this.preflightBindings(profile);
 
       if (device) {
         await device.applyProfile(profile);
@@ -349,6 +350,39 @@ module.exports = class ControllerDriver extends Homey.Driver {
         },
       };
     });
+  }
+
+  /**
+   * Refuse a save whose mappings cannot be compiled into Flows.
+   *
+   * The compiler declines a control whose range would need more flow variants
+   * than the ceiling allows — BILRESA's `switch_multi_press_multi` is 9 x 18 =
+   * 162 of them (CLAUDE.md §7), thirteen times over. Until now that was
+   * discovered at the FIRST RECONCILE, which is after the device exists: the
+   * user finished pairing, the mapping row said it was configured, and the
+   * gesture did nothing. The reason was one line in the app log.
+   *
+   * Doing it here means the answer arrives on the screen where the mapping was
+   * made, while the user is still looking at the control they picked.
+   *
+   * The decision is `findUncompilableBindings` (pure, offline, tested); the
+   * SENTENCE is here, because `lib/` cannot translate one.
+   */
+  private preflightBindings(profile: ControllerProfile): void {
+    const declined = findUncompilableBindings(
+      profile.catalogue ?? [],
+      new Set(profile.mappings.map(rule => rule.inputKey).filter((key): key is string => key !== null)),
+      profile.source.name ?? 'remote',
+    );
+    if (declined.length === 0) return;
+
+    // Thrown, not returned: the pair view surfaces a rejected save as an error
+    // next to the button, which is where this belongs.
+    throw new Error(
+      this.homey.__('mapping.unsupportedControl', {
+        controls: declined.map(item => `${item.label} (${item.reason})`).join('; '),
+      }),
+    );
   }
 
   /**

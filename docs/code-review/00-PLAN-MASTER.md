@@ -77,7 +77,7 @@ Phases 1, 2, 3 are independent of each other and may be done in any order after 
 | Phase | Status | Branch / PR | Notes |
 |-------|--------|-------------|-------|
 | 0 | **done** | main | Lint clean (0 errors), CI SHA-pinned, `lib/support/` + `test/support/` in place with 22 tests, `safety-promises.test.ts` seeded with 6. 439 tests. One deviation: `no-unnecessary-type-assertion` is OFF — its `--fix` broke the build at the homey-api `any` boundary. See DEVIATIONS.md. |
-| 1 | not started | | |
+| 1 | **done** | main | All 8 tasks. 506 tests. Two findings worth reading in DEVIATIONS.md: 1.3's stated scenario was already correct (the real bug is a same-variant fingerprint change), and single-flight only works because each pass re-reads its stored references — the concurrency suite carries an explicit counter-example. **1.7a needs a 3-point hardware pass before release** — checklist in DEVIATIONS.md. |
 | 2 | not started | | |
 | 3 | not started | | |
 | 4 | not started | | |

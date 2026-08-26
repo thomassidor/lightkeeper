@@ -62,7 +62,8 @@
     "save": "Save",
     "saving": "Saving…",
     "allLights": "All lights",
-    "noEvents": "This remote exposed no usable events. Go back and pick another."
+    "noEvents": "This remote exposed no usable events. Go back and pick another.",
+    "unsupportedControl": "Lightkeeper cannot build a Flow for __controls__. Map that control to something else, or leave it unassigned."
   },
   "schedule": {
     "title": "Set the times",
@@ -155,6 +156,7 @@
     "surfaceChanged": "This remote now exposes different events. Open repair to remap it.",
     "noTargets": "None of this controller's lights are available.",
     "someTargets": "__count__ of __total__ lights unavailable.",
+    "unsupportedMapping": "Lightkeeper could not build a Flow for __controls__. Open Repair and map that control to something else.",
     "flowEdited": "A Flow this app generated has been edited by hand. Open repair to rebuild it.",
     "noSchedule": "This schedule has no configuration. Repair it to set it up again.",
     "noTimeCard": "This Homey does not offer a time trigger Lightkeeper can build on, so the schedule cannot be created. Please report this with your firmware version.",
@@ -193,6 +195,8 @@
     "orphansFound": "__orphans__ orphaned Flow(s) out of __total__ generated, across __live__ live Lightkeeper device(s).",
     "deleteOrphans": "Delete __count__ orphaned Flow(s)",
     "sweepRefused": "__total__ generated Flow(s) found, but no Lightkeeper device is running right now. Every Flow would look orphaned, so nothing will be deleted. Check your Lightkeeper devices first.",
+    "sweepStale": "The list changed while it was on screen, so nothing was deleted. Here it is again.",
+    "sweepUnmanaged": "__unmanaged__ Flow(s) use a Lightkeeper card but were not created by this app, so they are left alone.",
     "sweeping": "Deleting… this can take a while for hundreds of Flows.",
     "swept": "Deleted __deleted__, kept __kept__.",
     "sweptWithFailures": "Deleted __deleted__, kept __kept__, __failed__ failed.",

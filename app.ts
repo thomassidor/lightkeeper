@@ -12,6 +12,7 @@ import { HealthMonitor } from './lib/runtime/health-monitor';
 import { ScheduleRuntimeManager } from './lib/schedules/schedule-runtime-manager';
 import { CircadianRuntimeManager } from './lib/circadian/circadian-runtime-manager';
 import { parseEventKey } from './lib/schedules/schedule-bindings';
+import { flowWriteProbe } from './lib/credential-service';
 import { fireAndForget } from './lib/support/async';
 import { BoundedLog } from './lib/support/bounded-log';
 
@@ -51,21 +52,42 @@ module.exports = class LightkeeperApp extends Homey.App {
     this.recentEvents.add({ at: Date.now(), ...entry });
   }
 
+  private credentialFanOutTimer: NodeJS.Timeout | null = null;
+
   /**
-   * Both Flow-writing registries, told once.
+   * Both Flow-writing registries, told once, on a trailing edge.
    *
-   * Split out of onStatusChange because the status flip is itself a
-   * consequence of a write: the first reconcile of the boot storm proves the
-   * key, which fires this, which asks every runtime to reconcile again. See
-   * Phase 1 for the debounce that makes that converge.
+   * The debounce is not politeness. The status flip that calls this is CAUSED
+   * by a write, and at boot that write is the first reconcile's — so the
+   * sequence is: runtime starts, reconciles, its first createFlow proves the
+   * key, the status goes valid, and every runtime including the one still
+   * mid-pass is asked to reconcile again. With N devices that is N reconciles
+   * kicked off from inside N reconciles.
+   *
+   * Single-flight (FlowBridgeManager.reconcile) already makes each device's
+   * overlapping passes converge to two; the trailing edge collapses the burst
+   * of STATUS events itself, so the second pass runs once, after the storm,
+   * against settled state.
+   *
+   * 250 ms: far longer than a boot storm's own inter-event gap, far shorter
+   * than a person waiting for "I pasted a new key and nothing came back".
    */
   private fanOutCredentialChange(): void {
-    const log = (...args: unknown[]) => this.log(...args);
-    if (this.controllers) fireAndForget(this.controllers.onCredentialChange(), log, 'Controller credential fan-out');
-    if (this.schedules) fireAndForget(this.schedules.onCredentialChange(), log, 'Schedule credential fan-out');
-    // Circadian lights are deliberately absent from this fan-out: they
-    // generate no Flows, so no API key is involved in anything they do and
-    // there is nothing here for them to recover from (CLAUDE.md §12).
+    if (this.credentialFanOutTimer !== null) this.homey.clearTimeout(this.credentialFanOutTimer);
+
+    this.credentialFanOutTimer = this.homey.setTimeout(() => {
+      this.credentialFanOutTimer = null;
+      const log = (...args: unknown[]) => this.log(...args);
+      if (this.controllers) {
+        fireAndForget(this.controllers.onCredentialChange(), log, 'Controller credential fan-out');
+      }
+      if (this.schedules) {
+        fireAndForget(this.schedules.onCredentialChange(), log, 'Schedule credential fan-out');
+      }
+      // Circadian lights are deliberately absent from this fan-out: they
+      // generate no Flows, so no API key is involved in anything they do and
+      // there is nothing here for them to recover from (CLAUDE.md §12).
+    }, 250);
   }
 
   override async onInit() {
@@ -176,12 +198,9 @@ module.exports = class LightkeeperApp extends Homey.App {
       this.log('No API key stored yet');
       return;
     }
-    const status = await this.credentials.revalidate(async (client: any) => {
-      const folder = await client.flow.createFlowFolder({
-        flowfolder: { name: 'Lightkeeper (checking permissions)' },
-      });
-      await client.flow.deleteFlowFolder({ id: folder.id });
-    });
+    const status = await this.credentials.revalidate(
+      (client: any) => flowWriteProbe(client, (...args: unknown[]) => this.log(...args)),
+    );
     this.log(`Stored API key: ${status.valid ? 'valid' : status.failure}`);
   }
 
@@ -257,6 +276,12 @@ module.exports = class LightkeeperApp extends Homey.App {
 
   override async onUninit() {
     // Never leave a light mid-ramp, a timer running or a listener attached.
+    // The SDK's setTimeout is disposal-safe, but a pending fan-out would still
+    // reconcile against registries that are being torn down.
+    if (this.credentialFanOutTimer !== null) {
+      this.homey.clearTimeout(this.credentialFanOutTimer);
+      this.credentialFanOutTimer = null;
+    }
     await this.controllers?.destroyAll();
     await this.schedules?.destroyAll();
     await this.circadian?.destroyAll();

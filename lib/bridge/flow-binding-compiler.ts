@@ -193,3 +193,51 @@ function flowName(request: CompileRequest, variantKey: string): string {
 export function managedKey(controllerId: string, bindingKey: string, variantKey: string): string {
   return `${controllerId}::${bindingKey}::${variantKey}`;
 }
+
+/**
+ * Which of a set of mapped inputs the compiler would decline, and why.
+ *
+ * The pairing screen's preflight. Answering it needs no Homey, no API key and
+ * no cards that exist: `compileBinding` is pure, and the card refs are read
+ * only for an `id` and `uri` to echo into a flow this will throw away. So the
+ * placeholders below are honest rather than a shortcut — nothing here can
+ * reach a real flow, which is the one thing CLAUDE.md §3's rule protects.
+ *
+ * Returns the declined inputs rather than throwing, and returns no sentence:
+ * `lib/` has no access to `homey.__`, so a message built here could never be
+ * translated. The caller phrases it.
+ */
+export function findUncompilableBindings(
+  inputs: Array<{ key: string; label: string; binding: LogicalSourceBinding }>,
+  mappedKeys: Set<string>,
+  sourceName: string,
+): Array<{ bindingKey: string; label: string; reason: string }> {
+  const placeholder = { id: 'preflight', uri: 'preflight' };
+  const cards: BridgeCardRefs = { event: placeholder, numeric: placeholder, token: placeholder };
+
+  const declined: Array<{ bindingKey: string; label: string; reason: string }> = [];
+  for (const input of inputs) {
+    // Discovery offers every event surface it finds; only what the user
+    // actually assigned has to compile.
+    if (!mappedKeys.has(input.key)) continue;
+    try {
+      compileBinding({
+        controllerId: 'preflight',
+        bindingKey: input.key,
+        binding: input.binding,
+        cards,
+        label: input.label,
+        sourceName,
+      });
+    } catch (error) {
+      if (error instanceof RangeExpansionTooLargeError) {
+        declined.push({ bindingKey: input.key, label: input.label, reason: error.message });
+        continue;
+      }
+      // Anything else is a bug in the compiler rather than a control we are
+      // declining, and swallowing it here would hide it.
+      throw error;
+    }
+  }
+  return declined;
+}

@@ -60,6 +60,31 @@ describe('app.json is generated from .homeycompose/', () => {
     }
   });
 
+  /**
+   * The bridge cards are hidden from the Flow editor's card picker.
+   *
+   * `deprecated` is a real flowCard property — homey-lib's own app schema
+   * declares it (`definitions.flowCard.properties.deprecated`, `enum: [true]`),
+   * which is why this validates at publish level. What it buys: these cards are
+   * ours to write and nobody else's to add by hand, and a Flow somebody built
+   * around one carries a Lightkeeper device id it does not belong to. The
+   * sweep already refuses to DELETE such a Flow (looksGenerated); this stops it
+   * being made in the first place.
+   *
+   * Pinned by a test because removing it is a one-character edit that nothing
+   * else would notice, and because "deprecated" reads, wrongly, like something
+   * on its way out.
+   */
+  test('all three bridge cards are hidden from the Flow editor', () => {
+    const actions = (manifest.flow as any)?.actions as Array<Record<string, unknown>>;
+    for (const id of ['bridge_event', 'bridge_numeric_event', 'bridge_token_event']) {
+      assert.equal(
+        actions.find(a => a.id === id)?.deprecated, true,
+        `${id} must stay hidden from the card picker`,
+      );
+    }
+  });
+
   test('every driver matches its driver.compose.json', () => {
     // Discovered from disk, not listed here: a third driver must not be able to
     // ship with an unchecked manifest.

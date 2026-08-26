@@ -44,7 +44,14 @@ function harness(flows: Record<string, unknown>) {
   return { bridge, deleted };
 }
 
-/** A generated flow that calls our bridge card on behalf of `controllerId`. */
+/**
+ * A generated flow that calls our bridge card on behalf of `controllerId`.
+ *
+ * The controller ids below are REAL-shaped (`lk-ctrl-<ms>-<rand>`, as the
+ * drivers mint them) because the sweep now requires that shape before it will
+ * delete anything: an id a person could type into the argument field is not
+ * proof the flow was generated. See looksGenerated.
+ */
 function managedFlow(id: string, controllerId: string) {
   return {
     id,
@@ -53,15 +60,19 @@ function managedFlow(id: string, controllerId: string) {
   };
 }
 
+const ALIVE = 'lk-ctrl-1755500000000-111111';
+const GONE = 'lk-ctrl-1755500000000-222222';
+const ALSO_GONE = 'lk-sched-1755500000000-333333';
+
 describe('orphan sweep', () => {
   test('deletes flows whose controller is gone, keeps the rest', async () => {
     const h = harness({
-      f1: managedFlow('f1', 'alive'),
-      f2: managedFlow('f2', 'deleted-controller'),
+      f1: managedFlow('f1', ALIVE),
+      f2: managedFlow('f2', GONE),
       f3: { id: 'f3', name: 'Someone else’s flow', actions: [{ id: 'homey:manager:alarms:enable' }] },
     });
 
-    const result = await h.bridge.sweepOrphans(new Set(['alive']));
+    const result = await h.bridge.sweepOrphans(new Set([ALIVE]));
 
     assert.deepEqual(h.deleted, ['f2']);
     assert.equal(result.deleted, 1);
@@ -71,8 +82,8 @@ describe('orphan sweep', () => {
 
   test('refuses to sweep when no controller is running', async () => {
     const h = harness({
-      f1: managedFlow('f1', 'c1'),
-      f2: managedFlow('f2', 'c2'),
+      f1: managedFlow('f1', ALIVE),
+      f2: managedFlow('f2', ALSO_GONE),
     });
 
     const result = await h.bridge.sweepOrphans(new Set());
@@ -96,13 +107,164 @@ describe('orphan sweep', () => {
 
   test('never touches a flow that does not call one of our cards', async () => {
     const h = harness({
-      f1: managedFlow('f1', 'gone'),
+      f1: managedFlow('f1', GONE),
       f2: { id: 'f2', name: 'User flow', actions: [{ id: 'homey:manager:speech:say' }] },
       f3: { id: 'f3', name: 'No actions' },
     });
 
-    await h.bridge.sweepOrphans(new Set(['alive']));
+    await h.bridge.sweepOrphans(new Set([ALIVE]));
 
     assert.deepEqual(h.deleted, ['f1']);
+  });
+
+  /**
+   * A flow that calls one of our cards but does NOT match the template we
+   * generate. It is still ATTRIBUTED — the card is ours and the sweep can see
+   * it — but attribution is not licence to delete. The bridge cards are
+   * ordinary action cards in the user's Flow editor, so somebody building
+   * their own flow around one is a thing that can happen, and having the app
+   * silently delete it would be the worst failure in this file.
+   */
+  test('a flow using our card with a hand-typed controller arg is never deleted', async () => {
+    const h = harness({
+      f1: managedFlow('f1', GONE),
+      f2: {
+        id: 'f2',
+        name: 'My own shortcut',
+        actions: [{ id: cardId('bridge_event'), args: { controller: 'kitchen', event_key: 'k' } }],
+      },
+    });
+
+    const result = await h.bridge.sweepOrphans(new Set([ALIVE]));
+
+    assert.deepEqual(h.deleted, ['f1'], 'only the one that matches the template');
+    assert.equal(result.unmanaged, 1, 'the other is reported, not removed');
+    assert.equal(result.kept, 1);
+  });
+
+  test('a flow with a SECOND action is not ours to delete', async () => {
+    // Every generated flow has exactly one action. A user who added a
+    // notification beside ours has made the flow theirs.
+    const h = harness({
+      f1: {
+        id: 'f1',
+        name: 'Lightkeeper — with a twist',
+        actions: [
+          { id: cardId('bridge_event'), args: { controller: GONE, event_key: 'k' } },
+          { id: 'homey:manager:notifications:create_notification', args: {} },
+        ],
+      },
+    });
+
+    const result = await h.bridge.sweepOrphans(new Set([ALIVE]));
+
+    assert.deepEqual(h.deleted, []);
+    assert.equal(result.unmanaged, 1);
+  });
+
+  test('a flow with an empty event key is not ours to delete', async () => {
+    const h = harness({
+      f1: {
+        id: 'f1',
+        name: 'Half-built',
+        actions: [{ id: cardId('bridge_event'), args: { controller: GONE, event_key: '' } }],
+      },
+    });
+
+    const result = await h.bridge.sweepOrphans(new Set([ALIVE]));
+
+    assert.deepEqual(h.deleted, []);
+    assert.equal(result.unmanaged, 1);
+  });
+});
+
+describe('the sweep only deletes what the user was shown', () => {
+  test('a stale token refuses the whole sweep', async () => {
+    const h = harness({
+      f1: managedFlow('f1', ALIVE),
+      f2: managedFlow('f2', GONE),
+    });
+
+    const preview = await h.bridge.countOrphans(new Set([ALIVE]));
+    assert.equal(preview.orphans, 1);
+    assert.deepEqual(preview.flowIds, ['f2']);
+
+    // Between the count and the click, the device that owns f1 finished
+    // restarting — or another one was deleted. Either way the set the user
+    // approved is not the set in front of us now.
+    const result = await h.bridge.sweepOrphans(new Set([ALIVE, GONE]), {
+      token: preview.token,
+      flowIds: preview.flowIds,
+    });
+
+    assert.equal(result.refused, 'stale_preview');
+    assert.deepEqual(h.deleted, [], 'not one flow, on a set the user did not approve');
+  });
+
+  test('a matching token deletes exactly the approved set', async () => {
+    const h = harness({
+      f1: managedFlow('f1', ALIVE),
+      f2: managedFlow('f2', GONE),
+      f3: managedFlow('f3', ALSO_GONE),
+    });
+
+    const preview = await h.bridge.countOrphans(new Set([ALIVE]));
+    const result = await h.bridge.sweepOrphans(new Set([ALIVE]), {
+      token: preview.token,
+      flowIds: preview.flowIds,
+    });
+
+    assert.equal(result.refused, undefined);
+    assert.deepEqual(h.deleted.sort(), ['f2', 'f3']);
+  });
+
+  test('an id that was never in the preview is not deleted even under a valid token', async () => {
+    // Belt and braces behind the token: the approval is a LIST, and an id
+    // outside it is not deleted whatever the hash says.
+    const h = harness({
+      f1: managedFlow('f1', ALIVE),
+      f2: managedFlow('f2', GONE),
+      f3: managedFlow('f3', ALSO_GONE),
+    });
+
+    const preview = await h.bridge.countOrphans(new Set([ALIVE]));
+    const result = await h.bridge.sweepOrphans(new Set([ALIVE]), {
+      token: preview.token,
+      flowIds: ['f2'],
+    });
+
+    assert.deepEqual(h.deleted, ['f2']);
+    assert.equal(result.deleted, 1);
+    assert.equal(result.kept, 2);
+  });
+
+  test('no approval at all still sweeps — an older settings page must keep working', async () => {
+    const h = harness({
+      f1: managedFlow('f1', ALIVE),
+      f2: managedFlow('f2', GONE),
+    });
+
+    const result = await h.bridge.sweepOrphans(new Set([ALIVE]));
+
+    assert.deepEqual(h.deleted, ['f2']);
+    assert.equal(result.deleted, 1);
+  });
+
+  test('the preview counts unmanaged flows separately from orphans', async () => {
+    const h = harness({
+      f1: managedFlow('f1', GONE),
+      f2: {
+        id: 'f2',
+        name: 'Hand-built',
+        actions: [{ id: cardId('bridge_event'), args: { controller: 'nope', event_key: 'k' } }],
+      },
+    });
+
+    const preview = await h.bridge.countOrphans(new Set([ALIVE]));
+
+    assert.equal(preview.total, 2, 'both are attributed');
+    assert.equal(preview.orphans, 1, 'only one is a candidate for deletion');
+    assert.equal(preview.unmanaged, 1);
+    assert.deepEqual(preview.flowIds, ['f1']);
   });
 });

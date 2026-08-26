@@ -320,3 +320,82 @@ export class CredentialService {
     return this.getStatus();
   }
 }
+
+/**
+ * The name of the folder the write-probe creates and immediately removes.
+ *
+ * User-visible for the fraction of a second it exists, and — before the
+ * `finally` below — occasionally for much longer than that, so it says what it
+ * is. Exported because the stale-probe sweep matches on it exactly.
+ */
+export const PROBE_FOLDER_NAME = 'Lightkeeper (checking permissions)';
+
+/**
+ * Prove a key can WRITE, not merely read.
+ *
+ * This is the whole of credential validation, and it has to be a write:
+ * every flow READ succeeds on a key that cannot write a thing (CLAUDE.md §1),
+ * so a read-based check gives false confidence and sends the user away happy
+ * with a key that will fail at the first reconcile.
+ *
+ * It was copy-pasted at four call sites, three of which had no `try/finally` —
+ * so a validator that threw after the create (or a caller that failed between
+ * the two lines) left the probe folder sitting in the user's Flow list, named
+ * after a check that had already finished. Hence:
+ *
+ *  - the delete is in a `finally`, so it happens on the failure path too;
+ *  - a failed DELETE does not change the verdict — the key demonstrably wrote,
+ *    which is the entire question — it only leaves a folder behind, and says so
+ *    in the log;
+ *  - a failed CREATE *is* the verdict, and is rethrown untouched for
+ *    classifyCredentialError() upstream to read.
+ *
+ * The opening sweep is self-healing for folders leaked by the versions that had
+ * no `finally`. Best-effort in both directions: a Homey that refuses to list
+ * folders must not fail a key that can write them.
+ */
+export async function flowWriteProbe(
+  client: any,
+  log?: (...args: unknown[]) => void,
+): Promise<void> {
+  await sweepStaleProbeFolders(client, log);
+
+  const folder = await client.flow.createFlowFolder({
+    flowfolder: { name: PROBE_FOLDER_NAME },
+  });
+
+  try {
+    // Nothing to assert: reaching here IS the proof. A folder that came back
+    // without an id would fail the delete below, which is where it belongs.
+    return;
+  } finally {
+    try {
+      await client.flow.deleteFlowFolder({ id: folder?.id });
+    } catch (error) {
+      log?.(
+        `Left the permission-check folder behind: ${redactKeyMaterial(String((error as Error)?.message ?? ''))}`,
+      );
+    }
+  }
+}
+
+/** Root-level folders left behind by an interrupted probe. Never nested ones. */
+async function sweepStaleProbeFolders(
+  client: any,
+  log?: (...args: unknown[]) => void,
+): Promise<void> {
+  try {
+    const folders = Object.values(await client.flow.getFlowFolders()) as any[];
+    const stale = folders.filter(
+      folder => String(folder?.name ?? '') === PROBE_FOLDER_NAME
+        && (folder?.parent ?? null) === null,
+    );
+    for (const folder of stale) {
+      await client.flow.deleteFlowFolder({ id: String(folder.id) });
+      log?.('Removed a permission-check folder left behind by an earlier check');
+    }
+  } catch {
+    // A Homey that will not list or delete folders must not fail a key that
+    // can write them. The probe below is the verdict; this is housekeeping.
+  }
+}

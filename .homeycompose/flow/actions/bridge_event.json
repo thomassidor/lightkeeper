@@ -8,6 +8,7 @@
   "hint": {
     "en": "Used internally by Lightkeeper. These cards appear in Flows that Lightkeeper creates and maintains for you — you do not need to add them by hand, and editing them will disconnect the device they belong to."
   },
+  "deprecated": true,
   "args": [
     {
       "type": "text",

@@ -116,13 +116,20 @@ function harness(options: { sourcePresent?: boolean } = {}) {
   } as unknown as SourceDiscoveryService;
 
   const bridge = {
+    /**
+     * The real one single-flights per device (see FlowBridgeManager). Straight
+     * through here on purpose: coalescing has its own tests against the real
+     * class, and a double that reimplemented it would be testing the double.
+     */
+    reconcile: async (_deviceId: string, pass: () => Promise<unknown>) => pass(),
     sync: async (request: unknown) => {
       syncCalls.push(request);
       // Flow writes are the only thing the key gates.
       if (!credentialValid) throw new Error('403 Missing Scopes');
       return {
         references: profile().managedFlows,
-        created: 0, reused: 1, deleted: 0, unsupported: [], userEdited: [],
+        created: 0, reused: 1, deleted: 0, userEdited: [], staleReplacements: [],
+        unsupported,
       };
     },
   } as unknown as FlowBridgeManager;
@@ -141,6 +148,8 @@ function harness(options: { sourcePresent?: boolean } = {}) {
     },
   } as unknown as HomeyApiService;
 
+  let unsupported: Array<{ bindingKey: string; reason: string }> = [];
+
   const health = new HealthMonitor(catalog, discovery, () => credentialValid);
 
   const manager = new ControllerRuntimeManager({
@@ -151,6 +160,8 @@ function harness(options: { sourcePresent?: boolean } = {}) {
     manager,
     states,
     syncCalls,
+    declineControl: (bindingKey: string, reason: string) => { unsupported = [{ bindingKey, reason }]; },
+    acceptEveryControl: () => { unsupported = []; },
     grantCredential: () => { credentialValid = true; },
     loseCredential: () => { credentialValid = false; },
     loseSource: () => { sourcePresent = false; },
@@ -273,5 +284,68 @@ describe('recovering from needs_credential', () => {
     assert.equal(h.states.length, states, 'no state churn on an already-ready controller');
 
     await h.manager.destroyAll();
+  });
+});
+
+/**
+ * A control the compiler declined, at RECONCILE rather than at save.
+ *
+ * The save-time preflight catches the ordinary case, but a profile that
+ * compiled once can stop compiling: a re-attach onto a device whose card
+ * exposes a wider range, or a firmware that widened one under an unchanged
+ * device. The mapping row still reads as configured; the gesture does nothing.
+ * Before this it was one line in the app log and nothing else.
+ */
+describe('a control the compiler declines', () => {
+  test('puts the controller in repair and names the control', async () => {
+    const h = harness();
+    h.grantCredential();
+    h.declineControl('wheel|turn', 'Range expansion would need 18 flow variants, above the ceiling of 12');
+
+    const runtime = await h.register();
+    await runtime!.reconcileFlows();
+
+    const repair = h.states.filter(entry => entry.state === 'needs_repair').at(-1);
+    assert.ok(repair, 'the device must not sit there looking ready');
+    assert.equal((repair!.detail as any)?.key, 'state.unsupportedMapping');
+    assert.equal((repair!.detail as any)?.tokens?.controls, 'wheel|turn');
+  });
+
+  test('and it shows up in diagnostics', async () => {
+    const h = harness();
+    h.grantCredential();
+    h.declineControl('wheel|turn', 'above the ceiling of 12');
+
+    const runtime = await h.register();
+    await runtime!.reconcileFlows();
+
+    const declined = runtime!.diagnostics().unsupported as Array<{ bindingKey: string }>;
+    assert.deepEqual(declined.map(item => item.bindingKey), ['wheel|turn']);
+  });
+
+  test('a later reconcile that compiles clean clears it', async () => {
+    const h = harness();
+    h.grantCredential();
+    h.declineControl('wheel|turn', 'above the ceiling of 12');
+
+    const runtime = await h.register();
+    await runtime!.reconcileFlows();
+    assert.equal((runtime!.diagnostics().unsupported as unknown[]).length, 1);
+
+    h.acceptEveryControl();
+    await runtime!.reconcileFlows();
+    assert.deepEqual(runtime!.diagnostics().unsupported, [], 'the repair took');
+  });
+
+  test('a clean reconcile never mentions it', async () => {
+    const h = harness();
+    h.grantCredential();
+    const runtime = await h.register();
+    await runtime!.reconcileFlows();
+
+    assert.deepEqual(runtime!.diagnostics().unsupported, []);
+    assert.equal(
+      h.states.some(entry => (entry.detail as any)?.key === 'state.unsupportedMapping'), false,
+    );
   });
 });
