@@ -104,8 +104,8 @@ ICONS = [
         'master': 'circadian-icon-master.svg',
         'out': ROOT / 'drivers' / 'circadian' / 'assets' / 'icon.svg',
         'title': 'Circadian light',
-        'desc': 'A rayed sun above two horizon lines.',
-        'fit': (2.6927, -209.3, -335.9),
+        'desc': 'A lightbulb below a daylight arc, between a sunrise and a sunset.',
+        'fit': (3.1208, -318.9, -318.9),
         'stroke': 7.3,
     },
     {
@@ -117,8 +117,8 @@ ICONS = [
         'master': 'circadian-icon-master.svg',
         'out': ROOT / 'drivers' / 'curve' / 'assets' / 'icon.svg',
         'title': 'Circadian light',
-        'desc': 'A rayed sun above two horizon lines.',
-        'fit': (2.6927, -209.3, -335.9),
+        'desc': 'A lightbulb below a daylight arc, between a sunrise and a sunset.',
+        'fit': (3.1208, -318.9, -318.9),
         'stroke': 7.3,
     },
 ]

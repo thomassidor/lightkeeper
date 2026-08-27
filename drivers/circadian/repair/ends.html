@@ -152,76 +152,82 @@
   @media (max-width: 380px) { #end-root .grid { grid-template-columns: 1fr; } }
   #end-root .empty { font-size: 14px; color: var(--lk-muted); padding: 12px 0; }
   /* ==== end shared base ==== */
-  /* ---- this view only ---- */
-  #end-root .end {
-    border: 1px solid var(--lk-line);
-    border-radius: 12px;
-    background: var(--lk-surface);
-    box-shadow: var(--lk-shadow);
-    padding: 14px;
-    margin-bottom: 12px;
-  }
-  #end-root .end .rowhead {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 10px;
-    margin-bottom: 4px;
-  }
-  #end-root .end .name { font-weight: 600; font-size: 15px; }
-  #end-root .when { color: var(--lk-muted); font-size: 12px; }
-  #end-root .field { margin-top: 12px; }
-  #end-root .label {
-    font-size: 12px;
-    color: var(--lk-sub);
-    margin-bottom: 6px;
-  }
+  /* ---- this view only ----
+     A card's own furniture is NOT in the shared base — every view carries its
+     own copy of whichever parts it uses, because there is nowhere to put a
+     stylesheet (see the header). These match the curve view's rule for rule; the
+     screen is the same shape with two fixed cards instead of a list. */
+  #end-root .card { background: var(--lk-surface); border: 1px solid var(--lk-line);
+                 border-radius: 14px; padding: 14px; margin-bottom: 12px;
+                 box-shadow: var(--lk-shadow); }
+
+  #end-root .rowhead { display: flex; align-items: baseline; justify-content: space-between;
+                    margin-bottom: 12px; gap: 10px; }
+
+  #end-root .rowhead .name { font-size: 15px; font-weight: 600; }
+
+  /* Which hours this end applies at. The shape is not editable, so saying when
+     it lands is the only way a slider called "warmest" means anything. */
+  #end-root .when { font-size: 12px; color: var(--lk-muted); flex: none; }
+
+  #end-root .field { margin-bottom: 14px; }
+
+  #end-root .field:last-child { margin-bottom: 0; }
+
+  #end-root .label { font-size: 12px; font-weight: 600; text-transform: uppercase;
+                  letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 6px 2px; }
+
+  #end-root .check { display: flex; align-items: center; gap: 10px; min-height: 44px;
+                 font-size: 14px; color: var(--lk-body); cursor: pointer; }
+
+  #end-root .check input { width: 22px; height: 22px; margin: 0; flex: none;
+                        accent-color: var(--lk-accent); cursor: pointer; }
+
   #end-root .slider { display: flex; align-items: center; gap: 10px; }
-  #end-root .slider input[type=range] { flex: 1; }
-  #end-root .slider .value {
-    min-width: 84px;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-    color: var(--lk-body);
-    font-size: 13px;
-  }
-  #end-root .check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-  #end-root .acts { display: flex; gap: 8px; margin-top: 14px; }
-  #end-root .result { margin-top: 8px; font-size: 12px; color: var(--lk-muted); }
+
+  #end-root .slider input[type=range] { flex: 1; min-width: 0; accent-color: var(--lk-accent);
+                                     height: 28px; }
+
+  #end-root .slider .value { font-size: 13px; color: var(--lk-sub); flex: none;
+                          min-width: 62px; text-align: right; }
+
+  #end-root .acts { display: flex; gap: 7px; }
+
+  #end-root .acts .btn { flex: 1; }
+
+  #end-root .result { font-size: 13px; color: var(--lk-sub); margin-top: 8px; }
+
+  #end-root .help { font-size: 12.5px; line-height: 1.5; color: var(--lk-muted);
+                 margin: 2px 0 10px 32px; }
 
 </style>
 
 <div class="wrap" id="end-root">
-  <div class="head">
-    <div class="title" data-i18n="circadian.endsTitle"></div>
-    <div class="sub" data-i18n="circadian.endsIntro"></div>
-  </div>
-
-  <div id="end-summary" class="sub"></div>
+  <h2 data-i18n="circadian.endsTitle"></h2>
+  <p class="sub" data-i18n="circadian.endsIntro"></p>
 
   <div id="end-list"></div>
 
-  <label class="check" id="end-brightnessRow" style="display:none;">
-    <input type="checkbox" id="end-adjustBrightness" />
-    <span data-i18n="circadian.alsoBrightness"></span>
-  </label>
+  <div class="card">
+    <label class="check" id="end-brightnessRow" style="display:none;">
+      <input type="checkbox" id="end-adjustBrightness" />
+      <span data-i18n="circadian.alsoBrightness"></span>
+    </label>
 
-  <label class="check" style="margin-top:10px;">
-    <input type="checkbox" id="end-preStage" />
-    <span data-i18n="circadian.preStage"></span>
-  </label>
-  <div class="sub" data-i18n="circadian.preStageHelp"></div>
-
-  <div class="acts">
-    <button class="btn" id="end-preview" data-i18n="circadian.preview"></button>
-    <button class="btn" id="end-testPreStage" data-i18n="circadian.preStageTest"></button>
+    <label class="check"><input type="checkbox" id="end-preStage" />
+      <span data-i18n="circadian.preStage"></span></label>
+    <div class="help" data-i18n="circadian.preStageHelp"></div>
+    <div class="acts"><button class="btn" id="end-testPreStage" data-i18n="circadian.preStageTest"></button></div>
+    <div class="result" id="end-preResult"></div>
   </div>
+
+  <div class="acts"><button class="btn" id="end-preview" data-i18n="circadian.preview"></button></div>
   <div class="result" id="end-result"></div>
 
-  <div class="foot">
-    <button class="btn primary" id="end-save" data-i18n="circadian.save"></button>
-  </div>
+  <div class="msg muted" id="end-summary"></div>
   <div class="msg" id="end-msg" style="display:none;"></div>
+
+  <button id="end-save" class="btn-primary" data-i18n="circadian.save"></button>
 </div>
 
 <script type="text/javascript">
@@ -239,10 +245,18 @@
  * scoped to this view's root id, and why the boot guard below lives on the root
  * ELEMENT rather than in a global.
  */
-(function () {
-  var root = document.getElementById('end-root');
-  if (!root || root.getAttribute('data-booted') === '1') return;
-  root.setAttribute('data-booted', '1');
+/**
+ * The guard lives on the view's root ELEMENT, not in a global. All views
+ * share one document, and a global flag survives leaving and re-entering the
+ * pairing flow — which silently blocked the second run from ever rendering.
+ * A freshly injected root has no marker, so each injection boots exactly once.
+ */
+function __lkBootEn(Homey) {
+  var __root = document.getElementById('end-root');
+  if (!__root || __root.dataset.llBooted === '1') return;
+  __root.dataset.llBooted = '1';
+
+  if (typeof Homey.ready === 'function') Homey.ready();
 
   function emit(event, data) {
     return new Promise(function (resolve, reject) {
@@ -381,7 +395,7 @@
 
     ENDS.forEach(function (which) {
       var end = which.key;
-      var card = node('div', 'end');
+      var card = node('div', 'card');
 
       var head = node('div', 'rowhead');
       head.appendChild(node('div', 'name', Homey.__(which.label)));
@@ -455,7 +469,7 @@
   });
 
   document.getElementById('end-testPreStage').addEventListener('click', function () {
-    var result = document.getElementById('end-result');
+    var result = document.getElementById('end-preResult');
     result.textContent = Homey.__('circadian.preStageTesting');
     push()
       .then(function () { return emit('testPreStage'); })
@@ -509,5 +523,23 @@
   }).catch(function (err) {
     show('bad', err.message || String(err));
   });
-})();
+}
+
+window.onHomeyReady = __lkBootEn;
+
+(function waitForHomey(attempt) {
+  if (window.Homey && typeof window.Homey.emit === 'function') return __lkBootEn(window.Homey);
+  // Homey never arrived, so Homey.__ does not exist and this one string cannot
+  // go through a locale key: the failure mode IS "no Homey on the page". It is
+  // also inserted into document.body, outside the view root, so the tokens
+  // scoped to that root cannot reach it either — hence the literal colours,
+  // which are the pair-view error palette rather than the settings one.
+  if ((attempt || 0) > 100) {
+    document.body.insertAdjacentHTML('afterbegin',
+      '<div style="padding:12px;background:#fdeceb;color:#8f1d18;font-size:13px;">'
+      + 'Lightkeeper could not reach the Homey pairing API on this page.</div>');
+    return;
+  }
+  setTimeout(function () { waitForHomey((attempt || 0) + 1); }, 50);
+})(0);
 </script>

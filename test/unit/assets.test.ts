@@ -268,6 +268,102 @@ describe('icons', () => {
     }
   });
 
+  /**
+   * Every coordinate an exported icon draws at, on the 960 canvas.
+   *
+   * The exported file carries its own `translate(...) scale(...)`, so the numbers
+   * inside it plus that transform are the whole answer — no rasteriser needed.
+   * Arc bulges and curve control points are not modelled, which makes this a
+   * LOWER bound on the ink: it catches a drawing pushed off the canvas, not a
+   * curve that overshoots its endpoints by a few units. The former is the bug
+   * this exists for.
+   */
+  function inkBounds(svg: string): { min: number; max: number } | null {
+    const transform = /translate\((-?[\d.]+) (-?[\d.]+)\) scale\(([\d.]+)\)/.exec(svg);
+    if (!transform) return null;
+    const [, tx, ty, scale] = transform.map(Number);
+
+    const xs: number[] = [];
+    const ys: number[] = [];
+
+    for (const [, x, y, w, h] of svg.matchAll(
+      /<rect x="([-\d.]+)" y="([-\d.]+)" width="([-\d.]+)" height="([-\d.]+)"/g,
+    )) {
+      xs.push(Number(x), Number(x) + Number(w));
+      ys.push(Number(y), Number(y) + Number(h));
+    }
+    for (const [, cx, cy, r] of svg.matchAll(
+      /<circle cx="([-\d.]+)" cy="([-\d.]+)" r="([-\d.]+)"/g,
+    )) {
+      xs.push(Number(cx) - Number(r), Number(cx) + Number(r));
+      ys.push(Number(cy) - Number(r), Number(cy) + Number(r));
+    }
+    for (const [, data] of svg.matchAll(/ d="([^"]+)"/g)) {
+      // Coordinate PAIRS only: an arc's `rx ry rotation large sweep` flags sit
+      // between the command and its endpoint, so pairing blindly would read a
+      // radius as an x. Taking the last two numbers of each command is enough,
+      // and every command in these files ends at a point.
+      for (const [, command, numbers] of data!.matchAll(/([MLCAZ])\s*([-\d.\s]*)/gi)) {
+        if (command!.toUpperCase() === 'Z') continue;
+        const values = numbers!.trim().split(/\s+/).map(Number).filter(Number.isFinite);
+        if (values.length < 2) continue;
+        xs.push(values[values.length - 2]!);
+        ys.push(values[values.length - 1]!);
+      }
+    }
+    if (xs.length === 0) return null;
+
+    const at = (value: number, offset: number) => offset + scale! * value;
+    return {
+      min: Math.min(Math.min(...xs.map(x => at(x, tx!))), Math.min(...ys.map(y => at(y, ty!)))),
+      max: Math.max(Math.max(...xs.map(x => at(x, tx!))), Math.max(...ys.map(y => at(y, ty!)))),
+    };
+  }
+
+  test('no icon is drawn off the edge of its canvas', () => {
+    /**
+     * The circadian light's icon shipped clipped: its stored `fit` had been
+     * measured against an earlier master and never re-measured, so the y
+     * translate put the top of the drawing at −39 on a canvas that starts at 0.
+     * The frame's top edge was simply gone.
+     *
+     * Nothing could see it. The file was generated, byte-identical to its curve
+     * copy, valid SVG, and `homey app validate` never opens an icon at all
+     * (§10) — the only check was somebody looking at a 32-pixel mask on a phone.
+     *
+     * Half the stroke is the margin, because a stroke straddles its path.
+     */
+    const HALF_STROKE = 20;
+    for (const target of iconTargets()) {
+      const bounds = inkBounds(readFileSync(target.path, 'utf8'));
+      assert.ok(bounds, `${target.label}: no transform to measure against`);
+      assert.ok(
+        bounds.min >= HALF_STROKE,
+        `${target.label}: ink starts at ${bounds.min.toFixed(1)}, so ${HALF_STROKE - bounds.min} `
+        + 'units of it are off the canvas — re-run export-assets.py --measure',
+      );
+      assert.ok(
+        bounds.max <= 960 - HALF_STROKE,
+        `${target.label}: ink ends at ${bounds.max.toFixed(1)}, past the 960 canvas — `
+        + 're-run export-assets.py --measure',
+      );
+    }
+  });
+
+  test('and every icon fills the canvas it is given', () => {
+    // Guideline 1.5 asks for the full canvas. A drawing that lands inside the
+    // bounds but occupies a third of them is the other way to get this wrong,
+    // and it looks like a rendering bug rather than a design choice.
+    for (const target of iconTargets()) {
+      const bounds = inkBounds(readFileSync(target.path, 'utf8'))!;
+      const extent = bounds.max - bounds.min;
+      assert.ok(
+        extent >= 960 * 0.7,
+        `${target.label}: the drawing spans ${extent.toFixed(0)} of 960 — too small to read`,
+      );
+    }
+  });
+
   test('every pending-artwork entry names an icon that exists', () => {
     // So the list cannot outlive the thing it excuses: an entry for an icon that
     // has been drawn, renamed or removed fails here rather than quietly

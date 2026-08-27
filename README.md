@@ -323,7 +323,7 @@ covered by unit tests rather than by a week of waiting. The trigger card they ar
 resolved at runtime by enumerating what your Homey actually offers, rather than hardcoding an id, so
 it adapts if a firmware update moves it.
 
-757 unit tests, type-clean, validated at `publish` level.
+769 unit tests, type-clean, validated at `publish` level.
 
 ---
 
@@ -331,7 +331,7 @@ it adapts if a firmware update moves it.
 
 ```bash
 npm install
-npm test                          # 757 unit tests, no hardware needed
+npm test                          # 769 unit tests, no hardware needed
 npm run typecheck                 # the app
 npm run typecheck:test            # the suite and scripts/
 npm run sync:views                # after editing any pair view — nothing runs it for you
