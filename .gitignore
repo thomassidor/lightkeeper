@@ -12,6 +12,10 @@
 # display name. They must never be committed — see test/fixtures/README.md.
 /test/fixtures/raw/
 
+# scripts/verify-hardware.mjs reads a Personal API Key and a Homey address from
+# here when the environment variables are not set. Both are credentials.
+/scripts/hardware-env.json
+
 # Local Claude Code settings — per-machine, not shared.
 .claude/settings.local.json
 

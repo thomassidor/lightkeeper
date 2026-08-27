@@ -31,6 +31,39 @@ Report against those numbers — `7.4 OK`, or `7.4 failed: the Flows went with
 the key` — and renumber nothing when you rewrite [This release](#this-release):
 the numbers come from the standing sections, which do not move.
 
+## Some of it is scripted
+
+`scripts/verify-hardware.mjs` answers the lines that are a state a machine can
+read, over the same `createLocalAPI` client and Personal API Key the app uses for
+Flow writes (platform §1). **It cannot pair devices** — Homey's pair sessions are
+not an API surface — so it checks a Homey you have already built by hand, and
+everything before §6 stays manual.
+
+| Command | Lines | Notes |
+|---|---|---|
+| `spike` | — | Does the key reach the Homey and the app's own Web API? Run this first; the rest depend on it |
+| `flows` | 1.3, 2.9, 3.5, 4.6, 5.9 | Read-only, safe any time |
+| `redaction` | 8.2, 8.3, 8.4, 8.5 | Read-only. Searches the diagnostics report for your key by machine |
+| `credential` | 7.1, 7.2, 7.4, 7.6, 7.7 | Removes the key and puts it back. Needs `--yes` |
+| `rejoin` | 4.7, 4.8, 5.8 | Switches a lamp off and on, and sets a colour on it by hand. Needs `--yes`; takes about 5 minutes per light |
+
+```bash
+export HOMEY_ADDRESS=http://192.168.1.23   # or scripts/hardware-env.json, gitignored
+export HOMEY_API_KEY=<the key from 2.1>
+node scripts/verify-hardware.mjs spike
+node scripts/verify-hardware.mjs all       # every read-only command
+node scripts/verify-hardware.mjs rejoin --yes
+```
+
+It prints one line per test-plan number, in this file's own `4.7 OK` form, so its
+output pastes straight into a report. A line it prints as `SKIPPED` has not been
+tested — tick it by hand or say so, exactly as if the script had not run.
+
+**What it will never cover:** anything needing a finger on a remote (2.10–2.12 —
+running a generated Flow over the API bypasses the real release event, which is
+the whole reason the ramp hard-stops at 10 seconds), and anything needing eyes on
+a screen (every pairing view, the four device pictures, the curve chart).
+
 ---
 
 ## This release

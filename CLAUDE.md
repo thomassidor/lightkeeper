@@ -36,6 +36,7 @@ npx homey app run --remote     # live logs, TEMPORARY — see below
 npm run sync:views             # pair -> repair, and shared views between drivers. See platform §8
 npm run sync:views:check       # what sync WOULD copy; writes nothing, exits 1 on drift. CI runs it
 python artwork/export-assets.py   # re-export every shipped icon, image and the banner
+node scripts/verify-hardware.mjs spike   # the scripted half of the hardware pass — NEEDS a real Homey
 ```
 
 **`package.json`'s `build` script is not ours to remove.** It looks unused — nothing in this repo
@@ -89,6 +90,8 @@ drivers/schedule/               virtual device, driver, three pairing views
                                 controller's; only schedule.html is its own — see platform §8
   repair/                       exact copies of pair/, generated — see platform §8
 scripts/sync-views.mjs          makes every copy named above; nothing runs it for you
+scripts/verify-hardware.mjs     the scripted half of the hardware pass. Talks to a REAL Homey over
+                                the user's own API key; needs HOMEY_ADDRESS + HOMEY_API_KEY
 settings/index.html             app settings page
 locales/en.json                 all user-facing strings
 .homeycompose/                  the manifest's SOURCE; app.json is generated from it
@@ -211,7 +214,8 @@ repo stopped saying.
 4. Condense it into `README.md`'s `## Changelog`: the new release in about four bullets, and the
    previous one demoted to a single line in the table below it.
 5. Update the **This release** section of `docs/hardware-test-plan.md` — what is new or risky this
-   time — and run that pass on hardware.
+   time — and run that pass on hardware. `node scripts/verify-hardware.mjs all` answers the lines
+   that are a readable state rather than a lamp somebody has to watch; the plan says which.
 6. Run `npm run validate` — this is what regenerates `app.json`, so it is a required step and not
    just a check. Commit the regenerated `app.json` with the rest.
 7. Re-read `README.txt` if anything about what the app *is* changed.
