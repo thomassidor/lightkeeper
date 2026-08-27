@@ -23,10 +23,11 @@ reframe the subject. Everything here is a function of the masters and this file.
                                           -> drivers/curve/assets/images/*   (PLACEHOLDER)
 
 The curve light split out of the circadian light and ships with its artwork until
-its own is drawn. That is a real review finding — Athom's reviewer flags
-byte-identical icons as reuse — so it is listed here and in
-test/unit/assets.test.ts's PENDING_ARTWORK rather than tolerated silently.
-Removing both entries is the definition of done for that artwork.
+its own is drawn. Both circadian masters are real, so the curve light ships a COPY
+of finished artwork rather than a stand-in — it looks right and is still a review
+finding, because Athom's reviewer flags byte-identical icons as reuse. So it is
+listed here and in test/unit/assets.test.ts's PENDING_ARTWORK rather than
+tolerated silently. Removing both entries is the definition of done.
     masters/logo-bitmap-original.png      -> nothing; it is the palette's source
 
 Homey's sizes, and which of them are actually enforced:

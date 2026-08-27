@@ -92,35 +92,48 @@ same crop treatment.
 > numerals, no text, no logos, no branding, no hand, no props, no watermark.
 
 **4. Circadian device** — for `drivers/circadian/assets/images/*`, and currently ALSO
-for `drivers/curve/assets/images/*` as a placeholder. The Curve light split out of the
+for `drivers/curve/assets/images/*` until that artwork is drawn. The Curve light split out of the
 circadian light in 0.5.0 and has no artwork of its own yet; byte-identical driver
 images are a review finding, so the pair is recorded in `provenance.md`
 and listed in `test/unit/assets.test.ts`'s `PENDING_ARTWORK`. A fifth prompt for the
-Curve light — the same room, a lamp showing a distinctly coloured light rather than a
-warm white — is what closes it. Landscape, 1500×1050 or larger;
-same crop treatment. **This one has not been generated yet** — `masters/circadian-device-master.png`
-is a placeholder that guideline 1.4 would reject, and replacing it is the last thing standing between
-this device type and a store submission. See [`provenance.md`](provenance.md).
+Curve light — the same device body showing a distinctly coloured light rather than a
+warm white — is what closes it. Landscape, 1500×1050 or larger; same crop treatment.
 
-> Device picture for the third part of Lightkeeper, a smart-home app that makes lights follow the
-> colour of the day — warm at dawn, cool through the middle, warm again at night. The object that
-> stands for it is a lamp whose light changes colour.
+**Delivered 27 August 2026, and it took a different subject to the one specified below.** The brief
+asked for a frosted-globe bulb on a base; what ships is the driver's own MARK rendered onto a device
+body — a white rounded square carrying the warm-to-cool arc, a lit bulb and the sunrise and sunset
+glyphs, on studio white with a soft contact shadow. That is the better answer and is what the
+Curve light's fifth prompt should follow: the icon and the picture now show the same thing, so the
+device type reads the same in a driver list as it does on a tile, and the arc carries the
+warm-to-cool idea more legibly at 75×75 than a gradient across a globe did. **The exact prompt text
+was not captured** — recorded as a gap rather than reconstructed, on the same principle that keeps
+`provenance.md` from inventing a model name.
+
+The subject brief, for whoever redraws it or draws the Curve light's:
+
+> Device picture for the part of Lightkeeper that makes lights follow the colour of the day — warm
+> at dawn, cool through the middle, warm again at night. The object that stands for it is a wall
+> device whose face shows the shape of the day.
 >
-> Product photograph on a pure white background. One original generic frosted-globe smart bulb
-> standing upright on a slim matte warm-white base. The globe is lit from within and the colour shifts
-> across it: warm amber (around #F2A93B) low on the left, cool daylight white high on the right, a
-> smooth gradient between them rather than two halves. Three-quarter view angled from the right, soft
-> even studio light, subtle contact shadow. Whole object with even margin, the colour shift still
-> readable at 75×75. Photorealistic catalogue render, matching the neutral white-ground studio look of
-> the remote and the timer in the app's other device pictures. No text, no numerals, no logos, no
-> branding, no resemblance to any real product, no hand, no props, no packaging, no watermark.
+> Product render on a pure white background. One original generic square wall unit with generously
+> rounded corners, matte warm-white body, seen three-quarter from the left so the side face reads as
+> depth. On its front, an arc rising left to right and back down, gradient from warm amber (around
+> #F2A93B) at both feet through cool daylight blue at the apex, with a small glowing marker sitting
+> on the descending right-hand limb. Centred below the arc, a warm lit bulb glyph. Below each foot
+> of the arc, a small line-art sun glyph — sunrise with an up arrow on the left, sunset with a down
+> arrow on the right. Soft even studio light, subtle contact shadow. Whole object with even margin,
+> the arc's warm-to-cool shift still readable at 75×75. No text, no numerals, no logos, no branding,
+> no resemblance to any real product, no hand, no props, no packaging, no watermark.
 
 Four things in those prompts are deliberate, so nobody "fixes" them:
 
-- **Every device shot is white-ground product photography**, so the pictures read as one app and all
-  satisfy the "device on a white background" rule.
-- **The bulb's colour shift is a gradient, not two halves.** Two halves read as a novelty bulb; a
-  gradient reads as a colour temperature moving through the day, which is what the device does.
+- **Every device shot is white-ground product imagery**, so the pictures read as one app and all
+  satisfy the "device on a white background" rule. Two are photographs and the circadian one is a
+  render, because its subject is a virtual device with no physical product to photograph.
+- **The warm-to-cool shift is a gradient, not two halves.** Two halves read as a novelty product; a
+  gradient reads as a colour temperature moving through the day, which is what the device does. On
+  the circadian device that gradient runs along the arc, which holds up at 75×75 where a shift
+  across a globe did not.
 - **The timer's dial glows but carries no numerals.** The glow says "time" at 75 px where digits would
   turn to mush, and printed numerals in a store image read as clipart.
 - **No hand in any frame, including the banner.** A hand on a remote describes only half of what the

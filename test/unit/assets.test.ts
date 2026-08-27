@@ -242,10 +242,11 @@ describe('icons', () => {
    * own artwork.
    *
    * The two device types split out of one, and the second shipped with the
-   * first's graphics as placeholders. That is a real review finding — Athom's
-   * reviewer flags byte-identical icons as reuse — so it is listed here rather
-   * than tolerated silently, and the list is what a `git grep` finds when the
-   * artwork is drawn.
+   * first's graphics. Both of the circadian masters are real now, so what the
+   * curve light ships is a COPY of finished artwork rather than a stand-in — it
+   * looks right and is still a review finding, because Athom's reviewer flags
+   * byte-identical icons as reuse. So it is listed here rather than tolerated
+   * silently, and the list is what a `git grep` finds when the artwork is drawn.
    *
    * **Removing an entry from this list is the definition of done for that
    * artwork.** Do not add to it.

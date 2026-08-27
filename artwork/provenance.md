@@ -7,13 +7,14 @@ to a shipped file is lost on the next export. What to produce, and why, is in
 
 ## The Curve light's artwork is a PLACEHOLDER
 
-The Curve light split out of the circadian light in 0.5.0 and ships with its
-artwork: `drivers/curve/assets/` is exported from `circadian-icon-master.svg` and
-`circadian-device-master.png`, the same two masters the circadian light uses.
+**This is the only outstanding artwork.** The Curve light split out of the circadian light in 0.5.0
+and ships with its graphics: `drivers/curve/assets/` is exported from `circadian-icon-master.svg`
+and `circadian-device-master.png`, the same two masters the circadian light uses. Both of those are
+now real — see below — so what the Curve light ships is a byte-identical *copy* of finished artwork
+rather than a stand-in for missing artwork. It looks right and is still a review finding.
 
-That is a real review finding rather than a cosmetic shortcut — Athom's automated
-reviewer flags byte-identical icons between drivers as reuse — so it is recorded
-in three places rather than tolerated silently:
+That finding is real rather than cosmetic — Athom's automated reviewer flags byte-identical icons
+between drivers as reuse — so it is recorded in three places rather than tolerated silently:
 
 - `artwork/export-assets.py`, at both target entries, marked PLACEHOLDER;
 - `test/unit/assets.test.ts`, as the single entry in `PENDING_ARTWORK`;
@@ -32,11 +33,11 @@ icon target is what stops the list outliving what it excuses.
 | `logo-mark-master.svg` | `assets/icon.svg`, and the logo tile on the README banner |
 | `remote-remote-icon-master.svg` | `drivers/controller/assets/icon.svg` |
 | `schedule-icon-master.svg` | `drivers/schedule/assets/icon.svg` |
-| `circadian-icon-master.svg` | `drivers/circadian/assets/icon.svg` |
+| `circadian-icon-master.svg` | `drivers/circadian/assets/icon.svg`, and `drivers/curve/assets/icon.svg` until that artwork is drawn |
 | `app-hero-master.png` 1499×1049 | `assets/images/*` and `readme/banner.png` |
 | `remote-device-master.png` 1499×1049 | `drivers/controller/assets/images/*` |
 | `schedule-device-master.png` 1500×1049 | `drivers/schedule/assets/images/*` |
-| `circadian-device-master.png` 1500×1049 | `drivers/circadian/assets/images/*` — **PLACEHOLDER** |
+| `circadian-device-master.png` 1499×1049 | `drivers/circadian/assets/images/*`, and `drivers/curve/assets/images/*` until that artwork is drawn |
 | `logo-bitmap-original.png` 1071² | nothing ships from it; it is the palette's source of truth |
 
 Supplied by the author on **23 August 2026**, replacing a set generated on 12 August 2026. The
@@ -46,23 +47,38 @@ trademarks, brand-recognisable hardware and text — Homey's review checks that 
 manufacturer photography, so that matters. The prompts live there and are not repeated here; this file
 carries the date, the tool and the rights.
 
-## `circadian-device-master.png` is a placeholder and MUST NOT ship
+**Name the model when you replace a master.** "An image model" is a weaker answer than a name to a
+reviewer or a future maintainer, and this file is where both look. The circadian device master below
+is recorded that way; the 23 August set is not, which is a gap in the record rather than a decision.
 
-Written on **25 August 2026** by `artwork/masters/make-circadian-placeholder.py` — a warm-to-cool
-radial wash with the driver's own sun mark on it. It exists so the driver validates, the export runs
-and the suite is green while the real photograph is sourced; **it is not a photograph and Athom's
-guideline 1.4 rejects exactly this** ("images that consist of a single flat shape or icon on a plain,
-monochrome or transparent background are not approved"), which is why the schedule driver ships a
-photograph of a plug-in timer rather than a rasterised stopwatch.
+## `circadian-device-master.png`
 
-To finish it: put a landscape photograph at that path — a lamp in a room at golden hour reads the
-subject best — re-run `python artwork/export-assets.py`, and delete this section along with the
-**PLACEHOLDER** note above. Nothing else changes: the crop is found by non-white detection, so a new
-master reframes itself.
+Supplied by the author on **27 August 2026**, generated with **ChatGPT's image model** (OpenAI). It
+replaces a placeholder written on 25 August 2026 by a script, `make-circadian-placeholder.py` — a
+warm-to-cool radial wash with the driver's own sun mark on it, which existed only so the driver
+validated and the suite stayed green while real artwork was sourced. That script has been deleted
+along with the file it made; nothing else referenced it.
 
-**The specific model is not recorded.** That is a gap rather than a decision: this file is where a
-reviewer or a future maintainer looks, and "an image model" is a weaker answer than a name. Whoever
-replaces a master next should write theirs in.
+The placeholder had to go because **Athom's guideline 1.4 rejects exactly what it was** ("images that
+consist of a single flat shape or icon on a plain, monochrome or transparent background are not
+approved") — the same reason the schedule driver ships a photograph of a plug-in timer rather than a
+rasterised stopwatch.
+
+What replaced it is a **dimensional render of a device**, not a photograph: a white rounded-square
+body carrying the driver's own mark — the warm-to-cool arc, a lit bulb, and the sunrise and sunset
+glyphs — lit on studio white with a soft contact shadow. That clears 1.4 (it is a picture of an
+object, not a flat shape on a plain ground) and it is what Athom asks a *driver* image to be, "a
+recognizable picture of the device". It is worth noting that it is the one device image in the set
+that is a render rather than a photograph, because the app's other two are photographs; the subject
+here is a virtual device with no physical product to photograph.
+
+It carries no logo, trademark, brand-recognisable hardware or text, which is the same review filter
+every other master was checked against. The crop is found by non-white detection, so it reframed
+itself on export with no hand-measured box.
+
+`daylight-bulb.svg` arrived in the same delivery and proved byte-identical to the
+`circadian-icon-master.svg` already in the tree, so the icon was already correct and nothing changed
+there.
 
 ## Icon weight
 

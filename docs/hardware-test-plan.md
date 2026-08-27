@@ -133,8 +133,8 @@ This is the one that fails loudly if the pairing files are in the wrong place �
 
 ## Known and expected
 
-- **The Curve light uses the circadian light's icon and picture.** Placeholder —
-  new artwork is a separate job.
+- **The Curve light shows the circadian light's icon and picture.** Borrowed until
+  its own artwork is drawn; a separate job. Both should look right, just identical.
 - **Your old circadian curve lost its middle points.** By design; the changelog says
   so. Add a Curve light if you want that curve back.
 - **A CLI-installed app shows no icon at all** (platform §10). Not a bug; it

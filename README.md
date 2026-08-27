@@ -95,8 +95,8 @@ pick a circadian light when you just want "warm at night, cool in the day".
 </tr>
 </table>
 
-> The circadian and Curve lights currently share one placeholder image — the Curve light's own
-> artwork is still to be drawn. [`artwork/provenance.md`](artwork/provenance.md) tracks it.
+> The Curve light borrows the circadian light's picture until its own is drawn.
+> [`artwork/provenance.md`](artwork/provenance.md) tracks it.
 
 Every one of them has a **Test** button in pairing that drives the real lights immediately, so you
 know it works before you save anything. For the first two, Lightkeeper writes the Flows underneath
