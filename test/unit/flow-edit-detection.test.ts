@@ -18,7 +18,7 @@ import type { CompiledFlow } from '../../lib/bridge/flow-binding-compiler';
  *                                   with the flow that carried it
  *
  * And two ways that must NOT count, because the folder migration depends on
- * them not counting (CLAUDE.md §11): renaming a flow, and moving it.
+ * them not counting (platform §11): renaming a flow, and moving it.
  */
 
 const APP_ID = 'com.thomassidor.lightkeeper';
@@ -85,7 +85,7 @@ describe('what counts as a user edit', () => {
   test('a RENAMED flow is still ours, and is reused in place', () => {
     // Load-bearing: placeExisting() distinguishes "still where we left it"
     // from "the user filed this somewhere" and would break if a rename
-    // dragged a flow back into our folder (CLAUDE.md §11).
+    // dragged a flow back into our folder (platform §11).
     assert.equal(hasBeenUserEdited(asWritten({ name: 'Kitchen up button' }), expected), false);
   });
 

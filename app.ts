@@ -114,7 +114,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       }
       // Circadian lights are deliberately absent from this fan-out: they
       // generate no Flows, so no API key is involved in anything they do and
-      // there is nothing here for them to recover from (CLAUDE.md §12).
+      // there is nothing here for them to recover from (platform §12).
     }, 250);
   }
 
@@ -200,7 +200,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       // The SDK's disposal-safe aliases: cleaned up with the Homey instance, so a
       // reloaded app cannot leave a timer behind writing to somebody's lights.
       // One interval for every circadian device — see the manager for why a curve
-      // may use a timer where a schedule may not (CLAUDE.md §9).
+      // may use a timer where a schedule may not (platform §9).
       setInterval: (fn, ms) => this.homey.setInterval(fn, ms),
       clearInterval: handle => this.homey.clearInterval(handle as any),
       log: (...args) => this.log(...args),

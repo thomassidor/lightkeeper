@@ -27,7 +27,7 @@ import { formatMinutes, type CircadianPlan } from './circadian-types';
  *
  * There are no Flows here and there is no clock to wait for. A schedule fires at
  * boundaries, which is why it delegates timekeeping to the Flow engine
- * (CLAUDE.md §9); a circadian curve has a value at every minute, so the runtime
+ * (platform §9); a circadian curve has a value at every minute, so the runtime
  * simply asks the curve where it is whenever it has reason to. It has three:
  *
  *  1. **A light was switched on.** The reason this feature exists. Homey reports
@@ -107,7 +107,7 @@ const COLOR_STEP = 0.01;
  * How far a reported colour must be from the one we wrote before it counts as
  * somebody overriding us.
  *
- * Comfortably above `light_temperature`'s own 0.01 resolution (CLAUDE.md §6), so
+ * Comfortably above `light_temperature`'s own 0.01 resolution (platform §6), so
  * a bridge that rounds our 0.47 to 0.46 does not read as a human reaching for
  * the Hue app — and far below any change a person would make on purpose.
  */
@@ -127,7 +127,7 @@ const PRE_STAGE_CHECK_MS = 1500;
  * What `diagnostics()` returns. See ControllerDiagnostics for why it is typed.
  *
  * No `credential` field, and its absence is the feature: this device type
- * generates no Flows, so no API key is involved in anything it does (CLAUDE.md
+ * generates no Flows, so no API key is involved in anything it does (platform
  * §12).
  */
 export interface CircadianDiagnostics {
@@ -315,7 +315,7 @@ export class CircadianRuntime {
      * Hue too, wherever the curve carries a colour.
      *
      * Subscribed for ONE reason: the override check. "An external colour change
-     * stands the device down for that light" is the promise (CLAUDE.md §12), and
+     * stands the device down for that light" is the promise (platform §12), and
      * a lamp sitting in a coloured segment is one whose colour a person changes
      * on the hue axis, not the temperature axis — so without this, taking such a
      * lamp over by hand went unnoticed and the next tick took it back.
@@ -337,7 +337,7 @@ export class CircadianRuntime {
   /**
    * A target's capability changed. `external` is the cache's verdict on whether
    * it was a real change or the echo of our own write — and because echoes
-   * arrive duplicated (CLAUDE.md §6), it is also what makes one power-on produce
+   * arrive duplicated (platform §6), it is also what makes one power-on produce
    * exactly one response rather than two.
    */
   private onCapabilityChange(
@@ -527,7 +527,7 @@ export class CircadianRuntime {
       const preStaged = new Map<string, number>();
       for (const write of writes) {
         // Only the colour of an off light can be a pre-stage write; brightness
-        // is never sent to one (CLAUDE.md §12).
+        // is never sent to one (platform §12).
         if (write.capability !== 'light_temperature') continue;
         if (this.cache.state(write.deviceId).actualOn === true) continue;
         const generation = (this.writeGeneration.get(write.deviceId) ?? 0) + 1;
@@ -658,7 +658,7 @@ export class CircadianRuntime {
    * The gate that keeps a once-a-minute tick from becoming a once-a-minute write:
    * across the steepest default segment the curve moves about 0.003 a minute, and
    * `light_temperature` reports `decimals: 2`, so anything finer is a no-op at the
-   * lamp (CLAUDE.md §6). In practice this is one write per light every few
+   * lamp (platform §6). In practice this is one write per light every few
    * minutes.
    */
   /**
@@ -895,7 +895,7 @@ export class CircadianRuntime {
        * switching it on must produce ZERO writes.
        *
        * It kept its capability subscription, so the rising edge of `onoff`
-       * still arrived — and the rising edge is THE feature (CLAUDE.md §12), so
+       * still arrived — and the rising edge is THE feature (platform §12), so
        * the runtime dutifully wrote a colour to a lamp that was no longer any
        * of its business.
        */

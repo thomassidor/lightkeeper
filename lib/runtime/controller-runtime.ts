@@ -461,7 +461,7 @@ export class ControllerRuntime {
 
       /**
        * A control the compiler declined — a range needing more flow variants
-       * than the ceiling allows (CLAUDE.md §7: BILRESA's 162 combinations are
+       * than the ceiling allows (platform §7: BILRESA's 162 combinations are
        * what the ceiling is for).
        *
        * It was logged and nowhere else. The mapping row stayed on screen

@@ -27,7 +27,7 @@ import type { TargetSpec } from '../../lib/outputs/light-intent';
  *
  * **Neither screen asks for an API key.** The controller and the schedule both
  * open with the credential view because both generate Flows and an app's own token
- * cannot write one (CLAUDE.md §1). This device type generates none, so pairing is
+ * cannot write one (platform §1). This device type generates none, so pairing is
  * the light picker — shared byte-for-byte with the other drivers — and then the
  * two ends.
  *
@@ -195,7 +195,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
     /**
      * Prove pre-staging on this household's own lights rather than assuming it.
      * A colour write to an off lamp turns it on through some integrations
-     * (CLAUDE.md §6), and this is the only way to find out which.
+     * (platform §6), and this is the only way to find out which.
      */
     handler('testPreStage', async () => {
       const runtime = await this.app.curves.ephemeral(expandSimplePlan(this.buildPlan(state)));

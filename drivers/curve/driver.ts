@@ -25,7 +25,7 @@ import type { TargetSpec } from '../../lib/outputs/light-intent';
  *
  * **Neither asks for an API key.** The controller and the schedule both open with
  * the credential view because both generate Flows and an app's own token cannot
- * write one (CLAUDE.md §1). Neither of these generates any, so pairing is the
+ * write one (platform §1). Neither of these generates any, so pairing is the
  * light picker — shared byte-for-byte with the other drivers — and then the curve.
  *
  * The same views serve pairing and repair; repair arrives with the existing
@@ -190,7 +190,7 @@ module.exports = class CurveDriver extends Homey.Driver {
     /**
      * Prove pre-staging on this household's own lights rather than assuming it.
      * A colour write to an off lamp turns it on through some integrations
-     * (CLAUDE.md §6), and this is the only way to find out which.
+     * (platform §6), and this is the only way to find out which.
      */
     handler('testPreStage', async () => {
       const runtime = await this.app.curves.ephemeral(this.buildPlan(state));

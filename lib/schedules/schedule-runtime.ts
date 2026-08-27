@@ -197,7 +197,7 @@ export class ScheduleRuntime {
    * midnight the two disagree about which day it is, and the refusal that
    * follows means a window that simply never happens. So an unresolved timezone
    * blocks this device type, while a circadian light degrades on the same
-   * fallback quite happily (CLAUDE.md §12).
+   * fallback quite happily (platform §12).
    */
   private clock(): { clock: LocalClock; resolved: boolean } {
     return localNowResolved(this.deps.timezone(), this.now());

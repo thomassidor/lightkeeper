@@ -1,19 +1,27 @@
 # CLAUDE.md
 
-Guidance for Claude Code (and any other agent) working in this repository.
+Guidance for Claude Code (and any other agent) working in this repository. This file holds the
+architecture, the conventions and the release process. **The Homey platform reference — how the
+platform actually behaves, thirteen numbered sections established against real hardware — lives in
+[`docs/homey-platform.md`](docs/homey-platform.md), and the code cites it as `platform §n`.** Read
+it before changing anything that talks to Homey; [the map is below](#the-homey-platform-reference-lives-in-docshomey-platformmd).
+
+Documentation for everyone else: [`README.md`](README.md) and [`FAQ.md`](FAQ.md) for users,
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for contributors, [`docs/README.md`](docs/README.md) as the
+index of everything.
 
 Lightkeeper is a Homey Pro app that does three things to already-paired lights: it turns an
 already-paired remote, switch or dial into a controller for them, it puts them on a schedule, and it
 follows the colour of the day with them.
 
-**Four device types, three jobs.** The first two — a light controller and a light schedule — work by
-generating and maintaining the Flows underneath, which is why they need a Personal API Key (§1). The
-third job has TWO device types, and they are the same engine: a **circadian light** asks what the
-lights should look like at their warmest and coolest and supplies the shape of the day itself, and a
-**Curve light** exposes the whole curve — every point, every time, and a colour from a closed palette
-instead of a warmth at any point. **Neither generates Flows at all** (§12): they watch the lights
-themselves and write to them directly, so neither needs a key, neither has a `needs_credential`
-state, and neither appears in the orphan sweep's live set.
+**Four device types, three jobs.** The first two — a light controller and a light schedule — work
+by generating and maintaining the Flows underneath, which is why they need a Personal API Key
+(platform §1). The third job has TWO device types, and they are the same engine: a **circadian
+light** asks what the lights should look like at their warmest and coolest and supplies the shape
+of the day itself, and a **Curve light** exposes the whole curve — every point, every time, and a
+colour from a closed palette instead of a warmth at any point. **Neither generates Flows at all**
+(platform §12): they watch the lights themselves and write to them directly, so neither needs a
+key, neither has a `needs_credential` state, and neither appears in the orphan sweep's live set.
 
 ## Commands
 
@@ -25,9 +33,9 @@ npm run lint                   # eslint, type-checked. See eslint.config.mjs for
 npm run validate               # homey app validate --level publish, CLI from the lockfile
 npx homey app install          # persistent install on a real Homey
 npx homey app run --remote     # live logs, TEMPORARY — see below
-npm run sync:views             # pair -> repair, and shared views between drivers. See §8
+npm run sync:views             # pair -> repair, and shared views between drivers. See platform §8
 npm run sync:views:check       # what sync WOULD copy; writes nothing, exits 1 on drift. CI runs it
-python docs/artwork/export-assets.py   # re-export every shipped icon, image and the banner
+python artwork/export-assets.py   # re-export every shipped icon, image and the banner
 ```
 
 **`package.json`'s `build` script is not ours to remove.** It looks unused — nothing in this repo
@@ -60,7 +68,7 @@ lib/
                                 cyclic interpolation, the palette, the two-ended simple plan,
                                 runtime, manager, and one migration chain per store
   devices/                      the device layer: DeviceLifecycle (plain, testable) and
-                                LightkeeperDevice (the Homey.Device shell) — see §13
+                                LightkeeperDevice (the Homey.Device shell) — see platform §13
   time/                         wall-clock minutes and the Homey's local clock
   validation/                   guards, the three plan validators, pairing DTO checks
   pairing/                      the light picker, shared by every driver
@@ -68,18 +76,18 @@ app-contract.ts                 what api.ts and the device layer may use of the 
 homey-api-types.ts              the shapes homey-api returns, at the normalisation seams
 drivers/controller/             virtual device, driver, four pairing views
   pair/                         the four views, edited here
-  repair/                       exact copies of pair/, generated — see §8
+  repair/                       exact copies of pair/, generated — see platform §8
 drivers/circadian/              the SIMPLE one: two ends of the day. NO credential screen
   pair/                         targets.html is a COPY of the controller's; ends.html is its own
-  repair/                       exact copies of pair/, generated — see §8
+  repair/                       exact copies of pair/, generated — see platform §8
 drivers/curve/                  the FULL one: every point, and a colour per point. NO credential
                                 screen. Placeholder artwork — see assets.test.ts
   pair/                         targets.html is a COPY of the controller's; curve.html is its own
-  repair/                       exact copies of pair/, generated — see §8
+  repair/                       exact copies of pair/, generated — see platform §8
 drivers/schedule/               virtual device, driver, three pairing views
   pair/                         credential.html and targets.html are COPIES of the
-                                controller's; only schedule.html is its own — see §8
-  repair/                       exact copies of pair/, generated — see §8
+                                controller's; only schedule.html is its own — see platform §8
+  repair/                       exact copies of pair/, generated — see platform §8
 scripts/sync-views.mjs          makes every copy named above; nothing runs it for you
 settings/index.html             app settings page
 locales/en.json                 all user-facing strings
@@ -87,645 +95,50 @@ locales/en.json                 all user-facing strings
 assets/                         the app's own icon and store images, all generated
 README.txt                      the App Store long description — not README.md
 test/                           unit tests and hand-transcribed fixtures
-docs/                           review notes, privacy, localisation (not bundled)
-  artwork/masters/              every graphic's source
-  artwork/export-assets.py      builds every shipped icon and image from those
+docs/                           NOT bundled. `docs/README.md` indexes it
+  homey-platform.md             the platform reference — §1-13, cited in code as `platform §n`
+  privacy.md                    the privacy notice
+  homey-review-notes.md         for Athom's reviewer
+  localisation.md               English-only on purpose; how to add a language back
+  hardware-test-plan.md         the standing pass on a real Homey, run before every release
+  history/                      ARCHIVE: the completed 0.5.0 remediation project
+artwork/                        NOT bundled. Every graphic's source, and its own two docs
+  masters/                      every graphic's source
+  export-assets.py              builds every shipped icon and image from those
+  asset-spec.md                 the brief: what to draw, at what size, and why
+  provenance.md                 where it came from, the rights register, what is placeholder
+README.md  FAQ.md  CHANGELOG.md  CONTRIBUTING.md
+                                the four end-user / contributor documents, none bundled
 ```
 
 ---
 
-# Homey platform reference
+# The Homey platform reference lives in `docs/homey-platform.md`
 
-Everything below was established against real hardware: Homey Pro 2023, firmware 13.4.0,
-homey-api 3.19.2. It is how Homey actually behaves, as opposed to how it appears to, and it is not
-documented anywhere else.
+Thirteen numbered sections on how Homey actually behaves — every one established against real
+hardware (Homey Pro 2023, firmware 13.4.0, homey-api 3.19.2) and documented nowhere else. **Read it
+before changing anything that talks to Homey.** It used to be the middle of this file; it moved out
+so that a human developer could find it under a name that says what it is.
 
-## 1. An app's own token cannot write Flows
+**Code cites it as `platform §n`.** Around ninety comments across `lib/`, `app.ts`, `api.ts` and the
+tests carry one — `(platform §6)` means section 6 of that file. Keep writing them that way, and grep
+`platform §` to find everything that depends on a given fact.
 
-This is the single fact that makes the architecture legible.
-
-`createFlow` through `HomeyAPI.createAppAPI` — which authenticates with
-`await homey.api.getOwnerApiToken()` — is refused with `403 Missing Scopes`, thrown server-side:
-
-```
-Error: Missing Scopes
-    at SessionLocal.checkScopes (file:///app/packages/homey-core/lib/Session.mjs:86:13)
-    at file:///app/packages/homey-core/lib/ManagerApi.mjs:386:19
-```
-
-Every flow **read** succeeds; every flow **write** is refused. A user-minted Personal API Key
-succeeds at the full create/read/delete lifecycle, **including from inside the app process**.
-
-Corroborating detail worth not re-deriving:
-
-- `homey:manager:api` is the **only** API permission that exists
-  (`homey-lib/assets/app/permissions.json`). There is no finer-grained flow permission to request,
-  so this is not a manifest omission.
-- The refusal is against the app's *session*, not the account.
-- Athom's position on Web API scopes: *"Clients using the Web API with OAuth2 cannot have these
-  scopes for obvious security reasons"*, pointing users at Settings → API Keys on Homey Pro 2023
-  and newer.
-- **Homey Pro 2019 and earlier cannot mint API Keys at all**, which is what sets the app's
-  compatibility floor.
-
-### Consequence: two API clients, deliberately separated
-
-| Client | Auth | Used for |
-|---|---|---|
-| `createAppAPI({ homey })` | the app's own token | device and zone reads, capability subscriptions, `setCapabilityValue`, flow **reads** |
-| `createLocalAPI({ address, token })` | the user's Personal API Key | flow **writes** only — create, update, delete, folders |
-
-Both live in `lib/homey-api-service.ts`. `address` comes from `homey.api.getLocalUrl()`, which
-returns `http://127.0.0.1:80` inside the app — no LAN discovery needed.
-
-The split bounds the blast radius: when the key dies, controllers keep driving lights and only Flow
-maintenance degrades. That is a health state (`needs_credential`), distinct from `needs_repair` —
-repair means remap, this means re-enter a key and keep every mapping.
-
-**Do not route flow writes through the app client, or reads through the key client.**
-
-## 2. API key sessions die, routinely
-
-A Homey API Key is `<userId>:<sessionId>:<secret>`. The middle segment is a **session ID**; the key
-string is only a reference to it. When that session is invalidated the key stops working although
-the string on disk is unchanged.
-
-This was observed twice within hours during development, once about twenty minutes after first use.
-Key invalidation is a near-certainty, not an edge case, and `CredentialService` treats it as a
-first-class runtime state rather than an error path.
-
-Three failures that look alike and mean completely different things:
-
-| Error | Meaning | Fix |
-|---|---|---|
-| `401 Missing Session ID in Token` | not a real key — placeholder or truncated paste | paste the whole key |
-| `401 Session Not Found` | valid key string, session gone | re-mint |
-| `403 Missing Scopes` | valid session, insufficient permission | re-mint with Flow scope |
-
-`classifyCredentialError()` maps these; conflating them sends users to the wrong fix.
-
-**Working hypothesis: one live session per API key.** A second `createLocalAPI` handshake appears
-to claim or replace the session, invalidating the first holder. So: **never share a key between the
-app and any external tool.** Two holders fight, and the symptom is a key that "randomly" stops
-working.
-
-**Validate a key with a WRITE, not a read.** Reads succeed on credentials that cannot write, so a
-read-based check gives false confidence. `setCredential` proves the key by creating a flow folder
-and immediately deleting it.
-
-## 3. Never construct a flow card URI
-
-The verbatim serialisation of a flow created through the API:
-
-```json
-{
-  "trigger": {
-    "uri": "homey:flowcardtrigger:homey:manager:flow:programmatic_trigger",
-    "id": "homey:manager:flow:programmatic_trigger",
-    "args": {}
-  },
-  "actions": [
-    {
-      "uri": "homey:flowcardaction:homey:manager:alarms:enable_next",
-      "id": "homey:manager:alarms:enable_next",
-      "args": {}
-    }
-  ]
-}
-```
-
-A card's `uri` is a **full resource URI that embeds its own id**, prefixed by card type. It is
-**not** `homey:app:<appId>`, which is what the SDK docs' phrasing suggests.
-
-**Rule: never construct a card URI. Enumerate the card and echo its `uri` and `id` back verbatim.**
-Getting this wrong produces `404 Not Found: FlowCardAction with ID <x>`, which reads like a
-permission refusal.
-
-Also: an app's own cards exist only while that app is running. A 404 may mean "not running", not
-"not permitted".
-
-## 4. Device trigger cards are found by card ID, not by URI
-
-`getFlowCardTriggers()` returns ~1700 cards. Device-scoped cards encode their device in the card
-**`id`**:
-
-```
-homey:device:<deviceId>:<cardName>
-```
-
-There is **no card whose `uri` equals `homey:device:<deviceId>`**. Matching on `uri` finds exactly
-nothing and makes every remote look eventless.
-
-The discovery rules, in rank order:
-
-1. **`device_scoped`** — `card.id.startsWith('homey:device:' + deviceId + ':')`. This is the real
-   route; every reference device resolves through it.
-2. **`device_arg`** — an app-level card with a `device`-typed argument whose `filter` matches. Rare.
-3. **`device_arg_unfiltered`** — an unfiltered device argument matches every device on the Homey
-   and is near worthless; it offered "LG refrigerator error changed" as an input for a Tap Dial.
-   Keep it reachable (says never hard-filter) but rank it last.
-4. **"Same owning app" must NOT be a match route.** It offered Hue motion-area triggers as buttons
-   on a Hue dial. A ranking hint at best.
-
-Device-scoped cards also include system capability cards (`measure_battery_threshold_above`,
-`alarm_motion_true`, `*_changed`, `*_duration`). These are state changes, not input events, and the
-normalizer separates them — a remote typically exposes about 5 real input cards among ~10
-capability ones.
-
-## 5. Token encoding
-
-From a hand-built flow:
-
-```json
-{
-  "id": "homey:device:<id>:action_upload_file_flow",
-  "group": "then",
-  "delay": null,
-  "duration": null,
-  "droptoken": "homey:device:<id>|image-camera-snapshot",
-  "args": {}
-}
-```
-
-- **`droptoken` is a top-level property of the action, not an entry in `args`.**
-- Actions carry `group: "then"`, plus nullable `delay` and `duration`.
-- **Global token** → `"<ownerUri>|<tokenId>"`.
-- **Local token from the flow's own trigger card** → the **bare token id**, e.g. `"steps"`.
-- **Token identity is `token.id`, never `token.name`.** Using `name` silently produces broken flows.
-- Autocomplete-typed args serialise as the whole selected object (`{id, name, image, …}`), not just
-  an id. Dropdown args store the value id.
-
-## 6. Capability behaviour
-
-**Echoes arrive duplicated.** Setting `dim` once produces two identical callbacks. `TargetStateCache`
-dedupes within a 1500 ms window, or optimistic desired state fights itself and the ramp engine reads
-a duplicate as an external change that cancels the ramp.
-
-**Capability options are not uniform — read them, never assume:**
-
-| Capability | Options as read |
+| § | What it settles |
 |---|---|
-| `onoff` | `{}` — no min/max/step at all |
-| `dim` | `{ min: 0, max: 1, units: "%", decimals: 2 }` |
-| `light_temperature` | `{ min: 0, max: 1, units: null, decimals: 2 }` |
-
-**`light_temperature` is normalised 0–1**, not mireds or kelvin, so temperature deltas work on the
-same normalised axis as brightness. `decimals: 2` implies a meaningful step of 0.01 — a smaller
-delta is a no-op and is accumulated rather than written.
-
-**HIGHER IS WARMER on that axis: 0 is the coolest end, 1 the warmest.** This is not a guess and not
-a convention we chose — `homey-lib`'s own capability definition
-(`assets/capability/capabilities/light_temperature.json`) states it in the hint for its
-`temperature` flow action: *"Adjusts the temperature of the light. A higher value means a warmer
-color."* It cost a real bug to learn: both the controller's `warmer`/`colder` mapping and the
-schedule screen's warmth labels assumed the opposite, so a schedule set to "Warmest" wrote 0 and
-lit a room cold white on the first live run. Anything that reasons about this axis — a delta's
-sign, a slider's labels, a default, the direction a circadian curve rises in (§12) — must go the
-same way.
-
-A `setCapabilityValue` write to a Hue Bridge light acks in roughly 275 ms. That is the output leg
-only; radio time and flow-engine dispatch upstream of the bridge card are not observable from
-inside an app.
-
-## 7. Reference device event surfaces
-
-The four remotes the fixtures in `test/fixtures/reference-devices.ts` are transcribed from. Note
-how differently they behave — this is why capability is resolved at runtime and never hardcoded.
-
-**IKEA STYRBAR** — `com.ikea.tradfri:remote_control_n2`, class `remote`, Zigbee local
-
-| Card | Meaning |
-|---|---|
-| `n2_on` / `n2_off` | up / down pressed |
-| `n2_dim_up` / `n2_dim_down` | up / down **long** pressed |
-| `n2_scene_up` / `n2_scene_down` | right / left pressed |
-
-Fixed cards, no arguments, no tokens. Up and down carry **both** press and long-press — these are
-the controls the supersede gate exists for, and grouping `n2_on` with `n2_dim_up` under one
-`controlId` is the normalizer's job. Left and right expose press only, so no hold is offered there.
-
-**Hue Dimmer v2** — `nl.philips.hue:dimmerswitch`, Hue Bridge
-
-One card only: `dimmerswitch_button_pressed`, `button` dropdown =
-`[on | increase_brightness | decrease_brightness | off]`. **No long-press card exists** through this
-integration. Offering hold here would be inventing a gesture.
-
-**Hue Tap Dial** — `nl.philips.hue:tapdial`, Hue Bridge
-
-| Card | Args | Tokens |
-|---|---|---|
-| `tapdial_button_pressed` | `button` = `[button1…button4]` | — |
-| `tapdial_dial_rotation_started` | `rotate_direction` = `[either \| counter_clock_wise \| clock_wise]` | — |
-| `tapdial_dial_rotation_stopped` | `rotate_direction` (same) | **`steps:number`** "Steps (1000/turn)" |
-| `tapdial_dial_rotation_dimmed` | — | `dim_level:number` "Resulting dim level" |
-
-Magnitude arrives as the `steps` token on rotation **stopped** — after the gesture, at 1000 steps
-per turn. That is stepping, not ramping, and it is why `normaliseMagnitude()` scales by the
-integration's declared units-per-turn: a small nudge arrives as 151, and multiplying a 0.1 step by
-151 slams the lights to full on first touch. `dim_level` is an **absolute** level, not a delta.
-
-**IKEA BILRESA** — `com.ikea.tradfri:matter_bilresa_scroll_wheel`, class `button`, Matter/Thread
-
-| Card | Args |
-|---|---|
-| `switch_initial_press_multi` | `button` = `[1…9]` |
-| `switch_press_multi` | `button` = `[1…9]` |
-| `switch_long_press_multi` | `button` = `[3 \| 6 \| 9]` |
-| `switch_long_press2_multi` | `button` = `[3 \| 6 \| 9]` |
-| `switch_multi_press_multi` | `button` = `[1…9]`, `count` = `[1…18]` |
-
-`switch_multi_press_multi` is 9 × 18 = **162 combinations**, exceeding the expansion ceiling of 12
-thirteenfold — this is what the ceiling exists for. `count` reaching 18 is strong evidence it
-encodes **wheel detents, not repeated clicks**. Only buttons 3, 6 and 9 support long press,
-suggesting 9 logical endpoints map onto 3 physical buttons plus wheel positions.
-
-No release or "stopped" card exists for BILRESA, so no hold-ramp is offered — stepping only.
-
-BILRESA is also the device one-tap re-attach exists for: its cards vanish after a Homey restart
-and the device must be re-added under a new id. That is recurring, not exceptional, and making the
-user redo the mapping every time would defeat the product.
-
-## 8. Repair views live in their own folder, and validation cannot tell you
-
-Homey serves pair views from `drivers/<driverId>/pair/<viewId>.html` and repair views from
-`drivers/<driverId>/repair/<viewId>.html`. **Two separate folders.** The CLI's own
-`HomeyCompose.js` shows it: the pair branch writes templated views into `.../<driverId>/pair`, the
-repair branch into `.../<driverId>/repair`.
-
-Declaring `repair` views in `driver.compose.json` without that second folder is not a validation
-error. `homey-lib` asserts the existence of the **pair** view files only
-(`_ensureFileExistsCaseSensitive('drivers', <id>, 'pair', '<viewId>.html')`) and has no equivalent
-check for repair — `repair` is not even in its app schema, merely tolerated. So the app passes
-`homey app validate --level publish`, ships, and then every Repair fails on the device with Homey's
-own untranslated
-
-```
-Error: unknown_error_getting_file
-```
-
-thrown before a single app screen renders. It reads like a corrupt install; it means one HTML file
-is in the wrong folder. Repair is where re-attach, remap and flow-edited recovery all live, so this
-turns every `needs_repair` state into a dead end.
-
-Our views are identical in both modes — self-contained, each rule scoped to its own root id,
-separate sessions with separate documents, and the one branch that differs (`createDevice` vs
-`done`) is already decided by what `save` returns. So `repair/` is a copy of `pair/`, made by
-`npm run sync:views` and held there by `test/unit/repair-views.test.ts`, which is the only
-thing that can catch a missing repair view before hardware does.
-
-**The same applies between drivers.** The API-key screen and the light picker are one screen each,
-used by both the controller and the schedule driver, and Homey will not follow a reference: each
-driver needs its own real file. So `drivers/schedule/pair/credential.html` and `targets.html` are
-copies too, made by the same script and compared by the same test. The credential view stays
-driver-agnostic because the **driver** tells it which view comes next (`nextView` on the
-`getCredentialStatus` reply) — a view that hardcoded `showView('source')` would silently strand the
-schedule flow, since `source` is not one of its screens.
-
-`test/unit/pair-view-styles.test.ts` discovers views from disk across every driver for the same
-reason: while it hardcoded `drivers/controller/pair`, a second driver's screens could break the
-scoping and colour-token conventions with nothing failing.
-
-## 9. Time comes from the Flow engine, because the SDK has no scheduler
-
-SDK v3 has **no cron manager** — v2's `ManagerCron` is gone, and the full `manager/` list (api, apps,
-arp, audio, ble, clock, cloud, dashboards, discovery, drivers, flow, geolocation, i18n, images,
-insights, ledring, nfc, notifications, rf, settings, speech-input, speech-output, zigbee, zwave) has
-nothing else that fires at a time. There is no sunrise/sunset helper either; `ManagerGeolocation`
-offers latitude and longitude and requires `homey:manager:geolocation`, which this app does not
-declare.
-
-What the SDK does give, and all a schedule needs:
-
-| Call | Notes |
-|---|---|
-| `this.homey.clock.getTimezone()` | synchronous, an IANA name, **no permission required** — unlike every geolocation method |
-| `this.homey.setTimeout` / `setInterval` | disposal-safe aliases, cleaned up when the Homey instance is destroyed |
-
-`homey-api`'s own clock manager exposes only `getState` under the `homey.system.readonly` scope, so
-it needs a scoped token. `this.homey.clock.getTimezone()` is free and is what we use.
-
-**So schedules fire from generated Flows, not from timers.** A light schedule compiles to two Flows
-per window — one at each boundary — triggered by Homey's own time card and calling our bridge action.
-The Flow engine then owns everything hard: DST, clock corrections, re-arming after a restart, and
-surviving an app that was not running a moment ago. The app owns only what a Flow cannot express: the
-day-of-week filter, the pause switch, and what "on" means for lights that may not all dim.
-
-Consequences worth not re-deriving:
-
-- **The day filter is deliberately NOT in the Flow.** The Flow fires every day and
-  `boundaryDayMatches()` checks the weekday on receipt, in the Homey's own timezone. That keeps a
-  day-of-week edit from rewriting Flows, and avoids depending on a day-condition card whose shape we
-  cannot enumerate ahead of time.
-- **A window belongs to the day it STARTED on.** "23:30 for two hours, Fridays" switches off at 01:30
-  on a Saturday, and that off event is Friday's. Matching an off event against the day it arrives on
-  silently drops every midnight-crossing schedule. `lib/schedules/schedule-window.ts` is the only
-  place that knows this, and `test/unit/schedule-window.test.ts` is why it stays known.
-- **Everything about time is a wall-clock minute count, 0–1439** — never a timestamp, never a UTC
-  offset. Because the Flow engine fires, the app never has to answer "when is the next 22:00 in
-  Europe/Copenhagen", only "is it 22:00 there now". That is what keeps DST out of our code entirely.
-- **The card, confirmed on hardware** (Homey Pro 2023, firmware 13.4.0, via the app's own
-  diagnostics on 18 August 2026):
-
-  | Card | Arguments |
-  |---|---|
-  | `homey:manager:cron:time_exactly` | `time` of type `time`. **This is the one we use.** |
-  | `homey:manager:cron:time_exactly_day` | `time` of type `time`, plus `day` of type `multiselect` |
-  | `homey:manager:cron:every` | `minutes` of type `number` |
-  | `homey:manager:energy:dynamic_electricity_price_period_{lowest,highest}_start_between` | `duration`, `unit`, `startTime`, `endTime` |
-
-  The trigger argument's value is the wall-clock string `"HH:MM"`. The uri is
-  `homey:flowcardtrigger:` + the id, which is §3's rule and is still never constructed — it is
-  echoed back from enumeration. The id now also RANKS in `discoverTimeCard()` (`KNOWN_TIME_CARDS`)
-  but never filters, so an unfamiliar card of the right shape still works on a firmware we have not
-  seen, and `getDiagnostics` keeps reporting every candidate considered.
-
-- **`time_exactly_day` exists and is deliberately NOT used.** It carries the weekday itself, which
-  sounds like exactly what a schedule wants. Two reasons against it, and they are the same two that
-  put the day filter in the app in the first place: the day set would then live in the Flow, so every
-  day-of-week edit would rewrite Flows (and would have to appear in the variant key, or silently
-  not); and its `day` argument is a `multiselect` whose accepted value tokens we cannot enumerate
-  ahead of time, which is how you get a Flow that validates and never fires. If it is ever worth
-  revisiting, the missing piece is that argument's `values` list from `getFlowCardTriggers()` — read
-  it, do not guess it. The energy cards above are the reason the shape match requires the time to be
-  the ONLY argument.
-- **A CIRCADIAN light is the one thing here that may use a timer, and §12 says why.** Everything
-  above is about a BOUNDARY: something that has to happen at 22:00 whether or not the app was
-  running a moment ago. A curve has no boundaries, so none of this applies to it — do not "fix" it
-  into Flows.
-- **`Intl` timezone data IS present on the Homey's Node build.** Verified on the same firmware:
-  `homey.clock.getTimezone()` returned `Europe/Copenhagen` and `localNow()` resolved it to the right
-  weekday and minute (`Sat 20:30`). The fallback in `localNow()` — a fixed `en-US` locale, and
-  process-local time if `Intl` throws — stays anyway: it costs nothing and the next firmware is not
-  something we get to test in advance.
-
-- **What the first live window actually did** (a 20:25–20:30 schedule over three Hue spots,
-  18 August 2026). Worth keeping because it is the only measurement of the whole path, and because
-  each line confirms a design decision rather than merely working:
-
-  | Observation | What it confirms |
-  |---|---|
-  | Both boundary Flows fired **~11–22 ms after the minute** | The Flow engine is punctual enough that no app-side timer would improve on it |
-  | On-boundary wrote `onoff` ×3, then `dim` ×3, then `light_temperature` ×3 | The write queue's ordering holds across a composed intent — the level lands on a lit lamp |
-  | Every write acked, 304–501 ms each, three devices in parallel and serial per device | Comparable to the ~275 ms single-write figure in §6; nothing in the schedule path adds latency |
-  | `active: false` in diagnostics at exactly 20:30 | The off boundary is EXCLUSIVE, as `activeWindowStartDay()` and its tests say |
-  | Both events accepted, `lastRejection: null` | The day check passed on receipt, and the bridge arguments round-tripped intact |
-
-## 10. Store assets: what is validated, what is reviewed, and what Homey does to your icon
-
-`docs/asset-spec.md` and `docs/artwork/provenance.md` hold the rest. The four facts worth having here, because
-each one was learned by reading `homey-lib` inside the CLI's own package rather than from
-anything discoverable in this repo:
-
-- **An icon is a CSS MASK fetched from Athom's CDN by its MD5.** Read off a live Homey's DOM:
-
-  ```html
-  <span style="--prop-mask-image: url('https://icons-cdn.athom.com/<md5>.svg');
-               --prop-size: 50px; --prop-color: var(--theme-color-white);">
-  ```
-
-  `<md5>` is exactly the `iconHash` the CLI writes into the manifest — confirmed by hashing
-  `assets/icon.svg` and matching it against the URL the UI requested. Two consequences:
-
-  - **Colour inside an icon is discarded; only alpha survives.** That is the mechanism behind
-    `homey-lib`'s *"Icons are rendered white, so choose a darker color that has enough contrast"*,
-    and it is why a filled two-colour mark becomes the single solid blob guideline 1.5 warns about.
-    All three of our icons are line art RENDERING at 40 units on the 960 canvas — the authored
-    attribute is that divided by the fit scale, so grepping for `stroke-width="40"` finds nothing.
-    The app mark adds one filled shape, the logo's sparkle, which is fine: `homey-lib`'s own stock icons mix stroked and filled
-    paths. They are generated from the SVG masters by `docs/artwork/export-assets.py`.
-  - **A CLI-installed app shows NO icon, ever.** That CDN only holds icons from builds Athom
-    published, so `homey app install` leaves the mask pointing at a 404 and the UI draws an empty
-    `brandColor` circle. This cost a diagnosis: the SVGs render correctly inline, as a sized
-    `<img>`, as an unsized `<img>` and as a CSS mask, and the right bytes were in `.homeybuild` —
-    the file was never the problem. **Do not redraw anything chasing a blank icon on a dev
-    install.** It resolves on publish, test channel included.
-- **The validator checks far less than the guidelines say.** `_validateImages` iterates
-  `['small', 'large']` only: **`xlarge` is optional and never checked**, at any level. It never
-  opens an SVG — there is no driver-icon existence check and no content validation at all. Every
-  other rule (line art, transparent, full canvas, "a recognizable picture of the device") is applied
-  by a human or by Athom's AI reviewer, so breaking one costs a review round trip, not a red build.
-  `test/unit/assets.test.ts` is what makes those rules fail locally instead.
-- **A flat mark is rejected as an app or driver IMAGE.** Guideline 1.4: *"Images that consist of a
-  single flat shape or icon on a plain, monochrome or transparent background are not approved."*
-  Lifestyle photography is what Athom asks for, in those words — which is why the store image and
-  both driver pictures are photographs, and why the schedule driver's picture is a photograph of a
-  plug-in timer rather than a rasterised icon.
-- **Three things simply do not exist**, so do not spend time looking for them: an icon on a flow
-  card (the SDK's `icon` property belongs to argument *autocomplete results*), an icon on
-  `capabilitiesOptions` (only app-defined custom capabilities can carry one), and any
-  screenshot or promotional asset class. Widget previews are the one asset class we ship nothing
-  for, and they are a hard build requirement the moment a widget is added.
-
-## 11. Flow folders nest, and every lookup must key on (name, parent)
-
-Generated flows are filed one folder per Lightkeeper device, inside the app's own folder:
-`Lightkeeper/<device name>/`. `lib/bridge/flow-folder-manager.ts` owns all of it, so
-`FlowBridgeManager` stays about flows.
-
-- **Nesting is real.** `FlowFolder` is `{ id, name, parent: string | null }`, and both
-  `createFlowFolder` and `updateFlowFolder` accept `parent`
-  (`homey-api/assets/specifications/HomeyAPIV3Local.json`, `managers.ManagerFlow`). `getFlowFolders()`
-  returns a map keyed by id, hence the `Object.values()`. A flow points at exactly ONE folder
-  (`flow.folder`), so there is no "in two places" to reason about.
-- **Match on name AND parent, never name alone.** The old code found the app folder with
-  `folders.find(f => f.name === 'Lightkeeper')`. With children in the tree that picks up a device
-  folder a user happened to name Lightkeeper, and nests everything inside one device. The root is
-  `name === MANAGED_FOLDER_NAME && parent === null`; a device folder is `parent === root`.
-- **`createFlow` is the only writer of `flow.folder`, and a reused flow is never rewritten.** So
-  moving flows that already exist takes an explicit `updateFlow({ id, flow: { folder } })` — which is
-  how installs predating per-device folders migrate themselves.
-- **Only ever move a flow OUT OF OUR OWN root.** A flow whose folder is something else was put there
-  by the user, and `README.md` promises it stays. `hasBeenUserEdited()` deliberately compares neither
-  `name` nor `folder`, so nothing else would notice — a moved flow is reused IN PLACE, which is the
-  distinction that makes the migration safe.
-- **A device's folder is resolved from its own live flows first**, and only then by name. That is why
-  nothing persists a folder id: after a rename the flows still sit in the folder we made, it merely
-  carries the old name, so `renameIfOurs()` renames the folder instead of moving every flow. The
-  rename is refused when the folder holds anything that is not this device's — two devices sharing a
-  name would otherwise rename it back and forth on every reconcile, forever.
-- **Never cache a folder id across reconciles.** The previous `folderId` field was set once for the
-  app's lifetime; deleting the folder on the Homey left every later `createFlow` writing to a dead id.
-  The view is read once per `sync()`, alongside the flow read that already happens.
-- **Folder work never blocks a flow write.** Every method catches its own failure and degrades to "no
-  folder" / "no change". `test/unit/flow-bridge-folders.test.ts` asserts a Homey that refuses every
-  folder call still gets its flows, and `test/unit/flow-bridge-sweep.test.ts`'s client stub has no
-  folder methods at all, which is the same contract from the other side.
-- **The empty `Lightkeeper` folder is left behind on purpose.** Device folders are deleted once
-  emptied; the root is the anchor the next device resolves against.
-
----
-
-## 12. A circadian light generates no Flows, and that is the whole design
-
-Two device types follow the colour temperature of the day — warm at dawn, cool through the middle,
-warm again at night — and they are ONE engine:
-
-| Device type | Stores | Asks for |
-|---|---|---|
-| **Circadian light** (`drivers/circadian/`) | two ends of the day | what warmest and coolest look like |
-| **Curve light** (`drivers/curve/`) | a list of points | every point, every time, and a colour per point |
-
-Neither is a schedule with more rows. A schedule fires AT a time; a curve has a value at EVERY
-minute, and that difference decides everything below.
-
-**The split, and why the shape is not a setting.** A five-point editor is a lot of screen for "warm
-at night, cool in the day", which is what most people want — so the circadian light asks two
-questions and supplies the shape itself (`SIMPLE_SHAPE` in `lib/circadian/simple-curve.ts`: warmest
-at 06:00, coolest at 11:00 and 15:00, warmest again at 21:00). Four points, not two, so each end is
-HELD: two points would have the curve only ever AT one of them for an instant, cooling all night on
-its way to midday. The segment from 21:00 round to 06:00 is warmest at both ends, so the whole night
-is flat — which cyclic interpolation makes true with no special case.
-
-The shape is a CONSTANT, derived on every register rather than stored. Two consequences, both
-deliberate: an installed device picks up an improved shape, and the moment the times become editable
-this device type is the Curve light with fewer fields. Somebody who wants their own times has one.
-
-**One registry serves both.** `app.curves` — a single `CircadianRuntimeManager` — because they are
-the same runtime, and sharing it is what keeps "ONE `setInterval` for every circadian device on the
-Homey" true across two device types rather than two timers over two maps. The circadian device's own
-`registry()` is a small adapter that expands its two ends into points on the way in and folds
-`enabled` and `preStage` back on the way out; `kind` in each runtime's diagnostics is what tells the
-two apart on a settings page and in a bug report.
-
-**A point may carry a COLOUR instead of a colour temperature** (Curve light only). The palette is
-closed (`lib/circadian/palette.ts`) and that is a decision, not a limitation: hue and saturation are
-a two-dimensional choice with one good answer per intent, most of the plane is a bad idea in a living
-room at 21:00, and a name survives being read back on a settings page a year later where a pair of
-coordinates does not. Three rules hold the feature together:
-
-- **`warmth` stays required even on a coloured point.** It is what a lamp with no colour capability
-  is written to instead, and what the neighbouring temperature segments interpolate towards — so the
-  SHAPE of the curve does not depend on which of the household's lamps can do colour.
-- **A colour is never blended with a colour temperature.** Both ends coloured blends, hue the short
-  way round the wheel. One end coloured HOLDS that colour flat across the whole segment. Fading
-  "amber" into "4000 K" means inventing a shade nobody chose. The consequence, stated because a user
-  notices it: ONE coloured point colours the two segments either side of it — "amber at 21:00" with
-  temperature points at 19:00 and 23:00 is amber from 19:00 to 23:00, not an amber instant.
-- **`light_mode` is written before hue and saturation.** A lamp sitting in temperature mode ignores a
-  hue it is given — not an error, just no visible effect, which is the worst failure this app can
-  produce. `WRITE_ORDER` in the scheduler puts mode ahead of hue for the same reason it puts `onoff`
-  ahead of `dim`. The capability tested for is `light_hue`, NOT `light_mode`: `homey-lib` pairs hue
-  and saturation on every colour-capable light, while `light_mode` exists only on a lamp that also
-  has a temperature mode to switch out of, so testing for it would skip a colour-only lamp that can
-  do exactly what was asked.
-
-**A colour override is detected on the hue axis.** `subscribeAll` adds `light_hue` to the
-subscription only when a point actually declares a colour — a lamp in a coloured segment is one whose
-colour a person changes on that axis, not the temperature one, so without it taking such a lamp over
-by hand went unnoticed and the next tick took it back.
-
-- **It uses a timer, and §9 does not forbid it.** §9 is about boundaries — a 22:00 event has to fire
-  at 22:00 across DST, restarts and an app that was not running a moment ago, which only the Flow
-  engine can promise. A curve has nothing to miss: a skipped tick is corrected by the next one and a
-  restart just resumes. So `CircadianRuntimeManager` holds ONE `homey.setInterval` for every
-  curve-driven device on the Homey (60 s) — both device types, one timer — and compiling ninety-six
-  Flows to approximate a smooth curve would be worse in every direction, including putting these
-  device types back behind an API key.
-- **Which is the real prize: no Flows means no Personal API Key.** Pairing is the light picker and
-  then the curve (or the two ends); there is no credential screen, `assessHealth()` has no credential
-  leg, `app.ts` does not notify either on a credential change, and `liveDeviceIds()` in `api.ts`
-  deliberately excludes BOTH — neither kind of id can appear in a Flow's bridge arguments, so
-  counting them would only inflate the sweep's "live" count and stop its "nothing is running"
-  refusal from firing.
-- **Three things cause a write, and the first is the feature.** The rising edge of a target's
-  `onoff` — over the capability subscription the app already holds — is what makes a lamp the right
-  colour however it was switched on: the wall switch, the vendor app, another Flow. That write
-  deliberately SKIPS the "has the curve moved" gate, because the lamp has just restored whatever
-  colour it was last at. The other two are the tick and any change of plan or targets.
-- **`LightTargetAdapter.subscribe()` now hands on the cache's verdict.** `applyExternalChange()`
-  always knew whether a change was genuinely external or the echo of our own write, and always threw
-  the answer away. The optional third argument is that answer — and because echoes arrive duplicated
-  (§6), it is also what makes one power-on produce one write rather than two.
-- **The tick must not refresh.** Live values arrive over the subscriptions, so re-reading every
-  target every minute would add a round trip per light per minute to an app that otherwise only talks
-  to Homey when something happens. `ScheduleRuntime.apply()` does the opposite, correctly: it fires
-  twice a day off a cache that may be hours stale.
-- **The write gate is the capability's own resolution.** Across the steepest default segment the
-  curve moves about 0.003 a minute and `light_temperature` reports `decimals: 2` (§6), so a write
-  goes out roughly every third tick. Ticking faster changes nothing; the gate is what sets the rate.
-  **Colour has its own gate and a fixed threshold**, because `light_hue` carries no `decimals` in
-  `homey-lib`: there is no declared resolution below which a hue write is provably a no-op. 0.01 of a
-  turn is about 3.6° — finer than the eye on a wall, coarse enough that a two-hour blend costs a
-  handful of writes rather than a hundred and twenty. Hue is compared the SHORT way round, for the
-  same reason it is blended that way.
-- **An external colour change stands the device down for that light.** Over a 0.03 tolerance — above
-  a bridge's rounding, far below a deliberate change — and outside a 3 s settle window after our own
-  write. Cleared by either edge of `onoff`, because "switch it off and on again" is the gesture
-  people already have for putting a light back to how it ought to be. Never persisted: a restart is a
-  clean slate, which is the right bias for a feature whose job is to be correct by default.
-- **Pre-staging is opt-in because a colour write can switch a lamp ON.** §6 measured that for `dim`
-  on Hue; whether `light_temperature` does the same is per-integration and untested. So writing to
-  lights that are off is off by default, provable from the pairing screen against the household's own
-  lamps, and self-disabling: `verifyStayedOff()` turns it off for the whole device and persists that
-  the first time a lamp comes on from one. It does NOT switch the lamp back off — by then our doing
-  and somebody walking in are indistinguishable, and switching off a room a person has just lit is
-  the worse failure. The screen's own probe does restore it, because there the user asked.
-- **Brightness is never pre-staged.** A `dim` write turns an off lamp on; that is measured, not
-  suspected. Pre-staging is a colour-only idea, and `planWrites()` splits its two legs for exactly
-  this reason.
-- **A circadian light's schema 1 → 2 is where this device type stopped being the curve editor.** The
-  step keeps the WARMEST and COOLEST points — the two values the user actually chose, and the two the
-  new shape is built to hold — and drops everything between them, because there is nowhere in the new
-  plan to put it. That is in the changelog rather than hidden, and a Curve light is where such a curve
-  can be rebuilt. The step runs `sanitiseCurve` first: a plan stored at version 1 was never
-  validated (the chain ended in a cast until the validators landed), so `points` may be anything.
-- **There is no migration BETWEEN the two device types**, and there cannot be: Homey has no way to
-  change a device's driver. An existing circadian light becomes the simple one; a curve is a new
-  device. Adding one is cheap — no API key, no Flows — which is what makes that acceptable.
-- **The anchor is a discriminated union from day one.** `{ kind: 'clock' }` is all that ships;
-  `{ kind: 'sun' }` is declared, refused by `sanitiseCurve()` and thrown on by `resolveAnchor()`, so
-  anchoring to real sunrise and sunset later is a new variant rather than a reshape of every stored
-  plan. What it needs is `homey:manager:geolocation` — which this app does not declare — and solar
-  maths the SDK does not provide (§9).
-
----
-
----
-
-## 13. `require('homey')` only resolves ON a Homey, and that shapes the device layer
-
-The `homey` package in `node_modules` is the **CLI**, not the SDK: its `main` is `bin/homey.js`, so
-`require('homey')` outside a Homey either runs the CLI or hands back something with no `Device` on
-it. The SDK module exists only in the app's runtime on the device.
-
-`@types/homey` supplies the types, so `tsc` is perfectly happy — and any test that imports a file
-containing `extends Homey.Device` dies with
-
-```
-TypeError: Class extends value undefined is not a constructor or null
-```
-
-That is not a detail about testing. It is the reason the three device files had no tests at all, and
-therefore the reason every ordering bug in them survived to be found by review: a lifecycle whose
-only test harness is a real Homey Pro is a lifecycle nobody tests twice.
-
-So the device layer is split, and the split is load-bearing:
-
-| File | What it is |
-|---|---|
-| `lib/devices/device-lifecycle.ts` | `DeviceLifecycle<TPlan, TRuntime>` — a plain class taking its host as an argument. Every rule lives here: the transactional apply, the rollback, the per-device FIFO, the sequenced availability verdicts, load-and-migrate, quarantine, the delete gate. |
-| `lib/devices/lightkeeper-device.ts` | `LightkeeperDevice extends Homey.Device implements DeviceOwner` — holds a `DeviceLifecycle` and forwards five SDK entry points. Nothing in it branches. |
-
-`Homey.Device` satisfies the SDK half of `DeviceOwner` structurally, so the shell adds only the two
-members the SDK spells differently: `translate()` for `homey.__` and `removeFlows()` for
-`app.bridge.removeAll`. `test/unit/device-transactions.test.ts` is what the single-class version
-could not have had.
-
-The same constraint explains `lib/app-contract.ts`. `app.ts` must stay `module.exports = <class>` —
-a Homey entry point using `export default` is not loaded at all — so there is no class type for
-`api.ts` to import. The contract is that type written by hand, and `app.ts` assigns its class to it
-before exporting, so removing a member the contract promises fails at compile time rather than as
-`undefined` inside a settings-page handler.
-
-Two ordering rules the lifecycle owns, both of which cost a real bug:
-
-- **A verdict carries a sequence number.** Serialising the availability updates is not enough: a
-  stale verdict is still IN the queue and would be applied, just later. Each one takes a monotonic
-  number when it is issued and is dropped if a higher one has already been applied, so a register's
-  callback landing after the apply that superseded it cannot flip an unavailable device to available.
-- **An apply persists only after `register()` resolves**, and the managers insert into their maps
-  only after `start()` resolves. A runtime whose start threw is half-built — no scheduler, possibly
-  no subscriptions — and a bridge event arriving in that window would be dispatched into it.
+| [1](docs/homey-platform.md#1-an-apps-own-token-cannot-write-flows) | An app's own token cannot write Flows — hence the Personal API Key and the two separated clients |
+| [2](docs/homey-platform.md#2-api-key-sessions-die-routinely) | API key sessions die routinely; the three 401/403 failures mean different things |
+| [3](docs/homey-platform.md#3-never-construct-a-flow-card-uri) | Never construct a flow card URI — enumerate and echo it back |
+| [4](docs/homey-platform.md#4-device-trigger-cards-are-found-by-card-id-not-by-uri) | Device trigger cards are found by card **id**, not by URI |
+| [5](docs/homey-platform.md#5-token-encoding) | Token encoding: `droptoken` is top-level, identity is `token.id` |
+| [6](docs/homey-platform.md#6-capability-behaviour) | Capability behaviour — duplicated echoes, and **higher `light_temperature` is warmer** |
+| [7](docs/homey-platform.md#7-reference-device-event-surfaces) | The four reference remotes and how differently they behave |
+| [8](docs/homey-platform.md#8-repair-views-live-in-their-own-folder-and-validation-cannot-tell-you) | Repair views need their own folder, and `validate` cannot tell you |
+| [9](docs/homey-platform.md#9-time-comes-from-the-flow-engine-because-the-sdk-has-no-scheduler) | Time comes from the Flow engine, because SDK v3 has no scheduler |
+| [10](docs/homey-platform.md#10-store-assets-what-is-validated-what-is-reviewed-and-what-homey-does-to-your-icon) | Store assets: an icon is a CSS mask, and the validator checks far less than the guidelines |
+| [11](docs/homey-platform.md#11-flow-folders-nest-and-every-lookup-must-key-on-name-parent) | Flow folders nest; every lookup must key on (name, parent) |
+| [12](docs/homey-platform.md#12-a-circadian-light-generates-no-flows-and-that-is-the-whole-design) | A circadian light generates no Flows, and that is the whole design |
+| [13](docs/homey-platform.md#13-requirehomey-only-resolves-on-a-homey-and-that-shapes-the-device-layer) | `require('homey')` only resolves ON a Homey — why the device layer is split in two |
 
 # Working on this codebase
 
@@ -772,12 +185,15 @@ The version lives in **three** places and a release is only coherent when all of
 | `package.json` | must match it |
 | `app.json` | **generated** — never hand-edit; the CLI rewrites it from `.homeycompose/` on every `validate`, `build` and `install` |
 
-Every user-visible change ships a changelog entry, in two places with two different audiences:
+Every user-visible change ships a changelog entry, in **three** places with three different
+audiences. Three is deliberate rather than sloppy: the store entry, the full record and the front
+page's summary are read by different people looking for different depths.
 
-| File | Audience |
-|---|---|
-| `.homeychangelog.json` | what Homey shows in the app store. Keyed by the exact version string. Plain user language — what changed for them, never file names or internals |
-| `README.md` → `## Changelog` | the same release, for anyone reading the repo. May say *why*, and may name the mechanism |
+| File | Audience | Depth |
+|---|---|---|
+| `.homeychangelog.json` | what Homey shows in the app store. Keyed by the exact version string | plain user language — what changed for them, never file names or internals |
+| `CHANGELOG.md` | anyone reading the repo | the full entry. May say *why*, and may name the mechanism |
+| `README.md` → `## Changelog` | the front page | the CURRENT release in about four bullets, plus one line for the release just dropped off the top. Nothing more — this section going long is what made the old README unreadable |
 
 And one file that is not a changelog but drifts like one: **`README.txt` is the App Store long
 description**, which `homey app publish` uploads as the listing body (`README.<lang>.txt` per
@@ -791,15 +207,20 @@ repo stopped saying.
    new capability; pre-1.0 means no major bumps for breaking changes, so say it in the changelog
    instead.
 2. Add a `.homeychangelog.json` entry under that exact version.
-3. Mirror it under `## Changelog` in `README.md`, newest first.
-4. Run `npm run validate` — this is what regenerates `app.json`, so it is a required step and not
+3. Add the full entry to `CHANGELOG.md` as `## <version>`, newest first.
+4. Condense it into `README.md`'s `## Changelog`: the new release in about four bullets, and the
+   previous one demoted to a single line in the table below it.
+5. Update the **This release** section of `docs/hardware-test-plan.md` — what is new or risky this
+   time — and run that pass on hardware.
+6. Run `npm run validate` — this is what regenerates `app.json`, so it is a required step and not
    just a check. Commit the regenerated `app.json` with the rest.
-5. Re-read `README.txt` if anything about what the app *is* changed.
-6. `npm test`. `test/unit/release-metadata.test.ts` fails if the four versions disagree
-   (`package-lock.json` counts), if either changelog is missing the current version, or if
-   `README.md` states a test count that no longer matches the suite.
+7. Re-read `README.txt` if anything about what the app *is* changed.
+8. `npm test`. `test/unit/release-metadata.test.ts` fails if the four versions disagree
+   (`package-lock.json` counts), if any of the three changelogs is missing the current version, or if
+   `README.md`, `FAQ.md` or `docs/hardware-test-plan.md` states a test count that no longer matches
+   the suite.
    `test/unit/compose-manifest.test.ts` fails if `app.json` has drifted from `.homeycompose/` —
-   which `validate` would otherwise repair silently in step 4.
+   which `validate` would otherwise repair silently in step 6.
 
 `.homeychangelog.json` keeps the `{ "en": … }` object form for the same reason every other
 user-facing string does: adding a language stays a sibling key (see the localisation note below).
@@ -820,7 +241,7 @@ re-running the hardware pass list, not just re-running CI.
   leaves the CLI's own transitive tree free to move.
 - **`compatibility: >=12.9.0`** — the floor we can stand behind, rather than the older `>=12.3.0`
   that was never tested. Note this is a *firmware* floor; the real hardware floor is Homey Pro
-  2023 and newer, because earlier models cannot mint an API Key at all (§1).
+  2023 and newer, because earlier models cannot mint an API Key at all (platform §1).
 - **`category: ["tools", "lights"]`.** Apps holding `homey:manager:api` are reviewed as Tools-style
   cross-app functionality — `homey app validate` says so itself: *"using the homey:manager:api
   permission will require a more thorough review"*. `lights` stays second for discoverability.
@@ -840,7 +261,7 @@ re-running the hardware pass list, not just re-running CI.
 ## Two of the four device types share one flow lifecycle
 
 (The other two — a circadian light and a Curve light — generate no Flows at all and appear nowhere
-below. See §12.)
+below. See platform §12.)
 
 `FlowBridgeManager` takes `BindableInput` — `{ key, label, binding, variantKey? }` — not
 `SelectableInput`. A schedule has no physical control, no action and no magnitude, but it does have a
@@ -926,9 +347,9 @@ colour TOKENS stay, because they are what makes a palette change one edit rather
 
 **Edit a pair view, then run `npm run sync:views`.** Every `repair/` folder holds byte copies of its
 `pair/`, and the schedule driver's `credential.html` and `targets.html` are byte copies of the
-controller's, because Homey needs a real file in each place (§8). Edit the controller's copy of a
-shared view, never the schedule's. `npm test` fails on drift and names the script; nothing runs it
-for you.
+controller's, because Homey needs a real file in each place (platform §8). Edit the controller's
+copy of a shared view, never the schedule's. `npm test` fails on drift and names the script;
+nothing runs it for you.
 
 **Tests use `node --test` with `tsx`.** No framework. Fixtures in
 `test/fixtures/reference-devices.ts` are transcribed from the four remotes above; the expected
@@ -964,8 +385,8 @@ Load-bearing product guarantees, not implementation details:
   wording (redacted), because `404 Not Found: FlowCardAction with ID <x>` is the message that costs
   hours and replacing it with "could not reach Homey" sends the next reader elsewhere.
 - **One live handshake per API key.** `getWriteClient()` memoises the in-flight attempt. A key holds
-  a single session (§2), so two concurrent `createLocalAPI` calls fight over it — and at boot the
-  app's own revalidation races every controller's first reconcile. Symptom if this is removed: a key
+  a single session (platform §2), so two concurrent `createLocalAPI` calls fight over it — and at
+  boot the app's own revalidation races every controller's first reconcile. Symptom if this is removed: a key
   that was just accepted "randomly" stops working minutes later.
 - **A recovered key returns controllers to ready without a restart.** `needs_credential` is the one
   state a health re-check may leave downward (`recoverFromCredentialFailure`), because it asserts
@@ -994,7 +415,7 @@ Load-bearing product guarantees, not implementation details:
   CONTAINS now, because the alternative is a dark evening after a restart at 22:01. It deliberately
   does not act on a window that already ended: switching a household's lights off at app start, on
   the guess that we might once have switched them on, is the worse surprise. Stated as a limit in the
-  README rather than hidden.
+  README and the FAQ rather than hidden.
 - **Pausing a schedule keeps its Flows and does not mark the device unavailable.** The controller
   marks a disabled controller unavailable, which is harmless there; a paused schedule's tile carries
   the switch that un-pauses it, and an unavailable device cannot be switched. So `'disabled'` keeps a
@@ -1010,6 +431,7 @@ This app was designed and written end to end with Claude — architecture, imple
 documentation. A human directed the work, made the product decisions, and verified behaviour on
 real hardware.
 
-One practical consequence if you are picking this up: the dense *why*-comments, the platform
-reference above and the `§n` tags are the durable record of decisions reasoned through once, and of
-platform behaviour that took real hardware to establish. Prefer updating them over stripping them.
+One practical consequence if you are picking this up: the dense *why*-comments,
+`docs/homey-platform.md` and the `platform §n` tags that cite it are the durable record of
+decisions reasoned through once, and of platform behaviour that took real hardware to establish.
+Prefer updating them over stripping them.

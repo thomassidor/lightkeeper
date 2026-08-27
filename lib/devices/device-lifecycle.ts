@@ -46,7 +46,7 @@ export interface PlanMigration<TPlan> {
  * The slice of a runtime this layer touches.
  *
  * `reconcileFlows` and `updatePlan` are optional because a circadian runtime has
- * neither — it generates no Flows (CLAUDE.md §12), so a rename has nothing to
+ * neither — it generates no Flows (platform §12), so a rename has nothing to
  * reach — and an optional call is a no-op rather than a special case here.
  */
 export interface DeviceRuntime {
@@ -126,7 +126,7 @@ export interface DeviceOwner<TPlan, TRuntime extends DeviceRuntime> {
    * loaded, which includes the case where validation rejected one. The
    * lifecycle filters the result through the shape check before any delete.
    *
-   * Circadian returns nothing: it creates no Flows (CLAUDE.md §12).
+   * Circadian returns nothing: it creates no Flows (platform §12).
    */
   rawFlowRefs(): unknown;
   /**

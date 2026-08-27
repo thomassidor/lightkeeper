@@ -145,7 +145,7 @@ describe('sanitizedWriteError', () => {
   });
 
   test('an unclassified platform error keeps its meaning, redacted', () => {
-    // This is the error CLAUDE.md §3 says costs hours to recognise. Replacing it
+    // This is the error platform §3 says costs hours to recognise. Replacing it
     // with "could not reach Homey" would send the next reader somewhere else.
     const error = sanitizedWriteError(
       new Error(`404 Not Found: FlowCardAction with ID x (auth ${REAL_KEY})`),

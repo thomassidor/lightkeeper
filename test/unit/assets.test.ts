@@ -6,7 +6,7 @@ import { join } from 'node:path';
 /**
  * The shipped artwork, checked against what Homey actually enforces.
  *
- * Every PNG here is produced by `python docs/artwork/export-assets.py` from a crop
+ * Every PNG here is produced by `python artwork/export-assets.py` from a crop
  * box in that script, so a mistake is a number in a file rather than a bad export
  * — and it is invisible until `homey app validate` refuses the app, or until a
  * reviewer does. homey-lib checks the two required sizes exactly
@@ -116,7 +116,7 @@ describe('shipped images', () => {
       assert.deepEqual(
         [width, height], [...expected],
         `${target.label} ${target.key} is ${width}x${height}, Homey requires `
-        + `${expected[0]}x${expected[1]} — re-run python docs/artwork/export-assets.py`,
+        + `${expected[0]}x${expected[1]} — re-run python artwork/export-assets.py`,
       );
     }
   });
@@ -143,10 +143,10 @@ describe('shipped images', () => {
 
 describe('the palette', () => {
   test('brandColor is the colour the artwork pipeline extracted', () => {
-    // #180E32 is 93% of docs/artwork/masters/logo-bitmap-original.png, read out by
+    // #180E32 is 93% of artwork/masters/logo-bitmap-original.png, read out by
     // `export-assets.py --palette`. Tying the manifest to the script's constant is
     // what stops the app's brand colour drifting away from its own logo.
-    const script = readFileSync(join(ROOT, 'docs', 'artwork', 'export-assets.py'), 'utf8');
+    const script = readFileSync(join(ROOT, 'artwork', 'export-assets.py'), 'utf8');
     const declared = /^BRAND = '(#[0-9A-Fa-f]{6})'/m.exec(script)?.[1];
     assert.ok(declared, 'export-assets.py declares no BRAND colour');
 
@@ -221,7 +221,7 @@ describe('icons', () => {
     for (const target of iconTargets()) {
       const svg = readFileSync(target.path, 'utf8');
       assert.match(
-        svg, /GENERATED from docs\/artwork\/masters\/[\w.-]+/,
+        svg, /GENERATED from artwork\/masters\/[\w.-]+/,
         `${target.label}: does not name the master it came from`,
       );
     }

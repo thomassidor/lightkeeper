@@ -1,5 +1,10 @@
 # Deviations from the remediation plan
 
+> **Archive.** This is the completed remediation project that produced most of 0.5.0. All eight
+> phases are done — see the status table in [`00-PLAN-MASTER.md`](00-PLAN-MASTER.md). Nothing here
+> describes outstanding work. This file is kept for the reasoning: two code comments still cite it
+> directly.
+
 Where the plan and the code disagreed, and what was done instead. Per the
 master plan's rule 6: a discrepancy is recorded rather than improvised around.
 
@@ -841,7 +846,7 @@ Byte-identical driver icons are a review finding, so the pair is recorded rather
 than tolerated silently: `PENDING_ARTWORK` in `assets.test.ts` (with a sibling test
 asserting every entry still names a real icon target, so the list cannot outlive
 what it excuses), both target entries in `export-assets.py`, and
-`docs/artwork/provenance.md`. Removing those entries is the definition of done.
+`artwork/provenance.md`. Removing those entries is the definition of done.
 
 ### Locale keys are shared between the two screens
 

@@ -379,7 +379,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
    *
    * The compiler declines a control whose range would need more flow variants
    * than the ceiling allows — BILRESA's `switch_multi_press_multi` is 9 x 18 =
-   * 162 of them (CLAUDE.md §7), thirteen times over. Until now that was
+   * 162 of them (platform §7), thirteen times over. Until now that was
    * discovered at the FIRST RECONCILE, which is after the device exists: the
    * user finished pairing, the mapping row said it was configured, and the
    * gesture did nothing. The reason was one line in the app log.

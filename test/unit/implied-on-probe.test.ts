@@ -10,7 +10,7 @@ import { settle } from '../support/deferred';
  * The one place this app writes to a light nobody asked it to write to.
  *
  * `impliesOn` skips the separate `onoff` write because a `dim` write turns an
- * off Hue lamp on — measured (CLAUDE.md §6). Not every integration behaves that
+ * off Hue lamp on — measured (platform §6). Not every integration behaves that
  * way, so 1.5 s later the adapter checks whether the lamp really did come up
  * and sends `onoff` if it did not.
  *

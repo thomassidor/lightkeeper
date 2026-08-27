@@ -17,7 +17,7 @@ import type { ControllerState, StateDetail } from '../../lib/profiles/controller
  * Everything shared with the other device types lives in `LightkeeperDevice`.
  * What is here is the expansion above, plus three differences from a schedule,
  * all for the same underlying reason — this device type generates no Flows
- * (CLAUDE.md §12):
+ * (platform §12):
  *
  *  - **Nothing to clean up on delete.** `rawFlowRefs()` stays at the base's empty
  *    default, so the delete path unregisters the runtime and stops there.

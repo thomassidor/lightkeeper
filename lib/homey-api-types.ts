@@ -45,7 +45,7 @@ export interface RawZone {
  * A flow, as `flow.getFlows()` returns it.
  *
  * `trigger` and each action carry BOTH an `id` and a `uri`, and the uri embeds
- * the id (CLAUDE.md §3). Neither is ever constructed here — both are echoed back
+ * the id (platform §3). Neither is ever constructed here — both are echoed back
  * from enumeration, and this type is part of saying so.
  */
 export interface RawFlow {
@@ -63,7 +63,7 @@ export interface RawFlowCardRef {
   uri?: unknown;
   args?: unknown;
   group?: unknown;
-  /** A TOP-LEVEL property of an action, not an entry in args (CLAUDE.md §5). */
+  /** A TOP-LEVEL property of an action, not an entry in args (platform §5). */
   droptoken?: unknown;
 }
 
@@ -71,7 +71,7 @@ export interface RawFlowCardRef {
  * A flow folder, as `flow.getFlowFolders()` returns it.
  *
  * Nesting is real: `parent` is a folder id or null, and both `createFlowFolder`
- * and `updateFlowFolder` accept one (CLAUDE.md §11). A lookup must key on
+ * and `updateFlowFolder` accept one (platform §11). A lookup must key on
  * (name, parent) — name alone picks up a device folder a user happened to name
  * `Lightkeeper` and nests everything inside one device.
  */

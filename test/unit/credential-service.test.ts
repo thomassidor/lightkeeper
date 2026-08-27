@@ -149,7 +149,7 @@ describe('credential service', () => {
 
 /**
  * A key appears to hold a single live session: a second createLocalAPI handshake
- * claims or replaces it, invalidating the first holder (CLAUDE.md §2). At boot
+ * claims or replaces it, invalidating the first holder (platform §2). At boot
  * the app's own revalidation races every controller's first reconcile, so an
  * unguarded build here means two handshakes on one key — which presents as a key
  * that "randomly" stops working minutes after it was accepted.

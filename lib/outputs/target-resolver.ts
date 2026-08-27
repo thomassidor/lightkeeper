@@ -56,7 +56,7 @@ export class TargetResolver {
       for (const capability of ['dim', 'light_temperature', 'light_hue', 'light_saturation'] as const) {
         if (!device.capabilities.includes(capability)) continue;
         const options = device.capabilitiesObj[capability];
-        // Read, never assumed: capability options are not uniform (CLAUDE.md §6
+        // Read, never assumed: capability options are not uniform (platform §6
         // — `onoff` has none at all, `dim` carries units and decimals,
         // `light_temperature` carries decimals and no units).
         capabilities[capability] = {

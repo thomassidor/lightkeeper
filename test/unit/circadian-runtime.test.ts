@@ -210,7 +210,7 @@ describe('circadian writes', () => {
     await settle();
 
     // 22:15 sits between the 12:00 (0.2) and 23:00 (1.0) points, close to the
-    // warm end. Cooler than this at bedtime is the bug CLAUDE.md §6 records.
+    // warm end. Cooler than this at bedtime is the bug platform §6 records.
     const value = temperatures(h.writes)[0].value as number;
     assert.ok(value > 0.9, `wrote ${value} at 22:15`);
   });
@@ -364,7 +364,7 @@ describe('switching on', () => {
   });
 
   test('a duplicated echo of the same power event produces one write, not two', async () => {
-    // Echoes arrive duplicated on real hardware (CLAUDE.md §6).
+    // Echoes arrive duplicated on real hardware (platform §6).
     const h = harness({ devices: [light('l1', undefined, { onoff: false }), light('l2')] });
     await h.runtime.start();
     await settle();
@@ -583,7 +583,7 @@ describe('diagnostics', () => {
  * The acceptance bar for target release.
  *
  * A circadian light watches its targets' `onoff` and writes on the rising edge
- * — that IS the feature (CLAUDE.md §12), and it is why leaving a subscription
+ * — that IS the feature (platform §12), and it is why leaving a subscription
  * behind is worse here than anywhere else in the app. A light dropped from the
  * plan kept its subscription, so the next time somebody switched it on, this
  * runtime dutifully wrote a colour to a lamp that was no longer any of its

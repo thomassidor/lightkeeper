@@ -4,7 +4,7 @@
  * What `homey-api` throws is an `APIError` carrying a numeric `statusCode`
  * taken straight off the HTTP response (`lib/APIError.js`), with the server's
  * own text as the message — `404 Not Found: FlowCardAction with ID <x>` being
- * the one CLAUDE.md §3 records. So a status field really does exist and is the
+ * the one platform §3 records. So a status field really does exist and is the
  * first thing to read.
  *
  * The message match is not a fallback for tidiness. Between the client and us

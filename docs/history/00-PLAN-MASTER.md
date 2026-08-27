@@ -1,5 +1,11 @@
 # Lightkeeper Remediation — Implementation Plan (Master)
 
+> **Archive.** This is the completed remediation project that produced most of 0.5.0. All eight
+> phases are done — see the status table at the foot of this file. Nothing here
+> describes outstanding work. It is kept for the reasoning in
+> [`DEVIATIONS.md`](DEVIATIONS.md), which records where the plan and the code disagreed and what
+> was done instead, and which two code comments still cite directly.
+
 **Input:** Consolidated code review of `thomassidor/lightkeeper` @ `main`, 2026-08-26, v0.4.0 (two independent reviews, cross-verified against source; all finding IDs below — B*, Q*, D*, S*, R*, LK-* — refer to that document).
 **Executor:** Claude Code, working phase by phase. Read this file fully before any phase. Load exactly one `PHASE-N-*.md` per working session.
 **Baseline verified:** 411 tests / 100 suites, 0 failures (Node 20, `tsx`).

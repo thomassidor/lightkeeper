@@ -14,7 +14,7 @@ import type { WriteRecord } from '../outputs/light-target-adapter';
  * Two things make it its own manager rather than a widening of either:
  *
  *  - **It owns the clock.** One `setInterval` for every circadian device on the
- *    Homey, not one per device. SDK v3 has no cron manager (CLAUDE.md §9), and
+ *    Homey, not one per device. SDK v3 has no cron manager (platform §9), and
  *    `homey.setInterval` is its disposal-safe alias — which is the right tool
  *    HERE, where a schedule's is the Flow engine, because a curve has no
  *    boundaries: a missed tick is corrected by the next one, and a restart just

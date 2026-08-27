@@ -1,22 +1,41 @@
-# Human test plan — 0.5.0
+# Hardware test plan
 
-Everything below needs real hardware. The suite covers the logic (771 tests); this
-covers what only a Homey can answer: the loader, the pairing screens, and lights
-actually changing.
+**The standing pass, run before every release.** Everything below needs real
+hardware. The suite covers the logic (771 tests); this covers what only a Homey
+can answer: the loader, the pairing screens, and lights actually changing.
+
+Sections 1–8 do not change between releases. [This release](#this-release) is the
+part that does — rewrite it each time with what is new or risky, and leave the
+rest alone.
 
 **Before you start:** `npx homey app install`. If it fails with a bare
 `× Missing File`, try `--clean`; if `--clean` fails, try without it. Neither is
 always right.
 
-Tick each line. Anything unticked is a real result — tell me which.
+Tick each line. Anything unticked is a real result — say which.
+
+---
+
+## This release
+
+*Rewritten each release. Everything below this section is the standing pass.*
+
+**0.5.0.** Two things are new and one is invisible:
+
+- **A fourth device type, the Curve light** — §5 is entirely about it.
+- **The circadian light became the simple one**, and an existing one migrates
+  (§4). It should keep two of its old curve values and drop the rest.
+- **The device layer was rewritten**, so all four device types now load through a
+  shared file. If that broke, devices fail to appear rather than misbehaving —
+  which is what §1 is looking for.
 
 ---
 
 ## 1. It installs and every device survives a restart (5 min)
 
-The riskiest change in this release is invisible: the device layer was rewritten,
-so **all four device types now load through a shared file**. If that broke, devices
-fail to appear rather than misbehaving.
+Every device type loads through one shared file, so a loader fault shows up as
+devices failing to appear rather than as anything misbehaving. Check them all,
+even the ones a release did not touch.
 
 - [ ] The app starts. Settings → Lightkeeper shows no error.
 - [ ] Your existing controllers and schedules are all still listed, still available
@@ -118,7 +137,7 @@ This is the one that fails loudly if the pairing files are in the wrong place �
   new artwork is a separate job.
 - **Your old circadian curve lost its middle points.** By design; the changelog says
   so. Add a Curve light if you want that curve back.
-- **A CLI-installed app shows no icon at all** (CLAUDE.md §10). Not a bug; it
+- **A CLI-installed app shows no icon at all** (platform §10). Not a bug; it
   resolves on publish.
 
 ## If something fails

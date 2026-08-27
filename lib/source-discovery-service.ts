@@ -10,7 +10,7 @@ import type { SelectableInput } from './inputs/selectable-input';
 
 /**
  * Discovery order, corrected against what the platform actually
- * exposes (see CLAUDE.md).
+ * exposes (see platform §4).
  *
  * Device-scoped trigger cards encode their device in the card ID:
  *     homey:device:<deviceId>:<cardName>

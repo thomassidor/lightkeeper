@@ -15,7 +15,8 @@ import type { SelectableInput } from '../../lib/inputs/selectable-input';
  * exist to pin the two rules that are easy to break in the other direction:
  *
  *   - a flow is only ever moved OUT of our own root folder. One the user filed
- *     somewhere of their own stays where they put it (README's promise), and
+ *     somewhere of their own stays where they put it (README.md's "What you
+ *     can rely on" promises this), and
  *     hasBeenUserEdited() deliberately never compares folders, so nothing else
  *     would catch it.
  *   - a folder failure NEVER blocks a flow write. Folders are presentation.
@@ -248,7 +249,8 @@ describe('flows that already exist', () => {
   });
 
   test('one the USER moved elsewhere stays exactly where they put it', async () => {
-    // README: "any folder you moved those Flows into survives". Nothing else
+    // README.md: "A Flow you filed somewhere yourself stays there ... only ever
+    // out of the Lightkeeper folder, never out of one of yours." Nothing else
     // guards this — hasBeenUserEdited() never looks at a flow's folder.
     const h = harness({
       folders: [ROOT, { id: 'mine', name: 'My evening flows', parent: null }],

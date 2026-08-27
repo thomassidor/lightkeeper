@@ -2,8 +2,8 @@
   <title>Circadian light</title>
   <desc>A lightbulb below a daylight arc, between a sunrise and a sunset.</desc>
 
-  <!-- GENERATED from docs/artwork/masters/circadian-icon-master.svg by
-       docs/artwork/export-assets.py. Edit the master, then re-run the script;
+  <!-- GENERATED from artwork/masters/circadian-icon-master.svg by
+       artwork/export-assets.py. Edit the master, then re-run the script;
        an edit here is lost on the next export.
 
        Homey renders an icon as a CSS mask painted one flat colour, fetched from

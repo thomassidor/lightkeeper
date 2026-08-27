@@ -11,7 +11,7 @@ instead, re-run export-assets.py, and delete this script along with the
 placeholder notes in provenance.md. Nothing else changes — the crop is found by
 non-white detection, so a new master reframes itself.
 
-    python docs/artwork/masters/make-circadian-placeholder.py
+    python artwork/masters/make-circadian-placeholder.py
 """
 
 from __future__ import annotations

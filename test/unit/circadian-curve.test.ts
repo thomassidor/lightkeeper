@@ -100,7 +100,7 @@ describe('valueAt', () => {
 
   test('the default curve is warm at night and cool in the middle of the day', () => {
     // The product claim, asserted rather than assumed. HIGHER IS WARMER
-    // (CLAUDE.md §6), and getting this backwards once lit a room cold white at
+    // (platform §6), and getting this backwards once lit a room cold white at
     // bedtime.
     assert.ok(valueAt(DEFAULT_POINTS, 23 * 60).warmth > 0.9);
     assert.ok(valueAt(DEFAULT_POINTS, 3 * 60).warmth > 0.85);

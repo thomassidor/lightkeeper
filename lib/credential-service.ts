@@ -3,7 +3,7 @@
  *
  * Exists because of a platform constraint: an app's OWN token is refused with
  * 403 Missing Scopes on every flow write, while a user-minted Personal API Key
- * succeeds, including from inside the app process. See CLAUDE.md.
+ * succeeds, including from inside the app process. See platform §1.
  *
  * The key is never logged, never returned over the app API,
  * and never included in diagnostics or profile exports.
@@ -26,7 +26,7 @@
  *    every device went `needs_credential` until the next restart. A failed
  *    `setCredential` now returns a candidate-scoped verdict and touches nothing.
  *  - **Late answers are discarded.** A key holds a single live session
- *    (CLAUDE.md §2), so a revalidation in flight while a new key is entered is
+ *    (platform §2), so a revalidation in flight while a new key is entered is
  *    asking about a session that no longer matters. Every publish is gated on
  *    the generation and the token being the ones it started with.
  */
@@ -294,7 +294,7 @@ export class CredentialService {
    * The write client, built on demand. Throws with an actionable message.
    *
    * Concurrent callers MUST share one handshake. A key appears to hold a single
-   * live session (CLAUDE.md §2): a second `createLocalAPI` claims or replaces it,
+   * live session (platform §2): a second `createLocalAPI` claims or replaces it,
    * invalidating the first holder. At boot the app's own revalidation races every
    * controller's first reconcile, so an unguarded build here is two handshakes on
    * the same key — which presents as a key that "randomly" stops working minutes
@@ -406,7 +406,7 @@ export const PROBE_FOLDER_NAME = 'Lightkeeper (checking permissions)';
  * Prove a key can WRITE, not merely read.
  *
  * This is the whole of credential validation, and it has to be a write:
- * every flow READ succeeds on a key that cannot write a thing (CLAUDE.md §1),
+ * every flow READ succeeds on a key that cannot write a thing (platform §1),
  * so a read-based check gives false confidence and sends the user away happy
  * with a key that will fail at the first reconcile.
  *

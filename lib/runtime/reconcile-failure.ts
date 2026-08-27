@@ -16,7 +16,7 @@ import type { StateDetail } from '../profiles/controller-profile';
  *    in `lib/` can never be translated.
  *  - **An unclassified platform error keeps its own words, redacted.**
  *    `404 Not Found: FlowCardAction with ID <x>` is the message that costs hours
- *    (CLAUDE.md §3), and replacing it with "could not reach Homey" sends the next
+ *    (platform §3), and replacing it with "could not reach Homey" sends the next
  *    reader somewhere else entirely. Redacted because this text reaches
  *    `setUnavailable()` on the device, and an upstream error can quote the API
  *    key back inside its own message.

@@ -86,7 +86,7 @@ export function normalizeCards(
        * The type is NAMED, and for one type in particular.
        *
        * `type: "device"` is how an app-level card says "which device?" — a
-       * filtered one is discovery's rank-2 route (CLAUDE.md §4), and reaching
+       * filtered one is discovery's rank-2 route (platform §4), and reaching
        * here means the card was matched to this device and then declined for the
        * very argument that matched it. Pre-binding that argument would make the
        * card usable, and is deliberately NOT done: a `device` argument's accepted

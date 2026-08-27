@@ -7,7 +7,7 @@ import { isTransportFailure } from '../../lib/support/homey-errors';
 import { deferred } from '../support/deferred';
 
 /**
- * A key holds a single live session (CLAUDE.md §2), so the interesting cases are
+ * A key holds a single live session (platform §2), so the interesting cases are
  * all about two answers about two different keys arriving in the wrong order.
  *
  * The failures these prevent are the ones that read as "the key randomly stopped

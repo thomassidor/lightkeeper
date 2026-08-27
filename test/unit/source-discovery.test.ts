@@ -9,7 +9,7 @@ import type { HomeyApiService } from '../../lib/homey-api-service';
  * Discovery decides what a remote appears to be capable of, so what it
  * declines matters as much as what it offers.
  *
- * The rule (CLAUDE.md §4) is rank-last, never hard-filter: an unfiltered
+ * The rule (platform §4) is rank-last, never hard-filter: an unfiltered
  * `device`-typed argument matches every device on the Homey — it once offered
  * "LG refrigerator error changed" as an input for a Tap Dial — so it must not
  * reach the picker, but it must stay visible. It did not: the weak matches were

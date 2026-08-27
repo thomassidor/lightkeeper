@@ -16,10 +16,11 @@ import type { ManagedFlowReference } from '../../lib/profiles/controller-profile
 /**
  * One named test per PROMISE the app makes in prose.
  *
- * README.md and CLAUDE.md both state, in user-facing and maintainer-facing
- * language, things this app guarantees: that deleting a device removes only
- * its own Flows, that a Flow the user edited is never overwritten, that a
- * colour change never switches a lamp on. Each of those is implemented
+ * README.md's "What you can rely on", FAQ.md's limits, and CLAUDE.md's own
+ * "Safety properties worth preserving" all state, in user-facing and
+ * maintainer-facing language, things this app guarantees: that deleting a
+ * device removes only its own Flows, that a Flow the user edited is never
+ * overwritten, that a colour change never switches a lamp on. Each of those is implemented
  * somewhere and covered SOMEWHERE by a unit test of the module that implements
  * it — but nothing connected the sentence to the assertion, so a refactor that
  * quietly retired a promise would leave the sentence standing.
@@ -123,9 +124,9 @@ function bridgeHarness(flows: Record<string, unknown>) {
 describe('safety promises', () => {
 
   /**
-   * README.md: "Deleting a Lightkeeper device deletes only the Flows it
-   * created." CLAUDE.md, Safety properties: "Attribution is the controller id
-   * carried in the bridge action's arguments."
+   * README.md, What you can rely on: "Deleting a device deletes only the Flows
+   * it demonstrably created." CLAUDE.md, Safety properties: "Attribution is the
+   * controller id carried in the bridge action's arguments."
    */
   test('deleting a device removes only the flows carrying its own id', async () => {
     const h = bridgeHarness({
@@ -153,7 +154,8 @@ describe('safety promises', () => {
   });
 
   /**
-   * README.md: "A Flow you have edited is never overwritten." CLAUDE.md, I8:
+   * README.md, What you can rely on: "A Flow you have edited is never
+   * overwritten." CLAUDE.md, I8:
    * a renamed or moved Flow is reused IN PLACE — folder placement and name are
    * deliberately NOT evidence of an edit, because the per-device folder
    * migration depends on moving flows we already own.
@@ -181,7 +183,8 @@ describe('safety promises', () => {
   });
 
   /**
-   * README.md: "A Flow you have edited is never overwritten." The other half:
+   * README.md, What you can rely on: "A Flow you have edited is never
+   * overwritten." The other half:
    * a materially changed action IS an edit, and the device goes to repair
    * rather than having the change stamped over.
    */
@@ -240,8 +243,9 @@ describe('safety promises', () => {
   });
 
   /**
-   * README.md: "Change a mapping and the old Flow is replaced, not left
-   * beside the new one." The failure this phase fixed: a binding whose
+   * FAQ.md, Where do the generated Flows go: reconfiguring reuses Flows rather
+   * than duplicating them — the old one is replaced, not left beside the new
+   * one. The failure this phase fixed: a binding whose
    * fingerprint moved got a new flow while the old one stayed live and
    * unreferenced, so the lights did the old thing AND the new thing.
    */
@@ -359,7 +363,7 @@ describe('safety promises', () => {
    * "A temperature change must never implicitly turn a light on." It was a
    * comment describing code that did not do it — the plan wrote colour to off
    * lamps, and on an integration where a `light_temperature` write lights the
-   * lamp (which is per-integration and untested — CLAUDE.md §12), pressing
+   * lamp (which is per-integration and untested — platform §12), pressing
    * "warmer" in a dark room turned the lights on.
    */
   test('a temperature change never implicitly turns a light on', () => {
@@ -390,7 +394,8 @@ describe('safety promises', () => {
   });
 
   /**
-   * README.md: "Lightkeeper never overrides something you have just done."
+   * README.md, What you can rely on: "Lightkeeper never overrides something you
+   * have just done."
    * The implied-on probe was the one place it did — it fires 1.5 s after a dim
    * write, which is long enough for somebody to reach a wall switch.
    */
@@ -436,7 +441,8 @@ describe('safety promises', () => {
   /**
    * "Catch-up never switches lights on without a trusted off boundary."
    *
-   * README: a schedule is never switched off retroactively, and catch-up applies
+   * README.md and FAQ.md: a schedule is never switched off retroactively, and
+ * catch-up applies
    * a window that CONTAINS now. That licence rests entirely on something else
    * being scheduled to end the window — the off Flow. With no reference to it,
    * catching up means lighting a household's rooms with nothing to turn them off
@@ -475,10 +481,12 @@ describe('safety promises', () => {
 });
 
 /**
- * The `§n` tags in lib/ are citations into CLAUDE.md's platform reference —
- * the durable record of things that took real hardware to establish. A tag
+ * The `§n` tags in lib/ are citations into docs/homey-platform.md — the
+ * durable record of things that took real hardware to establish. A tag
  * pointing at a section that no longer exists sends the next reader nowhere,
- * and renumbering the reference is exactly the edit that would do it.
+ * and renumbering the reference is exactly the edit that would do it. The
+ * reference moved out of CLAUDE.md into a file named for what it is; this
+ * test is what would have caught that move breaking every citation.
  */
 describe('platform-reference citations', () => {
   const root = join(import.meta.dirname, '..', '..');
@@ -493,7 +501,7 @@ describe('platform-reference citations', () => {
   }
 
   test('every §n referenced from lib/ names a section that exists', () => {
-    const doc = readFileSync(join(root, 'CLAUDE.md'), 'utf8');
+    const doc = readFileSync(join(root, 'docs', 'homey-platform.md'), 'utf8');
     const sections = new Set(
       [...doc.matchAll(/^## (\d+)\./gm)].map(match => match[1]),
     );

@@ -180,7 +180,7 @@ accident of implementation.
   would need `homey:manager:geolocation`, which this app does not request.
 - A circadian light and a schedule pointed at the same lights will disagree: the
   schedule sets a warmth at its boundary and the circadian light overwrites it within
-  minutes. Stated in the README rather than detected.
+  minutes. Stated in the README and FAQ rather than detected.
 - Schedules are clock times only; sunrise and sunset are not offered. They follow the
   Homey's own timezone, which the settings page displays next to each schedule.
 - Twelve schedules per schedule device — one schedule is one on/off window — which

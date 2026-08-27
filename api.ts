@@ -275,7 +275,7 @@ module.exports = {
       schedules: app.schedules.all().map(runtime => runtime.diagnostics()),
       circadian: app.curves.all().map(runtime => runtime.diagnostics()),
       // Which of Homey's own trigger cards the schedules are built on, and what
-      // else was on offer. A card URI may never be constructed (CLAUDE.md §3), so when a
+      // else was on offer. A card URI may never be constructed (platform §3), so when a
       // firmware moves this card the candidate list IS the investigation.
       timeCard: await app.schedules.timeCard().catch((error: unknown) => ({
         card: null as null,

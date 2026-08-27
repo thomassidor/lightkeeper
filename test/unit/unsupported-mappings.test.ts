@@ -11,7 +11,7 @@ import type { SelectableInput } from '../../lib/inputs/selectable-input';
  *
  * The ceiling exists for a real device: BILRESA's `switch_multi_press_multi`
  * is 9 buttons x 18 counts = 162 flow variants, thirteen times over
- * (CLAUDE.md §7). Declining it is right — filling somebody's Flow list with
+ * (platform §7). Declining it is right — filling somebody's Flow list with
  * 162 generated rows would be worse — but until now the decline went to the
  * app log and nowhere else. The user finished pairing, the mapping row said
  * the control was configured, and the gesture did nothing.
@@ -90,7 +90,7 @@ describe('the range expansion ceiling', () => {
  * Pure and offline: `compileBinding` needs no Homey, no API key and no cards
  * that exist, because the card refs are read only for an `id` and `uri` to
  * echo into a flow this throws away. Nothing here can reach a real flow, which
- * is the one thing CLAUDE.md §3's "never construct a card URI" protects.
+ * is the one thing platform §3's "never construct a card URI" protects.
  *
  * It returns the declined inputs and no sentence — `lib/` cannot translate
  * one, so the driver phrases it from `mapping.unsupportedControl`.

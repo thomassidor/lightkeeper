@@ -301,7 +301,7 @@ describe('finding Homey\'s time trigger card', () => {
     // what a schedule wants. It is not taken: the day set would then live in the
     // Flow, so every day-of-week edit would rewrite Flows, and its `multiselect`
     // value tokens are not something we can enumerate ahead of time. The app
-    // checks the weekday on receipt instead. See CLAUDE.md §9.
+    // checks the weekday on receipt instead. See platform §9.
     const { candidates } = discoverTimeCard(cards);
     const sibling = candidates.find(c => c.id === 'homey:manager:cron:time_exactly_day');
     assert.match(sibling!.note, /not only that/);

@@ -19,7 +19,7 @@ import type { TargetSpec } from './light-intent';
  *
  * The fingerprint covers everything a plan is actually built from: which
  * devices, whether each is available, and each one's capability options
- * (CLAUDE.md §6 — these are NOT uniform and must be read, never assumed).
+ * (platform §6 — these are NOT uniform and must be read, never assumed).
  * Names are excluded: a renamed light is the same light, and re-priming the
  * cache for a rename would drop live state for nothing.
  */

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Build every shipped graphic from the masters in docs/artwork/masters/.
+"""Build every shipped graphic from the masters in artwork/masters/.
 
-    python docs/artwork/export-assets.py                # icons + images + banner
-    python docs/artwork/export-assets.py --palette      # the brand hexes, from the logo
-    python docs/artwork/export-assets.py --measure      # recompute the icon fits
-    python docs/artwork/export-assets.py --weight drawn # the masters' own stroke weights
-    python docs/artwork/export-assets.py --skip-banner  # everything Chrome is not needed for
+    python artwork/export-assets.py                # icons + images + banner
+    python artwork/export-assets.py --palette      # the brand hexes, from the logo
+    python artwork/export-assets.py --measure      # recompute the icon fits
+    python artwork/export-assets.py --weight drawn # the masters' own stroke weights
+    python artwork/export-assets.py --skip-banner  # everything Chrome is not needed for
 
 Why this exists: the shipped assets were once hand-cropped one at a time, which
 meant a crop could not be reproduced and a re-export at a new size would silently
@@ -36,7 +36,7 @@ homey-lib checks `['small', 'large']` only (lib/App/index.js, _validateImages) a
 never looks at xlarge. We ship xlarge anyway, for high-resolution screens.
 
 Requires Pillow. The two Chrome-dependent paths (--measure, and the banner's logo
-tile) use headless Chrome, the house rasteriser: see docs/artwork/provenance.md.
+tile) use headless Chrome, the house rasteriser: see artwork/provenance.md.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ from collections import Counter
 
 from PIL import Image, ImageDraw
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]
+ROOT = pathlib.Path(__file__).resolve().parents[1]
 MASTERS = pathlib.Path(__file__).resolve().parent / 'masters'
 README_ART = pathlib.Path(__file__).resolve().parent / 'readme'
 
@@ -256,8 +256,8 @@ width="{CANVAS}" height="{CANVAS}">
   <title>{spec['title']}</title>
   <desc>{spec['desc']}</desc>
 
-  <!-- GENERATED from docs/artwork/masters/{spec['master']} by
-       docs/artwork/export-assets.py. Edit the master, then re-run the script;
+  <!-- GENERATED from artwork/masters/{spec['master']} by
+       artwork/export-assets.py. Edit the master, then re-run the script;
        an edit here is lost on the next export.
 
        Homey renders an icon as a CSS mask painted one flat colour, fetched from

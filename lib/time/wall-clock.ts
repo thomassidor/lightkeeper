@@ -3,7 +3,7 @@
  *
  * Everything about time here is a MINUTE COUNT since local midnight, 0–1439 —
  * never a timestamp and never a UTC offset. That is not laziness. Because the
- * Flow engine owns firing (CLAUDE.md §9), the app never has to answer "when is
+ * Flow engine owns firing (platform §9), the app never has to answer "when is
  * the next 22:00 in Europe/Copenhagen", only "is it 22:00 there now". A minute
  * count is exactly that question's shape, and it is immune to every DST bug that
  * absolute-instant arithmetic invites.

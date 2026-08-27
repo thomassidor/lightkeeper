@@ -35,7 +35,7 @@ export const MAX_POINTS = 8;
  *
  * Only `clock` is accepted today. `sun` is declared from the start so that
  * anchoring to real sunrise and sunset — which needs `homey:manager:geolocation`
- * and solar maths the SDK does not provide (CLAUDE.md §9) — lands later as a new
+ * and solar maths the SDK does not provide (platform §9) — lands later as a new
  * variant rather than as a reshape of every stored plan. sanitiseCurve() rejects
  * it until then, and resolveAnchor() throws on it, so it can never half-work.
  */
@@ -50,7 +50,7 @@ export interface CircadianPoint {
    * Normalised colour temperature 0–1, where 1 is the WARMEST end. Not a
    * convention we chose — homey-lib's own capability definition says a higher
    * value is warmer, and assuming otherwise once shipped a schedule that lit a
-   * room cold white at bedtime (CLAUDE.md §6).
+   * room cold white at bedtime (platform §6).
    */
   warmth: number;
   /**
@@ -100,7 +100,7 @@ export interface CircadianPlan {
    *
    * Opt-in, and proven per installation rather than assumed: a capability write
    * to an off lamp turns it on through some integrations (measured for `dim` on
-   * Hue, CLAUDE.md §6), and lights coming on by themselves at night is a far
+   * Hue, platform §6), and lights coming on by themselves at night is a far
    * worse failure than a half-second of the wrong white. The runtime disables
    * this by itself if it ever observes a light coming on from a pre-stage write.
    */
@@ -245,7 +245,7 @@ function sanitiseAnchor(raw: unknown): CircadianAnchor | string {
  *
  * This file's policy differs from the schedule's on one point, and both are
  * right: a warmth or brightness of 0 is meaningful here — 0 is the coolest end
- * of the temperature axis (CLAUDE.md §6) — whereas a schedule reads a brightness
+ * of the temperature axis (platform §6) — whereas a schedule reads a brightness
  * of 0 as unset rather than "on, at nothing".
  */
 const sanitiseUnit = sanitiseUnitInterval;

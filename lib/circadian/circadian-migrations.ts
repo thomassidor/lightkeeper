@@ -72,7 +72,7 @@ export const CIRCADIAN_MIGRATIONS: Record<number, CircadianMigration> = {
       // engine's all-or-nothing rule.
       adjustBrightness: plan.adjustBrightness === true
         && warmest.brightness !== undefined && coolest.brightness !== undefined,
-      // The one verdict this device type persists about itself (CLAUDE.md §12),
+      // The one verdict this device type persists about itself (platform §12),
       // and it is about the integration rather than about the curve — so it
       // survives the reshape.
       preStage: plan.preStage === true,

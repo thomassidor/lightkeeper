@@ -102,7 +102,7 @@ describe('zone targets', () => {
 
 describe('priming the cache', () => {
   test('each target keeps its OWN capability options', async () => {
-    // Options are not uniform across devices (CLAUDE.md §6): onoff carries none
+    // Options are not uniform across devices (platform §6): onoff carries none
     // at all, and dim's decimals decide the smallest write that is not a no-op.
     // Assuming one device's options for another writes the wrong step.
     const narrow = device({

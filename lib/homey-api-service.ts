@@ -8,7 +8,7 @@ const { HomeyAPI } = require('homey-api');
 /**
  * Owns BOTH API clients and every subscription made through them.
  *
- * These cannot be one client — see CLAUDE.md for the evidence:
+ * These cannot be one client — see platform §1 for the evidence:
  *
  *   read client  — createAppAPI, the app's own token. Devices, zones,
  *                  capability subscriptions, setCapabilityValue, flow READS.

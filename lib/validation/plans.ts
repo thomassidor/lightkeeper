@@ -371,7 +371,7 @@ function validateAnchor(raw: unknown, path: string): CircadianAnchor {
      * and refused here for the same reason `sanitiseCurve` refuses it and
      * `resolveAnchor` throws on it: it needs `homey:manager:geolocation`, which
      * this app does not declare, and solar maths the SDK does not provide
-     * (CLAUDE.md §9 and §12). A plan carrying one is a plan from a future build.
+     * (platform §9 and §12). A plan carrying one is a plan from a future build.
      */
     fail(`${path}.kind`, 'is "sun", which this version cannot resolve');
   }

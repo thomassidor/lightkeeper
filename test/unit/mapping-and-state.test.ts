@@ -61,7 +61,7 @@ describe('mapping engine', () => {
   test('warmer RAISES the normalised temperature, colder lowers it', () => {
     // Higher is warmer on Homey's axis — homey-lib's own capability hint says so,
     // and this test used to assert the opposite, which is why "Warmest" lit a
-    // room cold white on the first live run. See CLAUDE.md §6.
+    // room cold white on the first live run. See platform §6.
     const engine = new MappingEngine([
       rule({ id: 'w', function: 'warmer', inputKey: 'w' }),
       rule({ id: 'c', function: 'colder', inputKey: 'c' }),
@@ -360,7 +360,7 @@ describe('live and Test resolve to the same intent', () => {
   });
 
   test('warmer adds and colder subtracts, on both paths', () => {
-    // The one line most worth reading twice: higher is warmer (CLAUDE.md §6).
+    // The one line most worth reading twice: higher is warmer (platform §6).
     // Getting it backwards lit a room cold white at bedtime on a first live run.
     for (const behavior of [DEFAULT_BEHAVIOR, { ...DEFAULT_BEHAVIOR, temperatureStep: 0.25 }]) {
       assert.deepEqual(intentForLightFunction('warmer', behavior), {

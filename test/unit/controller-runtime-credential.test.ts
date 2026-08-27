@@ -14,7 +14,7 @@ import type { SelectableInput } from '../../lib/inputs/selectable-input';
 /**
  * What happens to a live controller when the API key comes back.
  *
- * A key holds a single session and dies routinely (CLAUDE.md §2), so
+ * A key holds a single session and dies routinely (platform §2), so
  * "re-enter a key" is an ordinary path, not an edge case. Reconciling the flows
  * on the new key is only half of it: the controller has already been marked
  * needs_credential and its device made unavailable, and setState is

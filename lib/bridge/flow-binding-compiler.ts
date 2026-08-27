@@ -3,7 +3,7 @@ import type { LogicalSourceBinding } from '../inputs/selectable-input';
 /**
  * Compile logical bindings into concrete flow definitions.
  *
- * Two platform findings shape this module (see CLAUDE.md):
+ * Two platform findings shape this module (see docs/homey-platform.md):
  *
  *  1. A card's `uri` is a full resource URI that EMBEDS its id, e.g.
  *     `homey:flowcardaction:homey:manager:alarms:enable_next`. It is not
@@ -234,7 +234,7 @@ export function managedKey(controllerId: string, bindingKey: string, variantKey:
  * no cards that exist: `compileBinding` is pure, and the card refs are read
  * only for an `id` and `uri` to echo into a flow this will throw away. So the
  * placeholders below are honest rather than a shortcut — nothing here can
- * reach a real flow, which is the one thing CLAUDE.md §3's rule protects.
+ * reach a real flow, which is the one thing platform §3's rule protects.
  *
  * Returns the declined inputs rather than throwing, and returns no sentence:
  * `lib/` has no access to `homey.__`, so a message built here could never be

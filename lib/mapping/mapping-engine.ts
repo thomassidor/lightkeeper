@@ -34,7 +34,7 @@ export interface MappingEngineInput {
  * 1 the warmest. homey-lib's own capability hint says so ("A higher value means a
  * warmer color"), and getting it backwards is what made a schedule set to
  * "Warmest" write 0 and light a room cold white on its first live run
- * (CLAUDE.md §6).
+ * (platform §6).
  */
 export function intentForLightFunction(
   func: LightFunction,

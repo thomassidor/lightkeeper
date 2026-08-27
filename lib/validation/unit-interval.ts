@@ -3,7 +3,7 @@
  *
  * Both feature modules had a private `sanitiseUnit` with the same body, and both
  * are about the same axis: brightness is perceptual 0–1, and colour temperature
- * is normalised 0–1 with 1 the WARMEST end (CLAUDE.md §6). Clamping rather than
+ * is normalised 0–1 with 1 the WARMEST end (platform §6). Clamping rather than
  * rejecting is deliberate — a slider that reports 1.0000001 is a slider at
  * maximum, not a malformed request.
  *

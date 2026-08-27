@@ -20,7 +20,7 @@ import { mixColors, paletteColor } from './palette';
  *    day as a line rather than a circle leaves every night either undefined or
  *    pinned flat at the last value, which is precisely the half of the day this
  *    feature exists for. Same family of bug as a schedule window belonging to the
- *    day it STARTED on (CLAUDE.md §9).
+ *    day it STARTED on (platform §9).
  *  - **Interpolation is EASED, not linear.** A raised cosine has zero gradient at
  *    each anchor, so segments meet without a kink. Linear interpolation is
  *    perfectly accurate and still wrong here: the output is the colour of a room,
@@ -39,7 +39,7 @@ export interface AnchorContext {
 }
 
 export interface CurveValue {
-  /** 0–1, where 1 is the WARMEST end (CLAUDE.md §6). */
+  /** 0–1, where 1 is the WARMEST end (platform §6). */
   warmth: number;
   /** Perceptual 0–1. Only present when both bracketing points carry one. */
   brightness?: number;
@@ -137,7 +137,7 @@ export function valueAt(
  *    towards: a colour temperature is a point on a different axis, and fading
  *    "amber" into "4000 K" means inventing a shade nobody chose. Inventing a
  *    colour for someone's living room is the one thing this feature must not do
- *    (CLAUDE.md §12 makes the same argument about brightness).
+ *    (platform §12 makes the same argument about brightness).
  *  - **Neither** → no colour, and the warmth is written as a colour temperature
  *    exactly as it always was.
  *

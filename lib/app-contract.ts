@@ -144,7 +144,7 @@ export interface DiagnosticsResponse {
   circadian: CircadianDiagnostics[];
   /**
    * Which of Homey's own trigger cards the schedules are built on, and what else
-   * was on offer. A card URI may never be constructed (CLAUDE.md §3), so when a
+   * was on offer. A card URI may never be constructed (platform §3), so when a
    * firmware moves this card the candidate list IS the investigation.
    */
   timeCard: TimeCardDiscovery | { card: null; error: string };

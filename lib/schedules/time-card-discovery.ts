@@ -3,7 +3,7 @@ import { formatMinutes } from './schedule-types';
 /**
  * Find Homey's own "the time is …" trigger card, by ENUMERATION.
  *
- * §3 of CLAUDE.md is the whole reason this file exists: a card's `uri` is a full
+ * platform §3 is the whole reason this file exists: a card's `uri` is a full
  * resource URI that embeds its own id, so a constructed one yields
  * `404 Not Found`, which reads exactly like a permission refusal and costs hours.
  * Nothing here builds an id or a uri — both are echoed back verbatim from what
@@ -60,7 +60,7 @@ export function discoverTimeCard(triggers: unknown[]): TimeCardDiscovery {
   for (const raw of triggers as any[]) {
     const id = String(raw?.id ?? '');
     // Only Homey's own managers. An app-provided time card would work, but it
-    // exists only while that app runs (CLAUDE.md §3), which is not a dependency to take on
+    // exists only while that app runs (platform §3), which is not a dependency to take on
     // for something this load-bearing.
     if (!id.startsWith('homey:manager:')) continue;
 

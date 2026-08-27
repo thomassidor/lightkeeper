@@ -8,7 +8,7 @@ import type { CircadianRuntime } from '../../lib/circadian/circadian-runtime';
  *
  * Everything it shares with the other two device types lives in
  * `LightkeeperDevice`. Three things differ, all for the same underlying reason —
- * this device type generates no Flows (CLAUDE.md §12):
+ * this device type generates no Flows (platform §12):
  *
  *  - **Nothing to clean up on delete.** `flowRefs()` stays at the base's empty
  *    default, so the delete path unregisters the runtime and stops there. There

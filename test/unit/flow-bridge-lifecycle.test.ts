@@ -438,7 +438,7 @@ describe('an empty desired set reconciles to empty', () => {
     assert.deepEqual(
       h.foldersCreated, ['Lightkeeper'],
       'the app root is made either way — it is the anchor the next device resolves '
-      + 'against (CLAUDE.md §11). The DEVICE folder is what must not be made only to '
+      + 'against (platform §11). The DEVICE folder is what must not be made only to '
       + 'be cleaned up again.',
     );
     assert.ok(

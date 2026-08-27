@@ -2,8 +2,8 @@
 
 Every shipped graphic is built from `masters/` by `export-assets.py`. Nothing is hand-edited: an edit
 to a shipped file is lost on the next export. What to produce, and why, is in
-[`../asset-spec.md`](../asset-spec.md); how Homey consumes it is in
-[`../../CLAUDE.md`](../../CLAUDE.md) §10.
+[`asset-spec.md`](asset-spec.md); how Homey consumes it is in
+[`../docs/homey-platform.md`](../docs/homey-platform.md) §10.
 
 ## The Curve light's artwork is a PLACEHOLDER
 
@@ -15,7 +15,7 @@ That is a real review finding rather than a cosmetic shortcut — Athom's automa
 reviewer flags byte-identical icons between drivers as reuse — so it is recorded
 in three places rather than tolerated silently:
 
-- `docs/artwork/export-assets.py`, at both target entries, marked PLACEHOLDER;
+- `artwork/export-assets.py`, at both target entries, marked PLACEHOLDER;
 - `test/unit/assets.test.ts`, as the single entry in `PENDING_ARTWORK`;
 - here.
 
@@ -41,14 +41,14 @@ icon target is what stops the list outliving what it excuses.
 
 Supplied by the author on **23 August 2026**, replacing a set generated on 12 August 2026. The
 photographs are image-model output from the prompts in
-[`../asset-spec.md`](../asset-spec.md#prompts-for-the-three-photographs), reviewed to exclude logos,
+[`asset-spec.md`](asset-spec.md#prompts-for-the-four-photographs), reviewed to exclude logos,
 trademarks, brand-recognisable hardware and text — Homey's review checks that store imagery is not
 manufacturer photography, so that matters. The prompts live there and are not repeated here; this file
 carries the date, the tool and the rights.
 
 ## `circadian-device-master.png` is a placeholder and MUST NOT ship
 
-Written on **25 August 2026** by `docs/artwork/masters/make-circadian-placeholder.py` — a warm-to-cool
+Written on **25 August 2026** by `artwork/masters/make-circadian-placeholder.py` — a warm-to-cool
 radial wash with the driver's own sun mark on it. It exists so the driver validates, the export runs
 and the suite is green while the real photograph is sourced; **it is not a photograph and Athom's
 guideline 1.4 rejects exactly this** ("images that consist of a single flat shape or icon on a plain,
@@ -56,7 +56,7 @@ monochrome or transparent background are not approved"), which is why the schedu
 photograph of a plug-in timer rather than a rasterised stopwatch.
 
 To finish it: put a landscape photograph at that path — a lamp in a room at golden hour reads the
-subject best — re-run `python docs/artwork/export-assets.py`, and delete this section along with the
+subject best — re-run `python artwork/export-assets.py`, and delete this section along with the
 **PLACEHOLDER** note above. Nothing else changes: the crop is found by non-white detection, so a new
 master reframes itself.
 

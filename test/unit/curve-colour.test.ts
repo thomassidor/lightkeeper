@@ -21,7 +21,7 @@ import { DEFAULT_BEHAVIOR } from '../../lib/mapping/mapping-types';
  *    does not.
  *  - **A colour is never blended with a colour temperature.** A segment with a
  *    colour at only one end HOLDS that colour. Fading "amber" into "4000 K" means
- *    inventing a shade nobody chose — the same argument CLAUDE.md §12 makes about
+ *    inventing a shade nobody chose — the same argument platform §12 makes about
  *    brightness.
  */
 

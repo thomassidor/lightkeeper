@@ -18,7 +18,7 @@ import { KeyedMutex } from '../support/keyed-mutex';
  *     Evening lights/
  *
  * Nesting is real: a FlowFolder carries `parent`, and both createFlowFolder and
- * updateFlowFolder accept it. See CLAUDE.md §11.
+ * updateFlowFolder accept it. See platform §11.
  *
  * TWO RULES HOLD UP EVERY METHOD HERE:
  *

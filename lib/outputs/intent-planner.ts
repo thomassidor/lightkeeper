@@ -25,7 +25,7 @@ import type { ControllerBehavior } from '../mapping/mapping-types';
  * the first three in one way worth knowing: nothing in the app ever plans a
  * RELATIVE change to them. There is no "a bit more blue" gesture and no colour
  * ramp, so they need no desired-vs-actual arithmetic — only the echo dedupe (Hue
- * echoes duplicate for every capability, CLAUDE.md §6) and the write log.
+ * echoes duplicate for every capability, platform §6) and the write log.
  *
  * `light_mode` is a string (`'color'` | `'temperature'`), which is why it is the
  * one capability with no numeric state tracked anywhere.
@@ -241,7 +241,7 @@ function planTemperatureDelta(
     /**
      * An off lamp is skipped, and the docblock above is why.
      *
-     * A `dim` write turns an off Hue lamp on — that is measured (CLAUDE.md §6)
+     * A `dim` write turns an off Hue lamp on — that is measured (platform §6)
      * — and whether `light_temperature` does the same is per-integration and
      * untested. So "a temperature change must never implicitly turn a light
      * on" was a promise the code did not keep on any integration where it
