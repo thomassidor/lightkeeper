@@ -60,6 +60,10 @@ Fixed — remotes:
 - Two gestures that would share one binding key are reported instead of one silently vanishing.
 - Homey's time trigger card is chosen only when the choice is unambiguous; a tie is refused and
   both candidates are named.
+- **Mapping a remote to a single light shows one section, not two.** “All lights” and that lamp's
+  own section were the same lamp listed twice, the second offering per-lamp overrides that had
+  nothing to override. The one section left is named after the lamp, and now hides any function
+  that lamp cannot perform.
 
 Fixed — everywhere:
 

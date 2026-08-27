@@ -244,6 +244,9 @@ module.exports = class ControllerDriver extends Homey.Driver {
       const summary = await resolveSummary(this.app.catalog, state.target);
       const offered = availableFunctions(summary.support);
       const lights = await targetLights(this.app.catalog, state.target);
+      // One light chosen means "all of them" and "that one" are the same lamp,
+      // and the screen below collapses to a single section for it.
+      const single = lights.length === 1 ? lights[0] : null;
 
       return {
         functions: offered.map(fn => ({
@@ -269,23 +272,45 @@ module.exports = class ControllerDriver extends Homey.Driver {
         // One group per light, plus an "all lights" group — assignments read
         // as "this button does this to this lamp", which is how people think
         // about it.
-        groups: [
-          { key: '__all__', label: this.homey.__('mapping.allLights'), deviceIds: null },
-          ...lights.map((light: any) => ({
-            key: light.id,
-            label: light.name,
-            zoneName: light.zoneName,
-            capabilities: light.capabilities,
-            deviceIds: [light.id],
-          })),
-        ],
+        //
+        // Unless there is only one light, where the two groups are the same
+        // lamp listed twice: "All lights" open at the top, and below it a
+        // collapsed section offering overrides that can never override
+        // anything. One section then, keyed '__all__' so a rule still stores
+        // as "inherit" and the section still opens by default, but named after
+        // the lamp and carrying its capabilities — so a function it cannot
+        // perform drops off the list, which the '__all__' group alone never does.
+        groups: single
+          ? [{
+              key: '__all__',
+              label: single.name,
+              zoneName: single.zoneName,
+              capabilities: single.capabilities,
+              deviceIds: null,
+            }]
+          : [
+              { key: '__all__', label: this.homey.__('mapping.allLights'), deviceIds: null },
+              ...lights.map((light: any) => ({
+                key: light.id,
+                label: light.name,
+                zoneName: light.zoneName,
+                capabilities: light.capabilities,
+                deviceIds: [light.id],
+              })),
+            ],
         rules: state.mappings.map(m => ({
           id: m.id,
           function: m.function,
           inputKey: m.inputKey,
-          groupKey: m.target?.kind === 'devices' && m.target.deviceIds.length === 1
-            ? m.target.deviceIds[0]
-            : '__all__',
+          // Collapsed to the one group as well when there is one light. A rule
+          // saved against that light's own id — by a repair that narrowed the
+          // selection down to it — would otherwise name a group that is no
+          // longer rendered, and the row it belongs to would silently vanish.
+          groupKey: single
+            ? '__all__'
+            : m.target?.kind === 'devices' && m.target.deviceIds.length === 1
+              ? m.target.deviceIds[0]
+              : '__all__',
         })),
       };
     });
