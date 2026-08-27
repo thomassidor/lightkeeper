@@ -104,7 +104,11 @@ function loadConfig() {
   /** @type {any} */
   let fromFile = {};
   if (existsSync(file)) {
-    fromFile = JSON.parse(readFileSync(file, 'utf8'));
+    // The BOM is stripped rather than tolerated. On Windows PowerShell 5.1
+    // `Set-Content -Encoding utf8` writes UTF-8 WITH a byte-order mark, which is
+    // the obvious way to create this file and which JSON.parse rejects with
+    // `Unexpected token` naming an invisible character.
+    fromFile = JSON.parse(readFileSync(file, 'utf8').replace(/^﻿/, ''));
   }
 
   const address = String(process.env.HOMEY_ADDRESS ?? fromFile.address ?? '').replace(/\/$/, '');
@@ -131,18 +135,82 @@ function loadConfig() {
  * @returns {Promise<any>}
  */
 async function connect(config) {
+  note(`connecting to ${config.address}...`);
   const api = await HomeyAPI.createLocalAPI({ address: config.address, token: config.key });
-  for (const name of ['devices', 'zones', 'flow', 'flowtoken', 'apps']) {
+
+  /**
+   * Every connect is BOUNDED, and a failure is not fatal.
+   *
+   * `connect()` opens a realtime socket, and nothing in this script needs one:
+   * every check here is request/response over HTTP. Run from a laptop rather
+   * than from the Homey, one of these hangs indefinitely instead of refusing —
+   * which presented as a script that printed nothing at all and had to be
+   * killed. Bounded and best-effort is the honest shape for something we do not
+   * need in the first place.
+   */
+  for (const name of ['devices', 'zones', 'flow', 'apps']) {
     const manager = api[name];
-    if (manager && typeof manager.connect === 'function') {
-      try {
-        await manager.connect();
-      } catch (error) {
-        note(`manager "${name}" would not connect: ${messageOf(error)}`);
-      }
+    if (!manager || typeof manager.connect !== 'function') continue;
+    try {
+      await withTimeout(manager.connect(), 15_000, `connecting manager "${name}"`);
+    } catch (error) {
+      note(`manager "${name}" did not connect (${messageOf(error)}) — carrying on, `
+        + 'the checks below do not need a realtime socket');
     }
   }
   return api;
+}
+
+/**
+ * @template T
+ * @param {Promise<T>} promise
+ * @param {number} ms
+ * @param {string} what
+ * @returns {Promise<T>}
+ */
+async function withTimeout(promise, ms, what) {
+  /** @type {NodeJS.Timeout | undefined} */
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms ${what}`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * Close every realtime socket so the process can exit.
+ *
+ * Without this the script printed its whole report and then hung forever: a
+ * connected manager holds an open socket, and node does not exit while one is
+ * alive. Deliberately not `process.exit()` — that truncates buffered stdout on
+ * Windows, which would eat the last lines of the very report this exists to
+ * produce.
+ *
+ * @param {any} api
+ */
+function disconnectAll(api) {
+  for (const name of ['devices', 'zones', 'flow', 'apps']) {
+    const manager = api?.[name];
+    try {
+      if (manager && typeof manager.destroy === 'function') manager.destroy();
+    } catch {
+      // A socket that will not close cannot stop us reporting what we found.
+    }
+  }
+  // The managers are not enough on their own. The client holds the socket
+  // SESSION and a map of refresh timers above them, and either keeps node alive
+  // by itself — destroying only the managers still hung.
+  try {
+    if (typeof api?.destroy === 'function') api.destroy();
+  } catch {
+    // As above.
+  }
 }
 
 /**
@@ -297,7 +365,7 @@ async function capabilityValue(api, deviceId, capability) {
  * @param {any} api
  */
 async function commandSpike(api) {
-  note(`Homey software version ${api.softwareVersion ?? '(not reported)'}`);
+  note(`Homey software version ${api.version ?? '(not reported)'}`);
 
   const devices = await lightkeeperDevices(api);
   report('-', 'INFO', `${devices.length} Lightkeeper device(s): `
@@ -905,6 +973,8 @@ async function main() {
     if (command === 'rejoin') await commandRejoin(api);
     console.log('');
   }
+
+  disconnectAll(api);
 
   const failed = results.filter(r => r.status === 'FAILED');
   const passed = results.filter(r => r.status === 'OK');
