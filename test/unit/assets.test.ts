@@ -238,20 +238,20 @@ describe('icons', () => {
   });
 
   /**
-   * Icons and images the curve light SHARES with the circadian light, pending its
-   * own artwork.
+   * Icons and images a driver SHARES with another, pending its own artwork.
    *
-   * The two device types split out of one, and the second shipped with the
-   * first's graphics. Both of the circadian masters are real now, so what the
-   * curve light ships is a COPY of finished artwork rather than a stand-in — it
-   * looks right and is still a review finding, because Athom's reviewer flags
-   * byte-identical icons as reuse. So it is listed here rather than tolerated
-   * silently, and the list is what a `git grep` finds when the artwork is drawn.
+   * **Deliberately empty, and that is the point.** The curve light split out of
+   * the circadian light in 0.5.0 and shipped with its graphics; this set is what
+   * held that review finding — Athom's reviewer flags byte-identical icons as
+   * reuse — visible rather than tolerated silently. The curve light got its own
+   * master before release, so the entry is gone and every icon below is now
+   * compared against every other with no exemption.
    *
-   * **Removing an entry from this list is the definition of done for that
-   * artwork.** Do not add to it.
+   * Keep it empty. An entry here is a promise to draw something, and the test at
+   * the foot of this file asserts each one names a real icon target, so the list
+   * cannot outlive what it excuses.
    */
-  const PENDING_ARTWORK = new Set(['driver curve']);
+  const PENDING_ARTWORK = new Set<string>();
 
   test('no two icons share a mark, except artwork not yet drawn', () => {
     // The one icon rule the automated reviewer does enforce: reuse is a finding

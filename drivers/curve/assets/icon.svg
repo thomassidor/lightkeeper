@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 960" width="960" height="960">
-  <title>Circadian light</title>
-  <desc>A lightbulb below a daylight arc, between a sunrise and a sunset.</desc>
+  <title>Curve light</title>
+  <desc>A four-point curve over a row of hour ticks.</desc>
 
-  <!-- GENERATED from artwork/masters/circadian-icon-master.svg by
+  <!-- GENERATED from artwork/masters/curve-icon-master.svg by
        artwork/export-assets.py. Edit the master, then re-run the script;
        an edit here is lost on the next export.
 
@@ -14,27 +14,25 @@
        The transform centres the master's drawing and scales it to fill the
        canvas, which guideline 1.5 asks for; stroke widths are pre-divided by the
        scale so they render at 40 units on this 960 canvas. -->
-  <g transform="translate(-318.9 -318.9) scale(3.1208)" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="12.82">
-    <g stroke-width="12.82">
-    <rect x="117.5" y="117.5" width="277.0" height="277.0" rx="42.9"/>
-    <path d="M169.6 265.4 A 86.4 86.4 0 0 1 332.8 225.8"/>
-    <path d="M339.3 242.5 A 86.4 86.4 0 0 1 342.4 265.4"/>
-    <circle cx="336.5" cy="234.0" r="9.0"/>
-    <path d="M242.7 302.6 L242.7 296.0 C242.7 284.6 240.8 287.5 234.3 279.7 A 28.2 28.2 0 1 1 277.7 279.7 C271.2 287.5 269.3 284.6 269.3 296.0 L269.3 302.6 Z"/>
-    <path d="M244.8 312.5 L267.2 312.5"/>
-    <path d="M249.1 322.1 L262.9 322.1"/>
+  <g transform="translate(-294.3 -294.3) scale(3.0247)" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="13.22">
+    <g stroke-width="13.22">
+    <rect x="113.1" y="113.1" width="285.8" height="285.8" rx="35.3"/>
+    <path d="M159.5 277.3 C178.1 238.1 179.7 184.2 216.1 168.6 M234.6 167.9 C266.1 180.0 263.9 234.4 299.6 232.2 M318.4 232.8 C336.1 240.2 344.7 263.7 349.0 277.1"/>
     </g>
-    <g stroke-width="12.82">
-    <path d="M158.2 308.3 A 10.2 10.2 0 0 1 178.6 308.3"/>
-    <path d="M147.2 312.3 L189.7 312.3"/>
-    <path d="M155.1 295.0 L152.1 291.9"/>
-    <path d="M168.4 289.5 L168.4 285.2"/>
-    <path d="M181.7 295.0 L184.7 291.9"/>
-    <path d="M333.4 308.3 A 10.2 10.2 0 0 1 353.8 308.3"/>
-    <path d="M322.3 312.3 L364.8 312.3"/>
-    <path d="M330.3 295.0 L327.3 291.9"/>
-    <path d="M343.6 289.5 L343.6 285.2"/>
-    <path d="M356.9 295.0 L359.9 291.9"/>
+    <g stroke-width="13.22">
+    <circle cx="155.0" cy="285.8" r="9.0"/>
+    <circle cx="225.3" cy="165.7" r="9.0"/>
+    <circle cx="309.0" cy="230.6" r="9.0"/>
+    <circle cx="352.9" cy="285.8" r="9.0"/>
+    </g>
+    <g stroke-width="13.22">
+    <path d="M140.2 346.6 L140.2 356.4"/>
+    <path d="M178.8 346.6 L178.8 356.4"/>
+    <path d="M217.4 346.6 L217.4 356.4"/>
+    <path d="M256.0 346.6 L256.0 356.4"/>
+    <path d="M294.6 346.6 L294.6 356.4"/>
+    <path d="M333.2 346.6 L333.2 356.4"/>
+    <path d="M371.8 346.6 L371.8 356.4"/>
     </g>
   </g>
 </svg>

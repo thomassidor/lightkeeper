@@ -24,6 +24,10 @@ which of these rules a validator enforces versus a human reviewer, is in
 | `drivers/controller/assets/images/{small,large,xlarge}.png` | Photo of a remote | Device rows, and the "supported devices" grid on the App Store page |
 | `drivers/schedule/assets/icon.svg` | Line-art stopwatch | This device type's icon when adding a device, and on its tile afterwards |
 | `drivers/schedule/assets/images/{small,large,xlarge}.png` | Photo of a plug-in timer | The same two places |
+| `drivers/circadian/assets/icon.svg` | Line-art bulb under a daylight arc | This device type's icon when adding a device, and on its tile afterwards |
+| `drivers/circadian/assets/images/{small,large,xlarge}.png` | Render of a device showing the warm-to-cool arc | The same two places |
+| `drivers/curve/assets/icon.svg` | Line-art four-point curve over hour ticks | This device type's icon when adding a device, and on its tile afterwards |
+| `drivers/curve/assets/images/{small,large,xlarge}.png` | Render of a device showing a four-point coloured curve | The same two places |
 | `artwork/readme/banner.png` | The hero photograph with the logo on a rounded violet tile | The top of `README.md`. Ships nowhere; built by the same script |
 
 Rules, for whoever draws or generates the next set:
@@ -37,7 +41,7 @@ Rules, for whoever draws or generates the next set:
 - **`xlarge` is optional** and no validator ever opens it, but ship it: it is what a
   high-resolution screen gets.
 
-## Prompts for the four photographs
+## Prompts for the five images
 
 The icons come from the SVG masters, so only the photographs need generating. Each prompt carries its
 own app context and palette, so one block can be pasted into a generator on its own. Generate larger
@@ -91,21 +95,16 @@ same crop treatment.
 > matching the neutral white-ground studio look of the remote in the app's other device picture. No
 > numerals, no text, no logos, no branding, no hand, no props, no watermark.
 
-**4. Circadian device** — for `drivers/circadian/assets/images/*`, and currently ALSO
-for `drivers/curve/assets/images/*` until that artwork is drawn. The Curve light split out of the
-circadian light in 0.5.0 and has no artwork of its own yet; byte-identical driver
-images are a review finding, so the pair is recorded in `provenance.md`
-and listed in `test/unit/assets.test.ts`'s `PENDING_ARTWORK`. A fifth prompt for the
-Curve light — the same device body showing a distinctly coloured light rather than a
-warm white — is what closes it. Landscape, 1500×1050 or larger; same crop treatment.
+**4. Circadian device** — for `drivers/circadian/assets/images/*`. Landscape, 1500×1050 or larger;
+the crop finds itself.
 
 **Delivered 27 August 2026, and it took a different subject to the one specified below.** The brief
 asked for a frosted-globe bulb on a base; what ships is the driver's own MARK rendered onto a device
 body — a white rounded square carrying the warm-to-cool arc, a lit bulb and the sunrise and sunset
-glyphs, on studio white with a soft contact shadow. That is the better answer and is what the
-Curve light's fifth prompt should follow: the icon and the picture now show the same thing, so the
-device type reads the same in a driver list as it does on a tile, and the arc carries the
-warm-to-cool idea more legibly at 75×75 than a gradient across a globe did. **The exact prompt text
+glyphs, on studio white with a soft contact shadow. That is the better answer, and prompt 5 below
+followed it: the icon and the picture now show the same thing, so a device type reads the same in a
+driver list as it does on a tile, and the arc carries the warm-to-cool idea more legibly at 75×75
+than a gradient across a globe did. **The exact prompt text
 was not captured** — recorded as a gap rather than reconstructed, on the same principle that keeps
 `provenance.md` from inventing a model name.
 
@@ -125,17 +124,45 @@ The subject brief, for whoever redraws it or draws the Curve light's:
 > the arc's warm-to-cool shift still readable at 75×75. No text, no numerals, no logos, no branding,
 > no resemblance to any real product, no hand, no props, no packaging, no watermark.
 
+**5. Curve device** — for `drivers/curve/assets/images/*`. Delivered **27 August 2026**, and it is
+what closed the last placeholder in the app. Same device body as the circadian light, showing what
+that device type is *for*: named points you place yourself, each able to carry a colour rather than
+a warmth. **The exact prompt text was not captured**, same gap as prompt 4; the brief below is
+written from what shipped.
+
+> Device picture for the part of Lightkeeper that hands the whole day to the user — every point,
+> every time, and a colour instead of a warmth at any point. The object that stands for it is a wall
+> device whose face shows a curve the user drew.
+>
+> Product render on a pure white background. The same original generic square wall unit as the
+> circadian device picture — generously rounded corners, matte warm-white body, three-quarter view
+> from the left so the side face reads as depth. On its front, a smooth curve across the face with
+> four glowing ring markers on it: amber low at the left end, cool blue at a high apex, violet at a
+> lower second crest, red low at the right end, the line itself gradienting between those colours.
+> Soft even studio light, subtle contact shadow. Whole object with even margin, the curve and its
+> coloured points still readable at 75×75. No logos, no branding, no resemblance to any real
+> product, no hand, no props, no packaging, no watermark.
+
+**It shipped with four hour labels on it — 06:00, 12:00, 18:00, 00:00 — which breaks the no-numerals
+rule below.** Kept deliberately: checked at 75 px the labels are illegible exactly as that rule
+predicts, but they degrade into a faint tick row rather than visible broken text, and the curve with
+its coloured points carries the meaning alone. Recorded rather than quietly excepted, in
+[`provenance.md`](provenance.md) too. If a reviewer objects, re-render the same composition without
+the labels; nothing else changes. **Do not add numerals to anything else on the strength of this.**
+
 Four things in those prompts are deliberate, so nobody "fixes" them:
 
 - **Every device shot is white-ground product imagery**, so the pictures read as one app and all
-  satisfy the "device on a white background" rule. Two are photographs and the circadian one is a
-  render, because its subject is a virtual device with no physical product to photograph.
+  satisfy the "device on a white background" rule. The remote and the timer are photographs; the
+  circadian and curve devices are renders, because their subjects are virtual devices with no
+  physical product to photograph.
 - **The warm-to-cool shift is a gradient, not two halves.** Two halves read as a novelty product; a
   gradient reads as a colour temperature moving through the day, which is what the device does. On
   the circadian device that gradient runs along the arc, which holds up at 75×75 where a shift
   across a globe did not.
 - **The timer's dial glows but carries no numerals.** The glow says "time" at 75 px where digits would
-  turn to mush, and printed numerals in a store image read as clipart.
+  turn to mush, and printed numerals in a store image read as clipart. The curve device is the one
+  exception in the set, argued above rather than assumed.
 - **No hand in any frame, including the banner.** A hand on a remote describes only half of what the
   app does — that is exactly what the previous banner got wrong.
 

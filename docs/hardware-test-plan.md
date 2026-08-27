@@ -28,6 +28,10 @@ Tick each line. Anything unticked is a real result — say which.
 - **The device layer was rewritten**, so all four device types now load through a
   shared file. If that broke, devices fail to appear rather than misbehaving —
   which is what §1 is looking for.
+- **Every device type has its own artwork now**, the circadian and Curve lights
+  included. In Devices → Add → Lightkeeper, all four should show four *different*
+  icons and four different pictures — a CLI install draws no icon at all
+  (platform §10), so judge the pictures there and the icons after publish.
 
 ---
 
@@ -133,8 +137,6 @@ This is the one that fails loudly if the pairing files are in the wrong place �
 
 ## Known and expected
 
-- **The Curve light shows the circadian light's icon and picture.** Borrowed until
-  its own artwork is drawn; a separate job. Both should look right, just identical.
 - **Your old circadian curve lost its middle points.** By design; the changelog says
   so. Add a Curve light if you want that curve back.
 - **A CLI-installed app shows no icon at all** (platform §10). Not a bug; it

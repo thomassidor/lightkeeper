@@ -29,9 +29,6 @@ Changed:
   Curve light away.
 - One registry serves both, so there is still exactly one 60-second timer for every curve-driven
   device on the Homey.
-- The Curve light ships with the circadian light's artwork as a placeholder. `assets.test.ts` lists
-  the pair as pending rather than tolerating it silently; removing that entry is the definition of
-  done for the artwork.
 
 Fixed — schedules:
 

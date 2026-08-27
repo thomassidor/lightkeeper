@@ -5,25 +5,18 @@ to a shipped file is lost on the next export. What to produce, and why, is in
 [`asset-spec.md`](asset-spec.md); how Homey consumes it is in
 [`../docs/homey-platform.md`](../docs/homey-platform.md) §10.
 
-## The Curve light's artwork is a PLACEHOLDER
+## Nothing is a placeholder any more
 
-**This is the only outstanding artwork.** The Curve light split out of the circadian light in 0.5.0
-and ships with its graphics: `drivers/curve/assets/` is exported from `circadian-icon-master.svg`
-and `circadian-device-master.png`, the same two masters the circadian light uses. Both of those are
-now real — see below — so what the Curve light ships is a byte-identical *copy* of finished artwork
-rather than a stand-in for missing artwork. It looks right and is still a review finding.
+Every shipped graphic comes from a master drawn for it. The Curve light was the last one outstanding
+— it split out of the circadian light in 0.5.0 and shipped with that driver's graphics, which
+Athom's automated reviewer would have flagged as byte-identical reuse — and it got
+`curve-icon-master.svg` and `curve-device-master.png` of its own on **27 August 2026**, before
+release. `test/unit/assets.test.ts`'s `PENDING_ARTWORK` set is now empty, so every icon is compared
+against every other with no exemption.
 
-That finding is real rather than cosmetic — Athom's automated reviewer flags byte-identical icons
-between drivers as reuse — so it is recorded in three places rather than tolerated silently:
-
-- `artwork/export-assets.py`, at both target entries, marked PLACEHOLDER;
-- `test/unit/assets.test.ts`, as the single entry in `PENDING_ARTWORK`;
-- here.
-
-**Definition of done:** draw `curve-icon-master.svg` and `curve-device-master.png`,
-point both entries in the export script at them, re-export, and delete the
-`PENDING_ARTWORK` entry. The test that asserts every pending entry names a real
-icon target is what stops the list outliving what it excuses.
+**If that ever changes**, record it in all three places rather than one: the target entry in
+`artwork/export-assets.py`, an entry in `PENDING_ARTWORK`, and here. A test asserts each pending
+entry names a real icon target, so the list cannot outlive what it excuses.
 
 
 ## The masters
@@ -33,16 +26,18 @@ icon target is what stops the list outliving what it excuses.
 | `logo-mark-master.svg` | `assets/icon.svg`, and the logo tile on the README banner |
 | `remote-remote-icon-master.svg` | `drivers/controller/assets/icon.svg` |
 | `schedule-icon-master.svg` | `drivers/schedule/assets/icon.svg` |
-| `circadian-icon-master.svg` | `drivers/circadian/assets/icon.svg`, and `drivers/curve/assets/icon.svg` until that artwork is drawn |
+| `circadian-icon-master.svg` | `drivers/circadian/assets/icon.svg` |
+| `curve-icon-master.svg` | `drivers/curve/assets/icon.svg` |
 | `app-hero-master.png` 1499×1049 | `assets/images/*` and `readme/banner.png` |
 | `remote-device-master.png` 1499×1049 | `drivers/controller/assets/images/*` |
 | `schedule-device-master.png` 1500×1049 | `drivers/schedule/assets/images/*` |
-| `circadian-device-master.png` 1499×1049 | `drivers/circadian/assets/images/*`, and `drivers/curve/assets/images/*` until that artwork is drawn |
+| `circadian-device-master.png` 1499×1049 | `drivers/circadian/assets/images/*` |
+| `curve-device-master.png` 1254² | `drivers/curve/assets/images/*` |
 | `logo-bitmap-original.png` 1071² | nothing ships from it; it is the palette's source of truth |
 
 Supplied by the author on **23 August 2026**, replacing a set generated on 12 August 2026. The
 photographs are image-model output from the prompts in
-[`asset-spec.md`](asset-spec.md#prompts-for-the-four-photographs), reviewed to exclude logos,
+[`asset-spec.md`](asset-spec.md#prompts-for-the-five-images), reviewed to exclude logos,
 trademarks, brand-recognisable hardware and text — Homey's review checks that store imagery is not
 manufacturer photography, so that matters. The prompts live there and are not repeated here; this file
 carries the date, the tool and the rights.
@@ -80,11 +75,37 @@ itself on export with no hand-measured box.
 `circadian-icon-master.svg` already in the tree, so the icon was already correct and nothing changed
 there.
 
+## `curve-device-master.png` and `curve-icon-master.svg`
+
+Supplied by the author on **27 August 2026**, generated with **ChatGPT's image model** (OpenAI), in
+the same delivery style as the circadian pair above and checked against the same filter: no logo,
+trademark, brand-recognisable hardware, or resemblance to a real product.
+
+The device master is **1254 × 1254 — square, where every other device master is landscape**. That is
+harmless rather than an oversight: `subject_square()` finds the subject by non-white detection and
+centres it on a white square, so the aspect of the master never reaches a shipped file. It is
+recorded here so nobody "fixes" it into 1500 × 1050 and reframes the crop for no reason.
+
+**It carries text, and the brief says not to.** The four hour labels — 06:00, 12:00, 18:00, 00:00 —
+break the "no text, no numerals" rule that
+[`asset-spec.md`](asset-spec.md#prompts-for-the-five-images) applies to every device shot, for a
+stated reason: numerals turn to mush at 75 px and printed type in a store image reads as clipart.
+Checked at 75 px, both halves of that prediction hold — the labels are illegible — **and the image
+still works**, because they degrade into a faint tick row under the curve rather than into visible
+broken text, and the curve with its four coloured points carries the whole meaning on its own. Kept
+deliberately, not by omission. If Athom's reviewer objects, the fix is a re-render of the same
+composition with the labels dropped; nothing else changes.
+
+The icon is a four-point curve over a row of hour ticks — a different mark from the circadian
+light's arc-and-bulb, which is what the two device types needed: one says "the shape of the day is
+handled for you", the other says "every point is yours". Its canvas fit came from `--measure`
+(`ink 292×291 of 512`), stored in the script so a normal export needs no browser.
+
 ## Icon weight
 
-All four icons ship at `stroke-width` 40 on the 960 canvas, Homey's house weight. Fitted to the
-canvas the masters' own strokes are 31 (logo), 22 (stopwatch), 20 (sun) and 14 (remote): four different
-weights, and the remote a hairline at the 32 px Homey renders. Judged from a contact sheet at
+All five icons ship at `stroke-width` 40 on the 960 canvas, Homey's house weight. Fitted to the
+canvas the masters' own strokes are 31 (logo), 23 (sun), 22 (stopwatch), 16 (curve) and 14 (remote):
+five different weights, and the remote a hairline at the 32 px Homey renders. Judged from a contact sheet at
 32/40/56 px, on white and as a white mask on the brand violet — which is how Homey actually draws
 them. `export-assets.py --weight drawn` reproduces the masters' own weights if the decision is ever
 revisited.

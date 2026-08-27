@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
+     role="img" aria-label="Line chart with four data points on a rounded square frame">
+  <g stroke-width="5.3">
+    <rect x="113.1" y="113.1" width="285.8" height="285.8" rx="35.3"/>
+    <path d="M159.5 277.3 C178.1 238.1 179.7 184.2 216.1 168.6 M234.6 167.9 C266.1 180.0 263.9 234.4 299.6 232.2 M318.4 232.8 C336.1 240.2 344.7 263.7 349.0 277.1"/>
+  </g>
+  <g stroke-width="4.1">
+    <circle cx="155.0" cy="285.8" r="9.0"/>
+    <circle cx="225.3" cy="165.7" r="9.0"/>
+    <circle cx="309.0" cy="230.6" r="9.0"/>
+    <circle cx="352.9" cy="285.8" r="9.0"/>
+  </g>
+  <g stroke-width="3.7">
+    <path d="M140.2 346.6 L140.2 356.4"/>
+    <path d="M178.8 346.6 L178.8 356.4"/>
+    <path d="M217.4 346.6 L217.4 356.4"/>
+    <path d="M256.0 346.6 L256.0 356.4"/>
+    <path d="M294.6 346.6 L294.6 356.4"/>
+    <path d="M333.2 346.6 L333.2 356.4"/>
+    <path d="M371.8 346.6 L371.8 356.4"/>
+  </g>
+</svg>
