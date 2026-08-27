@@ -154,7 +154,11 @@ BANNER = {
     'tile_fraction': 0.42,         # tile side, as a fraction of banner height
     'inset_fraction': 0.07,        # tile inset from the left and bottom edges
     'radius_fraction': 0.22,       # corner radius, as a fraction of the tile side
-    'mark_fraction': 0.60,         # the mark's size inside the tile
+    # The mark's canvas, not its ink: logo-mark-master.svg carries ~27% padding of
+    # its own (ink 693x744 of 1024), so the visible mark lands at about 0.63 of the
+    # tile — a normal app-icon proportion. Judged from a contact sheet at 0.60,
+    # 0.78, 0.86 and 0.94: past this the sparkle crowds the corner radius.
+    'mark_fraction': 0.86,         # the mark's size inside the tile
 }
 
 CHROME_CANDIDATES = [
