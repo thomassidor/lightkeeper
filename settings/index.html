@@ -29,9 +29,8 @@
       --lk-muted: #8b929e;
       --lk-faint: #9aa1ac;
 
-      /* transparent in light so the Homey settings frame keeps painting the
-         page behind us; claimed in dark, because a white card on a dark frame
-         is the one combination that reads as broken. */
+      /* transparent, so the Homey settings frame keeps painting the page
+         behind us. */
       --lk-page: transparent;
       --lk-surface: #ffffff;
       --lk-raised: #f7f8fa;
@@ -46,37 +45,6 @@
       --lk-flat-bg: #f4f5f7; --lk-flat-ink: #5b616e;
 
       --lk-code-bg: #f4f5f7; --lk-code-ink: #16181d;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --lk-accent: #ccb0f3;
-        --lk-accent-ink: #1b1230;
-        --lk-accent-tint: #251b40;
-        --lk-accent-strong: #e2d4fb;
-        --lk-ring: rgba(204, 176, 243, .28);
-
-        --lk-ink: #f2f3f5;
-        --lk-sub: #a6adb8;
-        --lk-body: #c3c9d2;
-        --lk-muted: #8b929e;
-        --lk-faint: #7c8390;
-
-        --lk-page: #16181b;
-        --lk-surface: #1f2126;
-        --lk-raised: #262a31;
-        --lk-line: #2c3037;
-        --lk-field: #3a3f48;
-        --lk-hover: #4a5160;
-        --lk-shadow: 0 1px 2px rgba(0, 0, 0, .4);
-
-        --lk-ok-bg: #14301f;   --lk-ok-ink: #7ddba4;
-        --lk-warn-bg: #3a2d10; --lk-warn-ink: #f0c669;
-        --lk-bad-bg: #3a1a19;  --lk-bad-ink: #f7a49e;
-        --lk-flat-bg: #262a31; --lk-flat-ink: #aeb5c0;
-
-        --lk-code-bg: #101215; --lk-code-ink: #d7dbe0;
-      }
     }
 
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,

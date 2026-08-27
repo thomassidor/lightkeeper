@@ -915,6 +915,15 @@ in every view, across every driver, and so are the `emit()`, `stabiliseScrollbar
 others. Both tests discover views from disk, so a new driver's screens are covered the moment they
 exist.
 
+**Every screen the app draws is LIGHT, and does not ask the OS.** Homey paints the pairing sheet
+and the settings frame itself, and paints them light whatever the phone's colour scheme says. Every
+view used to carry a `@media (prefers-color-scheme: dark)` block restating the whole palette, so a
+phone in dark mode got our dark cards and pale text drawn inside Homey's white panel — the media
+query was asking the OS about a surface the OS does not own. There is no query that reports the
+container's own colour, so the honest answer is to match the one panel Homey actually draws. The
+colour TOKENS stay, because they are what makes a palette change one edit rather than five;
+`test/unit/pair-view-styles.test.ts` fails if a scheme query reappears in any view.
+
 **Edit a pair view, then run `npm run sync:views`.** Every `repair/` folder holds byte copies of its
 `pair/`, and the schedule driver's `credential.html` and `targets.html` are byte copies of the
 controller's, because Homey needs a real file in each place (§8). Edit the controller's copy of a

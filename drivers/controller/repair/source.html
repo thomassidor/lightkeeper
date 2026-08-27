@@ -10,9 +10,12 @@
      id normalised and fails on any difference. Edit this block in all
      files, or in none of them.
 
-     Colours are tokens so that the dark scheme below restates values only,
-     never rules. A colour written as a literal anywhere past this block is a
-     token that is missing. */
+     Colours are tokens so a colour lives in ONE place, not so a second scheme
+     can restate them: there IS no second scheme. Homey renders a pairing view
+     inside its own panel, and that panel is light whatever the phone is set to
+     — so a view that followed the OS scheme went dark inside a white sheet. A
+     colour written as a literal anywhere past this block is a token that is
+     missing. */
   #src-root {
     /* Brand. The violet is the manifest brandColor and the ground of the logo —
        93% of its pixels — and the lavender is the logo's mark. Both are read
@@ -34,9 +37,7 @@
     --lk-faint: #9aa1ac;
 
     /* transparent, not white: the pairing container paints the page behind us,
-       and claiming it in light mode would flatten every card against it. The
-       dark scheme does claim it, because a white card on a dark container is
-       the one combination that reads as broken rather than merely plain. */
+       and claiming it would flatten every card against it. */
     --lk-page: transparent;
     --lk-surface: #ffffff;
     --lk-raised: #f7f8fa;
@@ -55,39 +56,6 @@
                  "Helvetica Neue", sans-serif;
     color: var(--lk-ink);
     -webkit-font-smoothing: antialiased;
-  }
-
-  /* Values only. Note the accent inverts: #180e32 is nearly black and cannot
-     carry white text on a dark ground, so dark mode promotes the logo's own
-     lavender to the accent and darkens the ink on top of it. */
-  @media (prefers-color-scheme: dark) {
-    #src-root {
-      --lk-accent: #ccb0f3;
-      --lk-accent-ink: #1b1230;
-      --lk-accent-tint: #251b40;
-      --lk-accent-wash: #1b1626;
-      --lk-accent-line: #4a3a75;
-      --lk-accent-strong: #e2d4fb;
-      --lk-ring: rgba(204, 176, 243, .28);
-
-      --lk-ink: #f2f3f5;
-      --lk-sub: #a6adb8;
-      --lk-body: #c3c9d2;
-      --lk-muted: #8b929e;
-      --lk-faint: #7c8390;
-
-      --lk-page: #16181b;
-      --lk-surface: #1f2126;
-      --lk-raised: #262a31;
-      --lk-line: #2c3037;
-      --lk-field: #3a3f48;
-      --lk-hover: #4a5160;
-      --lk-shadow: 0 1px 2px rgba(0, 0, 0, .4);
-
-      --lk-ok-bg: #14301f;   --lk-ok-ink: #7ddba4;
-      --lk-bad-bg: #3a1a19;  --lk-bad-ink: #f7a49e;
-      --lk-flat-bg: #262a31; --lk-flat-ink: #aeb5c0;
-    }
   }
 
   #src-root h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }

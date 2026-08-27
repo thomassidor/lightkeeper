@@ -323,7 +323,7 @@ covered by unit tests rather than by a week of waiting. The trigger card they ar
 resolved at runtime by enumerating what your Homey actually offers, rather than hardcoding an id, so
 it adapts if a firmware update moves it.
 
-769 unit tests, type-clean, validated at `publish` level.
+770 unit tests, type-clean, validated at `publish` level.
 
 ---
 
@@ -331,7 +331,7 @@ it adapts if a firmware update moves it.
 
 ```bash
 npm install
-npm test                          # 769 unit tests, no hardware needed
+npm test                          # 770 unit tests, no hardware needed
 npm run typecheck                 # the app
 npm run typecheck:test            # the suite and scripts/
 npm run sync:views                # after editing any pair view — nothing runs it for you
@@ -449,6 +449,12 @@ Fixed — remotes:
 
 Fixed — everywhere:
 
+- **Every screen is light now, in every phone setting.** The pairing and settings screens followed
+  the phone's dark mode, but Homey draws the panel around them and draws it light regardless — so a
+  phone set to dark got dark cards and pale text on a white sheet. The dark palette is gone rather
+  than corrected: there is no way to ask what colour the panel is.
+- The two-ends screen no longer shows a brightness slider for each end while *Follow brightness too*
+  is switched off. The sliders appear when you switch it on, which is when they do anything.
 - Entering a new API key that turns out to be bad no longer marks the working key as broken, and a
   key check still in flight cannot publish its verdict after the key has been replaced.
 - Saving a device whose runtime fails to start now restores the previous setup instead of leaving a

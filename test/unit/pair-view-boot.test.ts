@@ -175,13 +175,32 @@ describe('the two ends screen renders both ends', () => {
     for (const node of when) assert.notEqual(node.textContent, '', 'and says it non-empty');
   });
 
-  test('a warmth slider per end, and a brightness one where the lights dim', async () => {
+  test('a warmth slider per end, and no brightness one until it is asked for', async () => {
+    /**
+     * The screen shipped with a brightness slider per end whenever the lights
+     * could dim, sitting above an unchecked "follow brightness too". The
+     * runtime ignores brightness while that box is off, so both sliders were
+     * controls that looked configured and did nothing.
+     */
     const view = run();
     await view.settle();
 
     const ranges = view.byId('end-list')!.descendants().filter(node => node.type === 'range');
-    assert.equal(ranges.length, 4, 'warmth and brightness, twice');
+    assert.equal(ranges.length, 2, 'warmth only, once per end');
     // Warmest at 100, coolest at 15: the stored values, not the defaults.
+    assert.deepEqual(ranges.map(node => node.value), ['100', '15']);
+  });
+
+  test('and checking the box puts them there, without a round trip', async () => {
+    const view = run();
+    await view.settle();
+
+    const box = view.byId('end-adjustBrightness')!;
+    box.checked = true;
+    view.fire(box, 'change');
+
+    const ranges = view.byId('end-list')!.descendants().filter(node => node.type === 'range');
+    assert.equal(ranges.length, 4, 'warmth and brightness, twice');
     assert.deepEqual(ranges.map(node => node.value), ['100', '50', '15', '90']);
   });
 
@@ -197,13 +216,20 @@ describe('the two ends screen renders both ends', () => {
           ...(expected.reply as Record<string, unknown>),
           support: { dim: 0, light_temperature: 1 },
         },
+        setEnds: { warmest: {}, coolest: {}, adjustBrightness: false, corrected: [] },
       },
     });
     await withoutDim.settle();
     assert.equal(withoutDim.byId('end-brightnessRow')!.style.display, 'none');
-    // And no brightness slider at all, rather than one that is ignored.
+
+    // And with the row hidden there is no way to reach the sliders: checking
+    // the box by hand is the closest a test can come to a click on something
+    // the user cannot see, and it must still add nothing.
+    const box = withoutDim.byId('end-adjustBrightness')!;
+    box.checked = true;
+    withoutDim.fire(box, 'change');
     const ranges = withoutDim.byId('end-list')!.descendants().filter(node => node.type === 'range');
-    assert.equal(ranges.length, 2);
+    assert.equal(ranges.length, 2, 'warmth only — these lights cannot dim');
   });
 
   test('the summary names the lights and the clock', async () => {

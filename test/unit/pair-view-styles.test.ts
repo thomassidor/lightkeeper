@@ -134,10 +134,12 @@ describe('pair view styles', () => {
   });
 
   test('colours outside the token declarations go through a token', () => {
-    // A literal past the token blocks is a colour the dark scheme cannot reach,
-    // which is how a surface ends up white-on-dark. The select chevron is the
-    // documented exception: it lives inside a data: URI, which cannot read a
-    // custom property.
+    // A token is where a colour is CHANGED — one declaration block per view,
+    // all of them byte-identical, so a palette edit is one find-and-replace
+    // rather than a hunt through five files. A literal past that block is a
+    // colour the next edit will miss. The select chevron is the documented
+    // exception: it lives inside a data: URI, which cannot read a custom
+    // property.
     for (const view of Object.keys(VIEWS)) {
       const style = styleBlock(view)
         .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -153,24 +155,29 @@ describe('pair view styles', () => {
       assert.deepEqual(
         literals, [],
         `${view}: hard-coded colour(s) outside the token declarations — `
-        + 'add a token instead, or the dark scheme cannot restate it',
+        + 'add a token instead, or the next palette change will miss it',
       );
     }
   });
 
-  test('both colour schemes define the same tokens', () => {
+  test('no view follows the operating system colour scheme', () => {
+    /**
+     * Every view carried a `prefers-color-scheme: dark` block restating the
+     * whole palette, and it was wrong in a way only hardware could show: Homey
+     * paints the pairing sheet ITSELF, in light, whatever the phone is set to.
+     * So a phone in dark mode got our dark palette drawn inside Homey's white
+     * panel — dark cards, pale text, on white. The media query was asking the
+     * OS a question about a surface the OS does not own.
+     *
+     * Removed rather than inverted: there is no query that reports what colour
+     * the container is, so the only honest answer is to match the one panel
+     * Homey actually draws.
+     */
     for (const view of Object.keys(VIEWS)) {
-      const base = baseBlock(view);
-      const dark = base.slice(base.indexOf('@media (prefers-color-scheme: dark)'));
-      const light = base.slice(0, base.indexOf('@media (prefers-color-scheme: dark)'));
-
-      const names = (text: string) =>
-        [...new Set([...text.matchAll(/(--lk-[\w-]+)\s*:/g)].map(m => m[1]))].sort();
-
-      assert.deepEqual(
-        names(dark), names(light),
-        `${view}: the dark scheme does not restate the same tokens as the light one — `
-        + 'a token defined in only one scheme keeps its light value in the dark',
+      assert.ok(
+        !styleBlock(view).includes('prefers-color-scheme'),
+        `${view}: a colour-scheme media query is back — the pairing sheet is `
+        + 'light whatever the phone says, so this renders dark-on-white',
       );
     }
   });
