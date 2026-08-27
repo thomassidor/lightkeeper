@@ -217,7 +217,7 @@ reads, what it stores, and for how long.
 
 Earlier releases, one line each:
 
-| | |
+| Version | What changed |
 |---|---|
 | **0.4.0** | Circadian lights: follow the colour of the day, and no API key needed for them |
 | **0.3.1** | Generated Flows grouped into a folder per device |

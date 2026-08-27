@@ -4,7 +4,7 @@ Every document in this repository, and who it is for. None of `docs/` is bundled
 
 ## If you use the app
 
-| | |
+| Document | What is in it |
 |---|---|
 | [`../README.md`](../README.md) | What Lightkeeper is, what the four device types do, and how to set one up |
 | [`../FAQ.md`](../FAQ.md) | Troubleshooting, the limits in full, what Repair fixes, and how to remove it |
@@ -13,7 +13,7 @@ Every document in this repository, and who it is for. None of `docs/` is bundled
 
 ## If you work on the app
 
-| | |
+| Document | What is in it |
 |---|---|
 | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | **Start here.** Setup, the house rules, and what must pass before a PR |
 | [`../CLAUDE.md`](../CLAUDE.md) | The architecture, the conventions, the release checklist, and why each dependency is pinned. Written for agents and maintainers alike |
@@ -23,7 +23,7 @@ Every document in this repository, and who it is for. None of `docs/` is bundled
 
 ## If you review the app
 
-| | |
+| Document | What is in it |
 |---|---|
 | [`homey-review-notes.md`](homey-review-notes.md) | For Athom's reviewer: why `homey:manager:api` and a user-supplied Personal API Key are both unavoidable, plus what is still untested |
 | [`privacy.md`](privacy.md) | The privacy notice, same file as above |
@@ -33,7 +33,7 @@ Every document in this repository, and who it is for. None of `docs/` is bundled
 Everything graphic lives in [`../artwork/`](../artwork), a sibling of the `assets/` it generates —
 masters, the export script, and its own two documents:
 
-| | |
+| Document | What is in it |
 |---|---|
 | [`../artwork/asset-spec.md`](../artwork/asset-spec.md) | The brief: every graphic the app ships, what it is for, the sizes Homey requires, and the prompts the photographs came from |
 | [`../artwork/provenance.md`](../artwork/provenance.md) | Where the artwork came from, the palette's source, the rights register, and which pieces are still placeholders |
