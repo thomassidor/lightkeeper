@@ -116,11 +116,9 @@ export function planIntent(
 
     case 'temperature_absolute':
       for (const deviceId of supported) {
-        writes.push({
-          deviceId,
-          capability: 'light_temperature',
-          value: clampTemperature(deviceId, intent.value, cache),
-        });
+        writes.push(
+          ...planTemperature(deviceId, clampTemperature(deviceId, intent.value, cache), cache),
+        );
       }
       return { writes, skipped };
   }
@@ -257,7 +255,7 @@ function planTemperatureDelta(
     }
     const current = cache.currentTemperature(deviceId) ?? 0.5;
     const next = clampTemperature(deviceId, current + delta, cache);
-    writes.push({ deviceId, capability: 'light_temperature', value: next });
+    writes.push(...planTemperature(deviceId, next, cache));
   }
   return { writes, skipped };
 }
@@ -294,6 +292,36 @@ function clampTemperature(deviceId: string, value: number, cache: TargetStateCac
  * resolution to compare against: `homey-lib` gives `light_hue` no `decimals`, so
  * there is no step below which a write is provably a no-op.
  */
+/**
+ * A temperature write, preceded by the mode switch that makes it land.
+ *
+ * The mirror of `planColor`, and it exists because only one half of the pair
+ * was ever written. A lamp sitting in COLOUR mode ignores a temperature exactly
+ * as a lamp in temperature mode ignores a hue — silently, reporting the write
+ * as accepted and keeping its old value. That asymmetry is invisible until one
+ * device writes both to the same lamp, which is what a Curve light with a
+ * coloured point does: the colour switches the lamp to colour mode, and every
+ * later temperature-only point is then thrown away by the lamp.
+ *
+ * Only where the lamp HAS `light_mode`. A lamp without it has one mode, cannot
+ * be in the wrong one, and would be sent a capability it does not have.
+ *
+ * `WRITE_ORDER` in the command scheduler puts `light_mode` ahead of both
+ * `light_temperature` and `light_hue`, so this ordering survives the queue.
+ */
+function planTemperature(
+  deviceId: string,
+  value: number,
+  cache: TargetStateCache,
+): PlannedWrite[] {
+  const writes: PlannedWrite[] = [];
+  if (cache.supports(deviceId, 'light_mode')) {
+    writes.push({ deviceId, capability: 'light_mode', value: 'temperature' });
+  }
+  writes.push({ deviceId, capability: 'light_temperature', value });
+  return writes;
+}
+
 function planColor(
   hue: number,
   saturation: number,

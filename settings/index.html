@@ -196,6 +196,12 @@
     return HomeyRef.__('settings.' + key, tokens || {});
   }
 
+  /** What stands in for a reading the app does not have yet. A bare "?" inside
+   *  "Homey clock: ? (?)" reads as a typo rather than as an honest blank. */
+  function unknown() {
+    return HomeyRef.__('schedule.notKnownYet');
+  }
+
   /**
    * A DOM node, BUILT rather than parsed.
    *
@@ -390,7 +396,7 @@
 
       var meta = node('p', 'entry-meta');
       var entries = schedule.entries || [];
-      if (!entries.length) meta.textContent = t('noSchedules');
+      if (!entries.length) meta.textContent = t('scheduleNoEntries');
       entries.forEach(function (entry, index) {
         if (index > 0) meta.appendChild(document.createElement('br'));
         meta.appendChild(document.createTextNode(
@@ -411,7 +417,7 @@
       // almost always this line — and `timezoneResolved: false` means the app
       // could not use the Homey's own zone, which blocks a schedule outright.
       var clock = t('scheduleClock', {
-        local: schedule.localTime || '?', zone: schedule.timezone || '?',
+        local: schedule.localTime || unknown(), zone: schedule.timezone || unknown(),
       });
       if (schedule.timezoneResolved === false) clock += ' \u00b7 ' + t('clockUnresolved');
       el.appendChild(node('p', 'entry-sub', clock));
@@ -443,10 +449,12 @@
       el.appendChild(document.createTextNode(' '));
       el.appendChild(node('strong', null, device.name || t('controllerFallback')));
 
-      var meta = node('p', 'entry-meta', t('circadianNow', {
-        warmth: device.now ? Math.round(device.now.warmth * 100) : '?',
-        next: device.nextPoint ? device.nextPoint.at : '?',
-      }));
+      var meta = node('p', 'entry-meta', device.now
+        ? t('circadianNow', {
+          warmth: Math.round(device.now.warmth * 100),
+          next: device.nextPoint ? device.nextPoint.at : unknown(),
+        })
+        : t('notStarted'));
       if (device.overridden) {
         meta.appendChild(separator());
         meta.appendChild(document.createTextNode(
@@ -462,7 +470,7 @@
         el.appendChild(node('p', 'entry-sub', t('circadianPreStageOff')));
       }
       el.appendChild(node('p', 'entry-sub', t('scheduleClock', {
-        local: device.localTime || '?', zone: device.timezone || '?',
+        local: device.localTime || unknown(), zone: device.timezone || unknown(),
       })));
 
       list.appendChild(el);

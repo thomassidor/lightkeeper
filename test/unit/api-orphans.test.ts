@@ -60,6 +60,8 @@ function homey(options: {
    * bad migration, a restart in progress.
    */
   installedOnly?: { controller?: string[]; schedule?: string[] };
+  /** What a schedule has ALREADY resolved, if anything. Never looked up here. */
+  timeCard?: { card: null; candidates: never[] };
   /**
    * Per device kind for the per-runtime diagnostics, plus `interleaved` for
    * the app-level log the settings page actually reads.
@@ -165,7 +167,14 @@ function homey(options: {
         controllers: { all: () => (options.controllers ?? []).map(id => runtime(id, 'controller')) },
         schedules: {
           all: () => (options.schedules ?? []).map(id => runtime(id, 'schedule')),
-          timeCard: async () => ({ card: null, candidates: [] }),
+          /**
+           * Throws on purpose. Diagnostics must PEEK at the time card and never
+           * ask for it: the lookup reads every trigger card on the Homey, and
+           * that read raises the app's memory floor for the rest of its run
+           * (platform §15). A bug report must not change what it reports on.
+           */
+          timeCard: async () => { throw new Error('getDiagnostics must not provoke the time card lookup'); },
+          peekTimeCard: () => options.timeCard ?? null,
         },
         /**
          * One registry for BOTH curve-driven device types. Named `curves`

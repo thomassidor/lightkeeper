@@ -16,6 +16,12 @@ Added:
   written the point's warmth instead, so the shape of the day is the same on every lamp.
 - Colour writes go out as `light_mode`, then `light_hue`, then `light_saturation`, in that order —
   a lamp sitting in temperature mode ignores a hue it is given, silently.
+- Six routes on the app's own Web API that drive a *saved* device the way a pairing screen's
+  **Test** button drives an unsaved one — preview a curve, probe pre-staging, tick every curve,
+  fire a schedule boundary, replace a schedule's windows, run one mapped controller function. They
+  are session-authenticated like every other route, add no new UI, and each wraps a method a pair
+  session already calls. `scripts/verify-hardware.mjs` uses them to answer the last lines of the
+  hardware pass that needed a person watching a lamp.
 
 Changed:
 
@@ -29,6 +35,16 @@ Changed:
   Curve light away.
 - One registry serves both, so there is still exactly one 60-second timer for every curve-driven
   device on the Homey.
+- **A copy pass over every screen, read as somebody meeting the app for the first time.** The
+  warm/cool axis is called *warmth* everywhere — the light-support row said "colour temperature",
+  the curve's no-colour option said the same, and the controller offered "Colder" against a
+  Cool/Coolest scale. The `targets` view is one file shared by all four drivers and was the only
+  screen without a subtitle, so it never said which lights it was asking for; the driver now
+  supplies that line. The credential screen is shared by the controller and the schedule and
+  described "your remote" to both. `state.noCurve` called a Curve light a circadian one, and so did
+  the settings section that lists them — `api.ts` reads one registry for both types. Four strings
+  named internals at the user (`pair/listSources`, "the intent never reached the queue"), and four
+  more were hardcoded English inside the views where every sibling string went through a locale key.
 
 Fixed — schedules:
 
@@ -66,6 +82,14 @@ Fixed — remotes:
   that lamp cannot perform.
 
 Fixed — everywhere:
+
+- **The app uses less memory on your Homey.** It was reading the full list of every Flow card on the
+  Homey — around 1700 of them, each carrying its text in every language it was translated into — in
+  three separate places, and keeping all of it for as long as the app ran. It now reads that list in
+  one place, keeps only the handful of details it actually uses, and lets the rest go. Two of the
+  three reads are gone entirely: the three cards Lightkeeper needs of its own are asked for by name,
+  and opening the settings page no longer triggers a read at all. The reasoning, and what it would
+  take to go further, is written up as `platform §15`.
 
 - **Every screen is light now, in every phone setting.** The pairing and settings screens followed
   the phone's dark mode, but Homey draws the panel around them and draws it light regardless — so a

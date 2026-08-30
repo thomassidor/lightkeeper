@@ -828,7 +828,39 @@ export class CircadianRuntime {
 
     const deviceId = this.targetIds[index];
     const name = this.targetNames[index];
-    await this.adapter.write(deviceId, 'light_temperature', value.warmth);
+
+    /**
+     * A REFUSED write is the third outcome, and it means the same as the second.
+     *
+     * The probe asks one question — can this household's lamps be given a colour
+     * while off? — and there turn out to be three answers, not two. The lamp
+     * stays off (pre-staging works); the lamp comes on (it does not, and we put
+     * it back); or the integration declines the write outright. A Hue Bridge
+     * does the third for a lamp it considers "soft off":
+     *
+     *   device (light) <id> is "soft off",
+     *   command (.color_temperature.mirek) may not have effect
+     *
+     * Unguarded, that threw out of the probe and reached the pairing screen as
+     * the raw sentence above, under a button labelled "Test it". For the user it
+     * means exactly what "it came on" means — pre-staging is not available here
+     * — so it is reported that way, with the integration's own words kept as the
+     * reason rather than discarded.
+     *
+     * Nothing was changed on the lamp, so nothing needs restoring.
+     */
+    try {
+      await this.adapter.write(deviceId, 'light_temperature', value.warmth);
+    } catch (error) {
+      return {
+        deviceId,
+        ...(name ? { name } : {}),
+        stayedOff: false,
+        restored: true,
+        reason: (error as Error)?.message ?? String(error),
+      };
+    }
+
     await new Promise(resolve => this.setTimer(() => resolve(null), waitMs));
     await this.adapter.refresh(deviceId);
 
@@ -871,7 +903,7 @@ export class CircadianRuntime {
     if (this.targetIds.length > 0 && warmthCapable.length === 0) {
       this.setState('needs_repair', {
         key: 'state.noWarmthTargets',
-        text: 'None of its lights can change colour temperature.',
+        text: 'None of its lights can change their warmth.',
       });
       return;
     }

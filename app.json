@@ -78,6 +78,30 @@
     "countOrphans": {
       "method": "GET",
       "path": "/orphans"
+    },
+    "previewDevice": {
+      "method": "POST",
+      "path": "/devices/:id/preview"
+    },
+    "testPreStage": {
+      "method": "POST",
+      "path": "/devices/:id/prestage-test"
+    },
+    "tickCurves": {
+      "method": "POST",
+      "path": "/curves/tick"
+    },
+    "testScheduleBoundary": {
+      "method": "POST",
+      "path": "/schedules/:id/test"
+    },
+    "setScheduleEntries": {
+      "method": "POST",
+      "path": "/schedules/:id/entries"
+    },
+    "testControllerFunction": {
+      "method": "POST",
+      "path": "/controllers/:id/test"
     }
   },
   "flow": {

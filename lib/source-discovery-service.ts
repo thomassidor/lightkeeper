@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import type { HomeyApiService } from './homey-api-service';
 import type { CatalogDevice } from './device-catalog';
+import { FlowCardCatalogue } from './flow-card-catalogue';
 import {
   normalizeCards,
   type DiscoveredTriggerCard,
@@ -50,11 +51,20 @@ export interface DiscoveryResult {
 }
 
 export class SourceDiscoveryService {
-  constructor(private readonly api: HomeyApiService) {}
+  private readonly cards: FlowCardCatalogue;
+
+  /**
+   * The catalogue is injectable so the app can SHARE one with the schedule
+   * registry, which asks the same ~11.6 MB question about the same cards
+   * (platform §15). Defaulted so the pairing screens' throwaway rigs and every
+   * test can still build one from an api alone.
+   */
+  constructor(api: HomeyApiService, cards?: FlowCardCatalogue) {
+    this.cards = cards ?? new FlowCardCatalogue(api);
+  }
 
   async discover(device: CatalogDevice): Promise<DiscoveryResult> {
-    const client = await this.api.read();
-    const allCards = Object.values(await client.flow.getFlowCardTriggers()) as any[];
+    const allCards = await this.cards.triggerCards();
 
     const matched: Array<{ card: DiscoveredTriggerCard; routes: MatchRoute[] }> = [];
     /** Cards a filter we cannot evaluate kept out. Reported, never guessed at. */
@@ -63,10 +73,10 @@ export class SourceDiscoveryService {
     for (const card of allCards) {
       const { routes, declined } = matchRoutesFor(card, device);
       for (const reason of declined) {
-        unevaluable.push({ cardId: String(card?.id ?? '?'), reason });
+        unevaluable.push({ cardId: card.id || '?', reason });
       }
       if (routes.length === 0) continue;
-      matched.push({ card: toDiscoveredCard(card), routes });
+      matched.push({ card, routes });
     }
 
     // Strong matches only reach the picker. An unfiltered device argument
@@ -105,14 +115,13 @@ export class SourceDiscoveryService {
    * remote events found" rather than an unexplained absence.
    */
   async rankSources(devices: CatalogDevice[]): Promise<RankedSource[]> {
-    const client = await this.api.read();
-    const allCards = Object.values(await client.flow.getFlowCardTriggers()) as any[];
+    const allCards = await this.cards.triggerCards();
 
     const scopedCount = new Map<string, number>();
     for (const card of allCards) {
-      const deviceId = deviceIdOfScopedCard(String(card.id ?? ''));
+      const deviceId = deviceIdOfScopedCard(card.id);
       if (!deviceId) continue;
-      const shortId = String(card.id).split(':').slice(3).join(':');
+      const { shortId } = card;
       // Capability cards are not input; counting them would rank a thermometer
       // above a remote.
       if (/^(measure_|alarm_|meter_)|_threshold_|_changed$|_duration$/.test(shortId)) continue;
@@ -154,17 +163,17 @@ export function deviceIdOfScopedCard(cardId: string): string | null {
  * the card is not offered for this device.
  */
 function matchRoutesFor(
-  card: any,
+  card: DiscoveredTriggerCard,
   device: CatalogDevice,
 ): { routes: MatchRoute[]; declined: string[] } {
   const routes: MatchRoute[] = [];
   const declined: string[] = [];
 
-  if (deviceIdOfScopedCard(String(card.id ?? '')) === device.id) {
+  if (deviceIdOfScopedCard(card.id) === device.id) {
     routes.push('device_scoped');
   }
 
-  for (const arg of (card.args ?? []) as any[]) {
+  for (const arg of card.args) {
     if (arg?.type !== 'device') continue;
     const verdict = deviceMatchesFilter(arg.filter, device);
     if (verdict.unknownKeys.length > 0) {
@@ -256,32 +265,6 @@ function deviceMatchesFilter(
     }
   }
   return { matches: unknownKeys.length === 0, unknownKeys };
-}
-
-function toDiscoveredCard(card: any): DiscoveredTriggerCard {
-  const id = String(card.id ?? '');
-  const shortId = id.startsWith('homey:device:') ? id.split(':').slice(3).join(':') : id;
-  return {
-    id,
-    shortId,
-    uri: String(card.uri ?? ''),
-    title: titleOf(card.title) ?? shortId,
-    args: (card.args ?? []).map((a: any) => ({
-      name: a.name,
-      type: a.type,
-      values: a.values?.map((v: any) => ({ id: String(v.id), title: v.title })),
-      filter: a.filter,
-      min: a.min,
-      max: a.max,
-      step: a.step,
-    })),
-    tokens: (card.tokens ?? []).map((t: any) => ({
-      id: String(t.id ?? ''),
-      type: String(t.type ?? ''),
-      // The title carries the scale, e.g. "Steps (1000/turn)".
-      title: t.title,
-    })),
-  };
 }
 
 function titleOf(title: unknown): string | null {

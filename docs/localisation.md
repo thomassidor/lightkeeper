@@ -75,7 +75,7 @@ choices took thought, and re-deriving them would produce a different and worse s
 | API key | API-nøgle | Preserve the capitalisation of API |
 | colour temperature | farvetemperatur | Note the English copy uses British spelling |
 | brightness | lysstyrke | |
-| warmer / colder | varmere / koldere | Lighting-temperature direction |
+| warmer / cooler | varmere / koldere | Lighting-temperature direction |
 | zone | zone | |
 | unavailable | utilgængelig | |
 | repair | reparér / reparation | Verb / noun |

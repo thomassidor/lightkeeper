@@ -31,6 +31,8 @@
  *    the generation and the token being the ones it started with.
  */
 
+import { NO_CACHE } from './flow-card-catalogue';
+
 export type CredentialFailure =
   /** The string is not a key at all — placeholder or truncated paste. */
   | 'malformed'
@@ -457,7 +459,7 @@ async function sweepStaleProbeFolders(
   log?: (...args: unknown[]) => void,
 ): Promise<void> {
   try {
-    const folders = Object.values(await client.flow.getFlowFolders()) as any[];
+    const folders = Object.values(await client.flow.getFlowFolders(NO_CACHE)) as any[];
     const stale = folders.filter(
       folder => String(folder?.name ?? '') === PROBE_FOLDER_NAME
         && (folder?.parent ?? null) === null,

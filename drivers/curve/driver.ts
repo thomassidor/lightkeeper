@@ -5,6 +5,7 @@ import Homey from 'homey';
 import {
   listTargetsPayload, resolveSummary, targetLights,
 } from '../../lib/pairing/target-picker';
+import { deriveSuffixedName } from '../../lib/pairing/derive-name';
 import { CURRENT_CURVE_SCHEMA_VERSION } from '../../lib/circadian/curve-migrations';
 import {
   DEFAULT_POINTS, MAX_POINTS, MIN_POINTS, sanitiseCurve,
@@ -90,7 +91,13 @@ module.exports = class CurveDriver extends Homey.Driver {
 
     // -------------------------------------------------------------- targets
 
-    handler('listTargets', async () => listTargetsPayload(this.app.catalog, state.target));
+    // The targets view is ONE file shared by all four drivers (platform §8), so the
+    // line telling the user which lights these are has to be supplied per driver.
+    // Resolved here rather than in `lib/`, which cannot translate.
+    handler('listTargets', async () => ({
+      ...await listTargetsPayload(this.app.catalog, state.target),
+      subtitle: this.homey.__('targets.subtitleCurve'),
+    }));
 
     handler('selectTargets', async (spec: unknown) => {
       // The pairing channel is a webview, so this is the same class of boundary
@@ -235,23 +242,9 @@ module.exports = class CurveDriver extends Homey.Driver {
    * the user rename a device afterwards, which is the natural place for it.
    */
   private async deriveName(state: SessionState): Promise<string> {
-    if (!state.target) return 'Curve light';
-
-    if (state.target.kind === 'zone') {
-      const zones = await this.app.catalog.allZones();
-      const zone = zones.find((z: any) => z.id === (state.target as any).zoneId);
-      return `${zone?.name ?? 'Zone'} curve`;
-    }
-
-    const lights = await targetLights(this.app.catalog, state.target);
-    if (lights.length === 0) return 'Curve light';
-    if (lights.length === 1) return `${lights[0].name} curve`;
-
-    // Where every light shares a room, the room reads better than a list.
-    const zoneNames = new Set(lights.map(l => l.zoneName).filter(Boolean));
-    if (zoneNames.size === 1) return `${[...zoneNames][0]} curve`;
-
-    return `${lights.length} lights curve`;
+    return deriveSuffixedName(this.app.catalog, state.target, {
+      fallback: 'Curve light', suffix: 'curve', zoneFallback: 'Zone',
+    });
   }
 
   private buildPlan(state: SessionState): CircadianPlan {

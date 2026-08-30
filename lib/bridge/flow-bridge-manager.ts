@@ -11,6 +11,7 @@ import {
 } from './flow-binding-compiler';
 import type { LogicalSourceBinding } from '../inputs/selectable-input';
 import { FlowFolderManager, type FlowFolderInfo } from './flow-folder-manager';
+import { FlowCardCatalogue, NO_CACHE } from '../flow-card-catalogue';
 import { isNotFound } from '../support/homey-errors';
 import { randomUUID } from 'node:crypto';
 
@@ -238,12 +239,21 @@ export class FlowBridgeManager {
    */
   private readonly reconciles = new SingleFlight();
 
+  private readonly cards: FlowCardCatalogue;
+
+  /**
+   * `cards` is optional so the app can hand in the ONE catalogue it shares with
+   * source discovery (platform §15), while every test and every ephemeral rig
+   * still builds a manager from an api, an app id and a log.
+   */
   constructor(
     private readonly api: HomeyApiService,
     private readonly appId: string,
     private readonly log: (...args: unknown[]) => void,
+    cards?: FlowCardCatalogue,
   ) {
     this.folders = new FlowFolderManager(api, log, this.folderMutex);
+    this.cards = cards ?? new FlowCardCatalogue(api);
   }
 
   /**
@@ -272,17 +282,41 @@ export class FlowBridgeManager {
   async bridgeCards(): Promise<BridgeCardRefs> {
     if (this.cardRefs) return this.cardRefs;
 
-    const client = await this.api.read();
-    const actions = Object.values(await client.flow.getFlowCardActions()) as any[];
+    const wanted = ['bridge_event', 'bridge_numeric_event', 'bridge_token_event'] as const;
+
+    /**
+     * Ask for the three by name first. Reading the whole action catalogue to
+     * find three cards is ~12 MB of allocation the app never gets back
+     * (platform §15), and it is the only reason this method was expensive.
+     */
+    const ownerUri = `homey:app:${this.appId}`;
+    const direct = await Promise.all(wanted.map(name => this.cards.actionCardRef(ownerUri, name)));
+
+    if (direct.every((ref): ref is { id: string; uri: string } => ref !== null)) {
+      this.cardRefs = { event: direct[0]!, numeric: direct[1]!, token: direct[2]! };
+      return this.cardRefs;
+    }
+
+    /**
+     * The FALLBACK, and the reason the direct path is allowed to be optimistic.
+     *
+     * Enumerate and echo — platform §3's rule, and what this method used to do
+     * unconditionally. It costs the full catalogue read, which is why it is no
+     * longer the first thing tried, but it is the path that still answers when
+     * the direct lookup cannot: a card id shaped differently from what we
+     * expect, or a Homey that answers the collection and not the item.
+     */
+    this.log('Falling back to enumerating every action card to find our own');
+    const actions = await this.cards.actionCardRefs();
 
     const find = (shortId: string) => {
-      const wanted = `${this.appId}:${shortId}`;
-      const card = actions.find(c => String(c.id ?? '') === wanted)
-        ?? actions.find(c => String(c.id ?? '').endsWith(`:${shortId}`) && String(c.id).includes(this.appId));
+      const exact = `${this.appId}:${shortId}`;
+      const card = actions.find(c => c.id === exact)
+        ?? actions.find(c => c.id.endsWith(`:${shortId}`) && c.id.includes(this.appId));
       if (!card) {
         throw new Error(`Lightkeeper's own action card "${shortId}" is not registered on this Homey.`);
       }
-      return { id: String(card.id), uri: String(card.uri) };
+      return { id: card.id, uri: card.uri };
     };
 
     this.cardRefs = {
@@ -306,7 +340,7 @@ export class FlowBridgeManager {
     let liveFlows: Record<string, any>;
     try {
       const client = await this.api.read();
-      liveFlows = await client.flow.getFlows();
+      liveFlows = await client.flow.getFlows(NO_CACHE);
     } catch (error) {
       this.api.reportReadFailure(error);
       throw error;
@@ -543,7 +577,7 @@ export class FlowBridgeManager {
     const ids = ourCardIds(cards);
 
     const client = await this.api.read();
-    const flows = Object.values(await client.flow.getFlows()) as any[];
+    const flows = Object.values(await client.flow.getFlows(NO_CACHE)) as any[];
 
     const found: ManagedFlowSummary[] = [];
     for (const flow of flows) {
@@ -689,7 +723,7 @@ export class FlowBridgeManager {
     const emptied = new Set<string>();
     try {
       const client = await this.api.read();
-      const live = (await client.flow.getFlows()) as Record<string, any>;
+      const live = (await client.flow.getFlows(NO_CACHE)) as Record<string, any>;
       for (const ref of references) {
         const folder = live[ref.flowId]?.folder;
         if (folder) emptied.add(String(folder));

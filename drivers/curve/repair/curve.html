@@ -165,6 +165,10 @@
   #cir-root .result { font-size: 13px; color: var(--lk-sub); margin-top: 8px; }
   #cir-root .help { font-size: 12.5px; line-height: 1.5; color: var(--lk-muted);
                margin: 2px 0 10px 32px; }
+  /* The same help text inside a field rather than under a checkbox: the 32px
+     indent above clears a checkbox that is not there in a point card. */
+  #cir-root .help.note { margin: 6px 0 0 2px; }
+  #cir-root .help.off { display: none; }
   #cir-root .add { width: 100%; }
 
   /* The curve, drawn rather than described. A list of five times and five
@@ -184,7 +188,6 @@
 <div class="wrap" id="cir-root">
   <h2 data-i18n="curve.title"></h2>
   <p class="sub" data-i18n="curve.subtitle"></p>
-  <p class="sub" data-i18n="circadian.colourHelp"></p>
 
   <div class="card chart">
     <svg id="cir-graph" viewBox="0 0 320 96" preserveAspectRatio="none" aria-hidden="true">
@@ -298,7 +301,7 @@ function __lkBootCir(Homey) {
         if (err) reject(err instanceof Error ? err : new Error(String(err)));
         else resolve(result);
       };
-      var timer = setTimeout(function () { finish(new Error('Homey did not respond to "' + event + '"')); }, 20000);
+      var timer = setTimeout(function () { finish(new Error('Homey did not respond in time. Close this screen and try again. (' + event + ')')); }, 20000);
       var done = function (err, result) { clearTimeout(timer); finish(err, result); };
       try {
         var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
@@ -448,7 +451,16 @@ function __lkBootCir(Homey) {
       // dots cannot show the one thing this screen added.
       var colour = point.color && palette(point.color);
       dot.setAttribute('class', 'dot');
-      if (colour) dot.setAttribute('fill', hsl(colour));
+      /**
+       * The colour goes on `style`, not on a `fill` attribute.
+       *
+       * `.dot` already carries `fill: var(--lk-surface)` from this view's own
+       * stylesheet, and a CSS declaration beats a presentation attribute — so
+       * `setAttribute('fill', …)` set the attribute, passed every check that
+       * looked at the attribute, and drew a plain surface-coloured dot. Inline
+       * style is what actually wins.
+       */
+      if (colour) dot.style.fill = hsl(colour);
       dot.setAttribute('cx', ((minuteOf(point) / MINUTES_PER_DAY) * 320).toFixed(1));
       dot.setAttribute('cy', (88 - point.warmth * 80).toFixed(1));
       dot.setAttribute('r', colour ? '4.5' : '3.5');
@@ -531,7 +543,14 @@ function __lkBootCir(Homey) {
        * It is what a lamp with no colour capability is written to instead, and
        * what the neighbouring temperature segments interpolate towards — so the
        * shape of the curve does not depend on which of the household's lamps can
-       * do colour. `circadian.colourHelp` says as much on screen.
+       * do colour.
+       *
+       * On a coloured point it is also the one control on this screen whose
+       * label stops being the whole truth: someone who has just chosen "amber"
+       * is looking at a slider that does nothing they can see. So the note
+       * below says what it is still for, next to the slider it is about —
+       * `circadian.colourHelp` used to sit at the top of the page, four points
+       * above the thing it explains.
        */
       + '<div class="field"><div class="label">'
       + escapeHtml(Homey.__('circadian.warmth')) + '</div>'
@@ -539,7 +558,16 @@ function __lkBootCir(Homey) {
       + '<input type="range" min="0" max="100" step="5" data-act="warmth" value="'
       + Math.round(point.warmth * 100) + '" />'
       + '<span class="value" data-role="warmthValue">' + escapeHtml(warmthText(point.warmth))
-      + '</span></div></div>';
+      + '</span></div>'
+      /**
+       * Rendered on every point and HIDDEN on the uncoloured ones, rather than
+       * added and removed on demand. Choosing a colour must not re-render the
+       * row — the same reason the sliders update in place further down — and a
+       * class toggle keeps the note's appearance a change of one attribute.
+       */
+      + '<p class="help note' + (point.color ? '' : ' off') + '" data-role="warmthNote">'
+      + escapeHtml(Homey.__('circadian.colourHelp')) + '</p>'
+      + '</div>';
 
     if (model.adjustBrightness) {
       html += '<div class="field"><div class="label">'
@@ -566,6 +594,15 @@ function __lkBootCir(Homey) {
     listEl.innerHTML = sorted().map(pointHtml).join('');
     drawChart();
     summary();
+  }
+
+  /**
+   * The warmth note follows the colour select, in place. See pointHtml: the
+   * note is already in the row, so this is the whole of showing it.
+   */
+  function syncWarmthNote(found) {
+    var note = found.card.querySelector('[data-role="warmthNote"]');
+    if (note) note.classList.toggle('off', !found.point.color);
   }
 
   function pointOf(element) {
@@ -626,6 +663,7 @@ function __lkBootCir(Homey) {
     if (!found) return;
     if (target.value) found.point.color = target.value;
     else delete found.point.color;
+    syncWarmthNote(found);
     drawChart();
   });
 
@@ -642,6 +680,7 @@ function __lkBootCir(Homey) {
       // is "absent or a palette id" and the sanitiser refuses anything else.
       if (target.value) found.point.color = target.value;
       else delete found.point.color;
+      syncWarmthNote(found);
       drawChart();
     } else if (act === 'warmth') {
       found.point.warmth = Number(target.value) / 100;
@@ -843,7 +882,7 @@ window.onHomeyReady = __lkBootCir;
     // test only inspects <style>: this banner has to render when nothing else
     // in the view has booted, tokens included.
     document.body.insertAdjacentHTML('afterbegin', '<div style="padding:12px;background:#fdeceb;color:#8f1d18;font-size:13px;">'
-      + 'Lightkeeper could not reach the Homey pairing API on this page.</div>');
+      + 'Lightkeeper could not reach Homey from this screen. Close it and try again.</div>');
     return;
   }
   setTimeout(function () { waitForHomey((attempt || 0) + 1); }, 50);

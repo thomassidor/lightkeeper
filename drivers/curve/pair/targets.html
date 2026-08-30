@@ -144,6 +144,9 @@
 
 <div class="wrap" id="tg-root">
   <h2 data-i18n="targets.title"></h2>
+  <!-- One shared file serves all four drivers, so the line that says WHICH lights
+       these are has to come from the driver rather than from the markup. -->
+  <p class="sub" id="tg-sub" style="display:none;"></p>
 
   <!-- Zone selection sits at equal prominence with multi-select. -->
   <div class="tabs">
@@ -250,7 +253,7 @@ function __lkBootTg(Homey) {
         if (err) reject(err instanceof Error ? err : new Error(String(err)));
         else resolve(result);
       };
-      var timer = setTimeout(function () { finish(new Error('Homey did not respond to "' + event + '"')); }, 20000);
+      var timer = setTimeout(function () { finish(new Error('Homey did not respond in time. Close this screen and try again. (' + event + ')')); }, 20000);
       var done = function (err, result) { clearTimeout(timer); finish(err, result); };
       try {
         var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
@@ -339,6 +342,13 @@ function __lkBootTg(Homey) {
   }
 
   emit('listTargets').then(function (data) {
+    var subtitle = (data && data.subtitle) || '';
+    if (subtitle) {
+      var sub = document.getElementById('tg-sub');
+      sub.textContent = subtitle;
+      sub.style.display = '';
+    }
+
     var container = clear(document.getElementById('tg-rooms'));
 
     var rooms = (data && data.rooms) || [];
@@ -422,7 +432,7 @@ window.onHomeyReady = __lkBootTg;
   if ((attempt || 0) > 100) {
     document.body.insertAdjacentHTML('afterbegin',
       '<div style="padding:12px;background:#fdeceb;color:#8f1d18;font-size:13px;">'
-      + 'Lightkeeper could not reach the Homey pairing API on this page.</div>');
+      + 'Lightkeeper could not reach Homey from this screen. Close it and try again.</div>');
     return;
   }
   setTimeout(function () { waitForHomey((attempt || 0) + 1); }, 50);

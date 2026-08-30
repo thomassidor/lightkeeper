@@ -113,12 +113,20 @@ const DEFAULT_MAX_QUEUED_DEVICES = 64;
 /**
  * The order writes to one device go out in.
  *
- * `onoff` first so a level lands on a lit lamp; `light_mode` before hue and
- * saturation for the same reason — a lamp in temperature mode ignores a hue it
- * is given, silently. Everything after that is independent.
+ * `onoff` first so a level lands on a lit lamp. Then `light_mode`, BEFORE both
+ * of the things it governs: a lamp ignores a hue it is given while in
+ * temperature mode, and ignores a temperature while in colour mode — silently,
+ * either way, reporting the write as accepted and keeping its old value.
+ *
+ * `light_mode` used to sit after `light_temperature`, which was invisible for
+ * as long as nothing wrote colour and temperature to the same lamp. A Curve
+ * light does: a coloured point puts a lamp into colour mode, and every later
+ * temperature-only point was then dropped on the floor. Found on hardware — a
+ * lamp written 0.43 sat at 0.87 and would not take a temperature from anything,
+ * this app or otherwise, until its mode was changed back.
  */
 const WRITE_ORDER: Capability[] = [
-  'onoff', 'dim', 'light_temperature', 'light_mode', 'light_hue', 'light_saturation',
+  'onoff', 'dim', 'light_mode', 'light_temperature', 'light_hue', 'light_saturation',
 ];
 
 export class CommandScheduler {

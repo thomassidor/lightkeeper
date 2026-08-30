@@ -1,10 +1,10 @@
 {
   "name": "com.thomassidor.lightkeeper",
   "version": "0.5.0",
-  "description": "Homey Pro app that points any paired remote, switch or dial at any paired lights, and puts those lights on a schedule — without writing a single Flow.",
+  "description": "Homey Pro app that points any paired remote, switch or dial at any paired lights, and puts those lights on a schedule \u2014 without writing a single Flow.",
   "license": "MIT",
   "author": {
-    "name": "Thomas René Sidor"
+    "name": "Thomas Ren\u00e9 Sidor"
   },
   "repository": {
     "type": "git",
@@ -34,6 +34,7 @@
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "sync:views": "node scripts/sync-views.mjs",
     "sync:views:check": "node scripts/sync-views.mjs --check",
+    "render:views": "node scripts/render-views.mjs",
     "test": "node --import tsx --test \"test/unit/**/*.test.ts\"",
     "test:watch": "node --import tsx --test --watch \"test/unit/**/*.test.ts\"",
     "validate": "homey app validate --level publish",

@@ -7,6 +7,7 @@ import { CredentialService } from './lib/credential-service';
 import { HomeyApiService } from './lib/homey-api-service';
 import { DeviceCatalog } from './lib/device-catalog';
 import { SourceDiscoveryService } from './lib/source-discovery-service';
+import { FlowCardCatalogue } from './lib/flow-card-catalogue';
 import { FlowBridgeManager } from './lib/bridge/flow-bridge-manager';
 import { ControllerRuntimeManager } from './lib/runtime/controller-runtime-manager';
 import { HealthMonitor } from './lib/runtime/health-monitor';
@@ -30,6 +31,15 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
   credentials!: CredentialService;
   api!: HomeyApiService;
   catalog!: DeviceCatalog;
+  /**
+   * ONE flow card catalogue for the whole app.
+   *
+   * Shared rather than one per consumer because the thing being shared is a
+   * ~11.6 MB read (platform §15): source discovery, the schedule registry's
+   * time-card lookup and the bridge's own card resolution all ask about the
+   * same cards, and at boot they ask at once.
+   */
+  cards!: FlowCardCatalogue;
   discovery!: SourceDiscoveryService;
   bridge!: FlowBridgeManager;
   controllers!: ControllerRuntimeManager;
@@ -144,8 +154,11 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
 
     this.api = new HomeyApiService(this.homey, this.credentials);
     this.catalog = new DeviceCatalog(this.api);
-    this.discovery = new SourceDiscoveryService(this.api);
-    this.bridge = new FlowBridgeManager(this.api, this.homey.manifest.id, (...args) => this.log(...args));
+    this.cards = new FlowCardCatalogue(this.api);
+    this.discovery = new SourceDiscoveryService(this.api, this.cards);
+    this.bridge = new FlowBridgeManager(
+      this.api, this.homey.manifest.id, (...args) => this.log(...args), this.cards,
+    );
     this.health = new HealthMonitor(
       this.catalog,
       this.discovery,
@@ -173,6 +186,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       onWriteResult,
       catalog: this.catalog,
       bridge: this.bridge,
+      cards: this.cards,
       // The SDK's only timezone primitive, and the one every schedule decision
       // is made against. Read per call rather than cached: a household that
       // corrects its Homey's timezone must not have to restart the app.
@@ -321,6 +335,9 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     await this.schedules?.destroyAll();
     await this.curves?.destroyAll();
     await this.api?.destroy();
+    // Whatever the catalogue is still holding from the last read. Small by
+    // design (platform §15), but there is no reason for it to outlive the app.
+    this.cards?.clear();
   }
 
 };

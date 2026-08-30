@@ -60,6 +60,42 @@ function harness(overrides: Partial<{ failOn: string }> = {}) {
 }
 
 describe('command scheduler', () => {
+  test('light_mode goes out before BOTH the things it governs', async () => {
+    /**
+     * The ordering the planner's mode writes depend on.
+     *
+     * A lamp ignores a hue while in temperature mode, and a temperature while in
+     * colour mode — silently, either way. `planColor` and `planTemperature` each
+     * emit the mode first, but a queue that reorders them puts the mode after
+     * the value it was meant to enable, and the lamp discards the value.
+     *
+     * `light_mode` sat AFTER `light_temperature` in that order until a Curve
+     * light with a coloured point was run on real hardware: the lamp took the
+     * colour, went into colour mode, and then held its old temperature against
+     * every later write.
+     */
+    const { clock, written, scheduler } = harness();
+
+    // Submitted deliberately in the WRONG order, since that is what the queue
+    // exists to fix.
+    scheduler.submit([
+      { deviceId: 'a', capability: 'light_temperature', value: 0.2 },
+      { deviceId: 'a', capability: 'light_hue', value: 0.5 },
+      { deviceId: 'a', capability: 'light_mode', value: 'temperature' },
+      { deviceId: 'a', capability: 'onoff', value: true },
+    ]);
+    await clock.advance(400);
+
+    const order = written.map(w => w.capability);
+    const at = (capability: Capability) => order.indexOf(capability);
+
+    assert.ok(at('onoff') < at('light_mode'), 'a lamp is switched on first');
+    assert.ok(at('light_mode') < at('light_temperature'),
+      `light_mode must precede light_temperature, got ${order.join(' -> ')}`);
+    assert.ok(at('light_mode') < at('light_hue'),
+      `light_mode must precede light_hue, got ${order.join(' -> ')}`);
+  });
+
   test('coalesces a burst, acting immediately then once more at the end', async () => {
     const { clock, written, scheduler } = harness();
 

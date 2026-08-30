@@ -54,6 +54,8 @@ function harness(options: {
   plan?: CircadianPlan;
   devices?: FakeDevice[];
   now?: number;
+  /** An integration that declines a write, the way a Hue Bridge does. */
+  refuseWrite?: { capability: string; message: string };
 } = {}) {
   const devices = options.devices ?? [light('l1'), light('l2')];
   const writes: Array<{ deviceId: string; capability: string; value: unknown }> = [];
@@ -70,6 +72,9 @@ function harness(options: {
     return {
       ...device,
       async setCapabilityValue({ capabilityId, value }: { capabilityId: string; value: unknown }) {
+        if (options.refuseWrite?.capability === capabilityId) {
+          throw new Error(options.refuseWrite.message);
+        }
         writes.push({ deviceId: id, capability: capabilityId, value });
         // The Homey reports back what it was told, which is what makes the echo
         // dedupe and the override tolerance worth testing at all.
@@ -515,6 +520,40 @@ describe('pre-staging that turns out to be unsafe', () => {
       h.writes.filter(w => w.capability === 'onoff'),
       [{ deviceId: 'l1', capability: 'onoff', value: false }],
     );
+  });
+
+  test('the probe reports a REFUSED write rather than throwing it at the user', async () => {
+    /**
+     * The third outcome, found on hardware. A Hue Bridge declines a colour
+     * write to a lamp it considers "soft off" instead of accepting it or
+     * turning the lamp on — and the probe's write was unguarded, so the
+     * integration's own sentence arrived on the pairing screen underneath a
+     * button labelled "Test it".
+     *
+     * For the user it means what "the lamp came on" means: pre-staging is not
+     * available here. So it is reported that way, and the reason is kept.
+     */
+    const h = harness({
+      plan: plan({ preStage: true }),
+      devices: [light('l1', undefined, { onoff: false }), light('l2')],
+      refuseWrite: {
+        capability: 'light_temperature',
+        message: 'device (light) abc is "soft off", command (.color_temperature.mirek) '
+          + 'may not have effect',
+      },
+    });
+    await h.runtime.startIdle();
+
+    const outcome = await h.runtime.probePreStage(0);
+
+    assert.equal(outcome.deviceId, 'l1', 'it still names the lamp it tried');
+    assert.equal(outcome.stayedOff, false, 'pre-staging is not available here');
+    assert.equal(outcome.restored, true, 'nothing was changed, so nothing needed putting back');
+    assert.match(outcome.reason ?? '', /soft off/,
+      "the integration's own words are the most useful thing it can say");
+
+    // And it did NOT switch the lamp off to "restore" a lamp it never touched.
+    assert.deepEqual(h.writes.filter(w => w.capability === 'onoff'), []);
   });
 
   test('the probe says so when every light is already on', async () => {

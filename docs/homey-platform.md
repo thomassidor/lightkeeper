@@ -5,7 +5,7 @@ the tests point here — `(platform §6)` means section 6 of this file. Grep `pl
 every site that depends on something written down below.
 
 This is how Homey actually behaves, as opposed to how it appears to, and it is documented nowhere
-else. Every section was established against real hardware: Homey Pro 2023, firmware 13.4.0,
+else. Every section was established against real hardware: Homey Pro 2023, firmware 13.4.0-13.4.1,
 homey-api 3.19.2. Prefer updating a section over stripping it — each one is a decision reasoned
 through once, or a platform fact that cost real hardware to establish.
 
@@ -119,6 +119,25 @@ permission refusal.
 Also: an app's own cards exist only while that app is running. A 404 may mean "not running", not
 "not permitted".
 
+**The same rule holds for DRIVER ids, and it caught us a second time.** A driver's id over the Web
+API is `homey:app:<appId>:<driverName>` — verified on hardware, 28 August 2026:
+
+```
+homey:app:com.thomassidor.lightkeeper:circadian
+homey:app:com.thomassidor.lightkeeper:controller
+homey:app:com.thomassidor.lightkeeper:curve
+homey:app:com.thomassidor.lightkeeper:schedule
+```
+
+`scripts/verify-hardware.mjs pairspike` built it as `<appId>:<driverName>` and got
+`Not Found: Driver with ID com.thomassidor.lightkeeper:circadian` — which reads like the endpoint
+refusing the request, and is nothing of the sort. Enumerate `drivers.getDrivers()` and match; never
+assemble the id.
+
+Note the asymmetry that makes this easy to get wrong: a **device**'s `driverId` is not something we
+build either, but it is handed to us on every device object, so nothing forces the question. A
+**pair session** is the one place a driver id has to be supplied rather than echoed.
+
 ## 4. Device trigger cards are found by card ID, not by URI
 
 `getFlowCardTriggers()` returns ~1700 cards. Device-scoped cards encode their device in the card
@@ -171,6 +190,41 @@ From a hand-built flow:
   an id. Dropdown args store the value id.
 
 ## 6. Capability behaviour
+
+**`light_mode` gates BOTH of the things it selects, and only one half was ever written.** A lamp in
+colour mode ignores a `light_temperature` exactly as a lamp in temperature mode ignores a
+`light_hue` — silently, in both directions: the write is accepted, `ok: true` is recorded, and the
+lamp keeps its old value. The planner set `light_mode: 'color'` before hue and saturation and set
+nothing before temperature, which was invisible until one device wrote both to one lamp. A Curve
+light with a coloured point does: the colour put the lamp into colour mode and every later
+temperature-only point was discarded by the lamp.
+
+Measured on hardware, 30 August 2026: written 0.430, held 0.870, and the lamp refused a temperature
+from *anything* — this app or a direct API write — until its mode changed. With
+`light_mode: 'temperature'` written first, the same lamp took 0.800 and held 0.840.
+
+Two consequences, both load-bearing:
+
+- `planTemperature()` mirrors `planColor()`, and `WRITE_ORDER` in the command scheduler puts
+  `light_mode` ahead of **both** `light_temperature` and `light_hue`. It used to sit between them,
+  so adding the write alone would have been reordered to arrive after the value it enables.
+- Anything writing a temperature by hand — a script standing in for a user — has to switch the mode
+  too, or it reproduces the bug instead of the person.
+
+**A lamp need not report back the value it was written.** It clamps to its own physical range and
+quantises to its own steps, and neither is visible in the capability options Homey reports. Measured
+on the same pass: 0.930 written and 0.850 held on a bulb at its warm ceiling; 0.800 written and
+0.840 held. So a check that a write "took" has to allow roughly 0.1 — loose enough for quantisation,
+far tighter than the 0.44 gap a discarded write leaves.
+
+**Writing to an "off" lamp has THREE outcomes, not two.** Pre-staging asks whether a lamp can be
+given a colour while off, and the answers are: it stays off (pre-staging works); it comes on (it does
+not, and the app puts it back and disables the option); or **the integration declines the write** —
+a Hue Bridge answers `device (light) <id> is "soft off", command (.color_temperature.mirek) may not
+have effect`. Measured 30 August 2026 on a Hue lamp, while a second lamp on the same Homey accepted
+the write and stayed off, so this is per-lamp rather than per-bridge. The third outcome means what
+the second does; `probePreStage()` reports it rather than throwing, because unguarded it reached the
+pairing screen as that raw sentence under a button labelled "Test it".
 
 **Echoes arrive duplicated.** Setting `dim` once produces two identical callbacks. `TargetStateCache`
 dedupes within a 1500 ms window, or optimistic desired state fights itself and the ramp engine reads
@@ -639,3 +693,236 @@ Two ordering rules the lifecycle owns, both of which cost a real bug:
 - **An apply persists only after `register()` resolves**, and the managers insert into their maps
   only after `start()` resolves. A runtime whose start threw is half-built — no scheduler, possibly
   no subscriptions — and a bridge event arriving in that window would be dispatched into it.
+
+## 14. Pair sessions ARE a Web API surface, and pairing can be scripted
+
+**Established on hardware, 28 August 2026** — Homey Pro 2023, firmware 13.4.1, homey-api 3.19.2.
+
+This repository asserted the opposite for months. `docs/hardware-test-plan.md` and
+`scripts/verify-hardware.mjs` both said *"it cannot pair devices — Homey's pair sessions are not an
+API surface"*, and neither cited anything. It is not what ships.
+
+`ManagerDrivers` in `HomeyAPIV3Local` exposes the whole `/pairsession` surface, all of it
+`private: false` under scope `homey.device`:
+
+```
+createPairSession({ pairsession: { type, driverId, deviceId?, zoneId? } })
+emitPairingEvent({ id, event, data? })
+emitPairingCallback({ id, callbackId, data? })
+emitPairingHeartbeat({ id })
+createPairSessionDevice({ id, device: { name?, data, store?, settings?, … } })
+deletePairSessionDevice({ id })
+deletePairSession({ id })
+getPairSession({ id })
+```
+
+**It is a client-side mirror of the pair-view API.** `emitPairingEvent({event, data})` is what
+`Homey.emit(event, data)` does inside a view, and it lands on the same `session.setHandler(event)`
+in the driver. `createPairSessionDevice({id, device})` is `Homey.createDevice(dto)`, and its body
+accepts `store` — which is where every Lightkeeper plan lives.
+
+Verified end to end against the circadian driver: session created with `type: 'pair'`,
+`listTargets` answered with 54 lights in 15 rooms, `selectTargets` validated against the catalogue,
+`getEnds` and `setEnds` round-tripped, `save` returned a device DTO, `createPairSessionDevice` plus
+`add_device` were accepted, and the device appeared in `getDevices` **available**. A Personal API
+Key is sufficient; no app-side permission is involved.
+
+Two consequences:
+
+- `scripts/verify-hardware.mjs pair` builds one of each device type without a phone, and `repair`
+  opens a repair session per device (`type: 'repair'` plus `deviceId`) to check each screen comes
+  back seeded from the stored plan rather than blank.
+- What stays manual is genuinely visual: whether the SCREENS draw correctly. The handlers can be
+  right while a view renders nothing, which is the bug `pair-view-boot.test.ts` was written about.
+
+**A device DTO must carry the manifest's own fields.** A pair view sends only
+`{ name, data, store }` and the platform fills the rest in from the driver manifest. Over the Web
+API it does not: a device created through `createPairSessionDevice` without the manifest's
+`capabilitiesOptions` comes up **unavailable** with
+
+```
+Cannot read properties of null (reading 'get')
+```
+
+and no runtime registered, while the same driver paired by hand is fine. Established 30 August
+2026 across all three drivers that declare a `capabilitiesOptions` block — schedule, circadian and
+Curve — with the controller, which declares none, unaffected throughout. `capabilities` and `class`
+ARE applied from the manifest on this path, which is what makes the omission so hard to see.
+
+Send `capabilities`, `capabilitiesOptions`, `class` and `energy` explicitly; the endpoint accepts
+all four. `withManifest()` in `scripts/verify-hardware.mjs` reads them from `driver.compose.json`.
+
+**A device that EXISTS is not a device that WORKS.** Homey creates it `available` and runs `onInit`
+afterwards, marking it unavailable only once init throws — so reading `available` straight after
+creation reports success for a device that is about to break. Wait for the app's own registry
+instead: a runtime appears there only after `start()` has resolved.
+
+**The driver id is `homey:app:<appId>:<driverName>`** — see §3. Building it as
+`<appId>:<driverName>` returns `Not Found: Driver with ID …`, which reads like the endpoint
+refusing the request and is nothing of the sort. That mistake cost the first two runs of this probe.
+
+`node scripts/verify-hardware.mjs pairspike --yes` is the probe, kept so the claim can be re-checked
+on a future firmware rather than trusted from this note.
+
+---
+
+## 15. `homey-api` caches every `getAll` result forever
+
+This is a memory fact, and it accounted for most of a 48 MB footprint against Homey's 30 MB
+guideline.
+
+`homey-api` builds one `__cache` per manager and writes every item returned by a `getAll` operation
+into it, for the life of the client. From `lib/HomeyAPI/HomeyAPIV3/Manager.js`, in `__request`:
+
+```js
+case 'getAll': {
+  const items = {};
+  for (let props of Object.values(result)) {
+    props = ItemClass.transformGet(props);
+    …
+    if (this.isConnected() && $updateCache === true) {
+      this.__cache[ItemClass.ID][props.id] = items[props.id];
+    }
+  }
+  if (this.isConnected() && $updateCache === true) {
+    this.__cacheAllComplete[ItemClass.ID] = true;
+  }
+  return items;
+}
+```
+
+Two conditions, both of which we satisfy by default. `isConnected()` is true because
+`HomeyApiService.read()` calls `connect()` on `devices`, `zones`, `flow` and `flowtoken` — which it
+must (§1, and `Flow.isBroken` refuses to run without flow + flowtoken connected). `$updateCache`
+defaults to `true`.
+
+**Which operations are `getAll` is a property of the specification, not of the name.** From
+`assets/specifications/HomeyAPIV3Local.json`:
+
+```
+getFlows            {"type":"getAll","item":"Flow"}
+getFlowFolders      {"type":"getAll","item":"FlowFolder"}
+getFlowCardTriggers {"type":"getAll","item":"FlowCardTrigger"}
+getFlowCardActions  {"type":"getAll","item":"FlowCardAction"}
+getDevices          {"type":"getAll","item":"Device"}
+```
+
+### What it costs
+
+The two card catalogues are the expensive ones, because they are every card of every installed app,
+each carrying `title`, `titleFormatted` and `hint` in every language the integration was translated
+into, plus `iconObj` and `color`. §4 records `getFlowCardTriggers()` returning **~1700 cards**.
+
+Measured against a 1700-card payload of that shape:
+
+| | |
+|---|---|
+| the payload | 11.6 MB of JSON |
+| retained once parsed | 16.8 MB of heap |
+| projected to the fields we read | 1.1 MB of heap |
+
+The app read both catalogues — triggers on the first health assess, actions at the first reconcile —
+used them for a handful of string comparisons, and then held roughly **30 MB** for the rest of its
+run.
+
+### The opt-out, and it takes both flags
+
+```js
+client.flow.getFlowCardTriggers({ $cache: false, $updateCache: false })
+```
+
+`$cache: false` alone only skips the cache *read*; the response is still written. `$updateCache:
+false` is the half that matters. This is `homey-api`'s own intended knob, not a private hook — it
+uses exactly this pair internally in `ManagerDevices.scheduleRefresh()`.
+
+One consequence to design around: with `$updateCache: false`, `__cacheAllComplete` is never set, so
+every later `getAll` is a real round trip. For flows and folders that is correct anyway (they must
+reflect current state). For the card catalogues it is not free, because
+`HealthMonitor.findReattachCandidate()` calls `discover()` once per plausible device in a loop — so
+`lib/flow-card-catalogue.ts` replaces the discarded cache with a single-flight promise and a 60 s
+TTL over a compact projection.
+
+**Rule: a new `getAll` call site either passes `NO_CACHE` from `lib/flow-card-catalogue.ts`, or
+carries a comment saying what it is retaining and why.**
+
+### Not retaining is only half of it: V8 never gives the pages back
+
+Measured on Node 22, parsing one 1700-card payload and then dropping every reference to it:
+
+```
+idle           rss  28.9 MB   heap  3.3 MB
+peak           rss 101.6 MB   heap 59.4 MB
+after 8x gc()  rss 112.5 MB   heap  4.3 MB
+```
+
+The heap empties — the garbage really is collected — and **RSS never comes back down**. V8 keeps the
+pages it grew into, so a transient allocation raises the process's floor permanently. Forcing a
+collection does not help, and there is no public Node API that asks V8 to release the pool.
+
+The practical consequence is sharper than it first looks: **on a Homey, the app's PSS is set by the
+largest single thing it has ever parsed, and NOT retaining that thing does not get the pages back.**
+Retaining a parsed catalogue and merely peaking on it cost the same RSS. Retention only wins you
+something if the pages would otherwise be released, and they are not.
+
+Measured on hardware, 30 August 2026, the same app minutes apart:
+
+| | |
+|---|---|
+| before it had read any catalogue | **31.9 MB** |
+| immediately after ONE trigger-catalogue read | **43.9 MB** |
+
+One read, ~12 MB of floor, permanently. So the honest accounting for this work is *the app now reads
+ONE catalogue where it read two, and holds neither* — 48 MB down to ~44 MB in the same state — and
+the 31.9 MB figure is what an app looks like before anything has asked it a question, not a steady
+state. **So a read that can be avoided entirely is worth far more than one
+that is merely dropped afterwards, and avoiding it is the only lever that moves the number.** Two
+places were fixed on exactly that reasoning:
+
+- `FlowBridgeManager.bridgeCards()` wants three cards. Asking for them by name costs a few hundred
+  bytes; enumerating cost ~12 MB of floor.
+- `getDiagnostics` used to call `ScheduleRuntimeManager.timeCard()`, so opening the settings page or
+  exporting a bug report read every trigger card on the Homey — on an installation that had no
+  schedule and no use for the answer. It peeks at the memoised result now. **A report must not
+  change the thing it is reporting on**, and this one raised the floor by 12 MB to tell you a
+  card id.
+
+### Where it stops, and what would move it
+
+**The app sits at ~44 MB once anything has read the trigger catalogue, against Homey's 30 MB
+guideline, and stopping there was a decision rather than an oversight.** `SourceDiscoveryService.discover()` genuinely needs every trigger card — the Web API
+offers no server-side filter, and device-scoped cards are matched on card id (§4) — and it runs at
+every boot for every controller. One such read sets the floor.
+
+Getting under 30 means never materialising that response: fetching it over plain HTTP with the same
+local URL and app token `createAppAPI` uses, and scanning it incrementally so each card is parsed,
+projected and dropped one at a time. That would put the peak at roughly the projection (~1.2 MB) and
+the app somewhere near 20 MB. It is the only lever left: there is nothing else of this size to stop
+holding, because nothing of this size is being held.
+
+Written down so the next person does not re-derive it. If the footprint has to come down further,
+that is the lever, and it is the only one left: there is nothing else of this size to stop holding.
+
+`scripts/verify-hardware.mjs` encodes the outcome rather than the guideline — T59 reports the 30 MB
+guideline and FAILS only past a 50 MB ceiling, because a line that failed on every run is a line
+nobody reads.
+
+Know what that line cannot do. It is a smoke check for a second bulk read appearing, and **not** a
+regression test for retention: holding a parsed catalogue and merely having parsed one cost the same
+RSS, so the number cannot separate them. The signal that CAN is the app's own `heapUsed` measured
+after a read — a few MB when the catalogue is let go, ~17 MB higher when it is not. The app does not
+expose it today; exposing it on `/diagnostics` is what to do if this ever has to be a real test.
+
+### A smaller one, in the same family
+
+`require('homey-api')` eagerly loads 218 modules — the whole Athom Cloud tree, every class of which
+loads its OpenAPI specification as a *static class field*, so the JSON is parsed at import time
+whether or not anything calls it. `require('homey-api/lib/HomeyAPI/HomeyAPI')` loads five, and
+`createAppAPI` / `createLocalAPI` require the local V3 client themselves on first use. Worth 0.5 MB
+of heap and 0.7 MB of RSS.
+
+### Reading the number back
+
+`GET /api/manager/apps/app/:id/usage` (`ManagerApps.getAppUsage`) is what
+[the app-profiling tool](https://tools.developer.homey.app/tools/app-profiling) reports, and
+`GET /api/manager/system/memory` (`ManagerSystem.getMemoryInfo`) gives the per-app breakdown around
+it. `node scripts/verify-hardware.mjs memory` reads both — T59 and T60.

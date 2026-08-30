@@ -16,6 +16,11 @@
 # here when the environment variables are not set. Both are credentials.
 /scripts/hardware-env.json
 
+# `npm run render:views` renders every pairing screen here for a look. Generated,
+# never reviewed as source, and it holds whatever the fixtures say — which keeps
+# the "nothing that looks like a capture from a real Homey" rule easy to keep.
+/.views/
+
 # Local Claude Code settings — per-machine, not shared.
 .claude/settings.local.json
 

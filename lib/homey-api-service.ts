@@ -2,8 +2,21 @@ import { CredentialService, sanitizedWriteError } from './credential-service';
 import { isTransportFailure } from './support/homey-errors';
 
 // homey-api ships JS with JSDoc rather than type declarations.
+
+/**
+ * The DEEP path, deliberately, and not `require('homey-api')`.
+ *
+ * The package index eagerly requires 218 modules — the whole Athom Cloud tree,
+ * every one of whose classes loads its OpenAPI specification as a static class
+ * field, so the JSON is parsed at import time whether or not anything calls it.
+ * This path loads five, and `createAppAPI` / `createLocalAPI` require the local
+ * V3 client themselves on first use. Measured at 0.5 MB of heap and 0.7 MB of
+ * RSS, which is small next to the caches platform §15 is about, but free.
+ *
+ * Do not "tidy" this back to the package root.
+ */
  
-const { HomeyAPI } = require('homey-api');
+const HomeyAPI = require('homey-api/lib/HomeyAPI/HomeyAPI');
 
 /**
  * Owns BOTH API clients and every subscription made through them.

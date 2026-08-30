@@ -83,7 +83,7 @@ export class HealthMonitor {
         state: 'needs_credential',
         detail: {
           key: 'state.needsCredential',
-          text: 'Lightkeeper needs a valid API key to maintain its Flows.',
+          text: 'Lightkeeper needs a new API key to manage its Flows.',
         },
       };
     }

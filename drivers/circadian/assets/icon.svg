@@ -13,9 +13,9 @@
 
        The transform centres the master's drawing and scales it to fill the
        canvas, which guideline 1.5 asks for; stroke widths are pre-divided by the
-       scale so they render at 40 units on this 960 canvas. -->
-  <g transform="translate(-318.9 -318.9) scale(3.1208)" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="12.82">
-    <g stroke-width="12.82">
+       scale so they render at 34 units on this 960 canvas. -->
+  <g transform="translate(-318.9 -318.9) scale(3.1208)" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="10.89">
+    <g stroke-width="10.89">
     <rect x="117.5" y="117.5" width="277.0" height="277.0" rx="42.9"/>
     <path d="M169.6 265.4 A 86.4 86.4 0 0 1 332.8 225.8"/>
     <path d="M339.3 242.5 A 86.4 86.4 0 0 1 342.4 265.4"/>
@@ -24,7 +24,7 @@
     <path d="M244.8 312.5 L267.2 312.5"/>
     <path d="M249.1 322.1 L262.9 322.1"/>
     </g>
-    <g stroke-width="12.82">
+    <g stroke-width="10.89">
     <path d="M158.2 308.3 A 10.2 10.2 0 0 1 178.6 308.3"/>
     <path d="M147.2 312.3 L189.7 312.3"/>
     <path d="M155.1 295.0 L152.1 291.9"/>

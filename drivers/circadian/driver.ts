@@ -5,6 +5,7 @@ import { validateTargetAgainstCatalog } from '../../lib/validation/pairing-dto';
 import {
   listTargetsPayload, resolveSummary, targetLights,
 } from '../../lib/pairing/target-picker';
+import { deriveSuffixedName } from '../../lib/pairing/derive-name';
 import { CURRENT_CIRCADIAN_SCHEMA_VERSION } from '../../lib/circadian/circadian-migrations';
 import {
   DEFAULT_SIMPLE_PLAN, SIMPLE_SHAPE, expandSimplePlan, sanitiseSimplePlan,
@@ -99,7 +100,13 @@ module.exports = class CircadianDriver extends Homey.Driver {
 
     // -------------------------------------------------------------- targets
 
-    handler('listTargets', async () => listTargetsPayload(this.app.catalog, state.target));
+    // The targets view is ONE file shared by all four drivers (platform §8), so the
+    // line telling the user which lights these are has to be supplied per driver.
+    // Resolved here rather than in `lib/`, which cannot translate.
+    handler('listTargets', async () => ({
+      ...await listTargetsPayload(this.app.catalog, state.target),
+      subtitle: this.homey.__('targets.subtitleCircadian'),
+    }));
 
     handler('selectTargets', async (spec: unknown) => {
       // The pairing channel is a webview, so this is the same class of boundary
@@ -240,23 +247,9 @@ module.exports = class CircadianDriver extends Homey.Driver {
    * the user rename a device afterwards, which is the natural place for it.
    */
   private async deriveName(state: SessionState): Promise<string> {
-    if (!state.target) return 'Circadian light';
-
-    if (state.target.kind === 'zone') {
-      const zones = await this.app.catalog.allZones();
-      const zone = zones.find((z: any) => z.id === (state.target as any).zoneId);
-      return `${zone?.name ?? 'Zone'} circadian`;
-    }
-
-    const lights = await targetLights(this.app.catalog, state.target);
-    if (lights.length === 0) return 'Circadian light';
-    if (lights.length === 1) return `${lights[0].name} circadian`;
-
-    // Where every light shares a room, the room reads better than a list.
-    const zoneNames = new Set(lights.map(l => l.zoneName).filter(Boolean));
-    if (zoneNames.size === 1) return `${[...zoneNames][0]} circadian`;
-
-    return `${lights.length} lights circadian`;
+    return deriveSuffixedName(this.app.catalog, state.target, {
+      fallback: 'Circadian light', suffix: 'circadian', zoneFallback: 'Zone',
+    });
   }
 
   private buildPlan(state: SessionState): SimpleCircadianPlan {

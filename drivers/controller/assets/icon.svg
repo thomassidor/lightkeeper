@@ -13,8 +13,8 @@
 
        The transform centres the master's drawing and scales it to fill the
        canvas, which guideline 1.5 asks for; stroke widths are pre-divided by the
-       scale so they render at 40 units on this 960 canvas. -->
-  <g transform="translate(-59.6 -60.7) scale(2.1079)" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="18.98">
+       scale so they render at 34 units on this 960 canvas. -->
+  <g transform="translate(-59.6 -60.7) scale(2.1079)" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="16.13">
     <rect x="186.5" y="50.7" width="139.0" height="411.8" rx="26.0"/>
     <circle cx="256.0" cy="171.5" r="50.6"/>
     <circle cx="256.0" cy="171.5" r="23.9"/>

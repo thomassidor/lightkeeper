@@ -1,299 +1,114 @@
 # Hardware test plan
 
-**The standing pass, run before every release.** Everything below needs real
-hardware. The suite covers the logic (771 tests); this covers what only a Homey
-can answer: the loader, the pairing screens, and lights actually changing.
+What to do before a release, on a real Homey. About 15 minutes plus the script's run.
 
-**This pass starts from nothing.** No app installed, no devices, no API key — so
-it builds all four device types from scratch, in the order they depend on each
-other. That puts the screens you otherwise see only once back in scope: the empty
-settings page, the key screen with no key behind it, and the first Flow this app
-ever writes. About 80 minutes end to end, plus one evening if you set an
-overnight window.
+**Every line is numbered `T1`, `T2`, … and a number is never reused.** They are not in sections any more, so a line keeps its number when the pass around it changes. Old reports written against the previous `section.line` numbering are still readable — the mapping is in [`hardware-test-coverage.md`](hardware-test-coverage.md#the-old-numbering).
 
-Sections 1–10 do not change between releases. [This release](#this-release) is the
-part that does — rewrite it each time with what is new or risky, and leave the
-rest alone.
+## 1. Set up
 
-**Before you start:** `npx homey app install`. If it fails with a bare
-`× Missing File`, try `--clean`; if `--clean` fails, try without it. Neither is
-always right.
+1. **Mint two Personal API Keys.** my.homey.app → this Homey → Settings → API Keys → New API Key.
+   - One for the **app** — paste it into Homey settings → Lightkeeper.
+   - One for the **script**, with **full access** — it reads devices and zones, reads and writes Flows, and calls the app's own API. A key's permissions cannot be widened later.
+   - They must be different: a key holds a single session, and two holders evict each other.
+2. **Install:** `npx homey app install`. On a bare `× Missing File`, try `--clean`; if `--clean` fails, try without it. Neither is always right.
+3. **Pair one device by hand** — any type. The script builds the rest, but nothing else puts a real pairing sheet in front of you. Note anything that looks or reads wrong.
 
-Then check the slate really is clean: Devices, filtered by the Lightkeeper app,
-should be empty. If anything is listed, either remove it or skip §1 and §7 and say
-so — both of those test states that only exist before the app has ever been set
-up.
-
-Tick each line. Anything unticked is a real result — say which.
-
-**Every line is numbered `section.line`**, so the fourth line of §7 is 7.4.
-Report against those numbers — `7.4 OK`, or `7.4 failed: the Flows went with
-the key` — and renumber nothing when you rewrite [This release](#this-release):
-the numbers come from the standing sections, which do not move.
-
-## Some of it is scripted
-
-`scripts/verify-hardware.mjs` answers the lines that are a state a machine can
-read, over the same `createLocalAPI` client and Personal API Key the app uses for
-Flow writes (platform §1). **It cannot pair devices** — Homey's pair sessions are
-not an API surface — so it checks a Homey you have already built by hand, and
-everything before §6 stays manual.
-
-| Command | Lines | Notes |
-|---|---|---|
-| `spike` | — | Does the key reach the Homey and the app's own Web API? Run this first; the rest depend on it |
-| `flows` | 1.3, 2.9, 3.5, 4.6, 5.9 | Read-only, safe any time |
-| `redaction` | 8.2, 8.3, 8.4, 8.5 | Read-only. Searches the diagnostics report for your key by machine |
-| `credential` | 7.1, 7.2, 7.4, 7.6, 7.7 | Removes the key and puts it back. Needs `--yes` |
-| `rejoin` | 4.7, 4.8, 5.8 | Switches a lamp off and on, and sets a colour on it by hand. Needs `--yes`; takes about 5 minutes per light |
+## 2. Run the script
 
 ```bash
-export HOMEY_ADDRESS=http://192.168.1.23   # or scripts/hardware-env.json, gitignored
-export HOMEY_API_KEY=<the key from 2.1>
-node scripts/verify-hardware.mjs spike
-node scripts/verify-hardware.mjs all       # every read-only command
-node scripts/verify-hardware.mjs rejoin --yes
+node scripts/verify-hardware.mjs spike       # first — can it reach the Homey?
+node scripts/verify-hardware.mjs memory      # the footprint, on its own — read-only
+node scripts/verify-hardware.mjs full --yes  # then — the rest of the pass
 ```
 
-It prints one line per test-plan number, in this file's own `4.7 OK` form, so its
-output pastes straight into a report. A line it prints as `SKIPPED` has not been
-tested — tick it by hand or say so, exactly as if the script had not run.
+**Safest: write the config file yourself**, in an editor, so no key is ever typed at a terminal
+prompt. Create `scripts/hardware-env.json` (gitignored):
 
-**What it will never cover:** anything needing a finger on a remote (2.10–2.12 —
-running a generated Flow over the API bypasses the real release event, which is
-the whole reason the ramp hard-stops at 10 seconds), and anything needing eyes on
-a screen (every pairing view, the four device pictures, the curve chart).
+```json
+{
+  "address": "http://192.168.1.23",
+  "key": "the key you made for the script",
+  "appKey": "the key the app holds — omit this line to skip T35-T41",
+  "room": "Studio"
+}
+```
 
----
+`room` keeps the test lamps to one room. The pass switches lamps on and off, writes colours to them
+and power-cycles one, so without it that happens to whichever lights sort first across the whole
+house. Omit it to use every room.
 
-## This release
+If the file is missing the script asks for the values instead and offers to save them. It hides
+keys as you type, but a terminal that mangles that would put a live credential in your scrollback —
+so prefer the file.
 
-*Rewritten each release. Everything below this section is the standing pass.*
+`full` **builds one of each device type**, tests them, and **deletes every Lightkeeper device** at the end. Run it only on a Homey you can afford to empty.
 
-**0.5.0, on a clean Homey.** The previous install and every device paired to it
-were removed on 27 August 2026, so this is a from-scratch build of all four device
-types rather than a check that the old ones survived.
+If it says a device type is already paired, it leaves that one alone — delete it first if you want the script to build it.
 
-- **A fourth device type, the Curve light** — §5 is entirely about it.
-- **The circadian light became the simple one**: two ends of the day, no curve
-  editor — §4.
-- **The 0.5.0 migration cannot be tested this pass.** It rewrites an existing
-  circadian light's stored curve into two ends, and no pre-0.5.0 device is left to
-  migrate. The unit tests cover the transform; nothing on hardware does. Say so in
-  the report rather than ticking it — testing it now would mean installing 0.4.0,
-  pairing a circadian light, and upgrading over the top.
-- **The device layer was rewritten**, so all four device types now load through
-  one shared file. A fault there shows up as a device that fails to appear or
-  fails to pair at all, which is what §1 and every pairing section are looking
-  for.
-- **Every device type has its own artwork now.** In Devices → Add → Lightkeeper,
-  all four should show four *different* pictures — a CLI install draws no icon at
-  all (platform §10), so judge the pictures here and the icons after publish.
-- **Two things only a clean slate lets you test, so do them this time:** §7's key
-  removal and recovery, and §10's deletion checks. Neither is safe to run against
-  a household that depends on the app.
+**Paste its whole output into the report.** Every line is numbered. `OK` and `SKIPPED` need nothing from you; `SKIPPED` means that line was **not** tested.
 
----
+## 3. Check these yourself
 
-## 1. It installs, and says honestly that it has nothing (5 min)
+The script cannot do these. Report each by its number.
 
-- [ ] 1.1 The app starts. Settings → Apps → Lightkeeper → Configure app. No
-      error.
-- [ ] 1.2 It says **No API key saved yet**, **No controllers yet**, **No
-      schedules yet**, **No circadian lights yet** — four empty sections, not
-      four blanks.
-- [ ] 1.3 **Generated Flows** reports **0** generated Flows. If it reports any,
-      the old install left Flows behind — say so, they will confuse §10.
-- [ ] 1.4 Devices → Add device → Lightkeeper lists exactly four: **Light
-      controller**, **Light schedule**, **Circadian light**, **Curve light**,
-      with four different pictures.
-- [ ] 1.5 Restart the app (⋮ → Restart). The settings page comes back the same,
-      still with no error.
+- [ ] **T3** Devices → Add device → Lightkeeper lists four device types, with four **different** pictures. (It draws no icon at all from a CLI install — that is normal and resolves on publish.)
+- [ ] **T9** Press the mapped button. The lights respond.
+- [ ] **T10** Hold the ramp button. It ramps, and **stops when you let go** — and never runs longer than about 10 seconds.
+- [ ] **T11** Turn the dial. The lights move by a sensible amount — **not** straight to full.
+- [ ] **T53** Run `npm run render:views` and open `.views/index.html`. Every pairing screen, on one page. Anything that looks wrong, say which screen. *30 Aug 2026: 11 screens rendered; the two new ones (`curve/curve.html`, `circadian/ends.html`) were read and are correct. The other nine still want a human eye.*
+- [ ] **T54** Anything you noticed while pairing by hand in step 1 that looked or read wrong.
 
-## 2. The first controller, and the API key with it (15 min)
+## 4. This release
 
-The controller's first pairing screen is the only place a first-time user meets the
-key, and on a clean slate it is doing the real work rather than re-checking a key
-that was already there.
+*Rewritten each release — what is new or risky this time. Its lines carry on from the highest number used so far, and are retired rather than reused when the next release rewrites this section.*
 
-**Keep the key in a note.** Homey shows it once, and §7 asks you to remove it and
-put it back.
+**0.5.0.** All four device types built from scratch.
 
-- [ ] 2.1 my.homey.app → this Homey → Settings → API Keys → New API Key, with
-      the **Flow** permissions ticked. Copy it.
-- [ ] 2.2 Devices → Add → Lightkeeper → **Light controller**. The first screen
-      is **One-time setup**, with four numbered steps and a key box.
-- [ ] 2.3 Paste **nonsense** (`not-a-key`) and save. It refuses — *"That does
-      not look like a complete API key"* — and stays on the screen. Nothing is
-      saved.
-- [ ] 2.4 Paste the real key. *"Key accepted."* → the next screen lists the
-      remotes, switches and dials on this Homey.
-- [ ] 2.5 Pick a remote → pick lights → the mapping screen lists that remote's
-      own gestures, not a generic list.
-- [ ] 2.6 Try to assign the **same gesture twice**. The second row should not
-      allow it — one rule per gesture.
-- [ ] 2.7 Map at least an on/off press, a hold that ramps, and a dial if you
-      have one. Save.
-- [ ] 2.8 The device appears, is **available** (not greyed out), and its tile
-      reads right.
-- [ ] 2.9 Flows → there is a `Lightkeeper` folder, a subfolder named after this
-      controller, and one Flow per mapping. Note how many.
-- [ ] 2.10 Press the mapped button. The lights respond.
-- [ ] 2.11 Hold the ramp button. It ramps, and stops when you let go — and in no
-      case runs longer than about 10 seconds.
-- [ ] 2.12 Turn the dial. The lights move by a sensible amount — **not**
-      straight to full.
+- [x] **T55** The **Curve light** is new. Draw a curve, give a point a colour, check the lamps follow — including a lamp that cannot show colour, which should take the warmth instead. *30 Aug 2026: the script's `preview` covered the substance — T27 wrote a colour (`light_hue`) and the lamps without colour took warmth instead; T28 saw 12 writes across `light_saturation`, `light_hue`, `light_mode` and every lamp holding what it was written. Drawing a curve by hand on a phone is still unticked.*
+- [x] **T56** The **circadian light** is now two questions rather than a curve. Check its screen reads sensibly. *30 Aug 2026: read from `npm run render:views` — "The two ends of the day", Warmest and Coolest with their anchor times, brightness behind one switch, and the no-Flows note. Reads correctly.*
+- [x] **T57** The 0.5.0 migration **cannot** be tested this time — no pre-0.5.0 device is left to migrate. *30 Aug 2026: confirmed, not tested — recorded rather than ticked off.*
+- [x] **T58** Two lamp-driving bugs were fixed this release and are worth a look with your own eyes: a Curve light's coloured point no longer stops later warmth points working, and **Test it** on the pre-stage option no longer shows a raw error from your bridge. *30 Aug 2026: both held. T27 wrote a colour and warmth in one pass; T22's refusal came back as a readable sentence naming the bridge's own reason ("soft off"), not a raw error.*
+- [x] **T59** **Memory.** `node scripts/verify-hardware.mjs memory`. Measured 30 August 2026 on Homey Pro 2023 / firmware 13.4.1: **12.2 MB** on a freshly installed app that has read no catalogue, and **28.5 MB** after a read-only pass — both inside Homey's 30 MB guideline. Reading a catalogue once still costs floor the runtime never gives back (platform §15), but the 0.5.0 work moved the numbers well below the ~32/~44 MB this line used to predict. The line fails past 50 MB. Report the number either way.
+- [x] **T60** The same reading at the end of `full`, as a delta. **Measured 51.1 MB, which trips the 50 MB ceiling — and that is the pass, not the app.** `full` pairs one of each device type over the API and runs fifty checks in a few minutes, and every catalogue parse along the way leaves floor behind (platform §15). Reinstalling and re-measuring immediately gave 12.2 MB, so nothing is being retained. Treat a `full`-run reading as the high-water mark of the pass; T59 on a fresh app is the number that describes a user's Homey. **A ceiling tuned to normal use rather than to this pass is the open item here.**
 
-If your remote is one where a single card covers several buttons *and* a direction
-*and* a step count, this release fixed it firing on every control at once: it must
-move only the control you touched. Say which remote if you have one.
+### Last run — 30 August 2026, Homey Pro 2023, firmware 13.4.1, app 0.5.0
 
-## 3. A schedule, on the key that is already saved (12 min)
+`node scripts/verify-hardware.mjs full --yes`: **50 OK, 3 failed, 5 skipped.** All three failures
+were investigated and none is a defect in the app.
 
-Its first screen is the same file as the controller's, so this is also the check
-that a saved key is recognised rather than asked for again.
+- **T21 and T24 failed, and the writes had in fact landed.** Both said a `light_temperature` write
+  to a Hue lamp "did not take" — written 1.000, lamp holding 0.850. Reading the same lamp back
+  afterwards showed `light_temperature: 1` — exactly what the app wrote. The two **T25 SKIPPED**
+  lines have the same shape: the hand-set 0.650 the script said was "never reported" was sitting on
+  the lamp when it was read again. **A Hue Bridge lamp can echo a new value back to Homey later than
+  this script waits for it**, so a read-back immediately after a write can report the previous
+  value. The app is fine; the script's read-back window is the thing to widen. Until it is, treat a
+  T21/T24/T25 failure as unproven rather than failed, and confirm by reading the lamp again.
+- **T60 tripped the 50 MB ceiling at 51.1 MB**, addressed in that line above: it is the pass's own
+  high-water mark, not retention. A reinstall and immediate re-measure gave 12.2 MB.
 
-- [ ] 3.1 Devices → Add → Lightkeeper → **Light schedule**. The setup screen
-      should already know the key and let you straight through — no retyping.
-- [ ] 3.2 Pick lights → the schedule screen. Set a window to start **2 minutes
-      from now** and run for 3 minutes. Save.
-- [ ] 3.3 Wait. The lights come on, then go off.
-- [ ] 3.4 Add a **second, overlapping** window on the same lights (now+1 for 10
-      minutes while the first is still running). **It should refuse to save**,
-      saying the windows overlap.
-- [ ] 3.5 Flows → two Flows for that window, in this schedule's own folder.
-- [ ] 3.6 Pause the schedule with the switch on its tile, then un-pause it. The
-      tile stays usable both ways, and the device never goes unavailable.
-- [ ] 3.7 Rename the schedule. Flows → the folder under `Lightkeeper` follows
-      the new name.
-- [ ] 3.8 **Overnight, if you set one up:** a window that crosses midnight
-      switches off at the right time, and its off-Flow reads `Off at 01:30
-      (starts Fri)` rather than `Off at 01:30, Fri`.
+Still outstanding, and each needs a person: **T3**, **T9**, **T10**, **T11**, **T54**, and the nine
+screens of **T53** that were not read. T9–T11 need a finger on a real remote, and `full` **deletes
+every Lightkeeper device at the end**, so they mean re-pairing a controller first.
 
-## 4. Circadian light — the simple one (10 min)
+## 5. How to report
 
-Two questions, and it handles the shape of the day itself. It creates no Flows, and
-it must never ask for a key.
+One line per number, in the order above:
 
-- [ ] 4.1 Devices → Add → Lightkeeper → **Circadian light**. It goes **straight
-      to the light picker** — no key screen at all.
-- [ ] 4.2 Pick lights → **The two ends of the day**: **Warmest** and
-      **Coolest**, each with a warmth slider (and brightness, if your lamps
-      dim).
-- [ ] 4.3 Each end says roughly when it applies (`Around 06:00, 21:00` and
-      `Around 11:00, 15:00`).
-- [ ] 4.4 Move a slider, press **Try it now**. The lights change immediately,
-      and it reports how many it wrote to.
-- [ ] 4.5 If **Set the colour before the lights come on** is offered, press
-      **Test it** with one lamp switched off. Either it reports the lamp stayed
-      off, or it reports the lamp switched itself on, switched it back off, and
-      turned the option off. Both are correct — say which you got.
-- [ ] 4.6 Save. **No new Flows appear anywhere in your Flow list.**
-- [ ] 4.7 Switch one of its lamps off and on, at the wall or in the Homey app.
-      **It comes back at the right colour for the time of day.**
-- [ ] 4.8 Change that lamp's colour by hand in the Homey app. Lightkeeper leaves
-      it alone from then on. Switch it off and on again → it rejoins.
+```
+T24 OK
+T46 failed: Repair on the schedule showed unknown_error_getting_file
+T55 OK — Hue spots took the amber, the kitchen strip went warm instead
+```
 
-## 5. Curve light — the full one (15 min)
+For anything that failed, add:
 
-- [ ] 5.1 Devices → Add → Lightkeeper → **Curve light**. It should **not** ask
-      for an API key. Pick some lights → **Draw the day**.
-- [ ] 5.2 The chart draws. Add and remove points; the chart follows.
-- [ ] 5.3 **Set one point's Colour to `Amber`** (leave the others on *Colour
-      temperature*). That point's dot on the chart turns amber and grows.
-- [ ] 5.4 Press **Try it now**. Your colour-capable lamps go amber. Lamps that
-      cannot do colour go to that point's warmth instead — **check both kinds if
-      you have them**.
-- [ ] 5.5 Set a *second* point to `Ocean`. Try it now at a time between the two
-      → the lamps should be a shade **between** amber and ocean, not one or the
-      other.
-- [ ] 5.6 Try to add more than 8 points. It should stop you and say so.
-- [ ] 5.7 Save it. Give it a minute, then confirm the lamps hold the right
-      value.
-- [ ] 5.8 Switch a lamp off and on → it comes back correct.
-- [ ] 5.9 **No Flows appeared for this device either** — the total in Flows is
-      the same as it was after §3.
+1. What you did.
+2. What happened instead.
+3. **The diagnostics report**: Homey settings → Lightkeeper → **Show diagnostics** → **Copy for a bug report**. It contains no API key. It does contain your device and zone names.
 
-## 6. All four survive a restart (3 min)
-
-Now that one of each exists, this is the loader check with something to load.
-
-- [ ] 6.1 Settings → Apps → Lightkeeper → ⋮ → **Restart**.
-- [ ] 6.2 All four devices come back, all **available**, tiles intact.
-- [ ] 6.3 Press the remote button again. It still works.
-- [ ] 6.4 The circadian and Curve lights still hold the right values a minute
-      later.
-
-## 7. The API key: a bad one, and losing it (8 min)
-
-The second half only makes sense on a slate you can afford to break, so run it this
-time.
-
-- [ ] 7.1 Settings → Lightkeeper. It says **a working API key is saved**.
-- [ ] 7.2 Paste **nonsense** into the key box and save. It should say the key is
-      not usable — **and the line above should still say a working key is
-      saved.** Your controller and schedule stay available.
-- [ ] 7.3 Press the remote button. It still works.
-- [ ] 7.4 Press **Remove key**. The controller and schedule go to **Needs API
-      key**. Their Flows are **still in your Flow list** — losing the key must
-      not delete anything.
-- [ ] 7.5 Press the remote button. It still works: the Flows are still there,
-      only unmaintained.
-- [ ] 7.6 Paste the real key back in and save. Within moments, and **without
-      restarting the app**, the controller and schedule return to **Ready**.
-- [ ] 7.7 The circadian and Curve lights were untouched throughout — no *Needs
-      API key*, no unavailability.
-
-## 8. Settings page and diagnostics (5 min)
-
-- [ ] 8.1 All four sections now list something: controllers, schedules, and the
-      circadian and Curve lights together in the circadian section.
-- [ ] 8.2 **Recent remote presses** shows entries after you press a button.
-- [ ] 8.3 **Writes to lights** shows entries after a press or a **Try it now**.
-- [ ] 8.4 Each schedule line shows its window and your Homey's clock and
-      timezone.
-- [ ] 8.5 **Show diagnostics**, then **Copy for a bug report**. Paste it
-      somewhere and **search it for your API key — it must not be in there.**
-      Search for a distinctive dozen characters of the key, not the whole thing.
-
-## 9. Repair every device type (5 min)
-
-This is the one that fails loudly if the pairing files are in the wrong place —
-`unknown_error_getting_file` before any screen appears.
-
-- [ ] 9.1 Repair a controller → all four screens open.
-- [ ] 9.2 Repair a schedule → all three open.
-- [ ] 9.3 Repair the circadian light → lights, then the two ends.
-- [ ] 9.4 Repair the Curve light → lights, then the curve.
-
-## 10. Deleting them again (5 min)
-
-Also only honest on a clean slate: nothing here is recoverable.
-
-- [ ] 10.1 Note the total in **Generated Flows**.
-- [ ] 10.2 Delete the **Curve light**. **No Flow appears or disappears** — this
-      device type creates none. Same total.
-- [ ] 10.3 Delete the **circadian light**. Same again: same total.
-- [ ] 10.4 Delete the **schedule**. Its two Flows and its folder go with it, and
-      nothing else does.
-- [ ] 10.5 Delete the **controller**. Its Flows and its folder go too, and the
-      total drops to **0**.
-- [ ] 10.6 **Generated Flows** now reports 0 generated Flows and offers nothing
-      to delete. No Lightkeeper Flow is left anywhere in your Flow list.
+For a schedule that did not fire, the two lines worth quoting from that report are `catchUpRefusals` and `lastRejection` — they say why.
 
 ---
 
-## Known and expected
-
-- **The 0.5.0 circadian migration is unverified on hardware.** See [This
-  release](#this-release) — there was no old device left to migrate.
-- **A CLI-installed app shows no icon at all** (platform §10). Not a bug; it
-  resolves on publish.
-- **A schedule window that already ended is not applied at startup.** Restarting at
-  22:01 into a window that ran 20:00–22:00 leaves your lights alone, on purpose.
-
-## If something fails
-
-Send me: what you did, what happened, and the diagnostics report from §8. The
-report carries the refusal reasons — for a schedule that did not fire,
-`catchUpRefusals` and `lastRejection` are the two lines that say why.
+Background — what the script covers, what the test suite covers instead, and why some old lines were retired — is in [`hardware-test-coverage.md`](hardware-test-coverage.md). You do not need it to run the pass.

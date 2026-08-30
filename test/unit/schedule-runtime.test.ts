@@ -380,8 +380,18 @@ describe('teardown', () => {
     const diagnostics = h.runtime.diagnostics();
     assert.equal(diagnostics.timezone, 'Europe/Copenhagen');
     assert.equal(diagnostics.localTime, 'Tue 22:15');
+    /**
+     * `end` is carried raw, beside the computed `off`.
+     *
+     * The clock strings are lossy: "until 23:30" and "for 90 minutes from
+     * 22:00" render identically and are not the same stored thing. A bug report
+     * reads differently depending on which the user set, and anything that reads
+     * a schedule and writes it back would otherwise rewrite every duration as a
+     * time.
+     */
     assert.deepEqual(diagnostics.entries, [{
       id: 'a', on: '22:00', off: '23:30', days: 'every day', active: true,
+      end: { kind: 'duration', minutes: 90 },
     }]);
     assert.ok(!JSON.stringify(diagnostics).includes('token'));
   });

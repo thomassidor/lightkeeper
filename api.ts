@@ -10,6 +10,7 @@
  */
 
 import { flowWriteProbe } from './lib/credential-service';
+import { sanitiseEntries } from './lib/schedules/schedule-types';
 import type {
   DiagnosticsResponse, LightkeeperApp, StatusResponse,
 } from './lib/app-contract';
@@ -77,6 +78,37 @@ function liveDeviceIds(app: LightkeeperApp, homey: any): Set<string> {
   }
 
   return ids;
+}
+
+/**
+ * The device id in a route, or a throw the caller can read.
+ *
+ * `:id` is the device's `data.id` — the same id `/diagnostics` reports as
+ * `controllerId` and a generated Flow carries in `args.controller`. It is
+ * deliberately NOT the Homey device id: that one appears nowhere else in this
+ * app's own vocabulary, and mixing the two is the mistake that makes a lookup
+ * silently miss.
+ */
+function idOf(params: any): string {
+  const id = String(params?.id ?? '');
+  if (!id) throw new Error('no device id in the request');
+  return id;
+}
+
+/**
+ * The installed device behind one of our own ids, for the one route that writes
+ * a stored plan.
+ *
+ * A runtime is not enough there: a plan is persisted through the DEVICE, so that
+ * `DeviceLifecycle.apply()` runs the transaction — carrying managed Flows
+ * forward, rolling back a plan that will not start, and publishing the state.
+ * Writing the store directly would skip every one of those.
+ */
+function deviceOf(homey: any, driverId: string, id: string): any {
+  for (const device of homey.drivers.getDriver(driverId).getDevices()) {
+    if (device?.getData?.()?.id === id) return device;
+  }
+  throw new Error(`no ${driverId} device with id "${id}" is installed`);
 }
 
 module.exports = {
@@ -274,14 +306,178 @@ module.exports = {
       controllers: app.controllers.all().map(runtime => runtime.diagnostics()),
       schedules: app.schedules.all().map(runtime => runtime.diagnostics()),
       circadian: app.curves.all().map(runtime => runtime.diagnostics()),
-      // Which of Homey's own trigger cards the schedules are built on, and what
-      // else was on offer. A card URI may never be constructed (platform §3), so when a
-      // firmware moves this card the candidate list IS the investigation.
-      timeCard: await app.schedules.timeCard().catch((error: unknown) => ({
+      /**
+       * Which of Homey's own trigger cards the schedules are built on, and what
+       * else was on offer. A card URI may never be constructed (platform §3), so
+       * when a firmware moves this card the candidate list IS the investigation.
+       *
+       * PEEKED, never asked for. Calling `timeCard()` here read every trigger
+       * card on the Homey — ~11.6 MB — so merely opening the settings page or
+       * exporting a bug report raised the app's memory floor for the rest of its
+       * run (platform §15). A report must not change what it is reporting on.
+       * A running schedule has already resolved this during start, so the answer
+       * is here whenever it is interesting.
+       */
+      timeCard: app.schedules.peekTimeCard() ?? {
         card: null as null,
-        error: String((error as Error)?.message ?? error),
-      })),
+        notLookedUp: 'no schedule has needed the time card yet, and looking it up '
+          + 'means reading every trigger card on this Homey',
+      },
     };
+  },
+
+  // ------------------------------------------------------------------ trying
+  //
+  // "Try it now" outside the pairing screen.
+  //
+  // Every handler below wraps a method the runtimes already expose and that a
+  // pair session already calls — the mechanism is not new, only its reachability
+  // is. Two things follow from that, and both are the point:
+  //
+  // - As a FEATURE: a device that is already paired had no way to prove itself.
+  //   The only "test this" in the app was on a screen you have to be pairing to
+  //   see, so the answer to "is this thing doing anything?" was to wait for
+  //   dusk.
+  // - As a TEST SURFACE: these are the last lines of docs/hardware-test-plan.md
+  //   that needed a person standing in a room watching a lamp — T21, T22, T27
+  //   and T28. scripts/verify-hardware.mjs answers them through here.
+  //
+  // They are session-authenticated like every other route in this file (nothing
+  // in .homeycompose/ is `public: true`), so nothing here widens WHO may call —
+  // only what a caller who can already store an API key and delete Flows can do.
+
+  /**
+   * Apply a saved circadian or Curve light's plan to its lights, now.
+   *
+   * Forced: the caller asked for a visible change and is owed one, even where
+   * the lights already happen to sit close to the curve. Drained before
+   * returning, so `writes` is what was attempted rather than what was queued.
+   *
+   * Returns `{ writes, skipped }`.
+   */
+  async previewDevice({ homey, params }: any) {
+    const app = appOf(homey);
+    const id = idOf(params);
+    const runtime = app.curves.get(id);
+    if (!runtime) throw new Error(`no circadian or Curve light with id "${id}" is running`);
+
+    const outcome = await runtime.applyNow('preview', { force: true });
+    await runtime.drain();
+    return outcome;
+  },
+
+  /**
+   * Prove pre-staging on this household's own lamps.
+   *
+   * A colour write to an off lamp turns it on through some integrations
+   * (platform §6) and there is no way to know which but to try. Returns
+   * `{ deviceId, name?, stayedOff, restored, reason? }` — and `stayedOff: false`
+   * is a RESULT, not an error: it is the answer that says this Homey cannot
+   * pre-stage.
+   */
+  async testPreStage({ homey, params }: any) {
+    const app = appOf(homey);
+    const id = idOf(params);
+    const runtime = app.curves.get(id);
+    if (!runtime) throw new Error(`no circadian or Curve light with id "${id}" is running`);
+    return runtime.probePreStage();
+  },
+
+  /**
+   * Tick every curve-driven device once, instead of waiting up to a minute.
+   *
+   * One timer serves both device types (platform §12), so this is one call for
+   * the whole Homey. Returns `{ ticked }` — how many runtimes there were, which
+   * is the only observable a caller can act on.
+   */
+  async tickCurves({ homey }: any) {
+    const app = appOf(homey);
+    await app.curves.tickAll();
+    return { ticked: app.curves.all().length };
+  },
+
+  /**
+   * Fire one schedule boundary now. Body: `{ entryId, boundary: 'on' | 'off' }`.
+   *
+   * The same path the pairing screen's "Test on" / "Test off" buttons take.
+   * Returns `{ writes, skipped, targets }`.
+   *
+   * This is not the same as letting the window arrive: it applies the boundary
+   * without consulting the day filter or the clock, which is exactly what makes
+   * it useful — waiting two minutes for T14 proves the Flow engine works, and
+   * that was measured once and belongs in the platform reference, not in every
+   * release pass.
+   */
+  async testScheduleBoundary({ homey, params, body }: any) {
+    const app = appOf(homey);
+    const id = idOf(params);
+    const runtime = app.schedules.get(id);
+    if (!runtime) throw new Error(`no schedule with id "${id}" is running`);
+
+    const entryId = String(body?.entryId ?? '');
+    if (!entryId) throw new Error('no entryId in the request');
+    return runtime.testEntry(entryId, body?.boundary === 'off' ? 'off' : 'on');
+  },
+
+  /**
+   * Replace a saved schedule's windows. Body: `{ entries }`.
+   *
+   * The one route here that writes a user's stored plan, so it is the one to be
+   * careful with — and the care is entirely in refusing to be clever:
+   *
+   * - `sanitiseEntries` is the SAME function the pair session calls. Overlaps,
+   *   bad days, duplicate ids and anything over the twelve-window cap are
+   *   dropped and NAMED, by one implementation rather than two that can drift.
+   * - The write goes through `device.applyPlan`, never the store, so
+   *   `DeviceLifecycle` runs its transaction: managed Flows carried forward, a
+   *   plan that will not start rolled back, the state published.
+   *
+   * Returns `{ count, dropped }` — the same shape the pairing screen renders, so
+   * a caller learns which windows were refused rather than only how many stuck.
+   */
+  async setScheduleEntries({ homey, params, body }: any) {
+    const id = idOf(params);
+    const device = deviceOf(homey, 'schedule', id);
+    const { entries, dropped } = sanitiseEntries(body?.entries);
+
+    // Refusing an empty result rather than saving it: a schedule with no windows
+    // is a device that looks configured and can never fire, which is the exact
+    // failure this app exists to prevent. An all-dropped payload is a mistake,
+    // and the `dropped` list says which one.
+    if (entries.length === 0) {
+      throw new Error(dropped.length > 0
+        ? `every window was dropped: ${dropped.map(d => d.reason).join('; ')}`
+        : 'a schedule needs at least one window');
+    }
+
+    const plan = { ...device.getStoreValue('schedule'), entries };
+    await device.applyPlan(plan);
+    return { count: entries.length, dropped };
+  },
+
+  /**
+   * Run one mapped function against a controller's lights. Body:
+   * `{ func, deviceIds? }`.
+   *
+   * The write half of a remote press, and only that half. It does NOT prove
+   * T9-T11: a real press arrives as a physical event that goes through the
+   * normalizer and the mapping engine first, and a real HOLD ends with a release
+   * event that is routinely dropped on Zigbee — which is the entire reason the
+   * ramp hard-stops at 10 seconds. Nothing reachable over HTTP can stand in for
+   * a finger.
+   *
+   * Returns `{ writes, skipped, targets }`.
+   */
+  async testControllerFunction({ homey, params, body }: any) {
+    const app = appOf(homey);
+    const id = idOf(params);
+    const runtime = app.controllers.get(id);
+    if (!runtime) throw new Error(`no controller with id "${id}" is running`);
+
+    const func = String(body?.func ?? '');
+    if (!func) throw new Error('no func in the request');
+    const deviceIds = Array.isArray(body?.deviceIds) ? body.deviceIds.map(String) : undefined;
+    return runtime.testFunction(func as any, deviceIds);
   },
 
 };

@@ -4,7 +4,7 @@ Thanks for taking a look. This is a small app with a specific shape, and two fil
 
 - **[`CLAUDE.md`](CLAUDE.md)** — the architecture, the conventions, and how to release. Read it
   before changing anything.
-- **[`docs/homey-platform.md`](docs/homey-platform.md)** — thirteen numbered sections on how Homey
+- **[`docs/homey-platform.md`](docs/homey-platform.md)** — fifteen numbered sections on how Homey
   *actually* behaves, every one established against real hardware and documented nowhere else. The
   code cites it as `platform §n`.
 
@@ -19,7 +19,13 @@ npm run typecheck        # the app
 npm run typecheck:test   # the suite and scripts/
 npm run lint             # eslint, type-checked
 npm run sync:views       # after editing any pair view — nothing runs it for you
+npm run render:views     # draw every pairing screen to .views/ and look at them. Needs Chrome
 ```
+
+**`render:views` is not a check.** It renders each screen with demo data so you can see what you
+changed; what a screen REFUSES and what it DRAWS is `test/unit/pair-view-behaviour.test.ts`, which
+fails. Both are worth having: a `fill` attribute that a stylesheet quietly overrode passed every
+assertion in the suite and drew the wrong thing, and only a picture showed it.
 
 For anything that touches real hardware you need the Homey CLI:
 
@@ -37,7 +43,11 @@ is not optional. See [CLAUDE.md → Running it on a real Homey](CLAUDE.md#runnin
 which also has the `Missing File` / `--clean` trap.
 
 **Do not share an API key between the app and an external script.** A key embeds a session id, and
-concurrent holders appear to invalidate one another.
+concurrent holders appear to invalidate one another
+([platform §2](docs/homey-platform.md#2-api-key-sessions-die-routinely)). So the hardware script
+takes TWO: `HOMEY_API_KEY` is its own, `HOMEY_APP_KEY` is the one the app holds and that
+`credential` removes and restores. It refuses to run that command on one key rather than leaving
+the app with none.
 
 ## The layout
 
@@ -114,7 +124,13 @@ the fixture. No framework — `node --test` with `tsx`.
 Run one file: `node --import tsx --test test/unit/ramp-engine.test.ts`
 
 Anything a real Homey has to answer lives in
-[`docs/hardware-test-plan.md`](docs/hardware-test-plan.md), which is run before every release.
+[`docs/hardware-test-plan.md`](docs/hardware-test-plan.md), which is run before every release —
+mostly by `node scripts/verify-hardware.mjs full --yes`. What is left for a person is the first
+page of that file: mint the keys, press the remote three ways, look at the contact sheet.
+
+The pairing SCREENS are tested off-hardware, through a hand-rolled DOM in
+`test/support/pair-view-harness.ts` that runs each view's real script. Deliberately not jsdom — the
+header of that file says why, and what it does not do.
 
 ## Releasing
 

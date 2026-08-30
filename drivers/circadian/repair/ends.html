@@ -235,7 +235,7 @@ function __lkBootEn(Homey) {
         if (err) reject(err instanceof Error ? err : new Error(String(err)));
         else resolve(result);
       };
-      var timer = setTimeout(function () { finish(new Error('Homey did not respond to "' + event + '"')); }, 20000);
+      var timer = setTimeout(function () { finish(new Error('Homey did not respond in time. Close this screen and try again. (' + event + ')')); }, 20000);
       var done = function (err, result) { clearTimeout(timer); finish(err, result); };
       try {
         var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
@@ -342,14 +342,14 @@ function __lkBootEn(Homey) {
 
     var value = node('span', 'value', field === 'temperature'
       ? warmthText(model[end].temperature)
-      : Math.round((model[end].brightness || 0) * 100) + '%');
+      : Homey.__('schedule.percent', { percent: Math.round((model[end].brightness || 0) * 100) }));
 
     input.addEventListener('input', function () {
       var next = Number(input.value) / 100;
       model[end][field] = next;
       value.textContent = field === 'temperature'
         ? warmthText(next)
-        : Math.round(next * 100) + '%';
+        : Homey.__('schedule.percent', { percent: Math.round(next * 100) });
     });
     input.addEventListener('change', push);
 
@@ -399,7 +399,7 @@ function __lkBootEn(Homey) {
 
     document.getElementById('end-summary').textContent = Homey.__('circadian.endsSummary', {
       lights: model.lights.length,
-      zone: model.timezone || '?'
+      zone: model.timezone || Homey.__('schedule.notKnownYet')
     });
   }
 
@@ -462,6 +462,13 @@ function __lkBootEn(Homey) {
       .catch(function (err) { result.textContent = err.message || String(err); });
   });
 
+  document.querySelectorAll('[data-i18n]').forEach(function (el) {
+    // Belt and braces: the pairing container translates these itself, but a
+    // build that does not leaves the screen showing key names.
+    var translated = Homey.__(el.getAttribute('data-i18n'));
+    if (translated) el.textContent = translated;
+  });
+
   document.getElementById('end-save').addEventListener('click', function () {
     var button = document.getElementById('end-save');
     button.disabled = true;
@@ -514,7 +521,7 @@ window.onHomeyReady = __lkBootEn;
   if ((attempt || 0) > 100) {
     document.body.insertAdjacentHTML('afterbegin',
       '<div style="padding:12px;background:#fdeceb;color:#8f1d18;font-size:13px;">'
-      + 'Lightkeeper could not reach the Homey pairing API on this page.</div>');
+      + 'Lightkeeper could not reach Homey from this screen. Close it and try again.</div>');
     return;
   }
   setTimeout(function () { waitForHomey((attempt || 0) + 1); }, 50);

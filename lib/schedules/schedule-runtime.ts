@@ -118,6 +118,20 @@ export interface ScheduleDiagnostics {
     brightness?: number;
     temperature?: number;
     active: boolean;
+    /**
+     * How the window's end was actually SET, not only where it lands.
+     *
+     * `off` is computed, so "until 22:00" and "for two hours from 20:00" render
+     * identically — and they are not the same thing to the person who typed one
+     * of them. A bug report about a window ending at the wrong time reads very
+     * differently depending on which it was.
+     *
+     * It is also what makes the plan round-trippable: anything that reads a
+     * schedule and writes it back — `scripts/verify-hardware.mjs schedule` puts
+     * a household's real windows back after retiming them — would otherwise
+     * have to guess, and would quietly rewrite every duration as a time.
+     */
+    end: ScheduleEntry['end'];
   }>;
   targetIds: string[];
   targetNames: string[];
@@ -745,6 +759,7 @@ export class ScheduleRuntime {
         ...(entry.brightness !== undefined ? { brightness: entry.brightness } : {}),
         ...(entry.temperature !== undefined ? { temperature: entry.temperature } : {}),
         active: activeWindowStartDay(entry, clock) !== null,
+        end: entry.end,
       })),
       targetIds: this.targetIds,
       targetNames: this.targetNames,

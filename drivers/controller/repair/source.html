@@ -224,7 +224,7 @@ function __lkBootSrc(Homey) {
         if (err) reject(err instanceof Error ? err : new Error(String(err)));
         else resolve(result);
       };
-      var timer = setTimeout(function () { finish(new Error('Homey did not respond to "' + event + '"')); }, 20000);
+      var timer = setTimeout(function () { finish(new Error('Homey did not respond in time. Close this screen and try again. (' + event + ')')); }, 20000);
       var done = function (err, result) { clearTimeout(timer); finish(err, result); };
       try {
         var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
@@ -280,7 +280,7 @@ function __lkBootSrc(Homey) {
         return;
       }
       msg.className = 'msg ok';
-      msg.textContent = Homey.__('source.found', { count: result.eventCount, controls: result.controls.length });
+      msg.textContent = Homey.__('source.found', { controls: result.controls.length });
     }).catch(function (err) {
       msg.className = 'msg bad';
       msg.textContent = err.message || String(err);
@@ -310,10 +310,12 @@ function __lkBootSrc(Homey) {
         // a controller. Showing it beats guessing a "remotes" category and
         // getting it wrong.
         var events = device.eventCount > 0
-          ? device.eventCount + ' event' + (device.eventCount === 1 ? '' : 's')
-          : 'no events';
+          ? (device.eventCount === 1
+            ? Homey.__('source.eventCountOne')
+            : Homey.__('source.eventCount', { count: device.eventCount }))
+          : Homey.__('source.noEvents');
         var meta = (device.ownerName || '') + ' · ' + events
-          + (device.available === false ? ' · unavailable' : '');
+          + (device.available === false ? ' · ' + Homey.__('targets.unavailable') : '');
         el.appendChild(node('div', 'name', device.name));
         el.appendChild(node('div', 'meta', meta));
         el.addEventListener('click', function () { choose(device, el); });
@@ -385,7 +387,7 @@ window.onHomeyReady = __lkBootSrc;
   if ((attempt || 0) > 100) {
     document.body.insertAdjacentHTML('afterbegin',
       '<div style="padding:12px;background:#fdeceb;color:#8f1d18;font-size:13px;">'
-      + 'Lightkeeper could not reach the Homey pairing API on this page.</div>');
+      + 'Lightkeeper could not reach Homey from this screen. Close it and try again.</div>');
     return;
   }
   setTimeout(function () { waitForHomey((attempt || 0) + 1); }, 50);

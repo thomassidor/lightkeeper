@@ -5,6 +5,7 @@ import Homey from 'homey';
 import {
   listTargetsPayload, resolveSummary, targetLights,
 } from '../../lib/pairing/target-picker';
+import { deriveSuffixedName } from '../../lib/pairing/derive-name';
 import { CURRENT_SCHEDULE_SCHEMA_VERSION } from '../../lib/schedules/schedule-migrations';
 import {
   MAX_ENTRIES, sanitiseEntries,
@@ -94,7 +95,13 @@ module.exports = class ScheduleDriver extends Homey.Driver {
 
     // -------------------------------------------------------------- targets
 
-    handler('listTargets', async () => listTargetsPayload(this.app.catalog, state.target));
+    // The targets view is ONE file shared by all four drivers (platform §8), so the
+    // line telling the user which lights these are has to be supplied per driver.
+    // Resolved here rather than in `lib/`, which cannot translate.
+    handler('listTargets', async () => ({
+      ...await listTargetsPayload(this.app.catalog, state.target),
+      subtitle: this.homey.__('targets.subtitleSchedule'),
+    }));
 
     handler('selectTargets', async (spec: unknown) => {
       // The pairing channel is a webview, so this is the same class of boundary
@@ -194,23 +201,9 @@ module.exports = class ScheduleDriver extends Homey.Driver {
    * the user rename a device afterwards, which is the natural place for it.
    */
   private async deriveName(state: SessionState): Promise<string> {
-    if (!state.target) return 'Light schedule';
-
-    if (state.target.kind === 'zone') {
-      const zones = await this.app.catalog.allZones();
-      const zone = zones.find((z: any) => z.id === (state.target as any).zoneId);
-      return `${zone?.name ?? 'Zone'} schedule`;
-    }
-
-    const lights = await targetLights(this.app.catalog, state.target);
-    if (lights.length === 0) return 'Light schedule';
-    if (lights.length === 1) return `${lights[0].name} schedule`;
-
-    // Where every light shares a room, the room reads better than a list.
-    const zoneNames = new Set(lights.map(l => l.zoneName).filter(Boolean));
-    if (zoneNames.size === 1) return `${[...zoneNames][0]} schedule`;
-
-    return `${lights.length} lights schedule`;
+    return deriveSuffixedName(this.app.catalog, state.target, {
+      fallback: 'Light schedule', suffix: 'schedule', zoneFallback: 'Zone',
+    });
   }
 
   private buildPlan(state: SessionState): SchedulePlan {

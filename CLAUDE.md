@@ -2,7 +2,7 @@
 
 Guidance for Claude Code (and any other agent) working in this repository. This file holds the
 architecture, the conventions and the release process. **The Homey platform reference — how the
-platform actually behaves, thirteen numbered sections established against real hardware — lives in
+platform actually behaves, fifteen numbered sections established against real hardware — lives in
 [`docs/homey-platform.md`](docs/homey-platform.md), and the code cites it as `platform §n`.** Read
 it before changing anything that talks to Homey; [the map is below](#the-homey-platform-reference-lives-in-docshomey-platformmd).
 
@@ -35,8 +35,11 @@ npx homey app install          # persistent install on a real Homey
 npx homey app run --remote     # live logs, TEMPORARY — see below
 npm run sync:views             # pair -> repair, and shared views between drivers. See platform §8
 npm run sync:views:check       # what sync WOULD copy; writes nothing, exits 1 on drift. CI runs it
+npm run render:views           # draw every pairing screen to .views/ — needs Chrome, not CI
 python artwork/export-assets.py   # re-export every shipped icon, image and the banner
-node scripts/verify-hardware.mjs spike   # the scripted half of the hardware pass — NEEDS a real Homey
+node scripts/verify-hardware.mjs spike       # can the script reach a real Homey at all?
+node scripts/verify-hardware.mjs memory      # PSS against Homey's 30 MB guideline. Read-only
+node scripts/verify-hardware.mjs full --yes  # MOST of the hardware pass — NEEDS a real Homey
 ```
 
 **`package.json`'s `build` script is not ours to remove.** It looks unused — nothing in this repo
@@ -50,11 +53,14 @@ Run a single test file: `node --import tsx --test test/unit/ramp-engine.test.ts`
 
 ```
 app.ts                          app entry, bridge action listeners, validation on receipt
-api.ts                          app Web API consumed by settings/index.html
+api.ts                          app Web API: what settings/index.html renders, plus six
+                                "try it now" routes over the runtimes
 lib/
   homey-api-service.ts          both API clients, subscription tracking and teardown
   credential-service.ts         the API key: storage, write-validation, failure classification
   device-catalog.ts             devices, zones, owning apps, capability metadata
+  flow-card-catalogue.ts        the ONE reader of the flow card catalogues, and the ONE place
+                                that knows homey-api retains every getAll result (platform §15)
   source-discovery-service.ts   trigger card discovery, event-surface fingerprints
   inputs/                       input contract, normalizer, magnitude collapse
   mapping/                      mapping engine, supersede gate, behaviour types
@@ -72,7 +78,9 @@ lib/
                                 LightkeeperDevice (the Homey.Device shell) — see platform §13
   time/                         wall-clock minutes and the Homey's local clock
   validation/                   guards, the three plan validators, pairing DTO checks
-  pairing/                      the light picker, shared by every driver
+  pairing/                      the light picker, the remote picker, the mapping screen's
+                                sections and the default device names — every pairing DECISION,
+                                lifted out of driver.ts so it can be tested (platform §13)
 app-contract.ts                 what api.ts and the device layer may use of the app
 homey-api-types.ts              the shapes homey-api returns, at the normalisation seams
 drivers/controller/             virtual device, driver, four pairing views
@@ -82,7 +90,7 @@ drivers/circadian/              the SIMPLE one: two ends of the day. NO credenti
   pair/                         targets.html is a COPY of the controller's; ends.html is its own
   repair/                       exact copies of pair/, generated — see platform §8
 drivers/curve/                  the FULL one: every point, and a colour per point. NO credential
-                                screen. Placeholder artwork — see assets.test.ts
+                                screen
   pair/                         targets.html is a COPY of the controller's; curve.html is its own
   repair/                       exact copies of pair/, generated — see platform §8
 drivers/schedule/               virtual device, driver, three pairing views
@@ -90,8 +98,13 @@ drivers/schedule/               virtual device, driver, three pairing views
                                 controller's; only schedule.html is its own — see platform §8
   repair/                       exact copies of pair/, generated — see platform §8
 scripts/sync-views.mjs          makes every copy named above; nothing runs it for you
-scripts/verify-hardware.mjs     the scripted half of the hardware pass. Talks to a REAL Homey over
-                                the user's own API key; needs HOMEY_ADDRESS + HOMEY_API_KEY
+scripts/verify-hardware.mjs     most of the hardware pass. Talks to a REAL Homey over its OWN
+                                Personal API Key — needs HOMEY_ADDRESS + HOMEY_API_KEY, and
+                                HOMEY_APP_KEY for `credential`. TWO keys: one session per key
+                                (platform §2)
+scripts/render-views.mjs        every pairing screen to a PNG, plus a contact sheet. Headless
+                                Chrome, the same rasteriser artwork/export-assets.py uses
+scripts/pair-view-fixtures.mjs  the demo data those renders use, one entry per view
 settings/index.html             app settings page
 locales/en.json                 all user-facing strings
 .homeycompose/                  the manifest's SOURCE; app.json is generated from it
@@ -99,17 +112,18 @@ assets/                         the app's own icon and store images, all generat
 README.txt                      the App Store long description — not README.md
 test/                           unit tests and hand-transcribed fixtures
 docs/                           NOT bundled. `docs/README.md` indexes it
-  homey-platform.md             the platform reference — §1-13, cited in code as `platform §n`
+  homey-platform.md             the platform reference — §1-14, cited in code as `platform §n`
   privacy.md                    the privacy notice
   homey-review-notes.md         for Athom's reviewer
   localisation.md               English-only on purpose; how to add a language back
-  hardware-test-plan.md         the standing pass on a real Homey, run before every release
+  hardware-test-plan.md         the standing pass on a real Homey: what to DO, and how to report
+  hardware-test-coverage.md     what covers what — the script, the suite, and the retired lines
   history/                      ARCHIVE: the completed 0.5.0 remediation project
 artwork/                        NOT bundled. Every graphic's source, and its own two docs
   masters/                      every graphic's source
   export-assets.py              builds every shipped icon and image from those
   asset-spec.md                 the brief: what to draw, at what size, and why
-  provenance.md                 where it came from, the rights register, what is placeholder
+  provenance.md                 where it came from, the rights register, the recorded gaps
 README.md  FAQ.md  CHANGELOG.md  CONTRIBUTING.md
                                 the four end-user / contributor documents, none bundled
 ```
@@ -118,7 +132,7 @@ README.md  FAQ.md  CHANGELOG.md  CONTRIBUTING.md
 
 # The Homey platform reference lives in `docs/homey-platform.md`
 
-Thirteen numbered sections on how Homey actually behaves — every one established against real
+Fifteen numbered sections on how Homey actually behaves — every one established against real
 hardware (Homey Pro 2023, firmware 13.4.0, homey-api 3.19.2) and documented nowhere else. **Read it
 before changing anything that talks to Homey.** It used to be the middle of this file; it moved out
 so that a human developer could find it under a name that says what it is.
@@ -142,6 +156,8 @@ tests carry one — `(platform §6)` means section 6 of that file. Keep writing 
 | [11](docs/homey-platform.md#11-flow-folders-nest-and-every-lookup-must-key-on-name-parent) | Flow folders nest; every lookup must key on (name, parent) |
 | [12](docs/homey-platform.md#12-a-circadian-light-generates-no-flows-and-that-is-the-whole-design) | A circadian light generates no Flows, and that is the whole design |
 | [13](docs/homey-platform.md#13-requirehomey-only-resolves-on-a-homey-and-that-shapes-the-device-layer) | `require('homey')` only resolves ON a Homey — why the device layer is split in two |
+| [14](docs/homey-platform.md#14-pair-sessions-are-a-web-api-surface-and-pairing-can-be-scripted) | Pair sessions ARE a Web API surface — pairing and repair can be scripted |
+| [15](docs/homey-platform.md#15-homey-api-caches-every-getall-result-forever) | `homey-api` caches every `getAll` result forever — which is where 30 MB of a 48 MB footprint went |
 
 # Working on this codebase
 
@@ -214,8 +230,12 @@ repo stopped saying.
 4. Condense it into `README.md`'s `## Changelog`: the new release in about four bullets, and the
    previous one demoted to a single line in the table below it.
 5. Update the **This release** section of `docs/hardware-test-plan.md` — what is new or risky this
-   time — and run that pass on hardware. `node scripts/verify-hardware.mjs all` answers the lines
-   that are a readable state rather than a lamp somebody has to watch; the plan says which.
+   time, as things to do — and run that pass on hardware.
+   `node scripts/verify-hardware.mjs full --yes` answers most of it;
+   [`docs/hardware-test-coverage.md`](docs/hardware-test-coverage.md) says what covers what.
+   Test lines are numbered `T1`, `T2`, … and **a number is never reused**: the release lines you
+   write here carry on from the highest one already used, and last release's are deleted rather
+   than renumbered. `hardware-test-coverage.md` keeps the map back to the old `section.line` scheme.
 6. Run `npm run validate` — this is what regenerates `app.json`, so it is a required step and not
    just a check. Commit the regenerated `app.json` with the rest.
 7. Re-read `README.txt` if anything about what the app *is* changed.
@@ -379,6 +399,25 @@ Load-bearing product guarantees, not implementation details:
   registries PLUS every installed device of those two drivers — see `liveDeviceIds()` below for why
   that is load-bearing rather than tidy. A circadian or Curve light is deliberately absent: neither
   owns a Flow, so counting them would only inflate the count and stop the refusal firing.
+- **A flow card catalogue is read, projected and dropped — never retained.** `homey-api` caches
+  every `getAll` result for the life of the client (platform §15), and the two card catalogues are
+  ~11.6 MB each on a real Homey: retaining them was 30 MB of a 48 MB footprint, against Homey's
+  30 MB guideline. Every `getAll` call site passes `NO_CACHE` from `lib/flow-card-catalogue.ts`, and
+  the cards are projected to the handful of fields the app reads before the raw array goes out of
+  scope. The single-flight promise and 60 s TTL in `FlowCardCatalogue` are not an optimisation:
+  they replace the cache that was given up, because `findReattachCandidate()` calls `discover()`
+  once per plausible device in a loop. `FlowBridgeManager.bridgeCards()` goes further and reads no
+  catalogue at all: it asks for its three cards by name and echoes back what the Homey returns,
+  which still honours platform §3 because nothing is assembled and then trusted. Enumeration
+  survives as the fallback.
+  Measured on hardware: one catalogue read costs **~12 MB of floor, permanently** (31.9 MB before
+  the app had read one, 43.9 MB immediately after), because V8 never returns the pages. So NOT
+  retaining and never reading cost the same unless the read is avoided altogether — which is why
+  `bridgeCards()` asks for its three cards by name and `getDiagnostics` peeks at the time card
+  rather than looking it up. The app sits around 44 MB once anything has read the catalogue;
+  getting under 30 would mean parsing that response incrementally instead of through `homey-api`. `node scripts/verify-hardware.mjs memory` checks it —
+  T59 reports the 30 MB guideline and fails past a 50 MB ceiling. That line is a smoke check for a
+  new bulk read, not a retention test: RSS cannot tell holding a catalogue from having parsed one.
 - **The API key is never logged, never returned over the app API, and never included in
   diagnostics.** Errors are classified before logging, because an error object can echo the token.
   `test/unit/diagnostics-redaction.test.ts` asserts this against serialised output.

@@ -15,6 +15,9 @@ import { findUncompilableBindings } from '../../lib/bridge/flow-binding-compiler
 import {
   listTargetsPayload, resolveSummary, targetDeviceIds, targetLights,
 } from '../../lib/pairing/target-picker';
+import { groupSourcesByRoom } from '../../lib/pairing/source-list';
+import { mappingGroups, mappingRuleRows, ruleTargetFor } from '../../lib/pairing/mapping-screen';
+import { deriveControllerName } from '../../lib/pairing/derive-name';
 
 /**
  * The Driver owns: pair/repair session handlers, UI data
@@ -156,34 +159,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
     handler('listSources', async () => {
       const devices = await this.app.catalog.allDevices();
       const ranked = await this.app.discovery.rankSources(devices);
-
-      // Grouped by room with a search box, rather than a "likely remotes"
-      // section: there is no reliable way to tell a remote from anything else
-      // that happens to expose trigger cards, and a wrong guess at the top of
-      // the list is worse than an honest alphabetical one.
-      const byZone = new Map<string, { zoneName: string; devices: unknown[] }>();
-      for (const { device, eventCount } of ranked as any[]) {
-        const key = device.zone ?? 'unknown';
-        if (!byZone.has(key)) byZone.set(key, { zoneName: device.zoneName || 'Unassigned', devices: [] });
-        byZone.get(key)!.devices.push({
-          id: device.id,
-          name: device.name,
-          zoneName: device.zoneName,
-          ownerName: device.ownerName,
-          available: device.available,
-          eventCount,
-          selected: device.id === state.sourceDeviceId,
-        });
-      }
-
-      return {
-        rooms: [...byZone.values()]
-          .sort((a, b) => a.zoneName.localeCompare(b.zoneName))
-          .map(room => ({
-            zoneName: room.zoneName,
-            devices: (room.devices as any[]).sort((a, b) => a.name.localeCompare(b.name)),
-          })),
-      };
+      return { rooms: groupSourcesByRoom(ranked as any[], state.sourceDeviceId) };
     });
 
     handler('selectSource', async (deviceId: string) => {
@@ -225,7 +201,13 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
     // -------------------------------------------------------------- targets
 
-    handler('listTargets', async () => listTargetsPayload(this.app.catalog, state.target));
+    // The targets view is ONE file shared by all four drivers (platform §8), so the
+    // line telling the user which lights these are has to be supplied per driver.
+    // Resolved here rather than in `lib/`, which cannot translate.
+    handler('listTargets', async () => ({
+      ...await listTargetsPayload(this.app.catalog, state.target),
+      subtitle: this.homey.__('targets.subtitleController'),
+    }));
 
     handler('selectTargets', async (spec: unknown) => {
       // The pairing channel is a webview, so this is the same class of boundary
@@ -244,9 +226,6 @@ module.exports = class ControllerDriver extends Homey.Driver {
       const summary = await resolveSummary(this.app.catalog, state.target);
       const offered = availableFunctions(summary.support);
       const lights = await targetLights(this.app.catalog, state.target);
-      // One light chosen means "all of them" and "that one" are the same lamp,
-      // and the screen below collapses to a single section for it.
-      const single = lights.length === 1 ? lights[0] : null;
 
       return {
         functions: offered.map(fn => ({
@@ -269,49 +248,12 @@ module.exports = class ControllerDriver extends Homey.Driver {
             label: i.label,
           })),
         })),
-        // One group per light, plus an "all lights" group — assignments read
-        // as "this button does this to this lamp", which is how people think
-        // about it.
-        //
-        // Unless there is only one light, where the two groups are the same
-        // lamp listed twice: "All lights" open at the top, and below it a
-        // collapsed section offering overrides that can never override
-        // anything. One section then, keyed '__all__' so a rule still stores
-        // as "inherit" and the section still opens by default, but named after
-        // the lamp and carrying its capabilities — so a function it cannot
-        // perform drops off the list, which the '__all__' group alone never does.
-        groups: single
-          ? [{
-              key: '__all__',
-              label: single.name,
-              zoneName: single.zoneName,
-              capabilities: single.capabilities,
-              deviceIds: null,
-            }]
-          : [
-              { key: '__all__', label: this.homey.__('mapping.allLights'), deviceIds: null },
-              ...lights.map((light: any) => ({
-                key: light.id,
-                label: light.name,
-                zoneName: light.zoneName,
-                capabilities: light.capabilities,
-                deviceIds: [light.id],
-              })),
-            ],
-        rules: state.mappings.map(m => ({
-          id: m.id,
-          function: m.function,
-          inputKey: m.inputKey,
-          // Collapsed to the one group as well when there is one light. A rule
-          // saved against that light's own id — by a repair that narrowed the
-          // selection down to it — would otherwise name a group that is no
-          // longer rendered, and the row it belongs to would silently vanish.
-          groupKey: single
-            ? '__all__'
-            : m.target?.kind === 'devices' && m.target.deviceIds.length === 1
-              ? m.target.deviceIds[0]
-              : '__all__',
-        })),
+        // Sections and rows, and the one-light collapse that binds them. Both
+        // in lib/pairing/mapping-screen.ts, where they can be tested together:
+        // the two halves have to agree about `groupKey` or a saved rule lands
+        // in a section that is not on the page.
+        groups: mappingGroups(lights, this.homey.__('mapping.allLights')),
+        rules: mappingRuleRows(state.mappings, lights),
       };
     });
 
@@ -352,9 +294,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
           function: r.function,
           inputKey: r.inputKey,
           // '__all__' inherits the controller's own targets.
-          target: r.groupKey && r.groupKey !== '__all__'
-            ? { kind: 'devices' as const, deviceIds: [r.groupKey] }
-            : null,
+          target: ruleTargetFor(r.groupKey),
         }));
       return { count: state.mappings.length };
     });
@@ -438,25 +378,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
    * it — asking during setup adds a step most people would skip anyway.
    */
   private async deriveName(state: SessionState): Promise<string> {
-    const source = state.sourceName ?? 'Remote';
-    if (!state.target) return source;
-
-    if (state.target.kind === 'zone') {
-      const zones = await this.app.catalog.allZones();
-      const zone = zones.find((z: any) => z.id === (state.target as any).zoneId);
-      return `${source} → ${zone?.name ?? 'zone'}`;
-    }
-
-    const lights = await targetLights(this.app.catalog, state.target);
-    if (lights.length === 0) return source;
-    if (lights.length === 1) return `${source} → ${lights[0].name}`;
-
-    // Where every light shares a room, the room reads better than a list.
-    const zoneNames = new Set(lights.map(l => l.zoneName).filter(Boolean));
-    if (zoneNames.size === 1) return `${source} → ${[...zoneNames][0]}`;
-
-    if (lights.length === 2) return `${source} → ${lights[0].name} + ${lights[1].name}`;
-    return `${source} → ${lights.length} lights`;
+    return deriveControllerName(this.app.catalog, state.target, state.sourceName ?? 'Remote');
   }
 
   private buildProfile(state: SessionState): ControllerProfile {

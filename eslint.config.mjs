@@ -146,6 +146,7 @@ export default tseslint.config(
       'lib/homey-api-service.ts',
       'lib/credential-service.ts',
       // Normalisers reading raw client objects.
+      'lib/flow-card-catalogue.ts',
       'lib/bridge/flow-bridge-manager.ts',
       'lib/bridge/flow-folder-manager.ts',
       'lib/device-catalog.ts',

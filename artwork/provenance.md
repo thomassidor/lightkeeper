@@ -103,12 +103,19 @@ handled for you", the other says "every point is yours". Its canvas fit came fro
 
 ## Icon weight
 
-All five icons ship at `stroke-width` 40 on the 960 canvas, Homey's house weight. Fitted to the
-canvas the masters' own strokes are 31 (logo), 23 (sun), 22 (stopwatch), 16 (curve) and 14 (remote):
-five different weights, and the remote a hairline at the 32 px Homey renders. Judged from a contact sheet at
-32/40/56 px, on white and as a white mask on the brand violet — which is how Homey actually draws
-them. `export-assets.py --weight drawn` reproduces the masters' own weights if the decision is ever
-revisited.
+Every icon is normalised to a house weight rather than its master's own. Fitted to the canvas the
+masters' own strokes are 31 (logo), 23 (sun), 22 (stopwatch), 16 (curve) and 14 (remote): five
+different weights, and the remote a hairline at the 32 px Homey renders. Judged from a contact
+sheet at 32/40/56 px, on white and as a white mask on the brand violet — which is how Homey
+actually draws them. `export-assets.py --weight drawn` reproduces the masters' own weights if the
+decision is ever revisited.
+
+There are **two** house weights, and the split is deliberate. The app icon ships at 40, which is
+what all 226 of homey-lib's stock class icons use and what Homey's large rendering wants. The four
+**device** icons ship at 34. They are denser drawings than a stock class glyph — a stopwatch face
+with hands and tick marks, a bulb under an arc between two suns, a curve over a row of hour ticks —
+and at 40 the gaps inside them close up, so a device tile shows a bulky blob rather than a drawing.
+34 is a touch lighter: still recognisably the stock family, with the interior legible at tile size.
 
 ## Palette
 

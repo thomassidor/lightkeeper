@@ -1,5 +1,6 @@
 import type { HomeyApiService } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
+import { FlowCardCatalogue } from '../flow-card-catalogue';
 import type { FlowBridgeManager } from '../bridge/flow-bridge-manager';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
 import { ScheduleRuntime, type ScheduleRuntimeDeps } from './schedule-runtime';
@@ -36,6 +37,12 @@ export interface ScheduleManagerDeps {
   api: HomeyApiService;
   catalog: DeviceCatalog;
   bridge: FlowBridgeManager;
+  /**
+   * Shared with source discovery, which asks the same question of the same
+   * ~11.6 MB of cards (platform §15). Optional so the ephemeral rigs and the
+   * tests can still build a manager from an api alone.
+   */
+  cards?: FlowCardCatalogue;
   /** The Homey's IANA timezone. */
   timezone: () => string | undefined;
   log: (...args: unknown[]) => void;
@@ -51,19 +58,43 @@ export class ScheduleRuntimeManager {
    */
   private timeCardLookup: Promise<TimeCardDiscovery> | null = null;
 
+  private readonly cards: FlowCardCatalogue;
+
   constructor(private readonly deps: ScheduleManagerDeps) {
     this.registry = new RuntimeRegistry({ log: deps.log, label: 'schedule' });
+    this.cards = deps.cards ?? new FlowCardCatalogue(deps.api);
   }
+
+  /**
+   * The answer IF something has already paid for it. NEVER provokes the lookup.
+   *
+   * Diagnostics used to call `timeCard()` directly, which made opening the
+   * settings page — or any bug report — cost a full ~11.6 MB trigger catalogue
+   * read on a Homey that had no schedule and no use for the answer. That read
+   * raises the process's floor permanently (platform §15), so a report about
+   * the app changed the thing it was reporting on.
+   *
+   * Nothing is lost. A running schedule has already resolved this during
+   * `start()`, so whenever the answer is interesting it is also already here;
+   * when it is null, no schedule has needed it, which is itself the honest
+   * thing to report.
+   */
+  peekTimeCard(): TimeCardDiscovery | null {
+    return this.timeCardResult;
+  }
+
+  /** Set once the lookup resolves, so `peekTimeCard()` can answer for free. */
+  private timeCardResult: TimeCardDiscovery | null = null;
 
   async timeCard(): Promise<TimeCardDiscovery> {
     if (!this.timeCardLookup) {
       this.timeCardLookup = (async () => {
-        const client = await this.deps.api.read();
-        const triggers = Object.values(await client.flow.getFlowCardTriggers());
+        const triggers = await this.cards.triggerCards();
         const discovery = discoverTimeCard(triggers);
         this.deps.log(discovery.card
           ? `Time trigger card: ${discovery.card.id} (argument "${discovery.card.argument}")`
           : 'No usable time trigger card found on this Homey');
+        this.timeCardResult = discovery;
         return discovery;
       })().catch(error => {
         // Do not cache a failure: a card lookup that failed because the Homey was

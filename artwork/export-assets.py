@@ -52,12 +52,20 @@ README_ART = pathlib.Path(__file__).resolve().parent / 'readme'
 
 CANVAS = 960                       # Homey's icon canvas, guideline 1.5
 
-# Every icon is normalised to this, which is what all 226 of homey-lib's stock
-# class icons use. Fitted to the canvas, the masters' own strokes land at 31, 22
-# and 14 units — so "as drawn" is three different weights, and the remote at 14 is
-# a hairline that all but vanishes at the 32 px Homey renders. `--weight drawn`
-# still emits the masters' own weights, for comparison.
+# Every icon is normalised to a house weight rather than the master's own. Fitted
+# to the canvas, the masters' own strokes land at 31, 22 and 14 units — so "as
+# drawn" is three different weights, and the remote at 14 is a hairline that all
+# but vanishes at the 32 px Homey renders. `--weight drawn` still emits the
+# masters' own weights, for comparison.
+#
+# Two house weights, because the two kinds of icon are drawn at different sizes.
+# 40 is what all 226 of homey-lib's stock class icons use, and it is right for the
+# app icon, which Homey draws large. The four DEVICE icons are denser drawings —
+# a stopwatch face, a bulb under an arc, a curve over hour ticks — and at 40 the
+# detail inside them closes up and reads as a bulky blob on a device tile. 34 is
+# a touch lighter: still clearly in the stock family, with the interior legible.
 HOUSE_STROKE = 40.0
+DEVICE_STROKE = 34.0
 
 # Extracted from masters/logo-bitmap-original.png — run --palette to re-derive.
 BRAND = '#180E32'                  # the logo's ground: 93% of its pixels
@@ -78,6 +86,7 @@ ICONS = [
         'desc': 'An open circle with a four-pointed sparkle.',
         'fit': (1.1871, -150.9, -102.9),
         'stroke': 26.0,
+        'house': HOUSE_STROKE,
     },
     {
         'master': 'remote-remote-icon-master.svg',
@@ -86,6 +95,7 @@ ICONS = [
         'desc': 'A handheld remote with a rotary wheel above two buttons.',
         'fit': (2.1079, -59.6, -60.7),
         'stroke': 6.7,
+        'house': DEVICE_STROKE,
     },
     {
         'master': 'schedule-icon-master.svg',
@@ -94,6 +104,7 @@ ICONS = [
         'desc': 'A stopwatch.',
         'fit': (3.0298, -295.6, -267.6),
         'stroke': 7.3,
+        'house': DEVICE_STROKE,
     },
     {
         'master': 'circadian-icon-master.svg',
@@ -102,6 +113,7 @@ ICONS = [
         'desc': 'A lightbulb below a daylight arc, between a sunrise and a sunset.',
         'fit': (3.1208, -318.9, -318.9),
         'stroke': 7.3,
+        'house': DEVICE_STROKE,
     },
     {
         'master': 'curve-icon-master.svg',
@@ -110,6 +122,7 @@ ICONS = [
         'desc': 'A four-point curve over a row of hour ticks.',
         'fit': (3.0247, -294.3, -294.3),
         'stroke': 5.3,
+        'house': DEVICE_STROKE,
     },
 ]
 
@@ -224,7 +237,7 @@ def build_icon(spec: dict, weight: str) -> str:
     root = root_tag(svg)
 
     # Rendered stroke width, in 960-canvas units.
-    rendered = HOUSE_STROKE if weight == 'homey' else spec['stroke'] * scale
+    rendered = spec['house'] if weight == 'homey' else spec['stroke'] * scale
     # Inside the transform, strokes are scaled too, so undo that.
     authored = rendered / scale
 
@@ -274,7 +287,7 @@ def export_icons(weight: str) -> None:
         markup = build_icon(spec, weight)
         spec['out'].parent.mkdir(parents=True, exist_ok=True)
         spec['out'].write_text(markup, encoding='utf-8', newline='\n')
-        rendered = HOUSE_STROKE if weight == 'homey' else spec['stroke'] * spec['fit'][0]
+        rendered = spec['house'] if weight == 'homey' else spec['stroke'] * spec['fit'][0]
         print(f'{spec["out"].relative_to(ROOT)}  stroke {rendered:.0f}/960  ({weight})')
 
 
@@ -406,7 +419,7 @@ def main() -> None:
     parser.add_argument('--palette', action='store_true', help='print the logo bitmap\'s colours')
     parser.add_argument('--measure', action='store_true', help='recompute the icon fit numbers')
     parser.add_argument('--weight', choices=('drawn', 'homey'), default='homey',
-                        help="icon stroke weight: Homey's 40 (default), or as drawn in the master")
+                        help='icon stroke weight: the house weights (default), or as drawn')
     parser.add_argument('--skip-banner', action='store_true', help='skip the Chrome-dependent banner')
     args = parser.parse_args()
 

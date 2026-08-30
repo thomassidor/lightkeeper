@@ -146,6 +146,6 @@ describe('the pairing screen refuses a save it cannot build', () => {
     const template = String(en.mapping.unsupportedControl);
 
     assert.match(template, /__controls__/, 'the control has to be nameable');
-    assert.match(template, /Map that control to something else/, 'and the user told what to do');
+    assert.match(template, /Assign that control to something else/, 'and the user told what to do');
   });
 });

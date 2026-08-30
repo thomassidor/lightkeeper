@@ -1,6 +1,7 @@
 import type { HomeyApiService } from '../homey-api-service';
 import { redactKeyMaterial } from '../credential-service';
 import { KeyedMutex } from '../support/keyed-mutex';
+import { NO_CACHE } from '../flow-card-catalogue';
 
 /**
  * Everything this app knows about Homey's Flow FOLDERS.
@@ -114,7 +115,7 @@ export class FlowFolderManager {
     return this.mutex.run(ROOT_FOLDER_LOCK, async () => {
       try {
         const client = await this.api.read();
-        const records = (Object.values(await client.flow.getFlowFolders()) as any[])
+        const records = (Object.values(await client.flow.getFlowFolders(NO_CACHE)) as any[])
           .map(toRecord);
         const folders = new Map(records.map(f => [f.id, f]));
 
@@ -276,7 +277,7 @@ export class FlowFolderManager {
     try {
       const client = await this.api.read();
       const occupied = new Set(
-        (Object.values(await client.flow.getFlows()) as any[]).map(f => String(f?.folder ?? '')),
+        (Object.values(await client.flow.getFlows(NO_CACHE)) as any[]).map(f => String(f?.folder ?? '')),
       );
 
       for (const id of wanted) {

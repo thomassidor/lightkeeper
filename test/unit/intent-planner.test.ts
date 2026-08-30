@@ -226,3 +226,91 @@ describe('perceptual curve', () => {
     assert.equal(applyPerceptualDelta(0, -0.5), 0);
   });
 });
+
+describe('a temperature write switches the lamp into temperature mode first', () => {
+  /**
+   * Found on hardware, and invisible until one device wrote both.
+   *
+   * A lamp in COLOUR mode ignores a temperature exactly as a lamp in
+   * temperature mode ignores a hue — silently, reporting the write as accepted
+   * and keeping its old value. Only `planColor` set `light_mode`, so a Curve
+   * light with a coloured point put a lamp into colour mode and then had every
+   * later temperature-only point thrown away by the lamp. The observed symptom:
+   * a lamp written 0.43 sat at 0.87 and would not take a temperature from
+   * anything, this app or otherwise, until its mode changed back.
+   */
+  const colourCapable = (id: string, on = true) => {
+    const cache = new TargetStateCache();
+    cache.setCapabilities(id, {
+      onoff: true,
+      dim: DIM,
+      light_temperature: TEMP,
+      light_mode: true,
+      light_hue: { min: 0, max: 1, decimals: 2 },
+      light_saturation: { min: 0, max: 1, decimals: 2 },
+    });
+    cache.initialise(id, { onoff: on, light_temperature: 0.5 });
+    return cache;
+  };
+
+  test('an absolute temperature sets light_mode before the temperature', () => {
+    const cache = colourCapable('a');
+    const { writes } = planIntent(
+      { type: 'temperature_absolute', value: 0.2 }, ['a'], cache, DEFAULT_BEHAVIOR);
+
+    const order = writes.map(w => w.capability);
+    assert.deepEqual(order, ['light_mode', 'light_temperature'],
+      'the mode has to be set first, or the lamp discards the temperature');
+    assert.equal(writes[0]!.value, 'temperature');
+    assert.equal(writes[1]!.value, 0.2);
+  });
+
+  test('a relative temperature does the same', () => {
+    // "Warmer" on a remote reaches the same lamp through a different path.
+    const cache = colourCapable('a');
+    const { writes } = planIntent(
+      { type: 'temperature_delta', delta: 0.1 }, ['a'], cache, DEFAULT_BEHAVIOR);
+
+    assert.deepEqual(writes.map(w => w.capability), ['light_mode', 'light_temperature']);
+    assert.equal(writes[0]!.value, 'temperature');
+  });
+
+  test('a lamp without light_mode is not sent one', () => {
+    // It has one mode, cannot be in the wrong one, and would be handed a
+    // capability it does not have.
+    const cache = cacheWith([{ id: 'a', on: true, temp: 0.5 }]);
+    const { writes } = planIntent(
+      { type: 'temperature_absolute', value: 0.2 }, ['a'], cache, DEFAULT_BEHAVIOR);
+
+    assert.deepEqual(writes.map(w => w.capability), ['light_temperature']);
+  });
+
+  test('and a colour still sets colour mode, unchanged', () => {
+    // The half that always worked. Asserted here so a future edit cannot fix
+    // one direction by breaking the other.
+    const cache = colourCapable('a');
+    const { writes } = planIntent(
+      { type: 'color_absolute', hue: 0.11, saturation: 0.75 }, ['a'], cache, DEFAULT_BEHAVIOR);
+
+    assert.deepEqual(writes.map(w => w.capability),
+      ['light_mode', 'light_hue', 'light_saturation']);
+    assert.equal(writes[0]!.value, 'color');
+  });
+
+  test('every lamp in a group gets its own mode write', () => {
+    const cache = colourCapable('a');
+    cache.setCapabilities('b', {
+      onoff: true, light_temperature: TEMP, light_mode: true,
+    });
+    cache.initialise('b', { onoff: true, light_temperature: 0.5 });
+
+    const { writes } = planIntent(
+      { type: 'temperature_absolute', value: 0.2 }, ['a', 'b'], cache, DEFAULT_BEHAVIOR);
+
+    for (const id of ['a', 'b']) {
+      const mine = writes.filter(w => w.deviceId === id);
+      assert.deepEqual(mine.map(w => w.capability), ['light_mode', 'light_temperature'],
+        `${id} was not switched into temperature mode`);
+    }
+  });
+});

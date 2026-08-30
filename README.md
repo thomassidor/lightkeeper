@@ -47,7 +47,7 @@ Lightkeeper**.
 
 Turns a remote, switch or dial you have **already paired** with Homey into a controller for lights
 you choose. Pick the remote, pick the lights, say what each press, hold or turn should do — on, off,
-brighter, dimmer, warmer, colder.
+brighter, dimmer, warmer, cooler.
 
 *Needs a Personal API Key: a token you generate on your own Homey, which is what lets Lightkeeper
 write Flows on your behalf. [Step 2 below](#2-give-it-an-api-key--if-you-need-one) walks through
@@ -253,7 +253,10 @@ reads, what it stores, and for how long.
 - **Overlapping schedule windows no longer fight**, and catch-up after a restart is gated on an off
   Flow actually existing.
 - **Every screen is light now, in every phone setting** — Homey draws the panel around them light
-  regardless of what the phone says.
+  regardless of what the phone says — and the words on them have had a pass: one name for the
+  warm/cool axis, and each pairing flow says which lights it is asking for.
+- **Less memory used on your Homey**, by not keeping a copy of every Flow card on your Homey for as
+  long as the app runs — and by not reading that list at all in two of the three places that did.
 
 Earlier releases, one line each:
 
@@ -281,7 +284,7 @@ If it changes how carefully you want to review the code before trusting it with 
 the code is right here.
 
 It has been verified end to end on a Homey Pro 2023 across four remotes and three transports, with
-771 unit tests covering the logic — [how well tested is this?](FAQ.md#how-well-tested-is-this) has
+898 unit tests covering the logic — [how well tested is this?](FAQ.md#how-well-tested-is-this) has
 the detail, including what has *not* run on hardware yet.
 
 ## Contributing

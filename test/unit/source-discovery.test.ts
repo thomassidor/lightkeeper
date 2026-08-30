@@ -96,4 +96,33 @@ describe('source discovery', () => {
     assert.deepEqual(result.rejected, [], 'no route at all is silence, not a rejection');
     assert.equal(result.cardsInspected, 1);
   });
+
+  /**
+   * The fingerprints are what HealthMonitor compares to decide "this remote now
+   * exposes different events". If flattening titles at the projection boundary
+   * (platform §15) changed either hash, every installed controller's stored
+   * value would disagree with a freshly computed one on upgrade and the whole
+   * Homey would report needs_repair about a surface that had not moved.
+   */
+  test('flattening a locale object to English does not move either fingerprint', async () => {
+    const card = (title: unknown, tokenTitle: unknown) => ({
+      dial: {
+        id: 'homey:device:dial-1:tapdial_button_pressed',
+        uri: 'homey:flowcardtrigger:homey:device:dial-1:tapdial_button_pressed',
+        title,
+        args: [{ type: 'dropdown', name: 'button', values: [{ id: 'button1' }] }],
+        tokens: [{ id: 'steps', type: 'number', title: tokenTitle }],
+      },
+    });
+
+    const multilingual = await service(
+      card({ en: 'Button pressed', nl: 'Knop ingedrukt' }, { en: 'Steps (1000/turn)', nl: 'Stappen' }),
+    ).discover(DIAL);
+    const flattened = await service(
+      card('Button pressed', 'Steps (1000/turn)'),
+    ).discover(DIAL);
+
+    assert.equal(multilingual.fingerprint, flattened.fingerprint);
+    assert.equal(multilingual.fingerprintV2, flattened.fingerprintV2);
+  });
 });

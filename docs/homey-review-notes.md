@@ -77,12 +77,12 @@ Two consequences a reviewer may want to check:
 
 ---
 
-## Why the third device type asks for no key at all
+## Why two of the four device types ask for no key at all
 
 A reviewer opening the Add-device list will find four drivers, two of which start
-with an API-key screen and one — **Circadian light** — which does not. That is
-deliberate and worth checking against the code, because it is the one place the
-key is genuinely unnecessary.
+with an API-key screen — **Light controller** and **Light schedule** — and two which
+do not: **Circadian light** and **Curve light**. That is deliberate and worth checking
+against the code, because those two are the place the key is genuinely unnecessary.
 
 A circadian light and a Curve light both make lights follow the colour temperature of
 the day, and they are one engine: the circadian light asks what the lights should look
@@ -147,7 +147,13 @@ Three consequences a reviewer may want to verify:
     attributable to that device may be removed. Then check the orphan count in app
     settings: with the other device still running it must not report the survivor's
     Flows as orphans.
-15. Restart the app, then the Homey, and repeat a mapped action.
+15. Add a **Curve light** (no API-key screen). Draw a curve over the day, give one
+    point a colour rather than a warmth, and include a lamp that cannot show colour
+    — it must take that point's warmth instead. Confirm **no Flows are created**,
+    that the lights are right the moment they are switched on, and that the device
+    never switches a lamp on or off by itself. A **Circadian light** is the same
+    engine with two questions instead of a curve.
+16. Restart the app, then the Homey, and repeat a mapped action.
 
 Steps 12, 13 and 14 are the ones worth the time — they are the app's genuinely
 risky behaviours, and each is a deliberate safety property rather than an

@@ -147,5 +147,11 @@ export interface DiagnosticsResponse {
    * was on offer. A card URI may never be constructed (platform §3), so when a
    * firmware moves this card the candidate list IS the investigation.
    */
-  timeCard: TimeCardDiscovery | { card: null; error: string };
+  /**
+   * `notLookedUp` rather than an error: reporting this must not PROVOKE the
+   * lookup, which reads every trigger card on the Homey and raises the app's
+   * memory floor for the rest of its run (platform §15). A running schedule has
+   * already resolved it, so it is absent only when nothing needed it.
+   */
+  timeCard: TimeCardDiscovery | { card: null; error: string } | { card: null; notLookedUp: string };
 }
