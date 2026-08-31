@@ -36,10 +36,12 @@ npx homey app run --remote     # live logs, TEMPORARY — see below
 npm run sync:views             # pair -> repair, and shared views between drivers. See platform §8
 npm run sync:views:check       # what sync WOULD copy; writes nothing, exits 1 on drift. CI runs it
 npm run render:views           # draw every pairing screen to .views/ — needs Chrome, not CI
+npm run render:icons           # draw every icon at the App Store's 24px box. Chrome, not CI
 python artwork/export-assets.py   # re-export every shipped icon, image and the banner
 node scripts/verify-hardware.mjs spike       # can the script reach a real Homey at all?
 node scripts/verify-hardware.mjs memory      # PSS against Homey's 30 MB guideline. Read-only
-node scripts/verify-hardware.mjs full --yes  # MOST of the hardware pass — NEEDS a real Homey
+node scripts/verify-hardware.mjs full --yes  # MOST of the hardware pass — NEEDS a real Homey.
+                                             # Builds and deletes its OWN devices only
 ```
 
 **`package.json`'s `build` script is not ours to remove.** It looks unused — nothing in this repo
@@ -101,9 +103,14 @@ scripts/sync-views.mjs          makes every copy named above; nothing runs it fo
 scripts/verify-hardware.mjs     most of the hardware pass. Talks to a REAL Homey over its OWN
                                 Personal API Key — needs HOMEY_ADDRESS + HOMEY_API_KEY, and
                                 HOMEY_APP_KEY for `credential`. TWO keys: one session per key
-                                (platform §2)
+                                (platform §2). Names everything it builds `[verify] …` and
+                                touches nothing else — a device you paired is never
+                                selected, written to or deleted
 scripts/render-views.mjs        every pairing screen to a PNG, plus a contact sheet. Headless
                                 Chrome, the same rasteriser artwork/export-assets.py uses
+scripts/render-icons.mjs        every icon at the size the App Store draws it — 24px of ink in a
+                                40px circle (platform §10). The contact sheet that catches an icon
+                                too fine or too busy to read there
 scripts/pair-view-fixtures.mjs  the demo data those renders use, one entry per view
 settings/index.html             app settings page
 locales/en.json                 all user-facing strings

@@ -77,6 +77,36 @@ describe('release metadata', () => {
     assert.ok(entry.en!.trim().length > 0, `.homeychangelog.json ${version} is empty`);
   });
 
+  test('every Homey changelog entry is one plain paragraph', () => {
+    // The store drops this string into a bare <p> with no `white-space: pre-wrap`
+    // (unlike README.txt's container, which has it), so every newline collapses to
+    // a space and `**bold**` and `- ` bullets are shown literally. 0.5.0 shipped
+    // with Added/Changed/Fixed headings and thirteen bullets and rendered as one
+    // 1800-character run-on sentence with visible asterisks. Athom say the same
+    // thing about the listing text: "any Markdown format is not allowed".
+    //
+    // Every entry is checked, not just the current one: the store's "View
+    // changelog" popup shows all of them.
+    const changelog = readJson('.homeychangelog.json') as Record<string, { en?: string }>;
+
+    for (const [release, entry] of Object.entries(changelog)) {
+      const text = entry.en ?? '';
+
+      assert.doesNotMatch(
+        text, /\n/,
+        `.homeychangelog.json ${release}: a newline collapses to a space in the store`,
+      );
+      assert.doesNotMatch(
+        text, /\*\*|(?:^|\s)#/,
+        `.homeychangelog.json ${release}: markdown is rendered literally`,
+      );
+      assert.doesNotMatch(
+        text, /(?:^|\s)[-*] /,
+        `.homeychangelog.json ${release}: a bullet renders inline, mid-sentence`,
+      );
+    }
+  });
+
   test('CHANGELOG.md has an entry for this version', () => {
     const changelog = read('CHANGELOG.md');
 

@@ -1,12 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"
      fill="none" stroke="currentColor" stroke-width="7.3" stroke-linecap="round" stroke-linejoin="round"
      role="img" aria-label="Stopwatch">
-  <circle cx="256.0" cy="264.6" r="124.1"/>
-  <path d="M240.9 141.3 V 128.6 H 231.3 A 5.3 5.3 0 0 1 226.0 123.3 V 110.2 A 5.3 5.3 0 0 1 231.3 104.9 H 280.3 A 5.3 5.3 0 0 1 285.6 110.2 V 123.3 A 5.3 5.3 0 0 1 280.3 128.6 H 271.1 V 141.3"/>
-  <path d="M256.0 176.8 L256.0 164.5"/>
-  <path d="M343.8 264.6 L356.0 264.6"/>
-  <path d="M256.0 352.4 L256.0 364.6"/>
-  <path d="M168.2 264.6 L156.0 264.6"/>
-  <path d="M263.1 256.8 L315.2 200.1"/>
-  <circle cx="256.0" cy="264.6" r="10.5"/>
+  <!--
+    The four quarter-hour ticks and the stem above the face are gone, and the
+    face is bigger. At the 24px the App Store draws a driver icon into, a tick
+    is a third of a pixel and only adds grey around a shape that already reads.
+    See scripts/render-icons.mjs.
+  -->
+  <circle cx="256" cy="300" r="155"/>
+  <path d="M226 148 V128 H214 A8 8 0 0 1 206 120 V100 A8 8 0 0 1 214 92 H298 A8 8 0 0 1 306 100 V120 A8 8 0 0 1 298 128 H286 V148"/>
+  <path d="M256 300 L348 212"/>
+  <circle cx="256" cy="300" r="18"/>
 </svg>

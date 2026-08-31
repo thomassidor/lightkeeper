@@ -6,6 +6,60 @@ release in a few bullets and one line for each older one; this is where the deta
 Newest first. Pre-1.0, so there are no major bumps for breaking changes: a change that would break
 something says so in its own entry instead.
 
+## 0.5.1
+
+Nothing about how the app works changed. This is the App Store listing, which three separate things
+were getting wrong.
+
+Changed:
+
+- **The store description is a third of its old length and no longer opens with a backstory.** It
+  had grown to 562 words across six paragraphs, the first of which was about buying remotes from
+  IKEA. Athom's own guideline for the listing body is *"one to two paragraphs tops"*, and the store
+  clamps it to ten lines on desktop and five on mobile behind a "read more" — so everything past the
+  first paragraph was being read by almost nobody, and the first paragraph was not about the app. It
+  now says what the app does, that light controllers and schedules need a Personal API Key and the
+  two curve-driven device types do not, and that nothing leaves your Homey.
+- **The store tagline is a one-liner again.** It was *"Dozens of Flows, or one app. Point any remote
+  at any lights, put those lights on a timer, and let them follow the colour of the day"* — two
+  sentences, 133 characters, listing the same three jobs the description opens with, and leading on
+  a piece of Homey jargon. It is now *"Easy control for the lights you already have"*, which says
+  what the app is for and answers the first question a browser has: no, you do not need to buy
+  anything.
+- **The changelog is plain prose, every entry, not just this one.** `.homeychangelog.json` went into
+  the store as Markdown — `Added` / `Changed` / `Fixed` headings, thirteen bullets, `**bold**` — and
+  the store drops that string into a bare `<p>` with no `white-space: pre-wrap`. Every newline
+  collapsed to a space and the asterisks were shown literally, so 0.5.0's release notes rendered as
+  one 1800-character run-on sentence. (README.txt's container *does* have `pre-wrap`, which is why
+  the description's paragraphs survived and the changelog's did not — the difference is not
+  documented anywhere.) `test/unit/release-metadata.test.ts` now fails on a newline, a `**` or a
+  bullet in any entry.
+
+Fixed:
+
+- **The four device icons are legible at the size the App Store actually draws them.** They were
+  showing as near-empty circles on the listing. The cause was not the CDN, CORS or the mask
+  technique — the mask URL served `200 image/svg+xml` with the right bytes, inside markup identical
+  to what IKEA Trådfri and Philips Hue get. It was the drawing: a flow card's icon is a 40 px circle
+  with 8 px of padding, so a 960-unit canvas is rendered into **24 px**, where a 34-unit stroke is
+  0.85 px. Each of the four hung its subject inside a rounded-square frame that took two thirds of
+  the canvas, and the circadian icon carried seventeen separate strokes. Fewer and larger elements
+  fixed it, at the house stroke weight rather than a heavier one: the circadian icon is five
+  strokes now instead of seventeen, the curve five instead of thirteen, and the stopwatch four
+  instead of eight. The remote kept its five and was reproportioned instead — its old 0.34 aspect
+  made `mask-size: contain` fit it by height and leave it eight pixels wide. The app icon was
+  already fine and is unchanged. Recorded as `platform §10`.
+- **Two of the four say something different now**, which the size work exposed rather than caused.
+  The circadian icon was a bulb under an arc, which read at 24px and meant nothing; it is a rayed
+  sun on the horizon, which is what the device is about. The remote had a large circle over a small
+  one inside a rounded box, which is a woofer over a tweeter; it now sends a signal. Two arcs off
+  the top-right corner are the fix, and the reason is worth keeping: they sit OUTSIDE the
+  silhouette, so they survive the size that eats interior detail. Giving the dial a pointer and
+  the button a rocker split had fixed the speaker read at 144px and changed nothing at 24.
+- `npm run render:icons` is new: it draws every icon at 24, 34, 48 and 144 px of ink using
+  homey.app's own markup and CSS, which is the only way to see this before publishing. A contact
+  sheet, not a check — `test/unit/assets.test.ts` is still what an icon has to pass.
+
 ## 0.5.0
 
 Added:

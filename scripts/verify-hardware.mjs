@@ -19,11 +19,13 @@
  *                                                  restores it after. Needs --yes
  *   preview     — T21, T22, T27, T28               writes the curve to your lamps,
  *                                                  needs --yes
- *   teardown    — T47-T52                          DELETES every Lightkeeper
- *                                                  device. Needs --yes
+ *   teardown    — T47-T52                          DELETES the devices this pass
+ *                                                  built. Needs --yes
  *   pair        — T5, T6, T7, T12, T13, T19, T20, T26
  *                                                  BUILDS one of each device
- *                                                  type over the API. Needs --yes
+ *                                                  type over the API, its own
+ *                                                  even if you have some already.
+ *                                                  Needs --yes
  *   repair      — T46                              opens a repair session per
  *                                                  device, saves nothing. Needs --yes
  *   pairspike   — nothing; the one-off probe that proved pairing over the API
@@ -31,6 +33,31 @@
  *
  *   all         — the four read-only commands
  *   full        — the whole pass, in the plan's own order, ending in teardown
+ *
+ * IT ONLY EVER TOUCHES ITS OWN DEVICES. Every device this pass builds is named
+ * with a marker — see `MARKER` below, and the comment there for why the name and
+ * not a file on the laptop. Every command selects from the marked ones, and
+ * `teardown` deletes only those, re-checking the mark against the Homey
+ * immediately before each permanent delete. A controller, schedule, circadian or
+ * Curve light that YOU paired is never chosen, never written to and never
+ * deleted, so a `full` run can be done on the Homey you actually live with.
+ *
+ * WHAT IT STILL DOES TO YOUR HOMEY, because these cannot be scoped to a device:
+ *
+ * - `credential` removes the app's stored API key and puts it back, and there is
+ *   one key for the whole app. EVERY Flow-owning device on the Homey — yours
+ *   included — goes to `needs_credential` for up to a minute or so and then
+ *   recovers. Nothing is deleted; T38 asserts that, by Flow id. If the put-back
+ *   fails, the report says so and you paste a key in from app settings.
+ * - `restart` restarts the whole app. There is no per-device restart, so every
+ *   Lightkeeper device is briefly unavailable. That is also why T32 keeps
+ *   looking at all of them rather than only at ours.
+ * - The LAMPS are shared. `pickLights()` picks from your real lights; there are
+ *   no others. `preview`, `rejoin` and `schedule` write colour, switch lamps off
+ *   and on, and set values by hand — on lamps your own devices may also drive.
+ *   `HOMEY_TEST_ROOM` is the containment, and worth setting.
+ * - During a run there are TWO devices of each type, probably on the same
+ *   remote. Nothing here presses a remote, so this only shows if you do.
  *
  * WHAT IT DELIBERATELY DOES NOT COVER:
  *
@@ -671,6 +698,69 @@ async function lightkeeperDevices(api) {
 }
 
 /**
+ * The mark this pass puts on every device it builds, and the only thing that
+ * tells them from the ones the user paired themselves.
+ *
+ * The Homey is the state store. A device that exists carries its own
+ * provenance, on the machine that owns it, readable by a `schedule` run in a
+ * separate process an hour after the `pair` that built it — which a gitignored
+ * run-state file on one laptop is not, and which is a second source of truth
+ * that can disagree with the first in both directions.
+ *
+ * It is a PREFIX because T18 renames a schedule to "<name> (verify)" and back
+ * (commandSchedule, below): a suffix marker would be destroyed and restored by
+ * the very test that has to survive it.
+ *
+ * Losing the mark fails safe. Rename one of these in the Homey app and this
+ * pass stops touching it AND stops deleting it — which is what renaming a
+ * device means. The cost is that `pair` builds a duplicate next run, and the
+ * recovery is to delete the unmarked leftover by hand.
+ *
+ * A flag inside the device's `store` was considered as a second, rename-proof
+ * mark and declined: it is unverified whether the Web API returns `store` at
+ * all, and it would put a foreign key inside a plan blob the app migrates.
+ */
+const MARKER = '[verify]';
+
+/** @param {string} name */
+function markName(name) {
+  return `${MARKER} ${name}`;
+}
+
+/** @param {string} name */
+function isMarked(name) {
+  return String(name ?? '').trimStart().startsWith(MARKER);
+}
+
+/**
+ * Only the devices this pass built — on this run, or on an abandoned earlier
+ * one.
+ *
+ * @param {any} api
+ */
+async function ourDevices(api) {
+  return (await lightkeeperDevices(api)).filter(device => isMarked(device.name));
+}
+
+/**
+ * Their `data.id`s, which is what every diagnostics runtime is keyed by and what
+ * every generated Flow carries in `args.controller`.
+ *
+ * @param {any} api
+ * @returns {Promise<Set<string>>}
+ */
+async function ourDataIds(api) {
+  return new Set((await ourDevices(api)).map(device => device.dataId));
+}
+
+/**
+ * One sentence, so every command says the same thing when this pass has nothing
+ * of its own to work on and the report reads as one voice.
+ */
+const NOTHING_OF_OURS = 'run `pair --yes` first. A device you paired yourself is never '
+  + `mutated or deleted by this pass — it is not marked ${MARKER}`;
+
+/**
  * Every Flow that calls one of our bridge cards, with the device id it is
  * attributed to.
  *
@@ -742,9 +832,18 @@ async function capabilityValue(api, deviceId, capability) {
 async function commandSpike(api) {
   note(`Homey software version ${api.version ?? '(not reported)'}`);
 
+  /**
+   * Split in the first lines of the report, because it is the whole promise of
+   * this pass: these are the ones it built and will delete, and those are yours,
+   * which it does not touch.
+   */
   const devices = await lightkeeperDevices(api);
-  report('-', 'INFO', `${devices.length} Lightkeeper device(s): `
-    + (devices.map(d => `${d.driver}/${d.name}`).join(', ') || 'none'));
+  const mine = devices.filter(d => isMarked(d.name));
+  const theirs = devices.filter(d => !isMarked(d.name));
+  report('-', 'INFO', `${devices.length} Lightkeeper device(s): ${mine.length} built by this `
+    + `pass (${mine.map(d => `${d.driver}/${d.name}`).join(', ') || 'none'}); `
+    + `${theirs.length} of your own, which this pass leaves alone`
+    + (theirs.length ? ` (${theirs.map(d => `${d.driver}/${d.name}`).join(', ')})` : ''));
 
   /** @type {any} */
   let app;
@@ -1019,10 +1118,18 @@ function describeKeys(value) {
  * @param {any} api
  */
 async function commandFlows(api) {
-  const devices = await lightkeeperDevices(api);
+  /**
+   * `all` for the census, `devices` for every assertion. A user's controller
+   * with no Flows yet is their business; ours having none is a failure.
+   */
+  const all = await lightkeeperDevices(api);
+  const devices = all.filter(d => isMarked(d.name));
   const flows = await managedFlows(api);
 
-  report('T2', 'INFO', `${flows.length} generated Flow(s) in total`);
+  const ourIds = new Set(devices.map(d => d.dataId));
+  report('T2', 'INFO', `${flows.length} generated Flow(s) in total, `
+    + `${flows.filter(f => ourIds.has(f.ownerDataId)).length} of them belonging to devices `
+    + 'this pass built');
 
   /** @type {Map<string, typeof flows>} */
   const byOwner = new Map();
@@ -1036,7 +1143,7 @@ async function commandFlows(api) {
     const line = driver === 'controller' ? 'T8' : 'T16';
     const owned = devices.filter(d => d.driver === driver);
     if (owned.length === 0) {
-      report(line, 'SKIPPED', `no ${driver} device paired`);
+      report(line, 'SKIPPED', `no ${driver} device built by this pass — ${NOTHING_OF_OURS}`);
       continue;
     }
     for (const device of owned) {
@@ -1064,7 +1171,7 @@ async function commandFlows(api) {
     const line = driver === 'circadian' ? 'T23' : 'T30';
     const owned = devices.filter(d => d.driver === driver);
     if (owned.length === 0) {
-      report(line, 'SKIPPED', `no ${driver} device paired`);
+      report(line, 'SKIPPED', `no ${driver} device built by this pass — ${NOTHING_OF_OURS}`);
       continue;
     }
     const offenders = owned.filter(d => (byOwner.get(d.dataId) ?? []).length > 0);
@@ -1081,14 +1188,16 @@ async function commandFlows(api) {
 
   // Not a numbered line, but the same read answers it: a Flow whose owner is not
   // a device on this Homey is exactly what the orphan sweep is for.
-  const liveIds = new Set(devices.map(d => d.dataId));
+  // `all`, not `devices`: a Flow owned by a device the USER paired is not an
+  // orphan, and reporting it as sweepable would be an invitation to delete it.
+  const liveIds = new Set(all.map(d => d.dataId));
   const orphaned = flows.filter(f => !liveIds.has(f.ownerDataId));
   if (orphaned.length > 0) {
     report('-', 'INFO', `${orphaned.length} Flow(s) attributed to a device that is not `
       + 'installed — app settings offers to sweep these');
   }
 
-  const unavailable = devices.filter(d => !d.available);
+  const unavailable = all.filter(d => !d.available);
   if (unavailable.length > 0) {
     report('-', 'INFO', `unavailable device(s): ${unavailable.map(d => d.name).join(', ')}`);
   }
@@ -1214,6 +1323,14 @@ async function commandCredential(api, key) {
   const ownersBefore = flowOwners(before).map(o => `${o.name ?? o.sourceName ?? o.id}=${o.state}`);
   note(`Flow-owning devices before: ${ownersBefore.join(', ') || 'none'}`);
 
+  /**
+   * The stored key is app-wide, so T36/T38/T40 below deliberately keep looking
+   * at EVERY Flow-owning device: the user's genuinely do degrade and recover
+   * with ours, and asserting over all of them is the honest test as well as a
+   * read-only one. Only the Flow that gets FIRED has to be one of ours.
+   */
+  const ourControllers = await ourDataIds(api);
+
   // T36 — a bad key must not unseat the working one. This is the regression that
   // made every device unavailable on a typo.
   /** @type {any} */
@@ -1233,8 +1350,8 @@ async function commandCredential(api, key) {
    * is honest HERE, unlike at T9: the question this line asks is whether the
    * path from a Flow to a light survived a bad key, not whether the radio works.
    */
-  const afterBadKey = await fireBridgeEvent(api, app);
-  report('T37', afterBadKey.ok ? 'OK' : 'FAILED',
+  const afterBadKey = await fireBridgeEvent(api, app, ourControllers);
+  report('T37', afterBadKey.skipped ? 'SKIPPED' : afterBadKey.ok ? 'OK' : 'FAILED',
     `with nonsense rejected, the generated Flow still fires: ${afterBadKey.detail}`);
 
   // T38 — removing the key must degrade the devices and delete nothing.
@@ -1253,10 +1370,22 @@ async function commandCredential(api, key) {
       + flowOwners(s).map(o => `${o.name ?? o.sourceName ?? o.id}=${o.state}`).join(', '));
   }
 
+  /**
+   * Compared BY FLOW ID, and failing only on a Flow that has GONE.
+   *
+   * A count cannot tell "the user's controller reconciled and added one" from
+   * "the key removal deleted one of ours", and with the user's own devices left
+   * standing throughout a run, the first happens. A Flow arriving is normal; a
+   * Flow vanishing is the bug this line exists to catch.
+   */
   const flowsAfterRemoval = await managedFlows(api);
-  report('T38', flowsAfterRemoval.length === flowsBefore.length ? 'OK' : 'FAILED',
+  const lostOnRemoval = flowsBefore.filter(f => !flowsAfterRemoval.some(n => n.flowId === f.flowId));
+  report('T38', lostOnRemoval.length === 0 ? 'OK' : 'FAILED',
     `${flowsAfterRemoval.length} generated Flow(s) after removal, was ${flowsBefore.length} — `
-    + 'losing the key must not delete anything');
+    + 'losing the key must not delete anything'
+    + (lostOnRemoval.length
+      ? `, but ${lostOnRemoval.length} are GONE: ${lostOnRemoval.map(f => f.name).join(', ')}`
+      : ''));
 
   /**
    * T39 — with NO key at all, the Flows are still there and still fire.
@@ -1265,8 +1394,8 @@ async function commandCredential(api, key) {
    * does not stop the lights working. A user whose key expired keeps their
    * remotes until they get round to pasting a new one in.
    */
-  const withoutKey = await fireBridgeEvent(api, app);
-  report('T39', withoutKey.ok ? 'OK' : 'FAILED',
+  const withoutKey = await fireBridgeEvent(api, app, ourControllers);
+  report('T39', withoutKey.skipped ? 'SKIPPED' : withoutKey.ok ? 'OK' : 'FAILED',
     `with no key stored at all, the generated Flow still fires: ${withoutKey.detail}`);
 
   // T41 — neither light-driving device type holds a key or has a
@@ -1305,9 +1434,12 @@ async function commandCredential(api, key) {
       + ' — recoverFromCredentialFailure is what should have cleared this');
   }
 
+  // By id, for the same reason as T38 above.
   const flowsAtEnd = await managedFlows(api);
-  report('-', flowsAtEnd.length === flowsBefore.length ? 'INFO' : 'FAILED',
-    `${flowsAtEnd.length} generated Flow(s) at the end, was ${flowsBefore.length}`);
+  const lost = flowsBefore.filter(f => !flowsAtEnd.some(n => n.flowId === f.flowId));
+  report('-', lost.length === 0 ? 'INFO' : 'FAILED',
+    `${flowsAtEnd.length} generated Flow(s) at the end, was ${flowsBefore.length}`
+    + (lost.length ? ` — ${lost.length} of them are GONE: ${lost.map(f => f.name).join(', ')}` : ''));
 }
 
 // ------------------------------------------------------------------- rejoin
@@ -1344,9 +1476,13 @@ async function commandRejoin(api) {
     return /** @type {any[]} */ (diagnostics?.circadian ?? []);
   };
 
-  const all = await curves();
+  // Ours only: this command switches a lamp off and on and sets a colour on it
+  // by hand, and the lamps behind somebody else's circadian light are theirs.
+  const ours = await ourDataIds(api);
+  const all = (await curves()).filter(runtime => ours.has(runtimeId(runtime)));
   if (all.length === 0) {
-    report('T24', 'SKIPPED', 'no circadian or Curve light is running');
+    report('T24', 'SKIPPED', 'no circadian or Curve light built by this pass is running — '
+      + NOTHING_OF_OURS);
     return;
   }
 
@@ -1675,7 +1811,14 @@ async function commandRestart(api) {
     report('T32', 'SKIPPED', 'no Lightkeeper device is paired, so a restart proves nothing');
     return;
   }
-  note(`${before.length} device(s) before the restart: ${before.map(d => d.name).join(', ')}`);
+  /**
+   * Deliberately the FULL list, unlike every other command here. A restart is
+   * app-wide — there is no per-device restart — so the user's devices go down
+   * with ours whatever this pass does, and checking that theirs came back too is
+   * free, read-only and a stronger test than checking only ours.
+   */
+  note(`${before.length} device(s) before the restart: ${before.map(d => d.name).join(', ')}`
+    + ` (${before.filter(d => isMarked(d.name)).length} built by this pass)`);
 
   try {
     await withTimeout(api.apps.restartApp({ id: APP_ID }), 60_000, 'restartApp');
@@ -1741,9 +1884,15 @@ async function commandRestart(api) {
   // rather than re-derived — the same rule `rejoin` follows.
   /** @type {any} */
   const diagnostics = await app.get('/diagnostics').catch(() => null);
-  const curves = /** @type {any[]} */ (diagnostics?.circadian ?? []);
+  // Asserted over ours alone. A curve of the user's that was already in
+  // needs_repair before the restart would otherwise report T34 FAILED against
+  // the app for a configuration this pass never looked at.
+  const ourCurves = await ourDataIds(api);
+  const curves = /** @type {any[]} */ (diagnostics?.circadian ?? [])
+    .filter(runtime => ourCurves.has(runtimeId(runtime)));
   if (curves.length === 0) {
-    report('T34', 'SKIPPED', 'no circadian or Curve light is running');
+    report('T34', 'SKIPPED', 'no circadian or Curve light built by this pass is running — '
+      + NOTHING_OF_OURS);
     return;
   }
 
@@ -1753,7 +1902,8 @@ async function commandRestart(api) {
 
   /** @type {any} */
   const after = await app.get('/diagnostics').catch(() => null);
-  const back2 = /** @type {any[]} */ (after?.circadian ?? []);
+  const back2 = /** @type {any[]} */ (after?.circadian ?? [])
+    .filter((/** @type {any} */ runtime) => ourCurves.has(runtimeId(runtime)));
   const broken = back2.filter(c => c.state !== 'ready' && c.enabled !== false);
   const withoutValue = back2.filter(c => c.enabled !== false && !c.now);
 
@@ -1781,19 +1931,28 @@ async function commandRestart(api) {
  * The card is ENUMERATED and its uri echoed back, never constructed (platform
  * §3): a built uri returns a 404 that reads like a permission refusal.
  *
+ * `skipped` is a third outcome rather than a flavour of `ok: false`, and it
+ * exists because of the device split: on a Homey where this pass could not build
+ * a controller, "there is nothing of ours to fire" is not the app failing, and
+ * reporting T33/T37/T39 as FAILED would be exactly the kind of lie the rest of
+ * this file goes out of its way to avoid.
+ *
  * @param {any} api
  * @param {any} app
- * @returns {Promise<{ ok: boolean, detail: string }>}
+ * @param {Set<string>} ours the data.ids of the controllers this pass built
+ * @returns {Promise<{ ok: boolean, skipped?: boolean, detail: string }>}
  */
-async function fireBridgeEvent(api, app) {
+async function fireBridgeEvent(api, app, ours) {
   /** @type {any} */
   const diagnostics = await app.get('/diagnostics').catch(() => null);
   const controllers = /** @type {any[]} */ (diagnostics?.controllers ?? []);
 
-  const controller = controllers.find(c =>
-    /** @type {any[]} */ (c?.mappings ?? []).some(m => m?.inputKey));
+  const controller = controllers
+    .filter(c => ours.has(runtimeId(c)))
+    .find(c => /** @type {any[]} */ (c?.mappings ?? []).some(m => m?.inputKey));
   if (!controller) {
-    return { ok: false, detail: 'no controller with a mapped gesture is running' };
+    return { ok: false, skipped: true,
+      detail: `no controller built by this pass has a mapped gesture — ${NOTHING_OF_OURS}` };
   }
   const mapping = /** @type {any[]} */ (controller.mappings).find(m => m?.inputKey);
 
@@ -1886,8 +2045,8 @@ async function commandBridge(api) {
     return;
   }
 
-  const result = await fireBridgeEvent(api, app);
-  report('T33', result.ok ? 'OK' : 'FAILED', result.detail);
+  const result = await fireBridgeEvent(api, app, await ourDataIds(api));
+  report('T33', result.skipped ? 'SKIPPED' : result.ok ? 'OK' : 'FAILED', result.detail);
   report('-', 'INFO', 'this proves dispatch, mapping and the write path — NOT the radio. '
     + 'T9-T11 still need a finger on the remote.');
 }
@@ -1915,14 +2074,24 @@ async function commandSchedule(api) {
 
   /** @type {any} */
   const diagnostics = await app.get('/diagnostics');
-  const schedule = /** @type {any[]} */ (diagnostics?.schedules ?? [])[0];
+  /**
+   * Ours, not merely the first one running.
+   *
+   * This command replaces a schedule's windows, renames its device and fires
+   * both boundaries at real lamps before putting everything back. A schedule's
+   * windows are somebody's real evening, so it no longer retimes one it did not
+   * create.
+   */
+  const ours = await ourDataIds(api);
+  const schedule = /** @type {any[]} */ (diagnostics?.schedules ?? [])
+    .find(entry => ours.has(runtimeId(entry)));
   if (!schedule) {
-    report('T13', 'SKIPPED', 'no schedule device is running');
+    report('T13', 'SKIPPED', `no schedule device built by this pass is running — ${NOTHING_OF_OURS}`);
     return;
   }
 
   const id = runtimeId(schedule);
-  const devices = await lightkeeperDevices(api);
+  const devices = await ourDevices(api);
   const device = devices.find(d => d.dataId === id);
   if (!device) {
     report('T13', 'FAILED', `schedule "${schedule.name}" is running but no device carries its id`);
@@ -2182,9 +2351,14 @@ async function commandPreview(api) {
 
   /** @type {any} */
   const diagnostics = await app.get('/diagnostics');
-  const curves = /** @type {any[]} */ (diagnostics?.circadian ?? []);
+  // Ours only: this writes the curve to whatever lamps the runtime drives, and
+  // the T22 probe switches one of them off and on.
+  const ours = await ourDataIds(api);
+  const curves = /** @type {any[]} */ (diagnostics?.circadian ?? [])
+    .filter(runtime => ours.has(runtimeId(runtime)));
   if (curves.length === 0) {
-    report('T21', 'SKIPPED', 'no circadian or Curve light is running');
+    report('T21', 'SKIPPED', 'no circadian or Curve light built by this pass is running — '
+      + NOTHING_OF_OURS);
     return;
   }
 
@@ -2377,13 +2551,17 @@ async function commandPreview(api) {
 // ----------------------------------------------------------------- teardown
 
 /**
- * Deleting them again, and checking that only the right Flows go with
- * them: T47 to T52.
+ * Deleting the devices this pass built, and checking that only the right Flows
+ * go with them: T47 to T52.
  *
  * The most destructive thing in this file, and nothing it deletes comes back.
- * Three guards, all of them load-bearing:
+ * Four guards, all of them load-bearing:
  *
- * - it will only ever delete a device whose `driverId` names THIS app;
+ * - it will only ever delete a device whose `driverId` names THIS app AND whose
+ *   name still carries the mark, re-read from the Homey immediately before the
+ *   delete. A device the user paired is not in the list, and could not survive
+ *   the re-check if it somehow were;
+ * - it prints what it is LEAVING ALONE as well as what it is deleting;
  * - it prints the whole list and the Flow total before the first delete;
  * - it is never in `all`, and never runs without `--yes`.
  *
@@ -2391,39 +2569,63 @@ async function commandPreview(api) {
  * types go first BECAUSE they own no Flows, so the total must not move — which
  * is only a meaningful check while there are still Flows for it to fail to move.
  *
+ * Every Flow total below is OUR total. The user's own Flow-owning devices stay
+ * live throughout and reconcile on their own schedule, so a Homey-wide count is
+ * no longer a number this can reason about. What the wider set is good for is
+ * the opposite assertion, made by id: nothing of theirs went with ours.
+ *
  * @param {any} api
  */
 async function commandTeardown(api) {
-  const devices = await lightkeeperDevices(api);
+  const all = await lightkeeperDevices(api);
+  const devices = all.filter(device => isMarked(device.name));
+  const theirs = all.filter(device => !isMarked(device.name));
+
   if (devices.length === 0) {
-    report('T47', 'SKIPPED', 'no Lightkeeper device is paired');
+    report('T47', 'SKIPPED', `no ${MARKER} device is paired — this pass built nothing to delete`
+      + (theirs.length
+        ? `; the ${theirs.length} device(s) you paired yourself are, as always, left alone`
+        : ''));
     return;
   }
 
   const flowsAtStart = await managedFlows(api);
+  const ourIds = new Set(devices.map(device => device.dataId));
+  const installed = new Set(all.map(device => device.dataId));
+
+  /** The only Flows this run may account for: the ones its own devices own. */
+  const ourFlowsAtStart = flowsAtStart.filter(flow => ourIds.has(flow.ownerDataId));
 
   /**
-   * Flows that were ALREADY orphaned when this started.
+   * Everything else, BY ID rather than by count.
    *
-   * They belong to a device deleted before this run — a half-built one from an
-   * earlier attempt, say — so nothing here can be expected to remove them:
-   * teardown deletes only what it can attribute to the devices IT deleted, and
-   * the app's own sweep refuses to touch anything while no Flow-owning device is
-   * live, which by the end is the case by construction.
-   *
-   * Without this baseline the final check demands zero and fails on somebody
-   * else's litter, which reads as "teardown left Flows behind" — the exact
-   * accusation the check exists to make truthfully.
+   * A count delta cannot tell "the user's controller reconciled and added one"
+   * from "we deleted one of theirs". An id set can: nothing below may remove a
+   * Flow whose id is in here, while a Flow ARRIVING mid-teardown is normal and
+   * must not fail a line.
    */
-  const live = new Set(devices.map(device => device.dataId));
-  const strays = flowsAtStart.filter(flow => !live.has(flow.ownerDataId));
+  const foreignAtStart = new Set(
+    flowsAtStart.filter(flow => !ourIds.has(flow.ownerDataId)).map(flow => flow.flowId));
 
-  report('T47', 'INFO', `${flowsAtStart.length} generated Flow(s) before any deletion`
+  /**
+   * Flows that already belonged to no installed device — an abandoned run's
+   * litter. Still reported, and still the sweep's job, but no longer
+   * load-bearing: T52 is now stated over the devices this run actually deleted,
+   * so a stray and a live user Flow are both simply "not ours" and neither needs
+   * a baseline to be excused.
+   */
+  const strays = flowsAtStart.filter(flow => !installed.has(flow.ownerDataId));
+
+  report('T47', 'INFO', `${flowsAtStart.length} generated Flow(s) before any deletion, `
+    + `${ourFlowsAtStart.length} of them belonging to devices this pass built`
     + (strays.length
-      ? `, of which ${strays.length} already belonged to no installed device`
+      ? `; ${strays.length} already belonged to no installed device`
       : ''));
   note('about to DELETE, permanently:');
   for (const device of devices) note(`  ${device.driver}/${device.name} (${device.dataId})`);
+  if (theirs.length > 0) {
+    note(`leaving alone, untouched: ${theirs.map(d => `${d.driver}/${d.name}`).join(', ')}`);
+  }
 
   /** The plan's order: the two that own no Flows first. */
   const ORDER = [
@@ -2433,31 +2635,38 @@ async function commandTeardown(api) {
     { driver: 'controller', line: 'T51', ownsFlows: true },
   ];
 
-  let previous = flowsAtStart.length;
+  let previous = ourFlowsAtStart.length;
+  /** The ids this run actually deleted, which is what T52 is stated over. */
+  /** @type {Set<string>} */
+  const deleted = new Set();
 
   for (const step of ORDER) {
     const mine = devices.filter(d => d.driver === step.driver);
     if (mine.length === 0) {
-      report(step.line, 'SKIPPED', `no ${step.driver} device to delete`);
+      report(step.line, 'SKIPPED', `no ${step.driver} device built by this pass to delete`);
       continue;
     }
 
     for (const device of mine) {
-      const ownedBefore = flowsAtStart.filter(f => f.ownerDataId === device.dataId).length;
+      const ownedBefore = ourFlowsAtStart.filter(f => f.ownerDataId === device.dataId).length;
 
       /**
        * Re-checked immediately before the delete, against the Homey rather than
-       * against the list read at the top.
+       * against the list read at the top, and checked for BOTH properties: it is
+       * one of this app's devices, and it still carries this pass's mark.
        *
-       * `lightkeeperDevices()` already filters on the app id, so this can only
-       * fire if something has gone wrong — which is exactly when it matters. A
-       * permanent delete of somebody else's device is not a failure worth
-       * discovering from the report afterwards.
+       * The list above is seconds old, the delete is permanent, and the device
+       * on the other side of a mistake here may be the only controller in
+       * somebody's house. A rename that lands between the two reads takes the
+       * device out of this pass's reach, which is the safe direction.
        */
       const live = await api.devices.getDevice({ id: device.homeyId }).catch(() => null);
-      if (!live || !String(live?.driverId ?? '').includes(APP_ID)) {
-        report(step.line, 'FAILED', `refusing to delete ${device.homeyId}: it is not a `
-          + `Lightkeeper device (driver "${live?.driverId ?? 'gone'}")`);
+      if (!live
+        || !String(live?.driverId ?? '').includes(APP_ID)
+        || !isMarked(String(live?.name ?? ''))) {
+        report(step.line, 'FAILED', `refusing to delete ${device.homeyId}: it is not a device `
+          + `this pass created (driver "${live?.driverId ?? 'gone'}", `
+          + `name "${live?.name ?? 'gone'}")`);
         continue;
       }
 
@@ -2468,57 +2677,93 @@ async function commandTeardown(api) {
           + messageOf(error));
         continue;
       }
+      deleted.add(device.dataId);
 
       // Deletion cleans Flows up asynchronously, so this waits for the count to
       // settle rather than reading it immediately.
       const expected = step.ownsFlows ? previous - ownedBefore : previous;
       const settled = await waitFor(async () => {
         const now = await managedFlows(api);
-        return now.length === expected ? now : null;
-      }, { timeoutMs: 60_000, everyMs: 3_000, what: `the Flow total to reach ${expected}` });
+        return now.filter(f => ourIds.has(f.ownerDataId)).length === expected ? now : null;
+      }, { timeoutMs: 60_000, everyMs: 3_000, what: `our Flow total to reach ${expected}` });
 
       const now = settled ?? await managedFlows(api);
+      const mineNow = now.filter(f => ourIds.has(f.ownerDataId));
+
+      /** Nothing of anybody else's may have gone with it. */
+      const collateral = [...foreignAtStart].filter(id => !now.some(f => f.flowId === id));
+      if (collateral.length > 0) {
+        report(step.line, 'FAILED', `deleting ${step.driver} "${device.name}" also removed `
+          + `${collateral.length} Flow(s) belonging to a device this pass did not create`);
+      }
 
       if (step.ownsFlows) {
         // Only ITS Flows, and nothing else's.
-        const survivors = now.filter(f => f.ownerDataId === device.dataId);
-        report(step.line, now.length === expected && survivors.length === 0 ? 'OK' : 'FAILED',
-          `deleted ${step.driver} "${device.name}": ${previous} → ${now.length} Flow(s) `
-          + `(expected ${expected}, it owned ${ownedBefore})`
+        const survivors = mineNow.filter(f => f.ownerDataId === device.dataId);
+        report(step.line,
+          mineNow.length === expected && survivors.length === 0 && collateral.length === 0
+            ? 'OK' : 'FAILED',
+          `deleted ${step.driver} "${device.name}": ${previous} → ${mineNow.length} of our `
+          + `Flow(s) (expected ${expected}, it owned ${ownedBefore})`
           + (survivors.length ? `, ${survivors.length} of its own left behind` : ''));
       } else {
         // The whole point of these two device types: nothing appears, nothing
         // disappears (platform §12).
-        report(step.line, now.length === previous ? 'OK' : 'FAILED',
-          `deleted ${step.driver} "${device.name}": ${previous} → ${now.length} Flow(s) — `
-          + (now.length === previous
+        report(step.line,
+          mineNow.length === previous && collateral.length === 0 ? 'OK' : 'FAILED',
+          `deleted ${step.driver} "${device.name}": ${previous} → ${mineNow.length} of our `
+          + 'Flow(s) — '
+          + (mineNow.length === previous
             ? 'unchanged, as a device that generates none should be'
             : 'THE TOTAL MOVED, and this device type owns no Flows'));
       }
 
-      previous = now.length;
+      previous = mineNow.length;
     }
   }
 
-  // T52: everything this run could attribute is gone.
+  /**
+   * T52, stated over the devices this run actually deleted.
+   *
+   * Not "everything except a pre-existing-orphan baseline is gone", which only
+   * made sense while teardown emptied the Homey: the user's own live Flows are
+   * now legitimately in the total, and demanding zero would accuse this run of
+   * leaving behind Flows it must never have touched in the first place.
+   */
   const atEnd = await managedFlows(api);
-  const ours = atEnd.filter(flow => !strays.some(stray => stray.flowId === flow.flowId));
+  const left = atEnd.filter(flow => deleted.has(flow.ownerDataId));
+  const collateral = [...foreignAtStart].filter(id => !atEnd.some(f => f.flowId === id));
 
-  report('T52', ours.length === 0 ? 'OK' : 'FAILED',
-    ours.length === 0
-      ? `every Flow belonging to a deleted device is gone`
+  report('T52', left.length === 0 ? 'OK' : 'FAILED',
+    left.length === 0
+      ? 'every Flow belonging to a device this run deleted is gone'
         + (strays.length
           ? `; ${strays.length} pre-existing orphan(s) remain, which are the sweep's job`
           : '')
-      : `${ours.length} Flow(s) left that this run should have removed: `
-        + ours.map(f => f.name).join(', '));
+      : `${left.length} Flow(s) left that this run should have removed: `
+        + left.map(f => f.name).join(', '));
+
+  report('T52', collateral.length === 0 ? 'OK' : 'FAILED',
+    collateral.length === 0
+      ? `${foreignAtStart.size} Flow(s) belonging to devices this pass did not create are all `
+        + 'still there'
+      : `${collateral.length} Flow(s) belonging to a device this pass did not create are GONE`);
 
   try {
     const app = await appApi(api);
     /** @type {any} */
     const orphans = await app.get('/orphans');
-    report('T52', (orphans?.total ?? 0) === 0 ? 'OK' : 'INFO',
-      `the app reports ${orphans?.total} generated Flow(s), ${orphans?.orphans} orphaned`
+    const orphanedNow = orphans?.orphans ?? 0;
+    /**
+     * A DELTA, not an absolute. With the user's own Flow-owning devices still
+     * live, a non-zero total is a correct end state; what would be wrong is this
+     * run having MADE orphans. `refused` means nothing was live to judge
+     * against, so the number is not trustworthy and is reported rather than
+     * asserted on.
+     */
+    report('T52', !orphans?.refused && orphanedNow > strays.length ? 'FAILED' : 'INFO',
+      `the app reports ${orphans?.total} generated Flow(s), ${orphanedNow} orphaned `
+      + `(${strays.length} were already orphaned before this teardown)`
       + (orphans?.refused ? ` (refused: ${orphans.refused})` : ''));
   } catch (error) {
     report('T52', 'SKIPPED', `could not read /orphans: ${messageOf(error)}`);
@@ -2585,7 +2830,13 @@ async function commandPair(api, room) {
     return;
   }
 
-  const existing = await lightkeeperDevices(api);
+  /**
+   * Only the devices this pass built, so a controller the USER paired is not
+   * read as "already done". It is not, for the purposes of this pass: every
+   * command below refuses to touch it, so a run that skipped on the strength of
+   * it would report SKIPPED all the way down and prove nothing.
+   */
+  const existing = await ourDevices(api);
   const lights = await pickLights(session, room);
   if (!lights) return;
 
@@ -2598,9 +2849,11 @@ async function commandPair(api, room) {
   ];
 
   for (const step of PLAN) {
-    if (existing.some(d => d.driver === step.driver)) {
-      report(step.line, 'SKIPPED', `a ${step.driver} device is already paired — `
-        + 'delete it first if you want this to build one');
+    const reusable = existing.find(d => d.driver === step.driver);
+    if (reusable) {
+      report(step.line, 'SKIPPED', `a ${step.driver} from an earlier run is still here `
+        + `("${reusable.name}") — reusing it rather than building a second. `
+        + 'Run `teardown --yes` first if you want it rebuilt');
       continue;
     }
 
@@ -2700,10 +2953,12 @@ async function commandPair(api, room) {
   /**
    * Clear orphaned Flows from earlier runs, now that devices are live again.
    *
-   * `teardown` cannot: by the time it finishes there is no Flow-owning device
-   * left, and the sweep refuses in that state by design — every managed Flow
-   * would look orphaned. So the litter from one run survives into the next, and
-   * it is not inert. This script names a schedule after the lamp it picked, so
+   * `teardown` cannot be relied on to: whether anything Flow-owning is left
+   * when it finishes now depends on whether the USER happens to own a controller
+   * or a schedule, and the sweep refuses when nothing is live by design — every
+   * managed Flow would look orphaned. A sweep that works on one Homey and
+   * refuses on the next is not a sweep. So the litter from one run survives into
+   * the next, and it is not inert. This script names a schedule after the lamp it picked, so
    * a dead schedule's Flows land in the folder the NEW schedule wants, and
    * `renameIfOurs` then correctly declines to rename a folder holding another
    * device's Flows. A rename check failed for exactly that reason.
@@ -3120,7 +3375,17 @@ async function buildCurve(session, open, lights) {
 }
 
 /**
- * The device DTO out of a `save`, or null with a reason.
+ * The device DTO out of a `save`, marked as ours, or null with a reason.
+ *
+ * The one function every device this script creates passes through, which is why
+ * the mark goes on HERE rather than in each of the four builders: a fifth driver
+ * cannot be added without inheriting it.
+ *
+ * The name is PREFIXED rather than replaced, and the driver is still asked to
+ * derive one (the builders all send an empty name to `save`). Sending a name in
+ * would work — every driver does `name || await this.deriveName(state)` — but it
+ * would quietly drop lib/pairing/derive-name.ts from what this pass exercises on
+ * hardware, which is coverage currently had for free.
  *
  * @param {any} saved
  */
@@ -3130,7 +3395,9 @@ function dtoFrom(saved) {
     report('-', 'FAILED', `save returned no device: ${JSON.stringify(saved).slice(0, 200)}`);
     return null;
   }
-  return saved.device;
+  const derived = String(saved.device.name ?? '');
+  note(`the driver derived the name "${derived}"; pairing it as "${markName(derived)}"`);
+  return { ...saved.device, name: markName(derived) };
 }
 
 // ------------------------------------------------------------------- repair
@@ -3152,9 +3419,16 @@ async function commandRepair(api) {
   const session = await pairSessions(api);
   if (!session) return;
 
-  const devices = await lightkeeperDevices(api);
+  /**
+   * Ours only, for two reasons. A repair session on somebody's real device is a
+   * write surface opened on a configuration this pass did not make — and the
+   * `seeded()` predicates below demand at least one rule and at least one
+   * window, so a user's legitimately empty controller would report T46 FAILED
+   * against the app for a configuration that is perfectly valid.
+   */
+  const devices = await ourDevices(api);
   if (devices.length === 0) {
-    report('T46', 'SKIPPED', 'no Lightkeeper device to repair');
+    report('T46', 'SKIPPED', `no device built by this pass to repair — ${NOTHING_OF_OURS}`);
     return;
   }
 
@@ -3351,7 +3625,7 @@ async function commandPairSpike(api) {
       `setEnds round-tripped, corrected ${set?.corrected?.length ?? 0} field(s)`);
 
     /** @type {any} */
-    const saved = await emit('save', 'Lightkeeper pair spike');
+    const saved = await emit('save', markName('pair spike'));
     const dto = saved?.device;
     if (!saved?.created || !dto?.data?.id) {
       report('-', 'FAILED', `save did not return a device DTO: ${JSON.stringify(saved).slice(0, 200)}`);
@@ -3464,13 +3738,15 @@ async function main() {
       credential: 'credential removes the stored API key and puts it back',
       rejoin: 'rejoin switches one of your lamps off and on, and sets a colour on it by hand',
       pairspike: 'pairspike creates a throwaway circadian light and deletes it again',
-      pair: 'pair CREATES one of each Lightkeeper device type on your Homey',
+      pair: 'pair CREATES one of each Lightkeeper device type on your Homey, its own even if '
+        + 'you already have some',
       repair: 'repair opens a repair session on each device and reads its screens. Saves nothing',
       restart: 'restart restarts the Lightkeeper app on your Homey',
       bridge: 'bridge runs one of your generated Flows, which switches lights',
       schedule: 'schedule replaces a schedule\'s windows and fires them (both are restored)',
       preview: 'preview writes the current curve to your lamps, and probes one that is off',
-      teardown: 'teardown DELETES every Lightkeeper device on this Homey. Nothing comes back',
+      teardown: 'teardown DELETES the devices this pass built and nothing else. '
+        + 'Nothing it deletes comes back',
     };
     const effects = needsConfirmation.map(c => EFFECTS[c] ?? `${c} changes something`);
     console.error(`This changes your Homey: ${effects.join('; ')}. Re-run with --yes.`);

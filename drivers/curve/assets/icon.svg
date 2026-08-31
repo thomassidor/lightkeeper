@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 960" width="960" height="960">
   <title>Curve light</title>
-  <desc>A four-point curve over a row of hour ticks.</desc>
+  <desc>A three-point curve above a baseline.</desc>
 
   <!-- GENERATED from artwork/masters/curve-icon-master.svg by
        artwork/export-assets.py. Edit the master, then re-run the script;
@@ -13,26 +13,16 @@
 
        The transform centres the master's drawing and scales it to fill the
        canvas, which guideline 1.5 asks for; stroke widths are pre-divided by the
-       scale so they render at 34 units on this 960 canvas. -->
-  <g transform="translate(-294.3 -294.3) scale(3.0247)" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="11.24">
-    <g stroke-width="11.24">
-    <rect x="113.1" y="113.1" width="285.8" height="285.8" rx="35.3"/>
-    <path d="M159.5 277.3 C178.1 238.1 179.7 184.2 216.1 168.6 M234.6 167.9 C266.1 180.0 263.9 234.4 299.6 232.2 M318.4 232.8 C336.1 240.2 344.7 263.7 349.0 277.1"/>
+       scale so they render at 40 units on this 960 canvas. -->
+  <g transform="translate(-60.9 -58.8) scale(2.1129)" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="18.93">
+    <g stroke-width="18.93">
+    <path d="M80 330 C150 330 170 110 256 110 C342 110 362 260 432 260"/>
+    <path d="M62 430 L450 430"/>
     </g>
-    <g stroke-width="11.24">
-    <circle cx="155.0" cy="285.8" r="9.0"/>
-    <circle cx="225.3" cy="165.7" r="9.0"/>
-    <circle cx="309.0" cy="230.6" r="9.0"/>
-    <circle cx="352.9" cy="285.8" r="9.0"/>
-    </g>
-    <g stroke-width="11.24">
-    <path d="M140.2 346.6 L140.2 356.4"/>
-    <path d="M178.8 346.6 L178.8 356.4"/>
-    <path d="M217.4 346.6 L217.4 356.4"/>
-    <path d="M256.0 346.6 L256.0 356.4"/>
-    <path d="M294.6 346.6 L294.6 356.4"/>
-    <path d="M333.2 346.6 L333.2 356.4"/>
-    <path d="M371.8 346.6 L371.8 356.4"/>
+    <g stroke-width="18.93">
+    <circle cx="80" cy="330" r="30"/>
+    <circle cx="256" cy="110" r="30"/>
+    <circle cx="432" cy="260" r="30"/>
     </g>
   </g>
 </svg>

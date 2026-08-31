@@ -244,24 +244,28 @@ reads, what it stores, and for how long.
 
 ## Changelog
 
-**0.5.0** — the current release:
+**0.5.1** — the current release. Nothing about how the app works changed; this is the App Store
+listing:
 
-- **A fourth kind of device: a Curve light** — the circadian engine with the whole day open, and a
-  colour from a closed palette available at any point.
-- **The circadian light is now the simple one**: two questions, and it supplies the shape of the day
-  itself. An existing one keeps its warmest and coolest points.
-- **Overlapping schedule windows no longer fight**, and catch-up after a restart is gated on an off
-  Flow actually existing.
-- **Every screen is light now, in every phone setting** — Homey draws the panel around them light
-  regardless of what the phone says — and the words on them have had a pass: one name for the
-  warm/cool axis, and each pairing flow says which lights it is asking for.
-- **Less memory used on your Homey**, by not keeping a copy of every Flow card on your Homey for as
-  long as the app runs — and by not reading that list at all in two of the three places that did.
+- **A new tagline, and a description a third of its old length.** The old tagline listed the same
+  three jobs the description opened with; the description opened with a backstory. The store clamps
+  it to ten lines behind a "read more", so the first paragraph has to be the whole pitch.
+- **The changelog reads as prose.** The store renders it in a bare paragraph with no line breaks, so
+  the Markdown headings and bullets it used to carry came out as one run-on sentence with visible
+  asterisks. Every entry is flattened, and a test now fails on any that is not.
+- **The four device icons are legible in the store's flow-card circle.** A 960-unit canvas is drawn
+  into 24 px there, where a 34-unit stroke is 0.85 px — so each icon lost the frame around its
+  subject and everything worth less than a pixel. Two of them say something different as well: the
+  circadian icon is a rayed sun on the horizon rather than a bulb under an arch, and the remote
+  sends a signal rather than reading as a speaker.
+- **`npm run render:icons`** draws every icon at that size using homey.app's own markup and CSS,
+  which is the only way to see it before publishing.
 
 Earlier releases, one line each:
 
 | Version | What changed |
 |---|---|
+| **0.5.0** | A Curve light as a fourth device type, a simpler circadian light, and less memory used |
 | **0.4.0** | Circadian lights: follow the colour of the day, and no API key needed for them |
 | **0.3.1** | Generated Flows grouped into a folder per device |
 | **0.3.0** | New artwork throughout, a new palette, and a README banner |
@@ -284,7 +288,7 @@ If it changes how carefully you want to review the code before trusting it with 
 the code is right here.
 
 It has been verified end to end on a Homey Pro 2023 across four remotes and three transports, with
-898 unit tests covering the logic — [how well tested is this?](FAQ.md#how-well-tested-is-this) has
+903 unit tests covering the logic — [how well tested is this?](FAQ.md#how-well-tested-is-this) has
 the detail, including what has *not* run on hardware yet.
 
 ## Contributing

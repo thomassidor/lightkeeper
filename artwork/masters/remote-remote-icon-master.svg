@@ -1,9 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"
      fill="none" stroke="currentColor" stroke-width="6.7" stroke-linecap="round" stroke-linejoin="round"
-     role="img" aria-label="Remote control">
-  <rect x="186.5" y="50.7" width="139.0" height="411.8" rx="26.0"/>
-  <circle cx="256.0" cy="171.5" r="50.6"/>
-  <circle cx="256.0" cy="171.5" r="23.9"/>
-  <circle cx="256.0" cy="271.1" r="19.6"/>
-  <rect x="240.4" y="317.3" width="31.2" height="59.0" rx="12.6"/>
+     role="img" aria-label="A handheld remote sending a signal">
+  <!--
+    Three drawings came before this one, and the App Store's 24px box (platform
+    §10) killed each for a different reason.
+
+    The first was 139 by 412 — an aspect of 0.34 — so `mask-size: contain` fitted
+    it by height and left it eight pixels wide, a sliver with invisible controls.
+    The second was squatter and legible, and read as a SPEAKER: a tall rounded
+    box with a big circle above a small circle is a woofer above a tweeter. The
+    third gave the dial a pointer and the button a rocker split, which fixed the
+    speaker at 144px and changed nothing at 24, because both fixes were details
+    INSIDE a silhouette that was still just a box.
+
+    The signal is the answer, and the reason is the silhouette: two arcs off the
+    top-right corner stick OUT of the shape, so they survive the size that eats
+    interior detail. Nothing else in the set has them, which is what a small icon
+    needs — to be told apart before it can be read.
+  -->
+  <rect x="134" y="160" width="160" height="300" rx="38"/>
+  <circle cx="214" cy="240" r="47"/>
+  <rect x="180" y="342" width="69" height="46" rx="23"/>
+  <path d="M335 241 A 69.3 69.3 0 0 0 335 143"/>
+  <path d="M383 262 A 112 112 0 0 0 383 122"/>
 </svg>

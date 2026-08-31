@@ -1,6 +1,6 @@
 {
   "id": "com.thomassidor.lightkeeper",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "compatibility": ">=12.9.0",
   "runtime": "nodejs",
   "sdk": 3,
@@ -11,7 +11,7 @@
     "en": "Lightkeeper"
   },
   "description": {
-    "en": "Dozens of Flows, or one app. Point any remote at any lights, put those lights on a timer, and let them follow the colour of the day."
+    "en": "Easy control for the lights you already have."
   },
   "category": ["tools", "lights"],
   "tags": {

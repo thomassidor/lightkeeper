@@ -458,16 +458,34 @@ anything discoverable in this repo:
   - **Colour inside an icon is discarded; only alpha survives.** That is the mechanism behind
     `homey-lib`'s *"Icons are rendered white, so choose a darker color that has enough contrast"*,
     and it is why a filled two-colour mark becomes the single solid blob guideline 1.5 warns about.
-    All three of our icons are line art RENDERING at 40 units on the 960 canvas — the authored
+    All five of our icons are line art RENDERING at 40 units on the 960 canvas — the authored
     attribute is that divided by the fit scale, so grepping for `stroke-width="40"` finds nothing.
     The app mark adds one filled shape, the logo's sparkle, which is fine: `homey-lib`'s own stock icons mix stroked and filled
     paths. They are generated from the SVG masters by `artwork/export-assets.py`.
+  - **The App Store draws a driver icon into a 24 px box, and that is the size to draw for.** Read
+    off `homey.app/css/pages/app.*.css`: a flow card's `.icon` is `width: 40px; height: 40px;
+    padding: 8px; border-radius: 100%` filled with `brandColor`, and the `.icon-inner` inside it is
+    `background: white` with `mask-size: contain`. 40 less 8 a side is **24×24 of ink** — the
+    tightest place an icon ever appears, and less than half the 50 px `--prop-size` above. On a 960
+    canvas that is a scale of 0.025, so a 34-unit stroke lands at 0.85 px and washes out. 0.5.0
+    shipped four device icons that were unreadable there: each hung its subject inside a
+    rounded-square frame that ate two thirds of the canvas, and the circadian one carried seventeen
+    separate strokes. The fix was fewer, larger elements at the house weight, not a heavier line.
+    `npm run render:icons` reproduces that markup and CSS exactly, at 24, 34, 48 and 144 px of ink,
+    and is the only way to see this before publishing.
   - **A CLI-installed app shows NO icon, ever.** That CDN only holds icons from builds Athom
     published, so `homey app install` leaves the mask pointing at a 404 and the UI draws an empty
     `brandColor` circle. This cost a diagnosis: the SVGs render correctly inline, as a sized
     `<img>`, as an unsized `<img>` and as a CSS mask, and the right bytes were in `.homeybuild` —
     the file was never the problem. **Do not redraw anything chasing a blank icon on a dev
     install.** It resolves on publish, test channel included.
+
+    The converse trap is a blank icon on a PUBLISHED listing, which is a different fault and worth
+    telling apart: fetch the mask URL out of the page's own markup and look at what comes back.
+    `apps.homeycdn.net/app/<id>/<build>/<uuid>/drivers/<driver>/assets/icon.svg` returned
+    `200 image/svg+xml` with our exact bytes, and the surrounding markup was identical to what IKEA
+    Trådfri and Philips Hue get — which ruled out the CDN, CORS and the mask technique in one
+    command and left the drawing itself, at 24 px, as the only variable.
 - **The validator checks far less than the guidelines say.** `_validateImages` iterates
   `['small', 'large']` only: **`xlarge` is optional and never checked**, at any level. It never
   opens an SVG — there is no driver-icon existence check and no content validation at all. Every

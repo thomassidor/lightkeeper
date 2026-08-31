@@ -34,8 +34,12 @@ Rules, for whoever draws or generates the next set:
 
 - **Icons** are line art on a transparent, full 960 canvas — no gradients, no background shape. Homey
   paints them as a flat single-colour mask, so colour inside the file is discarded and only the
-  silhouette survives. Must read at 32 px. No two identical. Edit the master, never the shipped file:
-  an edit to a shipped file is lost on the next export.
+  silhouette survives. **Must read at 24 px** — that is the App Store's flow-card box (a 40 px
+  circle less 8 px of padding a side), the smallest an icon is ever drawn, and it rules the drawing:
+  a handful of large elements, no frame around the subject, no detail that is worth less than a
+  pixel. `npm run render:icons` draws every icon at that size the way the store does; check it
+  before shipping a redraw. No two identical. Edit the master, never the shipped file: an edit to a
+  shipped file is lost on the next export.
 - **Images** must be photographic. A flat shape or icon on a plain background is rejected. Colour has
   to reach every edge — no borders, no letterboxing. No Homey logo, name or hardware.
 - **`xlarge` is optional** and no validator ever opens it, but ship it: it is what a

@@ -33,17 +33,32 @@ prompt. Create `scripts/hardware-env.json` (gitignored):
 }
 ```
 
-`room` keeps the test lamps to one room. The pass switches lamps on and off, writes colours to them
-and power-cycles one, so without it that happens to whichever lights sort first across the whole
-house. Omit it to use every room.
+`room` keeps the test lamps to one room, and is the one containment worth setting. The pass switches
+lamps on and off, writes colours to them and power-cycles one, so without it that happens to
+whichever lights sort first across the whole house — including lamps your own Lightkeeper devices
+drive. Omit it to use every room.
 
 If the file is missing the script asks for the values instead and offers to save them. It hides
 keys as you type, but a terminal that mangles that would put a live credential in your scrollback —
 so prefer the file.
 
-`full` **builds one of each device type**, tests them, and **deletes every Lightkeeper device** at the end. Run it only on a Homey you can afford to empty.
+`full` **builds one of each device type**, tests those, and **deletes them again** at the end. It
+names everything it builds `[verify] …` and only ever touches devices carrying that mark, re-checking
+it against the Homey immediately before each permanent delete — so a controller, schedule, circadian
+or Curve light **you** paired is never chosen, never written to and never deleted. You can run this
+on the Homey you live with.
 
-If it says a device type is already paired, it leaves that one alone — delete it first if you want the script to build it.
+Three things it still does to the whole Homey, because they cannot be scoped to one device:
+
+- `credential` removes the app's stored API key and puts it back, and there is one key for the whole
+  app. Every controller and schedule on the Homey — yours too — goes to "needs credential" for up to
+  a minute and then recovers. Nothing is deleted.
+- `restart` restarts the app, so every Lightkeeper device is briefly unavailable.
+- The lamps are shared. Set `room`.
+
+If it says a device type from an earlier run is still there, it reuses that one rather than building
+a second — run `teardown --yes` first if you want it rebuilt. A device of yours never counts: the
+pass builds its own alongside it.
 
 **Paste its whole output into the report.** Every line is numbered. `OK` and `SKIPPED` need nothing from you; `SKIPPED` means that line was **not** tested.
 
@@ -62,16 +77,19 @@ The script cannot do these. Report each by its number.
 
 *Rewritten each release — what is new or risky this time. Its lines carry on from the highest number used so far, and are retired rather than reused when the next release rewrites this section.*
 
-**0.5.0.** All four device types built from scratch.
+**0.5.1.** The App Store listing only — no app behaviour changed, so this release's lines are read
+off the published listing rather than off a Homey. Publish to the test channel first; none of these
+can be answered from a CLI install, because the store page is the thing under test.
 
-- [x] **T55** The **Curve light** is new. Draw a curve, give a point a colour, check the lamps follow — including a lamp that cannot show colour, which should take the warmth instead. *30 Aug 2026: the script's `preview` covered the substance — T27 wrote a colour (`light_hue`) and the lamps without colour took warmth instead; T28 saw 12 writes across `light_saturation`, `light_hue`, `light_mode` and every lamp holding what it was written. Drawing a curve by hand on a phone is still unticked.*
-- [x] **T56** The **circadian light** is now two questions rather than a curve. Check its screen reads sensibly. *30 Aug 2026: read from `npm run render:views` — "The two ends of the day", Warmest and Coolest with their anchor times, brightness behind one switch, and the no-Flows note. Reads correctly.*
-- [x] **T57** The 0.5.0 migration **cannot** be tested this time — no pre-0.5.0 device is left to migrate. *30 Aug 2026: confirmed, not tested — recorded rather than ticked off.*
-- [x] **T58** Two lamp-driving bugs were fixed this release and are worth a look with your own eyes: a Curve light's coloured point no longer stops later warmth points working, and **Test it** on the pre-stage option no longer shows a raw error from your bridge. *30 Aug 2026: both held. T27 wrote a colour and warmth in one pass; T22's refusal came back as a readable sentence naming the bridge's own reason ("soft off"), not a raw error.*
-- [x] **T59** **Memory.** `node scripts/verify-hardware.mjs memory`. Measured 30 August 2026 on Homey Pro 2023 / firmware 13.4.1: **12.2 MB** on a freshly installed app that has read no catalogue, and **28.5 MB** after a read-only pass — both inside Homey's 30 MB guideline. Reading a catalogue once still costs floor the runtime never gives back (platform §15), but the 0.5.0 work moved the numbers well below the ~32/~44 MB this line used to predict. The line fails past 50 MB. Report the number either way.
-- [x] **T60** The same reading at the end of `full`, as a delta. **Measured 51.1 MB, which trips the 50 MB ceiling — and that is the pass, not the app.** `full` pairs one of each device type over the API and runs fifty checks in a few minutes, and every catalogue parse along the way leaves floor behind (platform §15). Reinstalling and re-measuring immediately gave 12.2 MB, so nothing is being retained. Treat a `full`-run reading as the high-water mark of the pass; T59 on a fresh app is the number that describes a user's Homey. **A ceiling tuned to normal use rather than to this pass is the open item here.**
+- [ ] **T61** Open the listing and read the description. It should be two short paragraphs, no "read more" needed for the point of the app, and no Markdown characters visible. Athom's guideline is *"one to two paragraphs tops"*.
+- [ ] **T62** The **What's new** section. One paragraph of ordinary prose — no `**`, no dashes starting a line, no `Added` / `Changed` / `Fixed` headings, nothing running together mid-word. Then open **View changelog** and check every older entry the same way; they were all flattened, not just this one.
+- [ ] **T63** The **Flow cards** section. Each card's icon is a white drawing inside a violet circle and you can tell the four device types apart from it: a rayed sun on the horizon, a curve over a baseline, a remote sending a signal, a stopwatch. If any is an empty or smudged circle, say which — and grab the mask URL from the page's markup and `curl` it, because a blank icon on a published listing and a blank icon on a dev install are different faults (platform §10).
+- [ ] **T64** `npm run render:icons` locally, then open `.views/icons/index.html` and compare its 40px column against what the store actually drew. They should agree. If they do not, the harness is reproducing the store wrongly and that is the thing to fix.
+- [ ] **T65** On a phone, in the Homey app: Devices → Add device → Lightkeeper, and the four device tiles. The icons got simpler this release, so check the redraw did not cost anything at tile size either — this is where they used to be judged.
 
 ### Last run — 30 August 2026, Homey Pro 2023, firmware 13.4.1, app 0.5.0
+
+*The 0.5.0 lines T55&ndash;T60 were retired with this section when 0.5.1 rewrote it; what they found is recorded below and in `docs/hardware-test-coverage.md`.*
 
 `node scripts/verify-hardware.mjs full --yes`: **50 OK, 3 failed, 5 skipped.** All three failures
 were investigated and none is a defect in the app.
@@ -88,8 +106,9 @@ were investigated and none is a defect in the app.
   high-water mark, not retention. A reinstall and immediate re-measure gave 12.2 MB.
 
 Still outstanding, and each needs a person: **T3**, **T9**, **T10**, **T11**, **T54**, and the nine
-screens of **T53** that were not read. T9–T11 need a finger on a real remote, and `full` **deletes
-every Lightkeeper device at the end**, so they mean re-pairing a controller first.
+screens of **T53** that were not read. T9–T11 need a finger on a real remote — but a controller you
+paired by hand now **survives** `full`, which deletes only the devices it built itself, so they no
+longer mean re-pairing one first.
 
 ## 5. How to report
 

@@ -237,3 +237,74 @@ describe('verify-hardware reads a runtime id the way the app writes one', () => 
     );
   });
 });
+
+describe('verify-hardware deletes only the devices it created', () => {
+  /**
+   * The pass runs against a Homey somebody lives with. Every command selects
+   * from the devices it built itself, and it recognises them by a marker on the
+   * name — so a device that is never marked is a device teardown will never
+   * delete, and a delete that never checks the marker is one that can take a
+   * controller the user paired.
+   *
+   * Read as text, like everything else here: running it needs a Homey, and this
+   * is the check that fails in CI rather than on somebody's evening.
+   */
+
+  /** One function's source, from its declaration to the next top-level one. */
+  function bodyOf(declaration: string): string {
+    const from = source.indexOf(declaration);
+    assert.ok(from > 0, `${declaration} is gone`);
+    const rest = source.slice(from + declaration.length);
+    const to = rest.indexOf('\nasync function ');
+    return rest.slice(0, to === -1 ? undefined : to);
+  }
+
+  test('every device it pairs is marked', () => {
+    assert.ok(/^const MARKER = /m.test(source), 'the marker is gone');
+    assert.match(
+      bodyOf('function dtoFrom(saved)'), /markName\(/,
+      'dtoFrom no longer marks the name it returns — it is the one function every '
+      + 'device this script creates passes through, and an unmarked device is one '
+      + 'teardown will never delete and every other command will ignore',
+    );
+  });
+
+  test('the delete is guarded by the mark, re-read from the Homey', () => {
+    const teardown = bodyOf('async function commandTeardown(api)');
+    const del = teardown.indexOf('deleteDevice(');
+    assert.ok(del > 0, 'teardown no longer deletes anything');
+    assert.ok(
+      teardown.lastIndexOf('isMarked(', del) > 0,
+      'nothing checks the mark before the permanent delete',
+    );
+    assert.ok(
+      teardown.indexOf('getDevice(') > 0 && teardown.indexOf('getDevice(') < del,
+      'the guard trusts a list read seconds earlier rather than asking the Homey',
+    );
+  });
+
+  test('teardown selects from the marked devices, not from every one', () => {
+    assert.match(
+      bodyOf('async function commandTeardown(api)'), /isMarked\(device\.name\)/,
+      'teardown no longer filters to the devices this pass built',
+    );
+  });
+
+  test('nothing else in the file deletes a device', () => {
+    /**
+     * Two call sites, and only two: teardown, and pairspike cleaning up the one
+     * throwaway device it just made. Brittle on purpose — a third is precisely
+     * the failure this marker exists to prevent, so whoever adds one should have
+     * to read a test that says why.
+     */
+    const offenders = lines
+      .filter(line => !isComment(line.text))
+      .filter(line => /deleteDevice\(/.test(line.text))
+      .map(line => `${line.number}: ${line.text.trim()}`);
+
+    assert.equal(
+      offenders.length, 2,
+      `deleteDevice call sites: ${offenders.join(' | ')}`,
+    );
+  });
+});

@@ -18,7 +18,7 @@ Two Personal API Keys, and they must differ: a key holds a single live session a
 |---|---|---|
 | `spike` | — | none. Answers whether the rest can run |
 | `memory` | T59, T60 | none — read-only |
-| `pair` | T5, T6, T7, T12, T13, T19, T20, T26 | builds one of each device type |
+| `pair` | T5, T6, T7, T12, T13, T19, T20, T26 | builds one of each device type, its own even if you already have some. Reuses a marked one left by an earlier run |
 | `flows` | T2, T8, T16, T23, T30 | none — read-only |
 | `redaction` | T42–T45 | none. Searches the diagnostics report for both keys and a slice of each |
 | `restart` | T1, T4, T31, T32, T34 | restarts the app |
@@ -28,10 +28,41 @@ Two Personal API Keys, and they must differ: a key holds a single live session a
 | `rejoin` | T24, T25, T29 | switches a lamp off and on, and sets a colour by hand |
 | `credential` | T35–T41 | removes the stored key and puts it back |
 | `repair` | T46 | opens a repair session per device and reads its screens. Saves nothing |
-| `teardown` | T47–T52 | deletes every Lightkeeper device |
+| `teardown` | T47–T52 | deletes only the devices this pass built (`[verify] …`) |
 | `pairspike` | — | builds one throwaway circadian light over the API and deletes it |
 
 `all` is the read-only four; `full` is the whole pass in order, ending in `teardown`.
+
+## How the pass knows which devices are its own
+
+Every device the script builds is named `[verify] <the name the driver derived>`, and that name is
+the only thing telling them from the ones you paired. Every command selects from the marked ones,
+and `teardown` deletes only those — re-reading the name from the Homey immediately before each
+permanent delete, so a device that is not ours could not be deleted even if it reached that line.
+
+**The name rather than a file on the laptop.** A run-state file would be a second source of truth
+that can disagree with the first in both directions: delete the file and the marked devices become
+litter `teardown` refuses to remove; delete a device by hand and the file names something that is
+not there. The Homey already knows what exists, on the machine that owns it, readable by a
+`schedule` run in a separate process an hour after the `pair` that built it. It is also visible —
+you can see in the Homey app which devices are the pass's, which is worth a lot for a script whose
+whole promise is that it left yours alone.
+
+**It is a prefix**, because T18 renames a schedule to `<name> (verify)` and back: a suffix marker
+would be destroyed by the very test that has to survive it.
+
+**Renaming one of ours strips the mark**, and the pass then stops touching it *and* stops deleting
+it — which is what renaming a device says. The cost is that the next `pair` builds a duplicate; the
+recovery is to delete the unmarked leftover by hand.
+
+A flag inside the device's `store` was considered as a second, rename-proof mark and declined: it is
+unverified whether the Web API returns `store` at all, and it would put a foreign key inside a plan
+blob the app migrates.
+
+**What still cannot be scoped to a device** — the app-wide API key that `credential` removes and
+restores, the whole-app `restart`, and the lamps themselves, which are shared with whatever your own
+devices drive. `docs/hardware-test-plan.md` states all three where a person will read them before
+running the pass.
 
 **`memory` is the only line whose answer is a number rather than a state**, and it is here because
 the app was 48 MB against Homey's 30 MB guideline — almost all of it `homey-api` retaining both
@@ -133,6 +164,14 @@ the physical release event that the 10-second ramp stop exists for.
 **T3 and T53-T54 need eyes.** `assets.test.ts` proves four distinct pictures at the right sizes;
 whether they look right is not a machine's question.
 
+**T61-T65 need the published listing**, and no Homey at all. They are read off homey.app after a
+publish to the test channel, because the store is what they are about: the description's length and
+clamping, the changelog rendering as prose, and the flow-card icons inside their 24px circles
+(platform §10). `npm run render:icons` answers the substance of T63 locally — it draws every icon at
+that size with the store's own markup and CSS — but it is a reproduction, and T64 exists to check
+the reproduction against the real thing. `assets.test.ts` still owns the rules an icon must satisfy;
+neither script nor sheet passes or fails.
+
 ## Retired lines
 
 Kept here so an old report that says `3.8 OK` is still readable, and so nobody re-adds them. The numbers are not reused.
@@ -142,6 +181,7 @@ Kept here so an old report that says `3.8 OK` is still readable, and so nobody r
 | 3.8 | An overnight midnight-crossing window switches off at the right time, and its Flow reads `Off at 01:30 (starts Fri)` | `schedule-bindings.test.ts` asserts that exact string, and `schedule-window.test.ts` covers the arithmetic. The only residue was "Homey's cron card fires on the minute", measured at ~11–22 ms and recorded in `homey-review-notes.md`. It cost an evening and taught nothing |
 | 5.5 | Two coloured points, checked for a shade between them | `curve-colour.test.ts` covers the interpolation. The hardware residue — a lamp accepting the hue — is T27 |
 | 9.2–9.4 | Repair each of the four device types | The failure it names — `unknown_error_getting_file` — is `repair-views.test.ts`. Whether each screen comes back seeded from the stored plan is the `repair` command, which covers all four under T46 |
+| T55–T60 | The 0.5.0 release lines: the new Curve light, the two-question circadian light, the migration, two lamp-driving fixes, and the two memory readings | Retired when 0.5.1 rewrote **This release**, which is what that section is for. What they found is in the plan's *Last run* record; the memory readings are the ones worth keeping, and platform §15 carries the reasoning |
 
 ## Two things a picture caught that a test could not
 

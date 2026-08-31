@@ -58,14 +58,17 @@ CANVAS = 960                       # Homey's icon canvas, guideline 1.5
 # but vanishes at the 32 px Homey renders. `--weight drawn` still emits the
 # masters' own weights, for comparison.
 #
-# Two house weights, because the two kinds of icon are drawn at different sizes.
-# 40 is what all 226 of homey-lib's stock class icons use, and it is right for the
-# app icon, which Homey draws large. The four DEVICE icons are denser drawings —
-# a stopwatch face, a bulb under an arc, a curve over hour ticks — and at 40 the
-# detail inside them closes up and reads as a bulky blob on a device tile. 34 is
-# a touch lighter: still clearly in the stock family, with the interior legible.
+# One house weight now. 40 is what all 226 of homey-lib's stock class icons use.
+#
+# The device icons used to sit at 34, a touch lighter, because at 40 the detail
+# inside them closed up on a tile. That reasoning was answered from the wrong
+# end: the App Store draws a driver icon into a 24px box (a 40px circle less 8px
+# of padding), where 34 units on a 960 canvas is a 0.85px hairline and the
+# "detail" was never legible in the first place. The drawings lost the detail
+# instead — see the note in each master — and the weight went back to the house
+# one. `scripts/render-icons.mjs` is what shows the difference.
 HOUSE_STROKE = 40.0
-DEVICE_STROKE = 34.0
+DEVICE_STROKE = 40.0
 
 # Extracted from masters/logo-bitmap-original.png — run --palette to re-derive.
 BRAND = '#180E32'                  # the logo's ground: 93% of its pixels
@@ -92,8 +95,8 @@ ICONS = [
         'master': 'remote-remote-icon-master.svg',
         'out': ROOT / 'drivers' / 'controller' / 'assets' / 'icon.svg',
         'title': 'Light controller',
-        'desc': 'A handheld remote with a rotary wheel above two buttons.',
-        'fit': (2.1079, -59.6, -60.7),
+        'desc': 'A handheld remote sending a signal.',
+        'fit': (2.5600, -213.1, -265.0),
         'stroke': 6.7,
         'house': DEVICE_STROKE,
     },
@@ -102,7 +105,7 @@ ICONS = [
         'out': ROOT / 'drivers' / 'schedule' / 'assets' / 'icon.svg',
         'title': 'Light schedule',
         'desc': 'A stopwatch.',
-        'fit': (3.0298, -295.6, -267.6),
+        'fit': (2.3806, -129.4, -171.1),
         'stroke': 7.3,
         'house': DEVICE_STROKE,
     },
@@ -110,8 +113,8 @@ ICONS = [
         'master': 'circadian-icon-master.svg',
         'out': ROOT / 'drivers' / 'circadian' / 'assets' / 'icon.svg',
         'title': 'Circadian light',
-        'desc': 'A lightbulb below a daylight arc, between a sunrise and a sunset.',
-        'fit': (3.1208, -318.9, -318.9),
+        'desc': 'A rayed sun on the horizon.',
+        'fit': (2.2191, -88.1, -80.3),
         'stroke': 7.3,
         'house': DEVICE_STROKE,
     },
@@ -119,8 +122,8 @@ ICONS = [
         'master': 'curve-icon-master.svg',
         'out': ROOT / 'drivers' / 'curve' / 'assets' / 'icon.svg',
         'title': 'Curve light',
-        'desc': 'A four-point curve over a row of hour ticks.',
-        'fit': (3.0247, -294.3, -294.3),
+        'desc': 'A three-point curve above a baseline.',
+        'fit': (2.1129, -60.9, -58.8),
         'stroke': 5.3,
         'house': DEVICE_STROKE,
     },
@@ -252,6 +255,11 @@ def build_icon(spec: dict, weight: str) -> str:
         carried.append(f'{name}="{"#000" if value == "currentColor" else value}"')
 
     inner = inner_markup(svg).replace('currentColor', '#000')
+    # A master's own comments say why it is drawn the way it is, which is a note
+    # to whoever edits the master — not something to ship inside a file Homey
+    # fetches by MD5 and uses as an alpha mask. The generated header below is the
+    # only comment the shipped icon carries.
+    inner = re.sub(r'<!--.*?-->', '', inner, flags=re.S)
     # Any stroke-width authored on a child would override the group's.
     inner = re.sub(r'stroke-width="[\d.]+"', f'stroke-width="{authored:.2f}"', inner)
     inner = '\n    '.join(line.strip() for line in inner.splitlines() if line.strip())

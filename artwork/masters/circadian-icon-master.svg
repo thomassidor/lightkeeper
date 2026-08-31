@@ -1,25 +1,31 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"
      fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
-     role="img" aria-label="Lightbulb under a daylight arc between sunrise and sunset">
+     role="img" aria-label="A rayed sun on the horizon">
+  <!--
+    A sun on the horizon, which is what this device is about: the colour of the
+    day, from sunrise to sunset. Two drawings came before it and neither said so.
+    The first hung a bulb and a daylight arc inside a rounded-square frame with a
+    five-stroke sunrise at each foot — seventeen strokes, and a smudge at the 24px
+    the App Store draws a driver icon into (platform §10). The second dropped the
+    frame and the sunrises and kept the bulb under the arc, which read at 24px
+    and meant nothing: a bulb under an arch.
+
+    Three rays, not eight. At 24px a ray is about four pixels long, and eight of
+    them close into a halo — the same density fault as the frame, one scale down.
+    They run from 185 to 255 units of a 150-unit sun so they are unmistakably
+    rays and not a second outline.
+
+    The half-disc sits ON the horizon rather than above it, because a sun clear of
+    the line is just a circle over a rule, and the curve icon is already a line
+    over a rule.
+  -->
   <g stroke-width="5.5">
-    <rect x="117.5" y="117.5" width="277.0" height="277.0" rx="42.9"/>
-    <path d="M169.6 265.4 A 86.4 86.4 0 0 1 332.8 225.8"/>
-    <path d="M339.3 242.5 A 86.4 86.4 0 0 1 342.4 265.4"/>
-    <circle cx="336.5" cy="234.0" r="9.0"/>
-    <path d="M242.7 302.6 L242.7 296.0 C242.7 284.6 240.8 287.5 234.3 279.7 A 28.2 28.2 0 1 1 277.7 279.7 C271.2 287.5 269.3 284.6 269.3 296.0 L269.3 302.6 Z"/>
-    <path d="M244.8 312.5 L267.2 312.5"/>
-    <path d="M249.1 322.1 L262.9 322.1"/>
+    <path d="M60 380 L452 380"/>
+    <path d="M106 380 A 150 150 0 0 1 406 380"/>
   </g>
-  <g stroke-width="4.7">
-    <path d="M158.2 308.3 A 10.2 10.2 0 0 1 178.6 308.3"/>
-    <path d="M147.2 312.3 L189.7 312.3"/>
-    <path d="M155.1 295.0 L152.1 291.9"/>
-    <path d="M168.4 289.5 L168.4 285.2"/>
-    <path d="M181.7 295.0 L184.7 291.9"/>
-    <path d="M333.4 308.3 A 10.2 10.2 0 0 1 353.8 308.3"/>
-    <path d="M322.3 312.3 L364.8 312.3"/>
-    <path d="M330.3 295.0 L327.3 291.9"/>
-    <path d="M343.6 289.5 L343.6 285.2"/>
-    <path d="M356.9 295.0 L359.9 291.9"/>
+  <g stroke-width="5.5">
+    <path d="M256 195 L256 125"/>
+    <path d="M125.2 249.2 L75.7 199.7"/>
+    <path d="M386.8 249.2 L436.3 199.7"/>
   </g>
 </svg>

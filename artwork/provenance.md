@@ -96,10 +96,12 @@ broken text, and the curve with its four coloured points carries the whole meani
 deliberately, not by omission. If Athom's reviewer objects, the fix is a re-render of the same
 composition with the labels dropped; nothing else changes.
 
-The icon is a four-point curve over a row of hour ticks — a different mark from the circadian
-light's arc-and-bulb, which is what the two device types needed: one says "the shape of the day is
-handled for you", the other says "every point is yours". Its canvas fit came from `--measure`
-(`ink 292×291 of 512`), stored in the script so a normal export needs no browser.
+The icon is a three-point curve over a baseline — a different mark from the circadian light's sun
+on the horizon, which is what the two device types needed: one says "the shape of the day is handled
+for you", the other says "every point is yours". Both were redrawn in 0.5.1 for the App Store's 24px
+box (see **Icon weight** below); before that the curve was four points over a row of hour ticks
+inside a rounded-square frame, and the circadian light was a bulb under a daylight arc. Each icon's
+canvas fit comes from `--measure`, stored in the script so a normal export needs no browser.
 
 ## Icon weight
 
@@ -110,12 +112,25 @@ sheet at 32/40/56 px, on white and as a white mask on the brand violet — which
 actually draws them. `export-assets.py --weight drawn` reproduces the masters' own weights if the
 decision is ever revisited.
 
-There are **two** house weights, and the split is deliberate. The app icon ships at 40, which is
-what all 226 of homey-lib's stock class icons use and what Homey's large rendering wants. The four
-**device** icons ship at 34. They are denser drawings than a stock class glyph — a stopwatch face
-with hands and tick marks, a bulb under an arc between two suns, a curve over a row of hour ticks —
-and at 40 the gaps inside them close up, so a device tile shows a bulky blob rather than a drawing.
-34 is a touch lighter: still recognisably the stock family, with the interior legible at tile size.
+There is **one** house weight: 40, what all 226 of homey-lib's stock class icons use.
+
+There were two for a while. The four device icons shipped at 34 because they were denser drawings
+than a stock class glyph — a stopwatch face with hands and tick marks, a bulb under an arc between
+two suns, a curve over a row of hour ticks — and at 40 the gaps inside them closed up into a bulky
+blob on a device tile. That reasoning was sound about the tile and wrong about everywhere else. The
+App Store draws a driver icon into a **24 px** box (platform §10), where 34 units on a 960 canvas is
+a 0.85 px hairline; 0.5.0's listing showed four device icons as smudges inside their brand circles.
+The density was the fault, not the weight. Each of the four lost the rounded-square frame around its
+subject and every element worth less than a pixel — the circadian icon went from seventeen strokes
+to five, the curve from thirteen to five and the stopwatch from eight to four — and went back to
+40. The remote stayed at five and was redrawn twice: at its old 0.34 aspect `mask-size: contain`
+fitted it by height and left it eight pixels wide, and once squared up it read as a speaker — a
+big circle over a small one in a rounded box is a woofer over a tweeter. Detail inside the box
+could not fix that at 24px; two signal arcs off the top-right corner could, because they change
+the silhouette rather than its contents. `npm run render:icons` is the contact sheet that decided it, drawn with
+homey.app's own markup and CSS at 24, 34, 48 and 144 px of ink.
+`export-assets.py --weight drawn` still reproduces the masters' own weights if the decision is ever
+revisited.
 
 ## Palette
 
