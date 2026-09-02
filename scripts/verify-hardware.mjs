@@ -244,31 +244,69 @@ const askTerminal = (question, secret) => new Promise((resolve, reject) => {
 });
 
 /**
- * Ask the person to switch a lamp on, and wait.
+ * Switch one of a device's target lamps on OURSELVES, and hand back a restore.
  *
  * A circadian or Curve light writes colour only to lamps that are already on
  * (platform §12), so with every target off there is genuinely nothing for
- * `preview` or `rejoin` to observe. Skipping was honest but unhelpful: it named
- * no lamp, so the reader had to work out which of 55 lights the device was
- * pointed at before they could act on it.
+ * `preview` or `rejoin` to observe. That used to be a prompt — and in an
+ * unattended run (`--yes`, CI, anything without a TTY) the prompt could not be
+ * shown, so four lines simply skipped and the pass reported them as unproven
+ * every time nobody happened to have the right lamp on.
  *
- * Names the lamps, waits, and re-checks. Says so and moves on where there is
- * nobody to ask — a script blocking on a prompt in an unattended run is worse
- * than a skipped line.
+ * There is no reason for that to be a person's job. This pass already writes
+ * `onoff` to the household's lamps — T14 switches a schedule's lights on and
+ * then off again — so switching one on here is nothing new, and it is confined
+ * to the lamps a `[verify]` device this pass created is pointed at, which come
+ * from the configured `room`.
  *
- * @param {string[]} names
+ * It RESTORES what it found, and it says both things in the report: a line that
+ * only passes because the harness arranged its precondition has to admit it.
+ *
+ * @param {any} api
+ * @param {string[]} targetIds
  * @param {string} label
- * @returns {Promise<boolean>} whether to look again
+ * @returns {Promise<{ lit: string | null, restore: () => Promise<void> }>}
  */
-async function askForALampOn(names, label) {
-  if (!process.stdin.isTTY) return false;
+async function switchALampOn(api, targetIds, label) {
+  const noop = { lit: null, restore: async () => {} };
 
-  console.log('');
-  console.log(`  ACTION NEEDED — ${label} has no lamp switched on.`);
-  console.log(`  Switch ON any one of: ${names.join(', ')}`);
-  const answer = await askTerminal('  Then press ENTER, or type s to skip: ', false);
-  console.log('');
-  return !answer.toLowerCase().startsWith('s');
+  for (const id of targetIds) {
+    /** @type {any} */
+    let lamp;
+    try {
+      lamp = await api.devices.getDevice({ id, $cache: false, $updateCache: false });
+    } catch {
+      continue;
+    }
+    const caps = lamp?.capabilities ?? [];
+    if (!caps.includes('onoff')) continue;
+    // Only a lamp we can put back, and only one that is actually off.
+    if (lamp?.capabilitiesObj?.onoff?.value === true) return noop;
+
+    try {
+      await lamp.setCapabilityValue({ capabilityId: 'onoff', value: true });
+    } catch (error) {
+      console.log(`          could not switch "${lamp?.name}" on: ${messageOf(error)}`);
+      continue;
+    }
+    console.log(`          switched "${lamp?.name}" ON for ${label} — it will be put back`);
+    // A Hue Bridge takes a moment to report the change back, and the app's own
+    // cache is what the checks read.
+    await sleep(2500);
+    return {
+      lit: String(lamp?.name ?? id),
+      restore: async () => {
+        try {
+          await lamp.setCapabilityValue({ capabilityId: 'onoff', value: false });
+          console.log(`          switched "${lamp?.name}" back off`);
+        } catch (error) {
+          console.log(`          could NOT put "${lamp?.name}" back: ${messageOf(error)}`);
+        }
+      },
+    };
+  }
+
+  return noop;
 }
 
 // ------------------------------------------------------------ configuration
@@ -815,9 +853,62 @@ async function managedFlows(api) {
  * @returns {Promise<number | boolean | string | null>}
  */
 async function capabilityValue(api, deviceId, capability) {
-  const device = await api.devices.getDevice({ id: deviceId });
+  /**
+   * `$cache: false`, and without it this helper could report the PREVIOUS value.
+   *
+   * A `getAll` writes every item it returns into `homey-api`'s per-manager cache
+   * for the life of the client (platform §15), and this script calls
+   * `getDevices()` in several places — so a plain `getDevice` here was served
+   * from that snapshot rather than from the lamp.
+   *
+   * This is the same defect that was just fixed in the app's own
+   * `LightTargetAdapter.refresh()`, and it is the likeliest explanation for the
+   * recurring "wrote X, holds Y" read-backs where Y turned out to be the value
+   * from the step before. The 30 August 2026 pass recorded those as a Hue Bridge
+   * echoing late; a client-side cache the script never opted out of is a simpler
+   * story and one that is actually in our control.
+   */
+  const device = await api.devices.getDevice({ id: deviceId, $cache: false, $updateCache: false });
   const value = device?.capabilitiesObj?.[capability]?.value;
   return value === undefined ? null : value;
+}
+
+/**
+ * The same read, given a few seconds to become true.
+ *
+ * Even reading live, a Hue Bridge does not always have the new value the instant
+ * the write is acked — §6 measured a `setCapabilityValue` acking in ~275 ms,
+ * which is the output leg only. A single read immediately afterwards is
+ * therefore a race the script can lose, and losing it reports a write that
+ * landed as one that did not.
+ *
+ * Polls until the value is within tolerance or the window closes, and returns
+ * whatever it last saw either way — so a genuine mismatch still fails, just
+ * later and with better evidence.
+ *
+ * @param {any} api
+ * @param {string} deviceId
+ * @param {string} capability
+ * @param {unknown} wanted
+ * @param {number} [windowMs]
+ * @returns {Promise<number | boolean | string | null>}
+ */
+async function capabilityValueSettling(api, deviceId, capability, wanted, windowMs = 6_000) {
+  const deadline = Date.now() + windowMs;
+  let last = await capabilityValue(api, deviceId, capability);
+
+  while (Date.now() < deadline) {
+    const want = Number(wanted);
+    const got = Number(last);
+    const close = Number.isFinite(want) && Number.isFinite(got)
+      ? Math.abs(want - got) <= LAMP_TOLERANCE
+      : last === wanted;
+    if (close) return last;
+    await sleep(1_000);
+    last = await capabilityValue(api, deviceId, capability);
+  }
+
+  return last;
 }
 
 // -------------------------------------------------------------------- spike
@@ -1500,6 +1591,8 @@ async function commandRejoin(api) {
 
     let targets = /** @type {any[]} */ (runtime?.targets ?? []);
     let candidate = targets.find(t => t?.on === true && t?.canWarm === true);
+    /** A lamp THIS pass switched on, to be put back when the check is done. */
+    let arranged = { lit: /** @type {string | null} */ (null), restore: async () => {} };
 
     if (!candidate) {
       // Name the lamps and wait, rather than skipping a check that only needs a
@@ -1509,13 +1602,19 @@ async function commandRejoin(api) {
       const names = /** @type {string[]} */ (runtime?.targetNames ?? [])
         .filter((_, index) => warmable.includes(String(runtime?.targetIds?.[index])));
 
-      if (names.length > 0 && await askForALampOn(names, label)) {
-        /** @type {any} */
-        const fresh = await app.get('/diagnostics');
-        const now = /** @type {any[]} */ (fresh?.circadian ?? [])
-          .find(c => runtimeId(c) === runtimeId(runtime));
-        targets = /** @type {any[]} */ (now?.targets ?? []);
-        candidate = targets.find(t => t?.on === true && t?.canWarm === true);
+      if (warmable.length > 0) {
+        arranged = await switchALampOn(api, warmable, label);
+        if (arranged.lit) {
+          /** @type {any} */
+          const fresh = await app.get('/diagnostics');
+          const now = /** @type {any[]} */ (fresh?.circadian ?? [])
+            .find(c => runtimeId(c) === runtimeId(runtime));
+          targets = /** @type {any[]} */ (now?.targets ?? []);
+          candidate = targets.find(t => t?.on === true && t?.canWarm === true);
+        }
+      }
+      if (!candidate && names.length > 0) {
+        note(`${label}: none of ${names.join(', ')} could be switched on`);
       }
     }
 
@@ -1530,11 +1629,18 @@ async function commandRejoin(api) {
       runtime.targetNames?.[runtime.targetIds?.indexOf?.(lampId)] ?? lampId);
     note(`${label}: testing against lamp "${lampName}"`);
 
+    if (arranged.lit) {
+      note(`${label}: this pass switched "${arranged.lit}" on to make the check runnable`);
+    }
+
     await rejoinAfterPowerCycle(api, app, runtimeId(runtime), lampId, lampName, label, rejoinLine);
     // T25 is written once, for the circadian light, but the behaviour belongs to
     // the shared engine — so it runs for a Curve light too and reports against
     // the same number.
     await handOverAndRejoin(api, app, runtimeId(runtime), lampId, lampName, label);
+
+    // Put back only what we changed, and only after both checks have run.
+    await arranged.restore();
   }
 }
 
@@ -1567,7 +1673,7 @@ async function rejoinAfterPowerCycle(api, app, wantedId, lampId, lampName, label
     return;
   }
 
-  const held = await capabilityValue(api, lampId, String(write.capability));
+  const held = await capabilityValueSettling(api, lampId, String(write.capability), write.value);
   const wanted = Number(write.value);
   const actual = Number(held);
   const matches = Number.isFinite(wanted) && Number.isFinite(actual)
@@ -2375,7 +2481,7 @@ async function commandPreview(api) {
 
     const since = Date.now();
     /** @type {any} */
-    const outcome = await app.post(`/devices/${id}/preview`, {})
+    let outcome = await app.post(`/devices/${id}/preview`, {})
       .catch((/** @type {any} */ error) => ({ error: messageOf(error) }));
 
     if (outcome?.error) {
@@ -2393,34 +2499,53 @@ async function commandPreview(api) {
      */
     let lampsOn = /** @type {any[]} */ (runtime?.targets ?? []).filter(t => t?.on === true);
 
+    /** A lamp THIS pass switched on, put back once the read-back is done. */
+    let arranged = { lit: /** @type {string | null} */ (null), restore: async () => {} };
+    /** Named in the report: a line the harness set up has to admit it. */
+    let arrangedNote = '';
+
     if (outcome?.writes === 0 && lampsOn.length === 0) {
-      // Ask rather than skip: with every lamp off there is nothing to write to,
-      // and the reader cannot act on that without being told which lamps.
-      if (await askForALampOn(/** @type {string[]} */ (runtime?.targetNames ?? []), label)) {
-        /** @type {any} */
-        const retried = await app.post(`/devices/${id}/preview`, {})
+      /**
+       * ARRANGE the precondition rather than ask for it.
+       *
+       * With every target off there is genuinely nothing to write to, and this
+       * used to be a prompt — which an unattended run cannot show, so the line
+       * skipped every time nobody happened to have the right lamp on. The pass
+       * already writes `onoff` to these lamps (T14 does), so switching one on is
+       * nothing new; it is put back afterwards.
+       */
+      arranged = await switchALampOn(
+        api, /** @type {string[]} */ (runtime?.targetIds ?? []), label,
+      );
+
+      if (arranged.lit) {
+        outcome = await app.post(`/devices/${id}/preview`, {})
           .catch((/** @type {any} */ error) => ({ error: messageOf(error) }));
         /** @type {any} */
         const fresh = await app.get('/diagnostics');
         const now = /** @type {any[]} */ (fresh?.circadian ?? []).find(c => runtimeId(c) === id);
         lampsOn = /** @type {any[]} */ (now?.targets ?? []).filter(t => t?.on === true);
-
-        if (retried?.writes > 0) {
-          report(previewLine, 'OK',
-            `${label}: "Try it now" wrote to ${retried.writes} lamp(s), `
-            + `skipped ${retried.skipped}`);
-          continue;
-        }
+        arrangedNote = ` — this pass switched "${arranged.lit}" on for it`;
       }
+    }
 
+    if (outcome?.error) {
+      report(previewLine, 'FAILED', `${label}: preview was refused: ${outcome.error}`);
+      await arranged.restore();
+      continue;
+    }
+
+    if (outcome?.writes === 0 && lampsOn.length === 0) {
       report(previewLine, 'SKIPPED',
-        `${label}: none of its ${runtime?.targets?.length ?? 0} lamp(s) is on, so there was `
-        + 'nothing to write to');
+        `${label}: none of its ${runtime?.targets?.length ?? 0} lamp(s) is on and none could be `
+        + 'switched on, so there was nothing to write to');
+      await arranged.restore();
       continue;
     }
 
     report(previewLine, outcome?.writes > 0 ? 'OK' : 'FAILED',
       `${label}: "Try it now" wrote to ${outcome?.writes} lamp(s), skipped ${outcome?.skipped}`
+      + arrangedNote
       + (outcome?.writes === 0
         ? ` — but ${lampsOn.length} lamp(s) ARE on, so it should have written`
         : ''));
@@ -2442,6 +2567,7 @@ async function commandPreview(api) {
           ? `${label}: the preview reported ${outcome.writes} write(s) but the runtime `
             + 'recorded none'
           : `${label}: nothing was written, so there is nothing to read back`);
+      await arranged.restore();
       continue;
     }
 
@@ -2454,7 +2580,9 @@ async function commandPreview(api) {
       // An enabler is judged by whether the value it enables landed, not by
       // whether the lamp echoes the enabler back.
       if (ENABLER_CAPABILITIES.has(String(write.capability))) continue;
-      const held = await capabilityValue(api, String(write.deviceId), String(write.capability));
+      const held = await capabilityValueSettling(
+        api, String(write.deviceId), String(write.capability), write.value,
+      );
       const wanted = Number(write.value);
       const actual = Number(held);
       const matches = Number.isFinite(wanted) && Number.isFinite(actual)
@@ -2545,6 +2673,8 @@ async function commandPreview(api) {
 
       report('T22', 'OK', `${label}: probed "${probe?.name ?? probe?.deviceId}" — ${how}`);
     }
+    // Whatever this iteration did, put back the lamp this pass switched on.
+    await arranged.restore();
   }
 }
 

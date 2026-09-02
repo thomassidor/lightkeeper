@@ -178,6 +178,28 @@ export class DeviceCatalog {
     let rawZones: any;
     try {
       client = await this.api.read();
+      /**
+       * These two deliberately do NOT pass `NO_CACHE`, which is the other half
+       * of platform §15's rule — a `getAll` site either opts out or says what it
+       * is retaining and why. This is the why.
+       *
+       * They were changed to opt out, on the principle that a `getAll` retaining
+       * every device on the Homey is what §15 warns about, and because that
+       * snapshot is what `LightTargetAdapter.refresh()` was being served a stale
+       * value from. Then it was MEASURED on hardware, 2 September 2026: a fresh
+       * install with no devices went from 28.7 MB PSS to 33.9 MB. §15 explains
+       * it — with `$updateCache: false` nothing is cached, so every invalidation
+       * re-parses every device, and V8 never returns the pages a parse grew
+       * into, so each one raises the floor permanently. Opting out traded 5 MB
+       * of floor for retention that costs less than the parsing does.
+       *
+       * The staleness is fixed where it actually mattered instead:
+       * `refresh()` passes `$cache: false` so it reads the lamp rather than the
+       * snapshot, which is one single-device `get` per target at startup. Note
+       * the asymmetry §15 records — `$cache: false` is the CORRECTNESS half and
+       * `$updateCache: false` the memory half, and a reader that needs a live
+       * value only needs the first.
+       */
       [rawDevices, rawZones] = await Promise.all([
         client.devices.getDevices(),
         client.zones.getZones(),

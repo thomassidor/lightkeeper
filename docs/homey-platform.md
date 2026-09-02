@@ -903,6 +903,35 @@ TTL over a compact projection.
 **Rule: a new `getAll` call site either passes `NO_CACHE` from `lib/flow-card-catalogue.ts`, or
 carries a comment saying what it is retaining and why.**
 
+### The consequence nobody had drawn: a `get` is served from what a `getAll` filled
+
+The rule above is about MEMORY, and it hid a correctness bug for months. A `getAll` writes every
+item into `__cache`; a single-item `get` then READS that cache unless it opts out too. So
+`getDevices()` — every device on the Homey — silently made every later
+`getDevice({ id })` answer with a snapshot rather than with the device.
+
+Established on hardware, 2 September 2026, and it had bitten in two places at once:
+
+- **`LightTargetAdapter.refresh()`**, whose entire job is "refresh cached state from live values",
+  primed a lamp's power state from whenever `DeviceCatalog` last read the catalogue. Switch your
+  lights on, then pair a circadian light: its runtime reads them as OFF and `applyNow()` skips every
+  one, so the light does nothing at all until somebody next toggles a lamp — at which point the
+  capability subscription corrects the cache and it starts working. Reproduced directly: the lamps
+  were on, a separate client's `getDevice` returned `onoff: true`, and the app reported `on=false`
+  for the same device id.
+- **`scripts/verify-hardware.mjs`'s `capabilityValue()`**, which is how the hardware pass reads a
+  lamp back after a write. This is the one worth remembering, because a stale read is very good at
+  impersonating a misbehaving lamp: T25 polls for 15 seconds, and eight reads of one cached value
+  agree with each other perfectly, so "the lamp never reported the value" looked like a finding. It
+  was written into this reference as Hue-Bridge echo lag on 30 August 2026, and into
+  `hardware-test-coverage.md` as lamps that refuse external writes. Both were wrong. With
+  `$cache: false` the same six lines pass, including the override property T25 exists for, which had
+  never actually run.
+
+So: **anything reading a VALUE that can change under you passes `$cache: false`, `get` or `getAll`.**
+`$updateCache: false` is the memory half; `$cache: false` is the correctness half, and they are not
+the same question.
+
 ### Not retaining is only half of it: V8 never gives the pages back
 
 Measured on Node 22, parsing one 1700-card payload and then dropping every reference to it:

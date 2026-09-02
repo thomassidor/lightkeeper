@@ -36,9 +36,26 @@ function harness() {
     },
   };
 
+  /** Every `getDevice` call's options, so a test can assert the cache opt-out. */
+  const getDeviceCalls: any[] = [];
+
   const api = {
     async read() {
-      return { devices: { getDevice: async () => device } };
+      return {
+        devices: {
+          getDevice: async (options: any) => {
+            getDeviceCalls.push(options);
+            /**
+             * A stand-in for `homey-api`'s per-manager cache (platform §15):
+             * unless the caller opts out, it answers from the snapshot rather
+             * than from the live device. That is what made `refresh()` prime a
+             * lamp's power state from whenever the catalogue was last read.
+             */
+            if (options?.$cache === false) return device;
+            return cached ?? device;
+          },
+        },
+      };
     },
     track(unsubscribe: Unsubscribe): Unsubscribe {
       tracked.add(unsubscribe);
@@ -49,12 +66,19 @@ function harness() {
     },
   } as unknown as HomeyApiService;
 
+  /** Set to make an un-opted-out read answer with something stale. */
+  let cached: any = null;
+
   const cache = new TargetStateCache();
   cache.setCapabilities('light-1', { onoff: true, dim: { min: 0, max: 1 } });
 
   const adapter = new LightTargetAdapter(api, cache, () => { /* quiet */ });
 
-  return { adapter, cache, instances, tracked, live: () => instances.filter(i => !i.destroyed) };
+  return {
+    adapter, cache, instances, tracked, device, getDeviceCalls,
+    stale: (value: any) => { cached = value; },
+    live: () => instances.filter(i => !i.destroyed),
+  };
 }
 
 describe('capability subscriptions', () => {
@@ -143,5 +167,47 @@ describe('capability subscriptions', () => {
     await adapter.subscribe('light-1', ['onoff', 'dim']);
 
     assert.equal(calls, 2, 'dim is still attempted after onoff throws');
+  });
+});
+
+/**
+ * `refresh()` has to read the LAMP, not a snapshot of it.
+ *
+ * `DeviceCatalog` reads `getDevices()`, and a `getAll` writes every item it
+ * returns into `homey-api`'s per-manager cache for the life of the client
+ * (platform §15) — so `refresh()`'s `getDevice` was served from that snapshot
+ * and primed `actualOn` with whatever the lamp was doing when the catalogue was
+ * last read.
+ *
+ * Found on hardware: switch the lights on, pair a circadian light, and it reads
+ * them as off and writes nothing until somebody next toggles one.
+ */
+describe('refresh reads live values, not a cached snapshot', () => {
+  test('it opts out of the cache', async () => {
+    const h = harness();
+    await h.adapter.refresh('light-1');
+
+    assert.equal(h.getDeviceCalls.length, 1);
+    assert.equal(h.getDeviceCalls[0].$cache, false,
+      'without $cache: false this is served from the snapshot getDevices() populated');
+  });
+
+  test('a stale snapshot does not decide whether a lamp is on', async () => {
+    const h = harness();
+    // The live device is on; the snapshot says off, as it would after the
+    // catalogue was read before somebody reached for the switch.
+    (h.device as any).capabilitiesObj = { onoff: { value: true } };
+    h.stale({ capabilitiesObj: { onoff: { value: false } } });
+
+    await h.adapter.refresh('light-1');
+
+    assert.equal(h.cache.state('light-1').actualOn, true,
+      'the runtime would otherwise skip a lit lamp and write nothing to it');
+  });
+
+  test('it carries the id as well as the opt-out', async () => {
+    const h = harness();
+    await h.adapter.refresh('light-1');
+    assert.equal(h.getDeviceCalls[0].id, 'light-1');
   });
 });

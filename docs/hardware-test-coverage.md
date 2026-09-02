@@ -143,19 +143,31 @@ Every other old number — 1.2, 2.1, 2.2, 2.3, 2.6, 2.8, 3.8, 4.3, 5.2, 5.3, 5.5
 
 ## What the script still cannot answer
 
-**T25 — "a value set by hand is left alone" — depends on having a lamp that accepts one.**
-Both Studio lamps refuse an external `light_temperature` write while accepting the app's own: the
-app writes 0.96 and the lamp holds 0.95, but a direct write of 0.75 to the same lamp does not move
-it, and the check confirms the app wrote nothing in the window. So the property cannot be exercised
-there — a user changing the warmth by hand in the Homey app would hit the same refusal.
+**T25 — RESOLVED on 2 September 2026, and the earlier explanation here was wrong.**
 
-The check reports this as SKIPPED with that reasoning rather than as a pass or a failure, and
-separates it from the case that WOULD be a failure: if the app writes over a hand-set value inside
-15 seconds, it says so and fails. The override behaviour itself is covered by
-`circadian-runtime.test.ts`.
+This section used to say that both Studio lamps refuse an external `light_temperature` write, so the
+property could not be exercised and the line reported SKIPPED. The 30 August pass reached the same
+conclusion about T21 and T24 by a different route, blaming a Hue Bridge for echoing values back
+later than the script waits.
 
-To exercise it on hardware, point the pass at a room whose lamps take an external temperature write
-— `room` in `scripts/hardware-env.json`.
+Neither was the cause. **The script was reading its own cache.** `capabilityValue()` called
+`getDevice({ id })` with no `$cache: false`, and a `getAll` writes every item it returns into
+`homey-api`'s per-manager cache for the life of the client (platform §15) — which this script
+populates by enumerating devices. So the read-back was served the value from before the write, every
+time. T25 polling for 15 seconds made that look conclusive rather than stale: eight reads of one
+cached value agree with each other perfectly.
+
+The tell, in hindsight: a lamp the script said "never reported 0.480" was sitting at exactly 0.480
+when read a minute later over a client that had opted out.
+
+With `$cache: false` on that read, all of T21, T24, T25, T27, T28 and T29 pass — including the
+override property T25 is about, which had never once actually run. The same defect existed in the
+app's own `LightTargetAdapter.refresh()` and is fixed there too; it is worth knowing that a
+client-side cache can imitate hardware misbehaviour convincingly enough to be written into a
+platform reference twice.
+
+**The lamps were never the problem, so `room` in `scripts/hardware-env.json` does not need choosing
+for this.**
 
 **T9-T11 need a finger on a remote**, and always will. `bridge` proves dispatch, mapping,
 attribution and the write path by running the generated Flow's own action card; it cannot produce

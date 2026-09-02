@@ -308,3 +308,67 @@ describe('verify-hardware deletes only the devices it created', () => {
     );
   });
 });
+
+/**
+ * The pass has to read the LAMP, not a snapshot of it.
+ *
+ * A `getAll` writes every item into `homey-api`'s per-manager cache for the life
+ * of the client (platform §15), and this script enumerates devices — so a plain
+ * `getDevice({ id })` was served the value from before the write. That is not a
+ * memory problem, it is a correctness one, and it produced two wrong platform
+ * facts before anybody noticed: T21 and T24 were recorded as a Hue Bridge
+ * echoing late, and T25 as lamps that refuse external writes. Both were a cache.
+ *
+ * The tell was that T25 polls for FIFTEEN SECONDS and still reported the value
+ * as never arriving: eight reads of one cached entry agree with each other
+ * perfectly, so staleness impersonates a finding.
+ */
+describe('verify-hardware reads lamp values live', () => {
+  /** One function's source, by name, without needing an escape to find its end. */
+  function bodyOf(name: string): string {
+    const start = lines.findIndex(line => line.text.includes(`async function ${name}(`));
+    assert.ok(start >= 0, `${name}() is gone from the script`);
+    const end = lines.findIndex((line, index) => index > start && line.text === '}');
+    assert.ok(end > start, `${name}() has no closing brace at column 0`);
+    return lines.slice(start, end + 1).map(line => line.text).join('\n');
+  }
+
+  test('capabilityValue opts out of the cache', () => {
+    assert.match(
+      bodyOf('capabilityValue'), /\$cache:\s*false/,
+      'capabilityValue() must pass $cache: false — without it the read-back is served the '
+      + 'value from before the write, and a stale read imitates a misbehaving lamp',
+    );
+  });
+
+  test('the settling read exists and is bounded', () => {
+    const body = bodyOf('capabilityValueSettling');
+    assert.match(body, /deadline/, 'it has to give up rather than poll forever');
+    assert.match(body, /capabilityValue\(/, 'and it reads through the live reader');
+  });
+
+  test('a lamp the pass switches on is put back', () => {
+    const body = bodyOf('switchALampOn');
+    assert.match(body, /restore/, 'switchALampOn must hand back a restore');
+    assert.match(
+      body, /value:\s*false/,
+      'the restore has to switch the lamp back OFF — it was off when the pass found it',
+    );
+  });
+
+  test('every exit path calls the restore it was given', () => {
+    // A helper that returns a restore nobody calls is worse than no helper: it
+    // leaves somebody's lamp on and reports a pass.
+    const calls = (source.match(/arranged\.restore\(\)/g) ?? []).length;
+    assert.ok(calls >= 4, `only ${calls} restore call(s) — every exit path needs one`);
+  });
+
+  test('it no longer asks a person to flick a switch', () => {
+    // The prompt could not be shown in an unattended run, so four lines skipped
+    // every time nobody happened to have the right lamp on.
+    assert.equal(
+      /askForALampOn/.test(source), false,
+      'the pass arranges its own precondition now; the prompt is gone',
+    );
+  });
+});

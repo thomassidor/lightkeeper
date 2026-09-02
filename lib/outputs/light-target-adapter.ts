@@ -4,6 +4,7 @@ import type { TargetStateCache } from './target-state-cache';
 import { fireAndForget } from '../support/async';
 import { BoundedLog } from '../support/bounded-log';
 import { KeyedMutex } from '../support/keyed-mutex';
+import { NO_CACHE } from '../flow-card-catalogue';
 
 /**
  * Executes intents against targets and reconciles external changes.
@@ -364,11 +365,28 @@ export class LightTargetAdapter {
     this.handles.clear();
   }
 
-  /** Refresh cached state from live values — used at startup, never persisted. */
+  /**
+   * Refresh cached state from LIVE values — used at startup, never persisted.
+   *
+   * `NO_CACHE` is what makes that true, and without it this method did the
+   * opposite of its name. `DeviceCatalog` reads `getDevices()`, and a `getAll`
+   * writes every item it returns into `homey-api`'s per-manager `__cache` for
+   * the life of the client (platform §15) — so this `getDevice` was served from
+   * that snapshot, and primed `actualOn` with whatever the lamp was doing when
+   * the catalogue was last read.
+   *
+   * Found on hardware, 2 September 2026, and it is user-visible: switch your
+   * lights on, then pair a circadian light. Its runtime starts, reads the
+   * lamp as OFF from the cached snapshot, and `applyNow()` skips it — so the
+   * light does nothing at all until somebody next toggles it, at which point the
+   * capability subscription corrects the cache and it starts working. The lamps
+   * were demonstrably on, `getDevice` over a separate client returned
+   * `onoff: true`, and the app reported `on=false` for the same device.
+   */
   async refresh(deviceId: string): Promise<void> {
     const client = await this.api.read();
     try {
-      const device = await client.devices.getDevice({ id: deviceId });
+      const device = await client.devices.getDevice({ id: deviceId, ...NO_CACHE });
       /**
        * All five, because `initialise()` assigns all five.
        *
