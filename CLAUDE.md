@@ -270,8 +270,17 @@ user-facing string does: adding a language stays a sibling key (see the localisa
 Everything here is pinned to what was actually verified on hardware. Changing any of it means
 re-running the hardware pass list, not just re-running CI.
 
+**The firmware is the one thing in this list nobody pins, and it moves on its own.** The reference
+Homey was on 13.4.0-13.4.1 when everything below was verified, and was observed on **13.5.0-rc.4** on
+2 September 2026 — so the pins did not change and their justification quietly aged. That is not a
+reason to repin anything; it is a reason to re-derive a platform fact when it surprises you rather
+than trusting the note. §9 has been re-checked against 13.5.0-rc.4 and one row of its card table had
+gone stale (`cron:every` is now `cron:every_nth`, with a different shape); the card this app actually
+depends on, `cron:time_exactly`, is unchanged and is still the only card matching the shape match.
+Nothing else in the reference has been re-checked.
+
 - **`homey-api` is pinned exactly at `3.19.2`** — no caret. This is the version verified on
-  Homey Pro 2023, firmware 13.4.0. Its `engines.node` says `>=24`, which npm only *warns* about
+  Homey Pro 2023, firmware 13.4.0 (and still installing and connecting fine on 13.5.0-rc.4). Its `engines.node` says `>=24`, which npm only *warns* about
   (`EBADENGINE`); the package runs fine on the Node the Homey actually has and on Node 22 locally.
   A review recommended downgrading to `3.17.3` purely on the strength of that field — **do not**,
   on that evidence alone: it swaps a version proven on real hardware for one that never has been.

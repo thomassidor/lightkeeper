@@ -6,7 +6,12 @@ every site that depends on something written down below.
 
 This is how Homey actually behaves, as opposed to how it appears to, and it is documented nowhere
 else. Every section was established against real hardware: Homey Pro 2023, firmware 13.4.0-13.4.1,
-homey-api 3.19.2. Prefer updating a section over stripping it — each one is a decision reasoned
+homey-api 3.19.2.
+
+**The reference Homey has since moved to firmware 13.5.0-rc.4** (observed 2 September 2026). Only §9
+has been re-checked against it — one row of its card table had gone stale, and the card this app
+depends on had not. Everything else here still rests on 13.4.x, so a surprise on a newer firmware is
+a reason to re-derive the section rather than to disbelieve it. Prefer updating a section over stripping it — each one is a decision reasoned
 through once, or a platform fact that cost real hardware to establish.
 
 Who this is for: anyone changing this code, human or agent. [`../CLAUDE.md`](../CLAUDE.md) has the
@@ -140,7 +145,10 @@ build either, but it is handed to us on every device object, so nothing forces t
 
 ## 4. Device trigger cards are found by card ID, not by URI
 
-`getFlowCardTriggers()` returns ~1700 cards. Device-scoped cards encode their device in the card
+`getFlowCardTriggers()` returns ~1700 cards — 1869 on the reference Homey when re-counted on
+firmware 13.5.0-rc.4, 2 September 2026. The number is a function of how many apps are
+installed, so treat it as an order of magnitude rather than a constant; what it is for is the
+cost in §15. Device-scoped cards encode their device in the card
 **`id`**:
 
 ```
@@ -359,9 +367,26 @@ scoping and colour-token conventions with nothing failing.
 SDK v3 has **no cron manager** — v2's `ManagerCron` is gone, and the full `manager/` list (api, apps,
 arp, audio, ble, clock, cloud, dashboards, discovery, drivers, flow, geolocation, i18n, images,
 insights, ledring, nfc, notifications, rf, settings, speech-input, speech-output, zigbee, zwave) has
-nothing else that fires at a time. There is no sunrise/sunset helper either; `ManagerGeolocation`
-offers latitude and longitude and requires `homey:manager:geolocation`, which this app does not
-declare.
+nothing else that fires at a time. There is no sunrise/sunset helper in the SDK either;
+`ManagerGeolocation` offers latitude and longitude and requires `homey:manager:geolocation`, which
+this app does not declare.
+
+**But the FLOW ENGINE has sunrise and sunset trigger cards, and that is a different thing.**
+Re-checked on firmware 13.5.0-rc.4: `homey:manager:cron:sunrise` and `homey:manager:cron:sunset`
+both exist, each taking a single `before` of type `number`. The sentence above was written about the
+SDK's managers and read for a long time as though it settled the whole question; it does not.
+
+What that does and does not unblock, because the two device families are not alike:
+
+- **For a SCHEDULE it is genuinely available today.** A schedule fires AT a boundary, and this
+  section's whole argument is that the Flow engine should own the hard parts of "when" — so a
+  sunset boundary is the same shape as a 22:00 one, needs no new permission, and needs no solar
+  maths of ours. It is not implemented; nothing about it is blocked.
+- **For a CURVE it is still blocked, and §12 is right.** A curve has a value at EVERY minute, so
+  `resolveAnchor()` needs the sunrise *minute* to interpolate against — a number, not an event. A
+  trigger card fires; it does not answer "when is sunrise today". So `{ kind: 'sun' }` still wants
+  either `homey:manager:geolocation` plus solar maths, or a way to read those cards' resolved times
+  that has not been established.
 
 What the SDK does give, and all a schedule needs:
 
@@ -392,15 +417,30 @@ Consequences worth not re-deriving:
 - **Everything about time is a wall-clock minute count, 0–1439** — never a timestamp, never a UTC
   offset. Because the Flow engine fires, the app never has to answer "when is the next 22:00 in
   Europe/Copenhagen", only "is it 22:00 there now". That is what keeps DST out of our code entirely.
-- **The card, confirmed on hardware** (Homey Pro 2023, firmware 13.4.0, via the app's own
-  diagnostics on 18 August 2026):
+- **The card, confirmed on hardware** — first on firmware 13.4.0 via the app's own diagnostics on
+  18 August 2026, and **re-checked against firmware 13.5.0-rc.4 on 2 September 2026** by enumerating
+  all 1869 trigger cards directly. One row of the original table had gone stale in between, which is
+  the reason the re-check is worth recording rather than just the result:
 
-  | Card | Arguments |
-  |---|---|
-  | `homey:manager:cron:time_exactly` | `time` of type `time`. **This is the one we use.** |
-  | `homey:manager:cron:time_exactly_day` | `time` of type `time`, plus `day` of type `multiselect` |
-  | `homey:manager:cron:every` | `minutes` of type `number` |
-  | `homey:manager:energy:dynamic_electricity_price_period_{lowest,highest}_start_between` | `duration`, `unit`, `startTime`, `endTime` |
+  | Card | Arguments | 13.5.0-rc.4 |
+  |---|---|---|
+  | `homey:manager:cron:time_exactly` | `time` of type `time`. **This is the one we use.** | unchanged |
+  | `homey:manager:cron:time_exactly_day` | `time` of type `time`, plus `day` of type `multiselect` | unchanged |
+  | `homey:manager:cron:every` | `minutes` of type `number` | **GONE.** Replaced by `homey:manager:cron:every_nth`, taking `n` of type `number` and `type` of type `dropdown` |
+  | `homey:manager:cron:sunrise` / `:sunset` | `before` of type `number` | present — see the note at the top of this section |
+  | `homey:manager:energy:dynamic_electricity_price_period_{lowest,highest}_start_between` | `duration`, `unit`, `startTime`, `endTime` | unchanged |
+
+  **The shape match still resolves to exactly one card**, which is the fact that actually matters:
+  of all 1869 triggers on that Homey, `homey:manager:cron:time_exactly` is the ONLY one whose
+  arguments are a single `time`. So `discoverTimeCard()` is unambiguous on this firmware without
+  relying on `KNOWN_TIME_CARDS` to rank it — and the energy cards above are still why the match
+  requires the time to be the only argument, since two of them carry `time`-typed arguments and four
+  arguments in total.
+
+  A firmware that DID move this card is what
+  `hasBeenUserEdited(…, { triggerIdMayHaveMoved })` exists for: the card's identity is a schedule's
+  whole fingerprint, and without that flag `sync()` read a moved card as a user edit and could never
+  rebuild against the new one.
 
   The trigger argument's value is the wall-clock string `"HH:MM"`. The uri is
   `homey:flowcardtrigger:` + the id, which is §3's rule and is still never constructed — it is
