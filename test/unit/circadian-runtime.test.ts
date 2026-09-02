@@ -569,6 +569,100 @@ describe('pre-staging that turns out to be unsafe', () => {
     assert.deepEqual(h.writes.filter(w => w.capability === 'onoff'), []);
   });
 
+  /**
+   * The probe wrote `light_temperature` straight through the adapter with no
+   * `light_mode` first, unlike every production pre-stage write. Platform §6
+   * measured that a lamp sitting in colour mode refuses a temperature "from
+   * anything — this app or a direct API write", so on such a lamp the probe
+   * changed nothing, the lamp stayed off, and it reported `stayedOff: true` — a
+   * false pass on the exact question it exists to answer.
+   */
+  test('the probe switches the lamp into the mode it is about to write', async () => {
+    const lamp = light('l1', ['onoff', 'dim', 'light_temperature', 'light_mode'], { onoff: false });
+    const h = harness({ plan: plan({ preStage: true }), devices: [lamp, light('l2')] });
+    await h.runtime.startIdle();
+
+    const probe = h.runtime.probePreStage(0);
+    await settle();
+    h.runTimers();
+    await probe;
+
+    const order = h.writes.filter(w => w.deviceId === 'l1').map(w => w.capability);
+    assert.deepEqual(order, ['light_mode', 'light_temperature'],
+      'the mode goes first, or the lamp discards the value it enables');
+  });
+
+  /**
+   * A colour-only lamp is the one a coloured curve drives, and the probe could
+   * not see it: it filtered candidates on `light_temperature` alone, so a
+   * household whose lamps do colour and not temperature was told there was
+   * nothing to test.
+   */
+  test('the probe tests the axis the curve will actually write', async () => {
+    const colourOnly = light('l1', ['onoff', 'light_hue', 'light_saturation'], { onoff: false });
+    const h = harness({
+      plan: plan({
+        preStage: true,
+        points: [
+          { id: 'p1', anchor: { kind: 'clock', at: 21 * 60 }, warmth: 0.9, color: 'amber' },
+          { id: 'p2', anchor: { kind: 'clock', at: 23 * 60 }, warmth: 0.9, color: 'amber' },
+        ],
+      }),
+      devices: [colourOnly],
+    });
+    await h.runtime.startIdle();
+
+    const probe = h.runtime.probePreStage(0);
+    await settle();
+    h.runTimers();
+    const outcome = await probe;
+
+    assert.equal(outcome.deviceId, 'l1', 'a colour-only lamp IS testable');
+    const written = h.writes.filter(w => w.deviceId === 'l1').map(w => w.capability);
+    assert.ok(written.includes('light_hue'), `wrote ${written.join(', ')}`);
+  });
+
+  /**
+   * The health check counted `light_temperature` alone, so a Curve light whose
+   * points carry colours, pointed at colour-only lamps, was reported as "None of
+   * its lights can change their warmth" and taken offline — while `planWrites()`
+   * drives exactly that lamp on the hue axis, and the pairing screen's probe
+   * tests it happily. Pair it, watch the test pass, save, find it unavailable.
+   */
+  test('a coloured curve over colour-only lamps is ready, not broken', async () => {
+    const colourOnly = light('l1', ['onoff', 'light_hue', 'light_saturation']);
+    const h = harness({
+      plan: plan({
+        target: { kind: 'devices', deviceIds: ['l1'] },
+        points: [
+          { id: 'p1', anchor: { kind: 'clock', at: 21 * 60 }, warmth: 0.9, color: 'amber' },
+          { id: 'p2', anchor: { kind: 'clock', at: 23 * 60 }, warmth: 0.9, color: 'amber' },
+        ],
+      }),
+      devices: [colourOnly],
+    });
+
+    await h.runtime.start();
+    await h.settle();
+
+    assert.equal(h.runtime.currentState, 'ready');
+  });
+
+  test('a curve with no colours over colour-only lamps is still broken', async () => {
+    // Nothing to drive it with: no temperature capability, and no colour asked
+    // for. Reporting repair is right here.
+    const colourOnly = light('l1', ['onoff', 'light_hue', 'light_saturation']);
+    const h = harness({
+      plan: plan({ target: { kind: 'devices', deviceIds: ['l1'] } }),
+      devices: [colourOnly],
+    });
+
+    await h.runtime.start();
+    await h.settle();
+
+    assert.equal(h.runtime.currentState, 'needs_repair');
+  });
+
   test('the probe says so when every light is already on', async () => {
     const h = harness({ plan: plan({ preStage: true }) });
     await h.runtime.startIdle();

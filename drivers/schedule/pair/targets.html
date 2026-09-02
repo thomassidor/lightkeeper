@@ -154,8 +154,14 @@
     <div class="tab" data-mode="zone" data-i18n="targets.useZone"></div>
   </div>
 
+  <!--
+    ABOVE both panes, not inside one. It used to live in #tg-devicesPane, which
+    switchMode() hides in zone mode — so a failure while picking a zone had
+    nowhere to appear.
+  -->
+  <div id="tg-loadError" class="msg bad" style="display:none;"></div>
+
   <div id="tg-devicesPane">
-    <div id="tg-loadError" class="msg bad" style="display:none;"></div>
     <div id="tg-rooms"></div>
   </div>
 
@@ -318,8 +324,25 @@ function __lkBootTg(Homey) {
     }
 
     emit('selectTargets', spec()).then(function (result) {
+      clearFailure();
       document.getElementById('tg-count').textContent = Homey.__('targets.selected', { count: result.count });
       setSummary(result.support);
+    }).catch(function () {
+      /**
+       * Say so, rather than leaving the screen disagreeing with the session.
+       *
+       * This had no catch at all. On any rejection — a stale device id, a repair
+       * whose stored zone has been deleted, a transient catalogue read, the
+       * emit() timeout — the tiles and the count went on showing one thing while
+       * the pair session's own target spec held another, silently. Nothing
+       * downstream re-sends or re-checks it, so Next and then Save could create
+       * a device aimed at lights the user never chose.
+       *
+       * (Not naming that field with a dot here on purpose: locales.test.ts
+       * scans the source for `<group>.<key>` literals, and `state` is a locale
+       * group — see the same note in lib/validation/plans.ts.)
+       */
+      fail(Homey.__('targets.loadFailed'));
     });
   }
 
@@ -339,6 +362,18 @@ function __lkBootTg(Homey) {
     var el = document.getElementById('tg-loadError');
     el.textContent = text;
     el.style.display = 'block';
+  }
+
+  /**
+   * Clear it again, which `fail()` alone never did.
+   *
+   * Without this a single transient failure left a red banner up for the rest of
+   * the session, contradicted by every successful tap after it.
+   */
+  function clearFailure() {
+    var el = document.getElementById('tg-loadError');
+    el.textContent = '';
+    el.style.display = 'none';
   }
 
   emit('listTargets').then(function (data) {

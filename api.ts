@@ -10,6 +10,7 @@
  */
 
 import { flowWriteProbe } from './lib/credential-service';
+import { FUNCTION_CAPABILITY } from './lib/mapping/mapping-types';
 import { sanitiseEntries } from './lib/schedules/schedule-types';
 import type {
   DiagnosticsResponse, LightkeeperApp, StatusResponse,
@@ -474,8 +475,22 @@ module.exports = {
     const runtime = app.controllers.get(id);
     if (!runtime) throw new Error(`no controller with id "${id}" is running`);
 
+    /**
+     * Checked against the closed set before it is cast.
+     *
+     * `func as any` defeated the compile-time exhaustiveness `mapping-engine.ts`
+     * relies on: `intentForLightFunction` has no default arm, so an unrecognised
+     * string fell off the switch, returned `undefined`, and crashed inside
+     * `requiredCapability` with an opaque TypeError. A route answering a bad body
+     * with a stack trace instead of a refusal is the one thing every other
+     * handler in this file is careful not to do — and this is the same membership
+     * check `pairing-dto.ts` already makes on the same value.
+     */
     const func = String(body?.func ?? '');
     if (!func) throw new Error('no func in the request');
+    if (!(func in FUNCTION_CAPABILITY)) {
+      throw new Error(`"${func}" is not a light function`);
+    }
     const deviceIds = Array.isArray(body?.deviceIds) ? body.deviceIds.map(String) : undefined;
     return runtime.testFunction(func as any, deviceIds);
   },

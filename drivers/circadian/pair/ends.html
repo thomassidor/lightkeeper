@@ -351,7 +351,7 @@ function __lkBootEn(Homey) {
         ? warmthText(next)
         : Homey.__('schedule.percent', { percent: Math.round(next * 100) });
     });
-    input.addEventListener('change', push);
+    input.addEventListener('change', pushQuietly);
 
     wrap.appendChild(input);
     wrap.appendChild(value);
@@ -418,18 +418,35 @@ function __lkBootEn(Homey) {
     });
   }
 
+  /**
+   * `push()` where nobody is going to chain onto it.
+   *
+   * `push()` deliberately lets a rejection propagate, because Preview, Test and
+   * Save all chain onto it and report the failure themselves. The three
+   * fire-and-forget sites — a slider settling, and the two checkboxes — had no
+   * catch at all, so a refused round trip was an unhandled rejection in the
+   * webview and the user saw nothing. Lower stakes than the light picker's,
+   * because Save pushes again before it saves, but silence is still the wrong
+   * answer.
+   */
+  function pushQuietly() {
+    push().catch(function (err) {
+      show('bad', err.message || String(err));
+    });
+  }
+
   document.getElementById('end-adjustBrightness').addEventListener('change', function (e) {
     model.adjustBrightness = e.target.checked;
     // Re-render: the per-end brightness sliders appear and disappear with this
     // box, so switching it on has to put them where the user can see what they
     // just asked for.
     render();
-    push();
+    pushQuietly();
   });
 
   document.getElementById('end-preStage').addEventListener('change', function (e) {
     model.preStage = e.target.checked;
-    push();
+    pushQuietly();
   });
 
   document.getElementById('end-preview').addEventListener('click', function () {

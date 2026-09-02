@@ -167,12 +167,24 @@ export class FlowFolderManager {
     // name resolve to one folder by design (see renameIfOurs), so they are the
     // pair that must not race each other into creating it twice.
     return this.mutex.run(`folder:${name}`, async () => {
-      // Re-checked inside the lock. The `view` we were handed was read before
-      // the queue formed, so a caller ahead of us may have created this folder
-      // since — its record is in the same live `view.folders` map.
-      const byName = [...view.folders.values()]
-        .find(f => f.parent === view.root && f.name === name);
-      if (byName) return byName.id;
+      /**
+       * Re-checked inside the lock, against the HOMEY rather than against our
+       * own snapshot.
+       *
+       * It re-checked `view.folders`, and that gained nothing: `load()` is
+       * called once per reconcile and hands each pass its OWN view object, so a
+       * folder created by the caller ahead of us in this queue was written into
+       * their map and was invisible in ours. Two devices the user gave the same
+       * name, both resolving a folder for the first time in one boot storm,
+       * could therefore each create `Lightkeeper/<name>`.
+       *
+       * The consequence is cosmetic — folders are presentation, and nothing
+       * treats one as evidence that a flow is ours — but the lock exists for
+       * exactly this and was not doing it. One extra read, on the miss path
+       * only, which is the pass that is about to write anyway.
+       */
+      const byName = await this.findByName(view, name);
+      if (byName) return byName;
 
       try {
         const created = await this.api.withWriteClient(async write =>
@@ -185,6 +197,28 @@ export class FlowFolderManager {
         return undefined;
       }
     });
+  }
+
+  /**
+   * A folder of this name directly under our root, as the Homey has it now.
+   *
+   * Read live rather than from the caller's snapshot — see resolveForDevice for
+   * why that distinction is the whole point. Falls back to the snapshot if the
+   * read fails, because folder work must never block a flow write.
+   */
+  private async findByName(view: FolderView, name: string): Promise<string | undefined> {
+    try {
+      const client = await this.api.read();
+      const records = (Object.values(await client.flow.getFlowFolders(NO_CACHE)) as any[])
+        .map(toRecord);
+      // Folded back in, so the rest of this pass sees what we just learned.
+      for (const record of records) view.folders.set(record.id, record);
+      return records.find(f => f.parent === view.root && f.name === name)?.id;
+    } catch (error) {
+      this.warn(`Could not re-read folders before creating "${name}"`, error);
+      return [...view.folders.values()]
+        .find(f => f.parent === view.root && f.name === name)?.id;
+    }
   }
 
   /**

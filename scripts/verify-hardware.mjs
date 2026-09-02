@@ -3849,7 +3849,7 @@ async function main() {
    * nothing ever prints them. Only after `full`, where the claim "this is the
    * whole pass" is actually being made.
    */
-  if (commands.length >= FULL.length) {
+  if (expanded) {
     console.log('\nStill needs a person:');
     for (const line of STILL_MANUAL) console.log(`  ${line}`);
   }

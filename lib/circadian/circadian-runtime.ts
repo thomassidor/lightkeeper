@@ -124,6 +124,25 @@ const SETTLE_MS = 3000;
 const PRE_STAGE_CHECK_MS = 1500;
 
 /**
+ * The capabilities a write to an OFF lamp can be a pre-stage write on.
+ *
+ * Both axes, and the omission of the second was the bug. Pre-staging is a
+ * colour-only idea — brightness is never sent to an off lamp, because a `dim`
+ * write turns one on (platform §12) — but "colour" means a colour TEMPERATURE
+ * on a lamp that has one and a HUE on a lamp that does not, and `planWrites()`
+ * routes a colour-capable lamp away from the temperature leg by construction.
+ * So during a Curve light's coloured segments the probe was armed by nothing at
+ * all, and §12's promise that pre-staging is "self-disabling, and persists that"
+ * could not fire: a lamp that wakes from a hue write repeated the surprise every
+ * night.
+ *
+ * Keyed on `light_hue` rather than on saturation or mode, because mode and
+ * saturation ride in the same batch — the same reason `noteColorWritten` commits
+ * the pair off the hue outcome.
+ */
+const PRE_STAGE_CAPABILITIES: readonly Capability[] = ['light_temperature', 'light_hue'];
+
+/**
  * What `diagnostics()` returns. See ControllerDiagnostics for why it is typed.
  *
  * No `credential` field, and its absence is the feature: this device type
@@ -538,9 +557,10 @@ export class CircadianRuntime {
        */
       const preStaged = new Map<string, number>();
       for (const write of writes) {
-        // Only the colour of an off light can be a pre-stage write; brightness
-        // is never sent to one (platform §12).
-        if (write.capability !== 'light_temperature') continue;
+        // Only the COLOUR of an off light can be a pre-stage write; brightness
+        // is never sent to one (platform §12). Both colour axes count — see
+        // PRE_STAGE_CAPABILITIES.
+        if (!PRE_STAGE_CAPABILITIES.includes(write.capability)) continue;
         if (this.cache.state(write.deviceId).actualOn === true) continue;
         const generation = (this.writeGeneration.get(write.deviceId) ?? 0) + 1;
         this.writeGeneration.set(write.deviceId, generation);
@@ -566,7 +586,10 @@ export class CircadianRuntime {
         this.noteOutcomes(outcomes);
         for (const outcome of outcomes) {
           if (outcome.status !== 'succeeded') continue;
-          if (outcome.capability !== 'light_temperature') continue;
+          // The same allowlist as the arming loop above. Widening only one of
+          // the two leaves the other filtering every hue outcome out, and the
+          // probe still never arms.
+          if (!PRE_STAGE_CAPABILITIES.includes(outcome.capability)) continue;
           const generation = preStaged.get(outcome.deviceId);
           if (generation === undefined) continue;
           this.verifyStayedOff(outcome.deviceId, generation);
@@ -845,8 +868,19 @@ export class CircadianRuntime {
 
     await Promise.all(this.targetIds.map(id => this.adapter.refresh(id)));
 
+    /**
+     * A lamp this curve can actually pre-stage, on whichever axis it will be
+     * written on.
+     *
+     * `light_temperature` alone skipped a colour-only lamp — which is the one a
+     * coloured curve drives — so such a household was told there was nothing to
+     * test.
+     */
+    const wantsColour = value.color !== undefined;
     const index = this.targetIds.findIndex(id =>
-      this.cache.supports(id, 'light_temperature') && this.cache.state(id).actualOn !== true);
+      this.cache.state(id).actualOn !== true
+      && (this.cache.supports(id, 'light_temperature')
+        || (wantsColour && this.cache.supports(id, 'light_hue'))));
 
     if (index === -1) {
       return {
@@ -879,7 +913,41 @@ export class CircadianRuntime {
      * Nothing was changed on the lamp, so nothing needs restoring.
      */
     try {
-      await this.adapter.write(deviceId, 'light_temperature', value.warmth);
+      /**
+       * PLANNED, not hand-rolled, and this is the second half of the same bug.
+       *
+       * It wrote `light_temperature` straight through the adapter with no
+       * `light_mode` first, unlike every production pre-stage write, which goes
+       * through `planIntent`. Platform §6 measured that a lamp sitting in colour
+       * mode refuses a temperature "from anything — this app or a direct API
+       * write", so on such a lamp the probe changed nothing, the lamp stayed
+       * off, and it reported `stayedOff: true` — a FALSE PASS on the exact
+       * question it exists to answer.
+       *
+       * The planner also picks the right axis: a colour-capable lamp under a
+       * coloured point is written the point's colour, which is what pre-staging
+       * would actually do to it.
+       *
+       * Safe to write `planned.writes` in order here specifically:
+       * `planTemperature` and `planColor` each emit `light_mode` before the
+       * value it governs, and this plans for exactly ONE device — so there is no
+       * interleaving for the scheduler's `WRITE_ORDER` to have to fix. This path
+       * deliberately stays off the queue: there is nothing to coalesce and the
+       * answer has to be about one specific write.
+       */
+      const planned = wantsColour && this.cache.supports(deviceId, 'light_hue')
+        ? planIntent(
+          { type: 'color_absolute', hue: value.color!.hue, saturation: value.color!.saturation },
+          [deviceId], this.cache, DEFAULT_BEHAVIOR,
+        )
+        : planIntent(
+          { type: 'temperature_absolute', value: value.warmth },
+          [deviceId], this.cache, DEFAULT_BEHAVIOR,
+        );
+
+      for (const write of planned.writes) {
+        await this.adapter.write(deviceId, write.capability, write.value);
+      }
     } catch (error) {
       return {
         deviceId,
@@ -924,12 +992,25 @@ export class CircadianRuntime {
       return;
     }
 
-    // A circadian light pointed at lamps that cannot change colour does nothing
-    // at all, and would otherwise report 'ready' for ever. Some-but-not-all is
-    // already 'partial' by way of assessTargets — a group where three of five
-    // lights can change colour still works, and says so.
-    const warmthCapable = this.targetIds.filter(id => this.cache.supports(id, 'light_temperature'));
-    if (this.targetIds.length > 0 && warmthCapable.length === 0) {
+    /**
+     * A curve-driven light pointed at lamps it cannot drive does nothing at all,
+     * and would otherwise report 'ready' for ever. Some-but-not-all is already
+     * 'partial' by way of assessTargets — a group where three of five lights can
+     * change colour still works, and says so.
+     *
+     * "Cannot drive" is both axes, not just temperature. `planWrites()` sends a
+     * palette colour to a lamp with `light_hue` and the point's warmth to one
+     * without, so a Curve light whose points carry colours drives a COLOUR-ONLY
+     * lamp perfectly — and this reported it as "None of its lights can change
+     * their warmth" and took the device offline. The pairing screen's own probe
+     * tests such a lamp quite happily, so the two disagreed: pair it, watch the
+     * test pass, save, and find it unavailable.
+     */
+    const wantsColour = this.plan.points.some(point => point.color !== undefined);
+    const drivable = this.targetIds.filter(id =>
+      this.cache.supports(id, 'light_temperature')
+      || (wantsColour && this.cache.supports(id, 'light_hue')));
+    if (this.targetIds.length > 0 && drivable.length === 0) {
       this.setState('needs_repair', {
         key: 'state.noWarmthTargets',
         text: 'None of its lights can change their warmth.',

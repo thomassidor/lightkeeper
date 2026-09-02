@@ -3,6 +3,7 @@ import type { Capability, WriteValue } from './intent-planner';
 import type { TargetStateCache } from './target-state-cache';
 import { fireAndForget } from '../support/async';
 import { BoundedLog } from '../support/bounded-log';
+import { KeyedMutex } from '../support/keyed-mutex';
 
 /**
  * Executes intents against targets and reconciles external changes.
@@ -267,6 +268,19 @@ export class LightTargetAdapter {
    * circadian light cares about both edges of `onoff` and about someone
    * overriding its colour by hand.
    */
+  /**
+   * Serialised PER DEVICE, because "replace, never stack" is a read-then-write.
+   *
+   * The `set` at the end of `subscribe()` lands after two awaits, so two
+   * overlapping calls for one device both saw "nothing subscribed", both built a
+   * full set of capability instances, and the second `set` overwrote the first —
+   * orphaning a live array of listeners on somebody's lamp with nothing left
+   * holding a handle to destroy them. `KeyedMutex` is a plain per-key FIFO and
+   * exists in this repo for exactly this shape ("a read-then-create is only safe
+   * if two callers cannot both read absent").
+   */
+  private readonly subscriptionLock = new KeyedMutex();
+
   async subscribe(
     deviceId: string,
     capabilities: Capability[],
@@ -274,8 +288,19 @@ export class LightTargetAdapter {
       deviceId: string, capability: Capability, value: unknown, external: boolean,
     ) => void,
   ): Promise<void> {
+    return this.subscriptionLock.run(deviceId, () =>
+      this.subscribeNow(deviceId, capabilities, onChange));
+  }
+
+  private async subscribeNow(
+    deviceId: string,
+    capabilities: Capability[],
+    onChange?: (
+      deviceId: string, capability: Capability, value: unknown, external: boolean,
+    ) => void,
+  ): Promise<void> {
     // Replace, never stack. See the `subscriptions` field for why.
-    await this.unsubscribe(deviceId);
+    await this.unsubscribeNow(deviceId);
 
     const client = await this.api.read();
     const device = await client.devices.getDevice({ id: deviceId });
@@ -308,6 +333,12 @@ export class LightTargetAdapter {
 
   /** Drop every capability subscription for one target. */
   async unsubscribe(deviceId: string): Promise<void> {
+    // Through the same per-device lock, or an unsubscribe can interleave with a
+    // subscribe and leave the instances it was meant to remove behind.
+    return this.subscriptionLock.run(deviceId, () => this.unsubscribeNow(deviceId));
+  }
+
+  private async unsubscribeNow(deviceId: string): Promise<void> {
     const existing = this.subscriptions.get(deviceId);
     if (!existing) return;
     this.subscriptions.delete(deviceId);
@@ -338,10 +369,28 @@ export class LightTargetAdapter {
     const client = await this.api.read();
     try {
       const device = await client.devices.getDevice({ id: deviceId });
+      /**
+       * All five, because `initialise()` assigns all five.
+       *
+       * It used to pass three, and `initialise()` writes every pair
+       * unconditionally — so a refresh BLANKED the hue and saturation that
+       * `primeCache()` had just seeded. Only the curve-driven runtimes subscribe
+       * to `light_hue`, and for each of their colour-capable lamps
+       * `desiredHue` was then undefined until the first successful hue write
+       * committed one. In that window a redundant hue report carrying the lamp's
+       * UNCHANGED value had nothing to be compared against, so it read as
+       * somebody reaching for the vendor app and stood the device down for that
+       * light.
+       *
+       * The fields are already on the object being read; nothing extra is
+       * fetched.
+       */
       this.cache.initialise(deviceId, {
         onoff: device.capabilitiesObj?.onoff?.value,
         dim: device.capabilitiesObj?.dim?.value,
         light_temperature: device.capabilitiesObj?.light_temperature?.value,
+        light_hue: device.capabilitiesObj?.light_hue?.value,
+        light_saturation: device.capabilitiesObj?.light_saturation?.value,
       });
     } catch (error) {
       this.recordFailure(deviceId, 'onoff', error);
