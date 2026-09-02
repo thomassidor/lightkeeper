@@ -183,3 +183,53 @@ describe('no view reads the API key', () => {
     assert.equal(api.includes('getWriteClient'), false);
   });
 });
+
+/**
+ * A pasted key must not outlive the round trip that checks it.
+ *
+ * Every pair view of a session is injected into ONE document (platform §8), and
+ * that document also renders third-party device and zone names on the next
+ * screen. The credential view read `#cr-key` and navigated on without clearing
+ * it, so the plaintext key sat in an input there for the rest of the session —
+ * while `settings/index.html` had always cleared its own field.
+ *
+ * Not a live vulnerability: every `innerHTML` site in the app escapes correctly,
+ * which the tests above are about. It is the thing that perimeter exists to make
+ * unnecessary, and the guard nearest it ("no view reads the API key") asserts
+ * something adjacent — that no view MENTIONS the settings storage key — not this.
+ */
+describe('the credential screens do not keep what was pasted into them', () => {
+  const CREDENTIAL_VIEWS = ['controller/pair', 'controller/repair', 'schedule/pair', 'schedule/repair'];
+
+  test('every credential view clears its field', () => {
+    for (const view of CREDENTIAL_VIEWS) {
+      const source = readFileSync(
+        join(import.meta.dirname, '..', '..', 'drivers', ...view.split('/'), 'credential.html'),
+        'utf8',
+      );
+      assert.match(
+        source, /field\.value = ''/,
+        `drivers/${view}/credential.html never clears the pasted key`,
+      );
+    }
+  });
+
+  test('it clears on the failure path too, not only on success', () => {
+    const source = readFileSync(
+      join(import.meta.dirname, '..', '..', 'drivers', 'controller', 'pair', 'credential.html'),
+      'utf8',
+    );
+    // A refused key is still a key, and a refusal is the path a user retries
+    // from — so it is the one most likely to leave the field populated.
+    const afterEmit = source.slice(source.indexOf("emit('setCredential'"));
+    const inCatch = afterEmit.slice(afterEmit.indexOf('.catch('));
+    assert.match(inCatch, /forget\(\)/, 'the catch branch does not clear the field');
+  });
+
+  test('the settings page still clears its own, which is where the idea came from', () => {
+    const source = readFileSync(
+      join(import.meta.dirname, '..', '..', 'settings', 'index.html'), 'utf8',
+    );
+    assert.match(source, /getElementById\('key'\)\.value = ''/);
+  });
+});
