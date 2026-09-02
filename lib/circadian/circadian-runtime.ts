@@ -287,9 +287,21 @@ export class CircadianRuntime {
   }
 
   private async buildRuntime(): Promise<void> {
-    const resolved = await this.resolver.resolve(this.plan.target);
-    this.targetIds = resolved.devices.map(d => d.id);
-    this.targetNames = resolved.devices.map(d => `${d.name} (${d.zoneName})`);
+    /**
+     * `resolveSnapshot`, and the snapshot is RECORDED here.
+     *
+     * It used to be written only by `refreshTargets()`, which meant the field
+     * did not mean what its own doc says. Two consequences: the first catalogue
+     * change of a runtime's life diffed against `null`, so `removed` was empty
+     * and a light that had just left the plan kept its capability subscription
+     * and its cache state — the acceptance bar for that work is that switching
+     * such a light on produces ZERO writes. And after `stop()`/`start()` the
+     * field described the PREVIOUS plan's targets.
+     */
+    const resolved = await resolveSnapshot(this.resolver, this.plan.target);
+    this.snapshot = resolved;
+    this.targetIds = resolved.ids;
+    this.targetNames = resolved.names;
     this.resolver.primeCache(resolved.devices, this.cache);
 
     this.scheduler = new CommandScheduler({
@@ -718,7 +730,24 @@ export class CircadianRuntime {
     for (const outcome of outcomes) {
       if (outcome.status !== 'succeeded') continue;
       const entry = this.lastWritten.get(outcome.deviceId) ?? { at: this.now() };
-      if (outcome.capability === 'light_temperature') entry.warmth = outcome.value as number;
+      if (outcome.capability === 'light_temperature') {
+        entry.warmth = outcome.value as number;
+        /**
+         * A temperature write VOIDS whatever colour we last recorded, because
+         * it takes the lamp out of colour mode to get there: `WRITE_ORDER` puts
+         * `light_mode` ahead of `light_temperature` for exactly that reason
+         * (platform §6).
+         *
+         * Without this the record stood, and `colorHasMoved()` compared against
+         * it — so when the curve came back round to a coloured segment the hue
+         * write was declined as "already there" against a colour the lamp had
+         * physically left. And since ONE coloured point colours the two segments
+         * either side of it (platform §12), a curve with a single coloured point
+         * wrote its colour once, on the first pass, and never again.
+         */
+        this.lastColorWritten.delete(outcome.deviceId);
+        this.pendingColor.delete(outcome.deviceId);
+      }
       if (outcome.capability === 'light_hue') {
         // Saturation is written in the same batch, so recording it from the hue
         // outcome would be recording a value that has not landed yet. The pair
@@ -938,6 +967,10 @@ export class CircadianRuntime {
       });
       this.overrides.delete(deviceId);
       this.lastWritten.delete(deviceId);
+      // Same reason as in stop(): a light that leaves and later rejoins the plan
+      // must not be gated against what we wrote to it while it was ours.
+      this.lastColorWritten.delete(deviceId);
+      this.pendingColor.delete(deviceId);
       this.cancelProbe(deviceId);
     }
 
@@ -970,8 +1003,17 @@ export class CircadianRuntime {
     this.cache.clear();
     this.overrides.clear();
     this.lastWritten.clear();
+    // The colour side of the same bookkeeping, and it used to be left standing
+    // here while its temperature counterpart was cleared. `updatePlan()` is
+    // stop-then-start and `start()`'s own apply is NOT forced, so a plan change
+    // left `colorHasMoved()` comparing the new curve's colour against a record
+    // from the old one — and declining the first write.
+    this.lastColorWritten.clear();
+    this.pendingColor.clear();
     this.targetIds = [];
     this.targetNames = [];
+    // Or the next refresh diffs the new plan's targets against the old plan's.
+    this.snapshot = null;
   }
 
   /**

@@ -134,11 +134,44 @@ describe('every rejection names the field', () => {
       ...validCircadian(),
       points: [{ id: 'p1', anchor: { kind: 'sun', event: 'sunrise', offset: 0 }, warmth: 0.5 }],
     }), /CircadianPlan\.points\[0\]\.anchor\.kind is "sun"/],
+    // Two points, because the curve now has a lower bound too — one point is
+    // not a curve, and this case is about the brightness rule.
     ['brightness following a curve that has none', () => ({
       ...validCircadian(),
-      points: [{ id: 'p1', anchor: { kind: 'clock', at: 0 }, warmth: 0.5 }],
+      points: [
+        { id: 'p1', anchor: { kind: 'clock', at: 0 }, warmth: 0.5 },
+        { id: 'p2', anchor: { kind: 'clock', at: 720 }, warmth: 0.2 },
+      ],
       adjustBrightness: true,
     }), /CircadianPlan\.adjustBrightness is set while a point carries no brightness/],
+    ['a curve of one point, which reports ready and writes nothing', () => ({
+      ...validCircadian(),
+      points: [{ id: 'p1', anchor: { kind: 'clock', at: 0 }, warmth: 0.5 }],
+      adjustBrightness: false,
+    }), /CircadianPlan\.points has fewer than 2 points/],
+    ['a curve with two points sharing an id, so one can never be found', () => ({
+      ...validCircadian(),
+      points: [
+        { id: 'same', anchor: { kind: 'clock', at: 0 }, warmth: 0.5 },
+        { id: 'same', anchor: { kind: 'clock', at: 720 }, warmth: 0.2 },
+      ],
+      adjustBrightness: false,
+    }), /CircadianPlan\.points contains more than one entry with id "same"/],
+    ['a schedule id the event-key format cannot survive', () => ({
+      ...validSchedule(),
+      entries: [{ ...validSchedule().entries[0], id: 'evening:lights' }],
+    }), /SchedulePlan\.entries\[0\]\.id is not a usable schedule id/],
+    ['a schedule whose off-time equals its on-time, so it can never end', () => ({
+      ...validSchedule(),
+      entries: [{ ...validSchedule().entries[0], onAt: 1320, end: { kind: 'time', at: 1320 } }],
+    }), /SchedulePlan\.entries\[0\]\.end\.at is the same as the on-time/],
+    ['two schedule entries sharing an id, so one can never fire', () => ({
+      ...validSchedule(),
+      entries: [
+        { ...validSchedule().entries[0], id: 'both' },
+        { ...validSchedule().entries[0], id: 'both', onAt: 300, end: { kind: 'duration', minutes: 30 } },
+      ],
+    }), /SchedulePlan\.entries contains more than one entry with id "both"/],
   ];
 
   for (const [name, build, expected] of cases) {

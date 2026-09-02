@@ -51,12 +51,19 @@ export class DeviceCatalog {
    */
   private refreshing: Promise<void> | null = null;
 
+  /**
+   * Bumped by every invalidation, so a refresh can tell whether the world moved
+   * under it. Same guard shape `CredentialService.superseded()` already uses.
+   */
+  private generation = 0;
+
   constructor(private readonly api: HomeyApiService) {}
 
   /** Zone and device changes invalidate the cache (zone re-resolution). */
   async watch(onChange: () => void): Promise<void> {
     const client = await this.api.read();
     const invalidate = () => {
+      this.generation += 1;
       this.devices = null;
       this.zones = null;
       // App names too: an integration installed or updated after boot would
@@ -148,7 +155,24 @@ export class DeviceCatalog {
     return attempt;
   }
 
-  private async refreshNow(): Promise<void> {
+  private async refreshNow(attempt = 0): Promise<void> {
+    /**
+     * The generation this pass belongs to.
+     *
+     * `refreshNow` awaits twice after the reads — `loadAppNames()` is a real
+     * round trip every time, because `read()` never connects the `apps` manager
+     * so `getApps()` is never cached, and `invalidate()` clears `appNames`
+     * before every refresh it triggers. A device or zone event landing in that
+     * window nulled `this.zones`, and the device loop then dereferenced
+     * `this.zones!` and threw a TypeError: one refresh pass lost, and an opaque
+     * line in the log or a spurious error on a pairing screen.
+     *
+     * Fixed by building into locals and publishing them together at the end, so
+     * there is nothing half-assigned to trip over — and by discarding the result
+     * if a newer invalidation has arrived, because publishing it would install a
+     * view of the Homey that is already known to be stale.
+     */
+    const generation = this.generation;
     let client: any;
     let rawDevices: any;
     let rawZones: any;
@@ -167,7 +191,7 @@ export class DeviceCatalog {
 
     // The seam: `homey-api` is untyped JS, so `any` stops HERE. RawZone says
     // which fields we expect, and nothing past this line reads an unknown one.
-    this.zones = new Map((Object.values(rawZones) as RawZone[]).map(z => [String(z.id), {
+    const zones = new Map((Object.values(rawZones) as RawZone[]).map(z => [String(z.id), {
       id: String(z.id),
       name: String(z.name ?? ''),
       parent: typeof z.parent === 'string' ? z.parent : null,
@@ -175,7 +199,7 @@ export class DeviceCatalog {
 
     await this.loadAppNames(client);
 
-    this.devices = new Map((Object.values(rawDevices) as RawDevice[]).map(d => {
+    const devices = new Map((Object.values(rawDevices) as RawDevice[]).map(d => {
       const ownerUri = typeof d.ownerUri === 'string' ? d.ownerUri : null;
       const zone = String(d.zone ?? '');
       return [String(d.id), {
@@ -184,7 +208,7 @@ export class DeviceCatalog {
         class: String(d.class ?? ''),
         virtualClass: typeof d.virtualClass === 'string' ? d.virtualClass : null,
         zone,
-        zoneName: this.zones!.get(zone)?.name ?? '',
+        zoneName: zones.get(zone)?.name ?? '',
         // Device.driverUri and Device.zoneName are deprecated in homey-api 3.19
         // and log a warning on every access — resolve both ourselves instead.
         driverId: typeof d.driverId === 'string' ? d.driverId : null,
@@ -195,6 +219,29 @@ export class DeviceCatalog {
         capabilitiesObj: normaliseCapabilities(d.capabilitiesObj),
       }];
     }));
+
+    // Published TOGETHER, so no reader can ever see one without the other —
+    // which is the whole of the fix.
+    this.zones = zones;
+    this.devices = devices;
+
+    /**
+     * Superseded while we were reading, so read again.
+     *
+     * Publishing first and retrying second, deliberately in that order: the
+     * callers do `if (!this.devices) await this.refresh(); return this.devices!`
+     * so a pass that returned without publishing would hand them the null
+     * dereference this method exists to stop. A stale-but-complete view is
+     * always better than none.
+     *
+     * Bounded, because the alternative is spinning through a storm of
+     * `device.update` events. Two extra attempts is enough for a burst; past
+     * that the view is at most one generation behind and the next question
+     * after the storm settles refetches anyway.
+     */
+    if (this.generation !== generation && attempt < 2) {
+      await this.refreshNow(attempt + 1);
+    }
   }
 
   /** Always show the owning integration, by name rather than URI. */

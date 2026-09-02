@@ -314,14 +314,33 @@ describe('the curve plan has its own store and its own chain', () => {
   });
 
   test('a plan with no version is brought forward', () => {
+    const { points } = validPlan();
     const { plan, migrated, fromVersion } = migrateCurvePlan({
       target: { kind: 'devices', deviceIds: ['l1'] },
+      points,
     });
     assert.equal(migrated, true);
     assert.equal(fromVersion, 0);
     assert.equal(plan.schemaVersion, CURRENT_CURVE_SCHEMA_VERSION);
-    assert.deepEqual(plan.points, []);
+    assert.deepEqual(plan.points, points);
+    // Opt-in, so an absent value is a no rather than an unknown.
     assert.equal(plan.preStage, false);
+    assert.equal(plan.enabled, true);
+  });
+
+  /**
+   * The 0 → 1 step fills `points` with `[]` when there is none, and its own
+   * comment says no such plan can exist — the driver shipped at version 1, and
+   * the step is there only so version 0 is not a special case in the runner.
+   * So an empty curve reaching the validator is corruption, not an upgrade, and
+   * quarantine is the honest answer: a curve with no points reports `ready` and
+   * writes nothing, which is the failure this app exists to prevent.
+   */
+  test('a versionless plan with no points quarantines rather than running empty', () => {
+    assert.throws(
+      () => migrateCurvePlan({ target: { kind: 'devices', deviceIds: ['l1'] } }),
+      /points has fewer than 2 points/,
+    );
   });
 
   test('a colour this build does not offer quarantines the device', () => {

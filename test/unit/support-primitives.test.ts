@@ -199,6 +199,73 @@ describe('SingleFlight', () => {
     assert.equal(await waiter, 'new', 'the re-run read the state that arrived after the request');
   });
 
+  /**
+   * The trailing pass must run the closure of whoever asked LAST.
+   *
+   * A reconcile is keyed on the device id, and a runtime can be replaced under
+   * that key while its pass is in flight — a repair saved while the debounced
+   * credential fan-out is still working through the same device. Re-invoking the
+   * closure the flight STARTED with meant the new instance's request was
+   * answered by the old instance's pass, so the saved plan was never reconciled:
+   * a newly mapped gesture got no Flow until a restart, and on a source-changed
+   * repair the old remote's Flows were recreated after `prepareApply` had
+   * deleted them.
+   *
+   * Note this is not the same property as "never see a stale RESULT", which the
+   * test above already covers. The result was fresh; the work was the wrong
+   * instance's.
+   */
+  test('the trailing re-run executes the LAST closure submitted, not the first', async () => {
+    const flight = new SingleFlight();
+    const gate = deferred();
+    const ran: string[] = [];
+
+    const oldInstance = async () => {
+      ran.push('old');
+      await gate.promise;
+      return 'old';
+    };
+    const newInstance = async () => {
+      ran.push('new');
+      return 'new';
+    };
+
+    const first = flight.coalesce('device-1', oldInstance);
+    await settle();
+    assert.deepEqual(ran, ['old']);
+
+    // The device was replaced; this is the new runtime asking.
+    const waiter = flight.coalesce('device-1', newInstance);
+    gate.resolve();
+
+    assert.equal(await first, 'old');
+    assert.equal(await waiter, 'new');
+    assert.deepEqual(ran, ['old', 'new'], 'the trailing pass belonged to the new runtime');
+  });
+
+  test('the last closure wins even when several requests overlap', async () => {
+    const flight = new SingleFlight();
+    const gate = deferred();
+    const ran: string[] = [];
+    const work = (label: string) => async () => {
+      ran.push(label);
+      if (label === 'first') await gate.promise;
+      return label;
+    };
+
+    const first = flight.coalesce('c', work('first'));
+    await settle();
+
+    const a = flight.coalesce('c', work('second'));
+    const b = flight.coalesce('c', work('third'));
+    gate.resolve();
+
+    await first;
+    assert.equal(await a, 'third');
+    assert.equal(await b, 'third');
+    assert.deepEqual(ran, ['first', 'third'], 'one re-run, and it is the newest request');
+  });
+
   test('sequential calls each run', async () => {
     const flight = new SingleFlight();
     let runs = 0;

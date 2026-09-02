@@ -8,8 +8,14 @@ import { isPaletteColor } from '../circadian/palette';
 import type { TargetSpec } from '../outputs/light-intent';
 import type { ControllerBehavior, LightFunction, MappingRule } from '../mapping/mapping-types';
 import type { ControllerProfile, ManagedFlowReference } from '../profiles/controller-profile';
-import type { SchedulePlan, ScheduleEntry, ScheduleEnd, IsoWeekday } from '../schedules/schedule-types';
-import type { CircadianPlan, CircadianPoint, CircadianAnchor } from '../circadian/circadian-types';
+import {
+  ENTRY_ID_SHAPE,
+  type SchedulePlan, type ScheduleEntry, type ScheduleEnd, type IsoWeekday,
+} from '../schedules/schedule-types';
+import {
+  MIN_POINTS,
+  type CircadianPlan, type CircadianPoint, type CircadianAnchor,
+} from '../circadian/circadian-types';
 import type { CircadianEnd, SimpleCircadianPlan } from '../circadian/simple-curve';
 import type { LogicalSourceBinding, SelectableInput } from '../inputs/selectable-input';
 import type { InputAction } from '../inputs/input-event';
@@ -330,13 +336,48 @@ function validateScheduleEntry(raw: unknown, path: string): ScheduleEntry {
     if (days.length === 0) fail(`${path}.days`, 'is an empty list');
   }
 
+  /**
+   * The id has a SHAPE, and it is load-bearing rather than cosmetic.
+   *
+   * It goes into `sched:<id>:<boundary>`, which is a generated Flow's
+   * `event_key` argument, and `parseEventKey` splits it on `:`. An id containing
+   * a colon parses as a different entry or as nothing at all — and `app.ts`
+   * routes an unparseable key to the CONTROLLER registry, so the window never
+   * fires and the rejection names the wrong subsystem entirely.
+   *
+   * `sanitiseEntryId` enforces this on both of the app's own write paths. This
+   * is the stored-plan path, which had only `requireString` while every
+   * neighbouring field was range-checked — so a store written out of band (a
+   * `createPairSessionDevice` carrying a hand-crafted `store`, platform §14) or
+   * a partial write got through.
+   */
+  const id = requireString(entry.id, `${path}.id`);
+  if (!ENTRY_ID_SHAPE.test(id)) {
+    fail(`${path}.id`, 'is not a usable schedule id');
+  }
+
+  const onAt = requireNumber(entry.onAt, `${path}.onAt`, {
+    min: 0, max: MINUTES_PER_DAY - 1, integer: true,
+  });
+  const end = validateScheduleEnd(entry.end, `${path}.end`);
+
+  /**
+   * Equal times, refused here as `sanitiseEnd` already refuses them on the way
+   * in ("either way the user cannot have meant it").
+   *
+   * Admitted, it makes `windowLengthMinutes()` return 1440 — contradicting its
+   * own documented range of 1–1439 — and `activeWindow()` non-null at every
+   * minute of every day, so the window can never end.
+   */
+  if (end.kind === 'time' && end.at === onAt) {
+    fail(`${path}.end.at`, 'is the same as the on-time, which is not a window');
+  }
+
   return {
-    id: requireString(entry.id, `${path}.id`),
-    onAt: requireNumber(entry.onAt, `${path}.onAt`, {
-      min: 0, max: MINUTES_PER_DAY - 1, integer: true,
-    }),
+    id,
+    onAt,
     days,
-    end: validateScheduleEnd(entry.end, `${path}.end`),
+    end,
     ...(entry.brightness !== undefined
       ? { brightness: requireUnitInterval(entry.brightness, `${path}.brightness`) } : {}),
     ...(entry.temperature !== undefined
@@ -352,10 +393,30 @@ export function validateSchedulePlan(raw: unknown): SchedulePlan {
     }),
     enabled: requireBoolean(plan.enabled, `${ROOT.schedule}.enabled`),
     target: validateTarget(plan.target, `${ROOT.schedule}.target`),
-    entries: requireArray(plan.entries, `${ROOT.schedule}.entries`, MAX_ENTRIES)
-      .map((entry, i) => validateScheduleEntry(entry, `${ROOT.schedule}.entries[${i}]`)),
+    entries: uniqueIds(
+      requireArray(plan.entries, `${ROOT.schedule}.entries`, MAX_ENTRIES)
+        .map((entry, i) => validateScheduleEntry(entry, `${ROOT.schedule}.entries[${i}]`)),
+      `${ROOT.schedule}.entries`,
+    ),
     managedFlows: validateManagedFlows(plan.managedFlows, `${ROOT.schedule}.managedFlows`),
   };
+}
+
+/**
+ * Ids have to be distinct, because they are what a boundary event is routed by.
+ *
+ * Two entries sharing one id means `plan.entries.find(...)` answers with
+ * whichever comes first and the other can never fire, while both appear on
+ * screen. `sanitiseEntries` refuses duplicates on the way in; this is the
+ * stored-plan path, which did not.
+ */
+function uniqueIds<T extends { id: string }>(items: T[], path: string): T[] {
+  const seen = new Set<string>();
+  for (const item of items) {
+    if (seen.has(item.id)) fail(path, `contains more than one entry with id "${item.id}"`);
+    seen.add(item.id);
+  }
+  return items;
 }
 
 // ----------------------------------------------------------- circadian plan
@@ -413,8 +474,27 @@ function validateCircadianPoint(raw: unknown, path: string): CircadianPoint {
 
 export function validateCircadianPlan(raw: unknown): CircadianPlan {
   const plan = requireRecord(raw, ROOT.circadian);
-  const points = requireArray(plan.points, `${ROOT.circadian}.points`, MAX_POINTS)
-    .map((point, i) => validateCircadianPoint(point, `${ROOT.circadian}.points[${i}]`));
+  const points = uniqueIds(
+    requireArray(plan.points, `${ROOT.circadian}.points`, MAX_POINTS)
+      .map((point, i) => validateCircadianPoint(point, `${ROOT.circadian}.points[${i}]`)),
+    `${ROOT.circadian}.points`,
+  );
+
+  /**
+   * A LOWER bound too, not only the ceiling.
+   *
+   * `points` was bounded from above alone, so a stored plan with zero or one
+   * point validated, registered, and reported `ready` — while `applyNow()`
+   * returned early or the curve sat flat at a single warmth forever. A device
+   * that looks configured and does nothing is the precise failure this app
+   * exists to prevent, and quarantining it is what this module is for. The
+   * user-facing paths already refuse it (`buildPlan` in the Curve driver, and
+   * `sanitiseCurve`), so this covers a store written out of band or a partial
+   * write — the population named in the module header.
+   */
+  if (points.length < MIN_POINTS) {
+    fail(`${ROOT.circadian}.points`, `has fewer than ${MIN_POINTS} points, so there is no curve`);
+  }
   const adjustBrightness = requireBoolean(plan.adjustBrightness, `${ROOT.circadian}.adjustBrightness`);
 
   // "Present on every point or on none" is the curve's own rule: a half-dimmed

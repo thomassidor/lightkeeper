@@ -38,7 +38,27 @@ export class KeyedMutex {
 }
 
 interface Flight {
-  running: Promise<unknown>;
+  /**
+   * The closure the trailing re-run will execute: whoever asked LAST.
+   *
+   * This used to be implicit — `startTrailing` re-invoked the closure the flight
+   * was STARTED with — and that is not the same thing. A reconcile is keyed on
+   * the device id, and a runtime can be replaced under that key while its pass
+   * is in flight (a repair saved while the debounced credential fan-out is still
+   * working through the same device). The new instance's request was then
+   * answered by the old instance's pass and never ran: a newly mapped gesture
+   * got no Flow until a restart, and on a source-changed repair the old remote's
+   * Flows were recreated after `prepareApply` had deleted them — unreferenced,
+   * and invisible to the orphan sweep because the controller id is still live.
+   *
+   * Note this is a different property from "a waiter never sees a stale result",
+   * which the coalescing already guaranteed. The result was fresh; the work was
+   * the wrong instance's.
+   *
+   * There was also a `running` promise here, assigned at the end of `start()`
+   * and read nowhere. Removed rather than left for the next reader to work out.
+   */
+  pendingFn: () => Promise<unknown>;
   /** A request arrived mid-run; run once more when this one finishes. */
   rerunRequested: boolean;
   /** Resolvers waiting for a run that STARTS after they asked. */
@@ -60,13 +80,18 @@ export class SingleFlight {
       return this.start(key, fn);
     }
     flight.rerunRequested = true;
+    // The trailing pass belongs to whoever asked last, not to whoever started
+    // the flight. See Flight.pendingFn.
+    flight.pendingFn = fn as () => Promise<unknown>;
     return new Promise<T>((resolve, reject) => {
       flight.waiting.push({ resolve, reject });
     });
   }
 
   private start<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const flight: Flight = { running: Promise.resolve(), rerunRequested: false, waiting: [] };
+    const flight: Flight = {
+      pendingFn: fn as () => Promise<unknown>, rerunRequested: false, waiting: [],
+    };
     this.flights.set(key, flight);
 
     const run = (async (): Promise<T> => {
@@ -78,9 +103,10 @@ export class SingleFlight {
         // of THIS run is not theirs — but only if another run is coming.
         const waiting = flight.waiting.splice(0, flight.waiting.length);
         const rerun = flight.rerunRequested;
+        const next = flight.pendingFn;
         this.flights.delete(key);
         if (rerun && waiting.length > 0) {
-          this.startTrailing(key, fn, waiting);
+          this.startTrailing(key, next, waiting);
         } else {
           for (const waiter of waiting) waiter.reject(error);
         }
@@ -88,20 +114,20 @@ export class SingleFlight {
       }
       const waiting = flight.waiting.splice(0, flight.waiting.length);
       const rerun = flight.rerunRequested;
+      const next = flight.pendingFn;
       this.flights.delete(key);
       if (rerun) {
-        this.startTrailing(key, fn, waiting);
+        this.startTrailing(key, next, waiting);
       }
       return result;
     })();
 
-    flight.running = run.then(() => undefined, () => undefined);
     return run;
   }
 
-  private startTrailing<T>(
+  private startTrailing(
     key: string,
-    fn: () => Promise<T>,
+    fn: () => Promise<unknown>,
     waiting: Array<{ resolve: (value: any) => void; reject: (error: unknown) => void }>,
   ): void {
     const trailing = this.start(key, fn);

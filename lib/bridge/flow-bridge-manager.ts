@@ -3,6 +3,7 @@ import { redactKeyMaterial } from '../credential-service';
 import type { ManagedFlowReference } from '../profiles/controller-profile';
 import {
   compileBinding,
+  InvalidRangeError,
   managedKey,
   RangeExpansionTooLargeError,
   type BridgeCardRefs,
@@ -407,9 +408,26 @@ export class FlowBridgeManager {
           });
         }
       } catch (error) {
-        if (error instanceof RangeExpansionTooLargeError) {
+        /**
+         * BOTH of the compiler's declines, not just one.
+         *
+         * `InvalidRangeError` is documented as reaching the user through this
+         * same path — by its own class comment, by `DEVIATIONS.md` and by
+         * `lib/profiles/migrations.ts`, and the sibling caller
+         * `findUncompilableBindings` catches both. Only this one did not, so it
+         * escaped and aborted the whole pass before a single flow was written:
+         * the device landed on needs_repair carrying the raw error text, which
+         * names no control, and none of its OTHER gestures got their flows
+         * created or maintained.
+         *
+         * Not currently reachable — the empty-`values` shape it needs cannot be
+         * produced by any shipped version, and `refreshCatalogue()` replaces such
+         * a binding before the reconcile — so this is a documented contract being
+         * honoured rather than a live bug being fixed.
+         */
+        if (error instanceof RangeExpansionTooLargeError || error instanceof InvalidRangeError) {
           // Mark the control unsupported and log, rather than flooding the
-          // user's Flow list.
+          // user's Flow list or losing every other binding with it.
           this.log(`Declining "${input.label}": ${error.message}`);
           result.unsupported.push({ bindingKey: input.key, reason: error.message });
           continue;
@@ -445,7 +463,29 @@ export class FlowBridgeManager {
         let supersedes: ManagedFlowReference | null = null;
 
         if (existing && live) {
-          if (hasBeenUserEdited(live, flow)) {
+          /**
+           * Whether OUR OWN template moved under this binding.
+           *
+           * This is what lets the edit test tell "the user changed the trigger"
+           * from "we did". A schedule's fingerprint IS its time card's identity
+           * (`time:<id>:<argument>`), so a firmware that moves Homey's time
+           * trigger card changes the fingerprint — and `hasBeenUserEdited`
+           * read the resulting trigger-id mismatch as an unconditional user
+           * edit, which it reaches FIRST. The fingerprint branch below, which
+           * exists to rebuild against a moved card, was therefore unreachable
+           * in exactly the case it was added for: the schedule stopped firing
+           * and reported `state.flowEdited`, sending the user into a repair
+           * that could not help.
+           *
+           * Only the trigger's IDENTITY is forgiven, and only when we already
+           * know our own template changed. Its arguments, a condition, a
+           * disabled flow and an added action are all still edits — so the one
+           * thing this gives up is a user who re-pointed a flow's trigger card
+           * in the same window as an integration moving ours, which is both
+           * unlikely and already broken today.
+           */
+          const ourTemplateMoved = existing.fingerprint !== request.fingerprint;
+          if (hasBeenUserEdited(live, flow, { triggerIdMayHaveMoved: ourTemplateMoved })) {
             // Never overwrite a flow that appears materially user-edited.
             this.log(`Flow ${existing.flowId} looks user-edited; leaving it alone`);
             result.userEdited.push(existing.flowId);
@@ -898,7 +938,11 @@ function flowFolderInfos(flows: any[], cardIds: Set<string>): FlowFolderInfo[] {
  * "the user filed this somewhere", and it is why a rename never drags a flow
  * back into our folder.
  */
-export function hasBeenUserEdited(live: any, expected: CompiledFlow): boolean {
+export function hasBeenUserEdited(
+  live: any,
+  expected: CompiledFlow,
+  options: { triggerIdMayHaveMoved?: boolean } = {},
+): boolean {
   if (!live) return false;
 
   /**
@@ -928,7 +972,16 @@ export function hasBeenUserEdited(live: any, expected: CompiledFlow): boolean {
    */
   if (((live.conditions ?? []) as unknown[]).length > 0) return true;
 
-  if (String(live.trigger?.id ?? '') !== expected.trigger.id) return true;
+  /**
+   * A different trigger CARD is an edit — unless we already know our own
+   * template moved, in which case it is us.
+   *
+   * See the call site in `sync()`. Without the exception a moved platform card
+   * made every generated flow read as user-edited, and the fingerprint branch
+   * that replaces it was never reached.
+   */
+  if (!options.triggerIdMayHaveMoved
+    && String(live.trigger?.id ?? '') !== expected.trigger.id) return true;
 
   // The trigger's ARGUMENTS count as ours too. Without this, a schedule whose
   // time the user changed in the Flow itself read as untouched — the trigger id

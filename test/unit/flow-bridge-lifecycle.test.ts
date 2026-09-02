@@ -120,16 +120,23 @@ function harness(options: HarnessOptions = {}) {
 }
 
 /** A schedule-shaped binding: fixed trigger, one variant per boundary time. */
-function scheduleInput(key: string, time: string) {
+const CRON_TIME_CARD = {
+  id: 'homey:manager:cron:time_exactly',
+  uri: 'homey:flowcardtrigger:homey:manager:cron:time_exactly',
+  argument: 'time',
+};
+
+/** The card is a parameter so a test can move it, as a firmware could. */
+function scheduleInput(key: string, time: string, card = CRON_TIME_CARD) {
   return {
     key,
     label: `Schedule ${key}`,
     variantKey: `at:${time}`,
     binding: {
       kind: 'flow_fixed' as const,
-      cardId: 'homey:manager:cron:time_exactly',
-      cardOwnerUri: 'homey:flowcardtrigger:homey:manager:cron:time_exactly',
-      fixedArgs: { time },
+      cardId: card.id,
+      cardOwnerUri: card.uri,
+      fixedArgs: { [card.argument]: time },
     },
   };
 }
@@ -317,6 +324,74 @@ describe('an obsolete flow is REPLACED, not duplicated', () => {
     assert.deepEqual(h.deleted, ['f-goes']);
     assert.deepEqual(result.staleReplacements, []);
     assert.ok(!result.references.some(ref => ref.flowId === 'f-goes'), 'and the reference is dropped');
+  });
+
+  /**
+   * A firmware that MOVES Homey's own time trigger card must not strand a
+   * schedule.
+   *
+   * The card's identity is the schedule's whole fingerprint, so a moved card
+   * changes it — but `sync()` reaches the user-edit test first, and a different
+   * `trigger.id` was read there as an unconditional edit. So the flow was left
+   * alone, the device reported `state.flowEdited`, and the fingerprint branch
+   * that exists to rebuild against the new card was unreachable in exactly the
+   * case it was added for. The user was sent to a repair that could not help.
+   */
+  test('a moved platform trigger card replaces the flow instead of reading as an edit', async () => {
+    const oldCard = {
+      id: 'homey:manager:cron:time_exactly',
+      uri: 'homey:flowcardtrigger:homey:manager:cron:time_exactly',
+      argument: 'time',
+    };
+    const newCard = {
+      id: 'homey:manager:cron:time_exactly_v2',
+      uri: 'homey:flowcardtrigger:homey:manager:cron:time_exactly_v2',
+      argument: 'time',
+    };
+
+    const input = scheduleInput('sched:0:on', '22:00', newCard);
+    // The live flow still carries the OLD card, because that is what it was
+    // created with.
+    const h = harness({
+      flows: { 'f-old': asLiveFlow('f-old', 'lk-sched-1-1', scheduleInput('sched:0:on', '22:00', oldCard)) },
+    });
+
+    const result = await h.bridge.sync(request({
+      // A schedule's fingerprint IS its card's identity, so this moved with it.
+      fingerprint: `time:${newCard.id}:${newCard.argument}`,
+      mapped: [input],
+      existing: [reference('f-old', 'sched:0:on', 'at:22:00', `time:${oldCard.id}:time`)],
+    }));
+
+    assert.deepEqual(result.userEdited, [],
+      'a card the platform moved is not something the user did');
+    assert.equal(result.created, 1, 'the schedule is rebuilt against the new card');
+    assert.equal(result.deleted, 1, 'and the old flow goes');
+  });
+
+  test('a user-edited flow is still left alone when our own template moved', async () => {
+    const card = {
+      id: 'homey:manager:cron:time_exactly',
+      uri: 'homey:flowcardtrigger:homey:manager:cron:time_exactly',
+      argument: 'time',
+    };
+    const input = scheduleInput('sched:0:on', '22:00', card);
+    const live = asLiveFlow('f-old', 'lk-sched-1-1', input);
+    // The user added a condition — "only when I'm home". Everything except the
+    // trigger's identity is still compared, so this is still their flow.
+    (live as any).conditions = [{ id: 'homey:manager:presence:someone_home', args: {} }];
+
+    const h = harness({ flows: { 'f-old': live } });
+
+    const result = await h.bridge.sync(request({
+      fingerprint: 'time:something:else',
+      mapped: [input],
+      existing: [reference('f-old', 'sched:0:on', 'at:22:00', 'time:old:time')],
+    }));
+
+    assert.deepEqual(result.userEdited, ['f-old'], 'their work survives a template change');
+    assert.equal(result.created, 0);
+    assert.equal(result.deleted, 0);
   });
 
   test('an unchanged binding is still reused, not replaced', async () => {

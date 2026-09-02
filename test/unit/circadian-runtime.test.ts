@@ -126,6 +126,19 @@ function harness(options: {
 
   return {
     runtime, writes, states, plans, logs, devices,
+    /**
+     * Whether Homey still holds a capability listener for this device.
+     *
+     * The observable that separates "released" from "merely ignored". A light
+     * dropped from the plan stopped producing WRITES on its own — the cache and
+     * the planner see to that — so a test asserting only writes passed against a
+     * runtime that had left the subscription behind. The subscription is the
+     * thing platform §12's release contract is about: it is a live listener on
+     * somebody's lamp, held by a device that is no longer watching it.
+     */
+    isSubscribed(deviceId: string, capability: string) {
+      return listeners.has(`${deviceId}:${capability}`);
+    },
     /** Fire a capability change the way Homey's subscription does. */
     report(deviceId: string, capability: string, value: unknown) {
       const device = devices.find(d => d.id === deviceId)!;
@@ -658,6 +671,36 @@ describe('a light removed from the plan is released', () => {
       h.writes.filter(w => w.deviceId === 'l2').length, afterRefresh,
       'not one write to a light that has left the plan',
     );
+  });
+
+  /**
+   * On the FIRST catalogue change of a runtime's life, which is the case that
+   * was broken.
+   *
+   * `this.snapshot` was written only by `refreshTargets()`, never by
+   * `buildRuntime()`, so the first refresh diffed against `null` — `removed` came
+   * back empty and `releaseTarget()` was never called for a light that had just
+   * left the plan. Its capability subscription stayed live. The sibling test
+   * above could not see it: the write is suppressed further down the path
+   * whether the subscription is released or not.
+   */
+  test('the first refresh after start really releases the subscription', async () => {
+    const h = harness({ plan: plan({ target: { kind: 'zone', zoneId: 'z1', includeSubzones: false } }) });
+    await h.runtime.start();
+    await h.settle();
+
+    assert.equal(h.isSubscribed('l2', 'onoff'), true, 'it is a target to begin with');
+
+    h.removeFromCatalogue('l2');
+    // The FIRST refresh — nothing has set a snapshot before this point.
+    await h.runtime.refreshTargets();
+    await h.settle();
+
+    assert.equal(
+      h.isSubscribed('l2', 'onoff'), false,
+      'a light that has left the plan keeps no listener on somebody else’s lamp',
+    );
+    assert.equal(h.isSubscribed('l1', 'onoff'), true, 'and the remaining target keeps its own');
   });
 
   test('the remaining targets still work', async () => {

@@ -245,9 +245,21 @@ export class ScheduleRuntime {
   }
 
   private async buildRuntime(): Promise<void> {
-    const resolved = await this.resolver.resolve(this.plan.target);
-    this.targetIds = resolved.devices.map(d => d.id);
-    this.targetNames = resolved.devices.map(d => `${d.name} (${d.zoneName})`);
+    /**
+     * `resolveSnapshot`, and the snapshot is RECORDED here.
+     *
+     * It used to be written only by `refreshTargets()`, which meant the field
+     * did not mean what its own doc says. Two consequences: the first catalogue
+     * change of a runtime's life diffed against `null`, so `removed` was empty
+     * and a light that had just left the plan kept its capability subscription
+     * and its cache state — the acceptance bar for that work is that switching
+     * such a light on produces ZERO writes. And after `stop()`/`start()` the
+     * field described the PREVIOUS plan's targets.
+     */
+    const resolved = await resolveSnapshot(this.resolver, this.plan.target);
+    this.snapshot = resolved;
+    this.targetIds = resolved.ids;
+    this.targetNames = resolved.names;
     this.resolver.primeCache(resolved.devices, this.cache);
 
     this.scheduler = new CommandScheduler({
@@ -704,6 +716,8 @@ export class ScheduleRuntime {
     this.cache.clear();
     this.targetIds = [];
     this.targetNames = [];
+    // Or the next refresh diffs the new plan's targets against the old plan's.
+    this.snapshot = null;
   }
 
   /** Remove only what this schedule demonstrably owns. */
