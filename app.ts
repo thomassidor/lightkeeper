@@ -347,7 +347,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
  * are typed against.
  *
  * `module.exports = <class>` is required — a Homey entry point using
- * `export default` is not loaded at all (I10) — so there is no exported class
+ * `export default` is not loaded at all (platform §13) — so there is no exported class
  * type for a consumer to import. `LightkeeperApp` in `lib/app-contract.ts` is
  * that type written down by hand, and the assignment below is what keeps the two
  * honest: removing or renaming a member the contract promises fails HERE, at

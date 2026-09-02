@@ -1,6 +1,6 @@
 # Homey platform reference
 
-**Cited in code as `platform §n`.** Around ninety comments across `lib/`, `app.ts`, `api.ts` and
+**Cited in code as `platform §n`.** Over 150 comments across `lib/`, `app.ts`, `api.ts` and
 the tests point here — `(platform §6)` means section 6 of this file. Grep `platform §` to find
 every site that depends on something written down below.
 

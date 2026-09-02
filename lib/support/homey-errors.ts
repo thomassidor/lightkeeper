@@ -9,7 +9,8 @@
  *
  * The message match is not a fallback for tidiness. Between the client and us
  * sits `sanitizedWriteError()`, which rebuilds the error to keep the API key
- * out of it (I2). It carries `statusCode` forward deliberately — but an error
+ * out of it (CLAUDE.md's key-hygiene property). It carries `statusCode`
+ * forward deliberately — but an error
  * from anywhere else in the stack, or from a future client, may arrive with
  * only its text intact. Both routes are read, and both are tested.
  */

@@ -10,7 +10,7 @@ import type { CircadianRuntime } from '../../lib/circadian/circadian-runtime';
  * `LightkeeperDevice`. Three things differ, all for the same underlying reason —
  * this device type generates no Flows (platform §12):
  *
- *  - **Nothing to clean up on delete.** `flowRefs()` stays at the base's empty
+ *  - **Nothing to clean up on delete.** `rawFlowRefs()` stays at the base's empty
  *    default, so the delete path unregisters the runtime and stops there. There
  *    are no managed Flows to remove and no orphans to leave.
  *  - **A rename reaches nothing.** A schedule's name is the name of its Flow

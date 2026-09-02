@@ -295,7 +295,7 @@ the detail, including what has *not* run on hardware yet.
 
 **[CONTRIBUTING.md](CONTRIBUTING.md)** is the developer front door — setup, the house rules, and
 what has to pass before a PR. [`CLAUDE.md`](CLAUDE.md) has the architecture and conventions, and
-[`docs/homey-platform.md`](docs/homey-platform.md) is a thirteen-section reference on how Homey
+[`docs/homey-platform.md`](docs/homey-platform.md) is a numbered reference on how Homey
 actually behaves, established against real hardware and documented nowhere else.
 [`docs/README.md`](docs/README.md) indexes everything else.
 

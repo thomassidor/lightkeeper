@@ -83,8 +83,12 @@ lib/
   pairing/                      the light picker, the remote picker, the mapping screen's
                                 sections and the default device names — every pairing DECISION,
                                 lifted out of driver.ts so it can be tested (platform §13)
-app-contract.ts                 what api.ts and the device layer may use of the app
-homey-api-types.ts              the shapes homey-api returns, at the normalisation seams
+  support/                      the primitives every layer uses: the per-device FIFO and the
+                                single-flight coalescer, the bounded ring log, the migration-chain
+                                runner, the injectable Timers seam, error-shape classification,
+                                field-wise equality, fire-and-forget
+  app-contract.ts               what api.ts and the device layer may use of the app
+  homey-api-types.ts            the shapes homey-api returns, at the normalisation seams
 drivers/controller/             virtual device, driver, four pairing views
   pair/                         the four views, edited here
   repair/                       exact copies of pair/, generated — see platform §8
@@ -112,6 +116,11 @@ scripts/render-icons.mjs        every icon at the size the App Store draws it �
                                 40px circle (platform §10). The contact sheet that catches an icon
                                 too fine or too busy to read there
 scripts/pair-view-fixtures.mjs  the demo data those renders use, one entry per view
+scripts/dump-card-fixtures.mjs  writes test/fixtures/cards/*.json from the hand-transcribed TS
+                                fixtures. Run BY HAND, only when those change; the JSON is the
+                                committed artefact and card-fixtures.test.ts fails on drift
+scripts/hardware-env.json       GITIGNORED. A Homey address and two Personal API Keys, read by
+                                verify-hardware.mjs when the env vars are not set
 settings/index.html             app settings page
 locales/en.json                 all user-facing strings
 .homeycompose/                  the manifest's SOURCE; app.json is generated from it
@@ -119,7 +128,7 @@ assets/                         the app's own icon and store images, all generat
 README.txt                      the App Store long description — not README.md
 test/                           unit tests and hand-transcribed fixtures
 docs/                           NOT bundled. `docs/README.md` indexes it
-  homey-platform.md             the platform reference — §1-14, cited in code as `platform §n`
+  homey-platform.md             the platform reference, cited in code as `platform §n`
   privacy.md                    the privacy notice
   homey-review-notes.md         for Athom's reviewer
   localisation.md               English-only on purpose; how to add a language back
@@ -144,7 +153,7 @@ hardware (Homey Pro 2023, firmware 13.4.0, homey-api 3.19.2) and documented nowh
 before changing anything that talks to Homey.** It used to be the middle of this file; it moved out
 so that a human developer could find it under a name that says what it is.
 
-**Code cites it as `platform §n`.** Around ninety comments across `lib/`, `app.ts`, `api.ts` and the
+**Code cites it as `platform §n`.** Over 150 comments across `lib/`, `app.ts`, `api.ts` and the
 tests carry one — `(platform §6)` means section 6 of that file. Keep writing them that way, and grep
 `platform §` to find everything that depends on a given fact.
 
@@ -361,11 +370,24 @@ English–Danish glossary kept from the removed translation.
 container's document rather than getting their own iframe. They must not load `homey.js` themselves,
 every CSS rule is scoped to the view's root id, and the boot guard lives on the root element rather
 than in a global. Each file's header explains this. The ~150-line shared CSS base is byte-identical
-in every view, across every driver, and so are the `emit()`, `stabiliseScrollbar()` and
-`escapeHtml()` helpers beside it. `test/unit/pair-view-styles.test.ts` fails on any drift in either
-— it compared only the CSS until `emit()` was found carrying a timeout in one view and not the
-others. Both tests discover views from disk, so a new driver's screens are covered the moment they
-exist.
+in every view, across every driver, and so is `emit()`, which appears in all of them because it is
+the only way out. `test/unit/pair-view-styles.test.ts` fails on any drift in either — it compared
+only the CSS until `emit()` was found carrying a timeout in one view and not the others.
+
+The other shared helpers — `stabiliseScrollbar()`, `escapeHtml()`, `node()`, `clear()`, `pad()` —
+are byte-identical **wherever they appear**, which is not everywhere: `escapeHtml()` exists in the
+two views that build markup (`curve/pair/curve.html` and `schedule/pair/schedule.html`) and nowhere
+else. The test says so in its own comment and asserts the weaker, correct property; this file used
+to claim all three were in every view.
+
+Both tests discover views from disk, so a new driver's screens are covered the moment they exist.
+
+**Two views use `innerHTML`, and it is not an exception to a rule so much as the rule's real
+shape.** `curve.html` and `schedule.html` build a card's markup as a string; everything else builds
+nodes. Both are safe because every interpolated string goes through `escapeHtml()` and every number
+through `Math.round`/`Number` — which is what makes `escapeHtml()` load-bearing exactly where it
+lives. `drivers/controller/pair/mapping.html` states the rule as "no `innerHTML`" with no
+exceptions, which is true of that view and not of the app.
 
 **Every screen the app draws is LIGHT, and does not ask the OS.** Homey paints the pairing sheet
 and the settings frame itself, and paints them light whatever the phone's colour scheme says. Every

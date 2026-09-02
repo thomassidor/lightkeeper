@@ -347,8 +347,15 @@ module.exports = class ControllerDriver extends Homey.Driver {
         device: {
           name: name || await this.deriveName(state),
           // `lk-ctrl-`, matching the schedule driver's `lk-sched-`. The old
-          // `ll-` was Light Link, the name before this one. Nothing parses the
-          // prefix, so devices created under it keep working untouched.
+          // `ll-` was Light Link, the name before this one.
+          //
+          // The prefix IS parsed: `LIGHTKEEPER_DEVICE_ID` in
+          // lib/bridge/flow-bridge-manager.ts is what proves a Flow's
+          // `controller` argument was written by us rather than typed in by
+          // hand, and it matches `lk-` only. So a new device KIND has to be
+          // added to both `mintDeviceId` and that pattern — and an `ll-` device,
+          // if any exists, has unattributable Flows: the sweep reads them as
+          // not-generated and leaves them alone, which is the safe direction.
           data: { id: mintDeviceId('ctrl') },
           store: { profile },
         },

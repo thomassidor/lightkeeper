@@ -45,7 +45,13 @@ export type Executor = (
  */
 export type WriteOutcome =
   | { status: 'succeeded'; deviceId: string; capability: Capability; value: WriteValue; ms: number }
-  /** `error` is the SANITISED message only — never an error object (I2). */
+  /**
+   * The SANITISED message only — never an error object.
+   *
+   * An error that has been near the API key can quote it back inside itself;
+   * see CLAUDE.md, "The API key is never logged, never returned over the app
+   * API, and never included in diagnostics".
+   */
   | { status: 'failed'; deviceId: string; capability: Capability; error: string }
   /** A later value replaced this one before it was flushed. */
   | { status: 'coalesced'; deviceId: string; capability: Capability }
@@ -330,7 +336,8 @@ export class CommandScheduler {
           this.options.onError?.(deviceId, capability, error);
           // The message only. The adapter has already classified and redacted
           // it; an error OBJECT from the API boundary can quote the key back
-          // inside itself (I2).
+          // inside itself — see the `failed` outcome above, and CLAUDE.md's
+          // key-hygiene property.
           const message = String((error as Error)?.message ?? error);
           for (const waiter of write.waiters) {
             waiter.settle({ status: 'failed', deviceId, capability, error: message });
