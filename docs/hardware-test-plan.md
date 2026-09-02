@@ -151,11 +151,31 @@ What else the run confirmed that this release changed:
   the 30 MB guideline and inside the 50 MB accepted — consistent with platform §15's ~44 MB, so the
   review's deletions moved nothing.
 
-**The 4 skips are all one cause, and they are the gap worth closing next.** T21, T24, T27 and T29 —
-the circadian and Curve preview and warmth checks — reported `none of its lamp(s) is on, so there was
-nothing to write to`. Those are precisely the write paths this release changed (the colour
-bookkeeping, and pre-staging's two axes), so they are the least-covered part of it. To reach them:
-switch a lamp in the configured `room` on, then run `pair preview rejoin teardown`.
+**The 4 skips were closed the same day, and closing them found two bugs.** T21, T24, T27 and T29
+reported `none of its lamp(s) is on, so there was nothing to write to` — and needing a person to
+flick a switch was the first problem. `askForALampOn` prompted, and returned false with no TTY, so
+an unattended run skipped rather than asked. `switchALampOn` now switches a target lamp on itself,
+names it in the report and puts it back; with every studio lamp OFF the same four lines run.
+
+Then they failed, and the read-back was reading `homey-api`'s cache — `capabilityValue()` did not
+pass `$cache: false`, so it returned the value from before the write. That is why the 30 August pass
+recorded T21/T24 as a Hue Bridge echoing late and `hardware-test-coverage.md` recorded T25 as lamps
+refusing external writes: both were a stale client-side read, and T25's fifteen-second poll made it
+look conclusive. **The app had the same defect in `LightTargetAdapter.refresh()`**, which is a real
+user-facing bug — see platform §15.
+
+With both fixed: `pair preview rejoin teardown` with every lamp off gives **32 OK, 0 failed, 0
+skipped**, and a full pass gives **0 skipped**. T25 passes for the first time in any recorded run —
+"marked overridden and still holds 0.350" — which is the "a value set by hand is left alone"
+property.
+
+**T70 answered, with a caveat worth keeping.** 31.8 MB PSS on a fresh install once devices are
+paired, against 28.7 MB with none — so the review's deletions moved nothing. The caveat is a change
+made and then reverted on the strength of this number: opting `DeviceCatalog`'s two `getAll` sites
+out of the cache cost 5.2 MB of floor, because nothing cached means every invalidation re-parses
+every device and V8 never gives the pages back (§15). A mid-pass T59 of 60.3 MB was also seen, after
+many pair/teardown cycles in one app lifetime; it fell to 46 MB across the pass, because the pass
+restarts the app. Treat T59 as meaningful only on a freshly installed app.
 
 Still needing a person, unchanged: **T3**, **T9**, **T10**, **T11**, **T53**, **T54** — and from this
 release's own lines, **T67** (a repair that SAVES an edit; T46 only proves the screens are seeded,
