@@ -11,7 +11,6 @@ import { planIntent } from '../../lib/outputs/intent-planner';
 import { DEFAULT_BEHAVIOR } from '../../lib/mapping/mapping-types';
 import { eventKeyFor } from '../../lib/schedules/schedule-bindings';
 import type { ScheduleEntry } from '../../lib/schedules/schedule-types';
-import type { ManagedFlowReference } from '../../lib/profiles/controller-profile';
 
 /**
  * One named test per PROMISE the app makes in prose.
@@ -449,34 +448,27 @@ describe('safety promises', () => {
    * again, which is the one failure worse than a dark evening.
    */
   test('catch-up needs a recorded off boundary for the entry it is catching up', () => {
+    /**
+     * This used to declare its OWN `hasOff` predicate and assert that against
+     * hand-built reference lists — so it never called `ScheduleRuntime` at all,
+     * and would have passed just as happily with the gate deleted outright. The
+     * one test in the suite whose name promised the most and checked the least.
+     *
+     * The runtime-level assertion now lives in schedule-runtime.test.ts, where
+     * the harness that can build a runtime already is: "catch-up declines a
+     * window whose off boundary is not recorded". What is left here is the
+     * SHAPE the gate keys on, which is this file's own business — that the
+     * binding key of an off reference is derivable and distinct from the on one.
+     */
     const entry: ScheduleEntry = {
       id: 'night', onAt: 20 * 60, days: null, end: { kind: 'duration', minutes: 300 },
     };
-    const onlyOn: ManagedFlowReference[] = [{
-      flowId: 'f1',
-      bindingKey: eventKeyFor(entry.id, 'on'),
-      variantKey: '',
-      fingerprint: 'fp',
-      managedVersion: 1,
-      createdAt: 0,
-    }];
 
-    // The predicate the runtime gates on, stated here as the promise itself:
-    // an ON reference alone is not enough.
-    const hasOff = (refs: ManagedFlowReference[]) =>
-      refs.some(r => r.bindingKey === eventKeyFor(entry.id, 'off'));
-
-    assert.equal(hasOff(onlyOn), false, 'an on Flow alone must not license a catch-up');
-    assert.equal(hasOff([]), false);
-    assert.equal(
-      hasOff([...onlyOn, { ...onlyOn[0], flowId: 'f2', bindingKey: eventKeyFor(entry.id, 'off') }]),
-      true,
+    assert.notEqual(
+      eventKeyFor(entry.id, 'on'), eventKeyFor(entry.id, 'off'),
+      'the two boundaries must be separately referenceable, or the gate cannot tell them apart',
     );
-    // And a DIFFERENT entry's off Flow does not stand in for this one's.
-    assert.equal(
-      hasOff([{ ...onlyOn[0], bindingKey: eventKeyFor('other', 'off') }]),
-      false,
-    );
+    assert.match(eventKeyFor(entry.id, 'off'), /:off$/);
   });
 });
 
@@ -517,5 +509,73 @@ describe('platform-reference citations', () => {
       }
     }
     assert.deepEqual(missing, []);
+  });
+});
+
+/**
+ * "Pausing a schedule keeps its Flows and does not mark the device unavailable."
+ *
+ * That promise depends on two per-driver flags — `availableWhenDisabled` and
+ * `withPauseSwitch` — which default to `false` on `LightkeeperDevice` and are
+ * overridden to `true` in three `drivers/*&#47;device.ts` files. Those files extend
+ * `Homey.Device`, so no test can import them (platform §13), and the flags were
+ * asserted nowhere: `DeviceLifecycle` is tested against a fake owner that sets
+ * them itself, which proves the LOGIC and says nothing about the wiring.
+ *
+ * So the sources are read from disk, the way `repair-views.test.ts` and the §n
+ * check above already do. The invariant is not "these three are true" but the
+ * implication: a tile that carries a pause switch MUST stay available while
+ * paused, because an unavailable device cannot be switched — the user would have
+ * no way to un-pause it.
+ */
+describe('a device that can be paused can be un-paused', () => {
+  const root = join(import.meta.dirname, '..', '..');
+  const driversDir = join(root, 'drivers');
+
+  const drivers = readdirSync(driversDir)
+    .filter(name => statSync(join(driversDir, name)).isDirectory())
+    .filter(name => {
+      try {
+        return statSync(join(driversDir, name, 'device.ts')).isFile();
+      } catch {
+        return false;
+      }
+    })
+    .sort();
+
+  const declares = (driver: string, flag: string): boolean => {
+    const source = readFileSync(join(driversDir, driver, 'device.ts'), 'utf8');
+    return new RegExp(`override readonly ${flag} = true`).test(source);
+  };
+
+  test('every driver is discovered', () => {
+    // The canary: an empty list would make the implication below vacuous.
+    assert.deepEqual(drivers, ['circadian', 'controller', 'curve', 'schedule']);
+  });
+
+  test('a pause switch implies the device stays available while paused', () => {
+    for (const driver of drivers) {
+      if (!declares(driver, 'withPauseSwitch')) continue;
+      assert.ok(
+        declares(driver, 'availableWhenDisabled'),
+        `drivers/${driver}/device.ts has a pause switch but goes unavailable when disabled — `
+        + 'an unavailable device cannot be switched, so the user could never un-pause it',
+      );
+    }
+  });
+
+  test('the three switchable device types still have their switch', () => {
+    // Stated positively as well, because losing the switch is a silent
+    // regression: the tile simply stops offering it.
+    for (const driver of ['schedule', 'circadian', 'curve']) {
+      assert.ok(declares(driver, 'withPauseSwitch'), `drivers/${driver}/device.ts lost its pause switch`);
+    }
+  });
+
+  test('a controller has no switch, and so may read as unavailable', () => {
+    // Nothing on its tile to un-pause it with, so `disabled` reads as
+    // unavailable there — which is harmless and deliberate.
+    assert.equal(declares('controller', 'withPauseSwitch'), false);
+    assert.equal(declares('controller', 'availableWhenDisabled'), false);
   });
 });

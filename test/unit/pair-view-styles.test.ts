@@ -195,6 +195,14 @@ describe('pair view styles', () => {
  *
  * Helpers that legitimately exist in only some views (escapeHtml, which only
  * the list screens need) are compared across the views that DO have them.
+ *
+ * This guarded three of eight. `node`, `clear`, `pad`, `formatMinutes` and
+ * `warmthText` were each duplicated across two to seven views with nothing
+ * comparing them — and `warmthText` is the warmth ladder, so the realistic worst
+ * case was one device type's screen labelling a 0-1 warmth with a different word
+ * than another's. Not a wrong write (the axis direction itself is enforced in
+ * `lib/` and covered by circadian-curve.test.ts), but a screen that disagrees
+ * with the screen beside it about which end is warm.
  */
 describe('pair view script helpers', () => {
   /** A named function or IIFE, from its `function` keyword to its closing brace. */
@@ -247,6 +255,43 @@ describe('pair view script helpers', () => {
   test('escapeHtml() is identical in the views that have one', () => {
     // Only the list screens need it; those that do must agree.
     assertIdentical('escapeHtml');
+  });
+
+  test('node() is identical everywhere it appears', () => {
+    assertIdentical('node');
+  });
+
+  test('clear() is identical everywhere it appears', () => {
+    assertIdentical('clear');
+  });
+
+  test('pad() is identical everywhere it appears', () => {
+    assertIdentical('pad');
+  });
+
+  test('formatMinutes() is identical everywhere it appears', () => {
+    assertIdentical('formatMinutes');
+  });
+
+  test('warmthText() is identical everywhere it appears', () => {
+    // The warmth ladder. Two screens disagreeing about which end is warm is the
+    // one drift here a user would actually see.
+    assertIdentical('warmthText');
+  });
+
+  /**
+   * `brightnessText` is deliberately NOT here, and the difference is the reason.
+   *
+   * The schedule view's takes an `entry` and the curve view's takes a `point`,
+   * because that is what each screen holds. The three lines are otherwise the
+   * same, but they are two small formatters over differently-named records
+   * rather than one helper copied — and forcing byte-identity would make one of
+   * the two views name its own data wrongly. A guard is worth having only where
+   * the thing it guards is genuinely one thing.
+   */
+
+  test('setSummary() is identical everywhere it appears', () => {
+    assertIdentical('setSummary');
   });
 
   test('emit() appears in every view, because it is the only way out', () => {

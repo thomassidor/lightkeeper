@@ -13,7 +13,9 @@ import { ControllerRuntimeManager } from './lib/runtime/controller-runtime-manag
 import { HealthMonitor } from './lib/runtime/health-monitor';
 import { ScheduleRuntimeManager } from './lib/schedules/schedule-runtime-manager';
 import { CircadianRuntimeManager } from './lib/circadian/circadian-runtime-manager';
-import { parseEventKey } from './lib/schedules/schedule-bindings';
+import {
+  intakeBridgeEvent, type IntakeRecord, type MagnitudeReader,
+} from './lib/bridge/bridge-event-intake';
 import { flowWriteProbe } from './lib/credential-service';
 import { fireAndForget } from './lib/support/async';
 import { BoundedLog } from './lib/support/bounded-log';
@@ -63,10 +65,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
    * light change is otherwise undiagnosable from outside: this records whether
    * the bridge card was reached at all, and if it was rejected, why.
    */
-  readonly recentEvents = new BoundedLog<{
-    at: number; cardId: string; controller: string; eventKey: string;
-    magnitude?: number; accepted: boolean; reason?: string;
-  }>(40);
+  readonly recentEvents = new BoundedLog<{ at: number } & IntakeRecord>(40);
 
   /**
    * Every write attempted by every runtime, newest first.
@@ -82,13 +81,6 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
    * is a different question.
    */
   readonly recentWrites = new BoundedLog<WriteRecord>(50);
-
-  private recordEvent(entry: {
-    cardId: string; controller: string; eventKey: string;
-    magnitude?: number; accepted: boolean; reason?: string;
-  }): void {
-    this.recentEvents.add({ at: Date.now(), ...entry });
-  }
 
   private credentialFanOutTimer: NodeJS.Timeout | null = null;
 
@@ -259,67 +251,35 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
    * and expected binding key before anything executes. On malformed or stale
    * input we fail closed: log and ignore, never execute heuristically.
    */
-  private registerBridgeCard(cardId: string, magnitudeOf?: (args: any) => number) {
+  /**
+   * Register one bridge action card. The SHELL only.
+   *
+   * Every rule — the coercion, the fail-closed refusal, the magnitude, and which
+   * registry a key belongs to — is `intakeBridgeEvent` in
+   * `lib/bridge/bridge-event-intake.ts`, because this class `extends Homey.App`
+   * and no test can import it (platform §13). "Bridge arguments are untrusted"
+   * is one of CLAUDE.md's stated safety properties and it had no test at all
+   * while it lived here.
+   */
+  private registerBridgeCard(cardId: string, magnitudeOf?: MagnitudeReader) {
     const card = this.homey.flow.getActionCard(cardId);
 
     card.registerRunListener(async (args: any) => {
-      const controllerId = String(args?.controller ?? '');
-      const eventKey = String(args?.event_key ?? '');
-
-      if (!controllerId || !eventKey) {
-        this.recordEvent({ cardId, controller: controllerId, eventKey, accepted: false, reason: 'missing controller or event key' });
-        this.log(`Ignoring ${cardId}: missing controller or event key`);
-        return false;
-      }
-
-      const magnitude = magnitudeOf ? magnitudeOf(args) : undefined;
-      const outcome = this.dispatchBridgeEvent(
-        controllerId,
-        eventKey,
-        Number.isFinite(magnitude) ? magnitude : undefined,
-      );
-
-      this.recordEvent({
-        cardId,
-        controller: controllerId,
-        eventKey,
-        ...(Number.isFinite(magnitude) ? { magnitude } : {}),
-        accepted: outcome.accepted,
-        ...(outcome.reason ? { reason: outcome.reason } : {}),
+      const { accepted, reason, record } = intakeBridgeEvent(cardId, args, magnitudeOf, {
+        schedule: (id, key) => this.schedules.dispatchWithReason(id, key),
+        controller: (id, key, options) => this.controllers.dispatchWithReason(id, key, options),
       });
 
-      if (!outcome.accepted) {
-        // A flow left behind by a deleted controller, or an edited event key.
-        this.log(`Ignoring ${cardId}: ${outcome.reason}`);
+      this.recentEvents.add({ at: Date.now(), ...record });
+
+      if (!accepted) {
+        // A flow left behind by a deleted controller, an emptied argument, or an
+        // edited event key.
+        this.log(`Ignoring ${cardId}: ${reason}`);
         return false;
       }
 
       return true;
-    });
-  }
-
-  /**
-   * Route a validated bridge event to the registry that owns it.
-   *
-   * Two registries, not three: a circadian light has no Flows and therefore no
-   * bridge events. It reacts to the lights themselves.
-   *
-   * Routed on the KEY'S SHAPE rather than by trying both registries: a schedule
-   * boundary key is unmistakable, and asking the controller registry about one
-   * first would produce a refusal reason about a missing mapping catalogue —
-   * exactly the wrong sentence to leave in the diagnostics of a schedule that
-   * did not fire.
-   */
-  private dispatchBridgeEvent(
-    controllerId: string,
-    eventKey: string,
-    magnitude: number | undefined,
-  ): { accepted: boolean; reason?: string } {
-    if (parseEventKey(eventKey)) {
-      return this.schedules.dispatchWithReason(controllerId, eventKey);
-    }
-    return this.controllers.dispatchWithReason(controllerId, eventKey, {
-      ...(magnitude !== undefined ? { magnitude } : {}),
     });
   }
 

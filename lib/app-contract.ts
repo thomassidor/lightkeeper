@@ -1,4 +1,5 @@
 import type { CredentialService, CredentialStatus } from './credential-service';
+import type { IntakeRecord } from './bridge/bridge-event-intake';
 import type { HomeyApiService } from './homey-api-service';
 import type { DeviceCatalog } from './device-catalog';
 import type { SourceDiscoveryService } from './source-discovery-service';
@@ -52,16 +53,13 @@ export interface LightkeeperApp {
  * A generated Flow that fires and produces no light change is otherwise
  * undiagnosable from outside the Homey: this is the record of whether the card
  * was reached at all, and if it was refused, why.
+ *
+ * DERIVED from what the intake actually produces, plus the timestamp `app.ts`
+ * stamps on it. It used to restate all six fields, in a third place after the
+ * intake and the app's own log — and a field renamed in one of them would have
+ * failed silently, as an empty row on the settings page.
  */
-export interface BridgeEventRecord {
-  at: number;
-  cardId: string;
-  controller: string;
-  eventKey: string;
-  magnitude?: number;
-  accepted: boolean;
-  reason?: string;
-}
+export type BridgeEventRecord = { at: number } & IntakeRecord;
 
 // ------------------------------------------------------------ API responses
 

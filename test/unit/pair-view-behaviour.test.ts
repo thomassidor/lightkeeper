@@ -642,3 +642,150 @@ describe('the two ends screen says when each end applies (the old 4.3)', () => {
     assert.equal(inputsOf(view.byId('end-list')!, 'range').length, 2);
   });
 });
+
+// ------------------------------------------------------------- light picker
+
+/**
+ * The one pairing screen all FOUR device types share, and it had no behaviour
+ * test.
+ *
+ * Its only executed path in the suite was the empty-house early return: the boot
+ * fixture replies with `rooms: []`, so nothing ever reached the tiles, the zone
+ * select or `refresh()` — which means no `selectTargets` round trip was
+ * exercised anywhere, in any driver.
+ *
+ * The failure path is the one that matters. `selectTargets` had no `.catch`, so
+ * on any rejection — a stale device id, a repair whose stored zone was deleted, a
+ * transient catalogue read, the emit timeout, or deselecting the last light — the
+ * tiles and the count went on showing one thing while the pair session held
+ * another, silently. Nothing downstream re-sends or re-checks it, so Next and
+ * then Save could create a device aimed at lights the user never chose.
+ */
+describe('the light picker', () => {
+  const HOUSE = {
+    rooms: [{
+      zoneName: 'Kitchen',
+      lights: [
+        { id: 'l1', name: 'Ceiling', capabilities: ['onoff', 'dim'], selected: false },
+        { id: 'l2', name: 'Counter', capabilities: ['onoff'], selected: false },
+      ],
+    }],
+    zones: [{ id: 'z1', name: 'Kitchen' }],
+  };
+
+  const support = { onoff: 2, dim: 1, light_temperature: 0, total: 2 };
+
+  const open = (respond: Record<string, unknown>) =>
+    runPairView(read('controller', 'targets.html'), { respond });
+
+  const tiles = (view: ViewRun) =>
+    view.root.descendants().filter(n => (n.className ?? '').split(' ').includes('tile'));
+
+  test('it draws a tile per light, grouped by room', async () => {
+    const view = open({ listTargets: HOUSE, selectTargets: { count: 0, support } });
+    await view.settle();
+
+    assert.ok(!view.error, String(view.error));
+    assert.equal(tiles(view).length, 2, 'one tile per light');
+
+    const names = view.root.descendants()
+      .filter(n => (n.className ?? '').split(' ').includes('name'))
+      .map(n => n.textContent);
+    assert.deepEqual(names, ['Ceiling', 'Counter']);
+
+    const rooms = view.root.descendants()
+      .filter(n => (n.className ?? '').split(' ').includes('section-title'))
+      .map(n => n.textContent);
+    assert.deepEqual(rooms, ['Kitchen'], 'grouped per room — a flat grid of a whole house is unusable');
+  });
+
+  test('tapping a light selects it and tells the driver', async () => {
+    const view = open({ listTargets: HOUSE, selectTargets: { count: 1, support } });
+    await view.settle();
+
+    view.click(tiles(view)[0]!);
+    await view.settle();
+
+    const sent = view.emitted.filter(c => c.event === 'selectTargets');
+    assert.ok(sent.length > 0, 'the session was told');
+    assert.deepEqual((sent.at(-1)!.data as any).deviceIds, ['l1']);
+    assert.ok((tiles(view)[0]!.className ?? '').includes('sel'), 'and the tile shows it');
+  });
+
+  /**
+   * The regression this describe block exists for. With no stub the harness
+   * rejects, which is what a stale id or a timed-out emit does.
+   */
+  test('a refused selectTargets is reported, not swallowed', async () => {
+    const view = open({ listTargets: HOUSE });
+    await view.settle();
+
+    view.click(tiles(view)[0]!);
+    await view.settle();
+
+    const banner = view.byId('tg-loadError')!;
+    assert.equal(banner.style.display, 'block',
+      'the screen must not go on showing a selection the session does not have');
+    assert.ok(banner.textContent.length > 0);
+  });
+
+  test('the message is reachable in ZONE mode too', async () => {
+    // `#tg-loadError` used to live inside `#tg-devicesPane`, which switchMode
+    // hides in zone mode — so a failure while picking a zone was invisible.
+    const view = open({ listTargets: HOUSE });
+    await view.settle();
+
+    const zoneTab = view.root.descendants()
+      .find(n => n.attributes['data-mode'] === 'zone')!;
+    view.fire(zoneTab, 'click');
+    await view.settle();
+
+    assert.equal(view.byId('tg-devicesPane')!.style.display, 'none', 'the pane really is hidden');
+    assert.equal(view.byId('tg-loadError')!.style.display, 'block', 'and the message is not');
+  });
+
+  test('a later success clears the message', async () => {
+    // `fail()` never cleared, so one transient failure would otherwise leave a
+    // red banner up for the rest of the session.
+    let allow = false;
+    const view = runPairView(read('controller', 'targets.html'), {
+      respond: {
+        listTargets: HOUSE,
+        get selectTargets() {
+          if (!allow) throw new Error('refused');
+          return { count: 1, support };
+        },
+      },
+    });
+    await view.settle();
+
+    view.click(tiles(view)[0]!);
+    await view.settle();
+    assert.equal(view.byId('tg-loadError')!.style.display, 'block');
+
+    allow = true;
+    view.click(tiles(view)[1]!);
+    await view.settle();
+
+    assert.equal(view.byId('tg-loadError')!.style.display, 'none', 'the banner does not outlive the failure');
+  });
+
+  test('an empty house says so rather than drawing nothing', async () => {
+    const view = open({ listTargets: { rooms: [], zones: [] } });
+    await view.settle();
+
+    assert.equal(view.byId('tg-loadError')!.style.display, 'block');
+    assert.equal(tiles(view).length, 0);
+  });
+
+  test('a repair opens on the zone tab when the stored target is a zone', async () => {
+    const view = open({
+      listTargets: { ...HOUSE, current: { kind: 'zone', zoneId: 'z1', includeSubzones: false } },
+      selectTargets: { count: 2, support },
+    });
+    await view.settle();
+
+    assert.equal(view.byId('tg-zonePane')!.style.display, 'block');
+    assert.equal(view.byId('tg-subzones')!.checked, false, 'and it seeds the stored choice');
+  });
+});

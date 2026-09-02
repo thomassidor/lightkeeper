@@ -45,6 +45,15 @@ function harness(options: {
   timezone?: string;
   credentialValid?: boolean;
   timeCard?: unknown;
+  /**
+   * Return a reference for the ON boundary only, as a half-finished reconcile
+   * does — or a Flow the user deleted, or a dead key at first save.
+   *
+   * Catch-up's licence to switch lights on rests on something being scheduled to
+   * switch them off again, and reconciliation normally supplies both references
+   * before catch-up runs. This is how a test reaches the gate at all.
+   */
+  onlyOnBoundary?: boolean;
 } = { plan: plan() }) {
   const devices = options.devices ?? [light('l1'), light('l2')];
   const writes: Array<{ deviceId: string; capability: string; value: unknown }> = [];
@@ -86,8 +95,10 @@ function harness(options: {
     reconcile: async (_deviceId: string, pass: () => Promise<unknown>) => pass(),
     async sync(request: unknown) {
       synced.push(request);
+      const mapped = (request as any).mapped
+        .filter((input: any) => !(options.onlyOnBoundary && String(input.key).endsWith(':off')));
       return {
-        references: (request as any).mapped.map((input: any, index: number) => ({
+        references: mapped.map((input: any, index: number) => ({
           flowId: `f${index}`,
           bindingKey: input.key,
           variantKey: input.variantKey,
@@ -436,5 +447,62 @@ describe('a schedule emptied of every window', () => {
     await h.runtime.reconcileFlows();
 
     assert.deepEqual(h.synced, [], 'the cold-start case must not pay a flow and folder read');
+  });
+});
+
+/**
+ * Catch-up's whole licence to switch a household's lights on.
+ *
+ * A window whose on-Flow already fired while the app was down will not fire
+ * again until tomorrow, so catch-up applies a window that CONTAINS now. That is
+ * only safe because something else is scheduled to end it — the off Flow. With
+ * no reference to one, catching up means lighting rooms with nothing to turn
+ * them off again, which is the one failure worse than a dark evening.
+ *
+ * `safety-promises.test.ts` claimed this and did not check it: it declared its
+ * own `hasOff` predicate and asserted that against hand-built lists, never
+ * calling the runtime, so it would have passed with the gate deleted. This calls
+ * the runtime.
+ */
+describe('catch-up will not light a room it cannot switch off again', () => {
+  const inside = plan({
+    entries: [{ id: 'night', onAt: 20 * 60, days: null, end: { kind: 'duration', minutes: 300 } }],
+  });
+
+  test('a missing OFF reference refuses the catch-up, and says why', async () => {
+    const h = harness({ plan: inside, now: TUESDAY_2215, onlyOnBoundary: true });
+
+    await h.runtime.start();
+    await settle();
+
+    assert.deepEqual(h.writes, [], 'not one write');
+    const refusals = h.runtime.diagnostics().catchUpRefusals;
+    assert.equal(refusals.length, 1);
+    assert.equal(refusals[0]!.entryId, 'night');
+    assert.match(refusals[0]!.reason, /off boundary/);
+  });
+
+  test('with both references recorded it catches up', async () => {
+    const h = harness({ plan: inside, now: TUESDAY_2215 });
+
+    await h.runtime.start();
+    await settle();
+
+    assert.ok(h.writes.length > 0, 'the room is lit');
+    assert.deepEqual(h.runtime.diagnostics().catchUpRefusals, []);
+    assert.equal(h.runtime.diagnostics().lastAction?.note, 'catch-up');
+  });
+
+  test('the refusal is visible in diagnostics, not only in the log', async () => {
+    // Catch-up is the one path that switches lights on without a Flow having
+    // fired, so its refusals are what a "why did nothing happen at 22:01"
+    // report needs — and a refusal that is only logged is invisible from the
+    // settings page.
+    const h = harness({ plan: inside, now: TUESDAY_2215, onlyOnBoundary: true });
+
+    await h.runtime.start();
+    await settle();
+
+    assert.ok(h.runtime.diagnostics().catchUpRefusals.length > 0);
   });
 });
