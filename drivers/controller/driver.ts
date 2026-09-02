@@ -273,13 +273,27 @@ module.exports = class ControllerDriver extends Homey.Driver {
       /**
        * Checked against what is ALREADY chosen, not against the whole Homey.
        *
-       * A rule aimed at a light this controller does not target, or at a function
-       * the chosen lamps cannot perform, is a row that saves and can never move
-       * anything — which is the exact failure this app exists to prevent.
+       * A rule aimed at a light this controller does not target, at a function
+       * the chosen lamps cannot perform, or at an event this remote does not
+       * expose, is a row that saves and can never move anything — the exact
+       * failure this app exists to prevent.
+       *
+       * DROPPED and named rather than refused. Narrowing the lights and then
+       * going forward leaves stored rules that no screen renders, and rejecting
+       * the payload for them made repair permanently unsaveable behind a raw
+       * validation message. See validateMappingRules.
        */
       const summary = await resolveSummary(this.app.catalog, state.target);
       const selected = new Set(await targetDeviceIds(this.app.catalog, state.target));
-      const rules = validateMappingRules(raw, selected, availableFunctions(summary.support));
+      const { rules, dropped } = validateMappingRules(
+        raw,
+        selected,
+        availableFunctions(summary.support),
+        new Set(state.catalogue.map(input => input.key)),
+      );
+      for (const row of dropped) {
+        this.log(`Dropped mapping row ${row.index}: ${row.reason}`);
+      }
 
       // One rule per gesture. The mapping screen already displaces a duplicate
       // visibly; this is the net behind it, because a gesture assigned twice

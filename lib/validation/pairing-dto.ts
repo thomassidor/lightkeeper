@@ -84,35 +84,75 @@ export interface MappingRuleDto {
  * user cannot have meant, and it would resolve to a light they never selected on
  * the previous screen.
  */
+/**
+ * Shape errors THROW; rows that no longer belong are DROPPED and named.
+ *
+ * The distinction is the whole of this signature. A malformed payload is a bug
+ * in the view and refusing it is right. But a row whose light was deselected on
+ * the previous screen, or whose function the remaining lamps cannot perform, is
+ * a perfectly ordinary consequence of going back a step — and rejecting the
+ * whole save for it made a controller's repair permanently unsaveable, with a
+ * raw validation message and no way forward but starting over. The mapping
+ * screen does not render such a row either, so the user could not even see what
+ * was being complained about.
+ *
+ * Dropping and reporting is what `dedupeByInputKey`, `sanitiseEntries` and
+ * `sanitiseCurve` all already do with their own payloads.
+ */
 export function validateMappingRules(
   raw: unknown,
   selected: ReadonlySet<string>,
   offered: readonly LightFunction[],
-): MappingRuleDto[] {
-  const rules = requireArray(raw, 'rules', MAX_RULES);
+  /**
+   * The keys this remote actually exposes, if the caller knows them.
+   *
+   * `groupKey` and `function` were both checked against what the controller
+   * targets and offers; `inputKey` was only shape-checked, so a rule naming an
+   * input the remote does not expose was persisted, showed as configured on the
+   * mapping screen, generated no Flow and could never fire. Optional because a
+   * caller that has not discovered a catalogue yet has nothing to check against,
+   * and an empty set must not mean "drop everything".
+   */
+  catalogueKeys?: ReadonlySet<string>,
+): { rules: MappingRuleDto[]; dropped: Array<{ index: number; reason: string }> } {
+  const entries = requireArray(raw, 'rules', MAX_RULES);
+  const rules: MappingRuleDto[] = [];
+  const dropped: Array<{ index: number; reason: string }> = [];
 
-  return rules.map((entry, i) => {
+  entries.forEach((entry, i) => {
     const path = `rules[${i}]`;
     const rule = requireRecord(entry, path);
     const groupKey = requireString(rule.groupKey, `${path}.groupKey`);
+    const id = requireString(rule.id, `${path}.id`);
+    const inputKey = rule.inputKey === null || rule.inputKey === undefined
+      ? null
+      : requireString(rule.inputKey, `${path}.inputKey`);
 
+    // ---- membership: dropped and named, never thrown --------------------
     if (groupKey !== '__all__' && !selected.has(groupKey)) {
-      fail(`${path}.groupKey`, 'names a light this controller does not target');
+      dropped.push({ index: i, reason: `"${groupKey}" is not one of this controller's lights` });
+      return;
     }
 
+    if (!offered.includes(rule.function as LightFunction)) {
+      dropped.push({
+        index: i,
+        reason: `"${String(rule.function)}" is not something the chosen lights can do`,
+      });
+      return;
+    }
+
+    if (inputKey !== null && catalogueKeys && !catalogueKeys.has(inputKey)) {
+      dropped.push({ index: i, reason: `"${inputKey}" is not an event this remote exposes` });
+      return;
+    }
+
+    // ---- shape: still throws --------------------------------------------
     const func = requireOneOf(rule.function, `${path}.function`, offered);
-    // Offered is derived from what the chosen lights actually support, so this
-    // also rejects "make it warmer" on a set of lamps with no colour axis —
-    // which would otherwise save as a row that can never move anything.
     if (!(func in FUNCTION_CAPABILITY)) fail(`${path}.function`, 'is not a light function');
 
-    return {
-      id: requireString(rule.id, `${path}.id`),
-      function: func,
-      inputKey: rule.inputKey === null || rule.inputKey === undefined
-        ? null
-        : requireString(rule.inputKey, `${path}.inputKey`),
-      groupKey,
-    };
+    rules.push({ id, function: func, inputKey, groupKey });
   });
+
+  return { rules, dropped };
 }

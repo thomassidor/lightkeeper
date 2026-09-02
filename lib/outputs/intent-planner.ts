@@ -179,7 +179,9 @@ function planBrightnessDelta(
         // left the level, not from where the lamp last physically was.
         // commitDesired without a seq, because there is no write to lose a
         // race to.
-        const next = clampDim(deviceId, applyPerceptualDelta(current, delta), cache);
+        const next = advanceDim(
+          deviceId, current, applyPerceptualDelta(current, delta), delta, cache,
+        );
         cache.commitDesired(deviceId, 'dim', next);
         skipped.push({ deviceId, reason: 'off — desired level updated without turning on' });
         continue;
@@ -187,7 +189,7 @@ function planBrightnessDelta(
     }
 
     const raw = synchronisedValue ?? applyPerceptualDelta(current, delta);
-    const next = clampDim(deviceId, raw, cache);
+    const next = advanceDim(deviceId, current, raw, delta, cache);
 
     // Where the result would fall below the minimum, turn off rather
     // than clamping, when configured to do so.
@@ -265,6 +267,46 @@ function clampDim(deviceId: string, value: number, cache: TargetStateCache): num
   const min = options?.min ?? 0;
   const max = options?.max ?? 1;
   return quantise(clampToRange(value, min, max), options?.decimals);
+}
+
+/**
+ * A relative brightness step that is guaranteed to MOVE, where the range allows.
+ *
+ * The perceptual curve is steepest at the bottom, and quantisation happens in
+ * DEVICE values: at dim 0.00 a ramp's 0.06 perceptual tick is 0.06^2.2 ≈ 0.002 in
+ * device terms, which `quantise(…, 2)` rounds straight back to 0.00. So every
+ * tick of a ten-second hold recomputed from 0.00 and wrote 0.00 again, and the
+ * lamp could not be lifted off the floor at all. Reachable through the app's own
+ * defaults: `decreaseWhileOff: 'update_desired_only'` walks the desired level
+ * down to 0.00 with no `minimumBrightness` floor, because there is no write to
+ * put a floor under.
+ *
+ * So where rounding would eat the whole step, take one representable step in the
+ * direction asked for instead. One step rather than an accumulated residue
+ * because it needs no state between ticks — and because the honest reading of
+ * "brighten this" is "brighten it by something a lamp can show", not "by an
+ * amount that rounds to nothing".
+ *
+ * A step that is genuinely at the end of the range still does nothing, which is
+ * correct: `clampToRange` has the last word.
+ */
+function advanceDim(
+  deviceId: string,
+  current: number,
+  raw: number,
+  delta: number,
+  cache: TargetStateCache,
+): number {
+  const next = clampDim(deviceId, raw, cache);
+  if (delta === 0 || next !== clampDim(deviceId, current, cache)) return next;
+
+  const options = cache.capabilitiesOf(deviceId)?.dim;
+  const decimals = options?.decimals;
+  // No declared resolution means nothing was quantised away, so nothing to do.
+  if (decimals === undefined || !Number.isFinite(decimals)) return next;
+
+  const step = Math.pow(10, -Math.max(0, Math.floor(decimals)));
+  return clampDim(deviceId, next + (delta > 0 ? step : -step), cache);
 }
 
 function clampTemperature(deviceId: string, value: number, cache: TargetStateCache): number {

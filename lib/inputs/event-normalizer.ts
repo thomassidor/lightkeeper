@@ -138,13 +138,37 @@ export function normalizeCards(
     // "Dial — Turn" is not something a user can map. Mark it unsupported
     // rather than guess. (Tap Dial's rotation_dimmed lands here; it reports an
     // absolute level, which belongs to "Set brightness" and is not offered.)
+    /**
+     * TWO declines, and they are not the same one.
+     *
+     * A rotation with no resolvable direction cannot drive Brighter or Dimmer —
+     * "Dial — Turn" is not something a user can map — and that includes a
+     * rotation card carrying no direction argument at all. (Tap Dial's
+     * `rotation_dimmed` lands here: it reports an absolute level, which belongs
+     * to "Set brightness" and is not offered.)
+     *
+     * The second is any action whose direction argument HAS values but none
+     * this app can resolve — "either", or "open"/"close". That fell through and
+     * was expanded as if the card had no direction at all, and
+     * `buildSelectables` then filtered every value out and produced nothing for
+     * the card: no input offered, and no line in `rejected` saying why.
+     */
     const isRotation = action === 'rotate_delta' || action === 'rotate_start' || action === 'rotate_stop';
     const hasUsableDirection = direction
       && (direction.arg.values ?? []).some(v => directionOf(String(v.id)) !== null);
+
     if (isRotation && !hasUsableDirection) {
       rejected.push({
         cardId: card.id,
         reason: 'rotation without a resolvable direction — cannot drive a directional function',
+      });
+      continue;
+    }
+
+    if (direction && !hasUsableDirection) {
+      rejected.push({
+        cardId: card.id,
+        reason: `direction argument "${direction.arg.name}" has no value this app can resolve`,
       });
       continue;
     }
@@ -232,9 +256,24 @@ function buildSelectables(ctx: BuildContext): SelectableInput[] {
       // produces "1 up rotary — Press", which reads as a contradiction. Trust
       // the vendor's wording and leave the action off.
       const gestureNamed = valueLabel !== null && GESTURE_IN_NAME.test(valueLabel);
+      /**
+       * The direction has to be VISIBLE, whatever the action is.
+       *
+       * `actionLabel` folds the direction into its own wording for a rotation
+       * ("Turn left") and ignores it everywhere else — so a press-like card
+       * carrying a direction argument expanded into two picker options with
+       * distinct keys, correct per-direction bindings, and the SAME label. Two
+       * rows both reading "Button — Press", and no way for the user to tell
+       * which one they were choosing.
+       */
+      const gesture = actionLabel(action, dirValue?.dir ?? undefined);
+      const directionNamed = dirValue?.dir !== undefined && dirValue?.dir !== null
+        && !DIRECTIONAL_ACTIONS.has(action);
       const label = gestureNamed
-        ? controlLabel
-        : `${controlLabel} — ${actionLabel(action, dirValue?.dir ?? undefined)}`;
+        ? (directionNamed ? `${controlLabel} — ${directionWord(dirValue!.dir!)}` : controlLabel)
+        : directionNamed
+          ? `${controlLabel} — ${gesture} ${directionWord(dirValue!.dir!)}`
+          : `${controlLabel} — ${gesture}`;
 
       const binding = bindingFor(ctx, selectorValue?.id ?? null, dirValue?.id ?? null, magnitude, tokenMagnitude);
 
@@ -464,6 +503,17 @@ function preferred(a: SelectableInput, b: SelectableInput): SelectableInput {
   if (aInitial !== bInitial) return aInitial ? a : b;
 
   return a.key <= b.key ? a : b;
+}
+
+/**
+ * The actions whose own label already carries the direction, so appending it
+ * would read as "Turn left left".
+ */
+const DIRECTIONAL_ACTIONS = new Set<InputAction>(['rotate_delta', 'rotate_stop']);
+
+/** The direction, as a word, for an action whose label does not carry one. */
+function directionWord(direction: -1 | 1): string {
+  return direction === 1 ? 'up' : 'down';
 }
 
 function actionLabel(action: InputAction, direction?: -1 | 1): string {

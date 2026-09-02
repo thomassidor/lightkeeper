@@ -176,3 +176,65 @@ describe('gesture classification', () => {
     }, 'press'), { id: 'button', label: 'Button' });
   });
 });
+
+/**
+ * A direction argument on a card that is NOT a rotation.
+ *
+ * Rare, and it does happen: a vendor can put an up/down argument on a press.
+ * The normalizer expanded it into per-direction variants with distinct keys and
+ * correct per-direction bindings, and then labelled every one of them the same —
+ * two picker rows both reading "Button — Press", with no way to tell which was
+ * which. And where such an argument carried no value this app could resolve, the
+ * card produced nothing at all, silently: no input, and no line in `rejected`
+ * saying why.
+ */
+describe('a direction argument on something that is not a rotation', () => {
+  const pressWithDirection = (values: string[]) => ([{
+    id: 'homey:device:d1:switch_pressed',
+    shortId: 'switch_pressed',
+    uri: 'homey:flowcardtrigger:homey:device:d1:switch_pressed',
+    title: 'Button is pressed',
+    args: [{ name: 'direction', type: 'dropdown', values: values.map(id => ({ id })) }],
+    tokens: [],
+  }]);
+
+  test('the direction is visible in the label, not folded away', () => {
+    const { inputs } = normalizeCards(pressWithDirection(['up', 'down']), { sourceDeviceId: 'd1' });
+
+    assert.equal(inputs.length, 2);
+    const seen = labels(inputs);
+    assert.equal(new Set(seen).size, 2, `both rows read the same thing: ${seen.join(' / ')}`);
+    assert.deepEqual(seen, ['Button — Press down', 'Button — Press up']);
+  });
+
+  test('the two rows still carry the direction the binding needs', () => {
+    const { inputs } = normalizeCards(pressWithDirection(['up', 'down']), { sourceDeviceId: 'd1' });
+    assert.deepEqual(inputs.map(i => i.direction).sort(), [-1, 1]);
+  });
+
+  test('a direction nobody can resolve is declined with a reason', () => {
+    const { inputs, rejected } = normalizeCards(
+      pressWithDirection(['either', 'sideways']), { sourceDeviceId: 'd1' },
+    );
+
+    assert.deepEqual(inputs, [], 'nothing is offered');
+    assert.equal(rejected.length, 1, 'and it says why, rather than vanishing');
+    assert.match(rejected[0]!.reason, /no value this app can resolve/);
+  });
+
+  test('a rotation with no direction argument at all is still declined', () => {
+    // The original guard, which must survive the one above: "Dial — Turn" is
+    // not something a user can map to Brighter or Dimmer.
+    const { inputs, rejected } = normalizeCards([{
+      id: 'homey:device:d1:dial_rotated',
+      shortId: 'dial_rotated',
+      uri: 'homey:flowcardtrigger:homey:device:d1:dial_rotated',
+      title: 'Dial is rotated',
+      args: [],
+      tokens: [],
+    }], { sourceDeviceId: 'd1' });
+
+    assert.deepEqual(inputs, []);
+    assert.match(rejected[0]!.reason, /rotation without a resolvable direction/);
+  });
+});

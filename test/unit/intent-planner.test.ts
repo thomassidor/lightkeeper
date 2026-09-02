@@ -227,6 +227,62 @@ describe('perceptual curve', () => {
   });
 });
 
+describe('a relative step always moves the lamp', () => {
+  /**
+   * The perceptual curve is steepest at the bottom, and quantisation happens in
+   * DEVICE values: at dim 0.00 a ramp's 0.06 perceptual tick is 0.06^2.2 ≈ 0.002
+   * in device terms, which `quantise(…, 2)` rounds back to 0.00. So every tick
+   * of a ten-second hold recomputed from 0.00 and wrote 0.00 again — a
+   * brightness ramp could not lift a lamp off the floor at all.
+   *
+   * Reachable through the app's own defaults, which is what makes it worth
+   * fixing: `decreaseWhileOff: 'update_desired_only'` walks the desired level
+   * down to 0.00 with no `minimumBrightness` floor, because there is no write
+   * for a floor to apply to.
+   */
+  test('brightening from the floor writes something the lamp can show', () => {
+    const cache = cacheWith([{ id: 'l1', on: true, dim: 0 }]);
+    const plan = planIntent({ type: 'brightness_delta', delta: 0.06 }, ['l1'], cache, DEFAULT_BEHAVIOR);
+
+    assert.equal(dimWrites(plan.writes).l1, 0.01, 'one representable step, not zero');
+  });
+
+  test('and it keeps climbing rather than sticking', () => {
+    const cache = cacheWith([{ id: 'l1', on: true, dim: 0 }]);
+    let level = 0;
+    for (let tick = 0; tick < 4; tick += 1) {
+      const plan = planIntent({ type: 'brightness_delta', delta: 0.06 }, ['l1'], cache, DEFAULT_BEHAVIOR);
+      const next = dimWrites(plan.writes).l1!;
+      assert.ok(next > level, `tick ${tick}: ${next} did not move past ${level}`);
+      level = next;
+      cache.commitDesired('l1', 'dim', next);
+    }
+  });
+
+  test('dimming from the top moves too', () => {
+    const cache = cacheWith([{ id: 'l1', on: true, dim: 1 }]);
+    const plan = planIntent({ type: 'brightness_delta', delta: -0.001 }, ['l1'], cache, DEFAULT_BEHAVIOR);
+
+    assert.ok(dimWrites(plan.writes).l1! < 1);
+  });
+
+  test('a step at the end of the range still does nothing, which is correct', () => {
+    const cache = cacheWith([{ id: 'l1', on: true, dim: 1 }]);
+    const plan = planIntent({ type: 'brightness_delta', delta: 0.5 }, ['l1'], cache, DEFAULT_BEHAVIOR);
+
+    assert.equal(dimWrites(plan.writes).l1, 1, 'clampToRange has the last word');
+  });
+
+  test('an ordinary mid-range step is unchanged by the guarantee', () => {
+    const cache = cacheWith([{ id: 'l1', on: true, dim: 0.5 }]);
+    const plan = planIntent({ type: 'brightness_delta', delta: 0.1 }, ['l1'], cache, DEFAULT_BEHAVIOR);
+
+    // Whatever the curve says, not one step past it.
+    const expected = Math.round(applyPerceptualDelta(0.5, 0.1) * 100) / 100;
+    assert.equal(dimWrites(plan.writes).l1, expected);
+  });
+});
+
 describe('a temperature write switches the lamp into temperature mode first', () => {
   /**
    * Found on hardware, and invisible until one device wrote both.

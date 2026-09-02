@@ -6,6 +6,7 @@ import {
   mappingGroups, mappingRuleRows, ruleTargetFor, singleLightOf,
 } from '../../lib/pairing/mapping-screen';
 import { groupSourcesByRoom } from '../../lib/pairing/source-list';
+import { validateMappingRules } from '../../lib/validation/pairing-dto';
 import type { DeviceCatalog } from '../../lib/device-catalog';
 import type { MappingRule } from '../../lib/mapping/mapping-types';
 import type { PickerLight } from '../../lib/pairing/target-picker';
@@ -343,5 +344,89 @@ describe('the remote picker groups by room', () => {
       source('s2', 'B', 'z2', 'Bedroom'),
     ], undefined);
     assert.deepEqual(rooms.map(r => r.zoneName), ['Ærøskøbing', 'Bedroom'].sort((a, b) => a.localeCompare(b)));
+  });
+});
+
+/**
+ * What `setRules` does with a row that has stopped belonging.
+ *
+ * Narrowing a controller's lights mid-flow, or going back a screen, leaves
+ * stored rules the mapping screen does not render — and refusing the whole
+ * payload for one of them made repair permanently unsaveable behind a raw
+ * validation message, with nothing on screen to explain it. Dropping and naming
+ * is what `dedupeByInputKey`, `sanitiseEntries` and `sanitiseCurve` already do.
+ *
+ * The line to hold is that a MALFORMED payload still throws: that is a bug in
+ * the view, not a consequence of the user going back a step.
+ */
+describe('mapping rows that have stopped belonging', () => {
+  const LIGHTS = new Set(['l1', 'l2']);
+  const OFFERED = ['toggle', 'brightness_up', 'brightness_down'] as const;
+  const KEYS = new Set(['n2_on|press', 'n2_dim_up|long_press']);
+
+  const row = (over: Record<string, unknown> = {}) => ({
+    id: 'r1', function: 'toggle', inputKey: 'n2_on|press', groupKey: '__all__', ...over,
+  });
+
+  test('a rule aimed at a deselected light is dropped, not refused', () => {
+    const { rules, dropped } = validateMappingRules(
+      [row(), row({ id: 'r2', groupKey: 'gone' })], LIGHTS, OFFERED, KEYS,
+    );
+
+    assert.equal(rules.length, 1, 'the good row still saves');
+    assert.equal(rules[0]!.id, 'r1');
+    assert.equal(dropped.length, 1);
+    assert.equal(dropped[0]!.index, 1);
+    assert.match(dropped[0]!.reason, /not one of this controller's lights/);
+  });
+
+  test('a function the remaining lamps cannot do is dropped', () => {
+    const { rules, dropped } = validateMappingRules(
+      [row(), row({ id: 'r2', function: 'warmer' })], LIGHTS, OFFERED, KEYS,
+    );
+
+    assert.equal(rules.length, 1);
+    assert.equal(dropped.length, 1);
+    assert.match(dropped[0]!.reason, /not something the chosen lights can do/);
+  });
+
+  /**
+   * `groupKey` and `function` were both membership-checked; `inputKey` was only
+   * shape-checked. So a rule naming an event the remote does not expose was
+   * persisted, showed as configured on the mapping screen, generated no Flow and
+   * could never fire — with nothing anywhere reporting it.
+   */
+  test('a rule naming an event this remote does not expose is dropped', () => {
+    const { rules, dropped } = validateMappingRules(
+      [row(), row({ id: 'r2', inputKey: 'vanished|press' })], LIGHTS, OFFERED, KEYS,
+    );
+
+    assert.equal(rules.length, 1);
+    assert.equal(dropped.length, 1);
+    assert.match(dropped[0]!.reason, /not an event this remote exposes/);
+  });
+
+  test('an unknown catalogue is not the same as an empty one', () => {
+    // A caller that has not discovered anything yet has nothing to check
+    // against, and must not drop every row for it.
+    const { rules, dropped } = validateMappingRules([row()], LIGHTS, OFFERED, undefined);
+
+    assert.equal(rules.length, 1);
+    assert.deepEqual(dropped, []);
+  });
+
+  test('an unassigned row is kept, because that is how a gesture is cleared', () => {
+    const { rules, dropped } = validateMappingRules(
+      [row({ inputKey: null })], LIGHTS, OFFERED, KEYS,
+    );
+
+    assert.equal(rules.length, 1);
+    assert.equal(rules[0]!.inputKey, null);
+    assert.deepEqual(dropped, []);
+  });
+
+  test('a malformed payload still throws', () => {
+    assert.throws(() => validateMappingRules([{ id: 5 }], LIGHTS, OFFERED, KEYS), /rules\[0\]/);
+    assert.throws(() => validateMappingRules('not a list', LIGHTS, OFFERED, KEYS), /rules/);
   });
 });

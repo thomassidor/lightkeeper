@@ -459,6 +459,29 @@ function __lkBootMap(Homey) {
     });
 
     select.value = current || '';
+
+    /**
+     * A saved assignment the remote no longer offers.
+     *
+     * Assigning a value with no matching option leaves `selectedIndex` at -1, so
+     * the row rendered with NOTHING selected — while `assignedCount` still
+     * counted it, so a collapsed section could be badged "1 action" over rows
+     * that all read "Not assigned", and Save re-persisted a rule that compiles
+     * to no Flow. Nothing pruned it: not this view, not `mappingRuleRows`, not
+     * the driver. It happens for real — platform §7 records that BILRESA's cards
+     * vanish after a Homey restart.
+     *
+     * Dropped from the model here, which also makes the badge honest, and the
+     * row's own note says why rather than leaving a silent blank.
+     */
+    if (current && select.selectedIndex === -1) {
+      model.rules = model.rules.filter(function (r) {
+        return !(r.groupKey === groupKey && r.function === func);
+      });
+      select.value = '';
+      setNote(groupKey, func, Homey.__('mapping.eventGone'));
+    }
+
     select.addEventListener('change', function () {
       setAssignment(groupKey, func, select.value || null);
     });

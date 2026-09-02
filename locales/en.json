@@ -60,6 +60,7 @@
     "title": "Assign the controls",
     "subtitle": "Choose which button or gesture performs each lighting function.",
     "notAssigned": "Not assigned",
+    "eventGone": "The control this used was on the remote before and is not there now. Pick another.",
     "test": "Test",
     "testing": "Testing __name__…",
     "tested": "Sent to __writes__ of __targets__ light(s).",
