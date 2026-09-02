@@ -32,7 +32,7 @@ import { NO_CACHE } from '../flow-card-catalogue';
  *    reused in place rather than dragged back.
  */
 
-export const MANAGED_FOLDER_NAME = 'Lightkeeper';
+const MANAGED_FOLDER_NAME = 'Lightkeeper';
 
 interface FolderRecord {
   id: string;
@@ -64,7 +64,7 @@ export interface FolderView {
 const ROOT_FOLDER_LOCK = 'flow-root';
 
 /** A view that resolves to no folder at all — the non-fatal degraded state. */
-export const NO_FOLDERS: FolderView = { root: undefined, folders: new Map() };
+const NO_FOLDERS: FolderView = { root: undefined, folders: new Map() };
 
 /** Enough of a live flow for folder decisions. */
 export interface FlowFolderInfo {
@@ -343,7 +343,7 @@ export class FlowFolderManager {
  * named after. createFlowFolder requires a name, and a blank one is not worth
  * a folder.
  */
-export function folderNameFor(deviceName: string): string | undefined {
+function folderNameFor(deviceName: string): string | undefined {
   return deviceName.trim() || undefined;
 }
 

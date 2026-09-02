@@ -22,7 +22,7 @@ export interface TargetCount {
   available: number;
 }
 
-export async function countTargets(catalog: DeviceCatalog, target: TargetSpec): Promise<TargetCount> {
+async function countTargets(catalog: DeviceCatalog, target: TargetSpec): Promise<TargetCount> {
   if (target.kind === 'devices') {
     const devices = await Promise.all(target.deviceIds.map(id => catalog.device(id)));
     const present = devices.filter((d): d is CatalogDevice => d !== undefined);

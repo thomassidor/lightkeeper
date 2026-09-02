@@ -402,7 +402,7 @@ function candidateStatus(failure: CredentialFailure, present: boolean): Credenti
  * `finally` below — occasionally for much longer than that, so it says what it
  * is. Exported because the stale-probe sweep matches on it exactly.
  */
-export const PROBE_FOLDER_NAME = 'Lightkeeper (checking permissions)';
+const PROBE_FOLDER_NAME = 'Lightkeeper (checking permissions)';
 
 /**
  * Prove a key can WRITE, not merely read.

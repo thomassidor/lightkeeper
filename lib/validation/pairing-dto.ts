@@ -24,7 +24,7 @@ import { FUNCTION_CAPABILITY } from '../mapping/mapping-types';
 const MAX_RULES = 64;
 
 /** A target's shape, before anything is asked of the catalogue. */
-export function validateTargetDto(raw: unknown): TargetSpec {
+function validateTargetDto(raw: unknown): TargetSpec {
   return validateTarget(raw, 'target');
 }
 

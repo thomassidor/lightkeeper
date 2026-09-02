@@ -765,11 +765,11 @@ export class ScheduleRuntime {
    */
   private staleFlows: string[] = [];
 
-  /** Never exposes secrets or unrelated Homey configuration. */
 
   /** The target set this runtime is built against. See the controller's. */
   private snapshot: TargetSnapshot | null = null;
 
+  /** Never exposes secrets or unrelated Homey configuration. */
   diagnostics(): ScheduleDiagnostics {
     const timezone = this.deps.timezone();
     const { clock, resolved } = this.clock();

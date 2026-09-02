@@ -5,6 +5,7 @@ import { CircadianRuntime } from '../../lib/circadian/circadian-runtime';
 import type { CircadianPlan } from '../../lib/circadian/circadian-types';
 import type { DeviceCatalog } from '../../lib/device-catalog';
 import type { HomeyApiService } from '../../lib/homey-api-service';
+import { settle as sharedSettle } from '../support/deferred';
 
 /**
  * What a circadian runtime is responsible for is everything a curve is not: when
@@ -186,11 +187,14 @@ function plan(over: Partial<CircadianPlan> = {}): CircadianPlan {
 /**
  * The write queue flushes on the leading edge and does not await the flush it
  * started, so a test that asserts immediately sees only the first write. Yield a
- * few turns rather than sleeping.
+ * few turns rather than sleeping — twelve is well past any burst these tests
+ * produce.
+ *
+ * `settle` itself is `test/support/deferred.ts`'s; three files each carried a
+ * private copy of exactly this loop with an incompatible signature, while five
+ * other files imported the shared one.
  */
-async function settle(): Promise<void> {
-  for (let i = 0; i < 12; i += 1) await new Promise(resolve => setImmediate(resolve));
-}
+const settle = () => sharedSettle(12);
 
 /**
  * Settle, then flush the queue.

@@ -47,7 +47,7 @@ export interface RuntimeRegistryOptions {
  * virtual device — does not cost a pass per light; short enough that a light
  * re-paired while the user watches is picked up before they give up on it.
  */
-export const CATALOG_COALESCE_MS = 500;
+const CATALOG_COALESCE_MS = 500;
 
 export class RuntimeRegistry<TRuntime extends RegisteredRuntime> {
   private readonly runtimes = new Map<string, TRuntime>();

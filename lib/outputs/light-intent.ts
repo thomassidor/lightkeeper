@@ -55,7 +55,7 @@ export function requiredCapability(intent: LightIntent): 'onoff' | 'dim' | 'ligh
  * at the bottom of the range and inert at the top, which is why this is not
  * optional dressing.
  */
-export const GAMMA = 2.2;
+const GAMMA = 2.2;
 
 /** Device value → perceptual position. */
 export function toPerceptual(value: number): number {

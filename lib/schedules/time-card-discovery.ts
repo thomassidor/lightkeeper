@@ -27,7 +27,7 @@ import { formatMinutes } from './schedule-types';
  * Verified on Homey Pro 2023, firmware 13.4.0: `homey:manager:cron:time_exactly`,
  * one argument, `time` of type `time`.
  */
-export const KNOWN_TIME_CARDS = ['homey:manager:cron:time_exactly'];
+const KNOWN_TIME_CARDS = ['homey:manager:cron:time_exactly'];
 
 export interface TimeCardRef {
   id: string;

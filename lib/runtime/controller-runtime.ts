@@ -718,7 +718,6 @@ export class ControllerRuntime {
    */
   private staleFlows: string[] = [];
 
-  /** Never exposes secrets or unrelated Homey configuration. */
 
   /**
    * The target set this runtime is currently built against.
@@ -728,6 +727,7 @@ export class ControllerRuntime {
    */
   private snapshot: TargetSnapshot | null = null;
 
+  /** Never exposes secrets or unrelated Homey configuration. */
   diagnostics(): ControllerDiagnostics {
     return {
       controllerId: this.controllerId,

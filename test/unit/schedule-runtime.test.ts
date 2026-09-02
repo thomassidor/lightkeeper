@@ -7,6 +7,7 @@ import { eventKeyFor } from '../../lib/schedules/schedule-bindings';
 import type { DeviceCatalog } from '../../lib/device-catalog';
 import type { FlowBridgeManager } from '../../lib/bridge/flow-bridge-manager';
 import type { HomeyApiService } from '../../lib/homey-api-service';
+import { settle as sharedSettle } from '../support/deferred';
 
 /**
  * What a schedule runtime is responsible for is exactly what a generated Flow
@@ -131,12 +132,15 @@ function plan(over: Partial<SchedulePlan> = {}): SchedulePlan {
 
 /**
  * The write queue flushes on the leading edge and does not await the flush it
- * started, so a test that asserts immediately after drain() sees only the first
- * write. Yield a few turns rather than sleeping.
+ * started, so a test that asserts immediately sees only the first write. Yield a
+ * few turns rather than sleeping — twelve is well past any burst these tests
+ * produce.
+ *
+ * `settle` itself is `test/support/deferred.ts`'s; three files each carried a
+ * private copy of exactly this loop with an incompatible signature, while five
+ * other files imported the shared one.
  */
-async function settle(): Promise<void> {
-  for (let i = 0; i < 12; i += 1) await new Promise(resolve => setImmediate(resolve));
-}
+const settle = () => sharedSettle(12);
 
 /** 2026-08-18 is a Tuesday; 20:15 UTC is 22:15 in Copenhagen. */
 const TUESDAY_2215 = Date.UTC(2026, 7, 18, 20, 15);

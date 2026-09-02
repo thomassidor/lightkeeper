@@ -16,7 +16,7 @@ import type { LightIntent } from './light-intent';
  */
 
 export const TICK_MS = 100;
-export const DEFAULT_RATE_PER_SECOND = 0.6;
+const DEFAULT_RATE_PER_SECOND = 0.6;
 
 /** Not configurable. Deliberately not read from behaviour or settings. */
 export const HARD_STOP_MS = 10_000;

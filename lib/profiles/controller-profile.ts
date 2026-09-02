@@ -81,18 +81,6 @@ export interface ControllerProfile {
 }
 
 /**
- * Conflict rule: one lighting function per normalised event.
- * Returns the rule that would be displaced by assigning this input.
- */
-export function conflictingRule(
-  profile: ControllerProfile,
-  inputKey: string,
-  exceptRuleId: string,
-): MappingRule | undefined {
-  return profile.mappings.find(m => m.inputKey === inputKey && m.id !== exceptRuleId);
-}
-
-/**
  * One rule per normalised event, enforced on a whole rule set.
  *
  * The mapping screen is keyed on (light group, function), so nothing there

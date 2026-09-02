@@ -100,14 +100,9 @@ export class ControllerRuntimeManager {
     displayName: () => string = () => 'controller',
   ): Promise<ControllerRuntime> {
     const runtimeDeps: ControllerRuntimeDeps = {
-      api: this.deps.api,
-      catalog: this.deps.catalog,
-      discovery: this.deps.discovery,
-      bridge: this.deps.bridge,
+      ...this.baseDeps(),
       ...(this.deps.health ? { health: this.deps.health } : {}),
       displayName,
-      ...(this.deps.onWriteResult ? { onWriteResult: this.deps.onWriteResult } : {}),
-      log: this.deps.log,
       onStateChange,
       onProfileChange,
     };
@@ -126,17 +121,36 @@ export class ControllerRuntimeManager {
    */
   async ephemeral(profile: ControllerProfile): Promise<ControllerRuntime> {
     const runtime = new ControllerRuntime('__test__', profile, {
-      api: this.deps.api,
-      catalog: this.deps.catalog,
-      discovery: this.deps.discovery,
-      bridge: this.deps.bridge,
+      ...this.baseDeps(),
       displayName: () => 'test',
-      log: this.deps.log,
       onStateChange: () => { /* a test rig has no health state */ },
       onProfileChange: async () => { /* ephemeral: nothing to persist */ },
     });
     await runtime.startWithoutFlows();
     return runtime;
+  }
+
+  /**
+   * What every runtime gets, whether it is registered or not.
+   *
+   * The two builders above were hand-written lists, and they had drifted:
+   * `ephemeral()` omitted `onWriteResult`, so a controller's Test write was
+   * missing from the app-wide `recentWrites` log the settings page reads — the
+   * one list that tells "never fired" from "fired and could not reach the
+   * light". The schedule and circadian managers already share a `baseDeps()`
+   * for exactly this reason, and this is the third copy of that idea.
+   */
+  private baseDeps(): Pick<
+    ControllerRuntimeDeps, 'api' | 'catalog' | 'discovery' | 'bridge' | 'log' | 'onWriteResult'
+  > {
+    return {
+      api: this.deps.api,
+      catalog: this.deps.catalog,
+      discovery: this.deps.discovery,
+      bridge: this.deps.bridge,
+      log: this.deps.log,
+      ...(this.deps.onWriteResult ? { onWriteResult: this.deps.onWriteResult } : {}),
+    };
   }
 
   async unregister(controllerId: string): Promise<void> {

@@ -59,15 +59,18 @@ export function intentForLightFunction(
 }
 
 export class MappingEngine {
+  /**
+   * Both readonly: a mapping engine is REPLACED, never mutated.
+   *
+   * There was an `update()` here with no caller anywhere, tests included —
+   * `ControllerRuntime.buildRuntime()` constructs a fresh engine on every start
+   * and every profile change, which is what makes the whole runtime's state
+   * consistent with one plan. A mutator invited the other pattern.
+   */
   constructor(
-    private rules: MappingRule[],
-    private behavior: ControllerBehavior,
+    private readonly rules: MappingRule[],
+    private readonly behavior: ControllerBehavior,
   ) {}
-
-  update(rules: MappingRule[], behavior: ControllerBehavior): void {
-    this.rules = rules;
-    this.behavior = behavior;
-  }
 
   /** Unmapped input resolves to null — never a guess. Fail closed. */
   resolve({ inputKey, event }: MappingEngineInput): ResolvedIntent | null {

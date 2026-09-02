@@ -21,7 +21,7 @@ export const CURRENT_SCHEDULE_SCHEMA_VERSION = 1;
 export type ScheduleMigration = MigrationStep;
 
 /** Keyed by the version being migrated FROM. */
-export const SCHEDULE_MIGRATIONS: Record<number, ScheduleMigration> = {
+const SCHEDULE_MIGRATIONS: Record<number, ScheduleMigration> = {
   // 0 → 1: plans written before schemaVersion existed. None shipped, but the
   // step exists so version 0 is never a special case in the loop below.
   0: plan => ({

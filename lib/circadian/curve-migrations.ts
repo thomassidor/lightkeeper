@@ -22,7 +22,7 @@ export const CURRENT_CURVE_SCHEMA_VERSION = 1;
 export type CurveMigration = MigrationStep;
 
 /** Keyed by the version being migrated FROM. */
-export const CURVE_MIGRATIONS: Record<number, CurveMigration> = {
+const CURVE_MIGRATIONS: Record<number, CurveMigration> = {
   /**
    * 0 → 1: plans written before `schemaVersion` existed.
    *

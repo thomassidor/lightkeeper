@@ -1,5 +1,5 @@
 import {
-  fail, isRecord, optionalNumber, optionalString, optionalUnitInterval,
+  fail, isRecord, optionalNumber,
   requireArray, requireBoolean, requireNumber, requireOneOf, requireRecord,
   requireString, requireUnitInterval,
 } from './guards';
@@ -563,5 +563,12 @@ export function validateSimpleCircadianPlan(raw: unknown): SimpleCircadianPlan {
   };
 }
 
-/** Exported for the pairing DTO checks, which validate a target on its own. */
-export { validateTarget, optionalString, optionalUnitInterval };
+/**
+ * Exported for the pairing DTO checks, which validate a target on its own.
+ *
+ * `optionalString` and `optionalUnitInterval` used to be re-exported here too,
+ * and the comment above them was never true rather than having gone stale:
+ * `pairing-dto.ts` has always imported its guards from `guards.ts` directly, so
+ * the re-export had no consumer in its own birth commit.
+ */
+export { validateTarget };

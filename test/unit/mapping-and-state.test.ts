@@ -13,10 +13,7 @@ const LIGHT_FUNCTIONS: readonly LightFunction[] = [
 ];
 import { TargetStateCache } from '../../lib/outputs/target-state-cache';
 import { migrateProfile } from '../../lib/profiles/migrations';
-import {
-  CURRENT_SCHEMA_VERSION, conflictingRule, dedupeByInputKey,
-  type ControllerProfile,
-} from '../../lib/profiles/controller-profile';
+import { CURRENT_SCHEMA_VERSION, dedupeByInputKey } from '../../lib/profiles/controller-profile';
 import type { InputEvent } from '../../lib/inputs/input-event';
 
 const rule = (over: Partial<MappingRule>): MappingRule => ({
@@ -298,19 +295,6 @@ describe('one rule per gesture', () => {
       const resolved = engine.resolve({ inputKey: surviving.inputKey!, event: event() });
       assert.equal(resolved?.rule.id, surviving.id, 'a kept rule that cannot fire is the bug');
     }
-  });
-
-  test('conflictingRule names what an assignment would displace', () => {
-    const profile = {
-      mappings: [
-        rule({ id: 'a', function: 'toggle', inputKey: 'k1' }),
-        rule({ id: 'b', function: 'on', inputKey: 'k2' }),
-      ],
-    } as ControllerProfile;
-
-    assert.equal(conflictingRule(profile, 'k1', 'b')?.id, 'a');
-    assert.equal(conflictingRule(profile, 'k1', 'a'), undefined, 'a rule cannot conflict with itself');
-    assert.equal(conflictingRule(profile, 'k3', 'a'), undefined);
   });
 });
 

@@ -5,6 +5,7 @@ import type { CatalogDevice } from './device-catalog';
 import { FlowCardCatalogue } from './flow-card-catalogue';
 import {
   normalizeCards,
+  titleTextOf,
   type DiscoveredTriggerCard,
 } from './inputs/event-normalizer';
 import type { SelectableInput } from './inputs/selectable-input';
@@ -267,13 +268,6 @@ function deviceMatchesFilter(
   return { matches: unknownKeys.length === 0, unknownKeys };
 }
 
-function titleOf(title: unknown): string | null {
-  if (typeof title === 'string') return title;
-  if (title && typeof title === 'object' && 'en' in (title as Record<string, unknown>)) {
-    return String((title as Record<string, unknown>).en);
-  }
-  return null;
-}
 
 /**
  * Fingerprint the trigger and capability schema used at configuration
@@ -338,7 +332,7 @@ function fingerprintV2Of(device: CatalogDevice, cards: DiscoveredTriggerCard[]):
           .sort((a, b) => a.id.localeCompare(b.id))
           // The title is the scale. A token relabelled from "Steps (1000/turn)"
           // to "Steps (500/turn)" is the same shape and a different remote.
-          .map(token => `${token.id}:${token.type}:${titleOf(token.title) ?? ''}`),
+          .map(token => `${token.id}:${token.type}:${titleTextOf(token.title) ?? ''}`),
       })),
   };
 

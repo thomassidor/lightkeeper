@@ -11,7 +11,7 @@ import type { TargetSpec } from '../outputs/light-intent';
  */
 
 /** Only the capabilities this app acts on; the rest are noise on that screen. */
-export const OFFERED_CAPABILITIES = ['onoff', 'dim', 'light_temperature'] as const;
+const OFFERED_CAPABILITIES = ['onoff', 'dim', 'light_temperature'] as const;
 
 export interface PickerLight {
   id: string;

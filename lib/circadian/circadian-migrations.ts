@@ -28,7 +28,7 @@ export const CURRENT_CIRCADIAN_SCHEMA_VERSION = 2;
 export type CircadianMigration = MigrationStep;
 
 /** Keyed by the version being migrated FROM. */
-export const CIRCADIAN_MIGRATIONS: Record<number, CircadianMigration> = {
+const CIRCADIAN_MIGRATIONS: Record<number, CircadianMigration> = {
   // 0 → 1: plans written before schemaVersion existed. None shipped, but the
   // step exists so version 0 is never a special case in the loop below.
   0: plan => ({

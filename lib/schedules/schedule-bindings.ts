@@ -22,7 +22,7 @@ import {
  * 23:00 would keep firing at 22:00 while every screen in the app said 23:00.
  */
 
-export const EVENT_PREFIX = 'sched';
+const EVENT_PREFIX = 'sched';
 
 export function eventKeyFor(entryId: string, boundary: ScheduleBoundary): string {
   return `${EVENT_PREFIX}:${entryId}:${boundary}`;

@@ -22,7 +22,7 @@ interface StatusCarrying {
 }
 
 /** The numeric HTTP status an error carries, if it carries one at all. */
-export function statusOf(error: unknown): number | null {
+function statusOf(error: unknown): number | null {
   const err = error as StatusCarrying | undefined | null;
   if (!err) return null;
   for (const candidate of [err.statusCode, err.status, err.code]) {

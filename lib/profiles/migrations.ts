@@ -24,7 +24,7 @@ export type Migration = MigrationStep;
  * Keyed by the version being migrated FROM. Add a new entry, never edit an
  * existing one — an installed base is already carrying the old shape.
  */
-export const MIGRATIONS: Record<number, Migration> = {
+const MIGRATIONS: Record<number, Migration> = {
   // 0 → 1: profiles written before schemaVersion existed. Fill in the defaults
   // that later code assumes are present.
   0: profile => ({

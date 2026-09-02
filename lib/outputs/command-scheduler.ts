@@ -88,6 +88,16 @@ interface PendingWrite {
 }
 
 interface DeviceQueue {
+  /**
+   * The id this queue is filed under.
+   *
+   * Carried rather than reverse-looked-up. `stop()` was the only path that
+   * needed it and searched the map for its own value to find it, with a comment
+   * defending the O(n) as teardown-only — which was true, and still left a
+   * reader working out why one field was missing from an object that had
+   * everything else.
+   */
+  deviceId: string;
   pending: Map<Capability, PendingWrite>;
   timer: unknown;
   lastWriteAt: number;
@@ -234,7 +244,7 @@ export class CommandScheduler {
     // Never rate-limit the FIRST write against a zero timestamp — that would
     // add minWriteIntervalMs of latency to every button press.
     queue = {
-      pending: new Map(), timer: null,
+      deviceId, pending: new Map(), timer: null,
       lastWriteAt: Number.NEGATIVE_INFINITY, activeFlush: null,
     };
     this.queues.set(deviceId, queue);
@@ -411,7 +421,7 @@ export class CommandScheduler {
       for (const [capability, write] of queue.pending) {
         for (const waiter of write.waiters) {
           waiter.settle({
-            status: 'cancelled', deviceId: deviceIdOf(this.queues, queue), capability,
+            status: 'cancelled', deviceId: queue.deviceId, capability,
             reason: 'scheduler stopped',
           });
         }
@@ -425,18 +435,4 @@ export class CommandScheduler {
   get trackedDevices(): number {
     return this.queues.size;
   }
-}
-
-/**
- * The id a queue is filed under.
- *
- * Only stop() needs it — every other path already has the id in hand — so the
- * queue does not carry one, and this reverse lookup runs once per device at
- * teardown rather than once per write.
- */
-function deviceIdOf(queues: Map<string, DeviceQueue>, queue: DeviceQueue): string {
-  for (const [deviceId, candidate] of queues) {
-    if (candidate === queue) return deviceId;
-  }
-  return '';
 }
