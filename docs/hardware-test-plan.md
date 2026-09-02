@@ -93,7 +93,7 @@ serious one. `node scripts/verify-hardware.mjs full --yes` answers none of them:
 a capability listener on a `Homey.Device`, and the script pairs devices rather than driving their
 tiles.
 
-- [ ] **T66** Pair a **circadian light** (the two-ended one, not Curve). On its tile, tap the pause
+- [x] **T66** *(PASSED 2 Sep 2026 — see the run below.)* Pair a **circadian light** (the two-ended one, not Curve). On its tile, tap the pause
       switch OFF and then ON again. Neither tap may error, and after each one open **app settings**:
       the page must still load and still list the device. Before the fix, either tap threw inside the
       runtime — leaving it stopped but still registered, so the light did nothing until the app
@@ -114,6 +114,53 @@ tiles.
       silently, and the message element was hidden in zone mode.
 - [ ] **T70** `node scripts/verify-hardware.mjs memory`. Confirm the review's deletions did not move
       the ~44 MB floor (platform §15). T59's 30 MB guideline and 50 MB ceiling still apply.
+
+### Last run — 2 September 2026, Homey Pro 2023, firmware 13.5.0-rc.4, app 0.5.1 + the code-review pass
+
+`node scripts/verify-hardware.mjs full --yes`: **53 OK, 0 failed, 4 skipped.** Then `pair`, a
+targeted T66 probe, and `teardown` — which left 0 Lightkeeper devices and 0 generated Flows, and
+touched none of the household's own.
+
+**T66 PASSED**, and it is the line this pass was added for. The script cannot reach it, so it was
+driven directly: set the circadian light's `onoff` to false and then true, the way the tile does,
+reading `GET /` and `GET /diagnostics` around each tap.
+
+- both taps were accepted, neither threw
+- the device reported `enabled=false state=disabled`, then `enabled=true state=ready`
+- `/` and `/diagnostics` answered before, between and after, listing 2 curve devices each time
+- `POST /curves/tick` afterwards returned `{"ticked":2}` — both curve runtimes alive and ticking
+
+Before the fix every one of those would have failed: the tap threw inside `subscribeAll()`, the
+runtime was left stopped but still registered, and `diagnostics()` then threw for every curve-driven
+device, taking the settings page and the bug-report export down with it.
+
+What else the run confirmed that this release changed:
+
+- **T17** the schedule's pause switch: `paused=true, still available while paused=true, resumed=true`
+  — the same `setEnabled` path as T66, on the device type whose plan shape always matched, so the
+  `planForRuntime` hook did not break the case that worked.
+- **T33** `"n2_on|press" → toggle`, accepted, 1 write reached the lights — the extracted
+  `intakeBridgeEvent` running end to end on hardware.
+- **T18** the Flow folder followed a device rename, which exercises the folder lock's re-read.
+- **T32/T34** all four devices came back available after a restart, both curve runtimes `ready`.
+- **T40** controller and schedule left `needs_credential` without a restart once the key came back.
+- **T45** 6523 characters of diagnostics, no key material — on a payload that now carries
+  `staleReplacements`.
+- **T46** every driver's repair screens answered with that device's own values, circadian included.
+- **T59/T60** 28.7 MB PSS on a fresh install with no devices; 45.1 MB after the pass (+10.2 MB), over
+  the 30 MB guideline and inside the 50 MB accepted — consistent with platform §15's ~44 MB, so the
+  review's deletions moved nothing.
+
+**The 4 skips are all one cause, and they are the gap worth closing next.** T21, T24, T27 and T29 —
+the circadian and Curve preview and warmth checks — reported `none of its lamp(s) is on, so there was
+nothing to write to`. Those are precisely the write paths this release changed (the colour
+bookkeeping, and pre-staging's two axes), so they are the least-covered part of it. To reach them:
+switch a lamp in the configured `room` on, then run `pair preview rejoin teardown`.
+
+Still needing a person, unchanged: **T3**, **T9**, **T10**, **T11**, **T53**, **T54** — and from this
+release's own lines, **T67** (a repair that SAVES an edit; T46 only proves the screens are seeded,
+not that a save round-trips), **T68** (needs a colour-only lamp) and **T69** (needs a zone deleted
+mid-pairing).
 
 ### Last run — 30 August 2026, Homey Pro 2023, firmware 13.4.1, app 0.5.0
 

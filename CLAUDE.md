@@ -188,27 +188,51 @@ because the handlers are gone.
 local Docker container. `--remote` uploads and runs it on the Homey, which is also the only
 faithful context for anything touching app-scoped permissions.
 
-**`Missing File` on install means a stale `.homeybuild`, not a missing file.** Observed: `homey app
-install` failed with a bare server-side
+**`Missing File` on install is a transient server-side refusal. RETRY IT, plainly.** The whole error
+is:
 
 ```
 × Missing File
 ```
 
-after every local check had passed — validation clean, and every path referenced by `app.json`
-present in the build. The same tree installed on the first try with `homey app install --clean`. The
-build directory is reused between runs, and a `validate` beforehand leaves one that `install` can
-disagree with. The error names nothing and comes from the Homey, so it reads like a corrupt package;
-reach for `--clean` before investigating anything else.
+It names nothing, arrives after every local step has passed, and comes from the Homey — the string
+appears nowhere in `node_modules/homey/` or `node_modules/homey-lib/`, which is checkable in one
+grep and worth doing before believing anything else about it.
 
-**But `--clean` can also be the CAUSE of it.** Observed on 25 August 2026, installing 0.4.0 on the
-same Homey: `install --clean` failed with the same bare `× Missing File`, and the identical tree
-installed on the next attempt with a plain `install`. One trial each way, so this is a counter-example
-rather than a rule — but if `--clean` fails, try without it before believing anything about the tree.
-`preprocess()` wipes `.homeybuild` on every run regardless, so `--clean` is not what makes the build
-fresh: it is passed through to `devkit.runApp` as a flag about the app's data ON the Homey. Which is
-the other reason not to reach for it casually — a clean install is the one that can take the stored
-API key with it.
+Three observations on the same Homey, and the third is the one to act on:
+
+| When | What was run | Outcome |
+|---|---|---|
+| 0.4.0, ~24 Aug 2026 | plain `install` failed; `install --clean` | succeeded |
+| 0.4.0, 25 Aug 2026 | `install --clean` failed; plain `install` | succeeded |
+| 0.5.1, 2 Sep 2026 | plain `install` failed; **plain `install`** | succeeded |
+
+So `--clean` is not the variable. Two of the three recoveries did not involve it, and in the middle
+row it was the thing that failed. **Retry the same command; do not reach for `--clean`.**
+
+The third occurrence was investigated properly rather than shrugged at, and what it ruled out is
+more useful than what it found:
+
+- The build tree was verified coherent BEFORE retrying — every `lib/*.ts` compiled with none missing
+  and none stale, `app.js`/`api.js`/`app.json` present, every driver's two entry points, pair and
+  repair view counts matching per driver, and all fifteen `app.json` asset paths present. **Checked
+  case-exactly**, against real directory listings: `fs.existsSync` and Python's `os.path.exists` are
+  case-INSENSITIVE on Windows, so a check built on them proves nothing about a Linux Homey. No
+  mismatch, and no two files differing only by case.
+- The strongest structural candidate was **affirmatively excluded**, not merely doubted. The archive
+  really does ship `tsconfig.test.json` (and `eslint.config.mjs`, and dev-only `package.json`
+  scripts) carrying references to `test/`, `scripts/` and a `tsconfig.json` that are not in it —
+  because the CLI's ignore list is the literal name `tsconfig.json`, not a `tsconfig*` glob. But the
+  byte-identical file was in the 0.4.0 tree that installed successfully in the table above, ten
+  packed `node_modules` tsconfigs carry the same class of dangling `extends`, and nothing on the
+  device reads a tsconfig at all. It is inert: worth knowing, not worth fixing, and **not** a remedy
+  to try against a live Homey.
+
+`preprocess()` wipes `.homeybuild` on every run regardless, so `--clean` was never what makes the
+build fresh: it is passed through to `devkit.runApp` as a flag about the app's data ON the Homey.
+That is the real reason to leave it alone — a clean install is the one that can take the stored API
+key with it, and a plain install demonstrably does not: the 2 September retry came back with
+`credential: present=true valid=true` intact.
 
 ## Releasing a version
 
