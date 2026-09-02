@@ -172,6 +172,25 @@ that size with the store's own markup and CSS — but it is a reproduction, and 
 the reproduction against the real thing. `assets.test.ts` still owns the rules an icon must satisfy;
 neither script nor sheet passes or fails.
 
+**T66-T70 need a phone, and T66 is the important one.** They came out of the code review, and
+`verify-hardware.mjs full` answers none of them:
+
+- **T66-T67 drive a device TILE.** The pause switch is a capability listener on a class that
+  `extends Homey.Device`, and Repair is a pair session seeded from a stored plan; the script pairs
+  devices and reads state, it does not tap switches. Both bugs behind those lines were in exactly
+  that gap — `setEnabled` handing a runtime the wrong plan shape, and `planOf` folding onto the
+  store instead of onto the plan being saved — and both are now covered by
+  `device-transactions.test.ts` and `circadian-types.test.ts` at the logic level. What hardware adds
+  is the wiring: that the tile's switch reaches `setEnabled` and that a repair reaches `applyPlan`.
+- **T68 needs a colour-only lamp** — one with `light_hue` and no `light_temperature`. Whether the
+  household has one is not something a script can arrange, and `circadian-runtime.test.ts` covers
+  the verdict itself with a fake device.
+- **T69 needs a zone deleted mid-pairing**, from another client. The failure path is covered by
+  `pair-view-behaviour.test.ts` ("a refused selectTargets is reported, not swallowed"); what
+  hardware adds is that a real rejection takes that path.
+- **T70 is `memory`**, which the script does answer — it is listed with the others because it is the
+  review's own regression check rather than a release line.
+
 ## Retired lines
 
 Kept here so an old report that says `3.8 OK` is still readable, and so nobody re-adds them. The numbers are not reused.

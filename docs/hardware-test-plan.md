@@ -87,6 +87,34 @@ can be answered from a CLI install, because the store page is the thing under te
 - [ ] **T64** `npm run render:icons` locally, then open `.views/icons/index.html` and compare its 40px column against what the store actually drew. They should agree. If they do not, the harness is reproducing the store wrongly and that is the thing to fix.
 - [ ] **T65** On a phone, in the Homey app: Devices → Add device → Lightkeeper, and the four device tiles. The icons got simpler this release, so check the redraw did not cost anything at tile size either — this is where they used to be judged.
 
+**Unreleased, on top of 0.5.1: the code review pass.** No version bump, so these are not a release's
+lines — they are the ones the review's own fixes need a real Homey to confirm, and the first is the
+serious one. `node scripts/verify-hardware.mjs full --yes` answers none of them: the pause switch is
+a capability listener on a `Homey.Device`, and the script pairs devices rather than driving their
+tiles.
+
+- [ ] **T66** Pair a **circadian light** (the two-ended one, not Curve). On its tile, tap the pause
+      switch OFF and then ON again. Neither tap may error, and after each one open **app settings**:
+      the page must still load and still list the device. Before the fix, either tap threw inside the
+      runtime — leaving it stopped but still registered, so the light did nothing until the app
+      restarted — and `diagnostics()` then threw for every curve-driven device, which took the whole
+      settings page and the bug-report export down with it. Check the app log for a tick failure
+      repeating every minute afterwards; there should be none.
+- [ ] **T67** Same device: **Repair** it and change *warmest* (or the chosen lights). Save, then
+      re-open Repair — it must show what you just set, not the previous values. Then restart the app
+      (`npx homey app install` again) and confirm the new curve is still what runs. The repair used
+      to take effect on the lights and be written back as the plan it replaced.
+- [ ] **T68** A **Curve light** with a coloured point over a lamp that can do colour but **not**
+      colour temperature, if the household has one. It must pair and report ready rather than "None
+      of its lights can change their warmth", and the pairing screen's pre-stage **Test it** must
+      offer that lamp rather than saying every light is already on.
+- [ ] **T69** In the light picker, on any device type: pick a zone, then have the pick fail — the
+      simplest way is to delete the zone from another client mid-pairing. A red message must appear
+      *above* the two tabs, and it must clear again on the next successful tap. It used to fail
+      silently, and the message element was hidden in zone mode.
+- [ ] **T70** `node scripts/verify-hardware.mjs memory`. Confirm the review's deletions did not move
+      the ~44 MB floor (platform §15). T59's 30 MB guideline and 50 MB ceiling still apply.
+
 ### Last run — 30 August 2026, Homey Pro 2023, firmware 13.4.1, app 0.5.0
 
 *The 0.5.0 lines T55&ndash;T60 were retired with this section when 0.5.1 rewrote it; what they found is recorded below and in `docs/hardware-test-coverage.md`.*
