@@ -122,13 +122,12 @@ export class HealthMonitor {
 
     for (const device of plausible) {
       const discovered = await this.discovery.discover(device);
-      if (!surfaceMoved(profile, discovered)) {
-        return {
-          deviceId: device.id,
-          deviceName: device.name,
-          matchedOn: 'owner+driver+fingerprint',
-        };
-      }
+      if (!surfaceIsPortablyTheSame(profile, discovered)) continue;
+      return {
+        deviceId: device.id,
+        deviceName: device.name,
+        matchedOn: 'owner+driver+fingerprint',
+      };
     }
 
     return undefined;
@@ -145,18 +144,42 @@ export class HealthMonitor {
    * device id that just disappeared, so keeping them makes reconciliation read
    * them as user-edited and create nothing.
    */
-  static applyReattach(profile: ControllerProfile, candidate: ReattachCandidate, catalogue: ControllerProfile['catalogue']): ControllerProfile {
+  static applyReattach(
+    profile: ControllerProfile,
+    candidate: ReattachCandidate,
+    discovered: {
+      inputs: ControllerProfile['catalogue'];
+      fingerprint: string;
+      fingerprintV2?: string;
+    },
+  ): ControllerProfile {
     return {
       ...profile,
       source: {
         ...profile.source,
         deviceId: candidate.deviceId,
         name: candidate.deviceName,
+        /**
+         * The NEW device's own surface hashes, and this is not bookkeeping.
+         *
+         * A fingerprint is compared against the device it was taken from. Both
+         * of them embed something device-specific — v2 hashes the card's full
+         * `id` and `uri`, and those contain the device id (platform §4) — so a
+         * profile that kept the old device's hashes after re-attaching to a new
+         * one disagreed with itself on the very next health check: `assess()`
+         * called `surfaceMoved()`, the hashes could not match, and the device
+         * went straight back to needs_repair with "This remote now exposes
+         * different events." One tap, and then the same dead end.
+         */
+        eventSurfaceFingerprint: discovered.fingerprint,
+        ...(discovered.fingerprintV2 !== undefined
+          ? { eventSurfaceFingerprintV2: discovered.fingerprintV2 }
+          : {}),
       },
       // The old flows point at a device that no longer exists; reconciliation
       // recreates them against the new one.
       managedFlows: [],
-      catalogue: catalogue ?? profile.catalogue,
+      catalogue: discovered.inputs ?? profile.catalogue,
     };
   }
 
@@ -185,6 +208,33 @@ export function matchesOwnerAndDriver(device: CatalogDevice, profile: Controller
  * keeps v1 semantics until it is next saved or repaired. That upgrade is
  * one-way; nothing writes a profile without a v2 any more.
  */
+/**
+ * Is this a DIFFERENT device of the same shape?
+ *
+ * Deliberately not `surfaceMoved()`, and the difference is the whole of why
+ * one-tap re-attach was dead. `surfaceMoved()` asks "has the surface under MY
+ * device changed", and answers it on v2 wherever a profile carries one — but v2
+ * hashes each card's full `id` and `uri`, and both embed the device id
+ * (platform §4). Comparing two different devices on it can only ever disagree,
+ * so `findReattachCandidate` rejected every candidate it was ever offered, and
+ * the user was dropped into a full remap with a correct, unhelpful "no longer
+ * paired". Platform §7 records that BILRESA's cards vanish on every Homey
+ * restart, which is what the feature exists for.
+ *
+ * v1 is the right question here rather than a compromise: it hashes each card's
+ * `shortId` instead of its full id, which is exactly "the same card on another
+ * device", and it is stored on every profile ever written. Nothing is lost by
+ * not using v2's extra strictness either, because a re-attach re-discovers the
+ * new device and adopts ITS catalogue and ITS hashes — see `applyReattach`. The
+ * scale of a dial comes from the new device, not from the match.
+ */
+export function surfaceIsPortablyTheSame(
+  profile: ControllerProfile,
+  discovered: { fingerprint: string },
+): boolean {
+  return discovered.fingerprint === profile.source.eventSurfaceFingerprint;
+}
+
 export function surfaceMoved(
   profile: ControllerProfile,
   discovered: { fingerprint: string; fingerprintV2?: string },

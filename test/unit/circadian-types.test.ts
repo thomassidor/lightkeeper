@@ -8,7 +8,7 @@ import {
   migrateCircadianPlan, CURRENT_CIRCADIAN_SCHEMA_VERSION,
 } from '../../lib/circadian/circadian-migrations';
 import {
-  DEFAULT_SIMPLE_PLAN, SIMPLE_SHAPE, expandSimplePlan, sanitiseSimplePlan,
+  DEFAULT_SIMPLE_PLAN, SIMPLE_SHAPE, expandSimplePlan, foldBackSimplePlan, sanitiseSimplePlan,
 } from '../../lib/circadian/simple-curve';
 import { valueAt } from '../../lib/circadian/circadian-curve';
 
@@ -283,6 +283,73 @@ describe('circadian migrations', () => {
     });
     assert.equal(withBoth.adjustBrightness, true);
     assert.ok(withBoth.points.every(point => point.brightness !== undefined));
+  });
+
+  /**
+   * The inverse of the expansion, and the reason it moved here from
+   * `drivers/circadian/device.ts`: that file extends `Homey.Device`, so it cannot
+   * be imported by a test at all (platform §13) — and a bug in exactly this
+   * fold-back shipped because of it. It read the plan out of the device store
+   * rather than taking the plan the fold was for, and `DeviceLifecycle.apply()`
+   * persists AFTER registering, so on a repair the store still held the plan the
+   * user had just replaced.
+   */
+  test('the fold-back keeps the plan it is given and takes only the two runtime fields', () => {
+    const stored = {
+      schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION,
+      enabled: true,
+      target: TARGET as any,
+      warmest: { temperature: 1 },
+      coolest: { temperature: 0.1 },
+      adjustBrightness: false,
+      preStage: true,
+    };
+
+    // What a runtime can change while running: it paused, and pre-staging turned
+    // itself off after a lamp came on from a colour write (platform §12).
+    const folded = foldBackSimplePlan(stored, { enabled: false, preStage: false });
+
+    assert.equal(folded.enabled, false);
+    assert.equal(folded.preStage, false);
+    // And nothing else moved — the ends are the user's answers, and the shape
+    // between them is a constant that is never read back.
+    assert.deepEqual(folded.warmest, stored.warmest);
+    assert.deepEqual(folded.coolest, stored.coolest);
+    assert.equal(folded.adjustBrightness, false);
+    assert.equal(folded.schemaVersion, stored.schemaVersion);
+  });
+
+  test('the fold-back folds onto the plan given, not onto some earlier one', () => {
+    const base = {
+      schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION,
+      enabled: true,
+      target: TARGET as any,
+      adjustBrightness: false,
+      preStage: false,
+    };
+    const edited = { ...base, warmest: { temperature: 0.9 }, coolest: { temperature: 0.2 } };
+
+    // The runtime is still running the plan it was registered with; the fold is
+    // for the EDITED one. This is the repair that used to be written back as the
+    // plan it replaced.
+    const folded = foldBackSimplePlan(edited, expandSimplePlan(edited));
+
+    assert.equal(folded.warmest.temperature, 0.9);
+    assert.equal(folded.coolest.temperature, 0.2);
+  });
+
+  test('expansion and fold-back round-trip the two answers the user gave', () => {
+    const plan = {
+      schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION,
+      enabled: true,
+      target: TARGET as any,
+      warmest: { temperature: 0.95, brightness: 0.4 },
+      coolest: { temperature: 0.15, brightness: 0.85 },
+      adjustBrightness: true,
+      preStage: false,
+    };
+
+    assert.deepEqual(foldBackSimplePlan(plan, expandSimplePlan(plan)), plan);
   });
 
   test('the shape is derived, never stored', () => {

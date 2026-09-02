@@ -48,17 +48,28 @@ export interface PlanMigration<TPlan> {
  * `reconcileFlows` and `updatePlan` are optional because a circadian runtime has
  * neither — it generates no Flows (platform §12), so a rename has nothing to
  * reach — and an optional call is a no-op rather than a special case here.
+ *
+ * `TRuntimePlan` is the shape the RUNTIME takes, which is not always the shape
+ * the device STORES. It used to be `any`, and that one `any` shipped a real bug:
+ * a circadian light stores two ends of a day while its runtime takes a list of
+ * points, and `setEnabled` handed the stored plan straight to `updatePlan` —
+ * so tapping the pause switch threw inside `subscribeAll()`, left the runtime
+ * stopped but registered, and made `diagnostics()` throw for every curve-driven
+ * device, which took the settings page and the bug-report export down with it.
+ * Naming the type is what makes that a compile error: `DeviceOwner` must supply
+ * a `planForRuntime` that converts, and the two plan shapes are mutually
+ * incompatible, so the default identity cannot satisfy the constraint.
  */
-export interface DeviceRuntime {
+export interface DeviceRuntime<TRuntimePlan = unknown> {
   readonly currentState: ControllerState;
   readonly currentDetail: StateDetail | undefined;
   destroy(): Promise<void>;
   reconcileFlows?(): Promise<void>;
-  updatePlan?(plan: any): Promise<void>;
+  updatePlan?(plan: TRuntimePlan): Promise<void>;
 }
 
 /** The slice of an app-level manager this layer touches. */
-export interface DeviceRegistry<TPlan, TRuntime extends DeviceRuntime> {
+export interface DeviceRegistry<TPlan, TRuntime extends DeviceRuntime<any>> {
   register(
     id: string,
     plan: TPlan,
@@ -78,7 +89,11 @@ export interface DeviceRegistry<TPlan, TRuntime extends DeviceRuntime> {
  * `LightkeeperDevice` passes `this` and adds nothing but the two translations
  * (`homey.__`, `app.bridge`) that the SDK spells differently.
  */
-export interface DeviceOwner<TPlan, TRuntime extends DeviceRuntime> {
+export interface DeviceOwner<
+  TPlan,
+  TRuntime extends DeviceRuntime<TRuntimePlan>,
+  TRuntimePlan = TPlan,
+> {
   // ---- the SDK half -------------------------------------------------------
   getData(): any;
   getName(): string;
@@ -112,8 +127,31 @@ export interface DeviceOwner<TPlan, TRuntime extends DeviceRuntime> {
 
   migrate(raw: unknown): PlanMigration<TPlan>;
   registry(): DeviceRegistry<TPlan, TRuntime>;
-  /** The runtime's own current view of its plan, for persistence. */
-  planOf(runtime: TRuntime): TPlan;
+  /**
+   * The runtime's own current view of its plan, for persistence.
+   *
+   * `base` is the plan this persist is FOR — the one `apply()` just registered,
+   * or whatever the store currently holds on a state change. A device type whose
+   * runtime holds the whole plan ignores it and returns `runtime.currentPlan`;
+   * one that folds a couple of runtime-owned fields back onto a stored shape
+   * must fold them onto THIS, not onto the store.
+   *
+   * It exists because reading the store here was wrong on exactly the path that
+   * matters: `apply()` persists AFTER registering, deliberately, so at that
+   * moment the store still holds the pre-edit plan. A circadian light's repair
+   * therefore took effect on the lights and was then written back as the plan
+   * the user had just replaced — success on screen, old curve after a restart.
+   */
+  planOf(runtime: TRuntime, base: TPlan | null): TPlan;
+  /**
+   * The stored plan, as the RUNTIME wants it.
+   *
+   * Identity for every device type whose store and runtime agree on a shape.
+   * A circadian light is the one that does not: it stores two ends of the day
+   * and its runtime takes the points they expand into, and that expansion used
+   * to exist only on the register path — see DeviceRuntime for what that cost.
+   */
+  planForRuntime(plan: TPlan): TRuntimePlan;
   /** Whether a plan is running or paused. Only used with a pause switch. */
   planEnabled(plan: TPlan): boolean;
   /** A copy of the plan with the pause switch moved. */
@@ -145,13 +183,17 @@ export interface DeviceOwner<TPlan, TRuntime extends DeviceRuntime> {
 const OPS = 'ops';
 const STATE = 'state';
 
-export class DeviceLifecycle<TPlan, TRuntime extends DeviceRuntime> {
+export class DeviceLifecycle<
+  TPlan,
+  TRuntime extends DeviceRuntime<TRuntimePlan>,
+  TRuntimePlan = TPlan,
+> {
   private readonly operations = new KeyedMutex();
   /** Every verdict gets a number; only the newest may be applied. */
   private stateSeq = 0;
   private appliedSeq = 0;
 
-  constructor(private readonly owner: DeviceOwner<TPlan, TRuntime>) {}
+  constructor(private readonly owner: DeviceOwner<TPlan, TRuntime, TRuntimePlan>) {}
 
   get deviceId(): string {
     return this.owner.getData().id;
@@ -283,7 +325,13 @@ export class DeviceLifecycle<TPlan, TRuntime extends DeviceRuntime> {
       // Persist AFTER the register: what the runtime has learned (managed Flow
       // references, in practice) is already folded into its own plan, and
       // writing `merged` here would drop it.
-      await this.persistPlan(this.owner.planOf(runtime));
+      //
+      // `merged` is passed as the BASE for the same reason it is not written
+      // directly. A device type that folds runtime-owned fields back onto a
+      // stored shape has to fold them onto the plan this apply is for; reading
+      // the store instead persisted the plan the user had just replaced,
+      // because this line deliberately runs before the store is written.
+      await this.persistPlan(this.owner.planOf(runtime, merged));
 
       if (this.owner.withPauseSwitch) {
         await this.owner.setCapabilityValue('onoff', this.owner.planEnabled(merged))
@@ -338,7 +386,12 @@ export class DeviceLifecycle<TPlan, TRuntime extends DeviceRuntime> {
         // Restarts the runtime, which re-reconciles and — on resume — catches up
         // whatever is already in progress, so un-pausing at 22:30 lights the
         // room rather than waiting for tomorrow.
-        await runtime.updatePlan(updated);
+        //
+        // THROUGH planForRuntime, never the stored plan directly. The register
+        // path below converts (a circadian light's registry() expands its two
+        // ends into points); this path did not, so it handed the runtime a plan
+        // with no `points` at all. See DeviceRuntime for what that cost.
+        await runtime.updatePlan(this.owner.planForRuntime(updated));
       } else {
         await this.registerPlan(updated);
       }
@@ -387,7 +440,7 @@ export class DeviceLifecycle<TPlan, TRuntime extends DeviceRuntime> {
   }
 
   async uninit(): Promise<void> {
-    await this.owner.registry()?.unregister(this.deviceId);
+    await this.owner.registry().unregister(this.deviceId);
   }
 
   // ------------------------------------------------------------------- states
@@ -444,12 +497,23 @@ export class DeviceLifecycle<TPlan, TRuntime extends DeviceRuntime> {
       const runtime = this.owner.registry().get(this.deviceId);
       if (runtime) {
         try {
-          await this.persistPlan(this.owner.planOf(runtime));
+          // The store is the base here: nothing newer has been written, and a
+          // device type that folds runtime-owned fields back wants them on
+          // whatever is currently persisted.
+          await this.persistPlan(this.owner.planOf(runtime, this.storedPlan()));
         } catch (error) {
           // A plan we could not persist is a plan whose Flow references will not
           // survive a restart. Repair is the honest state, and it must not be
           // reported as a clean save.
+          //
+          // Subject to the SAME staleness rule as every other verdict below.
+          // It used to report unavailable and set `appliedSeq = seq`
+          // unconditionally, which broke the guard in both directions: a stale
+          // verdict took the device unavailable on a state that had already been
+          // superseded, and `appliedSeq` moved BACKWARDS, after which verdicts
+          // newer than the stale one stopped being rejected.
           this.owner.error('Could not persist the plan:', (error as Error)?.message);
+          if (seq < this.appliedSeq) return;
           this.appliedSeq = seq;
           await this.owner.setUnavailable(this.owner.translate('state.persistFailed'));
           return;

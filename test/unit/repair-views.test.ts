@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { SHARED_VIEWS, SHARED_SOURCE_DRIVER } from '../../scripts/sync-views.mjs';
+import { SHARED_VIEWS, SHARED_SOURCE_DRIVER, sync } from '../../scripts/sync-views.mjs';
 
 /**
  * Repair views live in their OWN folder, and shared views live in every driver
@@ -25,6 +25,14 @@ import { SHARED_VIEWS, SHARED_SOURCE_DRIVER } from '../../scripts/sync-views.mjs
  * is a test failure. Drivers are DISCOVERED here rather than named — a hardcoded
  * driver id is how a second driver's repair folder could go missing without
  * anything failing.
+ *
+ * **This file imports the sync script, and that used to run it.** Its body was
+ * top-level statements, so importing the two constants below synced the tree in
+ * WRITE MODE before a single assertion ran: every check here was vacuous, and
+ * CI's `sync:views:check` was defeated by ordering, because `npm test` goes
+ * first in the same tree and repairs the drift the later step exists to catch.
+ * The script now does nothing on import — `sync({ check: true })` is the only
+ * way to ask it anything from here, and it writes nothing.
  */
 
 const ROOT = join(import.meta.dirname, '..', '..');
@@ -53,6 +61,24 @@ describe('repair views', () => {
     // make every other test here pass by having nothing to check. This is the
     // canary for that, not a second source of truth.
     assert.deepEqual(drivers.map(d => d.id).sort(), ['circadian', 'controller', 'curve', 'schedule']);
+  });
+
+  /**
+   * The script's own answer, in check mode, asked directly.
+   *
+   * The assertions below compare files by hand, which is the honest way round —
+   * but this one is what proves the SCRIPT and this test agree about what a copy
+   * is. It is also the assertion that could not exist while importing the module
+   * ran the sync: the import repaired any drift, so there was never any left to
+   * report.
+   */
+  test('the sync script itself reports no drift, and writing is not how we ask', () => {
+    const { copies, drifted } = sync({ check: true });
+    assert.deepEqual(
+      drifted, [],
+      'views have drifted from their sources. Run: npm run sync:views',
+    );
+    assert.equal(copies, 0);
   });
 
   test('every driver declares repair views at all', () => {

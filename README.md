@@ -288,7 +288,7 @@ If it changes how carefully you want to review the code before trusting it with 
 the code is right here.
 
 It has been verified end to end on a Homey Pro 2023 across four remotes and three transports, with
-903 unit tests covering the logic — [how well tested is this?](FAQ.md#how-well-tested-is-this) has
+Over 900 unit tests covering the logic — [how well tested is this?](FAQ.md#how-well-tested-is-this) has
 the detail, including what has *not* run on hardware yet.
 
 ## Contributing

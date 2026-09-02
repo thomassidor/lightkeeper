@@ -26,8 +26,11 @@ export type { DeviceRegistry, DeviceRuntime, PlanMigration } from './device-life
 
 export abstract class LightkeeperDevice<
   TPlan,
-  TRuntime extends DeviceRuntime = DeviceRuntime,
-> extends Homey.Device implements DeviceOwner<TPlan, TRuntime> {
+  // No default on TRuntime: a default here could not reference TRuntimePlan,
+  // which is declared after it, and every subclass names its runtime anyway.
+  TRuntime extends DeviceRuntime<TRuntimePlan>,
+  TRuntimePlan = TPlan,
+> extends Homey.Device implements DeviceOwner<TPlan, TRuntime, TRuntimePlan> {
 
   abstract readonly storeKey: string;
   abstract readonly missingKey: string;
@@ -36,7 +39,18 @@ export abstract class LightkeeperDevice<
 
   abstract migrate(raw: unknown): PlanMigration<TPlan>;
   abstract registry(): DeviceRegistry<TPlan, TRuntime>;
-  abstract planOf(runtime: TRuntime): TPlan;
+  abstract planOf(runtime: TRuntime, base: TPlan | null): TPlan;
+
+  /**
+   * Identity, which is right for every device type whose store and runtime agree
+   * on a shape — three of the four. A circadian light overrides it; see
+   * `DeviceRuntime` for the bug that the absence of this hook shipped.
+   *
+   * The cast is the price of the default: `TRuntimePlan` defaults to `TPlan`, and
+   * a subclass that widens it must override this, which the generic constraint on
+   * `TRuntime` is what forces.
+   */
+  planForRuntime(plan: TPlan): TRuntimePlan { return plan as unknown as TRuntimePlan; }
 
   planEnabled(_plan: TPlan): boolean { return true; }
   withEnabled(plan: TPlan, _enabled: boolean): TPlan { return plan; }
@@ -45,7 +59,7 @@ export abstract class LightkeeperDevice<
   async prepareApply(_previous: TPlan | null, incoming: TPlan): Promise<TPlan> { return incoming; }
 
   /** Constructed here rather than in a subclass so every type gets it. */
-  protected readonly lifecycle = new DeviceLifecycle<TPlan, TRuntime>(this);
+  protected readonly lifecycle = new DeviceLifecycle<TPlan, TRuntime, TRuntimePlan>(this);
 
   protected get app(): any {
     return this.homey.app;

@@ -24,6 +24,13 @@ interface Plan {
   enabled: boolean;
   value: string;
   refs?: ManagedFlowReference[];
+  /**
+   * Set only by `planForRuntime`, so a test can tell a plan that reached the
+   * runtime through the conversion hook from one handed over raw. This stands in
+   * for a circadian light's two ends being expanded into points: the real shapes
+   * are mutually incompatible, which is what makes the omission a type error now.
+   */
+  expanded?: true;
 }
 
 interface FakeRuntime extends DeviceRuntime {
@@ -164,7 +171,29 @@ class FakeOwner implements DeviceOwner<Plan, FakeRuntime> {
   }
 
   registry(): DeviceRegistry<Plan, FakeRuntime> { return this.registryImpl; }
-  planOf(runtime: FakeRuntime): Plan { return runtime.plan; }
+
+  /** Every plan `planForRuntime` was asked to convert, in order. */
+  readonly convertedForRuntime: Plan[] = [];
+  planForRuntime(plan: Plan): Plan {
+    this.convertedForRuntime.push(plan);
+    return { ...plan, expanded: true };
+  }
+
+  /** Every `base` planOf was handed, in order — null included. */
+  readonly planOfBases: Array<Plan | null> = [];
+  /**
+   * Set to fold the runtime's `enabled` onto the BASE rather than returning the
+   * runtime's whole plan, which is what a circadian light does.
+   */
+  foldsOntoBase = false;
+
+  planOf(runtime: FakeRuntime, base: Plan | null): Plan {
+    this.planOfBases.push(base);
+    if (!this.foldsOntoBase) return runtime.plan;
+    const onto = base ?? (this.store.get('plan') as Plan | undefined);
+    if (!onto) throw new Error('no plan to fold onto');
+    return { ...onto, enabled: runtime.plan.enabled };
+  }
   planEnabled(plan: Plan): boolean { return plan.enabled; }
   withEnabled(plan: Plan, enabled: boolean): Plan { return { ...plan, enabled }; }
   rawFlowRefs(): unknown { return (this.store.get('plan') as Plan | undefined)?.refs; }
@@ -174,7 +203,7 @@ class FakeOwner implements DeviceOwner<Plan, FakeRuntime> {
 function harness() {
   const registry = new FakeRegistry();
   const owner = new FakeOwner(registry);
-  const lifecycle = new DeviceLifecycle<Plan, FakeRuntime>(owner);
+  const lifecycle = new DeviceLifecycle<Plan, FakeRuntime, Plan>(owner);
   /** The queued verdicts are fire-and-forget; tests need them settled. */
   const drain = () => settle(4);
   return { registry, owner, lifecycle, drain };
@@ -283,6 +312,78 @@ describe('verdict ordering', () => {
   });
 });
 
+describe('the plan a runtime is handed', () => {
+  /**
+   * The bug: `setEnabled` handed the STORED plan straight to `updatePlan`, while
+   * the register path converted it. For a circadian light the two shapes differ —
+   * it stores two ends of the day and its runtime reads `plan.points` — so
+   * tapping the pause switch threw inside the runtime's own start, left it
+   * stopped but still registered, and made `diagnostics()` throw for every
+   * curve-driven device on the Homey, taking the settings page and the
+   * bug-report export with it.
+   *
+   * `DeviceRuntime<TRuntimePlan>` is what makes that a compile error now; this is
+   * what makes it a test.
+   */
+  test('pausing converts the plan through planForRuntime', async () => {
+    const { registry, owner, lifecycle } = harness();
+    await lifecycle.apply({ enabled: true, value: 'v' });
+    owner.convertedForRuntime.length = 0;
+
+    await lifecycle.setEnabled(false);
+
+    const runtime = registry.get('lk-test-1')!;
+    assert.equal(runtime.plan.expanded, true, 'the runtime was handed a converted plan');
+    assert.equal(owner.convertedForRuntime.length, 1);
+    assert.equal(owner.convertedForRuntime[0]!.enabled, false, 'and it was the paused one');
+  });
+
+  test('resuming converts it too', async () => {
+    const { registry, owner, lifecycle } = harness();
+    await lifecycle.apply({ enabled: true, value: 'v' });
+    await lifecycle.setEnabled(false);
+    owner.convertedForRuntime.length = 0;
+
+    await lifecycle.setEnabled(true);
+
+    assert.equal(registry.get('lk-test-1')!.plan.expanded, true);
+    assert.equal(owner.convertedForRuntime.length, 1);
+    assert.equal(owner.convertedForRuntime[0]!.enabled, true);
+  });
+
+  /**
+   * The stored plan is what a device type that owns its whole plan persists, and
+   * it must NOT be what a device type folding two fields back reads: `apply()`
+   * persists after registering, deliberately, so at that moment the store still
+   * holds the plan the user has just replaced. A circadian light's repair
+   * therefore reported success, took effect on the lights, and wrote the OLD
+   * ends back — so the screen showed them again and the next restart restored
+   * the old curve.
+   */
+  test('an apply folds onto the plan it just registered, not the store', async () => {
+    const { owner, lifecycle } = harness();
+    owner.foldsOntoBase = true;
+    await lifecycle.apply({ enabled: true, value: 'first' });
+
+    await lifecycle.apply({ enabled: true, value: 'second' });
+
+    assert.equal((owner.store.get('plan') as Plan).value, 'second');
+  });
+
+  test('a state change folds onto the store, which is the current plan there', async () => {
+    const { owner, lifecycle, drain } = harness();
+    owner.foldsOntoBase = true;
+    await lifecycle.apply({ enabled: true, value: 'only' });
+    owner.planOfBases.length = 0;
+
+    lifecycle.onRuntimeState('ready', undefined);
+    await drain();
+
+    assert.equal(owner.planOfBases.length, 1);
+    assert.equal((owner.planOfBases[0] as Plan).value, 'only');
+  });
+});
+
 describe('awaited persistence', () => {
   test('a persistence failure reports repair rather than a clean save', async () => {
     const { registry, owner, lifecycle, drain } = harness();
@@ -295,6 +396,41 @@ describe('awaited persistence', () => {
     assert.equal(owner.available, false);
     assert.equal(owner.unavailableText, 'state.persistFailed');
     assert.ok(registry.get('lk-test-1'), 'the runtime keeps running');
+  });
+
+  /**
+   * The persist-failure branch used to run before the staleness check and set
+   * `appliedSeq = seq` unconditionally, so it broke the guard in both
+   * directions: a superseded verdict took the device unavailable, and
+   * `appliedSeq` moved BACKWARDS, after which verdicts newer than the stale one
+   * stopped being rejected. Platform §13 names this ordering as one of the two
+   * rules this layer exists to own.
+   */
+  test('a stale verdict that cannot persist does not overwrite a newer one', async () => {
+    const { owner, lifecycle, drain } = harness();
+    await lifecycle.apply({ enabled: true, value: 'v' });
+
+    // The newer verdict lands first and wins the sequence number race is not the
+    // point — the point is that once a HIGHER seq has been applied, a lower one
+    // may not take effect, persist failure or not.
+    lifecycle.onRuntimeState('ready', undefined);
+    await drain();
+    assert.equal(owner.available, true);
+
+    /**
+     * A verdict newer than the next one issued has already been applied. Set
+     * directly rather than raced into place: the sequence number is taken
+     * outside the state mutex precisely so that a verdict can be superseded
+     * while queued, and reaching for the field states the condition the guard
+     * is for without contriving an interleaving to produce it.
+     */
+    (lifecycle as unknown as { appliedSeq: number }).appliedSeq = 1000;
+    owner.failStoreWrite = new Error('store full');
+    lifecycle.onRuntimeState('needs_repair', undefined);
+    await drain();
+
+    assert.equal(owner.available, true, 'the stale verdict did not take the device down');
+    assert.equal(owner.unavailableText, null);
   });
 
   test('a migrated plan is written before the device is registered', async () => {

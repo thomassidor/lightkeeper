@@ -121,6 +121,34 @@ export function expandSimplePlan(plan: SimpleCircadianPlan): CircadianPlan {
 }
 
 /**
+ * The other half of `expandSimplePlan`: what the runtime knows, folded back onto
+ * what this device type stores.
+ *
+ * Only two fields can move while a runtime is running. `preStage` turns ITSELF
+ * off after observing a lamp come on from a colour write (platform §12), and
+ * that verdict has to survive a restart or the same lamp is switched on again
+ * tomorrow night; `enabled` moves when somebody uses the pause switch.
+ * Everything else in the expanded plan is derived from `SIMPLE_SHAPE`, so reading
+ * it back would be reading back a constant.
+ *
+ * It lives HERE, beside the expansion it inverts, rather than in
+ * `drivers/circadian/device.ts` where it was: that file extends `Homey.Device`
+ * and so cannot be imported by a test at all (platform §13), which is exactly why
+ * a bug in the fold-back — persisting the pre-edit plan on every repair — shipped
+ * without anything failing.
+ *
+ * `onto` is the plan the fold is FOR. It used to be read from the device store
+ * inside the driver, and `DeviceLifecycle.apply()` persists after registering, so
+ * on a repair the store still held the plan the user had just replaced.
+ */
+export function foldBackSimplePlan(
+  onto: SimpleCircadianPlan,
+  runtimePlan: { enabled: boolean; preStage: boolean },
+): SimpleCircadianPlan {
+  return { ...onto, enabled: runtimePlan.enabled, preStage: runtimePlan.preStage };
+}
+
+/**
  * Everything a screen sends is untrusted, the same way a schedule's rows are.
  *
  * Nothing is DROPPED here, because there is nothing droppable: two ends are not a

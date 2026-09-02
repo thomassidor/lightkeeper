@@ -1,7 +1,9 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { HealthMonitor, matchesOwnerAndDriver } from '../../lib/runtime/health-monitor';
+import {
+  HealthMonitor, matchesOwnerAndDriver, surfaceIsPortablyTheSame, surfaceMoved,
+} from '../../lib/runtime/health-monitor';
 import { CURRENT_SCHEMA_VERSION, type ControllerProfile } from '../../lib/profiles/controller-profile';
 import { DEFAULT_BEHAVIOR } from '../../lib/mapping/mapping-types';
 import type { CatalogDevice } from '../../lib/device-catalog';
@@ -47,6 +49,13 @@ const profile = (over: Partial<ControllerProfile> = {}): ControllerProfile => ({
 function harness(options: {
   devices: CatalogDevice[];
   fingerprints?: Record<string, string>;
+  /**
+   * The v2 hash per device, which the harness did NOT model — and its absence
+   * is why every test here passed while one-tap re-attach was dead. With no v2
+   * on the discovery result, `surfaceMoved()` falls back to v1 and the
+   * device-specific comparison the shipping build actually made never ran.
+   */
+  fingerprintsV2?: Record<string, string>;
   credentialValid?: boolean;
 }) {
   const catalog = {
@@ -61,6 +70,9 @@ function harness(options: {
       inputs: [],
       rejected: [],
       fingerprint: options.fingerprints?.[d.id] ?? 'fp-abc',
+      ...(options.fingerprintsV2?.[d.id] !== undefined
+        ? { fingerprintV2: options.fingerprintsV2[d.id] }
+        : {}),
       matchRoutes: [],
       cardsInspected: 0,
     }),
@@ -206,7 +218,7 @@ describe('one-tap re-attach', () => {
     const updated = HealthMonitor.applyReattach(
       original,
       { deviceId: 'new-device', deviceName: 'BILRESA scroll wheel', matchedOn: 'owner+driver+fingerprint' },
-      [],
+      { inputs: [], fingerprint: 'fp-new', fingerprintV2: 'fp-new-v2' },
     );
 
     assert.equal(updated.source.deviceId, 'new-device');
@@ -214,6 +226,111 @@ describe('one-tap re-attach', () => {
     assert.deepEqual(updated.target, original.target, 'targets must survive intact');
     assert.deepEqual(updated.managedFlows, [],
       'flows pointing at the old device must be dropped so reconciliation recreates them');
+  });
+
+  /**
+   * The second half of the same bug. A fingerprint is only meaningful against
+   * the device it was taken from — v2 hashes each card's full id and uri, and
+   * both embed the device id (platform §4) — so a re-attach that kept the old
+   * device's hashes disagreed with itself on the very next `assess()`, which
+   * put the device straight back into needs_repair with "This remote now
+   * exposes different events". One tap, and then the same dead end.
+   */
+  test('re-attaching adopts the NEW device surface, or the next check reports it moved', () => {
+    const original = profile();
+
+    const updated = HealthMonitor.applyReattach(
+      original,
+      { deviceId: 'new-device', deviceName: 'BILRESA scroll wheel', matchedOn: 'owner+driver+fingerprint' },
+      { inputs: [], fingerprint: 'fp-new', fingerprintV2: 'fp-new-v2' },
+    );
+
+    assert.equal(updated.source.eventSurfaceFingerprint, 'fp-new');
+    assert.equal(updated.source.eventSurfaceFingerprintV2, 'fp-new-v2');
+    // Which is exactly what makes the device settle instead of bouncing.
+    assert.equal(
+      surfaceMoved(updated, { fingerprint: 'fp-new', fingerprintV2: 'fp-new-v2' }), false,
+      'the re-attached profile agrees with the device it is now pointed at',
+    );
+  });
+});
+
+describe('one-tap re-attach through assess()', () => {
+  /**
+   * The whole feature, end to end, on a profile that carries a v2 hash — which
+   * is every controller paired or repaired since v2 landed, and the population
+   * for whom re-attach silently did nothing.
+   *
+   * The two devices are the SAME remote: identical v1 shape, different v2,
+   * because v2 hashes each card's full id and uri and both embed the device id
+   * (platform §4). Platform §7 records that BILRESA's cards vanish on every
+   * Homey restart and the device must be re-added under a new id.
+   */
+  test('a v2-carrying profile still finds its remote re-added under a new id', async () => {
+    const monitor = harness({
+      devices: [device({ id: 'new-device', name: 'BILRESA scroll wheel' }), light('light-1')],
+      fingerprints: { 'new-device': 'fp-abc' },
+      fingerprintsV2: { 'new-device': 'fp-abc-on-new-device' },
+    });
+
+    const stored = profile();
+    stored.source.eventSurfaceFingerprintV2 = 'fp-abc-on-old-device';
+
+    const assessment = await monitor.assess(stored);
+
+    assert.equal(assessment.state, 'needs_repair');
+    assert.equal(assessment.detail?.key, 'source.reattach',
+      'the user is offered one tap, not a full remap');
+    assert.equal(assessment.reattach?.deviceId, 'new-device');
+  });
+
+  test('a v2-carrying profile still refuses a remote of a different shape', async () => {
+    const monitor = harness({
+      devices: [device({ id: 'new-device' }), light('light-1')],
+      fingerprints: { 'new-device': 'fp-DIFFERENT' },
+      fingerprintsV2: { 'new-device': 'fp-DIFFERENT-on-new-device' },
+    });
+
+    const stored = profile();
+    stored.source.eventSurfaceFingerprintV2 = 'fp-abc-on-old-device';
+
+    const assessment = await monitor.assess(stored);
+
+    assert.equal(assessment.detail?.key, 'state.sourceGone');
+    assert.equal(assessment.reattach, undefined, 'never guess a new binding');
+  });
+});
+
+describe('one-tap re-attach matches a DIFFERENT device', () => {
+  /**
+   * v2 embeds the device id, so comparing two devices on it can only ever
+   * disagree — which is why every candidate was rejected and the feature was
+   * dead for any controller paired or repaired since v2 landed.
+   */
+  test('a candidate is matched on the portable hash, not the device-specific one', () => {
+    const stored = profile();
+    stored.source.eventSurfaceFingerprint = 'shape-1';
+    stored.source.eventSurfaceFingerprintV2 = 'shape-1-on-old-device';
+
+    // The same remote, re-added: identical shape, a v2 hash that cannot match
+    // because it carries the new device's id.
+    const readded = { fingerprint: 'shape-1', fingerprintV2: 'shape-1-on-new-device' };
+
+    assert.equal(surfaceIsPortablyTheSame(stored, readded), true,
+      'the same shape on another device is a re-attach candidate');
+    assert.equal(surfaceMoved(stored, readded), true,
+      'while surfaceMoved correctly says the device-specific surface differs — '
+      + 'which is why re-attach must not ask it');
+  });
+
+  test('a genuinely different remote is still refused', () => {
+    const stored = profile();
+    stored.source.eventSurfaceFingerprint = 'shape-1';
+
+    assert.equal(
+      surfaceIsPortablyTheSame(stored, { fingerprint: 'shape-2' }), false,
+      'never guess a new binding — a changed shape means remapping',
+    );
   });
 });
 

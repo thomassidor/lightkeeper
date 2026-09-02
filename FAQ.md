@@ -313,6 +313,6 @@ segment that wraps midnight — and every rule about when a write is worth makin
 tests, and the pairing screen's **Try it now** proves the whole write path against your own lamps
 before you save.
 
-903 unit tests, type-clean, validated at `publish` level. The test fixtures are transcribed verbatim
+Over 900 unit tests, type-clean, validated at `publish` level. The test fixtures are transcribed verbatim
 from the four real remotes above, and the expected results are written by hand beside them, so the
 tests prove the code rather than the fixture.

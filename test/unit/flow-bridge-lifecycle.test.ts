@@ -251,6 +251,74 @@ describe('an obsolete flow is REPLACED, not duplicated', () => {
     );
   });
 
+  /**
+   * The abandonment loop's own version of the test above, and it had none.
+   *
+   * The supersede path reported an undeletable flow; this one dropped the
+   * reference and moved on, which made the flow unreachable by every other path
+   * in the app: still live, still calling our bridge card, and its `controller`
+   * argument still naming a device that IS live — so the orphan sweep sees no
+   * orphan and never will.
+   */
+  test('when an abandoned flow will not delete, its reference is kept and reported', async () => {
+    const stays = scheduleInput('sched:0:on', '22:00');
+    const goes = scheduleInput('sched:1:on', '23:00');
+    const h = harness({
+      flows: {
+        'f-stays': asLiveFlow('f-stays', 'lk-sched-1-1', stays),
+        'f-goes': asLiveFlow('f-goes', 'lk-sched-1-1', goes),
+      },
+      failDeleteOf: new Set(['f-goes']),
+    });
+
+    // The second window was removed from the plan, so its flow is no longer
+    // wanted — and the Homey refuses to delete it.
+    const result = await h.bridge.sync(request({
+      fingerprint: 'fp-1',
+      mapped: [stays],
+      existing: [
+        reference('f-stays', 'sched:0:on', 'at:22:00', 'fp-1'),
+        reference('f-goes', 'sched:1:on', 'at:23:00', 'fp-1'),
+      ],
+    }));
+
+    assert.equal(result.deleted, 0, 'nothing was deleted');
+    assert.deepEqual(result.staleReplacements, ['f-goes'],
+      'the id is reported, so a caller can surface it and the user can find it');
+    assert.ok(
+      result.references.some(ref => ref.flowId === 'f-goes'),
+      'and the reference SURVIVES, or nothing will ever try to delete it again',
+    );
+    assert.equal(Object.keys(h.live).length, 2, 'it really is still live');
+  });
+
+  test('a retained abandoned reference is retried on the next pass', async () => {
+    const stays = scheduleInput('sched:0:on', '22:00');
+    const goes = scheduleInput('sched:1:on', '23:00');
+    const h = harness({
+      flows: {
+        'f-stays': asLiveFlow('f-stays', 'lk-sched-1-1', stays),
+        'f-goes': asLiveFlow('f-goes', 'lk-sched-1-1', goes),
+      },
+    });
+
+    // Same input as the pass above, but the Homey now accepts the delete — this
+    // is the second reconcile, carrying the reference the first one kept.
+    const result = await h.bridge.sync(request({
+      fingerprint: 'fp-1',
+      mapped: [stays],
+      existing: [
+        reference('f-stays', 'sched:0:on', 'at:22:00', 'fp-1'),
+        reference('f-goes', 'sched:1:on', 'at:23:00', 'fp-1'),
+      ],
+    }));
+
+    assert.equal(result.deleted, 1);
+    assert.deepEqual(h.deleted, ['f-goes']);
+    assert.deepEqual(result.staleReplacements, []);
+    assert.ok(!result.references.some(ref => ref.flowId === 'f-goes'), 'and the reference is dropped');
+  });
+
   test('an unchanged binding is still reused, not replaced', async () => {
     const input = scheduleInput('sched:0:on', '22:00');
     const h = harness({ flows: { 'f-old': asLiveFlow('f-old', 'lk-sched-1-1', input) } });

@@ -145,6 +145,18 @@ export interface ScheduleDiagnostics {
    */
   catchUpRefusals: readonly { at: number; entryId: string; reason: string }[];
   unsupported: Array<{ bindingKey: string; reason: string }>;
+  /**
+   * Generated Flows this device wanted removed and could not remove, from the
+   * last reconcile — so they are still live and still firing.
+   *
+   * Empty on a healthy device. Non-empty is the ONLY place this is visible from
+   * outside the app log: `SyncResult.staleReplacements` says callers must
+   * surface it rather than proceed as though the pass were clean, and both
+   * runtimes only logged it — so a bug-report export could not show a schedule
+   * that had started firing at two times. Same reasoning as `unsupported`
+   * directly above.
+   */
+  staleReplacements: string[];
   /** See ControllerDiagnostics.stateRevision. */
   stateRevision: number;
   recentFailures: readonly unknown[];
@@ -336,6 +348,10 @@ export class ScheduleRuntime {
         `Schedule flows reconciled: ${result.created} created, ${result.reused} reused, `
         + `${result.deleted} deleted`,
       );
+      // Carried as state, not only logged — see ScheduleDiagnostics. A schedule
+      // firing at two times is the sharpest form of "nothing on any screen
+      // admits to it", and the log was the only place it appeared.
+      this.staleFlows = result.staleReplacements;
       if (result.staleReplacements.length > 0) {
         // Both the new boundary flow and the one it replaced are live, so this
         // schedule now fires at two times. See the controller runtime.
@@ -729,6 +745,12 @@ export class ScheduleRuntime {
    */
   private unsupported: Array<{ bindingKey: string; reason: string }> = [];
 
+  /**
+   * Flows the last reconcile could not delete. See ScheduleDiagnostics for why
+   * this is state rather than a log line.
+   */
+  private staleFlows: string[] = [];
+
   /** Never exposes secrets or unrelated Homey configuration. */
 
   /** The target set this runtime is built against. See the controller's. */
@@ -768,6 +790,8 @@ export class ScheduleRuntime {
       lastRejection: this.lastRejection,
       catchUpRefusals: this.catchUpRefusals.entries(),
       unsupported: this.unsupported,
+      // Still live, still firing, and nothing else can show them.
+      staleReplacements: this.staleFlows,
       // How many times the VISIBLE state has moved. A device stuck on a
       // stale message with a rising revision means the device layer is not
       // rendering what it is being told.

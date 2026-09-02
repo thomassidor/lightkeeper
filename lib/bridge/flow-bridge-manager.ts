@@ -77,12 +77,21 @@ export interface SyncResult {
   /** Flows a user has visibly edited — left alone, controller marked for repair. */
   userEdited: string[];
   /**
-   * Replacements whose OLD flow could not be deleted, so both are live.
+   * Generated flows this pass wanted GONE and could not remove, so they are
+   * still live and still firing.
    *
-   * Not an error — the new flow exists and is correct — but the user now has a
-   * generated flow doing the previous thing, which nothing on any screen
-   * admits to. Callers surface it as a degraded state rather than proceeding
-   * as though the pass were clean.
+   * Two sources, and they are the same failure from either side: a replacement
+   * whose old flow could not be deleted (the new one exists and is correct, but
+   * the previous behaviour is still running beside it), and a binding that is no
+   * longer wanted at all whose flow would not delete. `deleteFlow` reports a
+   * 401, a 403 and an unreachable Homey identically — "we could not tell" — so
+   * either can happen on a perfectly healthy install with a dead key.
+   *
+   * Not an error, and not a repair: nothing is broken and a remap would not
+   * help. But it must not pass for a clean run either, so callers report it —
+   * both runtimes log it and carry it in their diagnostics, which is the only
+   * place a user or a bug report can see it. The abandonment case additionally
+   * keeps its reference, so the next pass retries the delete.
    */
   staleReplacements: string[];
 }
@@ -505,6 +514,30 @@ export class FlowBridgeManager {
         if (await this.deleteFlow(ref.flowId)) {
           result.deleted += 1;
           if (folderOf) abandoned.add(folderOf);
+        } else {
+          /**
+           * A delete we could not make stick, KEPT rather than forgotten.
+           *
+           * `deleteFlow` returns false for a 401, a 403 and an unreachable
+           * Homey alike — all of which mean "we could not tell", never "it is
+           * gone". Dropping the reference here made the flow unreachable by
+           * every other path in the app: it is still live, still calls our
+           * bridge card, and its `controller` argument still names a device
+           * that IS live, so the orphan sweep does not see an orphan and never
+           * will. A row in the user's Flow list, forever, that nothing in this
+           * app admits to owning.
+           *
+           * So the reference survives — the next reconcile finds it un-wanted
+           * again and retries the delete — and the id is reported alongside the
+           * supersede path's own undeletable flows, which is the same failure
+           * from the other direction.
+           */
+          result.references.push(ref);
+          result.staleReplacements.push(ref.flowId);
+          this.log(
+            `Could not delete flow ${ref.flowId}, which is no longer wanted — `
+            + 'keeping its reference so the next pass tries again',
+          );
         }
       }
 

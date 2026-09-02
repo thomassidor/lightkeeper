@@ -31,11 +31,19 @@
  * of running the sync there (a CI run that synced would repair the drift in the
  * runner and go green over it, exactly as an unchecked `homey app validate` does
  * to `app.json`).
+ *
+ * **Nothing happens on import.** Everything below runs from `sync()`, behind an
+ * entry-point guard, because it did not: the body was top-level statements, so
+ * `test/unit/repair-views.test.ts` — which imports two constants from here — ran
+ * the sync IN WRITE MODE before asserting anything. Its own drift assertions
+ * could never fail, and CI's `sync:views:check` was defeated by ordering, since
+ * `npm test` runs first in the same tree and repairs the drift the later step
+ * exists to catch.
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DRIVERS = join(ROOT, 'drivers');
@@ -45,89 +53,108 @@ export const SHARED_VIEWS = ['credential.html', 'targets.html'];
 export const SHARED_SOURCE_DRIVER = 'controller';
 
 /**
- * Report rather than write. See the header: CI checks, it never syncs.
+ * Do the work, or report what it would do.
+ *
+ * A function rather than top-level statements — see the header for why that is
+ * load-bearing rather than tidy.
+ *
+ * @param {{ check?: boolean }} [options] `check` reports drift without writing.
+ * @returns {{ copies: number; drifted: string[] }}
  */
-const CHECK_ONLY = process.argv.includes('--check');
+export function sync(options = {}) {
+  const CHECK_ONLY = options.check === true;
 
-let copies = 0;
-/** @type {string[]} What --check found, so the exit can name every file at once. */
-const drifted = [];
+  let copies = 0;
+  /** @type {string[]} What --check found, so the exit can name every file at once. */
+  const drifted = [];
+
+  /**
+   * @param {string} from
+   * @param {string} to
+   * @param {string} label
+   */
+  function copy(from, to, label) {
+    const before = existsSync(to) ? readFileSync(to) : null;
+    const content = readFileSync(from);
+    if (before && before.equals(content)) return;
+    if (CHECK_ONLY) {
+      drifted.push(label);
+      copies += 1;
+      return;
+    }
+    writeFileSync(to, content);
+    copies += 1;
+    console.log(label);
+  }
+
+  const driverIds = readdirSync(DRIVERS, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => entry.name)
+    .sort();
+
+  // 1. Shared views, out of the source driver and into every other one.
+  for (const driverId of driverIds) {
+    if (driverId === SHARED_SOURCE_DRIVER) continue;
+    const pairDir = join(DRIVERS, driverId, 'pair');
+    if (!existsSync(pairDir)) continue;
+
+    const manifest = readManifest(driverId);
+    const declared = new Set((manifest.pair ?? []).map(/** @param {{ id: string }} view */ view => `${view.id}.html`));
+
+    for (const view of SHARED_VIEWS) {
+      if (!declared.has(view)) continue;
+      copy(
+        join(DRIVERS, SHARED_SOURCE_DRIVER, 'pair', view),
+        join(pairDir, view),
+        `${driverId}/pair/${view} <- ${SHARED_SOURCE_DRIVER}/pair/${view}`,
+      );
+    }
+  }
+
+  // 2. pair → repair, for every driver that declares repair views.
+  for (const driverId of driverIds) {
+    const manifest = readManifest(driverId);
+    // Read the view ids from the manifest rather than hardcoding them, so adding
+    // another view cannot half-land.
+    const views = (manifest.repair ?? []).map(/** @param {{ id: string }} view */ view => view.id);
+    if (views.length === 0) continue;
+
+    const repairDir = join(DRIVERS, driverId, 'repair');
+    // Not in --check: creating the folder is a write, and a check writes nothing.
+    if (!CHECK_ONLY) mkdirSync(repairDir, { recursive: true });
+
+    for (const id of views) {
+      copy(
+        join(DRIVERS, driverId, 'pair', `${id}.html`),
+        join(repairDir, `${id}.html`),
+        `${driverId}/repair/${id}.html <- ${driverId}/pair/${id}.html`,
+      );
+    }
+  }
+  return { copies, drifted };
+}
 
 /**
- * @param {string} from
- * @param {string} to
- * @param {string} label
+ * The entry point, and the only place this module writes, logs or exits.
+ *
+ * Guarded on being the process's own entry point, so an import cannot sync.
  */
-function copy(from, to, label) {
-  const before = existsSync(to) ? readFileSync(to) : null;
-  const content = readFileSync(from);
-  if (before && before.equals(content)) return;
-  if (CHECK_ONLY) {
-    drifted.push(label);
-    copies += 1;
-    return;
-  }
-  writeFileSync(to, content);
-  copies += 1;
-  console.log(label);
-}
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const check = process.argv.includes('--check');
+  const { copies, drifted } = sync({ check });
 
-const driverIds = readdirSync(DRIVERS, { withFileTypes: true })
-  .filter(entry => entry.isDirectory())
-  .map(entry => entry.name)
-  .sort();
-
-// 1. Shared views, out of the source driver and into every other one.
-for (const driverId of driverIds) {
-  if (driverId === SHARED_SOURCE_DRIVER) continue;
-  const pairDir = join(DRIVERS, driverId, 'pair');
-  if (!existsSync(pairDir)) continue;
-
-  const manifest = readManifest(driverId);
-  const declared = new Set((manifest.pair ?? []).map(/** @param {{ id: string }} view */ view => `${view.id}.html`));
-
-  for (const view of SHARED_VIEWS) {
-    if (!declared.has(view)) continue;
-    copy(
-      join(DRIVERS, SHARED_SOURCE_DRIVER, 'pair', view),
-      join(pairDir, view),
-      `${driverId}/pair/${view} <- ${SHARED_SOURCE_DRIVER}/pair/${view}`,
-    );
-  }
-}
-
-// 2. pair → repair, for every driver that declares repair views.
-for (const driverId of driverIds) {
-  const manifest = readManifest(driverId);
-  // Read the view ids from the manifest rather than hardcoding them, so adding
-  // another view cannot half-land.
-  const views = (manifest.repair ?? []).map(/** @param {{ id: string }} view */ view => view.id);
-  if (views.length === 0) continue;
-
-  const repairDir = join(DRIVERS, driverId, 'repair');
-  // Not in --check: creating the folder is a write, and a check writes nothing.
-  if (!CHECK_ONLY) mkdirSync(repairDir, { recursive: true });
-
-  for (const id of views) {
-    copy(
-      join(DRIVERS, driverId, 'pair', `${id}.html`),
-      join(repairDir, `${id}.html`),
-      `${driverId}/repair/${id}.html <- ${driverId}/pair/${id}.html`,
-    );
-  }
-}
-
-if (CHECK_ONLY) {
-  if (copies === 0) {
-    console.log('Views are in sync.');
+  if (check) {
+    if (copies === 0) {
+      console.log('Views are in sync.');
+    } else {
+      console.error(`${copies} view file(s) have drifted from their source:`);
+      for (const label of drifted) console.error(`  ${label}`);
+      console.error('\nRun `npm run sync:views` and commit the result.');
+      process.exit(1);
+    }
   } else {
-    console.error(`${copies} view file(s) have drifted from their source:`);
-    for (const label of drifted) console.error(`  ${label}`);
-    console.error('\nRun `npm run sync:views` and commit the result.');
-    process.exit(1);
+    console.log(copies === 0 ? 'Views already in sync.' : `Synced ${copies} view file(s).`);
   }
-} else {
-  console.log(copies === 0 ? 'Views already in sync.' : `Synced ${copies} view file(s).`);
 }
 
 /**

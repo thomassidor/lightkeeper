@@ -148,7 +148,10 @@ module.exports = class ControllerDriver extends Homey.Driver {
       const newSource = await this.app.catalog.device(candidate.deviceId);
       const discovered = await this.app.discovery.discover(newSource);
 
-      const updated = HealthMonitor.applyReattach(profile, candidate, discovered.inputs);
+      // The whole discovery result, not just its inputs: a re-attach must adopt
+      // the new device's own surface hashes or the next health check reports the
+      // surface as moved. See applyReattach.
+      const updated = HealthMonitor.applyReattach(profile, candidate, discovered);
       await device.applyProfile(updated);
 
       return { mappings: updated.mappings.length, deviceName: candidate.deviceName };

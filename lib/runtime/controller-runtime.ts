@@ -125,6 +125,18 @@ export interface ControllerDiagnostics {
    * control is visible from outside the app log.
    */
   unsupported: Array<{ bindingKey: string; reason: string }>;
+  /**
+   * Generated Flows this device wanted removed and could not remove, from the
+   * last reconcile — so they are still live and still firing.
+   *
+   * Empty on a healthy device. Non-empty is the ONLY place this is visible from
+   * outside the app log: `SyncResult.staleReplacements` says callers must
+   * surface it rather than proceed as though the pass were clean, and both
+   * runtimes only logged it — so a bug-report export could not show a schedule
+   * that had started firing at two times. Same reasoning as `unsupported`
+   * directly above.
+   */
+  staleReplacements: string[];
   source: ControllerProfile['source'];
   targetIds: string[];
   /** Names, not just ids. See the interface comment. */
@@ -482,6 +494,10 @@ export class ControllerRuntime {
       this.deps.log(
         `Flows reconciled: ${result.created} created, ${result.reused} reused, ${result.deleted} deleted`,
       );
+      // Carried as state, not only logged: this is what makes it reachable from
+      // the settings page and the bug-report export. Assigned every pass, so a
+      // reconcile that finally manages the delete clears it.
+      this.staleFlows = result.staleReplacements;
       if (result.staleReplacements.length > 0) {
         // The replacements are correct and live; the flows they replaced are
         // ALSO still live and still firing. Not a repair — nothing is broken
@@ -682,6 +698,12 @@ export class ControllerRuntime {
    */
   private unsupported: Array<{ bindingKey: string; reason: string }> = [];
 
+  /**
+   * Flows the last reconcile could not delete. See ControllerDiagnostics for why
+   * this is state rather than a log line.
+   */
+  private staleFlows: string[] = [];
+
   /** Never exposes secrets or unrelated Homey configuration. */
 
   /**
@@ -703,6 +725,8 @@ export class ControllerRuntime {
       // Empty on a healthy controller. Non-empty is the only place a declined
       // control is visible from outside the app log.
       unsupported: this.unsupported,
+      // Still live, still firing, and nothing else can show them.
+      staleReplacements: this.staleFlows,
       source: this.profile.source,
       targetIds: this.targetIds,
       // Names, not just ids: a controller quietly pointed at the wrong room

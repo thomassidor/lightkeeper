@@ -1,6 +1,7 @@
 import { LightkeeperDevice, type DeviceRegistry, type PlanMigration } from '../../lib/devices/lightkeeper-device';
 import { migrateCircadianPlan } from '../../lib/circadian/circadian-migrations';
-import { expandSimplePlan, type SimpleCircadianPlan } from '../../lib/circadian/simple-curve';
+import { expandSimplePlan, foldBackSimplePlan, type SimpleCircadianPlan } from '../../lib/circadian/simple-curve';
+import type { CircadianPlan } from '../../lib/circadian/circadian-types';
 import type { CircadianRuntime } from '../../lib/circadian/circadian-runtime';
 import type { CircadianRuntimeManager } from '../../lib/circadian/circadian-runtime-manager';
 import type { ControllerState, StateDetail } from '../../lib/profiles/controller-profile';
@@ -32,7 +33,16 @@ import type { ControllerState, StateDetail } from '../../lib/profiles/controller
  * unavailable**. The tile carries the switch that un-pauses it, and an
  * unavailable device cannot be switched.
  */
-module.exports = class CircadianDevice extends LightkeeperDevice<SimpleCircadianPlan, CircadianRuntime> {
+/**
+ * The THIRD type argument is what this device type is: it stores a
+ * `SimpleCircadianPlan` and its runtime takes a `CircadianPlan`. Naming the
+ * second shape is what makes `planForRuntime` mandatory here rather than
+ * optional — the two are mutually incompatible, so the base's identity default
+ * cannot satisfy the constraint. Before it was named, `setEnabled` handed the
+ * stored plan straight to `updatePlan` and the pause switch threw.
+ */
+module.exports = class CircadianDevice
+  extends LightkeeperDevice<SimpleCircadianPlan, CircadianRuntime, CircadianPlan> {
 
   readonly storeKey = 'circadian';
   readonly missingKey = 'state.noCurve';
@@ -41,6 +51,17 @@ module.exports = class CircadianDevice extends LightkeeperDevice<SimpleCircadian
 
   migrate(raw: unknown): PlanMigration<SimpleCircadianPlan> {
     return migrateCircadianPlan(raw);
+  }
+
+  /**
+   * The expansion, on EVERY path into the runtime rather than only on register.
+   *
+   * `registry()` below has always converted; `DeviceLifecycle.setEnabled` did
+   * not, and handed the stored two-ended plan to a runtime that reads
+   * `plan.points`. Both paths go through this now.
+   */
+  override planForRuntime(plan: SimpleCircadianPlan): CircadianPlan {
+    return expandSimplePlan(plan);
   }
 
   /**
@@ -69,7 +90,7 @@ module.exports = class CircadianDevice extends LightkeeperDevice<SimpleCircadian
         onStateChange,
         // What comes back is the EXPANDED plan, and only two of its fields can
         // have changed at runtime — see planOf.
-        async expanded => onPlanChange(this.foldBack(plan, expanded)),
+        async expanded => onPlanChange(foldBackSimplePlan(plan, expanded)),
         displayName,
         // So diagnostics and the settings page can tell a circadian light from a
         // curve one; they share the registry.
@@ -88,17 +109,20 @@ module.exports = class CircadianDevice extends LightkeeperDevice<SimpleCircadian
    * `enabled`. Everything else in the expanded plan is derived, so reading it back
    * would be reading back a constant.
    */
-  override planOf(runtime: CircadianRuntime): SimpleCircadianPlan {
-    const stored = this.getStoreValue(this.storeKey) as SimpleCircadianPlan | undefined;
-    if (!stored) throw new Error('This circadian light has no stored plan');
-    return this.foldBack(stored, runtime.currentPlan);
-  }
-
-  private foldBack(
-    stored: SimpleCircadianPlan,
-    expanded: { enabled: boolean; preStage: boolean },
-  ): SimpleCircadianPlan {
-    return { ...stored, enabled: expanded.enabled, preStage: expanded.preStage };
+  override planOf(runtime: CircadianRuntime, base: SimpleCircadianPlan | null): SimpleCircadianPlan {
+    /**
+     * Folded onto `base`, NOT onto the store.
+     *
+     * `apply()` persists after registering, deliberately, so on a repair the
+     * store still holds the plan the user has just replaced. Reading it here
+     * meant a repair took effect on the lights and was then written back as the
+     * old plan: success on screen, the old ends in the screen next time it was
+     * opened, and the old curve after the next restart. `base` is the plan this
+     * persist is actually for.
+     */
+    const onto = base ?? (this.getStoreValue(this.storeKey) as SimpleCircadianPlan | undefined);
+    if (!onto) throw new Error('This circadian light has no stored plan');
+    return foldBackSimplePlan(onto, runtime.currentPlan);
   }
 
   override planEnabled(plan: SimpleCircadianPlan): boolean {

@@ -133,13 +133,27 @@ describe('release metadata', () => {
     );
   });
 
-  test('every doc that states a test count states the real one', () => {
-    // A stale number is the kind of small dishonesty that makes a reader
-    // distrust the rest of the file. Three docs quote it now that the FAQ
-    // carries "how well tested is this", so all three are checked rather than
-    // whichever one happened to be checked first.
+  /**
+   * A FLOOR, not an equality — and the change of shape is the fix.
+   *
+   * This counted static `test(`/`it(` call sites, which is not what `npm test`
+   * runs: two files generate their cases inside a `for` loop
+   * (`pair-view-boot.test.ts` over every discovered view,
+   * `plan-validation.test.ts` over a table), so each of those call sites expands
+   * to many tests. The derived number was 903 while the runner reported 937, and
+   * both README.md and FAQ.md quoted the wrong one with this guard green over the
+   * top of it.
+   *
+   * Counting what actually runs would mean running the suite from inside the
+   * suite. So the docs claim a floor instead — "over 900" — and this asserts the
+   * claim is one the suite can still stand behind. A stale number is the kind of
+   * small dishonesty that makes a reader distrust the rest of the file; a number
+   * that can only ever be an UNDERSTATEMENT is not stale, it is conservative.
+   */
+  test('no doc claims more tests than the suite defines', () => {
     const files = readdirSync(join(ROOT, 'test', 'unit')).filter(f => f.endsWith('.test.ts'));
-    const total = files.reduce((sum, file) => {
+    // Call sites, so this is itself a floor on what the runner reports.
+    const defined = files.reduce((sum, file) => {
       const body = readFileSync(join(ROOT, 'test', 'unit', file), 'utf8');
       return sum + (body.match(/(?:^|\s)(?:test|it)\(/g) ?? []).length;
     }, 0);
@@ -149,9 +163,14 @@ describe('release metadata', () => {
       const quoted = [...read(doc).matchAll(/(\d+) (?:unit )?tests/g)].map(m => Number(m[1]));
       quotedAnywhere += quoted.length;
       for (const count of quoted) {
-        assert.equal(
-          count, total,
-          `${doc} says ${count} tests, the suite defines ${total}`,
+        assert.ok(
+          count <= defined,
+          `${doc} claims ${count} tests; only ${defined} are defined`,
+        );
+        // And not so far under that the claim has stopped meaning anything.
+        assert.ok(
+          count >= defined - 200,
+          `${doc} claims ${count} tests while ${defined} are defined — round it up`,
         );
       }
     }
