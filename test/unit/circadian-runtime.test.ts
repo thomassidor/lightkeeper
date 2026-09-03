@@ -31,7 +31,10 @@ interface FakeDevice {
 function light(
   id: string,
   capabilities: string[] = ['onoff', 'dim', 'light_temperature'],
-  values: { onoff?: boolean; dim?: number; light_temperature?: number } = {},
+  values: {
+    onoff?: boolean; dim?: number; light_temperature?: number;
+    light_hue?: number; light_saturation?: number;
+  } = {},
 ): FakeDevice {
   const capabilitiesObj: Record<string, any> = {};
   if (capabilities.includes('onoff')) capabilitiesObj.onoff = { value: values.onoff ?? true };
@@ -43,8 +46,21 @@ function light(
       min: 0, max: 1, decimals: 2, value: values.light_temperature ?? 0.5,
     };
   }
+  // No `decimals`: homey-lib gives the colour pair none, which is why the
+  // runtime's colour deadband is a fixed step rather than a declared resolution.
+  if (capabilities.includes('light_hue')) {
+    capabilitiesObj.light_hue = { min: 0, max: 1, value: values.light_hue ?? 0.5 };
+  }
+  if (capabilities.includes('light_saturation')) {
+    capabilitiesObj.light_saturation = { min: 0, max: 1, value: values.light_saturation ?? 0.5 };
+  }
   return { id, name: id, zoneName: 'Kitchen', capabilities, capabilitiesObj, available: true };
 }
+
+/** A lamp that can do both axes, so it can be driven into the wrong mode. */
+const colourLamp = (id: string) => light(id, [
+  'onoff', 'dim', 'light_temperature', 'light_hue', 'light_saturation', 'light_mode',
+]);
 
 /** 2026-08-18 20:15 UTC is 22:15 in Copenhagen — deep in the warm end. */
 const EVENING = Date.UTC(2026, 7, 18, 20, 15);
@@ -833,5 +849,216 @@ describe('a light removed from the plan is released', () => {
     await h.settle();
 
     assert.equal(h.writes.length, before, 'no churn when nothing has changed');
+  });
+});
+
+/**
+ * A lamp is written on ONE of the two axes, and switching axes needs a mode
+ * write to land first (platform §6). These are about the moment it switches.
+ */
+describe('crossing between a coloured segment and a temperature one', () => {
+  /**
+   * Three points, so that ONE segment has a colour at neither end.
+   *
+   * Two would not do it: a segment with a colour at either end holds that
+   * colour flat, so with one coloured point out of two every segment is a
+   * coloured one. With the colour at 06:00 the day reads — 06:00→12:00 coloured
+   * (from-end), 12:00→18:00 TEMPERATURE, 18:00→06:00 coloured (to-end).
+   */
+  const mixedPlan = () => plan({
+    points: [
+      { id: 'dawn', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.9, color: 'ember' },
+      { id: 'noon', anchor: { kind: 'clock', at: 12 * 60 }, warmth: 0.2 },
+      { id: 'dusk', anchor: { kind: 'clock', at: 18 * 60 }, warmth: 0.6 },
+    ],
+  });
+
+  /** Copenhagen is UTC+2 in August, so these are local hours. */
+  const localHour = (hour: number) => Date.UTC(2026, 7, 18, hour - 2, 0);
+
+  const modeWrites = (writes: Written[]) =>
+    writes.filter(w => w.capability === 'light_mode').map(w => w.value);
+
+  test('the mode write survives the SECOND crossing, not just the first', async () => {
+    /**
+     * The regression. `planTemperature` returns two writes — the mode, then the
+     * temperature — and the deadband filter used to run per write. Handed the
+     * mode write, `hasMoved` compared the string 'temperature', got NaN, and
+     * NaN >= step is false, so the mode was dropped whenever a warmth had ever
+     * been recorded for that lamp. The temperature then went to a lamp still in
+     * colour mode, which refuses it outright.
+     *
+     * The first crossing always worked, which is why this is about the second:
+     * on a curve that repeats daily, every crossing after the first left the
+     * lamp on the colour it last held.
+     */
+    const h = harness({ devices: [colourLamp('l1')], plan: mixedPlan(), now: localHour(9) });
+    await h.runtime.start();
+    await applied(h);
+
+    // Into the temperature segment: the FIRST crossing.
+    h.at(localHour(15));
+    await h.runtime.tick();
+    await applied(h);
+
+    // Back into colour.
+    h.at(localHour(20));
+    await h.runtime.tick();
+    await applied(h);
+
+    const before = h.writes.length;
+
+    // And into temperature again: the second crossing.
+    h.at(localHour(15) + 24 * 60 * 60_000);
+    await h.runtime.tick();
+    await applied(h);
+
+    const crossing = h.writes.slice(before);
+    assert.deepEqual(modeWrites(crossing), ['temperature'],
+      'the second crossing needs the mode write as much as the first');
+    const order = crossing.map(w => w.capability);
+    assert.ok(order.indexOf('light_mode') < order.indexOf('light_temperature'),
+      'mode must precede the temperature it enables, got ' + order.join(' -> '));
+  });
+
+  test('a flat temperature segment writes no mode at all', async () => {
+    /**
+     * The other half of the fix, and the reason the mode write is not simply
+     * exempted from the deadband: exempted, it would go out on every tick for
+     * the whole life of a segment the curve is barely moving through.
+     */
+    const h = harness({ devices: [colourLamp('l1')], plan: mixedPlan(), now: localHour(15) });
+    await h.runtime.start();
+    await applied(h);
+
+    const before = h.writes.length;
+    // A minute of a segment this shallow is a no-op at two decimals.
+    h.advance(60_000);
+    await h.runtime.tick();
+    await applied(h);
+
+    assert.equal(h.writes.length, before, 'no temperature to write means no mode to write either');
+  });
+
+  test('a colour write voids the warmth we remember', async () => {
+    /**
+     * The mirror of the voiding a temperature write already did to the recorded
+     * colour. A colour takes the lamp OUT of temperature mode, so the
+     * temperature we last sent is no longer what it is showing — held, it told
+     * the deadband the lamp was already at today's warmth, and a daily curve
+     * repeats its warmths exactly.
+     */
+    const h = harness({ devices: [colourLamp('l1')], plan: mixedPlan(), now: localHour(15) });
+    await h.runtime.start();
+    await applied(h);
+
+    const warmth = () => h.runtime.diagnostics().targets[0].lastWritten?.warmth;
+    assert.notEqual(warmth(), undefined, 'a temperature segment records a warmth');
+
+    h.at(localHour(20));
+    await h.runtime.tick();
+    await applied(h);
+
+    assert.equal(warmth(), undefined, 'the colour write voids it');
+    assert.notEqual(h.runtime.diagnostics().targets[0].lastWritten?.color, undefined,
+      'and records what it put there instead');
+  });
+});
+
+describe('a brightness a person chose is a brightness the lamp shows', () => {
+  const dims = (writes: Written[]) =>
+    writes.filter(w => w.capability === 'dim').map(w => w.value);
+
+  const flatPlan = (brightness: number) => plan({
+    adjustBrightness: true,
+    points: [
+      { id: 'a', anchor: { kind: 'clock', at: 0 }, warmth: 0.5, brightness },
+      { id: 'b', anchor: { kind: 'clock', at: 12 * 60 }, warmth: 0.5, brightness },
+    ],
+  });
+
+  test('the dimmest setting is dim 0.01, not 0.00', async () => {
+    /**
+     * γ = 2.2 turns 5% into 0.0014, and `dim` reports two decimals, so it was
+     * quantised to 0.00 — off, on most lamps. That was the LOWEST position the
+     * brightness sliders offered, and on a curve it held there for the eight
+     * minutes either side of the point. The sliders now start at 10%, and this
+     * is the floor underneath any plan stored before they did.
+     */
+    const h = harness({ devices: [light('l1')], plan: flatPlan(0.05) });
+    await h.runtime.start();
+    await applied(h);
+
+    assert.deepEqual(dims(h.writes), [0.01],
+      'a positive brightness must stay positive through the perceptual curve');
+  });
+
+  test('a brightness well above the floor is untouched', async () => {
+    const h = harness({ devices: [light('l1')], plan: flatPlan(0.6) });
+    await h.runtime.start();
+    await applied(h);
+
+    // 0.6^2.2 = 0.325, quantised to two decimals.
+    assert.deepEqual(dims(h.writes), [0.33], 'the floor must not reshape the rest of the curve');
+  });
+});
+
+describe('the diagnostics can describe a Curve light', () => {
+  const colouredPlan = () => plan({
+    points: [
+      { id: 'a', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.9, color: 'ember' },
+      { id: 'b', anchor: { kind: 'clock', at: 18 * 60 }, warmth: 0.2, color: 'ocean' },
+    ],
+  });
+
+  test('a coloured point reports the colour that drives the lamp', () => {
+    /**
+     * `warmth` on a coloured point is only the fallback for lamps that cannot
+     * take a colour, so a projection carrying warmth alone made a coloured point
+     * indistinguishable from a plain temperature point at the same value — the
+     * one field a "my Curve light went the wrong colour" report needs.
+     */
+    const h = harness({ devices: [colourLamp('l1')], plan: colouredPlan() });
+
+    assert.deepEqual(h.runtime.diagnostics().points.map(p => p.color), ['ember', 'ocean']);
+  });
+
+  test('an action on a coloured segment names the colours it is between', async () => {
+    const h = harness({ devices: [colourLamp('l1')], plan: colouredPlan(), now: MORNING });
+    await h.runtime.start();
+    await applied(h);
+
+    const { lastAction } = h.runtime.diagnostics();
+    assert.deepEqual(lastAction?.colorLabelKeys, ['palette.ember', 'palette.ocean']);
+    assert.notEqual(lastAction?.color, undefined,
+      'the warmth beside it is the value a colour-capable lamp did NOT get');
+  });
+
+  test('a pass that does nothing says so, rather than leaving the last one standing', async () => {
+    /**
+     * These paths used to return and leave `lastAction` alone, so a plan
+     * switched off an hour ago reported the last pass that DID something — and
+     * a switched-off device was indistinguishable from one that had stopped
+     * ticking.
+     */
+    const h = harness({ devices: [light('l1')], plan: plan({ enabled: false }) });
+    await h.runtime.tick();
+
+    const { lastAction } = h.runtime.diagnostics();
+    assert.equal(lastAction?.writes, 0);
+    assert.match(lastAction?.detail ?? '', /switched off/);
+  });
+
+  test('a colour-only lamp is not reported as one nothing can be done with', async () => {
+    const h = harness({
+      devices: [light('l1', ['onoff', 'dim', 'light_hue', 'light_saturation'])],
+      plan: colouredPlan(),
+    });
+    await h.runtime.start();
+    await h.settle();
+
+    const target = h.runtime.diagnostics().targets[0];
+    assert.equal(target.canWarm, false);
+    assert.equal(target.canColor, true, 'it is driven perfectly well, on the other axis');
   });
 });

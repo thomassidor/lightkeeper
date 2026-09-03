@@ -17,17 +17,21 @@
        through an HTML parser. See lib/credential-service.ts for the perimeter
        this page sits inside. */
     :root {
-      --lk-accent: #180e32;
+      --lk-accent: #2a1958;
       --lk-accent-ink: #ffffff;
       --lk-accent-tint: #f3eefc;
-      --lk-accent-strong: #2b1a52;
-      --lk-ring: rgba(24, 14, 50, .16);
+      --lk-accent-strong: #3b2279;
+      --lk-ring: rgba(42, 25, 88, .16);
 
+      /* The ink ladder, kept in step with the pair views' shared base — and for
+         the same reason: every step clears WCAG AA (4.5:1) against
+         --lk-surface, because all five are used at small sizes and the two
+         lightest carry the section titles and the row meta. */
       --lk-ink: #16181d;
-      --lk-sub: #6b7280;
+      --lk-sub: #5f6672;
       --lk-body: #4b5563;
-      --lk-muted: #8b929e;
-      --lk-faint: #9aa1ac;
+      --lk-muted: #6a7180;
+      --lk-faint: #6f7683;
 
       /* transparent, so the Homey settings frame keeps painting the page
          behind us. */
@@ -427,6 +431,37 @@
   }
 
   /**
+   * Where a curve is right now, in the terms whoever built it actually chose.
+   *
+   * A Curve light's point may be a COLOUR instead of a warmth, and then the
+   * warmth is only the fallback for lamps that cannot show one
+   * (lib/circadian/circadian-curve.ts). Reporting it regardless said
+   * "Now at 36% warmth" about a curve whose every point was a colour — a number
+   * those lamps are not being sent, on the one screen that exists to say what
+   * the app is doing. So a coloured segment is named by its colour, and by BOTH
+   * colours while it is blending between two: the value in between is no longer
+   * either of them, and pretending it is one would be the same lie in a
+   * prettier form.
+   *
+   * The keys come from the runtime because a name built in lib/ could never be
+   * translated, so they are resolved bare rather than through `t()` — they are
+   * `palette.*`, not `settings.*`.
+   */
+  function curveNowText(now, nextPoint) {
+    var next = nextPoint ? nextPoint.at : unknown();
+    var keys = now.colorLabelKeys || [];
+    if (keys.length > 1) {
+      return t('circadianNowBetween', {
+        from: HomeyRef.__(keys[0]), to: HomeyRef.__(keys[1]), next: next,
+      });
+    }
+    if (keys.length === 1) {
+      return t('circadianNowColour', { colour: HomeyRef.__(keys[0]), next: next });
+    }
+    return t('circadianNow', { warmth: Math.round(now.warmth * 100), next: next });
+  }
+
+  /**
    * Circadian lights, which report a position on a curve rather than a list of
    * times. Two facts carry it: where the curve is NOW, and how many of its lights
    * somebody has taken over by hand — a light that has stopped following the curve
@@ -449,12 +484,8 @@
       el.appendChild(document.createTextNode(' '));
       el.appendChild(node('strong', null, device.name || t('controllerFallback')));
 
-      var meta = node('p', 'entry-meta', device.now
-        ? t('circadianNow', {
-          warmth: Math.round(device.now.warmth * 100),
-          next: device.nextPoint ? device.nextPoint.at : unknown(),
-        })
-        : t('notStarted'));
+      var meta = node('p', 'entry-meta',
+        device.now ? curveNowText(device.now, device.nextPoint) : t('notStarted'));
       if (device.overridden) {
         meta.appendChild(separator());
         meta.appendChild(document.createTextNode(

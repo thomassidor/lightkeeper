@@ -8,7 +8,8 @@ Thanks for taking a look. This is a small app with a specific shape, and two fil
   *actually* behaves, every one established against real hardware and documented nowhere else. The
   code cites it as `platform §n`.
 
-Everything below is the short version. [`docs/README.md`](docs/README.md) indexes the rest.
+Everything below is the short version. [`docs/commands.md`](docs/commands.md) has every command in
+one place if that is all you came for, and [`docs/README.md`](docs/README.md) indexes the rest.
 
 ## Getting set up
 

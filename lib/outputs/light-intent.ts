@@ -57,6 +57,50 @@ export function requiredCapability(intent: LightIntent): 'onoff' | 'dim' | 'ligh
  */
 const GAMMA = 2.2;
 
+/**
+ * The dimmest brightness a stored plan may hold, and the floor the brightness
+ * sliders start at.
+ *
+ * A consequence of the gamma above, which is why it lives beside it. Quantisation
+ * happens in DEVICE values, and `dim` reports `decimals: 2`, so a perceptual
+ * brightness below 0.005^(1/2.2) ≈ 0.0900 rounds to `dim` 0.00 — off, on most
+ * lamps. The sliders used to start at 5%, so the dimmest setting they offered was
+ * inside that band.
+ *
+ * 0.10 rather than 0.09 because the sliders step in fives, and a floor a slider
+ * cannot land on is a floor that has to be explained. `litDim` in the intent
+ * planner is the safety net under this for any plan that predates it.
+ */
+export const MINIMUM_BRIGHTNESS = 0.1;
+
+/**
+ * One stored thing that may carry a brightness — a curve point, a schedule
+ * window, one end of a circadian day — with that brightness brought up to
+ * MINIMUM_BRIGHTNESS.
+ *
+ * It lives beside the constant so the floor and the act of applying it cannot
+ * drift apart, and it is shared by all four migration chains. Those chains stay
+ * separate on purpose; a helper they all call is not a chain.
+ *
+ * Takes `unknown` and hands back `unknown` because a migration step runs BEFORE
+ * the chain's validator — the whole point of the chain is that the stored shape
+ * has not been checked yet, so anything that is not an object with a positive
+ * numeric brightness is passed through untouched for the validator to judge.
+ *
+ * A brightness of 0 is passed through, not lifted: every plan shape treats it as
+ * unset rather than as "on, at nothing", and lifting it would be inventing a
+ * brightness for a plan that has none.
+ */
+export function withFlooredBrightness(entry: unknown): unknown {
+  if (entry === null || typeof entry !== 'object') return entry;
+
+  const brightness = (entry as { brightness?: unknown }).brightness;
+  if (typeof brightness !== 'number' || brightness <= 0) return entry;
+  if (brightness >= MINIMUM_BRIGHTNESS) return entry;
+
+  return { ...entry, brightness: MINIMUM_BRIGHTNESS };
+}
+
 /** Device value → perceptual position. */
 export function toPerceptual(value: number): number {
   return Math.pow(clamp01(value), 1 / GAMMA);

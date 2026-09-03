@@ -104,7 +104,7 @@ export function planIntent(
 
     case 'brightness_absolute':
       for (const deviceId of supported) {
-        writes.push({ deviceId, capability: 'dim', value: clampDim(deviceId, intent.value, cache) });
+        writes.push({ deviceId, capability: 'dim', value: litDim(deviceId, intent.value, cache) });
       }
       return { writes, skipped };
 
@@ -270,6 +270,55 @@ function clampDim(deviceId: string, value: number, cache: TargetStateCache): num
 }
 
 /**
+ * The smallest change this lamp can actually show, or `undefined` where it
+ * declares no resolution and nothing is being quantised away.
+ *
+ * Shared by the two places that have to reason about what rounding eats:
+ * `litDim` below and `advanceDim` further down.
+ */
+function representableStep(deviceId: string, cache: TargetStateCache): number | undefined {
+  const decimals = cache.capabilitiesOf(deviceId)?.dim?.decimals;
+  if (decimals === undefined || !Number.isFinite(decimals)) return undefined;
+  return Math.pow(10, -Math.max(0, Math.floor(decimals)));
+}
+
+/**
+ * An absolute level that asks for light and gets light.
+ *
+ * The perceptual curve is steepest at the bottom and quantisation happens in
+ * DEVICE values, so a brightness a person chose deliberately can round away to
+ * nothing: γ = 2.2 turns 5% into 0.05^2.2 ≈ 0.0014, and `dim` reports
+ * `decimals: 2`, so it is written as 0.00. Anything below about 9% does the
+ * same. That is the LOWEST position the brightness sliders offer — `min="5"` in
+ * every one of them — so the dimmest setting a user can pick was the one that
+ * meant off at the lamp, and on a circadian curve it held there for the eight
+ * minutes either side of the point.
+ *
+ * So where rounding would eat the whole request, write one representable step
+ * instead: the dimmest thing the lamp can show, which is what "as dim as
+ * possible" asks for. Zero is still reachable and still means zero — it is only
+ * a positive request that is kept positive.
+ *
+ * The same argument as `advanceDim`, one axis over: that one keeps a relative
+ * step from rounding to a no-op, this one keeps an absolute level from rounding
+ * to darkness. It lives here, in the absolute branch, rather than in `clampDim`
+ * — the delta path deliberately allows low values, and `offBelowMinimum`
+ * deliberately turns a lamp off below its minimum, and both go through
+ * `clampDim` too.
+ */
+function litDim(deviceId: string, value: number, cache: TargetStateCache): number {
+  const quantised = clampDim(deviceId, value, cache);
+  if (value <= 0 || quantised > 0) return quantised;
+
+  const step = representableStep(deviceId, cache);
+  // No declared resolution means nothing was rounded away, so a zero here is a
+  // zero the caller asked for.
+  if (step === undefined) return quantised;
+
+  return clampDim(deviceId, step, cache);
+}
+
+/**
  * A relative brightness step that is guaranteed to MOVE, where the range allows.
  *
  * The perceptual curve is steepest at the bottom, and quantisation happens in
@@ -300,12 +349,10 @@ function advanceDim(
   const next = clampDim(deviceId, raw, cache);
   if (delta === 0 || next !== clampDim(deviceId, current, cache)) return next;
 
-  const options = cache.capabilitiesOf(deviceId)?.dim;
-  const decimals = options?.decimals;
   // No declared resolution means nothing was quantised away, so nothing to do.
-  if (decimals === undefined || !Number.isFinite(decimals)) return next;
+  const step = representableStep(deviceId, cache);
+  if (step === undefined) return next;
 
-  const step = Math.pow(10, -Math.max(0, Math.floor(decimals)));
   return clampDim(deviceId, next + (delta > 0 ? step : -step), cache);
 }
 

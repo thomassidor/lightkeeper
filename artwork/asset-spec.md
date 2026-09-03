@@ -6,9 +6,10 @@ underneath so the user never opens the Flow editor.
 
 **So the photographs are about lit rooms and ordinary objects, not technology.** Warm lamps at dusk in
 a calm Scandinavian interior for the app; a remote on white for the controller; a plug-in timer on
-white for the schedule. Brand colours are violet `#180E32` and lavender `#CCB0F3` — the dark and the
-light of the logo — and the lamplight in the banner is the warmth inside that. No people, no screens,
-no visible smart-home hardware, no branding of any kind.
+white for the schedule. Brand colours are violet `#2A1958` and lavender `#CCB0F3` — the dark and the
+light of the logo, the violet lightened from the `#180E32` ground so it reads as a colour rather than
+as black — and the lamplight in the banner is the warmth inside that. No people, no screens, no
+visible smart-home hardware, no branding of any kind.
 
 Nothing shipped is drawn or cropped by hand. Every file below is built from a master in
 `artwork/masters/` by `artwork/export-assets.py`, and the exact pixel sizes Homey requires are
@@ -20,13 +21,13 @@ which of these rules a validator enforces versus a human reviewer, is in
 |---|---|---|
 | `assets/icon.svg` | Line-art app mark: open circle with a sparkle | The app's icon inside Homey: app list, the app picker when adding a device, the app's grouping in the Flow editor, app settings |
 | `assets/images/{small,large,xlarge}.png` | Photo, one shot at three sizes | The app's card and banner on its App Store page |
-| `drivers/controller/assets/icon.svg` | Line-art remote control | This device type's icon when adding a device, and on its tile afterwards |
+| `drivers/controller/assets/icon.svg` | Line-art handheld remote sending a signal | This device type's icon when adding a device, and on its tile afterwards |
 | `drivers/controller/assets/images/{small,large,xlarge}.png` | Photo of a remote | Device rows, and the "supported devices" grid on the App Store page |
 | `drivers/schedule/assets/icon.svg` | Line-art stopwatch | This device type's icon when adding a device, and on its tile afterwards |
 | `drivers/schedule/assets/images/{small,large,xlarge}.png` | Photo of a plug-in timer | The same two places |
-| `drivers/circadian/assets/icon.svg` | Line-art bulb under a daylight arc | This device type's icon when adding a device, and on its tile afterwards |
+| `drivers/circadian/assets/icon.svg` | Line-art rayed sun on the horizon | This device type's icon when adding a device, and on its tile afterwards |
 | `drivers/circadian/assets/images/{small,large,xlarge}.png` | Render of a device showing the warm-to-cool arc | The same two places |
-| `drivers/curve/assets/icon.svg` | Line-art four-point curve over hour ticks | This device type's icon when adding a device, and on its tile afterwards |
+| `drivers/curve/assets/icon.svg` | Line-art three-point curve above a baseline | This device type's icon when adding a device, and on its tile afterwards |
 | `drivers/curve/assets/images/{small,large,xlarge}.png` | Render of a device showing a four-point coloured curve | The same two places |
 | `artwork/readme/banner.png` | The hero photograph with the logo on a rounded violet tile | The top of `README.md`. Ships nowhere; built by the same script |
 
@@ -79,7 +80,7 @@ the export finds the object and crops the square.
 > Product photograph on a pure white background. One original generic handheld smart-light remote:
 > matte warm-white body, a charcoal rotary scroll wheel near the top, three round buttons below it.
 > Three-quarter view angled from the right to give the object dimension, soft even studio light,
-> subtle contact shadow. The app's palette is violet #180E32 and lavender #CCB0F3, so keep the object
+> subtle contact shadow. The app's palette is violet #2A1958 and lavender #CCB0F3, so keep the object
 > neutral — warm white and charcoal — to sit beside them without competing. Whole device with even
 > margin, recognizable at 75×75. Photorealistic catalogue render. No text, no logos, no branding,
 > no resemblance to any real product, no hand, no props, no packaging, no watermark.

@@ -70,8 +70,13 @@ CANVAS = 960                       # Homey's icon canvas, guideline 1.5
 HOUSE_STROKE = 40.0
 DEVICE_STROKE = 40.0
 
-# Extracted from masters/logo-bitmap-original.png — run --palette to re-derive.
-BRAND = '#180E32'                  # the logo's ground: 93% of its pixels
+# LOGO_GROUND is extracted from masters/logo-bitmap-original.png — run --palette
+# to re-derive. BRAND is that colour deliberately lightened, and it is what ships:
+# at the extracted value the App Store's brandColor circle (platform §10) reads as
+# a black dot and the brand stops looking violet at all. Same hue and saturation,
+# HSL lightness 12.5% -> 22%; still 15.3:1 under the white icon mask.
+LOGO_GROUND = '#180E32'            # the logo's ground: 93% of its pixels
+BRAND = '#2A1958'                  # LOGO_GROUND, lightened
 ACCENT = '#CCB0F3'                 # the mark itself
 
 # ----------------------------------------------------------------------- icons
@@ -81,6 +86,11 @@ ACCENT = '#CCB0F3'                 # the mark itself
 # the full canvas. The numbers come from --measure, which rasterises the master and
 # reads the alpha bounding box; they are stored rather than recomputed so a normal
 # run needs no browser and produces byte-identical output every time.
+#
+# `stroke` must mirror the master's own stroke-width, because it is what
+# --weight drawn multiplies by the fit scale; nothing else reads it, which is
+# exactly how the circadian and curve entries came to be wrong for a release
+# after 0.5.1 redrew both masters. Change one, change the other.
 ICONS = [
     {
         'master': 'logo-mark-master.svg',
@@ -115,7 +125,7 @@ ICONS = [
         'title': 'Circadian light',
         'desc': 'A rayed sun on the horizon.',
         'fit': (2.2191, -88.1, -80.3),
-        'stroke': 7.3,
+        'stroke': 5.5,
         'house': DEVICE_STROKE,
     },
     {
@@ -124,7 +134,7 @@ ICONS = [
         'title': 'Curve light',
         'desc': 'A three-point curve above a baseline.',
         'fit': (2.1129, -60.9, -58.8),
-        'stroke': 5.3,
+        'stroke': 5.5,
         'house': DEVICE_STROKE,
     },
 ]
@@ -419,7 +429,9 @@ def print_palette() -> None:
     print('\nmost common exact colours:')
     for (r, g, b), count in exact.most_common(4):
         print(f'  #{r:02X}{g:02X}{b:02X}  {100 * count / len(opaque):5.1f}%')
-    print(f'\nin use: BRAND {BRAND} (the ground), ACCENT {ACCENT} (the mark)')
+    print(f'\nextracted: LOGO_GROUND {LOGO_GROUND} (the ground)')
+    print(f'in use:    BRAND {BRAND} (LOGO_GROUND lightened, see the constant), '
+          f'ACCENT {ACCENT} (the mark)')
 
 
 def main() -> None:

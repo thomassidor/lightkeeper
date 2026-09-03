@@ -50,6 +50,20 @@ export interface CurveValue {
    * capability gets instead — see CircadianPoint.color.
    */
   color?: { hue: number; saturation: number };
+  /**
+   * The palette colour(s) `color` was built from, as locale keys — one where a
+   * segment holds a single colour flat, two while it is blending between two
+   * different ones.
+   *
+   * Present exactly when `color` is, and it exists so that a screen can SAY
+   * what the lights are doing. `color` alone cannot be named: a blended
+   * hue/saturation pair is no longer any palette entry, and reporting the
+   * `warmth` beside it instead described a number those lamps are not being
+   * sent — "Now at 36% warmth" on a curve whose every point is a colour. Keys
+   * rather than words, because a name built in `lib/` could never be
+   * translated.
+   */
+  colorLabelKeys?: readonly string[];
 }
 
 /** Minutes since local midnight, 0–1439. */
@@ -151,14 +165,31 @@ function colorOf(
   from: ResolvedPoint,
   to: ResolvedPoint,
   fraction: number,
-): { color?: { hue: number; saturation: number } } {
+): Pick<CurveValue, 'color' | 'colorLabelKeys'> {
   const start = from.color ? paletteColor(from.color) : undefined;
   const end = to.color ? paletteColor(to.color) : undefined;
 
-  if (start && end) return { color: mixColors(start, end, fraction) };
+  if (start && end) {
+    return {
+      color: mixColors(start, end, fraction),
+      // One key when both ends are the same colour: "between amber and amber"
+      // is a sentence no screen should have to render.
+      colorLabelKeys: start.id === end.id ? [start.labelKey] : [start.labelKey, end.labelKey],
+    };
+  }
   // Held flat, not blended. See the comment above.
-  if (start) return { color: { hue: start.hue, saturation: start.saturation } };
-  if (end) return { color: { hue: end.hue, saturation: end.saturation } };
+  if (start) {
+    return {
+      color: { hue: start.hue, saturation: start.saturation },
+      colorLabelKeys: [start.labelKey],
+    };
+  }
+  if (end) {
+    return {
+      color: { hue: end.hue, saturation: end.saturation },
+      colorLabelKeys: [end.labelKey],
+    };
+  }
   return {};
 }
 

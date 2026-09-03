@@ -190,7 +190,9 @@ export const RENDER_REPLIES = {
       coolest: { temperature: 0.15, brightness: 0.9 },
       // On, so both sliders per end are drawn rather than only warmth.
       adjustBrightness: true,
-      preStage: false,
+      // On, so the render shows the pre-stage CHECK, which is revealed with the
+      // option and is otherwise a block of this screen no contact sheet covers.
+      preStage: true,
       shape: [
         { at: '06:00', end: 'warmest' }, { at: '11:00', end: 'coolest' },
         { at: '15:00', end: 'coolest' }, { at: '21:00', end: 'warmest' },
@@ -224,7 +226,9 @@ export const RENDER_REPLIES = {
       ],
       palette: PALETTE,
       adjustBrightness: true,
-      preStage: false,
+      // On, so the render shows the pre-stage CHECK, which is revealed with the
+      // option and is otherwise a block of this screen no contact sheet covers.
+      preStage: true,
       timezone: TIMEZONE,
     },
     setCurve: { count: 5, adjustBrightness: true, dropped: [] },

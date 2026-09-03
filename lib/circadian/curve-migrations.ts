@@ -1,4 +1,5 @@
 import type { CircadianPlan } from './circadian-types';
+import { withFlooredBrightness } from '../outputs/light-intent';
 import { runMigrationChain, type MigrationStep } from '../support/migrations';
 import { validateCircadianPlan } from '../validation/plans';
 
@@ -17,7 +18,7 @@ import { validateCircadianPlan } from '../validation/plans';
  * plan lives under `curve` and the two-ended one under `circadian`.
  */
 
-export const CURRENT_CURVE_SCHEMA_VERSION = 1;
+export const CURRENT_CURVE_SCHEMA_VERSION = 2;
 
 export type CurveMigration = MigrationStep;
 
@@ -38,6 +39,30 @@ const CURVE_MIGRATIONS: Record<number, CurveMigration> = {
     adjustBrightness: plan.adjustBrightness ?? false,
     // Opt-in, so an unknown value is a no, never a yes.
     preStage: plan.preStage === true,
+  }),
+
+  /**
+   * 1 → 2: every point's brightness comes up to the floor.
+   *
+   * A brightness below the floor is one the lamp could not show.
+   *
+   * The sliders used to start at 5%, and 5% is inside the band that quantises to
+   * `dim` 0.00 — off, on most lamps (see MINIMUM_BRIGHTNESS). So the dimmest
+   * setting they offered was the one that meant darkness, and a stored plan can
+   * be carrying it.
+   *
+   * Lifting it here rather than only flooring it at write time is what keeps the
+   * screens honest: a stored 5% loaded into a slider that now starts at 10%
+   * DISPLAYS 10% while the plan still says 5%, so the card would show one number
+   * and save another. `litDim` in the intent planner still floors the write, for
+   * a plan that reaches the engine another way.
+   */
+  1: plan => ({
+    ...plan,
+    schemaVersion: 2,
+    // Guarded rather than assumed: a step runs before the chain's validator, so
+    // `points` may be anything at all.
+    points: Array.isArray(plan.points) ? plan.points.map(withFlooredBrightness) : plan.points,
   }),
 };
 

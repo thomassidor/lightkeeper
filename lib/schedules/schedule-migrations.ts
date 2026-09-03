@@ -1,4 +1,5 @@
 import type { SchedulePlan } from './schedule-types';
+import { withFlooredBrightness } from '../outputs/light-intent';
 import { runMigrationChain, type MigrationStep } from '../support/migrations';
 import { validateSchedulePlan } from '../validation/plans';
 /**
@@ -16,7 +17,7 @@ import { validateSchedulePlan } from '../validation/plans';
  * validator rather than a cast.
  */
 
-export const CURRENT_SCHEDULE_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEDULE_SCHEMA_VERSION = 2;
 
 export type ScheduleMigration = MigrationStep;
 
@@ -30,6 +31,30 @@ const SCHEDULE_MIGRATIONS: Record<number, ScheduleMigration> = {
     enabled: plan.enabled ?? true,
     entries: plan.entries ?? [],
     managedFlows: plan.managedFlows ?? [],
+  }),
+
+  /**
+   * 1 → 2: every window's brightness comes up to the floor.
+   *
+   * A brightness below the floor is one the lamp could not show.
+   *
+   * The sliders used to start at 5%, and 5% is inside the band that quantises to
+   * `dim` 0.00 — off, on most lamps (see MINIMUM_BRIGHTNESS). So the dimmest
+   * setting they offered was the one that meant darkness, and a stored plan can
+   * be carrying it.
+   *
+   * Lifting it here rather than only flooring it at write time is what keeps the
+   * screens honest: a stored 5% loaded into a slider that now starts at 10%
+   * DISPLAYS 10% while the plan still says 5%, so the card would show one number
+   * and save another. `litDim` in the intent planner still floors the write, for
+   * a plan that reaches the engine another way.
+   */
+  1: plan => ({
+    ...plan,
+    schemaVersion: 2,
+    // Guarded rather than assumed: a step runs before the chain's validator, so
+    // `entries` may be anything at all.
+    entries: Array.isArray(plan.entries) ? plan.entries.map(withFlooredBrightness) : plan.entries,
   }),
 };
 

@@ -6,6 +6,60 @@ release in a few bullets and one line for each older one; this is where the deta
 Newest first. Pre-1.0, so there are no major bumps for breaking changes: a change that would break
 something says so in its own entry instead.
 
+## 0.5.2
+
+Four fixes, all found by reading one diagnostics export from a Homey that had been running for an
+hour. Three of them are only visible on a real lamp, which is why nothing in the suite had caught
+them.
+
+Fixed:
+
+- **A Curve light could keep the colour it last held instead of going back to white.** A lamp
+  sitting in colour mode refuses a colour temperature outright (platform §6), so switching axes
+  needs a `light_mode` write to land first — and `planTemperature` emits exactly that, ahead of the
+  temperature. The circadian runtime's "has the curve moved far enough to be worth a write" gate ran
+  per write, and handed the mode write it compared the string `'temperature'`: `Math.abs('temperature'
+  - previous)` is `NaN`, `NaN >= step` is false, so the mode write was dropped whenever a warmth had
+  ever been recorded for that lamp. The first crossing from a coloured segment into a temperature one
+  therefore worked and every later one did not, which on a curve that repeats daily means it worked
+  once and never again. The gate now decides per DEVICE and takes all of that lamp's writes or none —
+  the shape the colour leg already used. A successful colour write also voids the warmth we remember,
+  mirroring the way a temperature write already voided the remembered colour: without it the next
+  temperature segment compared against a value the lamp had physically left, and a daily curve
+  repeats its warmths exactly.
+- **The dimmest brightness setting meant off.** Brightness is stored perceptually and written in
+  device values through γ = 2.2, and `dim` reports two decimals — so 5% became `0.05^2.2` = 0.0014,
+  quantised to `dim` 0.00. Anything below 9% did the same, and 5% was the lowest position every
+  brightness slider offered. On a curve it held there for the eight minutes either side of the point.
+  Three changes: the sliders start at 10%, a migration lifts any stored value below that (without
+  which a stored 5% would load into the new slider *displaying* 10% while the plan still said 5%),
+  and `litDim` in the intent planner writes one representable step rather than zero whenever
+  quantisation would eat a positive request. That last one is the same argument `advanceDim` already
+  made for relative steps, one axis over.
+- **A blend between two distant palette colours went through hues nobody chose.** `mixColors` took
+  the short way round the hue wheel, which is right for adjacent warm pairs and wrong for wide ones:
+  ember (hue 0.02) to ocean (0.55) is 0.53 of a turn, flipped to −0.47, so it ran backwards through
+  rose, magenta, purple and violet at a saturation that never dropped below 0.7 — half of an
+  hour-long segment was purple. 14 of the 28 palette pairs are more than a quarter-turn apart. No arc
+  fixes it, because two hues half a wheel apart have nothing between them either way round, so the
+  blend is now a straight line across the colour DISC: hue and saturation are polar coordinates, and
+  a straight line between two points of a disc dips towards the pale middle for a wide pair while
+  barely moving for a narrow one. Amber still blends through orange to rose. `COLOR_STEP` rises from
+  0.01 to 0.03 to go with it — the disc path is genuinely longer than the arc, so at 0.01 the same
+  segment cost 95 writes instead of 42, against the "one write per light every few minutes" the
+  runtime promises; 0.03 restores it, and is still finer than the eye on a wall.
+- **A bug report can describe a Curve light's colour.** The diagnostics carried `warmth` for every
+  point and dropped `color`, which is the field that actually drives a colour-capable lamp — so a
+  coloured point was indistinguishable from a temperature point at the same warmth, and it was the
+  one field the first fix above would have needed from a user's report. `targets[].lastWritten` now
+  carries the colour too (it recorded a timestamp for hue and saturation writes and no value, which
+  read as "nothing written" on a lamp that had just been sent three), its `brightness` field is
+  called `dim` because that is what it holds — the device value, 0.02 where the curve says 0.156 —
+  and a `canColor` sits beside `canWarm` so a colour-only lamp no longer looks like one nothing can
+  be done with. `lastAction` records the colour and the palette names it was between, and a pass that
+  does nothing now says why instead of leaving the previous pass standing with a timestamp an hour
+  old.
+
 ## 0.5.1
 
 Nothing about how the app works changed. This is the App Store listing, which three separate things

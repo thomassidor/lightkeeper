@@ -1,6 +1,6 @@
 {
   "id": "com.thomassidor.lightkeeper",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "compatibility": ">=12.9.0",
   "runtime": "nodejs",
   "sdk": 3,
@@ -19,7 +19,7 @@
       "adaptive lighting", "colour temperature", "dimmer", "rotary dial", "button", "flow",
       "zigbee", "matter"]
   },
-  "brandColor": "#180E32",
+  "brandColor": "#2A1958",
   "permissions": [
     "homey:manager:api"
   ],

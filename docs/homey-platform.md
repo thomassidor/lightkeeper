@@ -510,9 +510,14 @@ anything discoverable in this repo:
     canvas that is a scale of 0.025, so a 34-unit stroke lands at 0.85 px and washes out. 0.5.0
     shipped four device icons that were unreadable there: each hung its subject inside a
     rounded-square frame that ate two thirds of the canvas, and the circadian one carried seventeen
-    separate strokes. The fix was fewer, larger elements at the house weight, not a heavier line.
+    separate strokes. 0.5.0's fix was fewer, larger elements at the house weight, not a heavier
+    line — which is true of a density problem and is NOT the general rule for a blank circle on a
+    published listing. See the three causes under the next point.
     `npm run render:icons` reproduces that markup and CSS exactly, at 24, 34, 48 and 144 px of ink,
-    and is the only way to see this before publishing.
+    and is the only way to see this before publishing. Whether a drawing carries enough ink for the
+    box is also measurable rather than a matter of taste — alpha coverage of the 24 px box, with
+    homey-lib's own stock icons as the calibration. The measured numbers are in
+    `artwork/provenance.md`; ours sit inside the range Homey's own icons occupy.
   - **A CLI-installed app shows NO icon, ever.** That CDN only holds icons from builds Athom
     published, so `homey app install` leaves the mask pointing at a 404 and the UI draws an empty
     `brandColor` circle. This cost a diagnosis: the SVGs render correctly inline, as a sized
@@ -520,12 +525,33 @@ anything discoverable in this repo:
     the file was never the problem. **Do not redraw anything chasing a blank icon on a dev
     install.** It resolves on publish, test channel included.
 
-    The converse trap is a blank icon on a PUBLISHED listing, which is a different fault and worth
-    telling apart: fetch the mask URL out of the page's own markup and look at what comes back.
+    The converse trap is a blank icon on a PUBLISHED listing, and it has **three** causes that look
+    identical from the outside: the wrong bytes, a drawing too fine for the box, and a transient in
+    the viewer's own browser. Only the first is cheap to rule out — fetch the mask URL out of the
+    page's own markup and look at what comes back.
     `apps.homeycdn.net/app/<id>/<build>/<uuid>/drivers/<driver>/assets/icon.svg` returned
     `200 image/svg+xml` with our exact bytes, and the surrounding markup was identical to what IKEA
-    Trådfri and Philips Hue get — which ruled out the CDN, CORS and the mask technique in one
-    command and left the drawing itself, at 24 px, as the only variable.
+    Trådfri and Philips Hue get. The build number in that path is worth reading too: it is how you
+    tell a page that has not caught up from an icon that has actually failed.
+
+    **What that does not rule out is CORS or the mask itself**, and believing it did cost a redraw.
+    `curl` sends no `Origin` and has no cache, so it only ever proves the bytes on the CDN. 0.5.1's
+    flow-card circles were still blank after four masters had been redrawn for the 24 px box, and
+    the fault was in the browser all along: the Network tab reported a CORS error on the icon
+    request, and a hard refresh made every glyph appear and turned the same request into a `200`.
+    The icons were correct the whole time, at 40 units, exactly as shipped.
+
+    It lasts for hours because of what that CDN does not send: **no `Cache-Control`, no
+    `Access-Control-Allow-Origin` (with or without an `Origin` request header) and no `Vary`.** With
+    no `Cache-Control`, Chrome falls back to heuristic freshness — about 10% of the file's age, so
+    roughly seven hours for a file published three days earlier — and an entry populated under a
+    different request mode (opening the SVG in a tab is enough) can hold a mask blank for that long.
+    Nothing in an app can change this; it is Athom's header to fix.
+
+    So diagnose this one in the browser rather than the shell: hard-refresh with the Network tab
+    open and watch the icon request. And to tell a hairline apart from a blank, **enlarge `.icon` in
+    devtools** — if a bigger box still shows nothing, the drawing is not the variable and no redraw
+    will help.
 - **The validator checks far less than the guidelines say.** `_validateImages` iterates
   `['small', 'large']` only: **`xlarge` is optional and never checked**, at any level. It never
   opens an SVG — there is no driver-icon existence check and no content validation at all. Every

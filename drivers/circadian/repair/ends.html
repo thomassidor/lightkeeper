@@ -17,24 +17,32 @@
      colour written as a literal anywhere past this block is a token that is
      missing. */
   #end-root {
-    /* Brand. The violet is the manifest brandColor and the ground of the logo —
-       93% of its pixels — and the lavender is the logo's mark. Both are read
-       out of docs/artwork/masters/logo-bitmap-original.png by
-       `export-assets.py --palette`, so the UI cannot drift from the artwork.
-       The tints and lines are derived: the logo itself has no mid-tones. */
-    --lk-accent: #180e32;
+    /* Brand. The violet is the manifest brandColor: the logo's ground — 93% of
+       its pixels — lightened so it reads as violet rather than black in the
+       circle Homey paints behind an icon (platform §10). The lavender is the
+       logo's mark. Both are read out of
+       artwork/masters/logo-bitmap-original.png by `export-assets.py --palette`,
+       so the UI cannot drift from the artwork. The tints and lines are derived:
+       the logo itself has no mid-tones. */
+    --lk-accent: #2a1958;
     --lk-accent-ink: #ffffff;
     --lk-accent-tint: #f3eefc;
     --lk-accent-wash: #fbf9fe;
     --lk-accent-line: #d9cbf5;
-    --lk-accent-strong: #2b1a52;
-    --lk-ring: rgba(24, 14, 50, .16);
+    --lk-accent-strong: #3b2279;
+    --lk-ring: rgba(42, 25, 88, .16);
 
+    /* The ink ladder. Every one of these clears WCAG AA (4.5:1) against
+       --lk-surface, because all five are used between 11px and 15px — and the
+       two lightest carry the section titles, the tile meta and the help text.
+       They were 3.1:1 (--lk-muted) and 2.6:1 (--lk-faint): grey on white that
+       is legible on a desk monitor and not on a phone in daylight. What
+       separates the steps now is weight, size and caps as much as tone. */
     --lk-ink: #16181d;
-    --lk-sub: #6b7280;
+    --lk-sub: #5f6672;
     --lk-body: #4b5563;
-    --lk-muted: #8b929e;
-    --lk-faint: #9aa1ac;
+    --lk-muted: #6a7180;
+    --lk-faint: #6f7683;
 
     /* transparent, not white: the pairing container paints the page behind us,
        and claiming it would flatten every card against it. */
@@ -85,10 +93,10 @@
     width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
     border: 1.5px solid var(--lk-field); border-radius: 11px; background: var(--lk-surface);
     color: var(--lk-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
-  /* The chevron's fill stays a literal: #8b929e is --lk-muted, which is the one
-     token with the same value in both schemes, and a data URI cannot read a
-     custom property. */
-  #end-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%238b929e' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+  /* The chevron's fill stays a literal: #6a7180 is --lk-muted, and a data URI
+     cannot read a custom property. So this is the one place a token's value is
+     written twice, and the two copies have to move together. */
+  #end-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
                background-repeat: no-repeat; background-position: right 13px center;
                background-size: 11px; padding-right: 34px; }
   #end-root input:focus, #end-root select:focus { outline: none; border-color: var(--lk-accent);
@@ -145,8 +153,29 @@
   #end-root .label { font-size: 12px; font-weight: 600; text-transform: uppercase;
                   letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 6px 2px; }
 
+  /* `text-transform: none` is not decoration. The pairing container's own
+     stylesheet styles bare `label`, and text-transform is one of the few
+     properties we never declared — so Homey's `uppercase` won, and the option
+     read "SET THE COLOUR BEFORE THE LIGHTS COME ON" on a real Homey while every
+     local render showed sentence case. The span inside inherits from the label,
+     so stating it here fixes both. */
   #end-root .check { display: flex; align-items: center; gap: 10px; min-height: 44px;
-                 font-size: 14px; color: var(--lk-body); cursor: pointer; }
+                 font-size: 14px; color: var(--lk-body); cursor: pointer;
+                 text-transform: none; letter-spacing: normal; }
+
+  /* A titled block inside a card: what tells the two live controls apart. Each
+     one now says what it does before you press it, instead of being a bare
+     button whose label had to carry the whole explanation. */
+  #end-root .blocktitle { font-size: 15px; font-weight: 600; color: var(--lk-ink); }
+  #end-root .blockhelp { font-size: 12.5px; line-height: 1.5; color: var(--lk-muted);
+                      margin: 4px 0 12px; }
+
+  /* The pre-stage check, nested under the option it checks and hidden until that
+     option is on — the only state in which "does this work on your lights?" is a
+     question worth asking, and what stops it sitting next to the preview button
+     looking like its twin. */
+  #end-root .probe { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--lk-line); }
+  #end-root .probe.off { display: none; }
 
   #end-root .check input { width: 22px; height: 22px; margin: 0; flex: none;
                         accent-color: var(--lk-accent); cursor: pointer; }
@@ -167,6 +196,9 @@
 
   #end-root .help { font-size: 12.5px; line-height: 1.5; color: var(--lk-muted);
                  margin: 2px 0 10px 32px; }
+  /* The brightness card ends on its help text, and the 10px below it would sit
+     inside the card's own padding as a stray gap. */
+  #end-root .card > .help:last-child { margin-bottom: 0; }
 
 </style>
 
@@ -174,23 +206,46 @@
   <h2 data-i18n="circadian.endsTitle"></h2>
   <p class="sub" data-i18n="circadian.endsIntro"></p>
 
-  <div id="end-list"></div>
-
-  <div class="card">
-    <label class="check" id="end-brightnessRow" style="display:none;">
+  <!-- Above the two end cards, not below them: switching this on adds a
+       brightness slider to BOTH ends, so a toggle underneath them meant
+       scrolling back up to set the sliders it had just produced. -->
+  <div class="card" id="end-brightnessCard" style="display:none;">
+    <label class="check" id="end-brightnessRow">
       <input type="checkbox" id="end-adjustBrightness" />
       <span data-i18n="circadian.alsoBrightness"></span>
     </label>
+    <div class="help" data-i18n="circadian.alsoBrightnessHelpEnds"></div>
+  </div>
 
+  <div id="end-list"></div>
+
+  <!-- Two live controls used to sit here as two bare buttons, one under the
+       other, reading "Test it" and "Try it now" — near-synonyms in the same
+       shape, so neither said what it did or how it differed from its neighbour.
+       They are told apart three ways now: each is a titled block rather than a
+       loose button, each carries a sentence saying what it does to which lights,
+       and the pre-stage CHECK is nested inside the option it checks and revealed
+       only while that option is on — which is the only state it means anything
+       in, and which stops the two ever being adjacent by default. -->
+  <div class="card">
     <label class="check"><input type="checkbox" id="end-preStage" />
       <span data-i18n="circadian.preStage"></span></label>
     <div class="help" data-i18n="circadian.preStageHelp"></div>
-    <div class="acts"><button class="btn" id="end-testPreStage" data-i18n="circadian.preStageTest"></button></div>
-    <div class="result" id="end-preResult"></div>
+
+    <div class="probe off" id="end-probe">
+      <div class="blocktitle" data-i18n="circadian.preStageCheckTitle"></div>
+      <div class="blockhelp" data-i18n="circadian.preStageCheckHelp"></div>
+      <div class="acts"><button class="btn" id="end-testPreStage" data-i18n="circadian.preStageTest"></button></div>
+      <div class="result" id="end-preResult"></div>
+    </div>
   </div>
 
-  <div class="acts"><button class="btn" id="end-preview" data-i18n="circadian.preview"></button></div>
-  <div class="result" id="end-result"></div>
+  <div class="card">
+    <div class="blocktitle" data-i18n="circadian.previewTitle"></div>
+    <div class="blockhelp" data-i18n="circadian.previewHelp"></div>
+    <div class="acts"><button class="btn" id="end-preview" data-i18n="circadian.preview"></button></div>
+    <div class="result" id="end-result"></div>
+  </div>
 
   <div class="msg muted" id="end-summary"></div>
   <div class="msg" id="end-msg" style="display:none;"></div>
@@ -385,17 +440,21 @@ function __lkBootEn(Homey) {
       if (model.support.dim > 0 && model.adjustBrightness) {
         var brightness = node('div', 'field');
         brightness.appendChild(node('div', 'label', Homey.__('circadian.brightness')));
-        brightness.appendChild(slider(end, 'brightness', 5, 100));
+        brightness.appendChild(slider(end, 'brightness', 10, 100));
         card.appendChild(brightness);
       }
 
       list.appendChild(card);
     });
 
-    document.getElementById('end-brightnessRow').style.display =
-      model.support.dim > 0 ? 'flex' : 'none';
+    // The whole card, not the row inside it: the toggle has its own card above
+    // the two ends now, so hiding only the row left an empty white box on a
+    // screen where nothing dims.
+    document.getElementById('end-brightnessCard').style.display =
+      model.support.dim > 0 ? 'block' : 'none';
     document.getElementById('end-adjustBrightness').checked = model.adjustBrightness;
     document.getElementById('end-preStage').checked = model.preStage;
+    syncProbe();
 
     document.getElementById('end-summary').textContent = Homey.__('circadian.endsSummary', {
       lights: model.lights.length,
@@ -444,13 +503,27 @@ function __lkBootEn(Homey) {
     pushQuietly();
   });
 
+  /**
+   * The check belongs to the option, so it appears and disappears with it.
+   *
+   * Called from the change handler AND from render(), because a repair session
+   * arrives with the option already on and the block would otherwise stay
+   * hidden behind a class that only a click could clear.
+   */
+  function syncProbe() {
+    document.getElementById('end-probe').classList.toggle('off', !model.preStage);
+  }
+
   document.getElementById('end-preStage').addEventListener('change', function (e) {
     model.preStage = e.target.checked;
+    syncProbe();
     pushQuietly();
   });
 
   document.getElementById('end-preview').addEventListener('click', function () {
+    var button = document.getElementById('end-preview');
     var result = document.getElementById('end-result');
+    button.disabled = true;
     result.textContent = Homey.__('circadian.previewing');
     push()
       .then(function () { return emit('previewNow'); })
@@ -459,11 +532,17 @@ function __lkBootEn(Homey) {
           writes: (outcome && outcome.writes) || 0
         });
       })
-      .catch(function (err) { result.textContent = err.message || String(err); });
+      .catch(function (err) { result.textContent = err.message || String(err); })
+      .then(function () { button.disabled = false; });
   });
 
   document.getElementById('end-testPreStage').addEventListener('click', function () {
+    // Disabled while it runs: the probe deliberately watches the lamp for five
+    // seconds, and a button that still looks pressable for all five invites a
+    // second press that races the first one's verdict.
+    var button = document.getElementById('end-testPreStage');
     var result = document.getElementById('end-preResult');
+    button.disabled = true;
     result.textContent = Homey.__('circadian.preStageTesting');
     push()
       .then(function () { return emit('testPreStage'); })
@@ -472,11 +551,31 @@ function __lkBootEn(Homey) {
           result.textContent = Homey.__('circadian.preStageNoLight');
           return;
         }
-        result.textContent = outcome.stayedOff
-          ? Homey.__('circadian.preStageOk', { name: outcome.name || outcome.deviceId })
-          : Homey.__('circadian.preStageCameOn', { name: outcome.name || outcome.deviceId });
+        if (outcome.stayedOff) {
+          result.textContent = Homey.__('circadian.preStageOk', { name: outcome.name || outcome.deviceId });
+          return;
+        }
+        /**
+         * The verdict has to change the MODEL, not just the sentence.
+         *
+         * Both `preStageCameOn` messages say the option has been turned off —
+         * the runtime does turn it off for itself — but this screen went on
+         * holding `preStage: true`, so the next `push()` sent it straight back
+         * and the message was untrue by the time it finished being read. The
+         * curve view already did this; this one only said it.
+         */
+        model.preStage = false;
+        document.getElementById('end-preStage').checked = false;
+        result.textContent = Homey.__(
+          outcome.restored ? 'circadian.preStageCameOn' : 'circadian.preStageCameOnStuck',
+          { name: outcome.name || outcome.deviceId });
+        // The verdict stays on screen for this render — hiding the block here
+        // would take away the sentence explaining what just happened to the
+        // user's lamp — and goes with the next change of the option.
+        pushQuietly();
       })
-      .catch(function (err) { result.textContent = err.message || String(err); });
+      .catch(function (err) { result.textContent = err.message || String(err); })
+      .then(function () { button.disabled = false; });
   });
 
   document.querySelectorAll('[data-i18n]').forEach(function (el) {

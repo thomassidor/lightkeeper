@@ -379,6 +379,33 @@ describe('schedule plan migration', () => {
     assert.deepEqual(plan, stored as never);
   });
 
+  test('1 to 2 brings a window brightness up to the floor', () => {
+    /**
+     * 5% quantises to `dim` 0.00 at the lamp — off, on most integrations — and
+     * 5% was the lowest position the brightness slider offered. Lifted here
+     * rather than only floored at write time, so the card cannot display 10%
+     * while the plan still says 5%.
+     */
+    const { plan, migrated } = migrateSchedulePlan({
+      schemaVersion: 1,
+      enabled: true,
+      target: { kind: 'devices', deviceIds: ['l1'] },
+      entries: [
+        { id: 'a', onAt: 60, days: null, end: { kind: 'duration', minutes: 30 }, brightness: 0.05 },
+        { id: 'b', onAt: 120, days: null, end: { kind: 'duration', minutes: 30 }, brightness: 0.6 },
+        { id: 'c', onAt: 180, days: null, end: { kind: 'duration', minutes: 30 } },
+      ],
+      managedFlows: [],
+    });
+
+    assert.equal(migrated, true);
+    assert.equal(plan.entries[0].brightness, 0.1);
+    assert.equal(plan.entries[1].brightness, 0.6, 'nothing above the floor moves');
+    // Absent means "leave brightness alone and only switch on", so there is
+    // nothing to lift.
+    assert.equal(plan.entries[2].brightness, undefined);
+  });
+
   test('refuses a plan from a newer version rather than corrupting it', () => {
     assert.throws(
       () => migrateSchedulePlan({ schemaVersion: CURRENT_SCHEDULE_SCHEMA_VERSION + 1 }),

@@ -65,11 +65,37 @@ export function isPaletteColor(id: unknown): boolean {
 }
 
 /**
- * Blend two palette colours.
+ * Blend two palette colours: a straight line across the colour DISC, not an arc
+ * round the hue wheel.
  *
- * Hue takes the SHORT way round the wheel, which is what makes amber blend
- * through orange to rose rather than the long way through green. Saturation is
- * linear, because it is a distance rather than an angle.
+ * Hue and saturation are polar coordinates — an angle and a distance from white
+ * — so each colour is a point on a disc, and the blend is the straight line
+ * between those two points. Read back out as an angle and a distance, a wide
+ * pair therefore fades in towards the pale middle and back out again, rather
+ * than swinging round the rim at full saturation.
+ *
+ * That is the whole point, and it is the same argument this module already makes
+ * about not inventing shades. Interpolating the ANGLE means every hue between
+ * the two ends gets painted on someone's wall, and for a wide pair those are
+ * hues nobody chose: `ember` (0.02) to `ocean` (0.55) is 0.53 of a turn, so the
+ * short way round ran backwards through rose, magenta, purple and violet at
+ * near-constant saturation, and half of an hour-long segment was purple. 14 of
+ * the 28 palette pairs are more than a quarter-turn apart — `peach` to `ocean`
+ * went through violet, `candle` to `ocean` through green.
+ *
+ * No arc can fix that: two hues half a wheel apart have nothing between them
+ * either way round. Fading through pale is the honest answer, because pale is
+ * what both ends have in common.
+ *
+ * Adjacent warm pairs — the pairs the wheel-blend was chosen for — barely move:
+ * amber to rose shifts about 0.015 in hue and 0.05 in saturation, so amber still
+ * blends through orange to rose. What changes is that it now does it across the
+ * chord rather than along the rim.
+ *
+ * The endpoints are returned VERBATIM rather than computed. The round trip
+ * through `atan2`/`hypot` is accurate to about 2e-16, which is not the same as
+ * exact, and a curve sitting exactly on one of its own points should report that
+ * point's colour and not a value 2e-16 away from it.
  *
  * Only ever called between two points that BOTH carry a colour — see
  * `valueAt()` for why a segment with a colour at only one end holds that
@@ -82,15 +108,51 @@ export function mixColors(
   to: PaletteColor,
   fraction: number,
 ): { hue: number; saturation: number } {
-  let delta = to.hue - from.hue;
-  // The wheel wraps at 1, so a difference over half a turn is shorter the other
-  // way: 0.96 → 0.08 is 0.12 forward, not 0.88 backward.
-  if (delta > 0.5) delta -= 1;
-  if (delta < -0.5) delta += 1;
+  if (fraction <= 0) return { hue: from.hue, saturation: from.saturation };
+  if (fraction >= 1) return { hue: to.hue, saturation: to.saturation };
 
-  const hue = ((from.hue + delta * fraction) % 1 + 1) % 1;
-  return {
-    hue,
-    saturation: from.saturation + (to.saturation - from.saturation) * fraction,
-  };
+  const [fromX, fromY] = toDisc(from);
+  const [toX, toY] = toDisc(to);
+
+  const x = fromX + (toX - fromX) * fraction;
+  const y = fromY + (toY - fromY) * fraction;
+
+  const saturation = Math.hypot(x, y);
+  /**
+   * At the very middle of the disc there is no angle to read — `atan2(0, 0)` is
+   * 0, which is red, and a pair whose line passes close to white would swing
+   * violently through it. So near the middle the hue is held at whichever end
+   * the blend is closer to: it is unsaturated there, the hue is not visible
+   * anyway, and holding it beats inventing red.
+   *
+   * `peach` to `ocean` is the pair that gets closest, passing within 0.017 of
+   * white.
+   */
+  if (saturation < HUE_FLOOR) {
+    return { hue: fraction < 0.5 ? from.hue : to.hue, saturation };
+  }
+
+  return { hue: normaliseHue(Math.atan2(y, x) / TURN), saturation };
+}
+
+/** A turn of the hue wheel, in radians. Hue is 0–1; `atan2` is not. */
+const TURN = 2 * Math.PI;
+
+/**
+ * Below this distance from white a colour has no visible hue, so the blend holds
+ * an endpoint's hue rather than reading an angle that is about to swing.
+ */
+const HUE_FLOOR = 0.02;
+
+/** A palette colour as a point on the disc: an angle and a distance from white. */
+function toDisc(color: PaletteColor): [number, number] {
+  return [
+    color.saturation * Math.cos(TURN * color.hue),
+    color.saturation * Math.sin(TURN * color.hue),
+  ];
+}
+
+/** Back into 0–1, because `atan2` returns −π…π and hue wraps at 1. */
+function normaliseHue(hue: number): number {
+  return ((hue % 1) + 1) % 1;
 }

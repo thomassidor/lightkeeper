@@ -244,27 +244,30 @@ reads, what it stores, and for how long.
 
 ## Changelog
 
-**0.5.1** — the current release. Nothing about how the app works changed; this is the App Store
-listing:
+**0.5.2** — the current release. Four fixes, all found in one diagnostics export from a Homey that
+had been running for an hour, and three of them only visible on a real lamp:
 
-- **A new tagline, and a description a third of its old length.** The old tagline listed the same
-  three jobs the description opened with; the description opened with a backstory. The store clamps
-  it to ten lines behind a "read more", so the first paragraph has to be the whole pitch.
-- **The changelog reads as prose.** The store renders it in a bare paragraph with no line breaks, so
-  the Markdown headings and bullets it used to carry came out as one run-on sentence with visible
-  asterisks. Every entry is flattened, and a test now fails on any that is not.
-- **The four device icons are legible in the store's flow-card circle.** A 960-unit canvas is drawn
-  into 24 px there, where a 34-unit stroke is 0.85 px — so each icon lost the frame around its
-  subject and everything worth less than a pixel. Two of them say something different as well: the
-  circadian icon is a rayed sun on the horizon rather than a bulb under an arch, and the remote
-  sends a signal rather than reading as a speaker.
-- **`npm run render:icons`** draws every icon at that size using homey.app's own markup and CSS,
-  which is the only way to see it before publishing.
+- **A Curve light could keep the colour it last held instead of going back to white.** A lamp in
+  colour mode refuses a colour temperature, so switching axes needs a mode write first — and the
+  "is this worth a write" gate was dropping it, because it compared a mode's value as if it were a
+  number. The first crossing out of a coloured segment worked and every later one did not, which on
+  a daily curve means once and never again.
+- **The dimmest brightness setting meant off.** 5% through the perceptual curve is 0.0014, which
+  rounds to `dim` 0.00 at two decimals — and 5% was the lowest position every slider offered. The
+  sliders now start at 10%, stored values below that are lifted, and a positive brightness can no
+  longer be rounded down to darkness.
+- **A blend between two distant palette colours went through hues nobody chose.** Ember to ocean ran
+  backwards round the wheel through magenta and purple at full saturation. Blends are now a straight
+  line across the colour disc, so a wide pair fades through pale and a narrow one is unchanged.
+- **A bug report can describe a Curve light's colour.** The diagnostics dropped each point's colour
+  — the field that actually drives the lamp — and recorded no colour against the lights it had just
+  been written to.
 
 Earlier releases, one line each:
 
 | Version | What changed |
 |---|---|
+| **0.5.1** | A shorter App Store listing, prose release notes, and icons legible at 24 px |
 | **0.5.0** | A Curve light as a fourth device type, a simpler circadian light, and less memory used |
 | **0.4.0** | Circadian lights: follow the colour of the day, and no API key needed for them |
 | **0.3.1** | Generated Flows grouped into a folder per device |
@@ -288,7 +291,7 @@ If it changes how carefully you want to review the code before trusting it with 
 the code is right here.
 
 It has been verified end to end on a Homey Pro 2023 across four remotes and three transports, with
-Over 900 unit tests covering the logic — [how well tested is this?](FAQ.md#how-well-tested-is-this) has
+Over 1000 unit tests covering the logic — [how well tested is this?](FAQ.md#how-well-tested-is-this) has
 the detail, including what has *not* run on hardware yet.
 
 ## Contributing

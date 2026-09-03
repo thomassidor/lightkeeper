@@ -1,5 +1,6 @@
 import { sanitiseCurve } from './circadian-types';
 import { DEFAULT_SIMPLE_PLAN, endsFromPoints, type SimpleCircadianPlan } from './simple-curve';
+import { withFlooredBrightness } from '../outputs/light-intent';
 import { runMigrationChain, type MigrationStep } from '../support/migrations';
 import { validateSimpleCircadianPlan } from '../validation/plans';
 /**
@@ -22,8 +23,10 @@ import { validateSimpleCircadianPlan } from '../validation/plans';
  * A circadian light is now two ends of the day and a fixed shape; the point-based
  * editor moved to its own device type (`drivers/curve/`). See the step below for
  * what that costs an installed device and why it is the honest trade.
+ *
+ * 2 → 3 brings a stored brightness up to the floor a lamp can show.
  */
-export const CURRENT_CIRCADIAN_SCHEMA_VERSION = 2;
+export const CURRENT_CIRCADIAN_SCHEMA_VERSION = 3;
 
 export type CircadianMigration = MigrationStep;
 
@@ -78,6 +81,33 @@ const CIRCADIAN_MIGRATIONS: Record<number, CircadianMigration> = {
       preStage: plan.preStage === true,
     };
   },
+
+  /**
+   * 2 → 3: both ends' brightness comes up to the floor.
+   *
+   * A brightness below the floor is one the lamp could not show.
+   *
+   * The sliders used to start at 5%, and 5% is inside the band that quantises to
+   * `dim` 0.00 — off, on most lamps (see MINIMUM_BRIGHTNESS). So the dimmest
+   * setting they offered was the one that meant darkness, and a stored plan can
+   * be carrying it.
+   *
+   * Lifting it here rather than only flooring it at write time is what keeps the
+   * screens honest: a stored 5% loaded into a slider that now starts at 10%
+   * DISPLAYS 10% while the plan still says 5%, so the card would show one number
+   * and save another. `litDim` in the intent planner still floors the write, for
+   * a plan that reaches the engine another way.
+   *
+   * Both ends are lifted independently, and that cannot break the engine's
+   * all-or-nothing rule: it turns on whether a brightness is PRESENT, and this
+   * step adds none and removes none.
+   */
+  2: plan => ({
+    ...plan,
+    schemaVersion: 3,
+    warmest: withFlooredBrightness(plan.warmest),
+    coolest: withFlooredBrightness(plan.coolest),
+  }),
 };
 
 /** What a plan with no stored ends falls back to. Exported for the driver. */

@@ -1,4 +1,7 @@
 {
+  "0.5.2": {
+    "en": "Four fixes, all on the light-following device types. A Curve light could keep the colour it last held instead of going back to white: a curve that mixes coloured points with plain warmth points switched correctly the first time and then stopped switching back, because the lamp was never told to leave colour mode. The dimmest brightness setting no longer means off, either. Five per cent worked out to nothing at the lamp once converted, so lights set that low went dark rather than dim; the lowest setting is now ten per cent, and any curve point, schedule or circadian light already set below that has been moved up to it. Blends between two colours far apart on the wheel, amber to ocean say, now fade through pale instead of swinging round through purple and magenta on the way; colours close together look the same as they always did. And a bug report now says which of a curve's points carry a colour and what colour each light was last sent, none of which it could tell you before."
+  },
   "0.5.1": {
     "en": "A tidier App Store listing. The description is much shorter and gets to the point, this What's new section reads as a paragraph instead of a wall of markup, and the four device icons have been redrawn so they are legible in the small circle the store draws them in. Nothing about how the app works has changed."
   },

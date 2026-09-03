@@ -120,24 +120,73 @@ two suns, a curve over a row of hour ticks — and at 40 the gaps inside them cl
 blob on a device tile. That reasoning was sound about the tile and wrong about everywhere else. The
 App Store draws a driver icon into a **24 px** box (platform §10), where 34 units on a 960 canvas is
 a 0.85 px hairline; 0.5.0's listing showed four device icons as smudges inside their brand circles.
-The density was the fault, not the weight. Each of the four lost the rounded-square frame around its
-subject and every element worth less than a pixel — the circadian icon went from seventeen strokes
-to five, the curve from thirteen to five and the stopwatch from eight to four — and went back to
-40. The remote stayed at five and was redrawn twice: at its old 0.34 aspect `mask-size: contain`
-fitted it by height and left it eight pixels wide, and once squared up it read as a speaker — a
-big circle over a small one in a rounded box is a woofer over a tweeter. Detail inside the box
+Each of the four lost the rounded-square frame around its subject and every element worth less than
+a pixel — the circadian icon went from seventeen strokes to five, the curve from thirteen to five
+and the stopwatch from eight to four — and went back to 40. The remote stayed at five and was
+redrawn twice: at its old 0.34 aspect `mask-size: contain` fitted it by height and left it eight
+pixels wide, and once squared up it read as a speaker — a big circle over a small one in a rounded
+box is a woofer over a tweeter. Detail inside the box
 could not fix that at 24px; two signal arcs off the top-right corner could, because they change
 the silhouette rather than its contents. `npm run render:icons` is the contact sheet that decided it, drawn with
 homey.app's own markup and CSS at 24, 34, 48 and 144 px of ink.
 `export-assets.py --weight drawn` still reproduces the masters' own weights if the decision is ever
 revisited.
 
+**What the store never actually confirmed.** That redraw was made against blank flow-card circles on
+the published listing, and it was read as proof that the drawings had been too fine. It was not. The
+0.5.1 listing showed the same blank circles after the redraw, and the fault turned out to be a
+cache/CORS transient in the browser looking at it — a hard refresh brought every glyph back, at 40
+units, unchanged (platform §10 records how to tell that apart). So the simplification stands on its
+own merits, the weight stays at 40, and the listing is not evidence either way. Judged on the page
+today the icons read.
+
+40 stays because it is what homey-lib's 226 stock class icons use — checked in
+`node_modules/homey/node_modules/homey-lib/assets/device/icons/*.svg`: same 960 canvas, same 40-unit
+outer stroke. At 40 units every mark in ours is exactly 1.00 px in the store's 24 px box, which
+sounds alarming written down, so it was measured against the same stock icons rather than argued
+about. Alpha coverage of the 24 px box, rasterised with this script's own `rasterise_svg`:
+
+| | coverage at 24 px |
+|---|---|
+| `assets/icon.svg` | 10.5% |
+| `drivers/circadian/assets/icon.svg` | 10.7% |
+| `drivers/curve/assets/icon.svg` | 11.5% |
+| `drivers/schedule/assets/icon.svg` | 12.6% |
+| `drivers/controller/assets/icon.svg` | 16.4% |
+| homey-lib `light-bulb.svg` | 10.4% |
+| homey-lib `clock.svg` | 22.0% |
+| homey-lib `socket.svg` | 23.8% |
+
+All five sit inside the range Homey's own icons occupy, and `light-bulb.svg` — the stock icon a
+light shows by default — is lighter than every one of them. So there is no legibility case to
+answer at the house weight, and the numbers are the reason rather than an opinion about a contact
+sheet. Reproduce them by rasterising each file at 24 and summing the alpha channel; the two
+homey-lib entries are the calibration and are what makes the row meaningful.
+
+The one difference worth knowing, if the question ever does come back: those stock icons reach their
+coverage with **filled regions and lighter 10–20-unit interiors** — `light-bulb.svg` is one closed
+40-unit outline around a filled base, `clock.svg` has a filled pivot — where ours are pure open
+line art. Mass, not weight, is the lever. It is untried, and on this evidence it is not needed.
+
 ## Palette
 
 `#180E32` is 93% of `logo-bitmap-original.png` and `#CCB0F3` is its mark. Both are read out of that
-file by `export-assets.py --palette`, and `test/unit/assets.test.ts` fails if the manifest's
-`brandColor` stops agreeing with the script. Every other brand tone in the UI is derived from those
-two; the logo carries no mid-tones.
+file by `export-assets.py --palette`, which prints them as `LOGO_GROUND` and `ACCENT`.
+
+**The violet that ships is not the extracted one.** `BRAND` — and so the manifest's `brandColor` and
+the UI's `--lk-accent` — is `#2A1958`: the same hue (257°) and saturation (56%) as the ground, with
+HSL lightness taken 12.5% → 22%. The reason is `platform §10`: the App Store paints `brandColor` as
+the circle behind every app and flow-card icon, and at the extracted value that circle reads as a
+black dot, so the one place the brand colour is most visible was the one place it did not look
+violet. Perceptual lightness roughly doubles (L\* 6.7 → 14.7) and the white icon mask still sits on
+it at 15.3:1, down from 18.3:1. `--palette` prints both values, so the derivation stays traceable to
+the file, and `test/unit/assets.test.ts` fails if the manifest's `brandColor` stops agreeing with the
+script's `BRAND`.
+
+Every other brand tone in the UI is derived from those two; the logo carries no mid-tones.
+`--lk-accent-strong` moved with the accent, from `#2b1a52` to `#3B2279`, keeping the +8.5
+lightness-point offset that makes it a distinguishable ink against `--lk-accent-tint`; at the new
+accent the old value would have been the accent itself.
 
 ## Rights
 

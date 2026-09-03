@@ -406,22 +406,23 @@ describe('the curve screen (5.2, 5.3, 5.6)', () => {
     id, anchor: { kind: 'clock', at }, warmth, ...(color ? { color } : {}),
   });
 
-  const open = (points: unknown[]) => runPairView(read('curve', 'curve.html'), {
-    respond: {
-      getCurve: {
-        minPoints: 2,
-        maxPoints: 8,
-        support: { onoff: 1, dim: 1, light_temperature: 1, total: 1 },
-        lights: [{ id: 'l1', name: 'Hall lamp', zoneName: 'Hall' }],
-        points,
-        palette: PALETTE,
-        adjustBrightness: false,
-        preStage: false,
-        timezone: 'Europe/Copenhagen',
+  const open = (points: unknown[], adjustBrightness = false) =>
+    runPairView(read('curve', 'curve.html'), {
+      respond: {
+        getCurve: {
+          minPoints: 2,
+          maxPoints: 8,
+          support: { onoff: 1, dim: 1, light_temperature: 1, total: 1 },
+          lights: [{ id: 'l1', name: 'Hall lamp', zoneName: 'Hall' }],
+          points,
+          palette: PALETTE,
+          adjustBrightness,
+          preStage: false,
+          timezone: 'Europe/Copenhagen',
+        },
+        setCurve: { count: points.length, adjustBrightness, dropped: [] },
       },
-      setCurve: { count: points.length, adjustBrightness: false, dropped: [] },
-    },
-  });
+    });
 
   const dots = (view: ViewRun) => view.byId('cir-dots')!.children;
 
@@ -455,7 +456,11 @@ describe('the curve screen (5.2, 5.3, 5.6)', () => {
     assert.equal(view.byId('cir-list')!.querySelectorAll('[data-act="remove"]').length, 0);
   });
 
-  test('a coloured point is drawn in its colour, and larger (5.3)', async () => {
+  test('every dot is filled with what that point sets (5.3)', async () => {
+    // The chart's vertical axis is brightness, so the dots are where the colour
+    // axis lives — a coloured point in its palette colour, an uncoloured one in
+    // its colour TEMPERATURE. A single chart colour for the second kind would
+    // leave the most common curve of all saying nothing about colour at all.
     const view = open([point('p1', 360, 0.9, 'amber'), point('p2', 1260, 0.3)]);
     await view.settle();
 
@@ -473,17 +478,32 @@ describe('the curve screen (5.2, 5.3, 5.6)', () => {
      */
     // hsl(40, 75%, 55%) — the palette entry, not a colour this test invented.
     assert.equal(amber!.style.fill, 'hsl(40, 75%, 55%)');
-    assert.equal(amber!.getAttribute('r'), '4.5');
-
-    assert.equal(plain!.style.fill, undefined, 'an uncoloured point keeps the chart colour');
+    // Warmth 0.3 is three fifths of the way from the daylight blue to the
+    // neutral white, mixed in sRGB because a hue lerp between two whites
+    // travels through green.
+    assert.equal(plain!.style.fill, 'rgb(209, 222, 243)');
     assert.equal(plain!.getAttribute('fill'), null, 'and sets no fill any other way either');
-    assert.equal(plain!.getAttribute('r'), '3.5');
+  });
+
+  test('and every dot is the same size, because size no longer means anything', async () => {
+    // It used to: a coloured point was drawn larger, because that was the only
+    // way to tell it from an uncoloured one. The fill says it now.
+    const view = open([point('p1', 360, 0.9, 'amber'), point('p2', 1260, 0.3)]);
+    await view.settle();
+
+    for (const dot of dots(view)) {
+      assert.equal(dot.getAttribute('ry'), '6');
+      // rx is ry corrected for the sheet's own width — equal only because this
+      // stub has no layout, which is exactly the no-stretch fallback.
+      assert.equal(Number(dot.getAttribute('rx')), 6);
+    }
   });
 
   test('setting a colour on screen recolours that dot without a round trip', async () => {
     const view = open([point('p1', 360, 0.9), point('p2', 1260, 0.3)]);
     await view.settle();
-    assert.equal(dots(view)[0]!.style.fill, undefined);
+    // Warmth 0.9 as a colour temperature: four fifths towards the candle amber.
+    assert.equal(dots(view)[0]!.style.fill, 'rgb(255, 171, 85)');
 
     const colour = view.byId('cir-list')!.querySelectorAll('[data-act="colour"]')[0]!;
     colour.value = 'ocean';
@@ -491,7 +511,6 @@ describe('the curve screen (5.2, 5.3, 5.6)', () => {
     await view.settle();
 
     assert.equal(dots(view)[0]!.style.fill, 'hsl(198, 60%, 55%)');
-    assert.equal(dots(view)[0]!.getAttribute('r'), '4.5');
   });
 
   test('the colour list offers the palette the driver sent, plus "no colour"', async () => {
@@ -559,11 +578,17 @@ describe('the curve screen (5.2, 5.3, 5.6)', () => {
     assert.equal(view.byId('cir-msg')!.textContent, 'circadian.atMost');
   });
 
-  test('moving the warmth slider updates its label and the chart', async () => {
+  test('moving the warmth slider RECOLOURS its dot rather than moving it', async () => {
+    // Height is brightness, so warmth cannot move a dot any more. It still has
+    // to change something visible, or the slider reads as one that has not
+    // registered — which is the complaint that first put brightness on this
+    // chart at all.
     const view = open([point('p1', 360, 0.9), point('p2', 1260, 0.3)]);
     await view.settle();
 
-    const before = dots(view)[0]!.getAttribute('cy');
+    const dot = () => dots(view)[0]!;
+    const before = { fill: dot().style.fill, cy: dot().getAttribute('cy') };
+
     // `input`, not `change`: the view updates sliders in place on `input` so a
     // drag does not re-render the list out from under the pointer.
     const warmth = view.byId('cir-list')!.querySelectorAll('[data-act="warmth"]')[0]!;
@@ -571,7 +596,85 @@ describe('the curve screen (5.2, 5.3, 5.6)', () => {
     view.click(warmth, 'input');
     await view.settle();
 
+    assert.notEqual(dot().style.fill, before.fill, 'the dot should change colour');
+    assert.equal(dot().getAttribute('cy'), before.cy, 'and must not move');
+  });
+
+  test('moving the brightness slider moves its dot, which is the axis now', async () => {
+    const view = open([
+      { ...point('p1', 360, 0.9), brightness: 0.5 },
+      { ...point('p2', 1260, 0.3), brightness: 0.9 },
+    ], true);
+    await view.settle();
+
+    const before = dots(view)[0]!.getAttribute('cy');
+    const dim = view.byId('cir-list')!.querySelectorAll('[data-act="brightness"]')[0]!;
+    dim.value = '90';
+    view.click(dim, 'input');
+    await view.settle();
+
     assert.notEqual(dots(view)[0]!.getAttribute('cy'), before, 'the dot should move');
+  });
+
+  test('there is ONE line, and it is drawn level rather than hidden', async () => {
+    /**
+     * The line ran hidden for a while when the curve did not dim, on the
+     * argument that a flat brightness line describes something the lights will
+     * never do. A row of unconnected dots is not a chart of anything either —
+     * the line is what makes them read as one day in order — so it is always
+     * drawn, and level is the plain truth about a curve that only sets colour.
+     */
+    const off = open([
+      { ...point('p1', 360, 0.9), brightness: 0.2 },
+      { ...point('p2', 1260, 0.3), brightness: 0.9 },
+    ]);
+    await off.settle();
+
+    assert.ok(!off.byId('cir-dim'), 'the second polyline is gone, not merely hidden');
+    assert.ok(!off.byId('cir-line')!.classList.contains('off'));
+    assert.equal(off.byId('cir-key')!.textContent, 'circadian.curveKey');
+
+    // And the dots sit LEVEL, though these two points carry stored brightnesses
+    // of their own: switching the toggle off does not erase them from the plan,
+    // and reading them anyway scattered the dots by a value the app is ignoring
+    // — a height that looks meaningful and is not.
+    const levels = [...dots(off)].map(dot => dot.getAttribute('cy'));
+    assert.equal(new Set(levels).size, 1, levels.join(' '));
+
+    const on = open([
+      { ...point('p1', 360, 0.9), brightness: 0.5 },
+      { ...point('p2', 1260, 0.3), brightness: 0.9 },
+    ], true);
+    await on.settle();
+
+    assert.equal(on.byId('cir-key')!.textContent, 'circadian.curveKeyWithBrightness');
+    const moved = [...dots(on)].map(dot => dot.getAttribute('cy'));
+    assert.equal(new Set(moved).size, 2, 'and follow their own brightness once it is on');
+  });
+
+  test('each point gets a vertical guide at its own time', async () => {
+    // The dots carry the colour axis now, so they are what has to be readable
+    // against the hour labels — and projecting a dot down through empty space
+    // is exactly what an eye cannot do.
+    const view = open([point('p1', 360, 0.9), point('p2', 1260, 0.3)]);
+    await view.settle();
+
+    const guides = [...view.byId('cir-guides')!.children];
+    assert.equal(guides.length, 2);
+
+    // Each guide stands at its own dot's x, full height, so it reaches the
+    // labels sitting under the chart.
+    guides.forEach((guide, index) => {
+      assert.equal(guide.getAttribute('x1'), dots(view)[index]!.getAttribute('cx'));
+      assert.equal(guide.getAttribute('x1'), guide.getAttribute('x2'));
+      assert.equal(guide.getAttribute('y1'), '0');
+      assert.equal(guide.getAttribute('y2'), '96');
+    });
+
+    // And they follow the points, rather than being drawn once at boot.
+    view.fire(view.byId('cir-add')!, 'click');
+    await view.settle();
+    assert.equal(view.byId('cir-guides')!.children.length, 3);
   });
 });
 

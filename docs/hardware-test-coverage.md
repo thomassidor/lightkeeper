@@ -176,14 +176,6 @@ the physical release event that the 10-second ramp stop exists for.
 **T3 and T53-T54 need eyes.** `assets.test.ts` proves four distinct pictures at the right sizes;
 whether they look right is not a machine's question.
 
-**T61-T65 need the published listing**, and no Homey at all. They are read off homey.app after a
-publish to the test channel, because the store is what they are about: the description's length and
-clamping, the changelog rendering as prose, and the flow-card icons inside their 24px circles
-(platform §10). `npm run render:icons` answers the substance of T63 locally — it draws every icon at
-that size with the store's own markup and CSS — but it is a reproduction, and T64 exists to check
-the reproduction against the real thing. `assets.test.ts` still owns the rules an icon must satisfy;
-neither script nor sheet passes or fails.
-
 **T66-T70 need a phone, and T66 is the important one.** They came out of the code review, and
 `verify-hardware.mjs full` answers none of them:
 
@@ -203,6 +195,29 @@ neither script nor sheet passes or fails.
 - **T70 is `memory`**, which the script does answer — it is listed with the others because it is the
   review's own regression check rather than a release line.
 
+**T71-T76 need a lamp, and T74 needs eyes.** They are the 0.5.2 fixes, and
+`verify-hardware.mjs full` answers none of them:
+
+- **T71-T72 and T75-T76 need a curve that CROSSES** between a coloured segment and a temperature
+  one, which takes three points arranged so that one segment has a colour at neither end. The script
+  builds a curve to pair a device, not a curve shaped to cross; and the bug behind T71 only appears
+  on the *second* crossing, so a single pass could not have caught it however the curve was shaped.
+  `circadian-runtime.test.ts` covers all four at the logic level — the mode write surviving a second
+  crossing, the dim floor, the voided warmth, and every diagnostics field. What hardware adds is the
+  half the suite cannot fake: that a lamp told to leave colour mode actually leaves it.
+- **T73 needs a device that predates the build**, so it cannot be arranged on a Homey that has only
+  ever run 0.5.2. The migration itself is covered in all three chains
+  (`curve-colour.test.ts`, `schedule-bindings.test.ts`, `circadian-types.test.ts`); what hardware
+  adds is that a repair screen loads the lifted value rather than displaying one number and saving
+  another.
+- **T74 is the one no test can replace**, and it is worth saying why given what is in the retired
+  table below. Line 5.5 was retired on the grounds that "`curve-colour.test.ts` covers the
+  interpolation" — which was true of the arithmetic and not of the choice it rests on. The all-pairs
+  test asserted that a blended hue stays on the wheel; nothing asserted which way round the wheel it
+  went, so ember fading to ocean through magenta and purple passed the suite for as long as it
+  existed. The new tests pin the property (a wide pair loses its saturation in the middle, a narrow
+  one keeps it), but whether the result looks right in a room is still a person's question.
+
 ## Retired lines
 
 Kept here so an old report that says `3.8 OK` is still readable, and so nobody re-adds them. The numbers are not reused.
@@ -213,6 +228,7 @@ Kept here so an old report that says `3.8 OK` is still readable, and so nobody r
 | 5.5 | Two coloured points, checked for a shade between them | `curve-colour.test.ts` covers the interpolation. The hardware residue — a lamp accepting the hue — is T27 |
 | 9.2–9.4 | Repair each of the four device types | The failure it names — `unknown_error_getting_file` — is `repair-views.test.ts`. Whether each screen comes back seeded from the stored plan is the `repair` command, which covers all four under T46 |
 | T55–T60 | The 0.5.0 release lines: the new Curve light, the two-question circadian light, the migration, two lamp-driving fixes, and the two memory readings | Retired when 0.5.1 rewrote **This release**, which is what that section is for. What they found is in the plan's *Last run* record; the memory readings are the ones worth keeping, and platform §15 carries the reasoning |
+| T61–T65 | The 0.5.1 release lines: the store description, the changelog rendering as prose, and the flow-card icons in their 24px circles | Retired when 0.5.2 rewrote **This release**. They needed the published listing and no Homey at all; `npm run render:icons` reproduces the icon half locally, and `assets.test.ts` still owns the rules an icon must satisfy |
 
 ## Two things a picture caught that a test could not
 

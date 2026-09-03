@@ -86,22 +86,63 @@ export interface CircadianRuntimeDeps {
 export interface CircadianAction {
   at: number;
   reason: string;
-  warmth: number;
+  /**
+   * Absent when the pass stopped before it read the curve — see `detail`.
+   *
+   * And on a coloured segment it is NOT what the lamps were sent: a lamp that
+   * can take a colour gets `color` below, and `warmth` is the fallback for the
+   * temperature-only lamps in the same target set (see CurveValue.warmth). So
+   * read the two together, never `warmth` alone.
+   */
+  warmth?: number;
   brightness?: number;
+  /** What a colour-capable lamp was actually sent, where the segment has one. */
+  color?: { hue: number; saturation: number };
+  /**
+   * The palette colour(s) `color` was built from, as locale keys.
+   *
+   * Here for the same reason it is on CurveValue: a blended hue is no longer any
+   * palette entry, so this is the only thing that can NAME what the lights are
+   * doing in a bug report.
+   */
+  colorLabelKeys?: readonly string[];
   writes: number;
   skipped: number;
+  /**
+   * Why a pass did nothing, where it stopped before planning any writes.
+   *
+   * `lastAction` used to be left untouched on those paths, so its `at` was the
+   * last pass that DID something — minutes or hours old — and a switched-off
+   * plan was indistinguishable from a runtime that had silently stopped
+   * ticking. Recorded rather than skipped, because "nothing to do" and "nothing
+   * happening" are the two answers a bug report has to tell apart.
+   */
+  detail?: string;
 }
 
 /**
  * How far a colour must move on the wheel before a write is worth making.
  *
  * `light_hue` carries no `decimals` in `homey-lib`, so unlike a colour
- * temperature there is no declared resolution to compare against. 0.01 of a turn
- * is about 3.6 degrees of hue — finer than the eye on a wall, and coarse enough
+ * temperature there is no declared resolution to compare against. 0.03 of a turn
+ * is about 11 degrees of hue — finer than the eye on a wall, and coarse enough
  * that a two-hour blend between two palette colours costs a handful of writes
  * rather than one per tick.
+ *
+ * It was 0.01 while `mixColors` blended round the WHEEL, where saturation barely
+ * moved and the hue crossed 0.47 of a turn over a whole segment. Blending across
+ * the DISC travels a longer path — out towards the pale middle and back — so at
+ * 0.01 the same segment crossed more than twice as many steps: measured over all
+ * 28 palette pairs on a two-hour segment, 95 writes at worst and 43 on average,
+ * about one per lamp per 1.3 minutes, against the "one write per light every few
+ * minutes" this file promises below. At 0.03 it is 45 and 17 — one write every
+ * 2.7 to 6.9 minutes, which is where the wheel-blend sat (42 and 27).
+ *
+ * Widening the deadband rather than shortening the path is the right way round:
+ * the path length is what makes the blend honest (see `mixColors`), and 0.03 of
+ * a turn is still below what anyone sees on a wall.
  */
-const COLOR_STEP = 0.01;
+const COLOR_STEP = 0.03;
 
 /**
  * How far a reported colour must be from the one we wrote before it counts as
@@ -168,7 +209,15 @@ export interface CircadianDiagnostics {
   /** "It went the wrong colour at the wrong time" is usually a timezone answer. */
   timezone: string;
   localTime: string;
-  points: Array<{ id: string; at: string; warmth: number; brightness?: number }>;
+  /**
+   * `color` is the palette id a Curve point declares, and it is the field that
+   * DRIVES a colour-capable lamp — `warmth` on such a point is only the fallback
+   * for lamps that cannot take a colour. It was dropped from this projection
+   * once, which left a coloured point indistinguishable from a temperature point
+   * at the same warmth: exactly the field a "my Curve light went the wrong
+   * colour" report needs.
+   */
+  points: Array<{ id: string; at: string; warmth: number; brightness?: number; color?: string }>;
   /** Where the curve is now, and where it goes next. */
   now: CurveValue | null;
   nextPoint: { id: string; at: string; inMinutes: number } | null;
@@ -182,12 +231,38 @@ export interface CircadianDiagnostics {
     on: boolean | null;
     canWarm: boolean;
     /**
+     * Whether this lamp takes the colour leg rather than the temperature one.
+     *
+     * A colour-only lamp is one a coloured curve drives perfectly well, and it
+     * reported `canWarm: false` with nothing beside it — which reads as a lamp
+     * the runtime cannot do anything with.
+     */
+    canColor: boolean;
+    /**
      * A light somebody has taken over by hand. Reported because one that stopped
      * following the curve on purpose looks exactly like one that stopped by
      * accident.
      */
     overridden: boolean;
-    lastWritten: unknown;
+    /**
+     * What we last sent this lamp, in DEVICE values, and when.
+     *
+     * `dim` rather than `brightness` on purpose: it is the value the lamp was
+     * given, after the perceptual curve and after quantisation, so at
+     * `now.brightness` 0.156 this reads 0.02. Both were called `brightness`
+     * once, which invited exactly the comparison that cannot be made.
+     *
+     * `color` comes from a different map than the other two, because a
+     * temperature write voids a recorded colour and a colour write voids a
+     * recorded warmth — see noteOutcomes. Whichever is present is the axis this
+     * lamp is currently being driven on.
+     */
+    lastWritten: {
+      at: number;
+      dim?: number;
+      warmth?: number;
+      color?: { hue: number; saturation: number };
+    } | null;
   }>;
   lastAction: CircadianAction | null;
   recentFailures: readonly unknown[];
@@ -504,14 +579,14 @@ export class CircadianRuntime {
     reason: string,
     options: { deviceIds?: string[]; force?: boolean } = {},
   ): Promise<{ writes: number; skipped: number }> {
-    if (!this.plan.enabled) return { writes: 0, skipped: 0 };
-    if (this.plan.points.length === 0) return { writes: 0, skipped: 0 };
+    if (!this.plan.enabled) return this.noteNothingToDo(reason, 'the plan is switched off');
+    if (this.plan.points.length === 0) return this.noteNothingToDo(reason, 'the curve has no points');
 
     const value = this.currentValue();
-    if (!value) return { writes: 0, skipped: 0 };
+    if (!value) return this.noteNothingToDo(reason, 'the curve holds no value at this minute');
 
     const candidates = options.deviceIds ?? this.targetIds;
-    if (candidates.length === 0) return { writes: 0, skipped: 0 };
+    if (candidates.length === 0) return this.noteNothingToDo(reason, 'no lights are selected');
 
     let skipped = 0;
     const eligible: string[] = [];
@@ -541,7 +616,7 @@ export class CircadianRuntime {
       // Recorded rather than swallowed: writes counted against a queue that does
       // not exist looks exactly like a working app with no effect.
       this.deps.log('No scheduler: the circadian runtime is not started, so writes were dropped');
-      return { writes: 0, skipped };
+      return this.noteNothingToDo(reason, 'the runtime is not started, so writes were dropped', skipped);
     }
 
     if (writes.length > 0) {
@@ -602,11 +677,32 @@ export class CircadianRuntime {
       reason,
       warmth: value.warmth,
       ...(value.brightness !== undefined ? { brightness: value.brightness } : {}),
+      // Beside the warmth, never instead of it: the two describe the two legs of
+      // one pass, and which leg a given lamp took is `canColor` on that target.
+      ...(value.color !== undefined ? { color: value.color } : {}),
+      ...(value.colorLabelKeys !== undefined ? { colorLabelKeys: value.colorLabelKeys } : {}),
       writes: writes.length,
       skipped,
     };
 
     return { writes: writes.length, skipped };
+  }
+
+  /**
+   * Record a pass that stopped before it planned anything, and why.
+   *
+   * Every one of these paths used to `return` and leave `lastAction` alone, so a
+   * plan switched off an hour ago reported the last pass that did something and
+   * looked like a runtime that had stopped ticking. Same shape as a real action
+   * with `writes: 0`, plus the sentence — see CircadianAction.detail.
+   */
+  private noteNothingToDo(
+    reason: string,
+    detail: string,
+    skipped = 0,
+  ): { writes: number; skipped: number } {
+    this.lastAction = { at: this.now(), reason, detail, writes: 0, skipped };
+    return { writes: 0, skipped };
   }
 
   /**
@@ -662,11 +758,36 @@ export class CircadianRuntime {
           { type: 'temperature_absolute', value: value.warmth },
           temperatureOnly, this.cache, DEFAULT_BEHAVIOR,
         );
-        // planIntent has already clamped and quantised against each target's OWN
-        // capability options, so this compares the value that would actually be
-        // sent — not the curve's idea of it.
-        planned.push(...temperature.writes.filter(write =>
-          force || this.hasMoved(write.deviceId, 'warmth', write.value as number)));
+        /**
+         * The deadband is decided per DEVICE, then applied to every write that
+         * device is owed — exactly as the colour leg above decides once from
+         * `value.color` and lets mode, hue and saturation stand or fall
+         * together.
+         *
+         * It cannot be decided per write, because `planTemperature` returns TWO
+         * writes per lamp and the first is `light_mode: 'temperature'`. Filtered
+         * one at a time, `hasMoved` was handed the string `'temperature'` as the
+         * value, `Math.abs('temperature' - previous)` is `NaN`, and `NaN >= step`
+         * is false — so the mode write was dropped whenever a warmth had ever
+         * been written to that lamp. The temperature then went to a lamp still
+         * in colour mode, which platform §6 measured is refused outright: a
+         * Curve light with one coloured point and one temperature point came
+         * back round to white and stayed the colour it was.
+         *
+         * Nor can the mode write simply be exempted from the filter: it would
+         * then go out on every tick for the whole life of a flat segment.
+         */
+        for (const deviceId of temperatureOnly) {
+          const mine = temperature.writes.filter(write => write.deviceId === deviceId);
+          // planIntent has already clamped and quantised against each target's OWN
+          // capability options, so this compares the value that would actually be
+          // sent — not the curve's idea of it.
+          const temperatureWrite = mine.find(write => write.capability === 'light_temperature');
+          if (temperatureWrite === undefined) continue;
+          if (force || this.hasMoved(deviceId, 'warmth', temperatureWrite.value as number)) {
+            planned.push(...mine);
+          }
+        }
       }
     }
 
@@ -687,28 +808,20 @@ export class CircadianRuntime {
   }
 
   /**
-   * Has the curve moved far enough since our last write to this light to be
-   * worth another one?
-   *
-   * The gate that keeps a once-a-minute tick from becoming a once-a-minute write:
-   * across the steepest default segment the curve moves about 0.003 a minute, and
-   * `light_temperature` reports `decimals: 2`, so anything finer is a no-op at the
-   * lamp (platform §6). In practice this is one write per light every few
-   * minutes.
-   */
-  /**
    * Has the colour moved enough to be worth a write?
    *
    * A separate gate from `hasMoved` because there is nothing to compare against
    * per-lamp: `homey-lib` gives `light_hue` no `decimals`, so unlike
    * `light_temperature` there is no declared resolution below which a write is
-   * provably a no-op. So this is a fixed threshold on the wheel, chosen to be
-   * finer than the eye and coarser than the tick: across a two-hour blend
-   * between two palette colours a lamp is written to a handful of times rather
-   * than a hundred and twenty.
+   * provably a no-op. So this is a fixed threshold, finer than the eye and
+   * coarser than the tick — see COLOR_STEP for how it was sized against the
+   * blend, which is the thing that decides how far a colour travels in an hour.
    *
-   * Hue is compared the short way round, for the same reason it is BLENDED that
-   * way: 0.99 to 0.01 is a small change, not a large one.
+   * Hue is compared the SHORT way round the wheel: 0.99 to 0.01 is a small
+   * change, not a large one. That is a fact about the wheel rather than about
+   * the blend — `mixColors` no longer moves along it (it crosses the disc), but
+   * two hues either side of the wrap are still near neighbours, and a deadband
+   * that read that as a near-full turn would fire on every tick through it.
    */
   private colorHasMoved(deviceId: string, next: { hue: number; saturation: number }): boolean {
     const last = this.lastColorWritten.get(deviceId);
@@ -720,6 +833,16 @@ export class CircadianRuntime {
     return hueDelta >= COLOR_STEP || Math.abs(next.saturation - last.saturation) >= COLOR_STEP;
   }
 
+  /**
+   * Has the curve moved far enough since our last write to this light to be
+   * worth another one?
+   *
+   * The gate that keeps a once-a-minute tick from becoming a once-a-minute write:
+   * across the steepest default segment the curve moves about 0.003 a minute, and
+   * `light_temperature` reports `decimals: 2`, so anything finer is a no-op at the
+   * lamp (platform §6). In practice this is one write per light every few
+   * minutes.
+   */
   private hasMoved(deviceId: string, field: 'warmth' | 'brightness', next: number): boolean {
     const last = this.lastWritten.get(deviceId);
     const previous = last?.[field];
@@ -776,6 +899,18 @@ export class CircadianRuntime {
         // outcome would be recording a value that has not landed yet. The pair
         // is recorded from the PLAN instead — see noteColorWritten.
         this.noteColorWritten(outcome.deviceId);
+        /**
+         * And the mirror of the voiding above: a colour write takes the lamp OUT
+         * of temperature mode, so whatever temperature we last recorded is no
+         * longer what the lamp is showing.
+         *
+         * Held, it told `hasMoved` the lamp was already at today's warmth — and
+         * a daily curve repeats its values, so on the next pass through a
+         * temperature segment the write was declined as "already there" against
+         * a temperature the lamp had physically left. That is the common case,
+         * not the corner.
+         */
+        delete entry.warmth;
       }
       if (outcome.capability === 'dim') entry.brightness = outcome.value as number;
       entry.at = this.now();
@@ -793,6 +928,32 @@ export class CircadianRuntime {
    * is the entire recovery mechanism this runtime has.
    */
   private readonly pendingColor = new Map<string, { hue: number; saturation: number }>();
+
+  /**
+   * What we last sent one lamp, gathered from the two maps that hold it.
+   *
+   * The maps stay separate — they void each other, deliberately, and that is
+   * what makes each one's presence meaningful — so joining them is the
+   * projection's job rather than theirs.
+   */
+  private lastWrittenFor(deviceId: string): {
+    at: number;
+    dim?: number;
+    warmth?: number;
+    color?: { hue: number; saturation: number };
+  } | null {
+    const written = this.lastWritten.get(deviceId);
+    if (!written) return null;
+
+    const color = this.lastColorWritten.get(deviceId);
+    return {
+      at: written.at,
+      // `brightness` in the map is the DEVICE value; `dim` is what it is.
+      ...(written.brightness !== undefined ? { dim: written.brightness } : {}),
+      ...(written.warmth !== undefined ? { warmth: written.warmth } : {}),
+      ...(color !== undefined ? { color } : {}),
+    };
+  }
 
   private noteColorWritten(deviceId: string): void {
     const planned = this.pendingColor.get(deviceId);
@@ -1156,6 +1317,7 @@ export class CircadianRuntime {
         at: formatMinutes(point.minute),
         warmth: point.warmth,
         ...(point.brightness !== undefined ? { brightness: point.brightness } : {}),
+        ...(point.color !== undefined ? { color: point.color } : {}),
       })),
       now: value,
       nextPoint: next ? { id: next.id, at: formatMinutes(next.minute), inMinutes: next.inMinutes } : null,
@@ -1168,8 +1330,11 @@ export class CircadianRuntime {
         id,
         on: this.cache.state(id).actualOn ?? null,
         canWarm: this.cache.supports(id, 'light_temperature'),
+        // `light_hue` and not `light_mode`, because that is the capability the
+        // colour/temperature split itself tests — see planWrites.
+        canColor: this.cache.supports(id, 'light_hue'),
         overridden: this.overrides.has(id),
-        lastWritten: this.lastWritten.get(id) ?? null,
+        lastWritten: this.lastWrittenFor(id),
       })),
       lastAction: this.lastAction,
       recentFailures: this.adapter.failures(),

@@ -44,6 +44,10 @@ node scripts/verify-hardware.mjs full --yes  # MOST of the hardware pass — NEE
                                              # Builds and deletes its OWN devices only
 ```
 
+[`docs/commands.md`](docs/commands.md) is the same set written out for a human to look things up in
+— every flag each script takes, the hardware pass command by command, and the trap that goes with
+each one.
+
 **`package.json`'s `build` script is not ours to remove.** It looks unused — nothing in this repo
 calls it — but the Homey CLI shells out to `npm run build` itself whenever it detects TypeScript,
 so deleting it fails `validate`, `install` and `run` alike with `Missing script: "build"` reported
@@ -453,6 +457,23 @@ Load-bearing product guarantees, not implementation details:
 - **Ramps hard-stop after 10 seconds.** Not configurable, deliberately not read from settings.
   Release events are routinely dropped on Zigbee and unreliable on Matter/Thread, so a stuck ramp is
   a certainty rather than a risk.
+- **A positive brightness is never written as darkness.** Brightness is stored perceptually and
+  written in device values through γ = 2.2, so the bottom of the axis is where quantisation bites:
+  5% becomes `dim` 0.0014, which `decimals: 2` rounds to 0.00. `MINIMUM_BRIGHTNESS` (0.10) is the
+  floor the three brightness sliders start at and the three migration chains that store a
+  brightness lift stored plans to (the controller profile has none);
+  `litDim()` in the intent planner is the safety net under both, writing one representable step
+  wherever rounding would eat a positive request. Zero still means zero — only a request for light
+  is kept as light. `advanceDim()` is the same guarantee for relative steps, and its docblock carries
+  the longer argument.
+- **A lamp is never sent a value the mode it is in makes it ignore.** A lamp in colour mode refuses
+  a colour temperature and vice versa — silently, reporting the write as accepted (platform §6) — so
+  `planColor()` and `planTemperature()` each emit `light_mode` ahead of the value it enables, and
+  `WRITE_ORDER` keeps that order through the queue. The consequence for anything filtering planned
+  writes: **decide per DEVICE, never per write.** A `light_mode` value is a string, so a numeric
+  deadband applied to it compares `NaN` and silently drops the mode write while letting the value
+  through — which is exactly how a Curve light came to sit on the colour it last held. The colour leg
+  has always decided per device; the temperature leg now does too.
 - **Flows that look user-edited are never overwritten.** The controller is marked for repair instead.
 - **Deleting a controller deletes only the Flows demonstrably created by it.** Attribution is the
   controller id carried in the bridge action's arguments.

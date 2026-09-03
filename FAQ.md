@@ -254,6 +254,15 @@ Stated plainly, because a limit you find out about later is worse than one you w
 - **One colour point colours the segments either side of it.** A colour is never blended into a colour
   temperature, because that would mean inventing a shade nobody chose. "Amber at 21:00" with
   temperature points at 19:00 and 23:00 is amber from 19:00 to 23:00, not an amber instant.
+- **Two colours far apart fade through pale, not through the colours in between them.** Amber to
+  rose passes through the shades between the two, because there are some. Ember to ocean has none —
+  they are opposite sides of the colour wheel — so instead of inventing a purple nobody asked for,
+  the lights lose their colour towards the middle of that segment and pick the new one up on the way
+  out. It is the same rule as the bullet above, applied to the one case where both ends *are* a
+  colour: pale is what any two colours have in common.
+- **The dimmest brightness you can set is 10%.** Below that there is nothing left to send a lamp:
+  brightness is stored the way it is perceived rather than the way a lamp is addressed, and under
+  about 9% the conversion rounds to zero, which most lamps read as off.
 
 ---
 
@@ -313,6 +322,6 @@ segment that wraps midnight — and every rule about when a write is worth makin
 tests, and the pairing screen's **Try it now** proves the whole write path against your own lamps
 before you save.
 
-Over 900 unit tests, type-clean, validated at `publish` level. The test fixtures are transcribed verbatim
+Over 1000 unit tests, type-clean, validated at `publish` level. The test fixtures are transcribed verbatim
 from the four real remotes above, and the expected results are written by hand beside them, so the
 tests prove the code rather than the fixture.

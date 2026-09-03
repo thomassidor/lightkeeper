@@ -190,6 +190,31 @@ describe('circadian migrations', () => {
     assert.equal(plan.preStage, true);
   });
 
+  test('2 to 3 brings both ends up to the brightness floor', () => {
+    /**
+     * 5% quantises to `dim` 0.00 at the lamp — off, on most integrations — and
+     * 5% was the lowest position the brightness slider offered.
+     *
+     * Both ends are lifted independently, which cannot break the all-or-nothing
+     * rule: that turns on whether a brightness is PRESENT, and this step adds
+     * none and removes none.
+     */
+    const { plan, migrated } = migrateCircadianPlan({
+      schemaVersion: 2,
+      enabled: true,
+      target: TARGET,
+      warmest: { temperature: 1, brightness: 0.05 },
+      coolest: { temperature: 0.15, brightness: 0.9 },
+      adjustBrightness: true,
+      preStage: false,
+    });
+
+    assert.equal(migrated, true);
+    assert.deepEqual(plan.warmest, { temperature: 1, brightness: 0.1 });
+    assert.deepEqual(plan.coolest, { temperature: 0.15, brightness: 0.9 });
+    assert.equal(plan.adjustBrightness, true, 'both ends still have one');
+  });
+
   test('and drops brightness-following when the derived ends have none', () => {
     const { plan } = migrateCircadianPlan({
       schemaVersion: 1,

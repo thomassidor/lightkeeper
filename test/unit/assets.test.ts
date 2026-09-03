@@ -142,10 +142,12 @@ describe('shipped images', () => {
 });
 
 describe('the palette', () => {
-  test('brandColor is the colour the artwork pipeline extracted', () => {
-    // #180E32 is 93% of artwork/masters/logo-bitmap-original.png, read out by
-    // `export-assets.py --palette`. Tying the manifest to the script's constant is
-    // what stops the app's brand colour drifting away from its own logo.
+  test('brandColor is the colour the artwork pipeline declares', () => {
+    // The script's BRAND is the shipping violet: LOGO_GROUND (#180E32, 93% of
+    // artwork/masters/logo-bitmap-original.png, read out by `export-assets.py
+    // --palette`) lightened so the brandColor circle does not read as black.
+    // Tying the manifest to BRAND rather than to a literal is what stops the
+    // app's brand colour drifting away from its own artwork.
     const script = readFileSync(join(ROOT, 'artwork', 'export-assets.py'), 'utf8');
     const declared = /^BRAND = '(#[0-9A-Fa-f]{6})'/m.exec(script)?.[1];
     assert.ok(declared, 'export-assets.py declares no BRAND colour');

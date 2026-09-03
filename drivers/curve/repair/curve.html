@@ -17,24 +17,32 @@
      colour written as a literal anywhere past this block is a token that is
      missing. */
   #cir-root {
-    /* Brand. The violet is the manifest brandColor and the ground of the logo —
-       93% of its pixels — and the lavender is the logo's mark. Both are read
-       out of docs/artwork/masters/logo-bitmap-original.png by
-       `export-assets.py --palette`, so the UI cannot drift from the artwork.
-       The tints and lines are derived: the logo itself has no mid-tones. */
-    --lk-accent: #180e32;
+    /* Brand. The violet is the manifest brandColor: the logo's ground — 93% of
+       its pixels — lightened so it reads as violet rather than black in the
+       circle Homey paints behind an icon (platform §10). The lavender is the
+       logo's mark. Both are read out of
+       artwork/masters/logo-bitmap-original.png by `export-assets.py --palette`,
+       so the UI cannot drift from the artwork. The tints and lines are derived:
+       the logo itself has no mid-tones. */
+    --lk-accent: #2a1958;
     --lk-accent-ink: #ffffff;
     --lk-accent-tint: #f3eefc;
     --lk-accent-wash: #fbf9fe;
     --lk-accent-line: #d9cbf5;
-    --lk-accent-strong: #2b1a52;
-    --lk-ring: rgba(24, 14, 50, .16);
+    --lk-accent-strong: #3b2279;
+    --lk-ring: rgba(42, 25, 88, .16);
 
+    /* The ink ladder. Every one of these clears WCAG AA (4.5:1) against
+       --lk-surface, because all five are used between 11px and 15px — and the
+       two lightest carry the section titles, the tile meta and the help text.
+       They were 3.1:1 (--lk-muted) and 2.6:1 (--lk-faint): grey on white that
+       is legible on a desk monitor and not on a phone in daylight. What
+       separates the steps now is weight, size and caps as much as tone. */
     --lk-ink: #16181d;
-    --lk-sub: #6b7280;
+    --lk-sub: #5f6672;
     --lk-body: #4b5563;
-    --lk-muted: #8b929e;
-    --lk-faint: #9aa1ac;
+    --lk-muted: #6a7180;
+    --lk-faint: #6f7683;
 
     /* transparent, not white: the pairing container paints the page behind us,
        and claiming it would flatten every card against it. */
@@ -85,10 +93,10 @@
     width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
     border: 1.5px solid var(--lk-field); border-radius: 11px; background: var(--lk-surface);
     color: var(--lk-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
-  /* The chevron's fill stays a literal: #8b929e is --lk-muted, which is the one
-     token with the same value in both schemes, and a data URI cannot read a
-     custom property. */
-  #cir-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%238b929e' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+  /* The chevron's fill stays a literal: #6a7180 is --lk-muted, and a data URI
+     cannot read a custom property. So this is the one place a token's value is
+     written twice, and the two copies have to move together. */
+  #cir-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
                background-repeat: no-repeat; background-position: right 13px center;
                background-size: 11px; padding-right: 34px; }
   #cir-root input:focus, #cir-root select:focus { outline: none; border-color: var(--lk-accent);
@@ -149,8 +157,29 @@
   #cir-root .times select { width: auto; flex: 1 1 0; min-width: 0; }
   #cir-root .times .sep { font-size: 15px; color: var(--lk-muted); flex: none; }
 
+  /* `text-transform: none` is not decoration. The pairing container's own
+     stylesheet styles bare `label`, and text-transform is one of the few
+     properties we never declared — so Homey's `uppercase` won, and the option
+     read "SET THE COLOUR BEFORE THE LIGHTS COME ON" on a real Homey while every
+     local render showed sentence case. The span inside inherits from the label,
+     so stating it here fixes both. */
   #cir-root .check { display: flex; align-items: center; gap: 10px; min-height: 44px;
-               font-size: 14px; color: var(--lk-body); cursor: pointer; }
+               font-size: 14px; color: var(--lk-body); cursor: pointer;
+               text-transform: none; letter-spacing: normal; }
+
+  /* A titled block inside a card: what tells the two live controls apart. Each
+     one now says what it does before you press it, instead of being a bare
+     button whose label had to carry the whole explanation. */
+  #cir-root .blocktitle { font-size: 15px; font-weight: 600; color: var(--lk-ink); }
+  #cir-root .blockhelp { font-size: 12.5px; line-height: 1.5; color: var(--lk-muted);
+                    margin: 4px 0 12px; }
+
+  /* The pre-stage check, nested under the option it checks and hidden until that
+     option is on — the only state in which "does this work on your lights?" is a
+     question worth asking, and what stops it sitting next to the preview button
+     looking like its twin. */
+  #cir-root .probe { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--lk-line); }
+  #cir-root .probe.off { display: none; }
   #cir-root .check input { width: 22px; height: 22px; margin: 0; flex: none;
                       accent-color: var(--lk-accent); cursor: pointer; }
 
@@ -169,6 +198,9 @@
      indent above clears a checkbox that is not there in a point card. */
   #cir-root .help.note { margin: 6px 0 0 2px; }
   #cir-root .help.off { display: none; }
+  /* The brightness card ends on its help text, and the 10px below it would sit
+     inside the card's own padding as a stray gap. */
+  #cir-root .card > .help:last-child { margin-bottom: 0; }
   #cir-root .add { width: 100%; }
 
   /* The curve, drawn rather than described. A list of five times and five
@@ -178,11 +210,24 @@
   #cir-root .chart svg { display: block; width: 100%; height: 96px; overflow: visible; }
   #cir-root .chart .line { fill: none; stroke: var(--lk-accent); stroke-width: 2;
                       stroke-linejoin: round; stroke-linecap: round; }
-  #cir-root .chart .dot { fill: var(--lk-surface); stroke: var(--lk-accent); stroke-width: 2; }
+  /* The dots are the payload now, not punctuation: each one is filled with the
+     colour — or the colour TEMPERATURE — that point sets, which is the axis the
+     chart itself no longer draws. So they are large enough to read a pale
+     2700K white off, and the ring is thinner than it was so the fill dominates
+     rather than the outline. */
+  #cir-root .chart .dot { fill: var(--lk-surface); stroke: var(--lk-accent); stroke-width: 1.5; }
   #cir-root .chart .now { stroke: var(--lk-muted); stroke-width: 1; stroke-dasharray: 3 3; }
+  /* One guide per point, so a dot can be read off the hour labels below it.
+     Without them the eye has to project a dot down through empty space, which
+     is the whole reason a scatter of dots is harder to read than a line — and
+     it got harder still once height stopped meaning warmth. Faint enough to
+     stay behind both the curve and the dashed "now" line: these are a ruler,
+     not data. */
+  #cir-root .chart .guide { stroke: var(--lk-ring); stroke-width: 1; }
   #cir-root .chart .axis { display: flex; justify-content: space-between; margin-top: 6px;
                       font-size: 11px; color: var(--lk-faint); }
   #cir-root .chart .legend { font-size: 12.5px; color: var(--lk-sub); margin-top: 8px; }
+  #cir-root .chart .key { font-size: 12px; color: var(--lk-muted); margin-top: 3px; }
 </style>
 
 <div class="wrap" id="cir-root">
@@ -191,32 +236,56 @@
 
   <div class="card chart">
     <svg id="cir-graph" viewBox="0 0 320 96" preserveAspectRatio="none" aria-hidden="true">
+      <g id="cir-guides"></g>
       <line class="now" id="cir-now" x1="0" y1="0" x2="0" y2="96"></line>
       <polyline class="line" id="cir-line" points=""></polyline>
       <g id="cir-dots"></g>
     </svg>
     <div class="axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
     <div class="legend" id="cir-legend"></div>
+    <div class="key" id="cir-key"></div>
+  </div>
+
+  <!-- Above the point list, not below it: switching this on adds a brightness
+       slider to EVERY point, so a toggle underneath them meant scrolling back up
+       through eight cards you had just finished setting. -->
+  <div class="card" id="cir-brightnessCard">
+    <label class="check"><input type="checkbox" id="cir-brightness" />
+      <span data-i18n="circadian.alsoBrightness"></span></label>
+    <div class="help" data-i18n="circadian.alsoBrightnessHelp"></div>
   </div>
 
   <div id="cir-list"></div>
 
   <button class="btn add" id="cir-add">Add another point</button>
 
+  <!-- Two live controls used to sit here as two bare buttons, one under the
+       other, reading "Test it" and "Try it now" — near-synonyms in the same
+       shape, so neither said what it did or how it differed from its neighbour.
+       They are told apart three ways now: each is a titled block rather than a
+       loose button, each carries a sentence saying what it does to which lights,
+       and the pre-stage CHECK is nested inside the option it checks and revealed
+       only while that option is on — which is the only state it means anything
+       in, and which stops the two ever being adjacent by default. -->
   <div class="card">
-    <label class="check"><input type="checkbox" id="cir-brightness" />
-      <span data-i18n="circadian.alsoBrightness"></span></label>
-    <div class="help" data-i18n="circadian.alsoBrightnessHelp"></div>
-
     <label class="check"><input type="checkbox" id="cir-prestage" />
       <span data-i18n="circadian.preStage"></span></label>
     <div class="help" data-i18n="circadian.preStageHelp"></div>
-    <div class="acts"><button class="btn" id="cir-testPre" data-i18n="circadian.preStageTest"></button></div>
-    <div class="result" id="cir-preResult"></div>
+
+    <div class="probe off" id="cir-probe">
+      <div class="blocktitle" data-i18n="circadian.preStageCheckTitle"></div>
+      <div class="blockhelp" data-i18n="circadian.preStageCheckHelp"></div>
+      <div class="acts"><button class="btn" id="cir-testPre" data-i18n="circadian.preStageTest"></button></div>
+      <div class="result" id="cir-preResult"></div>
+    </div>
   </div>
 
-  <div class="acts"><button class="btn" id="cir-preview" data-i18n="circadian.preview"></button></div>
-  <div class="result" id="cir-previewResult"></div>
+  <div class="card">
+    <div class="blocktitle" data-i18n="circadian.previewTitle"></div>
+    <div class="blockhelp" data-i18n="circadian.previewHelp"></div>
+    <div class="acts"><button class="btn" id="cir-preview" data-i18n="circadian.preview"></button></div>
+    <div class="result" id="cir-previewResult"></div>
+  </div>
 
   <div class="msg muted" id="cir-summary"></div>
   <div class="msg" id="cir-msg" style="display:none;"></div>
@@ -353,15 +422,22 @@ function __lkBootCir(Homey) {
   }
 
   /**
+   * The two points a minute falls between, and how far along that segment it is.
+   *
    * Mirrors lib/circadian/circadian-curve.ts — cyclic, and eased with the same
    * raised cosine, so the shape on screen is the shape the lights will follow.
    * A pair view cannot import from lib/, so the two are kept in step by eye and
    * by the fact that both are short.
+   *
+   * Null on an empty curve; `from === to` on a one-point curve, where every
+   * minute holds that point's value. The pair, and not just the interpolated
+   * number, because a COLOUR cannot be interpolated into a name — see
+   * colourNamesAt().
    */
-  function warmthAt(minute) {
+  function segmentAt(minute) {
     var points = sorted();
-    if (points.length === 0) return 0;
-    if (points.length === 1) return points[0].warmth;
+    if (points.length === 0) return null;
+    if (points.length === 1) return { from: points[0], to: points[0], eased: 0 };
 
     var now = ((Math.round(minute) % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
     var from = points[points.length - 1];
@@ -377,8 +453,50 @@ function __lkBootCir(Homey) {
 
     var span = ((minuteOf(to) - minuteOf(from) + MINUTES_PER_DAY) % MINUTES_PER_DAY) || MINUTES_PER_DAY;
     var elapsed = (now - minuteOf(from) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
-    var eased = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, elapsed / span));
-    return from.warmth + (to.warmth - from.warmth) * eased;
+    return {
+      from: from,
+      to: to,
+      eased: 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, elapsed / span)),
+    };
+  }
+
+  function curveAt(minute, read) {
+    var segment = segmentAt(minute);
+    if (!segment) return 0;
+    return read(segment.from) + (read(segment.to) - read(segment.from)) * segment.eased;
+  }
+
+  /**
+   * Two readings of the same curve, because the app interpolates brightness with
+   * the same easing as warmth (`circadian-curve.ts` mixes both with one `eased`)
+   * — so drawing brightness with its own maths would put a line on screen that
+   * the lights do not follow.
+   */
+  function warmthAt(minute) {
+    return curveAt(minute, function (point) { return point.warmth; });
+  }
+
+  function brightnessAt(minute) {
+    return curveAt(minute, brightnessOf);
+  }
+
+  /**
+   * One point's brightness AS THE CHART'S Y-AXIS, defaulted in one place because
+   * the line and the dots have to agree about it.
+   *
+   * Level whenever the curve does not set brightness, and that is the load-
+   * bearing part rather than a shortcut. Switching the toggle off leaves every
+   * point's stored brightness in the plan — so reading it regardless scattered
+   * the dots up and down the chart by a value the app was ignoring, which is a
+   * height that looks meaningful and is not. A row of dots at one level says
+   * what is true: the only thing this curve varies is colour.
+   *
+   * 0.6 for that level, and for a point the toggle has just revealed but not yet
+   * filled in, so nothing jumps as the fill lands.
+   */
+  function brightnessOf(point) {
+    if (!model.adjustBrightness) return 0.6;
+    return point.brightness === undefined ? 0.6 : point.brightness;
   }
 
   /**
@@ -397,6 +515,46 @@ function __lkBootCir(Homey) {
     if (value >= 0.35) return Homey.__('schedule.warmthNeutral');
     if (value >= 0.1) return Homey.__('schedule.warmthCool');
     return Homey.__('schedule.warmthCoolest');
+  }
+
+  /**
+   * The palette colours this minute is showing, as words, mirroring colorOf() in
+   * lib/circadian/circadian-curve.ts: both ends coloured names BOTH, because the
+   * value between them is neither of them; one end coloured names that one,
+   * because the segment holds it flat; neither leaves the minute on the warmth
+   * axis.
+   *
+   * Empty therefore means "there is no colour here", which is what lets
+   * showsText() fall back to a warmth word.
+   */
+  function colourNamesAt(minute) {
+    var segment = segmentAt(minute);
+    if (!segment) return [];
+    var from = segment.from.color && palette(segment.from.color);
+    var to = segment.to.color && palette(segment.to.color);
+
+    if (from && to) return from.id === to.id ? [from.label] : [from.label, to.label];
+    if (from) return [from.label];
+    if (to) return [to.label];
+    return [];
+  }
+
+  /**
+   * What the lights actually look like at this minute, in one phrase.
+   *
+   * A warmth word only where the curve is ON the warmth axis. On a coloured
+   * segment the warmth is just the fallback for lamps that cannot show a colour,
+   * so "that is Neutral" under a curve whose points are all colours names a
+   * value those lamps are not being sent — and contradicts the point cards
+   * directly below it, which is the quiet disagreement this app exists to avoid.
+   */
+  function showsText(minute) {
+    var names = colourNamesAt(minute);
+    if (names.length > 1) {
+      return Homey.__('circadian.betweenColours', { from: names[0], to: names[1] });
+    }
+    if (names.length === 1) return names[0];
+    return warmthText(warmthAt(minute));
   }
 
   function brightnessText(point) {
@@ -429,15 +587,88 @@ function __lkBootCir(Homey) {
       + Math.round(colour.saturation * 100) + '%, 55%)';
   }
 
+  /**
+   * A colour TEMPERATURE as CSS, for the chart only.
+   *
+   * The dots carry what each point sets, and most points set a warmth rather
+   * than a colour — so a warmth needs a swatch too, or every uncoloured point
+   * is the same grey dot and the chart says nothing about the axis it stopped
+   * drawing. Three stops through a neutral white, because 1 is the WARMEST end
+   * (platform §6): a candle-ish amber at the top, a daylight blue at the
+   * bottom.
+   *
+   * Mixed in sRGB, NOT in HSL. A hue lerp from a warm white (35°) to a cool
+   * white (215°) travels through green, which is a colour no lamp on this axis
+   * can produce and the one thing a swatch must not invent. Nothing is written
+   * to a lamp from this — it is the swatch, not the value.
+   */
+  function warmthSwatch(value) {
+    // The ends are pushed further than a real 2700K/6500K white would be. A
+    // faithful neutral IS white, which on a white card reads as a dot nobody
+    // filled in — so the ramp keeps a visible tint everywhere except the exact
+    // middle, and the two extremes stay recognisably candle and daylight.
+    var cool = [140, 186, 255];
+    var neutral = [255, 246, 235];
+    var warm = [255, 152, 48];
+    var clamped = Math.max(0, Math.min(1, value));
+
+    var rgb = clamped < 0.5
+      ? mixRgb(cool, neutral, clamped * 2)
+      : mixRgb(neutral, warm, (clamped - 0.5) * 2);
+    return 'rgb(' + rgb[0] + ', ' + rgb[1] + ', ' + rgb[2] + ')';
+  }
+
+  function mixRgb(from, to, fraction) {
+    return [0, 1, 2].map(function (channel) {
+      return Math.round(from[channel] + (to[channel] - from[channel]) * fraction);
+    });
+  }
+
+  /**
+   * The x-radius that draws a ROUND dot.
+   *
+   * The viewBox is 320 wide and `preserveAspectRatio="none"` stretches it to
+   * whatever the pairing sheet is, so a `<circle>` comes out as an egg on any
+   * sheet that is not 320px — unnoticeable at 3.5px and obvious now the dots
+   * are the thing carrying the colour. Measured per draw rather than assumed,
+   * because nothing here knows how wide Homey's sheet is; 320 when the element
+   * has no layout yet, which is the no-stretch case.
+   */
+  function dotRadiusX(svg, radius) {
+    return radius * (320 / (svg.clientWidth || 320));
+  }
+
+  /** The plot is 80 units tall with an 8-unit floor, and 1 belongs at the TOP. */
+  function yFor(fraction) {
+    return 88 - fraction * 80;
+  }
+
+  /**
+   * ONE line, and it is brightness.
+   *
+   * The chart used to draw warmth as a solid line and brightness as a dashed
+   * one, which asked the reader to hold two shapes and a shared y-axis in mind
+   * to answer "what happens at 20:00". Height is brightness now, and the thing
+   * that was the other line is in the DOTS: each one is filled with the colour
+   * that point sets, or with its colour temperature where it sets a warmth. So
+   * both dimensions are still on screen, and neither needs a key to tell it
+   * from the other.
+   *
+   * The chart is 96 units tall and the plot 80 of them, so a dot at 0%
+   * brightness still sits clear of the floor.
+   */
   function drawChart() {
     var samples = [];
     for (var minute = 0; minute <= MINUTES_PER_DAY; minute += 10) {
       var x = (minute / MINUTES_PER_DAY) * 320;
-      // The warm end is 1 and belongs at the TOP, so the axis is inverted here
-      // exactly once, and nowhere else.
-      var y = 88 - warmthAt(minute % MINUTES_PER_DAY) * 80;
-      samples.push(x.toFixed(1) + ',' + y.toFixed(1));
+      samples.push(x.toFixed(1) + ',' + yFor(brightnessAt(minute % MINUTES_PER_DAY)).toFixed(1));
     }
+    // Drawn whether or not the curve dims. It ran level and hidden for a while,
+    // on the argument that a flat brightness line describes something the lights
+    // will never do — but a row of unconnected dots is not a chart of anything
+    // either, and the line is what makes them read as one day in order. Level
+    // says the plain truth about a curve that only sets colour: nothing here
+    // varies in height.
     document.getElementById('cir-line').setAttribute('points', samples.join(' '));
 
     // Built with createElementNS rather than parsed: SVG needs its namespace
@@ -445,10 +676,16 @@ function __lkBootCir(Homey) {
     // exception. Only numbers are interpolated here either way.
     var group = document.getElementById('cir-dots');
     while (group.firstChild) group.removeChild(group.firstChild);
+    var guides = document.getElementById('cir-guides');
+    while (guides.firstChild) guides.removeChild(guides.firstChild);
+
+    var svg = document.getElementById('cir-graph');
+    var radiusX = dotRadiusX(svg, 6);
     sorted().forEach(function (point) {
-      var dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      // A coloured point is drawn in ITS colour, because a chart of identical
-      // dots cannot show the one thing this screen added.
+      // An ellipse rather than a circle, and the radii are not equal on purpose
+      // — see dotRadiusX(). Nothing else in this view is drawn small enough for
+      // the stretch to matter.
+      var dot = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
       var colour = point.color && palette(point.color);
       dot.setAttribute('class', 'dot');
       /**
@@ -460,22 +697,49 @@ function __lkBootCir(Homey) {
        * looked at the attribute, and drew a plain surface-coloured dot. Inline
        * style is what actually wins.
        */
-      if (colour) dot.style.fill = hsl(colour);
-      dot.setAttribute('cx', ((minuteOf(point) / MINUTES_PER_DAY) * 320).toFixed(1));
-      dot.setAttribute('cy', (88 - point.warmth * 80).toFixed(1));
-      dot.setAttribute('r', colour ? '4.5' : '3.5');
+      dot.style.fill = colour ? hsl(colour) : warmthSwatch(point.warmth);
+      var x = ((minuteOf(point) / MINUTES_PER_DAY) * 320).toFixed(1);
+      dot.setAttribute('cx', x);
+      dot.setAttribute('cy', yFor(brightnessOf(point)).toFixed(1));
+      dot.setAttribute('rx', radiusX.toFixed(2));
+      dot.setAttribute('ry', '6');
       group.appendChild(dot);
+
+      // The guide runs the full height of the box, like the "now" line, so it
+      // reaches the hour labels sitting just underneath it.
+      var guide = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      guide.setAttribute('class', 'guide');
+      guide.setAttribute('x1', x);
+      guide.setAttribute('x2', x);
+      guide.setAttribute('y1', '0');
+      guide.setAttribute('y2', '96');
+      guides.appendChild(guide);
     });
+
+    // What the height means, and what the dots mean — which is the whole key now
+    // that there is one line. Written here rather than filled from a data-i18n
+    // attribute at boot, because it depends on the brightness toggle.
+    document.getElementById('cir-key').textContent = model.adjustBrightness
+      ? Homey.__('circadian.curveKeyWithBrightness')
+      : Homey.__('circadian.curveKey');
 
     var nowX = ((nowMinutes() / MINUTES_PER_DAY) * 320).toFixed(1);
     var nowLine = document.getElementById('cir-now');
     nowLine.setAttribute('x1', nowX);
     nowLine.setAttribute('x2', nowX);
 
-    document.getElementById('cir-legend').textContent = Homey.__('circadian.nowIs', {
-      time: formatMinutes(nowMinutes()),
-      warmth: warmthText(warmthAt(nowMinutes())),
-    });
+    // The line says where the curve is now; with brightness on it has to say
+    // both, or the dashed line has no number anywhere on the screen.
+    document.getElementById('cir-legend').textContent = model.adjustBrightness
+      ? Homey.__('circadian.nowIsWithBrightness', {
+        time: formatMinutes(nowMinutes()),
+        shows: showsText(nowMinutes()),
+        brightness: Math.round(brightnessAt(nowMinutes()) * 100),
+      })
+      : Homey.__('circadian.nowIs', {
+        time: formatMinutes(nowMinutes()),
+        shows: showsText(nowMinutes()),
+      });
   }
 
   function options(count, selected, step) {
@@ -573,7 +837,7 @@ function __lkBootCir(Homey) {
       html += '<div class="field"><div class="label">'
         + escapeHtml(Homey.__('circadian.brightness')) + '</div>'
         + '<div class="slider">'
-        + '<input type="range" min="5" max="100" step="5" data-act="brightness" value="'
+        + '<input type="range" min="10" max="100" step="5" data-act="brightness" value="'
         + Math.round((point.brightness === undefined ? 0.6 : point.brightness) * 100) + '" />'
         + '<span class="value" data-role="brightnessValue">' + escapeHtml(brightnessText(point))
         + '</span></div></div>';
@@ -736,8 +1000,20 @@ function __lkBootCir(Homey) {
     render();
   });
 
+  /**
+   * The check belongs to the option, so it appears and disappears with it.
+   *
+   * Called from the change handler AND from boot, because a repair session
+   * arrives with the option already on and the block would otherwise stay
+   * hidden behind a class that only a click could clear.
+   */
+  function syncProbe() {
+    document.getElementById('cir-probe').classList.toggle('off', !model.preStage);
+  }
+
   document.getElementById('cir-prestage').addEventListener('change', function (event) {
     model.preStage = event.target.checked;
+    syncProbe();
   });
 
   /** Both live controls push the curve to the driver first: the ephemeral runtime
@@ -789,6 +1065,10 @@ function __lkBootCir(Homey) {
         result.textContent = Homey.__(
           outcome.restored ? 'circadian.preStageCameOn' : 'circadian.preStageCameOnStuck',
           { name: outcome.name || outcome.deviceId });
+        // The verdict is the last thing this block has to say, so it stays on
+        // screen for this render and goes with the next change of the option.
+        // Hiding it here would take the sentence explaining what just happened
+        // to the user's lamp away with it.
       })
       .catch(function (err) { result.textContent = err.message || String(err); })
       .then(function () { button.disabled = false; });
@@ -854,13 +1134,16 @@ function __lkBootCir(Homey) {
     model.palette = data.palette || [];
 
     document.getElementById('cir-prestage').checked = model.preStage;
+    syncProbe();
     document.getElementById('cir-brightness').checked = model.adjustBrightness;
     // Nothing selected dims, so offering to follow brightness would be offering
     // something that cannot happen.
     if (!model.support.dim) {
       model.adjustBrightness = false;
-      document.getElementById('cir-brightness').closest('.card')
-        .querySelector('.check').style.display = 'none';
+      // The whole card, not just the checkbox: the toggle has its own card above
+      // the point list now, so hiding the row alone left an empty white box with
+      // help text for an option that is not there.
+      document.getElementById('cir-brightnessCard').style.display = 'none';
     }
 
     render();

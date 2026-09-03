@@ -77,22 +77,52 @@ The script cannot do these. Report each by its number.
 
 *Rewritten each release — what is new or risky this time. Its lines carry on from the highest number used so far, and are retired rather than reused when the next release rewrites this section.*
 
-**0.5.1.** The App Store listing only — no app behaviour changed, so this release's lines are read
-off the published listing rather than off a Homey. Publish to the test channel first; none of these
-can be answered from a CLI install, because the store page is the thing under test.
+**0.5.2.** Four fixes to the two light-following device types, three of which only a real lamp can
+confirm — the suite proves the arithmetic, but "did the lamp actually change" is not a thing it can
+answer. `node scripts/verify-hardware.mjs full --yes` answers none of T71-T75: they need a curve
+crossing between a coloured segment and a temperature one, which is a curve the script does not
+build. **Set them a few minutes apart and watch the lamp**, rather than waiting on a real day.
 
-- [ ] **T61** Open the listing and read the description. It should be two short paragraphs, no "read more" needed for the point of the app, and no Markdown characters visible. Athom's guideline is *"one to two paragraphs tops"*.
-- [ ] **T62** The **What's new** section. One paragraph of ordinary prose — no `**`, no dashes starting a line, no `Added` / `Changed` / `Fixed` headings, nothing running together mid-word. Then open **View changelog** and check every older entry the same way; they were all flattened, not just this one.
-- [ ] **T63** The **Flow cards** section. Each card's icon is a white drawing inside a violet circle and you can tell the four device types apart from it: a rayed sun on the horizon, a curve over a baseline, a remote sending a signal, a stopwatch. If any is an empty or smudged circle, say which — and grab the mask URL from the page's markup and `curl` it, because a blank icon on a published listing and a blank icon on a dev install are different faults (platform §10).
-- [ ] **T64** `npm run render:icons` locally, then open `.views/icons/index.html` and compare its 40px column against what the store actually drew. They should agree. If they do not, the harness is reproducing the store wrongly and that is the thing to fix.
-- [ ] **T65** On a phone, in the Homey app: Devices → Add device → Lightkeeper, and the four device tiles. The icons got simpler this release, so check the redraw did not cost anything at tile size either — this is where they used to be judged.
+T66-T70 were unreleased on top of 0.5.1 and ship with this release, so they carry on below.
 
-**Unreleased, on top of 0.5.1: the code review pass.** No version bump, so these are not a release's
-lines — they are the ones the review's own fixes need a real Homey to confirm, and the first is the
-serious one. `node scripts/verify-hardware.mjs full --yes` answers none of them: the pause switch is
-a capability listener on a `Homey.Device`, and the script pairs devices rather than driving their
-tiles.
-
+- [ ] **T71** *The serious one.* A **Curve light** over a lamp that can do both colour and colour
+      temperature. Give it three points a few minutes apart: one with a **colour** (ember), then two
+      with a plain **warmth**. That shape puts one segment between two warmth points, which is the
+      only way to get a temperature segment at all — a colour at either end holds that colour flat.
+      Now watch it cross out of the coloured segment into the temperature one **twice** (edit the
+      times, or wait out two cycles). Both times the lamp must go white. Before the fix the first
+      crossing worked and the second left it sitting on the colour, because the `light_mode` write
+      that makes a temperature land was being dropped — so on a daily curve it worked once and never
+      again. Check `/diagnostics` after each crossing: `targets[].lastWritten` must show a `warmth`
+      and no `color`.
+- [ ] **T72** Same Curve light, on the **dimmest** setting the brightness slider now offers (10%).
+      The lamp must be visibly lit, not off and not at its own minimum. Then check `/diagnostics`:
+      `lastWritten.dim` must be above 0.00. Before the fix the slider went down to 5%, which became
+      `dim` 0.00 — off, on most integrations — and held there for the eight minutes either side of
+      the point.
+- [ ] **T73** *The migration, and it needs a device that predates this build.* On a Homey still
+      running 0.5.1, set a curve point, a schedule window or a circadian end to **5%** brightness and
+      save. Then install 0.5.2 over it. Open **Repair**: the card must show **10%**, and saving must
+      not change what the lamp does relative to what the card says. The failure this prevents is a
+      card displaying 10% while the stored plan still says 5%, which is what a raised slider does on
+      its own.
+- [ ] **T74** *By eye, and there is no other way to check it.* A Curve light with **ember** at one
+      point and **ocean** at the next, a few minutes apart, over a colour lamp. Through the middle of
+      that segment the lamp must go **pale** — nearly white — and come out blue. It must NOT pass
+      through purple or magenta at full saturation, which is what the old wheel blend did for half
+      the segment. Then try **candle to amber**: that one must stay a proper warm colour the whole
+      way across, because narrow pairs are the ones the old blend got right and must not have been
+      flattened.
+- [ ] **T75** `GET /diagnostics` with a Curve light running a coloured curve. Confirm all four of:
+      each coloured point in `points[]` carries its `color` (an `ember`, not just a warmth);
+      `targets[].lastWritten` carries a `color` while the lamp is on a coloured segment; that same
+      object says `dim` and not `brightness`; and `canColor` sits beside `canWarm`. Then switch the
+      device's pause switch **off** and read `lastAction` — it must carry a `detail` saying the plan
+      is switched off, with a fresh timestamp, rather than the last pass that did something.
+- [ ] **T76** Leave a Curve light on an **ember to ocean** segment for ten minutes and count the
+      colour writes in `recentWrites`. Expect roughly one every three to seven minutes, not one a
+      minute. `COLOR_STEP` went from 0.01 to 0.03 with the new blend precisely because the disc path
+      is longer than the arc; if this shows a write most minutes, 0.03 was not enough.
 - [x] **T66** *(PASSED 2 Sep 2026 — see the run below.)* Pair a **circadian light** (the two-ended one, not Curve). On its tile, tap the pause
       switch OFF and then ON again. Neither tap may error, and after each one open **app settings**:
       the page must still load and still list the device. Before the fix, either tap threw inside the

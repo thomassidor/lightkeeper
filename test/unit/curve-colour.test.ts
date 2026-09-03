@@ -59,9 +59,13 @@ describe('the palette', () => {
     }
   });
 
-  test('hue blends the SHORT way round the wheel', () => {
-    // Rose (0.96) to peach (0.04) is 0.08 forward through red, not 0.92 backward
-    // through green — which is the difference between a sunset and a mistake.
+  test('an adjacent pair still blends through the shades between them', () => {
+    // Rose (0.96) to peach (0.04) goes through red, not backward through green —
+    // which is the difference between a sunset and a mistake.
+    //
+    // It used to be the short arc round the wheel that guaranteed this. It is
+    // now a straight line across the disc, and for a pair this close the two are
+    // nearly the same line: what changed is the WIDE pairs, below.
     const rose = paletteColor('rose')!;
     const peach = paletteColor('peach')!;
 
@@ -84,10 +88,14 @@ describe('the palette', () => {
     }
   });
 
-  test('saturation is linear, because it is a distance and not an angle', () => {
+  test('two shades of one hue blend along that hue', () => {
+    // Same hue at two saturations sit on one ray from the middle, so the line
+    // between them lies along it: the hue is held and the saturation is linear.
     const a = { id: 'a', labelKey: 'x', hue: 0.5, saturation: 0.2 };
     const b = { id: 'b', labelKey: 'y', hue: 0.5, saturation: 0.8 };
-    assert.ok(Math.abs(mixColors(a, b, 0.5).saturation - 0.5) < 1e-9);
+    const half = mixColors(a, b, 0.5);
+    assert.ok(Math.abs(half.saturation - 0.5) < 1e-9);
+    assert.ok(Math.abs(half.hue - 0.5) < 1e-9, 'and the hue does not wander');
   });
 });
 
@@ -181,6 +189,56 @@ describe('a colour on the curve', () => {
     const points = [point({ at: 21 * 60, warmth: 1, color: 'rose' })];
     const rose = paletteColor('rose')!;
     assert.deepEqual(valueAt(points, 0).color, { hue: rose.hue, saturation: rose.saturation });
+  });
+
+  /**
+   * A blended hue/saturation pair is no longer any palette entry, so a screen
+   * that wants to SAY what the lights are doing cannot name it from `color`
+   * alone. It used to report the warmth beside it instead — "Now at 36% warmth"
+   * on a curve whose every point was a colour, a number those lamps are not
+   * being sent.
+   */
+  test('a coloured segment names the palette colours it came from', () => {
+    const points = [
+      point({ at: 21 * 60, warmth: 1, color: 'amber' }),
+      point({ at: 23 * 60, warmth: 1, color: 'rose' }),
+    ];
+    // Mid-segment the value is neither, so BOTH are named: pretending it is one
+    // of them would be the same lie in a prettier form.
+    assert.deepEqual(valueAt(points, 22 * 60).colorLabelKeys, ['palette.amber', 'palette.rose']);
+  });
+
+  test('a segment holding one colour flat names only that one', () => {
+    const points = [
+      point({ at: 19 * 60, warmth: 0.4 }),
+      point({ at: 21 * 60, warmth: 1, color: 'amber' }),
+      point({ at: 23 * 60, warmth: 0.8 }),
+    ];
+    for (const minute of [20 * 60, 22 * 60]) {
+      assert.deepEqual(valueAt(points, minute).colorLabelKeys, ['palette.amber'], `${minute}`);
+    }
+  });
+
+  test('two ends of the SAME colour name it once', () => {
+    // "between amber and amber" is a sentence no screen should have to render.
+    const points = [
+      point({ at: 21 * 60, warmth: 1, color: 'candle' }),
+      point({ at: 23 * 60, warmth: 1, color: 'candle' }),
+    ];
+    assert.deepEqual(valueAt(points, 22 * 60).colorLabelKeys, ['palette.candle']);
+  });
+
+  test('a warmth segment names nothing, which is what lets a screen say warmth', () => {
+    const points = [point({ at: 6 * 60, warmth: 0.2 }), point({ at: 21 * 60, warmth: 1 })];
+    assert.equal(valueAt(points, 12 * 60).colorLabelKeys, undefined);
+    assert.equal('colorLabelKeys' in valueAt(points, 12 * 60), false);
+  });
+
+  test('the keys are keys, not words — lib/ cannot translate', () => {
+    for (const colour of PALETTE) {
+      const points = [point({ at: 21 * 60, warmth: 1, color: colour.id })];
+      assert.deepEqual(valueAt(points, 21 * 60).colorLabelKeys, [colour.labelKey], colour.id);
+    }
   });
 
   test('resolvePoints carries the colour into diagnostics', () => {
@@ -354,5 +412,143 @@ describe('the curve plan has its own store and its own chain', () => {
   test('the label says Curve, so its errors are not the circadian light\'s', () => {
     assert.throws(() => migrateCurvePlan({ schemaVersion: 99 }), /Curve schema version 99/);
     assert.throws(() => migrateCurvePlan(null), /not an object/);
+  });
+});
+
+/**
+ * The blend is a straight line across the colour disc, and these are the
+ * properties that made it worth changing from an arc round the rim.
+ *
+ * Nothing here pinned the DIRECTION of a blend before: the all-pairs test above
+ * asserts only that a hue stays on the wheel, so ember fading to ocean through
+ * magenta and purple passed it silently.
+ */
+describe('a wide blend fades through pale, not through a hue nobody chose', () => {
+  const ember = paletteColor('ember')!;
+  const ocean = paletteColor('ocean')!;
+  const peach = paletteColor('peach')!;
+
+  test('ember to ocean loses its saturation in the middle', () => {
+    // 0.53 of a turn apart, so the arc had to cross a quarter of the wheel
+    // whichever way it went: backward through rose, magenta, purple and violet
+    // at a saturation that never dropped below 0.7. Half of an hour-long
+    // segment was purple.
+    const half = mixColors(ember, ocean, 0.5);
+    assert.ok(half.saturation < 0.15,
+      `the middle of a wide blend should be near white, got ${half.saturation}`);
+  });
+
+  test('a narrow blend keeps its saturation', () => {
+    // The pairs the wheel-blend was chosen for must not have been flattened:
+    // candle to amber is 0.03 of a turn, and stays a colour all the way across.
+    const candle = paletteColor('candle')!;
+    const amber = paletteColor('amber')!;
+    const half = mixColors(candle, amber, 0.5);
+
+    assert.ok(half.saturation > 0.6, `${half.saturation} should still be a colour`);
+    assert.ok(half.hue > candle.hue && half.hue < amber.hue,
+      `${half.hue} should sit between the two`);
+  });
+
+  test('no blend is more saturated than the more saturated end', () => {
+    /**
+     * The property that says "fades through pale" rather than just "changes
+     * saturation": a straight line between two points of a disc never leaves
+     * it, so the blend can only ever be less saturated than the ends, never
+     * more. An arc round the rim could not promise this either way.
+     */
+    for (const from of PALETTE) {
+      for (const to of PALETTE) {
+        const ceiling = Math.max(from.saturation, to.saturation) + 1e-9;
+        for (let step = 0; step <= 20; step += 1) {
+          const mixed = mixColors(from, to, step / 20);
+          assert.ok(mixed.saturation <= ceiling,
+            `${from.id}->${to.id} @${step / 20}: ${mixed.saturation} > ${ceiling}`);
+        }
+      }
+    }
+  });
+
+  test('the endpoints are the endpoints, exactly', () => {
+    /**
+     * Returned verbatim rather than computed. The round trip through
+     * atan2/hypot is accurate to about 2e-16, which is not the same as exact,
+     * and a curve sitting on one of its own points should report that point.
+     */
+    for (const from of PALETTE) {
+      for (const to of PALETTE) {
+        assert.deepEqual(mixColors(from, to, 0), { hue: from.hue, saturation: from.saturation });
+        assert.deepEqual(mixColors(from, to, 1), { hue: to.hue, saturation: to.saturation });
+      }
+    }
+  });
+
+  test('the palest pair still reports a usable hue', () => {
+    /**
+     * Peach to ocean is the pair whose line passes closest to the middle —
+     * within 0.017 of white. There is no angle at the middle of a disc
+     * (atan2(0, 0) is 0, which is red), so the blend holds an endpoint hue
+     * through that band rather than swinging through it.
+     */
+    for (let step = 0; step <= 40; step += 1) {
+      const fraction = step / 40;
+      const mixed = mixColors(peach, ocean, fraction);
+      assert.ok(Number.isFinite(mixed.hue) && mixed.hue >= 0 && mixed.hue < 1,
+        `@${fraction}: ${mixed.hue}`);
+      if (mixed.saturation < 0.02) {
+        const held = fraction < 0.5 ? peach.hue : ocean.hue;
+        assert.equal(mixed.hue, held, `@${fraction} should hold an end, not invent red`);
+      }
+    }
+  });
+});
+
+/**
+ * The brightness floor, applied to what is already stored.
+ *
+ * The sliders now start at 10% because 5% quantises to `dim` 0.00 at the lamp —
+ * off, on most integrations. Flooring the WRITE was not enough on its own: a
+ * stored 5% loaded into a slider that starts at 10% displays 10% while the plan
+ * still says 5%, so the card would show one number and save another.
+ */
+describe('a stored brightness comes up to the floor', () => {
+  const storedAt = (brightness: number | undefined) => ({
+    schemaVersion: 1,
+    enabled: true,
+    target: { kind: 'devices', deviceIds: ['l1'] },
+    points: [
+      { id: 'p1', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.2, brightness },
+      { id: 'p2', anchor: { kind: 'clock', at: 21 * 60 }, warmth: 1, brightness: 0.6 },
+    ],
+    adjustBrightness: brightness !== undefined,
+    preStage: false,
+  });
+
+  test('5% becomes 10%', () => {
+    const { plan, migrated, steps } = migrateCurvePlan(storedAt(0.05));
+
+    assert.equal(migrated, true);
+    assert.ok(steps.includes(1), `the 1 -> 2 step must have run, got ${steps.join(',')}`);
+    assert.equal(plan.points[0].brightness, 0.1);
+    assert.equal(plan.points[1].brightness, 0.6, 'and nothing above the floor moves');
+  });
+
+  test('a point with no brightness stays without one', () => {
+    /**
+     * The engine interpolates brightness only where BOTH bracketing points have
+     * it, so inventing one here would turn a temperature-only curve into a
+     * dimming one.
+     */
+    const { plan } = migrateCurvePlan(storedAt(undefined));
+    assert.equal(plan.points[0].brightness, undefined);
+  });
+
+  test('a plan already at the current version is left alone', () => {
+    const raw = { ...storedAt(0.05), schemaVersion: CURRENT_CURVE_SCHEMA_VERSION };
+    const { plan, migrated } = migrateCurvePlan(raw);
+
+    assert.equal(migrated, false);
+    assert.equal(plan.points[0].brightness, 0.05,
+      'the floor is a migration, not a validator — litDim still catches this one at write time');
   });
 });

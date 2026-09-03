@@ -204,10 +204,12 @@ describe('the two ends screen renders both ends', () => {
     assert.deepEqual(ranges.map(node => node.value), ['100', '50', '15', '90']);
   });
 
-  test('the brightness-following row is revealed only when the lights dim', async () => {
+  test('the brightness-following card is revealed only when the lights dim', async () => {
     const withDim = run();
     await withDim.settle();
-    assert.equal(withDim.byId('end-brightnessRow')!.style.display, 'flex');
+    // The CARD, not the row inside it: the toggle sits in its own card above the
+    // two ends, so hiding only the row would leave an empty white box.
+    assert.equal(withDim.byId('end-brightnessCard')!.style.display, 'block');
 
     const expected = FIRST_CALL['ends.html']!;
     const withoutDim = runPairView(read('circadian/ends.html'), {
@@ -220,9 +222,9 @@ describe('the two ends screen renders both ends', () => {
       },
     });
     await withoutDim.settle();
-    assert.equal(withoutDim.byId('end-brightnessRow')!.style.display, 'none');
+    assert.equal(withoutDim.byId('end-brightnessCard')!.style.display, 'none');
 
-    // And with the row hidden there is no way to reach the sliders: checking
+    // And with the card hidden there is no way to reach the sliders: checking
     // the box by hand is the closest a test can come to a click on something
     // the user cannot see, and it must still add nothing.
     const box = withoutDim.byId('end-adjustBrightness')!;
