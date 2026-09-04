@@ -1,6 +1,24 @@
 import type { InputAction } from './input-event';
 
 /**
+ * The most flow variants one control may expand into before it is declined.
+ *
+ * Read by BOTH halves of the range path and they must agree: the normalizer
+ * refuses a control above this, which is the only reason the compiler's
+ * `RangeExpansionTooLargeError` is unreachable in practice. It lived as `12` in
+ * each of them, agreeing by coincidence rather than by construction.
+ *
+ * The number is a product limit, not a technical one: two Flows per variant, so
+ * twelve is already 24 rows in somebody's Flow list. Beyond that the control is
+ * declined rather than flooding it. `MAX_ENTRIES` in `schedule-types.ts` is a
+ * DIFFERENT rule that happens to share the number, for the same reason.
+ *
+ * It lives here, upstream of both, because `inputs/` importing from `bridge/`
+ * would invert the layering the rest of the tree keeps.
+ */
+export const RANGE_EXPANSION_CEILING = 12;
+
+/**
  * How a normalised event is bound back to its raw source.
  * Persisted in the controller profile; the compiler turns it into flows.
  *
@@ -15,7 +33,7 @@ import type { InputAction } from './input-event';
  *
  * `flow_enum` keeps its `argument`/`value` pair ON TOP of `fixedArgs` rather than
  * folding into `flow_fixed`, because that pair is also what its variant key is
- * built from (`enum:<value>`) — see DEVIATIONS.md for the fold that was
+ * built from (`enum:<value>`) — see `docs/history/DEVIATIONS.md` for the fold that was
  * considered and why it cannot keep that key stable.
  */
 export type LogicalSourceBinding =

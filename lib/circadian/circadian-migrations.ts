@@ -1,7 +1,7 @@
 import { sanitiseCurve } from './circadian-types';
 import { DEFAULT_SIMPLE_PLAN, endsFromPoints, type SimpleCircadianPlan } from './simple-curve';
 import { withFlooredBrightness } from '../outputs/light-intent';
-import { runMigrationChain, type MigrationStep } from '../support/migrations';
+import { runMigrationChain, type MigrationResult, type MigrationStep } from '../support/migrations';
 import { validateSimpleCircadianPlan } from '../validation/plans';
 /**
  * A circadian plan's own migration chain — a third store, a third schema.
@@ -113,24 +113,11 @@ const CIRCADIAN_MIGRATIONS: Record<number, CircadianMigration> = {
 /** What a plan with no stored ends falls back to. Exported for the driver. */
 export { DEFAULT_SIMPLE_PLAN };
 
-export interface CircadianMigrationResult {
-  plan: SimpleCircadianPlan;
-  migrated: boolean;
-  fromVersion: number;
-  steps: number[];
-}
-
-export function migrateCircadianPlan(raw: unknown): CircadianMigrationResult {
-  const result = runMigrationChain(raw, {
+export function migrateCircadianPlan(raw: unknown): MigrationResult<SimpleCircadianPlan> {
+  return runMigrationChain(raw, {
     label: 'Circadian',
     current: CURRENT_CIRCADIAN_SCHEMA_VERSION,
     table: CIRCADIAN_MIGRATIONS,
     validate: validateSimpleCircadianPlan,
   });
-  return {
-    plan: result.value,
-    migrated: result.migrated,
-    fromVersion: result.fromVersion,
-    steps: result.steps,
-  };
 }

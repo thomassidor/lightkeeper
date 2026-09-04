@@ -1,6 +1,6 @@
 import type { SchedulePlan } from './schedule-types';
 import { withFlooredBrightness } from '../outputs/light-intent';
-import { runMigrationChain, type MigrationStep } from '../support/migrations';
+import { runMigrationChain, type MigrationResult, type MigrationStep } from '../support/migrations';
 import { validateSchedulePlan } from '../validation/plans';
 /**
  * A schedule plan's own migration chain, separate from the controller profile's.
@@ -58,24 +58,11 @@ const SCHEDULE_MIGRATIONS: Record<number, ScheduleMigration> = {
   }),
 };
 
-export interface ScheduleMigrationResult {
-  plan: SchedulePlan;
-  migrated: boolean;
-  fromVersion: number;
-  steps: number[];
-}
-
-export function migrateSchedulePlan(raw: unknown): ScheduleMigrationResult {
-  const result = runMigrationChain(raw, {
+export function migrateSchedulePlan(raw: unknown): MigrationResult<SchedulePlan> {
+  return runMigrationChain(raw, {
     label: 'Schedule',
     current: CURRENT_SCHEDULE_SCHEMA_VERSION,
     table: SCHEDULE_MIGRATIONS,
     validate: validateSchedulePlan,
   });
-  return {
-    plan: result.value,
-    migrated: result.migrated,
-    fromVersion: result.fromVersion,
-    steps: result.steps,
-  };
 }

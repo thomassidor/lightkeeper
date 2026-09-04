@@ -1,4 +1,5 @@
 import { test, describe } from 'node:test';
+import { ownsNothing, zoneLights } from '../support/fake-catalog';
 import assert from 'node:assert/strict';
 
 import { TargetStateCache } from '../../lib/outputs/target-state-cache';
@@ -51,6 +52,8 @@ function primedCache(devices: ReturnType<typeof light>[]) {
   const resolver = new TargetResolver({
     device: async (id: string) => devices.find(d => d.id === id),
     devicesInZone: async () => devices,
+    lightsInZone: zoneLights(async () => devices),
+    isOwnDevice: ownsNothing,
   } as unknown as DeviceCatalog);
   resolver.primeCache(devices as any, cache);
   return { cache, resolver };
@@ -231,6 +234,8 @@ describe('the target fingerprint sees what an id list cannot', () => {
     const resolver = new TargetResolver({
       device: async (id: string) => devices.find(d => d.id === id),
       devicesInZone: async () => devices,
+      lightsInZone: zoneLights(async () => devices),
+      isOwnDevice: ownsNothing,
     } as unknown as DeviceCatalog);
     return resolveSnapshot(resolver, { kind: 'devices', deviceIds: devices.map(d => d.id) });
   }
@@ -289,6 +294,8 @@ describe('the target fingerprint sees what an id list cannot', () => {
     const resolver = new TargetResolver({
       device: async () => undefined,
       devicesInZone: async () => [],
+      lightsInZone: zoneLights(async () => []),
+      isOwnDevice: ownsNothing,
     } as unknown as DeviceCatalog);
 
     const gone = await resolveSnapshot(resolver, { kind: 'devices', deviceIds: ['a'] });

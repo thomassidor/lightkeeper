@@ -45,6 +45,7 @@ const ID = {
   schedTwo: 'lk-sched-1755500000000-200002',
   schedGone: 'lk-sched-1755500000000-200003',
   circ: 'lk-circ-1755500000000-300001',
+  dayl: 'lk-dayl-1755500000000-400001',
 };
 
 type Write = { deviceId: string; capability: string; value: unknown; ok: boolean };
@@ -53,6 +54,7 @@ function homey(options: {
   controllers?: string[];
   schedules?: string[];
   circadian?: string[];
+  daylight?: string[];
   /** Flows on the Homey, as `flow(id, controllerId)` builds them. */
   managed?: Array<Record<string, unknown>>;
   /**
@@ -102,6 +104,10 @@ function homey(options: {
       targets: [],
       preStage: false,
       preStageDisabled: null,
+      // Daylight-only fields, harmless on the others for the same reason as the
+      // circadian ones above.
+      response: { sensors: [], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 },
+      sensors: [],
       recentWrites: (kind === 'controller' ? options.writes?.controller
         : kind === 'schedule' ? options.writes?.schedule
           : options.writes?.circadian) ?? [],
@@ -182,6 +188,15 @@ function homey(options: {
          * `liveDeviceIds` is what these tests are about.
          */
         curves: { all: () => (options.circadian ?? []).map(id => runtime(id, 'circadian')) },
+        /**
+         * A fifth device type that owns no Flows either, and its absence from
+         * `liveDeviceIds` is part of what these tests are about.
+         */
+        daylights: { all: () => (options.daylight ?? []).map(id => runtime(id, 'daylight')) },
+        daylight: {
+          sky: () => ({ elevation: 40, level: 1, location: { latitude: 55.68, longitude: 12.57 } }),
+          sensors: () => [],
+        },
         bridge,
         log: () => { /* the api's own best-effort log */ },
       },
@@ -199,7 +214,9 @@ function homey(options: {
           const extra = driverId === 'controller'
             ? (options.installedOnly?.controller ?? [])
             : (options.installedOnly?.schedule ?? []);
-          if (driverId === 'circadian') return { getDevices: () => [] };
+          // Neither owns a Flow, so neither is enumerated by liveDeviceIds and
+          // neither has devices to offer here.
+          if (driverId === 'circadian' || driverId === 'daylight') return { getDevices: () => [] };
           return {
             getDevices: () => [...withRuntimes, ...extra].map(id => ({ getData: () => ({ id }) })),
           };
@@ -257,6 +274,22 @@ describe('orphan counting across both device types', () => {
     // refusal from firing on a Homey whose only Lightkeeper devices cannot own
     // a Flow at all.
     const h = homey({ circadian: [ID.circ], managed: [flow('f1', ID.ctrlGone)] });
+
+    await api.sweepOrphans(h.args);
+    assert.deepEqual([...h.swept[0]!], []);
+
+    const result = await api.countOrphans(h.args);
+    assert.equal(result.refused, 'no_live_controllers');
+  });
+
+  test('Daylight lights are NOT in the live set either, for the same reason', async () => {
+    // A fifth device type that owns no Flows. Asserted separately from the
+    // circadian one because the exclusion is a decision per device type, and a
+    // fifth entry added to the driver loop by reflex is exactly how this breaks:
+    // with one Daylight light installed the set would stop being empty, the
+    // refusal would stop firing, and a sweep on a Homey with no Flow-owning
+    // device at all would delete every managed Flow it found.
+    const h = homey({ daylight: [ID.dayl], managed: [flow('f1', ID.ctrlGone)] });
 
     await api.sweepOrphans(h.args);
     assert.deepEqual([...h.swept[0]!], []);

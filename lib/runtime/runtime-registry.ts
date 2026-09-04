@@ -1,5 +1,6 @@
 import { fireAndForget } from '../support/async';
 import { withDefaults, type Timers } from '../support/timers';
+import { messageOf } from '../support/homey-errors';
 
 /**
  * The Map, the coalescing timer and the teardown that all three runtime
@@ -121,7 +122,7 @@ export class RuntimeRegistry<TRuntime extends RegisteredRuntime> {
       } catch (error) {
         // One device's failure must not stop the others being re-resolved.
         this.options.log(
-          `Failed to re-resolve ${this.options.label} targets:`, (error as Error)?.message,
+          `Failed to re-resolve ${this.options.label} targets:`, messageOf(error),
         );
       }
     }

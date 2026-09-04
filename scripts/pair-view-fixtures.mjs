@@ -34,6 +34,68 @@ const PALETTE = [
 const TIMEZONE = 'Europe/Copenhagen';
 
 /**
+ * Three sensor states in one list: a fresh reading, an hour-old one, and a
+ * sensor that has never reported.
+ *
+ * The ages matter to the render. A reading is never treated as stale — many
+ * Zigbee sensors report only on change (platform §16) — so the AGE is the only
+ * thing on screen that can reveal a sensor which has stopped, and a fixture
+ * where every reading was fresh would never draw that.
+ */
+/**
+ * What the shared daylight card is answered with, on the three screens that
+ * carry it as a SECTION rather than as the whole screen.
+ *
+ * `standalone: false` is the difference from the Daylight light's own fixture:
+ * there the card draws the Save and Test footer, here the surrounding screen
+ * owns it, and a render that got that wrong would show two.
+ */
+const SENSOR_READINGS = [
+  { deviceId: 's1', name: 'Living room motion', lux: 240, at: Date.now() - 30_000, available: true },
+  { deviceId: 's2', name: 'Hall motion', lux: 12, at: Date.now() - 3_600_000, available: true },
+  { deviceId: 's5', name: 'Bedroom motion', lux: null, at: null, available: true },
+];
+
+const DAYLIGHT_RESPONSE = { sensors: ['s1', 's2'], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 };
+const DAYLIGHT_NOW = { level: 0.42, brightness: 0.63, source: 'sensors', elevation: 18 };
+
+const DAYLIGHT_SENSORS = {
+  rooms: [
+    {
+      zoneName: 'Living room',
+      sensors: [
+        { id: 's1', name: 'Living room motion', zoneName: 'Living room', available: true, lux: 240, selected: true },
+        { id: 's3', name: 'Window sensor', zoneName: 'Living room', available: true, lux: 1400, selected: false },
+      ],
+    },
+    {
+      zoneName: 'Hall',
+      sensors: [
+        { id: 's2', name: 'Hall motion', zoneName: 'Hall', available: true, lux: 12, selected: true },
+        { id: 's4', name: 'Cupboard sensor', zoneName: 'Hall', available: false, lux: null, selected: false },
+      ],
+    },
+  ],
+  selected: ['s1', 's2'],
+};
+
+const DAYLIGHT_CARD = {
+  standalone: false,
+  response: DAYLIGHT_RESPONSE,
+  limits: { minLux: 0.1, maxLux: 100000 },
+  now: DAYLIGHT_NOW,
+  sky: { elevation: 18, level: 0.55, location: { latitude: 55.68, longitude: 12.57 } },
+  sensorReadings: SENSOR_READINGS,
+};
+
+const DAYLIGHT_SET = {
+  response: DAYLIGHT_RESPONSE,
+  corrected: [],
+  now: DAYLIGHT_NOW,
+  sensorReadings: SENSOR_READINGS,
+};
+
+/**
  * Keyed by view FILE NAME, not by driver: `targets.html` is one screen shared by
  * four drivers, and rendering it four times from four fixtures would be four
  * chances for them to disagree about the same picture.
@@ -160,6 +222,11 @@ export const RENDER_REPLIES = {
   },
 
   'schedule.html': {
+    // The card's own three calls. Every driver that carries it answers these,
+    // which is what lets one view file serve four screens.
+    getDaylight: DAYLIGHT_CARD,
+    listSensors: DAYLIGHT_SENSORS,
+    setDaylight: DAYLIGHT_SET,
     getSchedule: {
       maxEntries: 12,
       support: SUPPORT,
@@ -168,8 +235,12 @@ export const RENDER_REPLIES = {
       // the day chips and the "(starts …)" case are both on the page.
       entries: [
         {
+          // The morning window follows the daylight and the evening one does
+          // not, so the render shows the choice in both positions AND the shared
+          // card, which is hidden until a window references it.
           id: 'e1', onAt: 7 * 60, days: [1, 2, 3, 4, 5],
           end: { kind: 'duration', minutes: 90 }, brightness: 0.6, temperature: 0.35,
+          fromDaylight: true,
         },
         {
           id: 'e2', onAt: 22 * 60 + 30, days: null,
@@ -183,10 +254,18 @@ export const RENDER_REPLIES = {
   },
 
   'ends.html': {
+    // The card's own three calls. Every driver that carries it answers these,
+    // which is what lets one view file serve four screens.
+    getDaylight: DAYLIGHT_CARD,
+    listSensors: DAYLIGHT_SENSORS,
+    setDaylight: DAYLIGHT_SET,
     getEnds: {
       support: SUPPORT,
       lights: LIGHTS.slice(0, 2),
-      warmest: { temperature: 1, brightness: 0.55 },
+      // The warm end follows the daylight and the cool one does not, so the
+      // render shows the choice in both positions AND the shared card, which is
+      // hidden until something references it.
+      warmest: { temperature: 1, brightness: 0.55, fromDaylight: true },
       coolest: { temperature: 0.15, brightness: 0.9 },
       // On, so both sliders per end are drawn rather than only warmth.
       adjustBrightness: true,
@@ -210,6 +289,11 @@ export const RENDER_REPLIES = {
   },
 
   'curve.html': {
+    // The card's own three calls. Every driver that carries it answers these,
+    // which is what lets one view file serve four screens.
+    getDaylight: DAYLIGHT_CARD,
+    listSensors: DAYLIGHT_SENSORS,
+    setDaylight: DAYLIGHT_SET,
     getCurve: {
       minPoints: 2,
       maxPoints: 8,
@@ -219,7 +303,9 @@ export const RENDER_REPLIES = {
       // the colour selects are not all on "colour temperature".
       points: [
         { id: 'p1', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.9, brightness: 0.5 },
-        { id: 'p2', anchor: { kind: 'clock', at: 9 * 60 }, warmth: 0.35, brightness: 0.9 },
+        // One point following the daylight, so the render shows the choice in
+        // both positions and the shared card below the list.
+        { id: 'p2', anchor: { kind: 'clock', at: 9 * 60 }, warmth: 0.35, brightness: 0.9, fromDaylight: true },
         { id: 'p3', anchor: { kind: 'clock', at: 17 * 60 }, warmth: 0.45, brightness: 0.8, color: 'ocean' },
         { id: 'p4', anchor: { kind: 'clock', at: 20 * 60 }, warmth: 0.8, brightness: 0.6, color: 'amber' },
         { id: 'p5', anchor: { kind: 'clock', at: 23 * 60 }, warmth: 1, brightness: 0.3 },
@@ -234,5 +320,32 @@ export const RENDER_REPLIES = {
     setCurve: { count: 5, adjustBrightness: true, dropped: [] },
     previewNow: { writes: 2, skipped: 0 },
     testPreStage: { deviceId: 'l2', name: 'Reading lamp', stayedOff: true, restored: false },
+  },
+
+  'daylight.html': {
+    getDaylight: {
+      // Its own last screen, so the render shows the Save footer. On the other
+      // drivers the same card is a section of their screen and draws none.
+      standalone: true,
+      support: SUPPORT,
+      lights: LIGHTS.slice(0, 2),
+      response: {
+        // Two sensors, so the readout is a list rather than one line.
+        sensors: ['s1', 's2'],
+        darkLux: 5,
+        brightLux: 500,
+        dark: 0.9,
+        bright: 0.25,
+      },
+      limits: { minLux: 0.1, maxLux: 100000 },
+      now: { level: 0.42, brightness: 0.63, source: 'sensors', elevation: 18 },
+      sky: { elevation: 18, level: 0.55, location: { latitude: 55.68, longitude: 12.57 } },
+      // One reading fresh, one an hour old and one absent — the three states the
+      // readout can be in, and the ages are the only way a frozen sensor shows.
+      sensorReadings: SENSOR_READINGS,
+    },
+    listSensors: DAYLIGHT_SENSORS,
+    setDaylight: DAYLIGHT_SET,
+    previewNow: { writes: 2, skipped: 0 },
   },
 };

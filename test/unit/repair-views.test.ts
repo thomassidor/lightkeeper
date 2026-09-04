@@ -60,7 +60,7 @@ describe('repair views', () => {
     // below discovers its subjects, which means an empty `drivers` array would
     // make every other test here pass by having nothing to check. This is the
     // canary for that, not a second source of truth.
-    assert.deepEqual(drivers.map(d => d.id).sort(), ['circadian', 'controller', 'curve', 'schedule']);
+    assert.deepEqual(drivers.map(d => d.id).sort(), ['circadian', 'controller', 'curve', 'daylight', 'schedule']);
   });
 
   /**

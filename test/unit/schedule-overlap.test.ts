@@ -1,4 +1,5 @@
 import { test, describe } from 'node:test';
+import { ownsNothing, zoneLights } from '../support/fake-catalog';
 import assert from 'node:assert/strict';
 
 import { ScheduleRuntime } from '../../lib/schedules/schedule-runtime';
@@ -277,6 +278,8 @@ function harness(options: {
   const catalog = {
     async device(id: string) { return devices.find(d => d.id === id); },
     async devicesInZone() { return devices; },
+    lightsInZone: zoneLights(async () => devices),
+    isOwnDevice: ownsNothing,
   } as unknown as DeviceCatalog;
 
   const bridge = {

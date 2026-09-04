@@ -17,6 +17,10 @@ import {
   type CircadianPlan, type CircadianPoint, type CircadianAnchor,
 } from '../circadian/circadian-types';
 import type { CircadianEnd, SimpleCircadianPlan } from '../circadian/simple-curve';
+import {
+  MAX_SENSORS, MAX_LUX, MIN_LUX,
+  type DaylightPlan, type DaylightResponse,
+} from '../daylight/daylight-types';
 import type { LogicalSourceBinding, SelectableInput } from '../inputs/selectable-input';
 import type { InputAction } from '../inputs/input-event';
 
@@ -64,6 +68,7 @@ const ROOT = {
   schedule: 'SchedulePlan',
   circadian: 'CircadianPlan',
   simple: 'SimpleCircadianPlan',
+  daylight: 'DaylightPlan',
 } as const;
 
 /** Well above the app's own limits — 64 mapping rows, 12 windows, 8 curve points. */
@@ -378,8 +383,7 @@ function validateScheduleEntry(raw: unknown, path: string): ScheduleEntry {
     onAt,
     days,
     end,
-    ...(entry.brightness !== undefined
-      ? { brightness: requireUnitInterval(entry.brightness, `${path}.brightness`) } : {}),
+    ...brightnessWithDaylight(entry, path, 'window'),
     ...(entry.temperature !== undefined
       ? { temperature: requireUnitInterval(entry.temperature, `${path}.temperature`) } : {}),
   };
@@ -387,17 +391,18 @@ function validateScheduleEntry(raw: unknown, path: string): ScheduleEntry {
 
 export function validateSchedulePlan(raw: unknown): SchedulePlan {
   const plan = requireRecord(raw, ROOT.schedule);
+
+  const entries = uniqueIds(
+    requireArray(plan.entries, `${ROOT.schedule}.entries`, MAX_ENTRIES)
+      .map((entry, i) => validateScheduleEntry(entry, `${ROOT.schedule}.entries[${i}]`)),
+    `${ROOT.schedule}.entries`,
+  );
+  const daylight = optionalDaylight(plan, ROOT.schedule, entries, `${ROOT.schedule}.entries`);
+
   return {
-    schemaVersion: requireNumber(plan.schemaVersion, `${ROOT.schedule}.schemaVersion`, {
-      min: 0, integer: true,
-    }),
-    enabled: requireBoolean(plan.enabled, `${ROOT.schedule}.enabled`),
-    target: validateTarget(plan.target, `${ROOT.schedule}.target`),
-    entries: uniqueIds(
-      requireArray(plan.entries, `${ROOT.schedule}.entries`, MAX_ENTRIES)
-        .map((entry, i) => validateScheduleEntry(entry, `${ROOT.schedule}.entries[${i}]`)),
-      `${ROOT.schedule}.entries`,
-    ),
+    ...planRoot(plan, ROOT.schedule),
+    entries,
+    ...(daylight !== undefined ? { daylight } : {}),
     managedFlows: validateManagedFlows(plan.managedFlows, `${ROOT.schedule}.managedFlows`),
   };
 }
@@ -466,8 +471,7 @@ function validateCircadianPoint(raw: unknown, path: string): CircadianPoint {
     id: requireString(point.id, `${path}.id`),
     anchor: validateAnchor(point.anchor, `${path}.anchor`),
     warmth: requireUnitInterval(point.warmth, `${path}.warmth`),
-    ...(point.brightness !== undefined
-      ? { brightness: requireUnitInterval(point.brightness, `${path}.brightness`) } : {}),
+    ...brightnessWithDaylight(point, path, 'point'),
     ...(color !== undefined ? { color } : {}),
   };
 }
@@ -504,14 +508,13 @@ export function validateCircadianPlan(raw: unknown): CircadianPlan {
     fail(`${ROOT.circadian}.adjustBrightness`, 'is set while a point carries no brightness');
   }
 
+  const daylight = optionalDaylight(plan, ROOT.circadian, points, `${ROOT.circadian}.points`);
+
   return {
-    schemaVersion: requireNumber(plan.schemaVersion, `${ROOT.circadian}.schemaVersion`, {
-      min: 0, integer: true,
-    }),
-    enabled: requireBoolean(plan.enabled, `${ROOT.circadian}.enabled`),
-    target: validateTarget(plan.target, `${ROOT.circadian}.target`),
+    ...planRoot(plan, ROOT.circadian),
     points,
     adjustBrightness,
+    ...(daylight !== undefined ? { daylight } : {}),
     // Opt-in, so anything other than a real `true` is a no. Matching the 0 → 1
     // migration, which reads `preStage === true` for the same reason.
     preStage: plan.preStage === true,
@@ -524,8 +527,7 @@ function validateEnd(raw: unknown, path: string): CircadianEnd {
   const end = requireRecord(raw, path);
   return {
     temperature: requireUnitInterval(end.temperature, `${path}.temperature`),
-    ...(end.brightness !== undefined
-      ? { brightness: requireUnitInterval(end.brightness, `${path}.brightness`) } : {}),
+    ...brightnessWithDaylight(end, path, 'end'),
   };
 }
 
@@ -549,26 +551,185 @@ export function validateSimpleCircadianPlan(raw: unknown): SimpleCircadianPlan {
     fail(`${ROOT.simple}.adjustBrightness`, 'is set while an end carries no brightness');
   }
 
+  const daylight = optionalDaylight(
+    plan, ROOT.simple, [warmest, coolest], `${ROOT.simple}.warmest`,
+  );
+
   return {
-    schemaVersion: requireNumber(plan.schemaVersion, `${ROOT.simple}.schemaVersion`, {
-      min: 0, integer: true,
-    }),
-    enabled: requireBoolean(plan.enabled, `${ROOT.simple}.enabled`),
-    target: validateTarget(plan.target, `${ROOT.simple}.target`),
+    ...planRoot(plan, ROOT.simple),
     warmest,
     coolest,
     adjustBrightness,
+    ...(daylight !== undefined ? { daylight } : {}),
     // Opt-in, so anything other than a real `true` is a no.
     preStage: plan.preStage === true,
   };
 }
 
 /**
- * Exported for the pairing DTO checks, which validate a target on its own.
+ * The three fields every stored DEVICE plan opens with.
  *
- * `optionalString` and `optionalUnitInterval` used to be re-exported here too,
- * and the comment above them was never true rather than having gone stale:
- * `pairing-dto.ts` has always imported its guards from `guards.ts` directly, so
- * the re-export had no consumer in its own birth commit.
+ * A schedule, a Curve light, a circadian light and a Daylight light all carry a
+ * schema version, a pause flag and a target, in that order, and each wrote the
+ * same four lines out with only `ROOT.<kind>` differing. One helper makes "every
+ * plan has these three" structural rather than a thing four functions happen to
+ * agree about.
+ *
+ * The CONTROLLER profile is deliberately not in the group: it carries a `source`
+ * object where these carry a `target`, so it shares only two of the three and
+ * pressing it through here would need a second signature to save two lines.
  */
+function planRoot(plan: Record<string, unknown>, root: string): {
+  schemaVersion: number;
+  enabled: boolean;
+  target: TargetSpec;
+} {
+  return {
+    schemaVersion: requireNumber(plan.schemaVersion, `${root}.schemaVersion`, {
+      min: 0, integer: true,
+    }),
+    enabled: requireBoolean(plan.enabled, `${root}.enabled`),
+    target: validateTarget(plan.target, `${root}.target`),
+  };
+}
+
+/**
+ * The ROW-level half of the `fromDaylight` rule: a brightness, and the flag
+ * that may stand in front of it.
+ *
+ * `fromDaylight` is refused without a `brightness` because that brightness is
+ * the FALLBACK — four paths lead back to it and all four are real: no flag, no
+ * response on the plan, no evaluator wired, or an evaluator that cannot tell how
+ * light it is. A window that came on at nothing would be worse than one that
+ * came on at the level somebody chose last month. Refused rather than dropped:
+ * see `requireDaylightAvailable` for why the stored-plan path is stricter than
+ * the screen's.
+ *
+ * `noun` is a parameter rather than a fixed word because the failure message is
+ * what somebody reads to find the row to repair, and `plan-validation.test.ts`
+ * asserts it. This lived as the same eight lines in `validateEntry`,
+ * `validatePoint` and `validateEnd`, differing only in that word — three copies
+ * of the one rule CLAUDE.md requires "in every sanitiser and every validator",
+ * in the module whose own comment warns that copies are "chances for them to
+ * disagree".
+ *
+ * Key order is `brightness` then `fromDaylight`, matching what the three call
+ * sites produced before, because the result is spread into a stored plan.
+ */
+function brightnessWithDaylight(
+  row: Record<string, unknown>,
+  path: string,
+  noun: string,
+): { brightness?: number; fromDaylight?: true } {
+  const brightness = row.brightness !== undefined
+    ? requireUnitInterval(row.brightness, `${path}.brightness`)
+    : undefined;
+
+  if (row.fromDaylight !== true) {
+    return brightness !== undefined ? { brightness } : {};
+  }
+  if (brightness === undefined) {
+    fail(`${path}.fromDaylight`, `is set while the ${noun} carries no brightness to fall back to`);
+  }
+  return { brightness, fromDaylight: true };
+}
+
+// -------------------------------------------------------------- daylight
+
+/**
+ * The OPTIONAL daylight response the three curve-and-schedule plans may carry,
+ * plus the plan-level half of the `fromDaylight` rule that goes with it.
+ *
+ * The two are one function on purpose. A row that says it follows the daylight,
+ * on a device with no daylight response, is a row that looks configured and does
+ * nothing — the precise failure this app exists to prevent, and the one the
+ * mapping engine's "one rule per gesture" guard exists for in its own corner.
+ * The sanitisers cannot check it: each of them sees only the list, never the plan
+ * around it. Validating the response and asserting its availability were two
+ * calls that every carrier had to remember to make in pairs, so a fourth plan
+ * type could have done the first and not the second and nothing would have said
+ * so. Now there is no way to have one without the other.
+ *
+ * REFUSED rather than repaired, unlike the sanitisers' policy on the same field.
+ * A stored plan in this state did not come from a screen — it came from a
+ * partial write, a hand-edited store or a downgrade — and quarantining it with a
+ * named path is what tells somebody which device to repair.
+ *
+ * `rowsPath` is separate from `root` because the two name different things: the
+ * response is refused at `<root>.daylight`, but an unsatisfiable row is refused
+ * at the LIST that holds it, which is what somebody needs in order to find it.
+ * A Daylight light is not a caller — its response is required, at its own root.
+ */
+function optionalDaylight(
+  plan: Record<string, unknown>,
+  root: string,
+  rows: Array<{ fromDaylight?: boolean }>,
+  rowsPath: string,
+): DaylightResponse | undefined {
+  const daylight = plan.daylight === undefined
+    ? undefined
+    : validateDaylightResponse(plan.daylight, `${root}.daylight`);
+
+  if (daylight === undefined && rows.some(row => row.fromDaylight === true)) {
+    fail(rowsPath, 'follows the daylight, but this device has no daylight response');
+  }
+  return daylight;
+}
+
+/**
+ * One daylight response, validated at whichever of FOUR paths holds it.
+ *
+ * The `path` argument is what makes one function serve four stores: a Daylight
+ * light keeps its response at the root of its plan, and a schedule, a circadian
+ * light and a Curve light each keep one in an optional field. Four copies of
+ * these six checks is four chances for them to disagree about what a response is.
+ */
+function validateDaylightResponse(raw: unknown, path: string): DaylightResponse {
+  const response = requireRecord(raw, path);
+
+  const sensors = requireArray(response.sensors, `${path}.sensors`, MAX_SENSORS)
+    .map((id, i) => requireString(id, `${path}.sensors[${i}]`));
+
+  // A sensor named twice would be weighted twice in the mean — a weighting
+  // nobody asked for, and invisible on the screen that set it.
+  const seen = new Set<string>();
+  for (const id of sensors) {
+    if (seen.has(id)) fail(`${path}.sensors`, `names "${id}" more than once`);
+    seen.add(id);
+  }
+
+  const darkLux = requireNumber(response.darkLux, `${path}.darkLux`, { min: MIN_LUX, max: MAX_LUX });
+  const brightLux = requireNumber(response.brightLux, `${path}.brightLux`, {
+    min: MIN_LUX, max: MAX_LUX,
+  });
+
+  // A zero-width or inverted span is a division by zero dressed up as a
+  // preference — the same failure two curve points at one minute would be, and
+  // it would reach `levelFromLux` as a NaN level and a lamp as no write at all.
+  if (!(brightLux > darkLux)) {
+    fail(`${path}.brightLux`, 'is not above darkLux, so the response has no span');
+  }
+
+  return {
+    sensors,
+    darkLux,
+    brightLux,
+    // Both ends are REQUIRED, unlike every other stored brightness in this app.
+    // A response is asked for a number on every tick and has no "leave it alone"
+    // to fall back on, so an absent end is a plan that cannot be evaluated
+    // rather than one that does less.
+    dark: requireUnitInterval(response.dark, `${path}.dark`),
+    bright: requireUnitInterval(response.bright, `${path}.bright`),
+  };
+}
+
+export function validateDaylightPlan(raw: unknown): DaylightPlan {
+  const plan = requireRecord(raw, ROOT.daylight);
+  return {
+    ...planRoot(plan, ROOT.daylight),
+    response: validateDaylightResponse(plan.response, `${ROOT.daylight}.response`),
+  };
+}
+
+/** Exported for the pairing DTO checks, which validate a target on its own. */
 export { validateTarget };

@@ -1,0 +1,41 @@
+{
+  "name": {
+    "en": "Daylight light"
+  },
+  "class": "service",
+  "capabilities": ["onoff"],
+  "capabilitiesOptions": {
+    "onoff": {
+      "title": {
+        "en": "Daylight active"
+      }
+    }
+  },
+  "platforms": ["local"],
+  "connectivity": ["lan"],
+  "images": {
+    "small": "/drivers/daylight/assets/images/small.png",
+    "large": "/drivers/daylight/assets/images/large.png",
+    "xlarge": "/drivers/daylight/assets/images/xlarge.png"
+  },
+  "pair": [
+    {
+      "id": "targets",
+      "navigation": { "next": "daylight" }
+    },
+    {
+      "id": "daylight",
+      "navigation": { "prev": "targets" }
+    }
+  ],
+  "repair": [
+    {
+      "id": "targets",
+      "navigation": { "next": "daylight" }
+    },
+    {
+      "id": "daylight",
+      "navigation": { "prev": "targets" }
+    }
+  ]
+}

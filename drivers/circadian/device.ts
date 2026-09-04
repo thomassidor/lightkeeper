@@ -32,8 +32,7 @@ import type { ControllerState, StateDetail } from '../../lib/profiles/controller
  * What it copies from the schedule device deliberately: **paused is not
  * unavailable**. The tile carries the switch that un-pauses it, and an
  * unavailable device cannot be switched.
- */
-/**
+ *
  * The THIRD type argument is what this device type is: it stores a
  * `SimpleCircadianPlan` and its runtime takes a `CircadianPlan`. Naming the
  * second shape is what makes `planForRuntime` mandatory here rather than

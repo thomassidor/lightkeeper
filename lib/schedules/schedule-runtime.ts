@@ -2,6 +2,7 @@ import type { HomeyApiService } from '../homey-api-service';
 import { classifyReconcileError } from '../runtime/reconcile-failure';
 import type { CredentialStatus } from '../credential-service';
 import type { DeviceCatalog } from '../device-catalog';
+import type { DaylightEvaluator } from '../daylight/daylight-evaluator';
 import type { FlowBridgeManager } from '../bridge/flow-bridge-manager';
 import { CommandScheduler } from '../outputs/command-scheduler';
 import { LightTargetAdapter, type WriteRecord } from '../outputs/light-target-adapter';
@@ -11,7 +12,6 @@ import { planIntent, type PlannedWrite } from '../outputs/intent-planner';
 import { toDevice } from '../outputs/light-intent';
 import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
-import { sameDetail } from '../profiles/controller-profile';
 import { assessTargets } from '../runtime/target-health';
 import {
   diffTargets, releaseTarget, resolveSnapshot, type TargetSnapshot,
@@ -31,6 +31,8 @@ import {
   type ScheduleEntry,
   type SchedulePlan,
 } from './schedule-types';
+import { messageOf } from '../support/homey-errors';
+import { VisibleState } from '../runtime/visible-state';
 
 /**
  * One light schedule, live.
@@ -48,16 +50,7 @@ import {
  */
 
 export interface ScheduleRuntimeDeps {
-  /**
-   * One app-wide log of every write attempted by ANY runtime.
-   *
-   * Optional so the pairing screen's ephemeral rigs (which have no app) still
-   * work unchanged. Its consumer is the settings page: "did anything reach a
-   * light" is a question about the whole Homey, and answering it from the
-   * FIRST controller's log — which is what api.ts did — made it permanently
-   * empty for a household that runs only schedules, and permanently
-   * misleading for one that runs both.
-   */
+  /** @see WriteRecord — one app-wide log of every write by ANY runtime. */
   onWriteResult?: (entry: WriteRecord) => void;
   api: HomeyApiService;
   catalog: DeviceCatalog;
@@ -77,6 +70,16 @@ export interface ScheduleRuntimeDeps {
    * never changes, and unpersisted references leak Flows on every restart.
    */
   onPlanChange: (plan: SchedulePlan) => Promise<void>;
+  /**
+   * Sun position and sensor readings, for a window whose brightness follows the
+   * daylight.
+   *
+   * OPTIONAL, so the pairing screen's ephemeral rigs and every existing test
+   * keep working unchanged — and because a schedule with no `daylight` on its
+   * plan never asks. Absent with a window that wants one is the same case as no
+   * usable sensor: the stored brightness stands.
+   */
+  daylight?: DaylightEvaluator;
 }
 
 export interface ScheduleAction {
@@ -116,6 +119,15 @@ export interface ScheduleDiagnostics {
     off: string;
     days: readonly number[] | 'every day';
     brightness?: number;
+    /**
+     * Whether that brightness is the stored number or a fallback.
+     *
+     * On the report rather than only in the plan, because "it came on at 90%
+     * when I set it to 40%" and "it came on at 40% when it should have followed
+     * the room" are the same complaint from the outside and different bugs
+     * inside.
+     */
+    fromDaylight?: boolean;
     temperature?: number;
     active: boolean;
     /**
@@ -172,7 +184,7 @@ export class ScheduleRuntime {
   private scheduler: CommandScheduler | null = null;
   private targetIds: string[] = [];
   private targetNames: string[] = [];
-  private state: ControllerState = 'disabled';
+  private readonly visible: VisibleState;
   private lastAction: ScheduleAction | null = null;
   private lastRejection: { at: number; eventKey: string; reason: string } | null = null;
   /**
@@ -201,14 +213,17 @@ export class ScheduleRuntime {
     private plan: SchedulePlan,
     private readonly deps: ScheduleRuntimeDeps,
   ) {
+    // Constructor BODY, like `timers` below: a field initialiser runs before
+    // the parameter property `deps` is assigned.
+    this.visible = new VisibleState((state, detail) => deps.onStateChange(state, detail));
     this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log);
     if (deps.onWriteResult) this.adapter.setWriteSink(deps.onWriteResult);
     this.resolver = new TargetResolver(deps.catalog);
   }
 
-  get currentState(): ControllerState { return this.state; }
+  get currentState(): ControllerState { return this.visible.current; }
   /** The reason for that state, so the device layer can report it verbatim. */
-  get currentDetail(): StateDetail | undefined { return this.lastDetail; }
+  get currentDetail(): StateDetail | undefined { return this.visible.currentDetail; }
   get currentPlan(): SchedulePlan { return this.plan; }
 
   private now(): number {
@@ -265,7 +280,7 @@ export class ScheduleRuntime {
     this.scheduler = new CommandScheduler({
       minWriteIntervalMs: DEFAULT_BEHAVIOR.minWriteIntervalMs,
       onError: (deviceId, capability, error) =>
-        this.deps.log(`Write failed on ${deviceId}/${capability}:`, (error as Error)?.message),
+        this.deps.log(`Write failed on ${deviceId}/${capability}:`, messageOf(error)),
     }, (deviceId, capability, value, options) =>
       this.adapter.write(deviceId, capability, value, options));
   }
@@ -331,7 +346,7 @@ export class ScheduleRuntime {
         } catch (error) {
           persistFailed = true;
           this.flowsHealthy = false;
-          this.deps.log('Could not persist managed Flow references:', (error as Error)?.message);
+          this.deps.log('Could not persist managed Flow references:', messageOf(error));
         }
       }
 
@@ -409,7 +424,9 @@ export class ScheduleRuntime {
       return;
     }
 
-    const assessment = await assessTargets(this.deps.catalog, this.plan.target);
+    const assessment = await assessTargets(
+      this.deps.catalog, this.plan.target, this.adapter.unwritableTargets(),
+    );
     this.setState(assessment.state, assessment.detail);
   }
 
@@ -648,9 +665,10 @@ export class ScheduleRuntime {
   private planOn(entry: ScheduleEntry): { writes: PlannedWrite[]; skipped: number } {
     const plans = [planIntent({ type: 'power', value: true }, this.targetIds, this.cache, DEFAULT_BEHAVIOR)];
 
-    if (entry.brightness !== undefined) {
+    const brightness = this.brightnessFor(entry);
+    if (brightness !== undefined) {
       plans.push(planIntent(
-        { type: 'brightness_absolute', value: toDevice(entry.brightness) },
+        { type: 'brightness_absolute', value: toDevice(brightness) },
         this.targetIds, this.cache, DEFAULT_BEHAVIOR,
       ));
     }
@@ -667,6 +685,40 @@ export class ScheduleRuntime {
       // not a failed schedule, it is a lamp.
       skipped: plans[0].skipped.length,
     };
+  }
+
+  /**
+   * What brightness this window comes on at: the number the user set, or what
+   * the daylight asks for.
+   *
+   * Sampled ONCE, here, at the boundary. A schedule fires AT a time and does not
+   * follow anything afterwards — that is what a Daylight light is for — and it is
+   * stated as a limit in the README and the FAQ rather than left to be
+   * discovered.
+   *
+   * Every path back to the stored number is deliberate rather than defensive:
+   * no flag, no response on the plan, no evaluator wired, or an evaluator that
+   * cannot tell how light it is. The stored brightness is the fallback in all
+   * four, which is the reason it is kept beside the flag instead of replaced by
+   * it — a window that came on at nothing would be worse than one that came on
+   * at the level somebody chose last month.
+   */
+  private brightnessFor(entry: ScheduleEntry): number | undefined {
+    if (entry.brightness === undefined) return undefined;
+    if (entry.fromDaylight !== true) return entry.brightness;
+
+    const response = this.plan.daylight;
+    if (response === undefined || this.deps.daylight === undefined) return entry.brightness;
+
+    const verdict = this.deps.daylight.evaluate(response);
+    if (verdict.source === 'none') {
+      this.deps.log(
+        `${entry.id} follows the daylight, but nothing can tell how light it is; `
+        + 'using the brightness set by hand',
+      );
+      return entry.brightness;
+    }
+    return verdict.brightness;
   }
 
   private planOff(): { writes: PlannedWrite[]; skipped: number } {
@@ -726,29 +778,11 @@ export class ScheduleRuntime {
     await this.deps.bridge.removeAll(this.plan.managedFlows);
   }
 
-  /**
-   * Adopt a state, and tell the device layer when anything a user could SEE
-   * has changed.
-   *
-   * The comparison used to be `state === state` alone, which is not what the
-   * device layer renders: it renders the state AND its detail, and the detail
-   * is where the sentence lives. So a device that went from "the API key
-   * expired" to "the API key has no Flow permission" — both `needs_credential`
-   * — kept showing the first message, and the user re-minted a key with the
-   * same problem because the app never stopped telling them to.
-   */
+  /** See `VisibleState`, which owns the when-did-it-move rule. */
   private setState(state: ControllerState, detail?: StateDetail): void {
-    if (this.state === state && sameDetail(this.lastDetail, detail)) return;
-    this.state = state;
-    this.lastDetail = detail;
-    this.stateRevision += 1;
-    this.deps.onStateChange(state, detail);
+    this.visible.set(state, detail);
   }
 
-  /** The detail last handed to the device layer, for the comparison above. */
-  private lastDetail: StateDetail | undefined;
-  /** Diagnostics only: how many times the visible state has actually moved. */
-  private stateRevision = 0;
 
   /**
    * Controls the flow compiler declined, from the last reconcile.
@@ -777,7 +811,7 @@ export class ScheduleRuntime {
       controllerId: this.controllerId,
       kind: 'schedule',
       name: this.deps.displayName(),
-      state: this.state,
+      state: this.visible.current,
       enabled: this.plan.enabled,
       // The two facts every "it fired at the wrong time" report needs, and the
       // only place the resolved timezone is visible at all.
@@ -793,6 +827,7 @@ export class ScheduleRuntime {
         off: formatMinutes(offMinuteOf(entry)),
         days: entry.days ?? 'every day',
         ...(entry.brightness !== undefined ? { brightness: entry.brightness } : {}),
+        ...(entry.fromDaylight === true ? { fromDaylight: true } : {}),
         ...(entry.temperature !== undefined ? { temperature: entry.temperature } : {}),
         active: activeWindowStartDay(entry, clock) !== null,
         end: entry.end,
@@ -809,7 +844,7 @@ export class ScheduleRuntime {
       // How many times the VISIBLE state has moved. A device stuck on a
       // stale message with a rising revision means the device layer is not
       // rendering what it is being told.
-      stateRevision: this.stateRevision,
+      stateRevision: this.visible.revision,
       recentFailures: this.adapter.failures(),
       recentWrites: this.adapter.writes(),
       schedulerReady: this.scheduler !== null,

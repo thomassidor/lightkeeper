@@ -32,6 +32,17 @@ const read = (driver: string, file: string) =>
 const inputsOf = (node: FakeNode, type: string) =>
   node.descendants().filter(n => n.type === type);
 
+/**
+ * All the text under a node, gathered.
+ *
+ * The harness's `textContent` is a stored string rather than a computed one, so
+ * a container's own is empty however much its children say — which is a
+ * distinction that quietly turns an assertion about a rendered card into an
+ * assertion about nothing.
+ */
+const textUnder = (node: FakeNode | null): string =>
+  node === null ? '' : node.descendants().map(n => n.textContent).join(' ').trim();
+
 // --------------------------------------------------------------- credential
 
 describe('the API key screen (2.2, 2.3)', () => {
@@ -890,5 +901,354 @@ describe('the light picker', () => {
 
     assert.equal(view.byId('tg-zonePane')!.style.display, 'block');
     assert.equal(view.byId('tg-subzones')!.checked, false, 'and it seeds the stored choice');
+  });
+});
+
+// ----------------------------------------------------------------- daylight
+
+describe('the daylight screen shows the room before it asks about it', () => {
+  const GET = {
+    standalone: true,
+    support: { onoff: 2, dim: 2, light_temperature: 1, total: 2 },
+    lights: [{ id: 'l1', name: 'Hall lamp', zoneName: 'Hall' }],
+    response: { sensors: ['s1'], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 },
+    limits: { minLux: 0.1, maxLux: 100000 },
+    now: { level: 0.4, brightness: 0.62, source: 'sensors', elevation: 18 },
+    sky: { elevation: 18, level: 0.55, location: { latitude: 55.68, longitude: 12.57 } },
+    sensorReadings: [
+      { deviceId: 's1', name: 'Hall motion', lux: 240, at: Date.now() - 30_000, available: true },
+    ],
+  };
+
+  const SENSORS = {
+    rooms: [{
+      zoneName: 'Hall',
+      sensors: [
+        { id: 's1', name: 'Hall motion', zoneName: 'Hall', available: true, lux: 240, selected: true },
+        { id: 's2', name: 'Window sensor', zoneName: 'Hall', available: true, lux: 900, selected: false },
+      ],
+    }],
+    selected: ['s1'],
+  };
+
+  const open = (get: unknown = GET, sensors: unknown = SENSORS) =>
+    runPairView(read('daylight', 'daylight.html'), {
+      respond: {
+        getDaylight: get,
+        listSensors: sensors,
+        setDaylight: {
+          response: GET.response, corrected: [], now: GET.now, sensorReadings: GET.sensorReadings,
+        },
+        previewNow: { writes: 2, skipped: 0 },
+      },
+      // The real tokens, so the numbers are asserted rather than a bare key.
+      translate: (key, tokens) => `${key}:${Object.values(tokens ?? {}).join(',')}`,
+    });
+
+  test('standalone draws the Save footer', async () => {
+    const view = open();
+    await view.settle();
+
+    assert.equal(view.byId('dl-save')!.hidden, false);
+  });
+
+  test('but as a SECTION of another driver screen it draws none', async () => {
+    /**
+     * The whole reason `standalone` arrives in the reply rather than being baked
+     * into the file. On a schedule, a circadian light or a Curve light this same
+     * card is a section of that driver's own screen, which owns the footer — and
+     * two Save buttons doing different things is worse than either.
+     */
+    const view = open({ ...GET, standalone: false });
+    await view.settle();
+
+    assert.equal(view.byId('dl-save')!.hidden, true);
+  });
+
+  test('lights that cannot dim are refused before saving, not after', async () => {
+    // A response is meaningless against a lamp with no `dim`, and a device that
+    // looks configured and does nothing is the precise failure this app exists
+    // to prevent. The health check refuses such a device once saved; this is the
+    // same news, in time to act on it.
+    const view = open({ ...GET, support: { onoff: 2, dim: 0, light_temperature: 0, total: 2 } });
+    await view.settle();
+
+    assert.equal(view.byId('dl-save')!.disabled, true);
+    assert.ok(textUnder(view.root).includes('daylight.noDimmable'));
+  });
+
+  test('the lux inputs are bounded by what the driver will accept', async () => {
+    // So a number the sanitiser would clamp cannot be typed in the first place.
+    const view = open();
+    await view.settle();
+
+    assert.equal(view.byId('dl-dark-lux')!.min, '0.1');
+    assert.equal(view.byId('dl-bright-lux')!.max, '100000');
+  });
+
+  test('the readout names the sun, every chosen sensor, and the result', async () => {
+    /**
+     * Two numbers labelled "dark" and "bright" cannot be chosen without knowing
+     * what the room currently reads, which is why this sits ABOVE the controls
+     * it explains. It is also where somebody finds out that their Homey has
+     * never been told where it is.
+     */
+    const view = open();
+    await view.settle();
+
+    const text = textUnder(view.byId('dl-now'));
+    assert.ok(text.includes('18'), `no sun elevation in "${text}"`);
+    assert.ok(text.includes('Hall motion'), 'the chosen sensor is not named');
+    assert.ok(text.includes('240'), 'its reading is not shown');
+    assert.ok(text.includes('62'), 'the resulting brightness is not shown');
+  });
+
+  test('and it says WHICH of the two answered', async () => {
+    // "Sensors" and "sun" behave very differently - one measures the room and
+    // one infers it - so a user whose lamps are wrong needs to know which is
+    // speaking before anything else on the screen helps.
+    const view = open();
+    await view.settle();
+    assert.ok(textUnder(view.byId('dl-now')).includes('daylight.sourceSensors'));
+
+    const sky = open({ ...GET, now: { ...GET.now, source: 'sky' } });
+    await sky.settle();
+    assert.ok(textUnder(sky.byId('dl-now')).includes('daylight.sourceSky'));
+  });
+
+  test('no location is reported plainly rather than as a number', async () => {
+    // The single fastest check that the geolocation permission resolved on this
+    // Homey: a null here and a plausible number there are different problems.
+    const view = open({ ...GET, sky: { elevation: null, level: null, location: null } });
+    await view.settle();
+
+    assert.ok(textUnder(view.byId('dl-now')).includes('daylight.nowSkyUnknown'));
+  });
+
+  test('a sensor that has never reported says so instead of showing a zero', async () => {
+    // Zero lux is pitch dark, and a flat battery must not read as a dark room.
+    const view = open({
+      ...GET,
+      sensorReadings: [
+        { deviceId: 's1', name: 'Hall motion', lux: null, at: null, available: true },
+      ],
+    });
+    await view.settle();
+
+    const text = textUnder(view.byId('dl-now'));
+    assert.ok(text.includes('daylight.sensorNoReading'), `expected an unknown reading, got "${text}"`);
+    assert.ok(!text.includes('0 lx'), 'a missing reading was drawn as zero lux');
+  });
+
+  test('with no sensors chosen it says the sun is being used, not that it is broken', async () => {
+    // Most households own no light sensor at all, and the sun answers for them
+    // perfectly well. The empty state has to say that.
+    const view = open({
+      ...GET,
+      response: { ...GET.response, sensors: [] },
+      now: { ...GET.now, source: 'sky' },
+    });
+    await view.settle();
+
+    assert.ok(textUnder(view.byId('dl-now')).includes('daylight.nowNoSensors'));
+  });
+});
+
+// ------------------------------------------------- the shared daylight card
+
+describe('the daylight card as a SECTION of another screen', () => {
+  /** The three calls the card makes on whichever driver it lands on. */
+  const CARD = {
+    getDaylight: {
+      standalone: false,
+      response: { sensors: ['s1'], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 },
+      limits: { minLux: 0.1, maxLux: 100000 },
+      now: { level: 0.4, brightness: 0.62, source: 'sensors', elevation: 18 },
+      sky: { elevation: 18, level: 0.55, location: { latitude: 55.68, longitude: 12.57 } },
+      sensorReadings: [
+        { deviceId: 's1', name: 'Hall motion', lux: 240, at: Date.now(), available: true },
+      ],
+    },
+    listSensors: {
+      rooms: [{
+        zoneName: 'Hall',
+        sensors: [{ id: 's1', name: 'Hall motion', zoneName: 'Hall', available: true, lux: 240, selected: true }],
+      }],
+      selected: ['s1'],
+    },
+    setDaylight: {
+      response: { sensors: ['s1'], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 },
+      corrected: [],
+      now: { level: 0.4, brightness: 0.62, source: 'sensors', elevation: 18 },
+      sensorReadings: [],
+    },
+  };
+
+  const ends = (warmest: Record<string, unknown>) => runPairView(read('circadian', 'ends.html'), {
+    respond: {
+      getEnds: {
+        support: { onoff: 1, dim: 1, light_temperature: 1, total: 1 },
+        lights: [{ id: 'l1', name: 'Hall lamp', zoneName: 'Hall' }],
+        warmest,
+        coolest: { temperature: 0.15, brightness: 0.9 },
+        adjustBrightness: true,
+        preStage: false,
+        shape: [{ at: '06:00', end: 'warmest' }, { at: '11:00', end: 'coolest' }],
+        timezone: 'Europe/Copenhagen',
+      },
+      setEnds: { warmest: {}, coolest: {}, adjustBrightness: true, corrected: [] },
+      ...CARD,
+    },
+  });
+
+  test('it draws no Save footer, because the host screen owns one', async () => {
+    // The whole reason `standalone` arrives in the reply rather than being baked
+    // into the file: two Save buttons doing different things is worse than
+    // either, and this card lands on four screens.
+    const view = ends({ temperature: 1, brightness: 0.55, fromDaylight: true });
+    await view.settle();
+
+    assert.equal(view.byId('dl-preview-card')!.hidden, true);
+  });
+
+  test('it stays hidden until a row actually follows the daylight', async () => {
+    // A screen that already carries two ends, or twelve windows, should not also
+    // carry a sensor picker nobody asked for.
+    const view = ends({ temperature: 1, brightness: 0.55 });
+    await view.settle();
+
+    assert.ok(
+      view.byId('dl-card')!.className.split(' ').includes('dl-off'),
+      `expected the card hidden, class was "${view.byId('dl-card')!.className}"`,
+    );
+  });
+
+  test('and appears once one does', async () => {
+    const view = ends({ temperature: 1, brightness: 0.55, fromDaylight: true });
+    await view.settle();
+
+    assert.ok(!view.byId('dl-card')!.className.split(' ').includes('dl-off'));
+    // And it has actually loaded, rather than being an empty shown box.
+    assert.ok(textUnder(view.byId('dl-now')).includes('Hall motion'));
+  });
+
+  test('each end offers the choice, in the position its stored plan says', async () => {
+    const view = ends({ temperature: 1, brightness: 0.55, fromDaylight: true });
+    await view.settle();
+
+    const choices = view.byId('end-list')!.descendants().filter(n => n.tagName === 'select');
+    assert.equal(choices.length, 2, 'one choice per end');
+    assert.equal(choices[0]!.value, 'daylight', 'the warm end follows');
+    assert.equal(choices[1]!.value, 'fixed', 'the cool end does not');
+  });
+
+  test('the slider stays put when an end follows, because it is the fallback', async () => {
+    // Following the daylight does not throw the number away, and a control that
+    // vanished would leave that value unreachable and unexplained.
+    const view = ends({ temperature: 1, brightness: 0.55, fromDaylight: true });
+    await view.settle();
+
+    const sliders = inputsOf(view.byId('end-list')!, 'range');
+    // Two per end: warmth and brightness.
+    assert.equal(sliders.length, 4);
+  });
+});
+
+describe('a schedule window and the daylight', () => {
+  const CARD = {
+    getDaylight: {
+      standalone: false,
+      response: { sensors: [], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 },
+      limits: { minLux: 0.1, maxLux: 100000 },
+      now: { level: 0.4, brightness: 0.62, source: 'sky', elevation: 18 },
+      sky: { elevation: 18, level: 0.55, location: { latitude: 55.68, longitude: 12.57 } },
+      sensorReadings: [],
+    },
+    listSensors: { rooms: [], selected: [] },
+    setDaylight: {
+      response: { sensors: [], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 },
+      corrected: [], now: { level: 0.4, brightness: 0.62, source: 'sky', elevation: 18 },
+      sensorReadings: [],
+    },
+  };
+
+  const open = (entry: Record<string, unknown>) => runPairView(read('schedule', 'schedule.html'), {
+    respond: {
+      getSchedule: {
+        maxEntries: 12,
+        support: { onoff: 1, dim: 1, light_temperature: 1, total: 1 },
+        lights: [{ id: 'l1', name: 'Hall lamp', zoneName: 'Hall' }],
+        entries: [entry],
+        timezone: 'Europe/Copenhagen',
+      },
+      setSchedules: { entries: [entry], dropped: [] },
+      ...CARD,
+    },
+  });
+
+  const WINDOW = {
+    id: 'e1', onAt: 20 * 60, days: null, end: { kind: 'duration', minutes: 120 },
+    brightness: 0.6,
+  };
+
+  test('a window that follows the daylight says it is sampled at the boundary', async () => {
+    /**
+     * The one caveat worth printing on the screen. A schedule fires AT a time,
+     * so it reads the daylight once when the window starts and does not follow
+     * it afterwards — and somebody who wanted following wants a Daylight light,
+     * and had better be told here rather than after a fortnight of evenings.
+     */
+    const view = open({ ...WINDOW, fromDaylight: true });
+    await view.settle();
+
+    const note = view.root.descendants().find(n => n.dataset.role === 'daylightNote');
+    assert.ok(note, 'no boundary note in the row');
+    assert.notEqual(note.style.display, 'none', 'the note is hidden on a window that follows');
+    assert.equal(note.textContent, 'daylight.atBoundaryHelp');
+  });
+
+  test('and a window that does not is not told about it', async () => {
+    const view = open(WINDOW);
+    await view.settle();
+
+    const note = view.root.descendants().find(n => n.dataset.role === 'daylightNote');
+    assert.equal(note!.style.display, 'none');
+  });
+
+  test('unticking "set the brightness" drops the flag with it', async () => {
+    /**
+     * The flag goes with the brightness, because that brightness IS the
+     * fallback: the sanitiser drops it server-side for the same reason, and a
+     * row that kept it would show a mode for a control that is no longer there
+     * — and would save a window claiming to follow the daylight with nothing to
+     * fall back to, which the validator refuses outright.
+     */
+    const view = open({ ...WINDOW, fromDaylight: true });
+    await view.settle();
+
+    const tick = view.root.descendants().find(n => n.dataset.act === 'useBrightness')!;
+    tick.checked = false;
+    // `click` rather than `fire`: the listener is delegated on the window list,
+    // and firing on the checkbox itself reaches nothing.
+    view.click(tick, 'change');
+
+    const choice = view.root.descendants().find(n => n.dataset.role === 'daylightChoice')!;
+    assert.equal(choice.style.display, 'none', 'the choice is still on screen');
+    // And the card goes with it, because nothing references the response now.
+    assert.ok(view.byId('dl-card')!.className.split(' ').includes('dl-off'));
+  });
+
+  test('choosing to follow the daylight reveals the card and the caveat', async () => {
+    const view = open(WINDOW);
+    await view.settle();
+    assert.ok(view.byId('dl-card')!.className.split(' ').includes('dl-off'));
+
+    const choice = view.root.descendants().find(n => n.dataset.act === 'daylight')!;
+    choice.value = 'daylight';
+    view.click(choice, 'change');
+
+    assert.ok(!view.byId('dl-card')!.className.split(' ').includes('dl-off'));
+    const note = view.root.descendants().find(n => n.dataset.role === 'daylightNote')!;
+    assert.notEqual(note.style.display, 'none');
   });
 });

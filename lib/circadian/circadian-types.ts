@@ -2,6 +2,7 @@ import { MINUTES_PER_DAY, formatMinutes, parseMinutes } from '../time/wall-clock
 import { sanitiseUnitInterval } from '../validation/unit-interval';
 import { isPaletteColor } from './palette';
 import type { TargetSpec } from '../outputs/light-intent';
+import type { DaylightResponse } from '../daylight/daylight-types';
 
 /**
  * What a circadian light is, as persisted in its virtual device's store.
@@ -61,6 +62,21 @@ export interface CircadianPoint {
    */
   brightness?: number;
   /**
+   * Take this point's brightness from the daylight instead of from the number
+   * above.
+   *
+   * The number STAYS and becomes the fallback — see the same field on a schedule
+   * entry for why that is the load-bearing half of the design.
+   *
+   * Unlike a schedule window, a curve is re-evaluated on every tick, so a point
+   * that follows the daylight really does follow it rather than sampling it once.
+   * What interpolation does either side of such a point is decided in the
+   * runtime: each point's brightness is resolved to a NUMBER before `valueAt`
+   * sees it, so a segment between a fixed point and a daylight one is an
+   * ordinary blend and `circadian-curve.ts` stays pure and unchanged.
+   */
+  fromDaylight?: boolean;
+  /**
    * A palette colour id, INSTEAD of this point's colour temperature.
    *
    * Absent on most points, and absent is the normal case: a curve of colour
@@ -94,6 +110,11 @@ export interface CircadianPlan {
    * for someone's living room is the one thing this feature must not do.
    */
   adjustBrightness: boolean;
+  /**
+   * ONE daylight response for the whole device, or none. See the same field on
+   * `SchedulePlan` for why it is inline and why it is per device.
+   */
+  daylight?: DaylightResponse;
   /**
    * Write the day's warmth to lights that are OFF, so a light is already correct
    * before anyone touches it.
@@ -183,13 +204,19 @@ export function sanitiseCurve(raw: unknown, adjustBrightness = false): Sanitised
       color = String(source.color);
     }
 
+    const lit = brightness !== null && brightness > 0;
+
     points.push({
       id,
       anchor,
       warmth,
       // A brightness of 0 would be "on, at nothing" — treated as unset here, as
       // it is in a schedule entry.
-      ...(brightness !== null && brightness > 0 ? { brightness } : {}),
+      ...(lit ? { brightness } : {}),
+      // Only alongside a brightness, because that brightness is the fallback.
+      // The plan-level half of the rule — that the device has a response at all
+      // — is `validateCircadianPlan`'s: this function only sees the points.
+      ...(lit && source.fromDaylight === true ? { fromDaylight: true } : {}),
       ...(color !== undefined ? { color } : {}),
     });
   });

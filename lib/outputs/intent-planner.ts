@@ -6,6 +6,7 @@ import {
   type LightIntent,
 } from './light-intent';
 import type { TargetStateCache } from './target-state-cache';
+import { stepFromDecimals } from './target-state-cache';
 import { clamp01 } from './light-intent';
 import type { ControllerBehavior } from '../mapping/mapping-types';
 
@@ -57,6 +58,26 @@ export interface PlannedWrite {
    * did not come on.
    */
   impliesOn?: boolean;
+  /**
+   * This write exists ONLY because the plan opted into colouring a lamp that is
+   * off — a pre-stage write (platform §12). Its one and only consumer is write
+   * health in `LightTargetAdapter.noteWriteHealth()`.
+   *
+   * It is here because a pre-stage FAILURE is evidence of nothing. Measured on
+   * 4 September 2026 across 13 Philips Hue bulbs on one bridge: 4 rejected a
+   * colour write to an off lamp as `is "soft off", command
+   * (.color_temperature.mirek) may not have effect`, 9 took it and stayed off,
+   * and the two bulbs that were genuinely dead rejected every axis with a
+   * different sentence we are right not to match on. From the rejection alone a
+   * soft-off lamp and a dead one look identical, so counting it against the
+   * lamp's health marked healthy lamps as not responding for as long as they
+   * were switched off.
+   *
+   * No planner function sets it. The circadian runtime does, because it is the
+   * only layer that knows the write was speculative — the planner is given a
+   * list of device ids and cannot tell one that is off from one that is lit.
+   */
+  preStage?: boolean;
 }
 
 export interface SkippedTarget {
@@ -277,9 +298,7 @@ function clampDim(deviceId: string, value: number, cache: TargetStateCache): num
  * `litDim` below and `advanceDim` further down.
  */
 function representableStep(deviceId: string, cache: TargetStateCache): number | undefined {
-  const decimals = cache.capabilitiesOf(deviceId)?.dim?.decimals;
-  if (decimals === undefined || !Number.isFinite(decimals)) return undefined;
-  return Math.pow(10, -Math.max(0, Math.floor(decimals)));
+  return stepFromDecimals(cache.capabilitiesOf(deviceId)?.dim?.decimals);
 }
 
 /**
@@ -364,24 +383,6 @@ function clampTemperature(deviceId: string, value: number, cache: TargetStateCac
 }
 
 /**
- * A colour: mode, then hue, then saturation.
- *
- * `light_mode` comes first and only where the lamp has one. A lamp sitting in
- * temperature mode ignores a hue it is given — it is not an error, the write
- * simply has no visible effect, which is the worst kind of failure this app can
- * produce. `WRITE_ORDER` in the scheduler puts mode ahead of hue for the same
- * reason it puts `onoff` ahead of `dim`: the value has to land on a lamp that is
- * in a state to show it.
- *
- * Hue and saturation always go together. Half a colour is a colour nobody chose:
- * a hue written onto yesterday's saturation is a shade the user never selected.
- *
- * No `hasMoved`-style gate here — that is the caller's business, and the curve
- * runtime has its own. Unlike a colour temperature, a hue has no meaningful
- * resolution to compare against: `homey-lib` gives `light_hue` no `decimals`, so
- * there is no step below which a write is provably a no-op.
- */
-/**
  * A temperature write, preceded by the mode switch that makes it land.
  *
  * The mirror of `planColor`, and it exists because only one half of the pair
@@ -411,6 +412,24 @@ function planTemperature(
   return writes;
 }
 
+/**
+ * A colour: mode, then hue, then saturation.
+ *
+ * `light_mode` comes first and only where the lamp has one. A lamp sitting in
+ * temperature mode ignores a hue it is given — it is not an error, the write
+ * simply has no visible effect, which is the worst kind of failure this app can
+ * produce. `WRITE_ORDER` in the scheduler puts mode ahead of hue for the same
+ * reason it puts `onoff` ahead of `dim`: the value has to land on a lamp that is
+ * in a state to show it.
+ *
+ * Hue and saturation always go together. Half a colour is a colour nobody chose:
+ * a hue written onto yesterday's saturation is a shade the user never selected.
+ *
+ * No `hasMoved`-style gate here — that is the caller's business, and the curve
+ * runtime has its own. Unlike a colour temperature, a hue has no meaningful
+ * resolution to compare against: `homey-lib` gives `light_hue` no `decimals`, so
+ * there is no step below which a write is provably a no-op.
+ */
 function planColor(
   hue: number,
   saturation: number,

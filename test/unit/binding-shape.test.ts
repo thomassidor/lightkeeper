@@ -297,14 +297,14 @@ describe('the schema 1 to 2 migration', () => {
   });
 
   test('it runs, and lands on the current version', () => {
-    const { profile, migrated, fromVersion } = migrateProfile(oldProfile());
+    const { plan: profile, migrated, fromVersion } = migrateProfile(oldProfile());
     assert.equal(migrated, true);
     assert.equal(fromVersion, 1);
     assert.equal(profile.schemaVersion, CURRENT_SCHEMA_VERSION);
   });
 
   test('args becomes fixedArgs, and absent becomes empty', () => {
-    const { profile } = migrateProfile(oldProfile());
+    const { plan: profile } = migrateProfile(oldProfile());
     const bindings = (profile.catalogue ?? []).map(i => i.binding as any);
 
     assert.deepEqual(bindings[2].fixedArgs, { some: 'arg' });
@@ -314,14 +314,14 @@ describe('the schema 1 to 2 migration', () => {
   });
 
   test('a contiguous range becomes the values it always expanded to', () => {
-    const { profile } = migrateProfile(oldProfile());
+    const { plan: profile } = migrateProfile(oldProfile());
     const range = (profile.catalogue ?? [])[0].binding as any;
     assert.deepEqual(range.values, [1, 2, 3]);
     assert.equal('valueRange' in range, false);
   });
 
   test('so the compiled variant keys are unchanged, and no Flows churn', () => {
-    const { profile } = migrateProfile(oldProfile());
+    const { plan: profile } = migrateProfile(oldProfile());
     const flows = compileBinding({
       controllerId: 'lk-ctrl-1',
       bindingKey: 'wheel|1|clock_wise|rotate_start',
@@ -334,7 +334,7 @@ describe('the schema 1 to 2 migration', () => {
   });
 
   test('non-range kinds compile identically after migration', () => {
-    const { profile } = migrateProfile(oldProfile());
+    const { plan: profile } = migrateProfile(oldProfile());
     const compileAt = (index: number, key: string) => compileBinding({
       controllerId: 'lk-ctrl-1',
       bindingKey: key,
@@ -356,7 +356,7 @@ describe('the schema 1 to 2 migration', () => {
   test('a nonsense stored range migrates to a refusal, not a guess', () => {
     const broken = oldProfile();
     (broken.catalogue[0].binding as any).valueRange = ['a', 'b'];
-    const { profile } = migrateProfile(broken);
+    const { plan: profile } = migrateProfile(broken);
     assert.deepEqual((profile.catalogue ?? [])[0].binding as any, {
       kind: 'flow_range',
       cardId: 'homey:device:x:wheel',
@@ -386,7 +386,7 @@ describe('the schema 1 to 2 migration', () => {
       (current.catalogue[2].binding as any).args;
     delete (current.catalogue[2].binding as any).args;
 
-    const { profile, migrated } = migrateProfile(current);
+    const { plan: profile, migrated } = migrateProfile(current);
     assert.equal(migrated, false);
     assert.deepEqual((profile.catalogue ?? [])[0].binding as any, {
       kind: 'flow_range', cardId: 'c', cardOwnerUri: 'u',

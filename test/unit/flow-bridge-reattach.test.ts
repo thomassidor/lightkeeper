@@ -148,7 +148,7 @@ describe('sync after a re-attach', () => {
   test('carrying the old references over is what produced the false "user edited"', async () => {
     const h = harness({ 'flow-1': liveFlow('flow-1', OLD_DEVICE) });
 
-    // Exactly what device.applyProfile used to do: restore the previous
+    // Exactly what device.applyPlan does: restore the previous
     // managedFlows regardless of the source having changed.
     const result = await h.bridge.sync(syncRequest(NEW_DEVICE, [reference('flow-1', 'fp-1')], 'fp-1'));
 

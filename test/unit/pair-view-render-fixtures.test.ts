@@ -76,6 +76,7 @@ describe('render fixtures', () => {
       'schedule.html': 'getSchedule',
       'curve.html': 'getCurve',
       'ends.html': 'getEnds',
+      'daylight.html': 'getDaylight',
     };
 
     for (const file of files) {
@@ -117,6 +118,20 @@ describe('render fixtures', () => {
       'and at least one rule already assigned');
 
     assert.ok(replies['targets.html'].listTargets.rooms.length >= 2, 'lights in two rooms');
+
+    assert.ok(replies['daylight.html'].listSensors.rooms.length >= 2, 'sensors in two rooms');
+    assert.ok(
+      replies['daylight.html'].getDaylight.response.sensors.length >= 2,
+      'two sensors chosen, so the readout is a list rather than one line',
+    );
+    assert.ok(
+      replies['daylight.html'].getDaylight.sensorReadings.some((r: any) => r.lux === null),
+      'and one that has never reported, or the unknown state is never drawn',
+    );
+    assert.ok(
+      replies['daylight.html'].getDaylight.sky.elevation !== null,
+      'a sun position, or the one line that proves the permission resolved is blank',
+    );
     assert.ok(replies['source.html'].listSources.rooms.length >= 1, 'a remote to pick');
 
     // The key screen is the exception, and deliberately: it only draws itself

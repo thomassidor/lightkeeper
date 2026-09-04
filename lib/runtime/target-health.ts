@@ -20,21 +20,49 @@ import type { ControllerState, StateDetail } from '../profiles/controller-profil
 export interface TargetCount {
   total: number;
   available: number;
+  /**
+   * Of the available ones, how many have stopped taking writes.
+   *
+   * Counted separately from `available` because the two have different causes
+   * and different sentences: a light Homey reports as unavailable has gone
+   * away, and a light that is `available` while refusing every write is
+   * powered off at the wall or off the mesh. Measured on hardware — see
+   * `LightTargetAdapter.unwritableTargets()` for the run.
+   */
+  unwritable: number;
 }
 
-async function countTargets(catalog: DeviceCatalog, target: TargetSpec): Promise<TargetCount> {
+/**
+ * The ids the adapter says are failing every write. Empty when nobody asked —
+ * a pairing rig has no adapter, and neither does any of the tests that only
+ * care about availability.
+ */
+export type UnwritableTargets = ReadonlySet<string>;
+
+const NONE: UnwritableTargets = new Set<string>();
+
+async function countTargets(
+  catalog: DeviceCatalog,
+  target: TargetSpec,
+  unwritable: UnwritableTargets,
+): Promise<TargetCount> {
+  const count = (devices: CatalogDevice[], total: number): TargetCount => {
+    const reachable = devices.filter(d => d.available);
+    return {
+      total,
+      available: reachable.length,
+      unwritable: reachable.filter(d => unwritable.has(d.id)).length,
+    };
+  };
+
   if (target.kind === 'devices') {
     const devices = await Promise.all(target.deviceIds.map(id => catalog.device(id)));
     const present = devices.filter((d): d is CatalogDevice => d !== undefined);
-    return {
-      total: target.deviceIds.length,
-      available: present.filter(d => d.available).length,
-    };
+    return count(present, target.deviceIds.length);
   }
 
-  const inZone = await catalog.devicesInZone(target.zoneId, target.includeSubzones);
-  const lights = inZone.filter(d => d.capabilities.includes('onoff'));
-  return { total: lights.length, available: lights.filter(d => d.available).length };
+  const lights = await catalog.lightsInZone(target.zoneId, target.includeSubzones);
+  return count(lights, lights.length);
 }
 
 /**
@@ -45,14 +73,48 @@ async function countTargets(catalog: DeviceCatalog, target: TargetSpec): Promise
 export async function assessTargets(
   catalog: DeviceCatalog,
   target: TargetSpec,
+  unwritable: UnwritableTargets = NONE,
 ): Promise<{ state: ControllerState; detail?: StateDetail; count: TargetCount }> {
-  const count = await countTargets(catalog, target);
+  const count = await countTargets(catalog, target, unwritable);
 
   if (count.available === 0) {
     return {
       state: 'needs_repair',
       // `text` is the English fallback, for logs and diagnostics only.
       detail: { key: 'state.noTargets', text: 'None of its lights are available.' },
+      count,
+    };
+  }
+
+  /**
+   * Every light Homey still reports as available is refusing to be driven.
+   *
+   * Ranked above the availability shortfall below on purpose: if two of five
+   * lights went missing and the other three stopped answering, "3 lights are
+   * not responding" is the sentence that gets somebody to the wall switch,
+   * and "2 of 5 lights unavailable" is the one that sends them looking for a
+   * light that is sitting right there.
+   */
+  if (count.unwritable > 0 && count.unwritable === count.available) {
+    return {
+      state: 'needs_repair',
+      detail: {
+        key: 'state.noTargetsResponding',
+        tokens: { count: count.unwritable },
+        text: `${count.unwritable} light(s) are not responding to Lightkeeper.`,
+      },
+      count,
+    };
+  }
+
+  if (count.unwritable > 0) {
+    return {
+      state: 'partial',
+      detail: {
+        key: 'state.someTargetsNotResponding',
+        tokens: { count: count.unwritable, total: count.total },
+        text: `${count.unwritable} of ${count.total} lights are not responding.`,
+      },
       count,
     };
   }

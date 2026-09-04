@@ -1,10 +1,12 @@
 import type { HomeyApiService, Unsubscribe } from '../homey-api-service';
 import type { Capability, WriteValue } from './intent-planner';
 import type { TargetStateCache } from './target-state-cache';
+import { liveValuesOf } from './target-state-cache';
 import { fireAndForget } from '../support/async';
 import { BoundedLog } from '../support/bounded-log';
 import { KeyedMutex } from '../support/keyed-mutex';
 import { NO_CACHE } from '../flow-card-catalogue';
+import { messageOf } from '../support/homey-errors';
 
 /**
  * Executes intents against targets and reconciles external changes.
@@ -21,7 +23,21 @@ export interface TargetFailure {
   at: number;
 }
 
-/** One attempted write and what became of it. */
+/**
+ * One attempted write and what became of it.
+ *
+ * **On the `onWriteResult` sink every runtime and manager declares.** It is ONE
+ * app-wide log of every write attempted by ANY runtime. Optional, so the
+ * pairing screens' ephemeral rigs (which have no app) still work unchanged. Its
+ * consumer is the settings page: "did anything reach a light" is a question
+ * about the whole Homey, and answering it from the FIRST controller's log —
+ * which is what `api.ts` did — made it permanently empty for a household that
+ * runs only schedules, and permanently misleading for one that runs both.
+ *
+ * That paragraph lived in full on all four runtimes and all four managers. It is
+ * one rationale, not eight, so it lives here on the type they all name and the
+ * eight declarations point at it.
+ */
 export interface WriteRecord {
   at: number;
   deviceId: string;
@@ -30,6 +46,13 @@ export interface WriteRecord {
   ok: boolean;
   ms: number;
   error?: string;
+  /**
+   * Present and true only on a pre-stage write. Emitted rather than always
+   * carried so the settings page's write log stays narrow — and it is here at
+   * all so that somebody reading a diagnostics dump can see WHY a run of
+   * failures did not move the health verdict. See `noteWriteHealth()`.
+   */
+  preStage?: boolean;
 }
 
 export class LightTargetAdapter {
@@ -125,18 +148,180 @@ export class LightTargetAdapter {
 
   private noteWriteResult(entry: {
     deviceId: string; capability: Capability; value: WriteValue;
-    ok: boolean; ms: number; error?: string;
+    ok: boolean; ms: number; error?: string; preStage?: boolean;
   }): void {
     const record = { at: Date.now(), ...entry };
     this.recentWrites.add(record);
     this.onWriteResult?.(record);
+    this.noteWriteHealth(entry.deviceId, entry.capability, entry.ok, entry.preStage === true);
+  }
+
+  /**
+   * Which targets have stopped taking writes — the signal the app had no way
+   * to see.
+   *
+   * Measured on hardware (probe run, 3 September 2026): a Hue bulb reported
+   * `available: true` for eighteen minutes while 93 of 113 writes to it failed
+   * with "The device could not be reached. Is it powered on?".
+   *
+   * The failure was never HIDDEN — the scheduler's `onError` logs every one and
+   * `recentWrites` below carries each attempt with its outcome. What was missing
+   * is that none of it became a state anybody could see without reading
+   * `homey app run --remote`: `assessTargets()` asks the catalog's `available`
+   * flag, which does not track reachability at all (platform §6), so a circadian
+   * light goes on writing to that lamp every minute for ever behind a green tile.
+   *
+   * Kept here rather than in `recordFailure()` on purpose: `refresh()` calls
+   * that one with a hardcoded `'onoff'` for a failed READ, and a failed prime
+   * is not a lamp refusing to be driven.
+   */
+  private readonly failureStreaks = new Map<string,
+  { since: number; count: number; announced: boolean }>();
+
+  /**
+   * A count AND a time floor, because a count alone is the trap.
+   *
+   * A ramp is ten seconds at five writes a second per capability
+   * (`HARD_STOP_MS` in ramp-engine, the 200 ms floor in DEFAULT_BEHAVIOR), so
+   * one bad ramp on a briefly flaky lamp produces around fifty consecutive
+   * failures in ten seconds — a count-only threshold trips on it and a
+   * household's tiles go yellow because somebody held a dim button. A
+   * circadian light writes once a minute, so a time-only threshold says
+   * nothing about how many attempts stood behind it.
+   *
+   * Three failed writes AND a five-minute-old streak: no ramp can reach it,
+   * a circadian light reaches it after five ticks, and a twice-a-day schedule
+   * needs two windows. Slow rather than wrong, which is the right way round
+   * for something that marks a user's device.
+   */
+  static readonly UNWRITABLE_AFTER_WRITES = 3;
+
+  static readonly UNWRITABLE_AFTER_MS = 5 * 60_000;
+
+  /**
+   * Deliberately message-blind.
+   *
+   * The two integrations in that run phrase the same thing differently — Hue's
+   * "The device could not be reached. Is it powered on?" against IKEA's "Could
+   * not reach device. Is it powered on?" — and `isTransportFailure()` is the
+   * wrong instrument by design: it asks whether we reached the HOMEY, which we
+   * did. A rejection is a rejection, and staying blind to its wording is what
+   * makes this work on an integration nobody here has seen.
+   *
+   * `light_mode` is excluded in BOTH directions. It is written to make a value
+   * land, never as a value in itself (`WRITE_ORDER`), and the Hue app satisfies
+   * it locally without reaching the bulb: on the reference lamp it was the ONLY
+   * capability that acked, twenty times, while every value write failed. Let a
+   * `light_mode` success clear the streak and a dead lamp looks healthy forever.
+   *
+   * A pre-stage FAILURE is excluded too, and unlike `light_mode` the exclusion
+   * runs one way only.
+   *
+   * Measured on 4 September 2026 across 13 Philips Hue bulbs behind one bridge:
+   * 4 rejected a colour write to a lamp that was off — `is "soft off", command
+   * (.color_temperature.mirek) may not have effect`, platform §6's third
+   * outcome — while 9 took the same write and stayed off, and the two bulbs
+   * that were genuinely dead rejected every axis including `dim`. From the
+   * rejection alone a soft-off lamp and a dead one are the same event, so it is
+   * evidence of nothing. Counted, it marked healthy lamps as not responding for
+   * as long as the household had them switched off: a curve retries a failed
+   * write every tick by design (`noteOutcomes`), and a coloured point books two
+   * countable failures a minute.
+   *
+   * One-directional because a pre-stage SUCCESS is real evidence, which is
+   * exactly what a `light_mode` ack is not: the mode write never left the
+   * phone, while this one reached the bridge and the bridge did not refuse it.
+   * Excluding successes too would rebuild the bug from the other side — a lamp
+   * that failed three lit writes at nine and is then pre-staged happily all
+   * night would stay "not responding" until morning, with nothing left able to
+   * clear it.
+   *
+   * A caller's flag rather than a look at `cache.state(id).actualOn`, and that
+   * is not fussiness. A schedule turning a window on submits `onoff`, `dim` and
+   * `light_temperature` in one batch; `actualOn` only flips when the ECHO
+   * lands, so the temperature write executes while the lamp is still cached as
+   * off. Reading the cache here would throw that failure away on the one path
+   * where the lamp really is dead. The flag means one thing — the plan chose to
+   * write to a lamp it knew was off — and nothing else in the app sets it.
+   *
+   * What it costs, stated rather than left to be discovered: a lamp that is
+   * dead, is reported off, AND is only ever written to speculatively builds no
+   * streak. Bounded, because the usual dead lamp (cut at the wall, bridge still
+   * reporting `onoff: true`) is treated as lit and gets ordinary writes, and
+   * because accounting resumes in full the moment anything real is written to
+   * it. Nothing is hidden either way: the failure is still in `recentWrites`,
+   * still in `recentFailures`, and still logged by the scheduler's `onError`.
+   * Only the verdict changes.
+   */
+  private noteWriteHealth(
+    deviceId: string,
+    capability: Capability,
+    ok: boolean,
+    preStage = false,
+  ): void {
+    if (capability === 'light_mode') return;
+    // `!ok &&`, never a bare `preStage`: a success has to go on clearing the
+    // streak, or the paragraph above about nine o'clock becomes the behaviour.
+    if (!ok && preStage) return;
+
+    if (ok) {
+      this.failureStreaks.delete(deviceId);
+      return;
+    }
+
+    const streak = this.failureStreaks.get(deviceId);
+    if (!streak) {
+      this.failureStreaks.set(deviceId, { since: Date.now(), count: 1, announced: false });
+      return;
+    }
+
+    streak.count += 1;
+    /**
+     * Once, on the first write AFTER the threshold is met. Every individual
+     * failure is already logged by the scheduler's onError; what that stream
+     * cannot say is "this one has now been failing long enough to count",
+     * which is the line worth finding when somebody asks why a tile went
+     * yellow.
+     *
+     * Best-effort, and it is the health verdict rather than this line that is
+     * the mechanism: a target written to twice a day meets the threshold on
+     * the clock, and nothing announces it until the next write arrives.
+     * Announcing from `unwritableTargets()` instead would put a side effect
+     * inside a query that a health timer calls, which is worse than a missing
+     * log line.
+     */
+    if (!streak.announced && this.isUnwritable(streak)) {
+      streak.announced = true;
+      this.log(`${deviceId} has failed ${streak.count} writes since `
+        + `${new Date(streak.since).toISOString()} — treating it as not responding`);
+    }
+  }
+
+  private isUnwritable(
+    streak: { since: number; count: number },
+    now: number = Date.now(),
+  ): boolean {
+    return streak.count >= LightTargetAdapter.UNWRITABLE_AFTER_WRITES
+      && now - streak.since >= LightTargetAdapter.UNWRITABLE_AFTER_MS;
+  }
+
+  /**
+   * The device ids a health check should treat as not working, whatever the
+   * catalog says about them.
+   */
+  unwritableTargets(now: number = Date.now()): Set<string> {
+    const out = new Set<string>();
+    for (const [deviceId, streak] of this.failureStreaks) {
+      if (this.isUnwritable(streak, now)) out.add(deviceId);
+    }
+    return out;
   }
 
   async write(
     deviceId: string,
     capability: Capability,
     value: WriteValue,
-    options: { impliesOn?: boolean } = {},
+    options: { impliesOn?: boolean; preStage?: boolean } = {},
   ): Promise<void> {
     // The echo registration goes BEFORE dispatch: a fast integration can call
     // back before setCapabilityValue resolves, and an unrecognised echo reads
@@ -153,13 +338,17 @@ export class LightTargetAdapter {
       // from the fiction, so "a bit brighter" moved from a number nothing in
       // the room had ever shown.
       this.cache.commitDesired(deviceId, capability, value, seq);
-      this.noteWriteResult({ deviceId, capability, value, ok: true, ms: Date.now() - startedAt });
+      this.noteWriteResult({
+        deviceId, capability, value, ok: true, ms: Date.now() - startedAt,
+        ...(options.preStage ? { preStage: true } : {}),
+      });
 
       if (options.impliesOn) this.verifyCameOn(deviceId, startedAt);
     } catch (error) {
       this.noteWriteResult({
         deviceId, capability, value, ok: false, ms: Date.now() - startedAt,
-        error: (error as Error)?.message ?? String(error),
+        error: messageOf(error),
+        ...(options.preStage ? { preStage: true } : {}),
       });
       // A stale handle (device re-paired, app restarted) must not wedge writes.
       this.handles.delete(deviceId);
@@ -258,18 +447,6 @@ export class LightTargetAdapter {
   }
 
   /**
-   * Subscribe to a target's capability changes so external changes — someone
-   * using the vendor app, or a wall switch — reconcile into desired state.
-   *
-   * `onChange` is optional and additive. The cache already decides whether a
-   * change is genuinely external or the echo of our own write, and until the
-   * circadian runtime needed it that verdict was computed and thrown away —
-   * which is why this hands it on rather than making every caller re-derive it.
-   * A controller does not care (it reacts to remotes, not to lights); a
-   * circadian light cares about both edges of `onoff` and about someone
-   * overriding its colour by hand.
-   */
-  /**
    * Serialised PER DEVICE, because "replace, never stack" is a read-then-write.
    *
    * The `set` at the end of `subscribe()` lands after two awaits, so two
@@ -282,6 +459,18 @@ export class LightTargetAdapter {
    */
   private readonly subscriptionLock = new KeyedMutex();
 
+  /**
+   * Subscribe to a target's capability changes so external changes — someone
+   * using the vendor app, or a wall switch — reconcile into desired state.
+   *
+   * `onChange` is optional and additive. The cache already decides whether a
+   * change is genuinely external or the echo of our own write, and until the
+   * circadian runtime needed it that verdict was computed and thrown away —
+   * which is why this hands it on rather than making every caller re-derive it.
+   * A controller does not care (it reacts to remotes, not to lights); a
+   * circadian light cares about both edges of `onoff` and about someone
+   * overriding its colour by hand.
+   */
   async subscribe(
     deviceId: string,
     capabilities: Capability[],
@@ -317,7 +506,7 @@ export class LightTargetAdapter {
           try {
             onChange?.(deviceId, capability, value, external);
           } catch (error) {
-            this.log(`Capability listener for ${capability} on ${deviceId} threw:`, (error as Error)?.message);
+            this.log(`Capability listener for ${capability} on ${deviceId} threw:`, messageOf(error));
           }
         });
         // track() hands back a wrapper that also removes itself from the
@@ -325,7 +514,7 @@ export class LightTargetAdapter {
         // entry behind for destroy() to call a second time.
         created.push(this.api.track(() => instance.destroy()));
       } catch (error) {
-        this.log(`Could not subscribe to ${capability} on ${deviceId}:`, (error as Error)?.message);
+        this.log(`Could not subscribe to ${capability} on ${deviceId}:`, messageOf(error));
       }
     }
 
@@ -334,6 +523,12 @@ export class LightTargetAdapter {
 
   /** Drop every capability subscription for one target. */
   async unsubscribe(deviceId: string): Promise<void> {
+    // A device that has stopped being a target takes its failure streak with
+    // it. Cleared HERE and not in unsubscribeNow(), which subscribeNow() calls
+    // to replace an existing subscription — and refreshTargets() re-subscribes
+    // on every catalog change, so clearing there would wipe the streak
+    // repeatedly and nothing would ever reach the threshold.
+    this.failureStreaks.delete(deviceId);
     // Through the same per-device lock, or an unsubscribe can interleave with a
     // subscribe and leave the instances it was meant to remove behind.
     return this.subscriptionLock.run(deviceId, () => this.unsubscribeNow(deviceId));
@@ -363,6 +558,7 @@ export class LightTargetAdapter {
       await this.unsubscribe(deviceId);
     }
     this.handles.clear();
+    this.failureStreaks.clear();
   }
 
   /**
@@ -403,20 +599,14 @@ export class LightTargetAdapter {
        * The fields are already on the object being read; nothing extra is
        * fetched.
        */
-      this.cache.initialise(deviceId, {
-        onoff: device.capabilitiesObj?.onoff?.value,
-        dim: device.capabilitiesObj?.dim?.value,
-        light_temperature: device.capabilitiesObj?.light_temperature?.value,
-        light_hue: device.capabilitiesObj?.light_hue?.value,
-        light_saturation: device.capabilitiesObj?.light_saturation?.value,
-      });
+      this.cache.initialise(deviceId, liveValuesOf(device));
     } catch (error) {
       this.recordFailure(deviceId, 'onoff', error);
     }
   }
 
   private recordFailure(deviceId: string, capability: Capability, error: unknown): void {
-    const message = (error as Error)?.message ?? String(error);
+    const message = messageOf(error);
     // Newest first, like every other diagnostic log — this one was the odd
     // one out (push/shift), so the settings page rendered it backwards.
     this.recentFailures.add({ deviceId, capability, message, at: Date.now() });

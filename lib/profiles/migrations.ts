@@ -1,7 +1,8 @@
 import { CURRENT_SCHEMA_VERSION, type ControllerProfile } from './controller-profile';
 import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
-import { runMigrationChain, type MigrationStep } from '../support/migrations';
+import { runMigrationChain, type MigrationResult, type MigrationStep } from '../support/migrations';
 import { validateControllerProfile } from '../validation/plans';
+import { isRecord } from '../validation/guards';
 /**
  * Every profile carries schemaVersion and migrates
  * deterministically at startup. Every historical schema
@@ -108,30 +109,12 @@ function expandStoredRange(valueRange: unknown): number[] {
   return values;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
 
-export interface MigrationResult {
-  profile: ControllerProfile;
-  migrated: boolean;
-  fromVersion: number;
-  steps: number[];
-}
-
-export function migrateProfile(raw: unknown): MigrationResult {
-  const result = runMigrationChain(raw, {
+export function migrateProfile(raw: unknown): MigrationResult<ControllerProfile> {
+  return runMigrationChain(raw, {
     label: 'Profile',
     current: CURRENT_SCHEMA_VERSION,
     table: MIGRATIONS,
     validate: validateControllerProfile,
   });
-  // `profile` rather than `value`: the name predates the shared runner and half
-  // the app destructures it.
-  return {
-    profile: result.value,
-    migrated: result.migrated,
-    fromVersion: result.fromVersion,
-    steps: result.steps,
-  };
 }

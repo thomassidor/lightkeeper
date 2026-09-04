@@ -1,4 +1,5 @@
 import { test, describe } from 'node:test';
+import { ownsNothing, zoneLights } from '../support/fake-catalog';
 import assert from 'node:assert/strict';
 
 import { ControllerRuntimeManager } from '../../lib/runtime/controller-runtime-manager';
@@ -109,6 +110,8 @@ function harness(options: { sourcePresent?: boolean } = {}) {
     device: async (id: string) => devices().find(d => d.id === id),
     allDevices: async () => devices(),
     devicesInZone: async () => devices(),
+    lightsInZone: zoneLights(async () => devices()),
+    isOwnDevice: ownsNothing,
   } as unknown as DeviceCatalog;
 
   const discovery = {

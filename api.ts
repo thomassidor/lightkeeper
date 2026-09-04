@@ -15,6 +15,7 @@ import { sanitiseEntries } from './lib/schedules/schedule-types';
 import type {
   DiagnosticsResponse, LightkeeperApp, StatusResponse,
 } from './lib/app-contract';
+import { messageOf } from './lib/support/homey-errors';
 
 /**
  * `homey.app` is the running app instance, and this is the one place it is
@@ -32,12 +33,16 @@ function appOf(homey: any): LightkeeperApp {
  * Every device this app can attribute a generated Flow to — controllers AND
  * schedules.
  *
- * Circadian lights are deliberately NOT here, and their absence is as
- * load-bearing as the union below. They generate no Flows, so their ids appear in
- * no bridge arguments and nothing can ever be attributed to them; adding them
- * would inflate `liveControllers` and, worse, make the "nothing is running"
- * refusal below stop firing on a Homey whose only Lightkeeper devices cannot own
- * a Flow at all.
+ * Circadian lights, Curve lights and Daylight lights are deliberately NOT here,
+ * and their absence is as load-bearing as the union below. None of the three
+ * generates a Flow, so their ids appear in no bridge arguments and nothing can
+ * ever be attributed to them; adding them would inflate `liveControllers` and,
+ * worse, make the "nothing is running" refusal below stop firing on a Homey
+ * whose only Lightkeeper devices cannot own a Flow at all.
+ *
+ * That is also why the driver loop below names two drivers rather than five: it
+ * is a list of the device types that OWN Flows, not a list of this app's device
+ * types, and a fifth entry would be the same mistake in a different place.
  *
  * Load-bearing. `findManagedFlows()` groups by the device id in a Flow's bridge
  * arguments and cannot tell which registry that id belongs to, so a sweep run
@@ -74,7 +79,7 @@ function liveDeviceIds(app: LightkeeperApp, homey: any): Set<string> {
         if (typeof id === 'string' && id) ids.add(id);
       }
     } catch (error) {
-      app.log?.(`Could not enumerate installed ${driverId} devices:`, (error as Error)?.message);
+      app.log?.(`Could not enumerate installed ${driverId} devices:`, messageOf(error));
     }
   }
 
@@ -200,6 +205,36 @@ module.exports = {
           preStageDisabled: diagnostics.preStageDisabled,
         };
       }),
+      daylight: app.daylights.all().map(runtime => {
+        const diagnostics = runtime.diagnostics();
+        return {
+          id: runtime.controllerId,
+          state: runtime.currentState,
+          name: diagnostics.name,
+          enabled: diagnostics.enabled,
+          // What the response asks for now, and WHERE it came from — a room at
+          // the wrong brightness is almost always one of those two.
+          now: diagnostics.now,
+          response: diagnostics.response,
+          targetNames: diagnostics.targetNames,
+          // Lights somebody has taken over by hand. Shown because a light that
+          // has stopped following the room on purpose looks exactly like one
+          // that has stopped by accident.
+          overridden: diagnostics.targets.filter(target => target.overridden).length,
+          sensors: diagnostics.sensors,
+        };
+      }),
+      /**
+       * The sky, and every watched sensor, for the whole Homey.
+       *
+       * Outside the per-device lists on purpose. "Does it know where the sun is"
+       * is a question about the app rather than about a device, and it is the
+       * single fastest check that the geolocation permission actually resolved
+       * on this Homey — `null` there and a plausible number there are two very
+       * different problems (platform §16).
+       */
+      sky: app.daylight.sky(),
+      sensors: app.daylight.sensors(),
       // Writes actually attempted against lights — the step after an event is
       // accepted, and where a working-looking app can still do nothing.
       // Every runtime's writes, in one time-ordered log (App.recentWrites).
@@ -307,6 +342,7 @@ module.exports = {
       controllers: app.controllers.all().map(runtime => runtime.diagnostics()),
       schedules: app.schedules.all().map(runtime => runtime.diagnostics()),
       circadian: app.curves.all().map(runtime => runtime.diagnostics()),
+      daylight: app.daylights.all().map(runtime => runtime.diagnostics()),
       /**
        * Which of Homey's own trigger cards the schedules are built on, and what
        * else was on offer. A card URI may never be constructed (platform §3), so
@@ -359,8 +395,19 @@ module.exports = {
   async previewDevice({ homey, params }: any) {
     const app = appOf(homey);
     const id = idOf(params);
-    const runtime = app.curves.get(id);
-    if (!runtime) throw new Error(`no circadian or Curve light with id "${id}" is running`);
+    /**
+     * TWO registries, one route.
+     *
+     * "Apply this device's plan to its lights now" is the same request whether
+     * the plan is a curve or a daylight response, and both runtimes answer the
+     * same `applyNow`/`drain` pair with the same `{ writes, skipped }`. Adding a
+     * second route would mean a second manifest entry and a caller that has to
+     * know which kind of device it is holding an id for.
+     */
+    const runtime = app.curves.get(id) ?? app.daylights.get(id);
+    if (!runtime) {
+      throw new Error(`no circadian, Curve or Daylight light with id "${id}" is running`);
+    }
 
     const outcome = await runtime.applyNow('preview', { force: true });
     await runtime.drain();
@@ -395,6 +442,24 @@ module.exports = {
     const app = appOf(homey);
     await app.curves.tickAll();
     return { ticked: app.curves.all().length };
+  },
+
+  /**
+   * Tick every Daylight light once, instead of waiting up to a minute.
+   *
+   * Its own route rather than folded into `tickCurves`, because that name would
+   * then be a lie — and because the two are worth being able to drive
+   * separately: a hardware pass watching whether the daylight loop settles wants
+   * to advance THAT clock and nothing else. Returns `{ ticked }`.
+   *
+   * Note that one tick will usually not finish a move: the slew limit is a step
+   * per tick by design, so a caller proving a fade has to call this several
+   * times, exactly as the real minute-by-minute tick does.
+   */
+  async tickDaylight({ homey }: any) {
+    const app = appOf(homey);
+    await app.daylights.tickAll();
+    return { ticked: app.daylights.all().length };
   },
 
   /**

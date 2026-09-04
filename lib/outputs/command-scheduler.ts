@@ -1,5 +1,6 @@
 import type { Capability, PlannedWrite, WriteValue } from './intent-planner';
 import { withDefaults, type Timers } from '../support/timers';
+import { messageOf } from '../support/homey-errors';
 
 /**
  * Coalesce bursts, serialise per-target writes, cap write
@@ -33,7 +34,7 @@ export type Executor = (
   deviceId: string,
   capability: Capability,
   value: WriteValue,
-  options?: { impliesOn?: boolean },
+  options?: { impliesOn?: boolean; preStage?: boolean },
 ) => Promise<void>;
 
 /**
@@ -90,6 +91,7 @@ interface Waiter {
 interface PendingWrite {
   value: WriteValue;
   impliesOn: boolean;
+  preStage: boolean;
   waiters: Waiter[];
 }
 
@@ -122,12 +124,13 @@ interface DeviceQueue {
 const DEFAULT_MAX_QUEUED_DEVICES = 64;
 
 /**
- * Turning on and dimming in the same burst must arrive in a sensible order:
- * switch on first so the dim lands on a lit lamp, and switch off last so the
- * light does not visibly jump before going dark.
- */
-/**
  * The order writes to one device go out in.
+ *
+ * Read with `runFlush`, which applies one exception this list cannot express:
+ * an `onoff: false` is moved to the END of the burst, so the light does not
+ * visibly jump to a new level before going dark. `onoff` is first here for the
+ * opposite case — switching ON — and those are the same capability, so the sort
+ * gets the common one and the flush fixes up the other.
  *
  * `onoff` first so a level lands on a lit lamp. Then `light_mode`, BEFORE both
  * of the things it governs: a lamp ignores a hue it is given while in
@@ -223,9 +226,17 @@ export class CommandScheduler {
         }
       }
 
+      /**
+       * The NEWER write's flags win, along with its value — which is right,
+       * because both describe the write that will actually be sent. A
+       * pre-stage write superseded by an ordinary one is an ordinary write by
+       * the time it leaves here, and its failure counts against the lamp's
+       * health as it should.
+       */
       queue.pending.set(write.capability, {
         value: write.value,
         impliesOn: write.impliesOn === true,
+        preStage: write.preStage === true,
         waiters: [{ settle: record }],
       });
     }
@@ -308,6 +319,8 @@ export class CommandScheduler {
       queue.lastWriteAt = this.now();
 
       snapshot.sort((a, b) => WRITE_ORDER.indexOf(a[0]) - WRITE_ORDER.indexOf(b[0]));
+      // The one exception WRITE_ORDER cannot express: switching OFF goes last,
+      // or the lamp visibly jumps to the burst's new level before going dark.
       const turningOff = snapshot.find(([cap, write]) => cap === 'onoff' && write.value === false);
       if (turningOff) {
         snapshot.splice(snapshot.indexOf(turningOff), 1);
@@ -325,7 +338,9 @@ export class CommandScheduler {
         }
         const startedAt = this.now();
         try {
-          await this.executor(deviceId, capability, write.value, { impliesOn: write.impliesOn });
+          await this.executor(deviceId, capability, write.value, {
+            impliesOn: write.impliesOn, preStage: write.preStage,
+          });
           for (const waiter of write.waiters) {
             waiter.settle({
               status: 'succeeded', deviceId, capability,
@@ -338,7 +353,7 @@ export class CommandScheduler {
           // it; an error OBJECT from the API boundary can quote the key back
           // inside itself — see the `failed` outcome above, and CLAUDE.md's
           // key-hygiene property.
-          const message = String((error as Error)?.message ?? error);
+          const message = messageOf(error);
           for (const waiter of write.waiters) {
             waiter.settle({ status: 'failed', deviceId, capability, error: message });
           }

@@ -4,7 +4,7 @@ Thanks for taking a look. This is a small app with a specific shape, and two fil
 
 - **[`CLAUDE.md`](CLAUDE.md)** — the architecture, the conventions, and how to release. Read it
   before changing anything.
-- **[`docs/homey-platform.md`](docs/homey-platform.md)** — fifteen numbered sections on how Homey
+- **[`docs/homey-platform.md`](docs/homey-platform.md)** — sixteen numbered sections on how Homey
   *actually* behaves, every one established against real hardware and documented nowhere else. The
   code cites it as `platform §n`.
 

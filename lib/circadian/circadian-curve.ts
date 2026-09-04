@@ -4,6 +4,7 @@ import {
   type CircadianPoint,
 } from './circadian-types';
 import { mixColors, paletteColor } from './palette';
+import { ease, mix } from '../support/interpolate';
 
 /**
  * The curve itself: where the day's warmth is at any given minute.
@@ -244,15 +245,6 @@ function bracket(
   const span = ((to.minute - from.minute + MINUTES_PER_DAY) % MINUTES_PER_DAY) || MINUTES_PER_DAY;
   const elapsed = (now - from.minute + MINUTES_PER_DAY) % MINUTES_PER_DAY;
   return { from, to, fraction: Math.min(1, elapsed / span) };
-}
-
-/** Raised cosine: 0 → 0, 1 → 1, flat at both ends. */
-function ease(fraction: number): number {
-  return 0.5 - 0.5 * Math.cos(Math.PI * fraction);
-}
-
-function mix(from: number, to: number, fraction: number): number {
-  return from + (to - from) * fraction;
 }
 
 function wrap(minutes: number): number {

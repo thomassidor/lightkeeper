@@ -5,8 +5,8 @@
 [![CI](https://github.com/thomassidor/lightkeeper/actions/workflows/ci.yml/badge.svg)](https://github.com/thomassidor/lightkeeper/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Use any remote to control any lights, put any lights on a timer, and let them follow the colour
-of the day — without writing a single Flow.**
+**Use any remote to control any lights, put any lights on a timer, let them follow the colour of the
+day, and let them dim themselves as the daylight comes up — without writing a single Flow.**
 
 A Homey Pro app. A **Flow** is Homey's automation rule — *when this happens, do that* — and it is
 how you normally make a remote drive a lamp. One Flow per button, times every lamp, times every
@@ -33,10 +33,10 @@ below](#built-with-ai).
 
 ## What it does
 
-Four kinds of device, doing three jobs: **driving lights from a remote**, **putting lights on a
-timer**, and **moving lights through the colours of the day** — that last one in a simple version
-and a detailed version. You add them the way you add any Homey device: **Devices → Add →
-Lightkeeper**.
+Five kinds of device, doing four jobs: **driving lights from a remote**, **putting lights on a
+timer**, **moving lights through the colours of the day** — that one in a simple version and a
+detailed version — and **setting their brightness from how much light is in the room already**. You
+add them the way you add any Homey device: **Devices → Add → Lightkeeper**.
 
 <table>
 <tr>
@@ -110,9 +110,34 @@ the day" is all you are after.
 
 </td>
 </tr>
+<tr>
+<td width="160"><img src="drivers/daylight/assets/images/large.png" width="140" alt="Daylight light"></td>
+<td>
+
+### Daylight light
+
+Sets your lights' brightness from how much light is in the room **already** — dimming them as the
+morning comes up and lifting them again as it goes, or the other way round if you would rather the
+room followed the day. You set two things: how bright the lights should be when the room is dark,
+and when it is bright. Which of those two is higher is entirely up to you.
+
+It works out how light it is from **any light sensors you already own** — most motion sensors have
+one — and, where you have none, from **how high the sun is**, which it works out from your Homey's
+own location and needs nothing from you. Pick several sensors and they are averaged.
+
+*No API key, and the same rule again: it only dims lights that are already on, and never switches
+one on or off.*
+
+</td>
+</tr>
 </table>
 
-All four have a **Test** button while you are setting them up, which drives your actual lights then
+**And it is not only a device of its own.** A light schedule, a circadian light and a Curve light
+each let you set a brightness — and each will now let you say **follow the daylight** instead, on
+whichever windows, points or ends you choose. The brightness you set stays put as the fallback for
+when nothing can tell how light it is.
+
+All five have a **Test** button while you are setting them up, which drives your actual lights then
 and there, so you know it works before you save anything.
 
 The **light controller** and the **light schedule** do their work by writing Homey Flows behind the
@@ -132,7 +157,12 @@ lights and adjust them directly, which is why neither needs a key.
 - **Homey Cloud is not supported.** Lightkeeper needs wide access to the local API on the Homey
   itself, which only Homey Pro offers.
 - **A Personal API Key**, but only if you are adding a light controller or a light schedule.
-  Circadian lights and Curve lights need none. [Why?](FAQ.md#why-does-it-need-a-personal-api-key)
+  Circadian lights, Curve lights and Daylight lights need none.
+  [Why?](FAQ.md#why-does-it-need-a-personal-api-key)
+- **Your Homey's location**, for a Daylight light with no light sensor to read. Homey asks for it
+  during setup, so you almost certainly have one already; the app reads the latitude to work out how
+  high the sun is, and it never leaves the Homey. A Daylight light with a light sensor needs no
+  location at all.
 
 ## Getting started
 
@@ -244,29 +274,31 @@ reads, what it stores, and for how long.
 
 ## Changelog
 
-**0.5.2** — the current release. Four fixes, all found in one diagnostics export from a Homey that
-had been running for an hour, and three of them only visible on a real lamp:
+**0.6.0** — the current release. A fifth kind of device, and the first thing in this app that reads
+a sensor:
 
-- **A Curve light could keep the colour it last held instead of going back to white.** A lamp in
-  colour mode refuses a colour temperature, so switching axes needs a mode write first — and the
-  "is this worth a write" gate was dropping it, because it compared a mode's value as if it were a
-  number. The first crossing out of a coloured segment worked and every later one did not, which on
-  a daily curve means once and never again.
-- **The dimmest brightness setting meant off.** 5% through the perceptual curve is 0.0014, which
-  rounds to `dim` 0.00 at two decimals — and 5% was the lowest position every slider offered. The
-  sliders now start at 10%, stored values below that are lifted, and a positive brightness can no
-  longer be rounded down to darkness.
-- **A blend between two distant palette colours went through hues nobody chose.** Ember to ocean ran
-  backwards round the wheel through magenta and purple at full saturation. Blends are now a straight
-  line across the colour disc, so a wide pair fades through pale and a narrow one is unchanged.
-- **A bug report can describe a Curve light's colour.** The diagnostics dropped each point's colour
-  — the field that actually drives the lamp — and recorded no colour against the lights it had just
-  been written to.
+- **A Daylight light** sets your lights' brightness from how much light is in the room already.
+  It reads any light sensors you own — most motion sensors have one — and where you have none, how
+  high the sun is, worked out from your Homey's own location. Two settings: how bright the lights
+  should be when the room is dark, and when it is bright. Which is higher is up to you, so it will
+  either take over as the daylight goes or follow the day.
+- **A schedule, a circadian light or a Curve light can follow the daylight too**, on whichever
+  windows, points or ends you choose, instead of a brightness you set by hand. The brightness you
+  set stays put as the fallback for when nothing can tell how light it is.
+- **It never switches a light on or off**, and only dims lights that are already on — the same rule
+  the circadian and Curve lights follow.
+- **A light sensor in the same room as the lights it drives measures those lights too.** Lightkeeper
+  damps the hunting that causes and cannot remove it; the [FAQ](FAQ.md#limits) says which sensor
+  placements behave.
+- **Fixed:** a circadian or Curve light with pre-staging on could report its lights as not responding
+  while they were simply switched off. Some Hue bulbs refuse a colour sent to a lamp that is off, and
+  that refusal was being read as a lamp that had stopped answering.
 
 Earlier releases, one line each:
 
 | Version | What changed |
 |---|---|
+| **0.5.2** | Four fixes to the colour-following lights, and the dimmest brightness no longer meant off |
 | **0.5.1** | A shorter App Store listing, prose release notes, and icons legible at 24 px |
 | **0.5.0** | A Curve light as a fourth device type, a simpler circadian light, and less memory used |
 | **0.4.0** | Circadian lights: follow the colour of the day, and no API key needed for them |
@@ -291,7 +323,7 @@ If it changes how carefully you want to review the code before trusting it with 
 the code is right here.
 
 It has been verified end to end on a Homey Pro 2023 across four remotes and three transports, with
-Over 1000 unit tests covering the logic — [how well tested is this?](FAQ.md#how-well-tested-is-this) has
+Over 1200 unit tests covering the logic — [how well tested is this?](FAQ.md#how-well-tested-is-this) has
 the detail, including what has *not* run on hardware yet.
 
 ## Contributing

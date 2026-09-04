@@ -58,7 +58,7 @@ the manifest's `>=12.9.0` is a firmware floor on top of it.
 
 ## Why schedules use Homey's own time trigger
 
-The app ships four device types and two of them generate Flows. A light schedule compiles to
+The app ships five device types and two of them generate Flows. A light schedule compiles to
 two Flows per window — one at each end — triggered by **Homey's own time card**,
 which the app locates by enumerating the trigger cards this Homey offers and echoing
 that card's `id` and `uri` back verbatim. It never constructs a card URI, and it does
@@ -77,12 +77,13 @@ Two consequences a reviewer may want to check:
 
 ---
 
-## Why two of the four device types ask for no key at all
+## Why three of the five device types ask for no key at all
 
-A reviewer opening the Add-device list will find four drivers, two of which start
-with an API-key screen — **Light controller** and **Light schedule** — and two which
-do not: **Circadian light** and **Curve light**. That is deliberate and worth checking
-against the code, because those two are the place the key is genuinely unnecessary.
+A reviewer opening the Add-device list will find five drivers, two of which start
+with an API-key screen — **Light controller** and **Light schedule** — and three which
+do not: **Circadian light**, **Curve light** and **Daylight light**. That is deliberate
+and worth checking against the code, because those three are the place the key is
+genuinely unnecessary.
 
 A circadian light and a Curve light both make lights follow the colour temperature of
 the day, and they are one engine: the circadian light asks what the lights should look
@@ -112,6 +113,43 @@ Three consequences a reviewer may want to verify:
   and which the app disables by itself if a lamp ever comes on from such a write.
 - It stands down for any light whose colour someone changes by hand, until that light
   is switched off and on again.
+
+---
+
+## Why `homey:manager:geolocation`, and what it is used for
+
+**New in 0.6.0, and it is one line of arithmetic.** The **Daylight light** sets its
+lights' brightness from how much light is already in the room. Where the household
+owns a light sensor it reads that; where it does not — which is most households — it
+works out **how high the sun is**, and the sun's position needs the Homey's position.
+
+`this.homey.geolocation.getLatitude()` and `getLongitude()` are the only two calls,
+they are read at the moment a brightness is computed, and the latitude and longitude
+**never leave the Homey**: there is no request, no cloud call and no telemetry
+anywhere in the app. What happens to them is the standard NOAA solar-position
+algorithm in `lib/daylight/solar-elevation.ts`, which is pure arithmetic with no
+dependencies and is unit-tested against values astronomy fixes independently.
+
+Three things a reviewer may want to check:
+
+- **The alternative does not exist.** SDK v3 has no solar helper and no manager will
+  answer "how high is the sun". Homey's own `homey:manager:cron:sunrise` and `:sunset`
+  are trigger cards — they fire, they do not answer a question — so they cannot supply
+  a number to interpolate against. The permission plus ~120 lines of arithmetic is the
+  whole of the alternative.
+- **It degrades rather than failing.** A Homey that has never been told where it is,
+  or a user who declines the permission, gets a Daylight light that reports plainly
+  that it cannot tell how light it is and **leaves the lights alone** — and one with a
+  light sensor works completely, with no location at all.
+- **It reads a sensor and writes nothing to it.** `measure_luminance` is `setable:
+  false`, and the app subscribes to it through its own token exactly as it already
+  subscribes to a lamp's `onoff`. The sensor is never written to, and deliberately
+  cannot be: the capability union the write planner accepts does not contain it.
+
+The Daylight light itself follows the same two rules as the colour-following types
+above: it **never switches a light on or off**, only dimming lights that are already
+on, and it stands down for any light whose brightness someone changes by hand until
+that light is switched off and on again.
 
 ## Test script
 
@@ -153,7 +191,15 @@ Three consequences a reviewer may want to verify:
     that the lights are right the moment they are switched on, and that the device
     never switches a lamp on or off by itself. A **Circadian light** is the same
     engine with two questions instead of a curve.
-16. Restart the app, then the Homey, and repeat a mapped action.
+16. Add a **Daylight light** (no API-key screen). Confirm **no Flows are created**.
+    The second screen leads with what it currently reads: a sun elevation, plus any
+    light sensor you pick and what it reads in lux. With a sensor picked, cover it
+    with your hand and confirm the lamps ease down over a minute or two rather than
+    jumping — and that they then **settle** rather than moving every minute.
+    Confirm the device never switches a lamp on or off by itself.
+    On a Homey with no location set, confirm it says so plainly and leaves the lights
+    alone rather than guessing.
+17. Restart the app, then the Homey, and repeat a mapped action.
 
 Steps 12, 13 and 14 are the ones worth the time — they are the app's genuinely
 risky behaviours, and each is a deliberate safety property rather than an
@@ -170,6 +216,20 @@ accident of implementation.
 
 ## Known limitations, stated plainly
 
+- **The Daylight light's icon and store image are PLACEHOLDERS in 0.6.0** — a plain
+  circle and a flat violet disc. They satisfy every automated check and neither is
+  the finished artwork; the record is in `artwork/provenance.md` and
+  `artwork/asset-spec.md`, and replacing them is a publish blocker rather than a
+  nice-to-have. Flagged here rather than left to be noticed.
+- **A light sensor in the same room as the lights it drives measures those lights**,
+  which closes a control loop. The app damps it — a deadband below what the eye can
+  see, and a slew limit of one small step per minute — and cannot remove it. This is
+  stated in the app's own FAQ along with the sensor placements that avoid it, rather
+  than being left for a user to discover.
+- **What a real `measure_luminance` sensor reports is per-integration and is not
+  established.** The two lux thresholds a Daylight light asks for default to 5 and
+  500, which is a judgement rather than a measurement; the pairing screen shows the
+  chosen sensor's current reading so the user sets them against something real.
 - Compatibility follows what the source's owning integration exposes, not the
   model on the box. The same hardware can offer a different event surface through
   a different pairing path — a Hue device exposes more through the Philips Hue app

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { TargetSpec } from '../outputs/light-intent';
+import type { DaylightResponse } from '../daylight/daylight-types';
 import type { ManagedFlowReference } from '../profiles/controller-profile';
 import { MINUTES_PER_DAY, formatMinutes, parseMinutes } from '../time/wall-clock';
 import { sanitiseUnitInterval } from '../validation/unit-interval';
@@ -60,6 +61,25 @@ export interface ScheduleEntry {
    * Absent = leave brightness alone and only switch on.
    */
   brightness?: number;
+  /**
+   * Take the brightness from the daylight instead of from the number above.
+   *
+   * The number STAYS, and becomes the fallback. That is the load-bearing half of
+   * this design: when there is no usable light sensor and no position to compute
+   * a sun elevation from, the lights get the brightness the user already set
+   * rather than nothing or a guess. No new failure mode, and nothing to explain.
+   *
+   * Only meaningful with a `brightness` present and a `daylight` on the plan —
+   * `sanitiseEntries` drops it without the first, and `validateSchedulePlan`
+   * refuses it without either, because a window that says it follows the
+   * daylight and cannot is the "looks configured, does nothing" failure this app
+   * exists to prevent.
+   *
+   * **A window applies this at its boundary and does not follow it afterwards.**
+   * A schedule fires AT a time; following is what a Daylight light is for. Stated
+   * as a limit in the README and the FAQ rather than hidden.
+   */
+  fromDaylight?: boolean;
   /** Normalised colour temperature 0–1, where 1 is the WARMEST end (platform §6). */
   temperature?: number;
 }
@@ -70,6 +90,21 @@ export interface SchedulePlan {
   enabled: boolean;
   target: TargetSpec;
   entries: ScheduleEntry[];
+  /**
+   * ONE daylight response for the whole device, or none.
+   *
+   * Inline rather than a reference to a Daylight light, because a device that
+   * depends on another device existing is a device that breaks when somebody
+   * deletes the other one. One per device rather than one per window, because
+   * twelve windows would mean twelve sensor pickers on one screen and the same
+   * configuration retyped twelve times — and a user who genuinely needs two
+   * different responses adds a second schedule device, which is the answer the
+   * twelve-window cap already gives.
+   *
+   * The same shape a Daylight light stores as its whole plan, validated by the
+   * same function (`lib/daylight/daylight-types.ts`).
+   */
+  daylight?: DaylightResponse;
   managedFlows: ManagedFlowReference[];
 }
 
@@ -110,6 +145,8 @@ export function sanitiseEntries(
     const brightness = sanitiseUnit(source.brightness);
     const temperature = sanitiseUnit(source.temperature);
 
+    const lit = brightness !== null && brightness > 0;
+
     const entry: ScheduleEntry = {
       id,
       onAt,
@@ -117,7 +154,18 @@ export function sanitiseEntries(
       end,
       // A brightness of 0 would be "on, at nothing"; treat it as unset rather
       // than writing a lamp to zero and calling it lit.
-      ...(brightness !== null && brightness > 0 ? { brightness } : {}),
+      ...(lit ? { brightness } : {}),
+      /**
+       * Only alongside a brightness, because that brightness IS the fallback.
+       *
+       * Dropped rather than repaired, and dropped SILENTLY rather than dropping
+       * the whole row: the window is still a perfectly good window that sets no
+       * brightness, which is what it will now do. The plan-level half of the
+       * rule — that the device must actually have a daylight response — cannot
+       * be checked from here, because this function only sees the entries;
+       * `validateSchedulePlan` is where that is refused.
+       */
+      ...(lit && source.fromDaylight === true ? { fromDaylight: true } : {}),
       ...(temperature !== null ? { temperature } : {}),
     };
 

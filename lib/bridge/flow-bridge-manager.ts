@@ -1,5 +1,4 @@
 import type { HomeyApiService } from '../homey-api-service';
-import { redactKeyMaterial } from '../credential-service';
 import type { ManagedFlowReference } from '../profiles/controller-profile';
 import {
   compileBinding,
@@ -13,7 +12,7 @@ import {
 import type { LogicalSourceBinding } from '../inputs/selectable-input';
 import { FlowFolderManager, type FlowFolderInfo } from './flow-folder-manager';
 import { FlowCardCatalogue, NO_CACHE } from '../flow-card-catalogue';
-import { isNotFound } from '../support/homey-errors';
+import { isNotFound, redactedMessage } from '../support/homey-errors';
 import { randomUUID } from 'node:crypto';
 
 import { KeyedMutex, SingleFlight } from '../support/keyed-mutex';
@@ -142,13 +141,14 @@ export interface ManagedFlowSummary {
  *
  * One exported constant because two things must agree on it and they live apart:
  * the drivers that mint ids, and the sweep's proof that a flow's `controller`
- * argument was written by us rather than typed in by hand. `circ` is included for
- * completeness — as is `curv` — even though neither a circadian nor a curve light
- * owns any flows. An id of either kind turning up in a flow's arguments would be
- * evidence of something we would want to SEE rather than delete.
+ * argument was written by us rather than typed in by hand. `circ`, `curv` and
+ * `dayl` are included for completeness even though none of those three device
+ * types owns any flows. An id of one of those kinds turning up in a flow's
+ * arguments would be evidence of something we would want to SEE rather than
+ * delete.
  */
 export const LIGHTKEEPER_DEVICE_ID =
-  /^lk-(ctrl|sched|circ|curv)-(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d+-\d+)$/i;
+  /^lk-(ctrl|sched|circ|curv|dayl)-(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d+-\d+)$/i;
 
 /**
  * A new device id.
@@ -162,8 +162,35 @@ export const LIGHTKEEPER_DEVICE_ID =
  * The prefix stays, because it is what tells a human reading a Flow's arguments
  * what they are looking at.
  */
-export function mintDeviceId(kind: 'ctrl' | 'sched' | 'circ' | 'curv'): string {
+export function mintDeviceId(kind: 'ctrl' | 'sched' | 'circ' | 'curv' | 'dayl'): string {
   return `lk-${kind}-${randomUUID()}`;
+}
+
+/**
+ * A sweep that deleted nothing, because it refused to run.
+ *
+ * `kept` is every managed flow, not zero: a refusal leaves them all in place,
+ * and the settings page reports what survived rather than what was skipped.
+ */
+function refusedSweep(kept: number, refused: SweepResult['refused']): SweepResult {
+  return { deleted: 0, kept, failed: 0, unmanaged: 0, refused };
+}
+
+/**
+ * Do the arguments we generated still hold, on the live card?
+ *
+ * Compared as strings because Homey round-trips a number as a string on some
+ * paths, and only over the keys WE generated: Homey may echo back more than it
+ * was given, and a superset is not an edit.
+ *
+ * Written out twice — once for the trigger's args and once for the action's —
+ * byte-identical apart from which object was read.
+ */
+function argsMatch(expected: Record<string, unknown>, live: Record<string, unknown>): boolean {
+  for (const [key, value] of Object.entries(expected)) {
+    if (String(live[key] ?? '') !== String(value)) return false;
+  }
+  return true;
 }
 
 /**
@@ -185,7 +212,7 @@ export function mintDeviceId(kind: 'ctrl' | 'sched' | 'circ' | 'curv'): string {
  * trigger at a new device and the flow stays ours; requiring a particular
  * trigger would make every re-attached flow unmanaged and undeletable.
  */
-export function looksGenerated(flow: any, cardIds: Set<string>): boolean {
+function looksGenerated(flow: any, cardIds: Set<string>): boolean {
   const actions = (flow?.actions ?? []) as any[];
   if (actions.length !== 1) return false;
 
@@ -668,13 +695,6 @@ export class FlowBridgeManager {
   }
 
   /**
-   * Delete generated Flows whose controller no longer exists.
-   *
-   * Offered from app settings rather than run automatically: a bulk delete the
-   * user did not ask for is not something to do on a heuristic, and the count
-   * is always shown first (see countOrphans in api.ts).
-   */
-  /**
    * The candidates a sweep would delete, with a token that pins them.
    *
    * The preview and the delete are two round trips with a person in between,
@@ -726,20 +746,14 @@ export class FlowBridgeManager {
 
     if (liveDeviceIds.size === 0 && managed.length > 0) {
       this.log(`Refusing to sweep ${managed.length} managed flow(s): no devices are running`);
-      return {
-        deleted: 0, kept: managed.length, failed: 0, unmanaged: 0,
-        refused: 'no_live_controllers',
-      };
+      return refusedSweep(managed.length, 'no_live_controllers');
     }
 
     if (approved) {
       const current = previewToken(orphans.map(flow => flow.flowId), liveDeviceIds);
       if (current !== approved.token) {
         this.log('Refusing to sweep: the set of orphans changed since it was shown');
-        return {
-          deleted: 0, kept: managed.length, failed: 0, unmanaged: 0,
-          refused: 'stale_preview',
-        };
+        return refusedSweep(managed.length, 'stale_preview');
       }
     }
 
@@ -804,7 +818,7 @@ export class FlowBridgeManager {
     } catch (error) {
       // Losing the folder names only means an empty folder is left behind.
       this.log('Could not read flow folders before deleting:',
-        redactKeyMaterial(String((error as Error)?.message ?? '')));
+        redactedMessage(error));
     }
 
     let deleted = 0;
@@ -850,7 +864,7 @@ export class FlowBridgeManager {
     } catch (error) {
       if (isNotFound(error)) return true;
       // Redacted as well as sanitised upstream: this line goes to the app log.
-      this.log(`Could not delete flow ${flowId}:`, redactKeyMaterial(String((error as Error)?.message ?? '')));
+      this.log(`Could not delete flow ${flowId}:`, redactedMessage(error));
       return false;
     }
   }
@@ -989,9 +1003,7 @@ export function hasBeenUserEdited(
   // silently kept a flow that fires at a time no screen in the app admits to.
   // Only the keys we generated are compared: Homey may echo back more than it
   // was given, and a superset is not an edit.
-  for (const [key, value] of Object.entries(expected.trigger.args)) {
-    if (String((live.trigger?.args ?? {})[key] ?? '') !== String(value)) return true;
-  }
+  if (!argsMatch(expected.trigger.args, live.trigger?.args ?? {})) return true;
 
   const liveActions = (live.actions ?? []) as any[];
   const ours = liveActions.find(a => String(a?.id ?? '') === expected.actions[0]!.id);
@@ -999,10 +1011,7 @@ export function hasBeenUserEdited(
 
   if (liveActions.length !== expected.actions.length) return true;
 
-  const expectedArgs = expected.actions[0]!.args;
-  for (const [key, value] of Object.entries(expectedArgs)) {
-    if (String(ours.args?.[key] ?? '') !== String(value)) return true;
-  }
+  if (!argsMatch(expected.actions[0]!.args, ours.args ?? {})) return true;
 
   if ((expected.actions[0]!.droptoken ?? null) !== (ours.droptoken ?? null)) return true;
 

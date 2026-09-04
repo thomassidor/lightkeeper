@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
+     role="img" aria-label="A plain open circle">
+  <!--
+    PLACEHOLDER. A plain circle, and deliberately nothing more.
+    
+    The real Daylight light icon has not been drawn yet. This exists so the
+    driver can ship, be installed and be tested, and so that
+    `test/unit/assets.test.ts` has something real to check — its eleven rules are
+    all satisfied by a circle: line art, black paint only, a declared
+    stroke-width, no full-canvas rect, ink inside [20, 940] of the exported 960
+    canvas, ink spanning at least 70% of it, and not byte-identical to any other
+    icon.
+
+    It is NOT a design. A bare circle says nothing about what this device does,
+    and at the 24px the App Store draws a driver icon into (platform §10) it will
+    read as a dot beside four icons that mean something. Replacing it is a
+    release blocker, recorded in artwork/provenance.md and artwork/asset-spec.md.
+
+    Radius 170 of 512 leaves the stroke inside the canvas and, after the export
+    script's fit, spans the 70% the ink test requires.
+  -->
+  <g stroke-width="5.5">
+    <circle cx="256" cy="256" r="170"/>
+  </g>
+</svg>

@@ -31,6 +31,19 @@ export interface FakeNode {
   selected: boolean;
   /** `<details>`. The mapping screen opens a collapsed section to show a note. */
   open: boolean;
+  /**
+   * `hidden`. The daylight card is ONE file on several drivers and hides its own
+   * Save footer where the surrounding screen owns it, so whether it is hidden is
+   * a rule worth asserting rather than a detail.
+   */
+  hidden: boolean;
+  /**
+   * `min` / `max` on a number input. The daylight card bounds its two lux fields
+   * by what the driver's sanitiser will actually accept, so a number that would
+   * be clamped cannot be typed in the first place.
+   */
+  min: string;
+  max: string;
   type: string;
   /** Set to reparse this node's children. Reading it is refused — see below. */
   innerHTML: string;
@@ -100,6 +113,9 @@ function makeNode(tagName: string): FakeNode {
     disabled: false,
     selected: false,
     open: false,
+    hidden: false,
+    min: '',
+    max: '',
     type: '',
     // Replaced below by an accessor pair; declared here so the object literal
     // satisfies FakeNode.
@@ -332,6 +348,10 @@ function applyAttrs(node: FakeNode, attrs: string): void {
       node.dataset[key] = decodeEntities(value!);
     }
     if (name === 'type') node.type = value!;
+    // The daylight card reads and rewrites these, so an attribute that only
+    // reached `attributes` would be invisible to it.
+    if (name === 'min') node.min = value!;
+    if (name === 'max') node.max = value!;
     // The views read `.value` off a select or an input directly, so an attribute
     // that only reached `attributes` would be invisible to them.
     if (name === 'value') node.value = decodeEntities(value!);
@@ -354,6 +374,7 @@ function applyAttrs(node: FakeNode, attrs: string): void {
     if (lowered === 'selected') node.selected = true;
     if (lowered === 'checked') node.checked = true;
     if (lowered === 'disabled') node.disabled = true;
+    if (lowered === 'hidden') node.hidden = true;
     node.attributes[lowered] ??= '';
   }
 }

@@ -6,6 +6,85 @@ release in a few bullets and one line for each older one; this is where the deta
 Newest first. Pre-1.0, so there are no major bumps for breaking changes: a change that would break
 something says so in its own entry instead.
 
+## 0.6.0
+
+A fifth device type, and the first thing in this app that reads a sensor rather than only writing to
+lights.
+
+Added:
+
+- **A Daylight light**: it holds its lights at a brightness that depends on how much light is in the
+  room already. Two settings — how bright the lights should be when the room is dark, and when it is
+  bright — and which of the two is larger is the user's choice rather than a mode, so the same device
+  either takes over as the daylight goes or follows the day. It reads `measure_luminance` sensors the
+  household already owns, averaging several, and where there are none it reads **how high the sun
+  is**, computed from the Homey's own position.
+  Like the two curve-driven types it generates **no Flows** and needs no API key, it only dims lights
+  that are already on, and it never switches one on or off — brightness is never written to a light
+  that is off, which is measured rather than assumed (platform §12).
+- **A schedule window, a circadian end and a curve point can each follow the daylight**, instead of a
+  brightness typed in once. One response per device, configured on that device's own screen through a
+  card shared byte-for-byte by all four screens that carry it. The brightness that was there stays
+  put as the **fallback** for when nothing can tell how light it is — which is the reason the number
+  sits beside the flag rather than being replaced by it.
+  A schedule reads the daylight once, at its boundary; a curve re-reads it on every tick. That
+  difference is stated on the screen, because the two look identical for the first evening.
+- **`homey:manager:geolocation`**, and it is used for exactly one thing: the sun's position needs the
+  Homey's position. Two synchronous accessors, read at the moment a brightness is computed, and the
+  latitude never leaves the Homey. The arithmetic is the standard NOAA solar-position algorithm in
+  `lib/daylight/solar-elevation.ts` — pure, no dependencies, and asserted against values astronomy
+  fixes independently of any implementation (declination at the poles, `90 −` the latitude gap at
+  noon, hemispheric mirroring at an equinox, an hour per 15° of longitude). SDK v3 has no solar
+  helper and Homey's own sunrise cards fire rather than answer, so this is the whole of the
+  alternative (platform §16).
+- **A sky readout on the settings page**, above the per-device cards: the sun's current elevation and
+  every watched sensor with its reading **and that reading's age**. It is the fastest check that the
+  permission resolved, and the age is the only thing that can reveal a sensor which has stopped —
+  because a reading is deliberately never treated as stale.
+
+Fixed:
+
+- **A light whose lamps were switched off could report itself as broken.** Some Philips Hue bulbs
+  refuse a colour sent to them while they are off — the bridge answers that the lamp is "soft off" —
+  and a circadian or Curve light with pre-staging switched on kept sending it once a minute for as
+  long as the lamps were off. Each refusal counted against the lamp, so the device eventually said
+  its lights were not responding, and on a device whose lamps all behave that way it took itself
+  offline. It happened at no predictable moment and cleared itself the next morning, which is why it
+  had gone unnoticed. A refused pre-stage write is no longer counted against a lamp: from the refusal
+  alone a lamp that is merely off looks exactly like one that is dead, so it says nothing either way.
+  Pre-staging also now stops offering a colour to a lamp that has refused three times running, and
+  tries again the next time that lamp is switched on. Found by the light probe run of 4 September
+  2026, on four of thirteen colour-capable bulbs behind one bridge.
+
+Two decisions worth reading before changing anything here:
+
+- **The daylight loop terminates, and two constants are what make it.** A light sensor in the room
+  whose lamps it drives measures those lamps, so this is a closed loop, and an undamped closed loop
+  hunts — a room that pulses once a minute for as long as the app runs. A deadband makes it settle
+  (inside the band there is no next write to provoke the next reading) and a slew limit makes any
+  residual movement a fade. The app damps that loop and does not remove it; the FAQ says so plainly
+  and names the sensor placements that avoid it altogether.
+- **The slew is measured from what we aim at, never from what the lamp reports.** Slewing from the
+  lamp's own level looks more honest and stalls: on a lamp whose `dim` moves in tenths, every
+  perceptual aim from 0.10 to about 0.45 quantises to the same value, so an aim that only advanced on
+  a successful write would never leave the floor while the room went dark around it.
+
+Known:
+
+- **The Daylight light's icon and store image are placeholders** — a plain circle and a flat violet
+  disc. Both satisfy every automated check and neither is finished work; replacing them is a blocker
+  before publishing, recorded in `artwork/provenance.md`, `artwork/asset-spec.md` and
+  `docs/homey-review-notes.md`.
+- **What a real `measure_luminance` sensor reports is per-integration and not yet established.** The
+  two lux thresholds default to 5 and 500, which is a judgement rather than a measurement, and the
+  pairing screen shows the chosen sensor's live reading so it is set against something real. T82 in
+  the hardware plan is where that evidence comes from.
+- **Sunrise and sunset anchors are still refused for curves and schedules**, and are no longer
+  *blocked*: the permission is declared and the solar arithmetic is here. What is missing is the last
+  step — `resolveAnchor()` wants a minute, and an elevation function gives an angle at an instant —
+  plus a decision about what a day with no sunrise means. Half-working would be a curve that silently
+  sits at one colour (platform §12).
+
 ## 0.5.2
 
 Four fixes, all found by reading one diagnostics export from a Homey that had been running for an

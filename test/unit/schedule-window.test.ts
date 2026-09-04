@@ -256,3 +256,40 @@ describe('sanitising what a screen sends', () => {
     assert.equal(entries[0].temperature, 0);
   });
 });
+
+describe('sanitiseEntries and the daylight flag', () => {
+  const window = (over: Record<string, unknown> = {}) => ({
+    id: 'a', onAt: 22 * 60, days: null, end: { kind: 'duration', minutes: 90 }, ...over,
+  });
+
+  test('it survives alongside a brightness', () => {
+    const { entries } = sanitiseEntries([window({ brightness: 0.5, fromDaylight: true })]);
+    assert.equal(entries[0]!.fromDaylight, true);
+  });
+
+  test('and is dropped without one, because that brightness IS the fallback', () => {
+    // Dropped silently rather than dropping the row: the window is still a
+    // perfectly good window that sets no brightness. The plan-level half of the
+    // rule - that the device has a daylight response at all - is the validator's,
+    // because this function only ever sees the entries.
+    const { entries, dropped } = sanitiseEntries([window({ fromDaylight: true })]);
+
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0]!.fromDaylight, undefined);
+    assert.deepEqual(dropped, []);
+  });
+
+  test('a brightness of zero is unset, so the flag goes with it', () => {
+    const { entries } = sanitiseEntries([window({ brightness: 0, fromDaylight: true })]);
+
+    assert.equal(entries[0]!.brightness, undefined);
+    assert.equal(entries[0]!.fromDaylight, undefined);
+  });
+
+  test('anything other than a real true is a no', () => {
+    for (const value of ['yes', 1, {}, 'true']) {
+      const { entries } = sanitiseEntries([window({ brightness: 0.5, fromDaylight: value })]);
+      assert.equal(entries[0]!.fromDaylight, undefined, `failed on ${JSON.stringify(value)}`);
+    }
+  });
+});

@@ -13,6 +13,9 @@ import { ControllerRuntimeManager } from './lib/runtime/controller-runtime-manag
 import { HealthMonitor } from './lib/runtime/health-monitor';
 import { ScheduleRuntimeManager } from './lib/schedules/schedule-runtime-manager';
 import { CircadianRuntimeManager } from './lib/circadian/circadian-runtime-manager';
+import { LuminanceSource } from './lib/daylight/luminance-source';
+import { DaylightEvaluator } from './lib/daylight/daylight-evaluator';
+import { DaylightRuntimeManager } from './lib/daylight/daylight-runtime-manager';
 import {
   intakeBridgeEvent, type IntakeRecord, type MagnitudeReader,
 } from './lib/bridge/bridge-event-intake';
@@ -20,6 +23,7 @@ import { flowWriteProbe } from './lib/credential-service';
 import { fireAndForget } from './lib/support/async';
 import { BoundedLog } from './lib/support/bounded-log';
 import type { WriteRecord } from './lib/outputs/light-target-adapter';
+import { messageOf } from './lib/support/homey-errors';
 
 /**
  * Lightkeeper.
@@ -58,6 +62,27 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
    * an alias because the settings page and the diagnostics export both read it.
    */
   curves!: CircadianRuntimeManager;
+
+  /**
+   * The daylight feature's three app-level objects, and why all three are here
+   * rather than inside the manager that mostly uses them.
+   *
+   * `luminance` holds one ref-counted subscription per light sensor for the
+   * WHOLE app: a Daylight light, three schedules and a Curve light may every one
+   * of them name the sensor in the hall, and five listeners on one battery
+   * device is five teardowns to get right.
+   *
+   * `daylight` is the evaluator over it — the seam that means no runtime knows
+   * about geolocation or solar arithmetic. FOUR consumers: the daylight manager,
+   * the schedule and curve managers (whose plans may carry a response), and the
+   * pairing screens, which show what it currently reads.
+   *
+   * `daylights` is the registry of live Daylight lights, and owns the second
+   * `setInterval` in this app.
+   */
+  luminance!: LuminanceSource;
+  daylight!: DaylightEvaluator;
+  daylights!: DaylightRuntimeManager;
   health!: HealthMonitor;
 
   /**
@@ -145,7 +170,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     });
 
     this.api = new HomeyApiService(this.homey, this.credentials);
-    this.catalog = new DeviceCatalog(this.api);
+    this.catalog = new DeviceCatalog(this.api, this.homey.manifest.id);
     this.cards = new FlowCardCatalogue(this.api);
     this.discovery = new SourceDiscoveryService(this.api, this.cards);
     this.bridge = new FlowBridgeManager(
@@ -159,6 +184,41 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     // One shared sink, so a write from any runtime lands in one time-ordered
     // log. Wired here because this is the only place that can see all three.
     const onWriteResult = (entry: WriteRecord) => this.recentWrites.add(entry);
+
+    this.luminance = new LuminanceSource({
+      api: this.api,
+      catalog: this.catalog,
+      log: (...args) => this.log(...args),
+    });
+
+    this.daylight = new DaylightEvaluator({
+      /**
+       * The Homey's own position, and the try/catch is the whole reason this is
+       * a closure rather than a value.
+       *
+       * `getLatitude()` is synchronous and THROWS when the permission is
+       * missing, so the boundary belongs here — `lib/` has no access to
+       * `this.homey` and must not have to know that reading a number can fail
+       * (platform §16). What arrives at the evaluator is a position or nothing,
+       * and nothing is a verdict it knows how to report.
+       *
+       * Read per call rather than cached, for the same reason `timezone` is: a
+       * household that corrects its Homey's location must not have to restart
+       * the app.
+       */
+      location: () => {
+        try {
+          return {
+            latitude: this.homey.geolocation?.getLatitude(),
+            longitude: this.homey.geolocation?.getLongitude(),
+          };
+        } catch (error) {
+          this.log('Could not read the Homey location:', messageOf(error));
+          return null;
+        }
+      },
+      luminance: this.luminance,
+    });
 
     this.controllers = new ControllerRuntimeManager({
       api: this.api,
@@ -177,6 +237,9 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       api: this.api,
       onWriteResult,
       catalog: this.catalog,
+      // A window, point or end may take its brightness from the daylight; the
+      // evaluator is shared with the Daylight lights rather than rebuilt.
+      daylight: this.daylight,
       bridge: this.bridge,
       cards: this.cards,
       // The SDK's only timezone primitive, and the one every schedule decision
@@ -196,6 +259,9 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       api: this.api,
       onWriteResult,
       catalog: this.catalog,
+      // A window, point or end may take its brightness from the daylight; the
+      // evaluator is shared with the Daylight lights rather than rebuilt.
+      daylight: this.daylight,
       timezone: () => {
         try {
           return this.homey.clock?.getTimezone();
@@ -212,6 +278,20 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       log: (...args) => this.log(...args),
     });
 
+    this.daylights = new DaylightRuntimeManager({
+      api: this.api,
+      onWriteResult,
+      catalog: this.catalog,
+      daylight: this.daylight,
+      luminance: this.luminance,
+      // The SDK's disposal-safe aliases, as above. The SECOND interval in this
+      // app, and deliberately not shared with the curve one: see the manager's
+      // header for why these are two registries rather than one.
+      setInterval: (fn, ms) => this.homey.setInterval(fn, ms),
+      clearInterval: handle => this.homey.clearInterval(handle as any),
+      log: (...args) => this.log(...args),
+    });
+
     this.registerBridgeCard('bridge_event');
     this.registerBridgeCard('bridge_numeric_event', args => Number(args.value));
     this.registerBridgeCard('bridge_token_event', args => Number(args.droptoken));
@@ -223,6 +303,12 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       fireAndForget(this.controllers.onCatalogChange(), l, 'Controller catalogue change');
       fireAndForget(this.schedules.onCatalogChange(), l, 'Schedule catalogue change');
       fireAndForget(this.curves.onCatalogChange(), l, 'Circadian and curve catalogue change');
+      fireAndForget(this.daylights.onCatalogChange(), l, 'Daylight catalogue change');
+      // The sensor service too, and it is NOT covered by the line above. A
+      // sensor's availability arrives on these device events rather than over a
+      // capability subscription, so without this a sensor whose battery died
+      // went on being averaged with its last reading for as long as the app ran.
+      fireAndForget(this.luminance.onCatalogChange(), l, 'Luminance catalogue change');
     });
 
     // A stored key must be re-checked after every restart, or pairing asks for
@@ -245,12 +331,6 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     this.log(`Stored API key: ${status.valid ? 'valid' : status.failure}`);
   }
 
-  /**
-   * Generated flow arguments are user-editable and therefore untrusted.
-   * Every incoming bridge argument is validated against an existing controller
-   * and expected binding key before anything executes. On malformed or stale
-   * input we fail closed: log and ignore, never execute heuristically.
-   */
   /**
    * Register one bridge action card. The SHELL only.
    *
@@ -294,6 +374,10 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     await this.controllers?.destroyAll();
     await this.schedules?.destroyAll();
     await this.curves?.destroyAll();
+    await this.daylights?.destroyAll();
+    // After the runtimes, so their own release() calls have already run and this
+    // is only the backstop for anything a pairing session left behind.
+    await this.luminance?.destroy();
     await this.api?.destroy();
     // Whatever the catalogue is still holding from the last read. Small by
     // design (platform §15), but there is no reason for it to outlive the app.

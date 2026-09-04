@@ -373,6 +373,14 @@ function __lkBootTg(Homey) {
     light_temperature: Homey.__('targets.capTemperature')
   };
 
+  /**
+   * Everything with an `onoff` capability is offered as a light, deliberately —
+   * a smart plug with a lamp in it is somebody's light. The marker is so a
+   * dishwasher does not read as a bulb, and the payload sorts real lights first
+   * so the marked ones gather at the end of each room.
+   */
+  var NOT_A_LIGHT = Homey.__('targets.notALight');
+
   function fail(text) {
     var el = document.getElementById('tg-loadError');
     el.textContent = text;
@@ -420,6 +428,7 @@ function __lkBootTg(Homey) {
         // Showing what each light supports here explains the "2 of 3" notes on
         // the next screen before they appear.
         var caps = (light.capabilities || []).map(function (c) { return CAP_LABEL[c] || c; }).join(', ');
+        if (light.isLight === false) caps += ' \u00b7 ' + NOT_A_LIGHT;
         if (light.available === false) caps += ' \u00b7 ' + Homey.__('targets.unavailable');
         el.appendChild(node('div', 'name', light.name));
         el.appendChild(node('div', 'meta', caps));

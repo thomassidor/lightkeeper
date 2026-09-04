@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 960" width="960" height="960">
+  <title>Daylight light</title>
+  <desc>A plain open circle.</desc>
+
+  <!-- GENERATED from artwork/masters/daylight-icon-master.svg by
+       artwork/export-assets.py. Edit the master, then re-run the script;
+       an edit here is lost on the next export.
+
+       Homey renders an icon as a CSS mask painted one flat colour, fetched from
+       icons-cdn.athom.com by this file's MD5, so colour inside it is discarded
+       and only the silhouette survives. It also means a CLI-installed app shows
+       no icon at all — that CDN only holds published builds. See CLAUDE.md §10.
+
+       The transform centres the master's drawing and scales it to fill the
+       canvas, which guideline 1.5 asks for; stroke widths are pre-divided by the
+       scale so they render at 40 units on this 960 canvas. -->
+  <g transform="translate(-173.5 -173.5) scale(2.5526)" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="15.67">
+    <g stroke-width="15.67">
+    <circle cx="256" cy="256" r="170"/>
+    </g>
+  </g>
+</svg>

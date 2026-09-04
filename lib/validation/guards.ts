@@ -37,11 +37,6 @@ export function requireString(value: unknown, path: string): string {
   return value;
 }
 
-export function optionalString(value: unknown, path: string): string | undefined {
-  if (value === undefined) return undefined;
-  return requireString(value, path);
-}
-
 export function requireBoolean(value: unknown, path: string): boolean {
   if (typeof value !== 'boolean') fail(path, 'is not a boolean');
   return value;
@@ -109,9 +104,4 @@ export function requireOneOf<T extends string>(
 /** A 0–1 value, already clamped by the sanitiser on the way in. */
 export function requireUnitInterval(value: unknown, path: string): number {
   return requireNumber(value, path, { min: 0, max: 1 });
-}
-
-export function optionalUnitInterval(value: unknown, path: string): number | undefined {
-  if (value === undefined) return undefined;
-  return requireUnitInterval(value, path);
 }

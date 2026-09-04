@@ -1,5 +1,5 @@
 import { CredentialService, sanitizedWriteError } from './credential-service';
-import { isTransportFailure } from './support/homey-errors';
+import { isTransportFailure, messageOf } from './support/homey-errors';
 
 // homey-api ships JS with JSDoc rather than type declarations.
 
@@ -17,6 +17,36 @@ import { isTransportFailure } from './support/homey-errors';
  */
  
 const HomeyAPI = require('homey-api/lib/HomeyAPI/HomeyAPI');
+
+/**
+ * Connect the named managers, one at a time, never failing the whole client.
+ *
+ * Managers connect individually; a top-level `connect()` does not cover them,
+ * and `Flow.isBroken` refuses to run without `flow` + `flowtoken` connected.
+ *
+ * `onError` is a PARAMETER rather than a fixed policy because the two callers
+ * genuinely disagree and both are right: the read client logs a degraded
+ * manager, because the app will keep running on the ones that did connect and
+ * somebody has to be able to see which did not; the write client swallows it,
+ * because a write failure is reported by the write itself with a classified
+ * credential verdict, and a second line about a manager would send the reader
+ * to the wrong place.
+ */
+async function connectManagers(
+  api: any,
+  names: string[],
+  onError?: (name: string, error: unknown) => void,
+): Promise<void> {
+  for (const name of names) {
+    const manager = api[name];
+    if (!manager || typeof manager.connect !== 'function') continue;
+    try {
+      await manager.connect();
+    } catch (error) {
+      onError?.(name, error);
+    }
+  }
+}
 
 /**
  * Owns BOTH API clients and every subscription made through them.
@@ -56,22 +86,11 @@ export class HomeyApiService {
     // restarting the app. Every read path in the app funnels through here.
     const attempt = (async () => {
       const api = await this.createAppApi();
-      // Managers connect individually; a top-level connect does not cover them,
-      // and Flow.isBroken refuses to run without flow + flowtoken connected.
-      for (const name of ['devices', 'zones', 'flow', 'flowtoken']) {
-        const manager = api[name];
-        if (manager && typeof manager.connect === 'function') {
-          try {
-            await manager.connect();
-          } catch (error) {
-            // A manager that will not connect is degraded, not fatal — say so
-            // and carry on with the ones that did.
-            this.homey?.app?.error?.(
-              `Could not connect manager "${name}":`, (error as Error)?.message,
-            );
-          }
-        }
-      }
+      // A manager that will not connect is degraded, not fatal — say so and
+      // carry on with the ones that did.
+      await connectManagers(api, ['devices', 'zones', 'flow', 'flowtoken'], (name, error) => {
+        this.homey?.app?.error?.(`Could not connect manager "${name}":`, messageOf(error));
+      });
       this.readApi = api;
       return api;
     })().finally(() => {
@@ -170,13 +189,8 @@ export class HomeyApiService {
 
   static async createWriteClient(address: string, token: string): Promise<any> {
     const api = await HomeyAPI.createLocalAPI({ address, token });
-    for (const name of ['flow', 'flowtoken']) {
-      if (api[name] && typeof api[name].connect === 'function') {
-        try {
-          await api[name].connect();
-        } catch { /* reads still work; the write path reports its own failures */ }
-      }
-    }
+    // No handler: reads still work, and the write path reports its own failures.
+    await connectManagers(api, ['flow', 'flowtoken']);
     return api;
   }
 }

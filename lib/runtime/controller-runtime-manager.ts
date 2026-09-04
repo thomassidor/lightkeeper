@@ -8,6 +8,7 @@ import type { ControllerProfile, ControllerState, StateDetail } from '../profile
 import type { InputEvent } from '../inputs/input-event';
 import { RuntimeRegistry } from './runtime-registry';
 import type { WriteRecord } from '../outputs/light-target-adapter';
+import { messageOf } from '../support/homey-errors';
 
 /**
  * Registry of live controller runtimes.
@@ -17,16 +18,7 @@ import type { WriteRecord } from '../outputs/light-target-adapter';
  */
 
 export interface RuntimeManagerDeps {
-  /**
-   * One app-wide log of every write attempted by ANY runtime.
-   *
-   * Optional so the pairing screen's ephemeral rigs (which have no app) still
-   * work unchanged. Its consumer is the settings page: "did anything reach a
-   * light" is a question about the whole Homey, and answering it from the
-   * FIRST controller's log — which is what api.ts did — made it permanently
-   * empty for a household that runs only schedules, and permanently
-   * misleading for one that runs both.
-   */
+  /** @see WriteRecord — one app-wide log of every write by ANY runtime. */
   onWriteResult?: (entry: WriteRecord) => void;
   api: HomeyApiService;
   catalog: DeviceCatalog;
@@ -233,7 +225,7 @@ export class ControllerRuntimeManager {
         try {
           await runtime.assessHealth();
         } catch (error) {
-          this.deps.log('Health re-check after a credential loss failed:', (error as Error)?.message);
+          this.deps.log('Health re-check after a credential loss failed:', messageOf(error));
         }
       }
       return;
@@ -249,7 +241,7 @@ export class ControllerRuntimeManager {
         // and the re-check asks the monitor rather than assuming the best.
         await runtime.recoverFromCredentialFailure();
       } catch (error) {
-        this.deps.log('Reconcile after credential change failed:', (error as Error)?.message);
+        this.deps.log('Reconcile after credential change failed:', messageOf(error));
       }
     }
   }

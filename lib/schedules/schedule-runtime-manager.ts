@@ -1,5 +1,6 @@
 import type { HomeyApiService } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
+import type { DaylightEvaluator } from '../daylight/daylight-evaluator';
 import { FlowCardCatalogue } from '../flow-card-catalogue';
 import type { FlowBridgeManager } from '../bridge/flow-bridge-manager';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
@@ -8,6 +9,7 @@ import { discoverTimeCard, type TimeCardDiscovery } from './time-card-discovery'
 import type { SchedulePlan } from './schedule-types';
 import { RuntimeRegistry } from '../runtime/runtime-registry';
 import type { WriteRecord } from '../outputs/light-target-adapter';
+import { messageOf } from '../support/homey-errors';
 
 /**
  * Registry of live schedule runtimes — the schedule half of what
@@ -23,16 +25,7 @@ import type { WriteRecord } from '../outputs/light-target-adapter';
  */
 
 export interface ScheduleManagerDeps {
-  /**
-   * One app-wide log of every write attempted by ANY runtime.
-   *
-   * Optional so the pairing screen's ephemeral rigs (which have no app) still
-   * work unchanged. Its consumer is the settings page: "did anything reach a
-   * light" is a question about the whole Homey, and answering it from the
-   * FIRST controller's log — which is what api.ts did — made it permanently
-   * empty for a household that runs only schedules, and permanently
-   * misleading for one that runs both.
-   */
+  /** @see WriteRecord — one app-wide log of every write by ANY runtime. */
   onWriteResult?: (entry: WriteRecord) => void;
   api: HomeyApiService;
   catalog: DeviceCatalog;
@@ -45,6 +38,12 @@ export interface ScheduleManagerDeps {
   cards?: FlowCardCatalogue;
   /** The Homey's IANA timezone. */
   timezone: () => string | undefined;
+  /**
+   * Sun position and sensor readings, for a window whose brightness follows the
+   * daylight. Optional so the ephemeral rigs and the tests can build a manager
+   * without one.
+   */
+  daylight?: DaylightEvaluator;
   log: (...args: unknown[]) => void;
 }
 
@@ -149,6 +148,7 @@ export class ScheduleRuntimeManager {
       timeCard: () => this.timeCard(),
       ...(this.deps.onWriteResult ? { onWriteResult: this.deps.onWriteResult } : {}),
       timezone: this.deps.timezone,
+      ...(this.deps.daylight ? { daylight: this.deps.daylight } : {}),
       log: this.deps.log,
     };
   }
@@ -194,7 +194,7 @@ export class ScheduleRuntimeManager {
         if (valid) await runtime.reconcileFlows();
         await runtime.assessHealth();
       } catch (error) {
-        this.deps.log('Schedule reconcile after a credential change failed:', (error as Error)?.message);
+        this.deps.log('Schedule reconcile after a credential change failed:', messageOf(error));
       }
     }
   }

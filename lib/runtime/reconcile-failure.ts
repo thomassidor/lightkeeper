@@ -1,6 +1,7 @@
-import { credentialFailureKey, redactKeyMaterial } from '../credential-service';
+import { credentialFailureKey } from '../credential-service';
 import type { CredentialStatus } from '../credential-service';
 import type { StateDetail } from '../profiles/controller-profile';
+import { redactedMessage } from '../support/homey-errors';
 
 /**
  * Why a reconcile failed, in the form the device layer can show.
@@ -37,6 +38,6 @@ export function classifyReconcileError(
 
   return {
     state: 'needs_repair',
-    detail: { text: redactKeyMaterial(String((error as Error)?.message ?? '')) },
+    detail: { text: redactedMessage(error) },
   };
 }

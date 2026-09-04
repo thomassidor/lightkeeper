@@ -1,4 +1,5 @@
 import { test, describe } from 'node:test';
+import { ownsNothing, zoneLights } from '../support/fake-catalog';
 import assert from 'node:assert/strict';
 
 import { ScheduleRuntime } from '../../lib/schedules/schedule-runtime';
@@ -54,6 +55,8 @@ function harness(options: {
    * before catch-up runs. This is how a test reaches the gate at all.
    */
   onlyOnBoundary?: boolean;
+  /** A stand-in evaluator, for the windows that follow the daylight. */
+  daylight?: { evaluate: () => { brightness: number; source: string } };
 } = { plan: plan() }) {
   const devices = options.devices ?? [light('l1'), light('l2')];
   const writes: Array<{ deviceId: string; capability: string; value: unknown }> = [];
@@ -84,6 +87,8 @@ function harness(options: {
   const catalog = {
     async device(id: string) { return devices.find(d => d.id === id); },
     async devicesInZone() { return devices; },
+    lightsInZone: zoneLights(async () => devices),
+    isOwnDevice: ownsNothing,
   } as unknown as DeviceCatalog;
 
   const bridge = {
@@ -125,6 +130,9 @@ function harness(options: {
     log: (...args: unknown[]) => logs.push(args.join(' ')),
     onStateChange: (state, detail) => states.push({ state, detail }),
     onPlanChange: async () => { /* persistence is the device's job */ },
+    // Absent unless a test asks, which is the shape a schedule with no daylight
+    // response runs in — and the shape every other test in this file runs in.
+    ...(options.daylight ? { daylight: options.daylight as any } : {}),
   });
 
   return { runtime, writes, states, synced, logs };
@@ -235,6 +243,145 @@ describe('schedule boundaries', () => {
     // Partial support is not partial failure: nothing is reported as skipped,
     // because every light did get the part of the intent it can perform.
     assert.equal(result.skipped, 0);
+  });
+});
+
+describe('a window whose brightness follows the daylight', () => {
+  const RESPONSE = { sensors: ['s1'], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 };
+
+  const window = (over: Record<string, unknown> = {}) => ({
+    id: 'a', onAt: 22 * 60, days: null,
+    end: { kind: 'duration', minutes: 90 } as const,
+    brightness: 0.5, fromDaylight: true, ...over,
+  });
+
+  const evaluator = (brightness: number, source = 'sensors') => ({
+    evaluate: () => ({ brightness, source }),
+  });
+
+  test('comes on at what the daylight asks for, not at the stored number', async () => {
+    const h = harness({
+      plan: plan({ entries: [window()], daylight: RESPONSE }),
+      now: TUESDAY_1000,
+      daylight: evaluator(0.8),
+    });
+    await h.runtime.startWithoutFlows();
+    await h.runtime.testEntry('a', 'on');
+    await settle();
+
+    // 0.8 perceptual through gamma, quantised to the capability's two decimals.
+    const dim = h.writes.find(w => w.deviceId === 'l1' && w.capability === 'dim');
+    assert.equal(dim!.value, 0.61);
+  });
+
+  test('falls back to the stored number when nothing can tell how light it is', async () => {
+    /**
+     * The load-bearing half of the whole design, and the reason the fixed value
+     * is kept BESIDE the flag rather than replaced by it. No usable sensor and
+     * no sun position is a real state — a Homey that has never been told where
+     * it is, with a flat battery in its motion sensor — and a window that came
+     * on at nothing would be a worse answer than one that came on at the level
+     * somebody chose last month.
+     */
+    const h = harness({
+      plan: plan({ entries: [window()], daylight: RESPONSE }),
+      now: TUESDAY_1000,
+      daylight: evaluator(0.8, 'none'),
+    });
+    await h.runtime.startWithoutFlows();
+    await h.runtime.testEntry('a', 'on');
+    await settle();
+
+    const dim = h.writes.find(w => w.deviceId === 'l1' && w.capability === 'dim');
+    assert.equal(dim!.value, 0.22, 'expected the stored 0.5 perceptual, not the daylight');
+    assert.ok(h.logs.some(line => line.includes('using the brightness set by hand')));
+  });
+
+  test('falls back with a flag but no response on the plan', async () => {
+    // The validator refuses this combination in a stored plan, so it can only
+    // arrive from a rig — but the runtime must not read `undefined.sensors`.
+    const h = harness({
+      plan: plan({ entries: [window()] }),
+      now: TUESDAY_1000,
+      daylight: evaluator(0.8),
+    });
+    await h.runtime.startWithoutFlows();
+    await h.runtime.testEntry('a', 'on');
+    await settle();
+
+    assert.equal(h.writes.find(w => w.deviceId === 'l1' && w.capability === 'dim')!.value, 0.22);
+  });
+
+  test('falls back with a response but no evaluator wired', async () => {
+    // The ephemeral pairing rigs run without one.
+    const h = harness({
+      plan: plan({ entries: [window()], daylight: RESPONSE }),
+      now: TUESDAY_1000,
+    });
+    await h.runtime.startWithoutFlows();
+    await h.runtime.testEntry('a', 'on');
+    await settle();
+
+    assert.equal(h.writes.find(w => w.deviceId === 'l1' && w.capability === 'dim')!.value, 0.22);
+  });
+
+  test('a window with no brightness at all is untouched by any of this', async () => {
+    // "Leave the brightness alone and only switch on" is still a window's most
+    // common shape, and the daylight must not invent one for it.
+    const h = harness({
+      plan: plan({
+        entries: [window({ brightness: undefined, fromDaylight: undefined })],
+        daylight: RESPONSE,
+      }),
+      now: TUESDAY_1000,
+      daylight: evaluator(0.8),
+    });
+    await h.runtime.startWithoutFlows();
+    await h.runtime.testEntry('a', 'on');
+    await settle();
+
+    assert.deepEqual(h.writes.filter(w => w.capability === 'dim'), []);
+  });
+
+  test('it is sampled at the boundary and does not follow afterwards', async () => {
+    /**
+     * A schedule fires AT a time. Following is what a Daylight light is for, and
+     * this is stated as a limit in the README and the FAQ rather than left to be
+     * discovered — so it is worth pinning that the runtime really does read the
+     * daylight once per boundary rather than holding a subscription to it.
+     */
+    let brightness = 0.8;
+    const h = harness({
+      plan: plan({ entries: [window()], daylight: RESPONSE }),
+      now: TUESDAY_1000,
+      daylight: { evaluate: () => ({ brightness, source: 'sensors' }) },
+    });
+    await h.runtime.startWithoutFlows();
+    await h.runtime.testEntry('a', 'on');
+    await settle();
+    const first = h.writes.filter(w => w.capability === 'dim').length;
+
+    // The room changes. Nothing re-reads it, because nothing asked.
+    brightness = 0.2;
+    await settle();
+
+    assert.equal(h.writes.filter(w => w.capability === 'dim').length, first);
+  });
+
+  test('the report says whether a window followed the daylight', async () => {
+    // "It came on at 90% when I set it to 40%" and "it came on at 40% when it
+    // should have followed the room" are the same complaint from outside and
+    // different bugs inside.
+    const h = harness({
+      plan: plan({ entries: [window()], daylight: RESPONSE }),
+      now: TUESDAY_1000,
+      daylight: evaluator(0.8),
+    });
+    await h.runtime.startWithoutFlows();
+
+    const reported = h.runtime.diagnostics().entries.find(e => e.id === 'a');
+    assert.equal(reported!.fromDaylight, true);
+    assert.equal(reported!.brightness, 0.5, 'and still reports the fallback beside it');
   });
 });
 

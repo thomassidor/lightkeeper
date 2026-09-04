@@ -17,13 +17,14 @@ import {
 } from '../outputs/target-snapshot';
 import type { LightIntent } from '../outputs/light-intent';
 import type { ControllerProfile, ControllerState, StateDetail } from '../profiles/controller-profile';
-import { sameDetail } from '../profiles/controller-profile';
 import type { HealthMonitor } from './health-monitor';
 import type { InputEvent } from '../inputs/input-event';
 import type { SelectableInput } from '../inputs/selectable-input';
 import type { ControllerBehavior, LightFunction } from '../mapping/mapping-types';
 import { fireAndForget } from '../support/async';
 import { sameCatalogue, sameManagedFlows } from '../support/same';
+import { messageOf } from '../support/homey-errors';
+import { VisibleState } from './visible-state';
 
 /** Which ramp, if any, a resolved intent corresponds to. */
 function rampFor(intent: LightIntent): { kind: 'brightness' | 'temperature'; direction: -1 | 1 } | null {
@@ -58,16 +59,7 @@ export function intentForFunction(func: LightFunction, behavior: ControllerBehav
  */
 
 export interface ControllerRuntimeDeps {
-  /**
-   * One app-wide log of every write attempted by ANY runtime.
-   *
-   * Optional so the pairing screen's ephemeral rigs (which have no app) still
-   * work unchanged. Its consumer is the settings page: "did anything reach a
-   * light" is a question about the whole Homey, and answering it from the
-   * FIRST controller's log — which is what api.ts did — made it permanently
-   * empty for a household that runs only schedules, and permanently
-   * misleading for one that runs both.
-   */
+  /** @see WriteRecord — one app-wide log of every write by ANY runtime. */
   onWriteResult?: (entry: WriteRecord) => void;
   api: HomeyApiService;
   catalog: DeviceCatalog;
@@ -177,21 +169,24 @@ export class ControllerRuntime {
   private lastIntent: {
     intent: LightIntent; at: number; writes: number; skipped: number; note?: string;
   } | null = null;
-  private state: ControllerState = 'disabled';
+  private readonly visible: VisibleState;
 
   constructor(
     readonly controllerId: string,
     private profile: ControllerProfile,
     private readonly deps: ControllerRuntimeDeps,
   ) {
+    // Constructor BODY, like `timers` below: a field initialiser runs before
+    // the parameter property `deps` is assigned.
+    this.visible = new VisibleState((state, detail) => deps.onStateChange(state, detail));
     this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log);
     if (deps.onWriteResult) this.adapter.setWriteSink(deps.onWriteResult);
     this.resolver = new TargetResolver(deps.catalog);
   }
 
-  get currentState(): ControllerState { return this.state; }
+  get currentState(): ControllerState { return this.visible.current; }
   /** The reason for that state, so the device layer can report it verbatim. */
-  get currentDetail(): StateDetail | undefined { return this.lastDetail; }
+  get currentDetail(): StateDetail | undefined { return this.visible.currentDetail; }
   get currentProfile(): ControllerProfile { return this.profile; }
 
   async start(): Promise<void> {
@@ -222,13 +217,13 @@ export class ControllerRuntime {
     if (!this.deps.health) return;
 
     try {
-      const assessment = await this.deps.health.assess(this.profile);
+      const assessment = await this.deps.health.assess(this.profile, this.adapter.unwritableTargets());
       if (assessment.state === 'ready') return;
 
       this.setState(assessment.state, assessment.detail);
     } catch (error) {
       // A health check that cannot run is not itself a controller fault.
-      this.deps.log('Health assessment failed:', (error as Error)?.message);
+      this.deps.log('Health assessment failed:', messageOf(error));
     }
   }
 
@@ -244,7 +239,7 @@ export class ControllerRuntime {
    * back — which is indistinguishable, from outside, from the new key being bad.
    */
   async recoverFromCredentialFailure(): Promise<void> {
-    if (this.state !== 'needs_credential') return;
+    if (this.visible.current !== 'needs_credential') return;
 
     // No monitor (the ephemeral test rig) — the reconcile that just succeeded is
     // the only evidence available, and it is good enough.
@@ -254,11 +249,11 @@ export class ControllerRuntime {
     }
 
     try {
-      const assessment = await this.deps.health.assess(this.profile);
+      const assessment = await this.deps.health.assess(this.profile, this.adapter.unwritableTargets());
       this.setState(assessment.state, assessment.detail);
     } catch (error) {
       // Leave the controller where it is rather than guessing it is well.
-      this.deps.log('Health re-check after a credential change failed:', (error as Error)?.message);
+      this.deps.log('Health re-check after a credential change failed:', messageOf(error));
     }
   }
 
@@ -295,7 +290,7 @@ export class ControllerRuntime {
       this.profile = { ...this.profile, catalogue: discovered.inputs };
       await this.deps.onProfileChange(this.profile);
     } catch (error) {
-      this.deps.log('Could not refresh the event catalogue:', (error as Error)?.message);
+      this.deps.log('Could not refresh the event catalogue:', messageOf(error));
     }
   }
 
@@ -380,7 +375,7 @@ export class ControllerRuntime {
     this.scheduler = new CommandScheduler({
       minWriteIntervalMs: this.profile.behavior.minWriteIntervalMs,
       onError: (deviceId, capability, error) =>
-        this.deps.log(`Write failed on ${deviceId}/${capability}:`, (error as Error)?.message),
+        this.deps.log(`Write failed on ${deviceId}/${capability}:`, messageOf(error)),
     }, (deviceId, capability, value, options) =>
       this.adapter.write(deviceId, capability, value, options));
 
@@ -474,7 +469,7 @@ export class ControllerRuntime {
         } catch (error) {
           persistFailed = true;
           this.deps.log(
-            'Could not persist managed Flow references:', (error as Error)?.message,
+            'Could not persist managed Flow references:', messageOf(error),
           );
         }
       }
@@ -679,29 +674,11 @@ export class ControllerRuntime {
     await this.deps.bridge.removeAll(this.profile.managedFlows);
   }
 
-  /**
-   * Adopt a state, and tell the device layer when anything a user could SEE
-   * has changed.
-   *
-   * The comparison used to be `state === state` alone, which is not what the
-   * device layer renders: it renders the state AND its detail, and the detail
-   * is where the sentence lives. So a device that went from "the API key
-   * expired" to "the API key has no Flow permission" — both `needs_credential`
-   * — kept showing the first message, and the user re-minted a key with the
-   * same problem because the app never stopped telling them to.
-   */
+  /** See `VisibleState`, which owns the when-did-it-move rule. */
   private setState(state: ControllerState, detail?: StateDetail): void {
-    if (this.state === state && sameDetail(this.lastDetail, detail)) return;
-    this.state = state;
-    this.lastDetail = detail;
-    this.stateRevision += 1;
-    this.deps.onStateChange(state, detail);
+    this.visible.set(state, detail);
   }
 
-  /** The detail last handed to the device layer, for the comparison above. */
-  private lastDetail: StateDetail | undefined;
-  /** Diagnostics only: how many times the visible state has actually moved. */
-  private stateRevision = 0;
 
   /**
    * Controls the flow compiler declined, from the last reconcile.
@@ -731,11 +708,11 @@ export class ControllerRuntime {
   diagnostics(): ControllerDiagnostics {
     return {
       controllerId: this.controllerId,
-      state: this.state,
+      state: this.visible.current,
       // How many times the VISIBLE state has moved. A device stuck on a
       // stale message with a rising revision means the device layer is not
       // rendering what it is being told.
-      stateRevision: this.stateRevision,
+      stateRevision: this.visible.revision,
       // Empty on a healthy controller. Non-empty is the only place a declined
       // control is visible from outside the app log.
       unsupported: this.unsupported,

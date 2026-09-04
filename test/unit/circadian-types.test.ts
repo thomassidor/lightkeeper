@@ -137,6 +137,52 @@ describe('sanitiseCurve', () => {
  * and its own chain. So every test here is about the reshape, and the point-based
  * chain is tested through `migrateCurvePlan`.
  */
+describe('sanitiseCurve and the daylight flag', () => {
+  test('it survives alongside a brightness', () => {
+    const { points } = sanitiseCurve([
+      { id: 'p1', at: '06:00', warmth: 0.9, brightness: 0.5, fromDaylight: true },
+      { id: 'p2', at: '21:00', warmth: 1, brightness: 0.6 },
+    ], true);
+
+    assert.equal(points[0]!.fromDaylight, true);
+    assert.equal(points[1]!.fromDaylight, undefined);
+  });
+
+  test('and is dropped without one, because that brightness IS the fallback', () => {
+    // Dropped silently rather than dropping the row: the point is still a
+    // perfectly good point that sets no brightness, which is what it will now
+    // do. The plan-level half of the rule - that the device has a response at
+    // all - is the validator's, because this function only sees the points.
+    const { points } = sanitiseCurve([
+      { id: 'p1', at: '06:00', warmth: 0.9, fromDaylight: true },
+      { id: 'p2', at: '21:00', warmth: 1 },
+    ], false);
+
+    assert.equal(points.length, 2);
+    assert.equal(points[0]!.fromDaylight, undefined);
+  });
+
+  test('a brightness of zero is unset, so the flag goes with it', () => {
+    const { points } = sanitiseCurve([
+      { id: 'p1', at: '06:00', warmth: 0.9, brightness: 0, fromDaylight: true },
+      { id: 'p2', at: '21:00', warmth: 1 },
+    ], false);
+
+    assert.equal(points[0]!.brightness, undefined);
+    assert.equal(points[0]!.fromDaylight, undefined);
+  });
+
+  test('anything other than a real true is a no', () => {
+    for (const value of ['yes', 1, {}, 'true']) {
+      const { points } = sanitiseCurve([
+        { id: 'p1', at: '06:00', warmth: 0.9, brightness: 0.5, fromDaylight: value },
+        { id: 'p2', at: '21:00', warmth: 1, brightness: 0.5 },
+      ], true);
+      assert.equal(points[0]!.fromDaylight, undefined, `failed on ${JSON.stringify(value)}`);
+    }
+  });
+});
+
 describe('circadian migrations', () => {
   const TARGET = { kind: 'devices', deviceIds: ['l1'] };
 

@@ -65,26 +65,16 @@ export function looksLikeApiKey(token: string): boolean {
 }
 
 /**
- * Anything key-shaped, anywhere in a string. Whole keys first so a full key
- * collapses to one `<redacted>` rather than three.
+ * Re-exported, not declared here.
  *
- * 20+ CONTIGUOUS hex characters cannot be a Homey id: those are UUIDs, whose
- * longest unbroken hex run is the 12-character final group. So the secret
- * segment can be matched on its own without eating device or flow ids out of
- * the very log lines that make a failure diagnosable.
+ * It moved to `support/homey-errors.ts` so that `redactedMessage()` could be
+ * built on it without `support/` depending on this module. Every importer of
+ * `redactKeyMaterial` from here still works, and this is still the module whose
+ * property it defends.
  */
-const KEY_MATERIAL = /[0-9a-f-]{36}:[0-9a-f-]{36}:[0-9a-f]{20,}|[0-9a-f]{20,}/gi;
+import { redactKeyMaterial, redactedMessage } from './support/homey-errors';
 
-/**
- * Scrub key material from text that is about to be logged or shown.
- *
- * Belt and braces behind `sanitizedWriteError()`. An upstream error can quote
- * the offending request back, token and all, and "the key is never logged" has
- * to hold for strings we did not author.
- */
-export function redactKeyMaterial(text: string): string {
-  return text.replace(KEY_MATERIAL, '<redacted>');
-}
+export { redactKeyMaterial };
 
 /**
  * Replace an error thrown by a flow WRITE with one that provably carries no key
@@ -261,7 +251,7 @@ export class CredentialService {
     // they were. Without this, one typo in the settings box marked a working key
     // as broken for the rest of the app run.
     if (!looksLikeApiKey(token)) {
-      return candidateStatus('malformed', this.token !== null);
+      return failedStatus('malformed', this.token !== null);
     }
 
     let client: unknown;
@@ -272,7 +262,7 @@ export class CredentialService {
       // Deliberately not logging the error object — it can echo the token back.
       const failure = classifyCredentialError(error);
       this.options.log(`API key rejected: ${failure}`);
-      return candidateStatus(failure, this.token !== null);
+      return failedStatus(failure, this.token !== null);
     }
 
     this.options.settings.set(SETTINGS_KEY, token);
@@ -340,14 +330,7 @@ export class CredentialService {
     if (failure !== 'unknown') {
       this.client = null;
       this.connecting = null;
-      this.status = {
-        present: this.token !== null,
-        valid: false,
-        failure,
-        hint: describeFailure(failure),
-        lastCheckedAt: Date.now(),
-      };
-      this.options.onStatusChange?.(this.getStatus());
+      this.fail(failure);
     }
     return failure;
   }
@@ -363,29 +346,32 @@ export class CredentialService {
     return this.getStatus();
   }
 
+  /** The one caller of `failedStatus` that PUBLISHES the verdict it builds. */
   private fail(failure: CredentialFailure): CredentialStatus {
-    this.status = {
-      present: this.token !== null,
-      valid: false,
-      failure,
-      hint: describeFailure(failure),
-      lastCheckedAt: Date.now(),
-    };
+    this.status = failedStatus(failure, this.token !== null);
     this.options.onStatusChange?.(this.getStatus());
     return this.getStatus();
   }
 }
 
 /**
- * A verdict about a key that was OFFERED and refused.
+ * The one shape of a refusal — whether the key refused is the stored one or a
+ * candidate that was merely offered.
  *
- * Same shape as a published status so the pairing views and the settings page
- * render it unchanged — but it was never assigned to anything, so nothing
- * downstream can mistake it for the state of the key actually in use. `present`
- * describes the stored key, not the candidate: the settings page's "a key is
- * saved" line must not blink off because a different string was rejected.
+ * It stays a PURE function that assigns nothing, and that is the load-bearing
+ * part rather than a style preference. Two of its three callers are the
+ * candidate paths in `validateCandidate`, which must not disturb the incumbent:
+ * the settings page's "a key is saved" line must not blink off because a
+ * different string was rejected. Purity is what makes that a property of the
+ * helper instead of a rule each caller has to remember. `fail()` is the caller
+ * that DOES assign, and it says so at its own site.
+ *
+ * `present` therefore always describes the stored key, never the candidate.
+ *
+ * `reportFailure` and `fail` each built this same five-field literal inline, so
+ * the shape of a refusal was written out three times in one file.
  */
-function candidateStatus(failure: CredentialFailure, present: boolean): CredentialStatus {
+function failedStatus(failure: CredentialFailure, present: boolean): CredentialStatus {
   return {
     present,
     valid: false,
@@ -447,7 +433,7 @@ export async function flowWriteProbe(
       await client.flow.deleteFlowFolder({ id: folder?.id });
     } catch (error) {
       log?.(
-        `Left the permission-check folder behind: ${redactKeyMaterial(String((error as Error)?.message ?? ''))}`,
+        `Left the permission-check folder behind: ${redactedMessage(error)}`,
       );
     }
   }

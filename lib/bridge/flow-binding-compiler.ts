@@ -1,4 +1,4 @@
-import type { LogicalSourceBinding } from '../inputs/selectable-input';
+import { RANGE_EXPANSION_CEILING, type LogicalSourceBinding } from '../inputs/selectable-input';
 
 /**
  * Compile logical bindings into concrete flow definitions.
@@ -14,8 +14,6 @@ import type { LogicalSourceBinding } from '../inputs/selectable-input';
  *     A token owned by the flow's own trigger is referenced by its bare id;
  *     global tokens use "<ownerUri>|<tokenId>".
  */
-
-export const RANGE_EXPANSION_CEILING = 12;
 
 export interface BridgeCardRefs {
   /** Fixed and enum events. */

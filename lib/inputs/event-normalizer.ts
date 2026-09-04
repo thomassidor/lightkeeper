@@ -1,5 +1,9 @@
 import type { InputAction } from './input-event';
-import type { LogicalSourceBinding, SelectableInput } from './selectable-input';
+import {
+  RANGE_EXPANSION_CEILING,
+  type LogicalSourceBinding,
+  type SelectableInput,
+} from './selectable-input';
 import {
   type CardArgument,
   classifyArgument,
@@ -65,15 +69,13 @@ export interface NormalizeResult {
   rejected: Array<{ cardId: string; reason: string }>;
 }
 
-const DEFAULT_RANGE_CEILING = 12;
-
 export function normalizeCards(
   cards: DiscoveredTriggerCard[],
   options: NormalizeOptions,
 ): NormalizeResult {
   const inputs: SelectableInput[] = [];
   const rejected: Array<{ cardId: string; reason: string }> = [];
-  const ceiling = options.rangeExpansionCeiling ?? DEFAULT_RANGE_CEILING;
+  const ceiling = options.rangeExpansionCeiling ?? RANGE_EXPANSION_CEILING;
 
   for (const card of cards) {
     if (STATE_CARD.test(card.shortId)) continue;
@@ -153,7 +155,7 @@ export function normalizeCards(
      * `buildSelectables` then filtered every value out and produced nothing for
      * the card: no input offered, and no line in `rejected` saying why.
      */
-    const isRotation = action === 'rotate_delta' || action === 'rotate_start' || action === 'rotate_stop';
+    const isRotation = action !== undefined && ROTATION_ACTIONS.has(action);
     const hasUsableDirection = direction
       && (direction.arg.values ?? []).some(v => directionOf(String(v.id)) !== null);
 
@@ -416,7 +418,7 @@ export function controlIdentityOf(
   // Rotary identity follows the GESTURE, not the card name. Matching the name
   // alone made "tapdial_button_pressed" a dial, because the vendor prefix
   // happens to contain "dial" — four buttons vanished into the dial control.
-  const isRotation = action === 'rotate_delta' || action === 'rotate_start' || action === 'rotate_stop';
+  const isRotation = action !== undefined && ROTATION_ACTIONS.has(action);
   if (isRotation || (action === undefined && ROTARY_HINT.test(card.title ?? ''))) {
     return { id: 'dial', label: 'Dial' };
   }
@@ -476,11 +478,8 @@ function collapseSemanticDuplicates(
 }
 
 function semanticClass(action: InputAction): string {
+  if (ROTATION_ACTIONS.has(action)) return 'rotate';
   switch (action) {
-    case 'rotate_delta':
-    case 'rotate_start':
-    case 'rotate_stop':
-      return 'rotate';
     case 'press':
     case 'selection':
       return 'press';
@@ -504,6 +503,20 @@ function preferred(a: SelectableInput, b: SelectableInput): SelectableInput {
 
   return a.key <= b.key ? a : b;
 }
+
+/**
+ * The three actions a dial produces.
+ *
+ * "Which actions are rotations" was written out three times — the same
+ * three-way `||` in `normalizeCards` and in `controlIdentityOf`, and the same
+ * three cases again in `semanticClass`.
+ *
+ * NOT the same set as `DIRECTIONAL_ACTIONS` below, which is why they are two
+ * declarations sitting together rather than one: that one excludes
+ * `rotate_start` deliberately, because "Start turning" carries no direction in
+ * its label and folding it in produced rows reading "Turn left left".
+ */
+const ROTATION_ACTIONS = new Set<InputAction>(['rotate_delta', 'rotate_start', 'rotate_stop']);
 
 /**
  * The actions whose own label already carries the direction, so appending it

@@ -211,6 +211,28 @@ Measured on hardware, 30 August 2026: written 0.430, held 0.870, and the lamp re
 from *anything* — this app or a direct API write — until its mode changed. With
 `light_mode: 'temperature'` written first, the same lamp took 0.800 and held 0.840.
 
+**The gate is per-LAMP, not per-integration, and the paragraph above overstated it.**
+`scripts/probe-lights.mjs` walked the mode gate across ten Philips Hue bulbs on 3 September 2026
+(firmware 13.5.0-rc.4). One gated both axes exactly as described. **Three gated neither** — a
+temperature written in colour mode with no mode write landed and held — and a fourth candidate was a
+bulb that turned out to be unreachable, so its verdict is void. Same integration, same driver, same
+bridge, both behaviours.
+
+**Widened again on 4 September 2026, and the gate is rarer than that.** The same step ran across
+another fourteen lamps and **not one of them gated**: every temperature written in colour mode with
+no mode write landed, and the lamp reported itself in temperature mode afterwards. So across the two
+runs the count is one gating lamp in roughly twenty-four, on one integration.
+
+That does not weaken the fix; it is the argument FOR the fix as written. `planColor()` and
+`planTemperature()` emit `light_mode` unconditionally, so on a gating lamp it is the difference
+between working and silently doing nothing, and on a non-gating one it is a no-op that costs one
+write. A per-lamp probe-and-remember would have to be right about which kind each lamp is, and this
+is now measured to be a thing one driver does not know about itself.
+
+`MODE_NEEDS_DELAY` never fired on the lamp that does gate: `light_mode` and the value it enables,
+written back-to-back with no gap — which is exactly what `runFlush` does — landed. So the open
+question `hardware-test-coverage.md` raised by name is answered, on this integration.
+
 Two consequences, both load-bearing:
 
 - `planTemperature()` mirrors `planColor()`, and `WRITE_ORDER` in the command scheduler puts
@@ -225,6 +247,30 @@ on the same pass: 0.930 written and 0.850 held on a bulb at its warm ceiling; 0.
 0.840 held. So a check that a write "took" has to allow roughly 0.1 — loose enough for quantisation,
 far tighter than the 0.44 gap a discarded write leaves.
 
+**That was not reproduced, and the numbers have the shape of the mode gate.** Seven-rung ladders on
+`dim` and `light_temperature` across ten Hue bulbs, 3 September 2026: `maxDelta: 0` on **every** axis
+— `dim`, `light_temperature`, `light_hue` and `light_saturation` — with all seven rungs distinct and
+monotone, and `light_temperature` reaching both `0` and `1` with no warm-ceiling clamp anywhere.
+These lamps report back exactly what they were written.
+
+The awkward part is that "0.930 written, 0.850 held on a bulb at its warm ceiling" is the same
+picture as this section's own gate example, "written 0.430, held 0.870" — a lamp reporting the value
+it was already holding. A clamp and a discard are indistinguishable from a single write, and the two
+measurements were taken on the same pass, before the gate was understood. So at least part of the
+0.1 figure may have been the mode gate read as quantisation.
+
+Not resolved here, and deliberately nothing is changed on the strength of one run against one
+integration. What it means for the two numbers that were calibrated against it:
+
+- `OVERRIDE_TOLERANCE` (0.03, the circadian override band) has more headroom than was believed. A
+  lamp reporting our own write back exactly cannot trip it at all.
+- `LAMP_TOLERANCE` (0.1 in `scripts/verify-hardware.mjs`, chosen "well above observed quantisation")
+  is looser than the current evidence supports, so the hardware pass would not notice a discarded
+  write of small magnitude.
+
+Settling it needs the ladder run again with the mode written first on a lamp known to gate, which is
+`probe-lights.mjs axes modes` on one lamp.
+
 **Writing to an "off" lamp has THREE outcomes, not two.** Pre-staging asks whether a lamp can be
 given a colour while off, and the answers are: it stays off (pre-staging works); it comes on (it does
 not, and the app puts it back and disables the option); or **the integration declines the write** —
@@ -234,9 +280,59 @@ the write and stayed off, so this is per-lamp rather than per-bridge. The third 
 the second does; `probePreStage()` reports it rather than throwing, because unguarded it reached the
 pairing screen as that raw sentence under a button labelled "Test it".
 
+**Per-lamp is now a count rather than an inference.** 4 September 2026, thirteen colour-capable Hue
+bulbs behind one bridge with clean evidence: **four declined and nine staged**, and the split holds
+per lamp across both colour axes — a bulb that refuses a temperature refuses a hue. Every declining
+bulb still took the `dim` write in the same step and came on, which is the only thing that separates
+"refuses colour while off" from "dead": the two genuinely dead bulbs in that run rejected every axis,
+`dim` included. Pre-staging never sends a `dim` to an off lamp, so from inside the app the refusal
+alone cannot tell them apart — which is why a refused pre-stage write is excluded from write health
+below, and why the runtime stops offering a lamp a colour after three refusals in a row (§12).
+
+**`available` does not track reachability, and there is no field that does.** Measured 3 September
+2026: a Hue bulb reported `available: true` for eighteen minutes while **93 of 113 writes to it
+failed**. Every value write was rejected; the only capability that acked was `light_mode`, twenty
+times, because the Hue app satisfies it locally without going to the bridge. So "the write acked" is
+not evidence a lamp is there either, if the write was the enabler rather than the value.
+
+The wording differs per integration and must not be matched on — Hue answers `The device could not be
+reached. Is it powered on?` and the IKEA app answers `Could not reach device. Is it powered on?` for
+the same condition. What the app does with this is
+`LightTargetAdapter.unwritableTargets()`: count consecutive rejections, message-blind, and feed
+`assessTargets()` so a lamp nobody can drive stops reporting as ready.
+
+**With one exception, and it is a caller's flag rather than a message match: a PRE-STAGE write's
+failure is not counted.** A colour written to a lamp that is off is refused identically by a soft-off
+lamp and by a dead one, per the count above, so the rejection is evidence of nothing — and counted,
+it marked four healthy Hue bulbs as "not responding" for as long as the household had them switched
+off. The exclusion runs one way only: a pre-stage SUCCESS still clears a streak, because unlike a
+`light_mode` ack it reached the bridge and the bridge did not refuse it. It is a flag set by the
+runtime (`PlannedWrite.preStage`) rather than a look at the cached `onoff`, because a schedule
+turning a window on writes `onoff`, `dim` and `light_temperature` in one batch and the lamp is still
+cached as off when the temperature goes out — reading the cache would throw that failure away on the
+one path where the lamp really is dead.
+
+One further observation from that lamp, from ONE lamp and therefore not yet a rule: its reported
+`light_temperature` and `light_hue` ended the run holding values that only the probe had written, all
+of whose writes had been rejected. If a write can fail and still move the reported value, then a
+lamp reports back a value the app never committed — `commitDesired()` correctly commits only on
+success — and `applyExternalChange()` reads that as a human override, which drops a lamp out of a
+curve until it is power-cycled. Worth a targeted re-probe on a lamp made unreachable deliberately.
+
 **Echoes arrive duplicated.** Setting `dim` once produces two identical callbacks. `TargetStateCache`
 dedupes within a 1500 ms window, or optimistic desired state fights itself and the ramp engine reads
 a duplicate as an external change that cancels the ramp.
+
+Refined 3 September 2026, with exactly ONE subscription per capability — which is the point, because
+the app can hold two to one lamp (a controller and a circadian light both subscribe) and that would
+explain a doubling all by itself. `ECHO_COUNT` recorded **one or two** echoes per write across
+fourteen lamps, first echo 67-421 ms. So the duplication is the platform's rather than the app's, and
+it is not reliable: a lamp may echo once. The dedupe is still needed and nothing may depend on a
+second echo arriving.
+
+Twenty-seven lamps on 4 September 2026 say the same thing with the proportions filled in: **two
+echoes on twenty-two of them and one on five**, first echo 99-444 ms. Duplication is the norm and
+not the rule.
 
 **Capability options are not uniform — read them, never assume:**
 
@@ -368,8 +464,10 @@ SDK v3 has **no cron manager** — v2's `ManagerCron` is gone, and the full `man
 arp, audio, ble, clock, cloud, dashboards, discovery, drivers, flow, geolocation, i18n, images,
 insights, ledring, nfc, notifications, rf, settings, speech-input, speech-output, zigbee, zwave) has
 nothing else that fires at a time. There is no sunrise/sunset helper in the SDK either;
-`ManagerGeolocation` offers latitude and longitude and requires `homey:manager:geolocation`, which
-this app does not declare.
+`ManagerGeolocation` offers latitude and longitude and nothing more, and requires
+`homey:manager:geolocation` — which the app now declares, for the daylight device types. That
+changes what is possible here and not what is true: a position is still not a time, and §16 is where
+the arithmetic that turns one into the other lives.
 
 **But the FLOW ENGINE has sunrise and sunset trigger cards, and that is a different thing.**
 Re-checked on firmware 13.5.0-rc.4: `homey:manager:cron:sunrise` and `homey:manager:cron:sunset`
@@ -707,14 +805,37 @@ by hand went unnoticed and the next tick took it back.
   people already have for putting a light back to how it ought to be. Never persisted: a restart is a
   clean slate, which is the right bias for a feature whose job is to be correct by default.
 - **Pre-staging is opt-in because a colour write can switch a lamp ON.** §6 measured that for `dim`
-  on Hue; whether `light_temperature` does the same is per-integration and untested. So writing to
+  on Hue. `light_temperature` was measured on 3 September 2026 and does **not**: written to an off
+  Hue bulb it was *staged* on three lamps — the lamp took the value and stayed off, which is exactly
+  the outcome pre-staging needs — and *declined* as "soft off" on a fourth, §6's third outcome.
+  `OFF_TEMP_TURNS_ON` did not fire once. That is four lamps on one integration, so the option stays
+  opt-in and self-disabling; what changed is that its premise is now evidence rather than a hope.
+  Thirteen lamps on 4 September 2026 give the proportions: **nine staged and four declined**, and
+  `OFF_TEMP_TURNS_ON` still did not fire once — so the premise holds for two lamps in three, and the
+  third outcome is common rather than exotic.
+  So writing to
   lights that are off is off by default, provable from the pairing screen against the household's own
   lamps, and self-disabling: `verifyStayedOff()` turns it off for the whole device and persists that
   the first time a lamp comes on from one. It does NOT switch the lamp back off — by then our doing
   and somebody walking in are indistinguishable, and switching off a room a person has just lit is
   the worse failure. The screen's own probe does restore it, because there the user asked.
+- **A REFUSAL is handled per lamp, and neither opt-in nor self-disabling covers it.** A lamp that
+  comes on is a surprise about the INTEGRATION, so `verifyStayedOff()` answers it device-wide and
+  persists that. A lamp that refuses is a fact about that LAMP — measured four refusing against nine
+  staging on one bridge (§6) — and nothing happens to it at all, so answering it device-wide would
+  take pre-staging away from the nine on the evidence of the four. Instead the runtime counts
+  refusals per lamp and stops offering that one a colour after three ticks running
+  (`PRE_STAGE_DECLINES_BEFORE_SKIP`), clearing the count when the lamp is next switched on. Not
+  persisted: the fact costs one write to re-derive and goes stale invisibly when a bulb is replaced
+  under the same id. It is reported on the target in diagnostics, because `preStage: true` and a lamp
+  nothing is written to otherwise read as a broken runtime.
 - **Brightness is never pre-staged.** A `dim` write turns an off lamp on; that is measured, not
-  suspected. Pre-staging is a colour-only idea, and `planWrites()` splits its two legs for exactly
+  suspected — and measured again on 3 September 2026, where `OFF_DIM_TURNS_ON` fired on **eleven of
+  eleven** dimmable lamps, and on 4 September on **twenty-five of twenty-five**; the only lamps that
+  did not come on were the two that rejected every write on every axis. `impliesOn` (`lib/outputs/intent-planner.ts`) rests on that, and so does
+  the fact that this leg exists at all. The bottom of the axis held up in the same run:
+  `MINIMUM_BRIGHTNESS` written as a device `0.01` reported back `0.01` with `onoff: true` on every
+  lamp, so `litDim()` is doing what its docblock claims. Pre-staging is a colour-only idea, and `planWrites()` splits its two legs for exactly
   this reason.
 - **A circadian light's schema 1 → 2 is where this device type stopped being the curve editor.** The
   step keeps the WARMEST and COOLEST points — the two values the user actually chose, and the two the
@@ -728,8 +849,14 @@ by hand went unnoticed and the next tick took it back.
 - **The anchor is a discriminated union from day one.** `{ kind: 'clock' }` is all that ships;
   `{ kind: 'sun' }` is declared, refused by `sanitiseCurve()` and thrown on by `resolveAnchor()`, so
   anchoring to real sunrise and sunset later is a new variant rather than a reshape of every stored
-  plan. What it needs is `homey:manager:geolocation` — which this app does not declare — and solar
-  maths the SDK does not provide (§9).
+  plan. **What it needed has since arrived, and the anchor is still refused.**
+  `homey:manager:geolocation` is now declared and `solarElevation()` in
+  `lib/daylight/solar-elevation.ts` is the solar maths (§16), so this is no longer blocked — it is
+  unbuilt. What is missing is the last step of the sum: `resolveAnchor()` wants the sunrise MINUTE,
+  and an elevation function gives an angle at an instant, so somebody has to solve it for the horizon
+  crossing and decide what that means on a day with no sunrise at all. Until then `sanitiseCurve()`
+  and `validateAnchor()` go on refusing it, because a half-working sun anchor is a curve that
+  silently sits at one colour.
 
 ---
 
@@ -1039,3 +1166,70 @@ of heap and 0.7 MB of RSS.
 [the app-profiling tool](https://tools.developer.homey.app/tools/app-profiling) reports, and
 `GET /api/manager/system/memory` (`ManagerSystem.getMemoryInfo`) gives the per-app breakdown around
 it. `node scripts/verify-hardware.mjs memory` reads both — T59 and T60.
+
+---
+
+## 16. Geolocation, and the sun the SDK will not compute for you
+
+The daylight device types need to know how high the sun is. Nothing on the platform will tell them,
+and the shape of what IS available is what forced the design in `lib/daylight/`.
+
+**`this.homey.geolocation` gives a position and nothing else.** Four synchronous accessors —
+`getLatitude()`, `getLongitude()`, `getAccuracy()` (metres) and `getMode()` (`'auto'` or
+`'manual'`) — plus a `location` event. All four require the `homey:manager:geolocation` permission,
+which this app now declares alongside `homey:manager:api`. Synchronous matters: the value can be
+read inside a tick with no round trip, which is why `app.ts` can hand `lib/` a plain
+`location: () => Location | null` closure of exactly the same shape as the `timezone` one, and why
+`lib/daylight/` needs no async seam for it.
+
+*Read off `node_modules/@types/homey/manager/geolocation.d.ts` and the manager list in §9. Verified
+on hardware: the permission resolves and the accessors return the Homey's own position — see
+`docs/hardware-test-plan.md`.*
+
+**No manager answers "when is sunrise", and §9 already covers why the trigger cards do not help.**
+`homey:manager:cron:sunrise` and `:sunset` exist and fire; they do not answer a question, so they
+cannot supply a number to interpolate against. There is no solar helper anywhere in the SDK and no
+`sunrise` string anywhere in `homey-api`. So the arithmetic is ours:
+`lib/daylight/solar-elevation.ts` is the standard NOAA solar-position algorithm, pure, ~120 lines,
+and asserted against values astronomy fixes independently of any implementation (declination at the
+poles, `90 −` the latitude gap at noon, hemispheric mirroring at an equinox, an hour per 15° of
+longitude).
+
+**A second permission is a paragraph for the reviewer, not a new category.** The app is already
+reviewed as Tools-style for `homey:manager:api` — `homey app validate` says so itself. What the
+review notes have to say about this one is short: the sun's position needs the Homey's position,
+nothing computes it for us, and the latitude never leaves the Homey. See
+[`homey-review-notes.md`](homey-review-notes.md).
+
+**`0, 0` is what an unset location reads as.** It is also a real place, in the Gulf of Guinea, and on
+a Homey in somebody's house the first is overwhelmingly more likely. `usableLocation()` in
+`lib/daylight/daylight-types.ts` refuses it, along with out-of-range and non-finite values, because
+the cost of guessing is a confident sun elevation for a point in the ocean dimming a room in
+Denmark by it. Refusing yields `source: 'none'`, which falls back to the brightness the user set by
+hand.
+
+### `measure_luminance` is the only lux capability, and it declares no range
+
+`homey-lib`'s definition (`assets/capability/capabilities/measure_luminance.json`) is
+`type: number`, `units: lx`, `decimals: 2`, `getable: true`, **`setable: false`**,
+`uiComponent: sensor`, with a `measure_luminance_changed` trigger. There is no
+`measure_illuminance`, no solar capability, and no UV-to-lux anything. Two consequences:
+
+- **It carries no `min` and no `max`**, unlike `dim` and `light_temperature`. So
+  `TargetResolver.primeCache()`'s `min ?? 0 / max ?? 1` defaults would silently describe a lux
+  sensor as a 0–1 axis, and `TargetStateCache.supports()` returns `false` for it anyway because it
+  is not in `TargetCapabilities`. A sensor therefore must NOT be read through the light seams. It is
+  not a widening that was skipped for effort: the `Capability` union in `lib/outputs/intent-planner.ts`
+  is the set of things this app WRITES, and putting a read-only sensor into it would put a sensor in
+  the write path. `lib/daylight/luminance-source.ts` subscribes to it directly instead, with the
+  same `makeCapabilityInstance` + `api.track()` teardown pattern `LightTargetAdapter` uses.
+- **A reading is never treated as stale.** Many Zigbee sensors report only on change, so a quiet
+  sensor in a stable room is correct rather than broken, and a timeout would fall back to the sky
+  precisely when the sensor was telling the truth. Unusable means the device is gone, `available`
+  is false, or it has never reported a finite number. A frozen sensor is instead made visible: the
+  age of every reading is on the settings page and in diagnostics.
+
+*Capability definition read from the pinned `homey` CLI's bundled `homey-lib`. What real sensors
+actually report — scale, resolution and reporting interval, which are per-integration and where the
+`darkLux` / `brightLux` defaults of 5 and 500 will be judged — is what
+`node scripts/probe-lights.mjs inventory --all` is for, and is not yet established.*

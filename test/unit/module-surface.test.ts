@@ -71,6 +71,26 @@ function exportedValues(): Map<string, string[]> {
 }
 
 /** Everything that could plausibly consume one. */
+/**
+ * A file's code, with comments stripped.
+ *
+ * Load-bearing, not tidiness. The check below is a word-boundary regex over
+ * file text, so a name MENTIONED in prose counted as a consumer. Five exports
+ * were living on that: `optionalString` and `optionalUnitInterval` were called
+ * from nowhere at all and were kept alive by one sentence in `plans.ts` naming
+ * them, and three more were used only inside their own file while a comment
+ * elsewhere made them look imported. A test that a comment can satisfy is not
+ * holding the line it claims to.
+ *
+ * Deliberately crude — block comments and line comments, nothing else. It does
+ * not need to parse TypeScript, only to stop prose from voting.
+ */
+function withoutComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^[ 	]*\/\/.*$/gm, '');
+}
+
 function consumers(): Array<{ path: string; source: string }> {
   const paths = [
     ...filesUnder(join(ROOT, 'lib'), '.ts'),
@@ -82,7 +102,7 @@ function consumers(): Array<{ path: string; source: string }> {
     join(ROOT, 'app.ts'),
     join(ROOT, 'api.ts'),
   ];
-  return paths.map(path => ({ path, source: readFileSync(path, 'utf8') }));
+  return paths.map(path => ({ path, source: withoutComments(readFileSync(path, 'utf8')) }));
 }
 
 describe('the surface lib/ actually exposes', () => {

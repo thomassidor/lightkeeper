@@ -21,12 +21,14 @@ module.exports = class ControllerDevice extends LightkeeperDevice<ControllerProf
   readonly storeKey = 'profile';
   readonly missingKey = 'state.noConfiguration';
 
+  /**
+   * Straight through. The controller's chain used to call its payload `profile`
+   * and this method existed only to rename it — a shim justified in a comment
+   * as sparing "the whole migration suite", which turned out to be one
+   * destructure here and a handful of lines in two test files.
+   */
   migrate(raw: unknown): PlanMigration<ControllerProfile> {
-    // The controller's migration module predates the shared shape and calls its
-    // payload `profile`. Renaming it would touch the whole migration suite for
-    // nothing, so the adaptation is here.
-    const { profile, migrated, fromVersion } = migrateProfile(raw);
-    return { plan: profile, migrated, fromVersion };
+    return migrateProfile(raw);
   }
 
   registry(): DeviceRegistry<ControllerProfile, ControllerRuntime> {
@@ -66,11 +68,6 @@ module.exports = class ControllerDevice extends LightkeeperDevice<ControllerProf
     }
 
     return merged;
-  }
-
-  /** The name the pairing session has always called. */
-  async applyProfile(profile: ControllerProfile): Promise<void> {
-    return this.applyPlan(profile);
   }
 
 };

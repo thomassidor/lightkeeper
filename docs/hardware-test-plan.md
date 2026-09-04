@@ -66,7 +66,7 @@ pass builds its own alongside it.
 
 The script cannot do these. Report each by its number.
 
-- [ ] **T3** Devices → Add device → Lightkeeper lists four device types, with four **different** pictures. (It draws no icon at all from a CLI install — that is normal and resolves on publish.)
+- [ ] **T3** Devices → Add device → Lightkeeper lists five device types, with five **different** pictures. (The Daylight light's is a PLACEHOLDER for this release — a flat violet disc, and a publish blocker recorded in `artwork/provenance.md`.) (It draws no icon at all from a CLI install — that is normal and resolves on publish.)
 - [ ] **T9** Press the mapped button. The lights respond.
 - [ ] **T10** Hold the ramp button. It ramps, and **stops when you let go** — and never runs longer than about 10 seconds.
 - [ ] **T11** Turn the dial. The lights move by a sensible amount — **not** straight to full.
@@ -77,73 +77,62 @@ The script cannot do these. Report each by its number.
 
 *Rewritten each release — what is new or risky this time. Its lines carry on from the highest number used so far, and are retired rather than reused when the next release rewrites this section.*
 
-**0.5.2.** Four fixes to the two light-following device types, three of which only a real lamp can
-confirm — the suite proves the arithmetic, but "did the lamp actually change" is not a thing it can
-answer. `node scripts/verify-hardware.mjs full --yes` answers none of T71-T75: they need a curve
-crossing between a coloured segment and a temperature one, which is a curve the script does not
-build. **Set them a few minutes apart and watch the lamp**, rather than waiting on a real day.
+**0.6.0 — a fifth device type, and the first thing in this app that reads a sensor.** Most of it is
+provable without a Homey and is: the solar arithmetic is asserted against values astronomy fixes
+independently, the two anti-hunting dampers are pinned by unit tests, and the sanitisers and
+validators have their own. What no test can settle is the four lines below, and the reason is the
+same each time — they depend on a real permission, a real sensor, or ten minutes of a real room.
 
-T66-T70 were unreleased on top of 0.5.1 and ship with this release, so they carry on below.
+`node scripts/verify-hardware.mjs full --yes` answers **T77-T80** on its own. **T81-T86 need you.**
 
-- [ ] **T71** *The serious one.* A **Curve light** over a lamp that can do both colour and colour
-      temperature. Give it three points a few minutes apart: one with a **colour** (ember), then two
-      with a plain **warmth**. That shape puts one segment between two warmth points, which is the
-      only way to get a temperature segment at all — a colour at either end holds that colour flat.
-      Now watch it cross out of the coloured segment into the temperature one **twice** (edit the
-      times, or wait out two cycles). Both times the lamp must go white. Before the fix the first
-      crossing worked and the second left it sitting on the colour, because the `light_mode` write
-      that makes a temperature land was being dropped — so on a daily curve it worked once and never
-      again. Check `/diagnostics` after each crossing: `targets[].lastWritten` must show a `warmth`
-      and no `color`.
-- [ ] **T72** Same Curve light, on the **dimmest** setting the brightness slider now offers (10%).
-      The lamp must be visibly lit, not off and not at its own minimum. Then check `/diagnostics`:
-      `lastWritten.dim` must be above 0.00. Before the fix the slider went down to 5%, which became
-      `dim` 0.00 — off, on most integrations — and held there for the eight minutes either side of
-      the point.
-- [ ] **T73** *The migration, and it needs a device that predates this build.* On a Homey still
-      running 0.5.1, set a curve point, a schedule window or a circadian end to **5%** brightness and
-      save. Then install 0.5.2 over it. Open **Repair**: the card must show **10%**, and saving must
-      not change what the lamp does relative to what the card says. The failure this prevents is a
-      card displaying 10% while the stored plan still says 5%, which is what a raised slider does on
-      its own.
-- [ ] **T74** *By eye, and there is no other way to check it.* A Curve light with **ember** at one
-      point and **ocean** at the next, a few minutes apart, over a colour lamp. Through the middle of
-      that segment the lamp must go **pale** — nearly white — and come out blue. It must NOT pass
-      through purple or magenta at full saturation, which is what the old wheel blend did for half
-      the segment. Then try **candle to amber**: that one must stay a proper warm colour the whole
-      way across, because narrow pairs are the ones the old blend got right and must not have been
-      flattened.
-- [ ] **T75** `GET /diagnostics` with a Curve light running a coloured curve. Confirm all four of:
-      each coloured point in `points[]` carries its `color` (an `ember`, not just a warmth);
-      `targets[].lastWritten` carries a `color` while the lamp is on a coloured segment; that same
-      object says `dim` and not `brightness`; and `canColor` sits beside `canWarm`. Then switch the
-      device's pause switch **off** and read `lastAction` — it must carry a `detail` saying the plan
-      is switched off, with a fresh timestamp, rather than the last pass that did something.
-- [ ] **T76** Leave a Curve light on an **ember to ocean** segment for ten minutes and count the
-      colour writes in `recentWrites`. Expect roughly one every three to seven minutes, not one a
-      minute. `COLOR_STEP` went from 0.01 to 0.03 with the new blend precisely because the disc path
-      is longer than the arc; if this shows a write most minutes, 0.03 was not enough.
-- [x] **T66** *(PASSED 2 Sep 2026 — see the run below.)* Pair a **circadian light** (the two-ended one, not Curve). On its tile, tap the pause
-      switch OFF and then ON again. Neither tap may error, and after each one open **app settings**:
-      the page must still load and still list the device. Before the fix, either tap threw inside the
-      runtime — leaving it stopped but still registered, so the light did nothing until the app
-      restarted — and `diagnostics()` then threw for every curve-driven device, which took the whole
-      settings page and the bug-report export down with it. Check the app log for a tick failure
-      repeating every minute afterwards; there should be none.
-- [ ] **T67** Same device: **Repair** it and change *warmest* (or the chosen lights). Save, then
-      re-open Repair — it must show what you just set, not the previous values. Then restart the app
-      (`npx homey app install` again) and confirm the new curve is still what runs. The repair used
-      to take effect on the lights and be written back as the plan it replaced.
-- [ ] **T68** A **Curve light** with a coloured point over a lamp that can do colour but **not**
-      colour temperature, if the household has one. It must pair and report ready rather than "None
-      of its lights can change their warmth", and the pairing screen's pre-stage **Test it** must
-      offer that lamp rather than saying every light is already on.
-- [ ] **T69** In the light picker, on any device type: pick a zone, then have the pick fail — the
-      simplest way is to delete the zone from another client mid-pairing. A red message must appear
-      *above* the two tabs, and it must clear again on the next successful tap. It used to fail
-      silently, and the message element was hidden in zone mode.
-- [ ] **T70** `node scripts/verify-hardware.mjs memory`. Confirm the review's deletions did not move
-      the ~44 MB floor (platform §15). T59's 30 MB guideline and 50 MB ceiling still apply.
+- [ ] **T81** *The permission, and it is the first thing to check.* Homey settings → Lightkeeper.
+      The **Daylight lights** section now leads with a sky readout. Confirm it names a **plausible
+      sun elevation for the hour** rather than "This Homey has not said where it is".
+      Cross-check the number against [NOAA's own
+      calculator](https://gml.noaa.gov/grad/solcalc/) for your latitude and the current minute — a
+      sign error or a UTC slip produces a number that looks entirely reasonable and is wrong, and
+      this is the only place it shows.
+- [ ] **T82** *Needs a real `measure_luminance` device, and there is no substitute.* Pair a
+      **Daylight light** by hand and pick a light sensor — most motion sensors have one. Confirm the
+      pairing screen shows that sensor's **current reading in lux and its age**, and that "So your
+      lights would be" says **from the sensors** rather than from the sun. Then cover the sensor with
+      your hand for a minute and confirm the reading follows.
+      *What this is really checking:* that `measure_luminance` arrives over the capability
+      subscription at all, and on what scale. Nothing establishes that but a real sensor
+      (platform §16). Note the numbers you see — the `darkLux` and `brightLux` defaults of 5 and 500
+      are a judgement, not a measurement, and this is the evidence that would change them.
+- [ ] **T83** *The one that needs ten minutes of a real room, and the one this device type lives or
+      dies by.* Point a Daylight light at the lamps **in the same room as its sensor** — the
+      configuration the FAQ warns about, and the one people will try first. Switch the lamps on and
+      watch **Homey settings → Lightkeeper → writes** for ten minutes.
+      **Confirm the writes STOP.** A handful while it settles is right; one every minute for ten
+      minutes is the closed loop hunting, and it means the deadband is too narrow for real sensor
+      jitter. If it hunts, report the numbers rather than adjusting anything: `DAYLIGHT_DEADBAND` and
+      `MAX_STEP_PER_TICK` in `lib/daylight/daylight-runtime.ts` are sized against a guess about
+      sensor noise, and this is the measurement.
+- [ ] **T84** *By eye.* Cover the sensor from T82 by hand while the lamps are on. The lamps should
+      **ease** to their new level over a minute or two rather than jumping. Then uncover it and
+      confirm they ease back. A jump means the slew limit is not being applied; no movement at all
+      means the change never crossed the deadband, which is a different answer and worth saying.
+- [ ] **T85** *The add-on, on the device type where it is easiest to see.* Give a **schedule** a
+      window a couple of minutes out, tick **Set the brightness**, and choose **Follow the
+      daylight**. Confirm the screen shows the boundary caveat, then let the window fire and confirm
+      the lamps come on at the level the card's readout predicted rather than at the slider's number.
+      Then switch the Homey's location off (Homey settings → Location) if you can, and confirm the
+      next firing falls back to the slider — that fallback is the whole reason the number is kept
+      beside the flag, and it is untested on hardware.
+- [ ] **T86** *The one the light probe found, and it needs a lamp that refuses.* From the 4 September
+      2026 probe run, four of thirteen colour-capable Hue bulbs refuse a colour written to them while
+      they are off — the report names them, and `OFF_WRITE_DECLINED` with "soft off" is how to find
+      the ones in your own house. Give a **circadian light** one of those lamps, switch **pre-staging
+      on**, and leave the lamp switched off for ten minutes with the curve ticking. Then read the
+      settings page: the device must still be **ready** rather than "1 of 1 lights are not
+      responding", and its target must carry `preStageDeclined` with the bridge's own sentence.
+      Confirm in the diagnostics' recent writes that it stopped trying after **three** attempts
+      rather than one a minute. Then switch the lamp on and off again and confirm it is retried once
+      more. Before this release the device reported not-responding and, where every lamp behaved this
+      way, took itself offline — at no predictable moment, because a circadian light only re-assesses
+      its health when a target's availability moves or the app restarts.
 
 ### Last run — 2 September 2026, Homey Pro 2023, firmware 13.5.0-rc.4, app 0.5.1 + the code-review pass
 

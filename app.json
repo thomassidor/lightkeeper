@@ -1,7 +1,7 @@
 {
   "_comment": "This file is generated. Please edit .homeycompose/app.json instead.",
   "id": "com.thomassidor.lightkeeper",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "compatibility": ">=12.9.0",
   "runtime": "nodejs",
   "sdk": 3,
@@ -38,7 +38,8 @@
   },
   "brandColor": "#2A1958",
   "permissions": [
-    "homey:manager:api"
+    "homey:manager:api",
+    "homey:manager:geolocation"
   ],
   "images": {
     "small": "/assets/images/small.png",
@@ -90,6 +91,10 @@
     "tickCurves": {
       "method": "POST",
       "path": "/curves/tick"
+    },
+    "tickDaylight": {
+      "method": "POST",
+      "path": "/daylight/tick"
     },
     "testScheduleBoundary": {
       "method": "POST",
@@ -393,6 +398,62 @@
         }
       ],
       "id": "curve"
+    },
+    {
+      "name": {
+        "en": "Daylight light"
+      },
+      "class": "service",
+      "capabilities": [
+        "onoff"
+      ],
+      "capabilitiesOptions": {
+        "onoff": {
+          "title": {
+            "en": "Daylight active"
+          }
+        }
+      },
+      "platforms": [
+        "local"
+      ],
+      "connectivity": [
+        "lan"
+      ],
+      "images": {
+        "small": "/drivers/daylight/assets/images/small.png",
+        "large": "/drivers/daylight/assets/images/large.png",
+        "xlarge": "/drivers/daylight/assets/images/xlarge.png"
+      },
+      "pair": [
+        {
+          "id": "targets",
+          "navigation": {
+            "next": "daylight"
+          }
+        },
+        {
+          "id": "daylight",
+          "navigation": {
+            "prev": "targets"
+          }
+        }
+      ],
+      "repair": [
+        {
+          "id": "targets",
+          "navigation": {
+            "next": "daylight"
+          }
+        },
+        {
+          "id": "daylight",
+          "navigation": {
+            "prev": "targets"
+          }
+        }
+      ],
+      "id": "daylight"
     },
     {
       "name": {

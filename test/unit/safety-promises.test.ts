@@ -550,7 +550,7 @@ describe('a device that can be paused can be un-paused', () => {
 
   test('every driver is discovered', () => {
     // The canary: an empty list would make the implication below vacuous.
-    assert.deepEqual(drivers, ['circadian', 'controller', 'curve', 'schedule']);
+    assert.deepEqual(drivers, ['circadian', 'controller', 'curve', 'daylight', 'schedule']);
   });
 
   test('a pause switch implies the device stays available while paused', () => {
@@ -564,10 +564,10 @@ describe('a device that can be paused can be un-paused', () => {
     }
   });
 
-  test('the three switchable device types still have their switch', () => {
+  test('the four switchable device types still have their switch', () => {
     // Stated positively as well, because losing the switch is a silent
     // regression: the tile simply stops offering it.
-    for (const driver of ['schedule', 'circadian', 'curve']) {
+    for (const driver of ['schedule', 'circadian', 'curve', 'daylight']) {
       assert.ok(declares(driver, 'withPauseSwitch'), `drivers/${driver}/device.ts lost its pause switch`);
     }
   });

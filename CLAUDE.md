@@ -2,7 +2,7 @@
 
 Guidance for Claude Code (and any other agent) working in this repository. This file holds the
 architecture, the conventions and the release process. **The Homey platform reference — how the
-platform actually behaves, fifteen numbered sections established against real hardware — lives in
+platform actually behaves, sixteen numbered sections established against real hardware — lives in
 [`docs/homey-platform.md`](docs/homey-platform.md), and the code cites it as `platform §n`.** Read
 it before changing anything that talks to Homey; [the map is below](#the-homey-platform-reference-lives-in-docshomey-platformmd).
 
@@ -10,18 +10,28 @@ Documentation for everyone else: [`README.md`](README.md) and [`FAQ.md`](FAQ.md)
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for contributors, [`docs/README.md`](docs/README.md) as the
 index of everything.
 
-Lightkeeper is a Homey Pro app that does three things to already-paired lights: it turns an
-already-paired remote, switch or dial into a controller for them, it puts them on a schedule, and it
-follows the colour of the day with them.
+Lightkeeper is a Homey Pro app that does four things to already-paired lights: it turns an
+already-paired remote, switch or dial into a controller for them, it puts them on a schedule, it
+follows the colour of the day with them, and it sets their brightness from how much light is
+already in the room.
 
-**Four device types, three jobs.** The first two — a light controller and a light schedule — work
+**Five device types, four jobs.** The first two — a light controller and a light schedule — work
 by generating and maintaining the Flows underneath, which is why they need a Personal API Key
 (platform §1). The third job has TWO device types, and they are the same engine: a **circadian
 light** asks what the lights should look like at their warmest and coolest and supplies the shape
 of the day itself, and a **Curve light** exposes the whole curve — every point, every time, and a
-colour from a closed palette instead of a warmth at any point. **Neither generates Flows at all**
-(platform §12): they watch the lights themselves and write to them directly, so neither needs a
-key, neither has a `needs_credential` state, and neither appears in the orphan sweep's live set.
+colour from a closed palette instead of a warmth at any point. The fourth job is a **Daylight
+light**: it reads `measure_luminance` sensors the household already owns, and the sun's own
+elevation computed from the Homey's position (platform §16), and holds its lights at a brightness
+that depends on how light it is already. **None of those three generates Flows at all**
+(platform §12): they watch the lights themselves and write to them directly, so none needs a
+key, none has a `needs_credential` state, and none appears in the orphan sweep's live set.
+
+**The fourth job is also available inside the second and third.** A schedule window, a circadian
+end and a curve point each store a brightness, and each may instead say `fromDaylight` — one
+`DaylightResponse` per device, inline, with the stored number kept beside the flag as the fallback
+for when nothing can tell how light it is. A schedule samples it at its boundary; a curve follows
+it on every tick. That difference is the reason both device types exist.
 
 ## Commands
 
@@ -42,6 +52,9 @@ node scripts/verify-hardware.mjs spike       # can the script reach a real Homey
 node scripts/verify-hardware.mjs memory      # PSS against Homey's 30 MB guideline. Read-only
 node scripts/verify-hardware.mjs full --yes  # MOST of the hardware pass — NEEDS a real Homey.
                                              # Builds and deletes its OWN devices only
+node scripts/probe-lights.mjs plan --all     # what a probe run WOULD do. Writes nothing
+node scripts/probe-lights.mjs inventory --all   # every light's declared metadata. Read-only
+node scripts/probe-lights.mjs full --yes --all  # the quirks battery, on YOUR OWN lamps. Slow
 ```
 
 [`docs/commands.md`](docs/commands.md) is the same set written out for a human to look things up in
@@ -59,7 +72,7 @@ Run a single test file: `node --import tsx --test test/unit/ramp-engine.test.ts`
 
 ```
 app.ts                          app entry, bridge action listeners, validation on receipt
-api.ts                          app Web API: what settings/index.html renders, plus six
+api.ts                          app Web API: what settings/index.html renders, plus seven
                                 "try it now" routes over the runtimes
 lib/
   homey-api-service.ts          both API clients, subscription tracking and teardown
@@ -80,19 +93,28 @@ lib/
   circadian/                    the curve ENGINE, shared by two device types: curve types and
                                 cyclic interpolation, the palette, the two-ended simple plan,
                                 runtime, manager, and one migration chain per store
+  daylight/                     the brightness-from-the-room engine: NOAA solar elevation (pure),
+                                the response and its two ramps, the ONE stored shape four device
+                                types share, the app-level ref-counted sensor subscriptions, the
+                                evaluator every runtime takes, runtime, manager, migration chain
   devices/                      the device layer: DeviceLifecycle (plain, testable) and
                                 LightkeeperDevice (the Homey.Device shell) — see platform §13
   time/                         wall-clock minutes and the Homey's local clock
-  validation/                   guards, the three plan validators, pairing DTO checks
-  pairing/                      the light picker, the remote picker, the mapping screen's
-                                sections and the default device names — every pairing DECISION,
-                                lifted out of driver.ts so it can be tested (platform §13)
-  support/                      the primitives every layer uses: the per-device FIFO and the
+  validation/                   guards, the four plan validators, pairing DTO checks
+  pairing/                      the light picker, the SENSOR picker, the remote picker, the
+                                mapping screen's sections and the default device names — every
+                                pairing DECISION, lifted out of driver.ts so it can be tested
+                                (platform §13)
+  support/                      the primitives every layer uses: the per-KEY mutex and the
                                 single-flight coalescer, the bounded ring log, the migration-chain
                                 runner, the injectable Timers seam, error-shape classification,
-                                field-wise equality, fire-and-forget
+                                field-wise equality, fire-and-forget. NOT the queue that gates
+                                lamp writes: that is DeviceQueue, inside command-scheduler.ts.
+                                KeyedMutex serialises subscribe/unsubscribe, device-lifecycle
+                                operations and flow folders instead
   app-contract.ts               what api.ts and the device layer may use of the app
-  homey-api-types.ts            the shapes homey-api returns, at the normalisation seams
+  homey-api-types.ts            the DEVICE and ZONE shapes homey-api returns, at the one
+                                seam that normalises them. The flow and card seams read `any`
 drivers/controller/             virtual device, driver, four pairing views
   pair/                         the four views, edited here
   repair/                       exact copies of pair/, generated — see platform §8
@@ -102,6 +124,12 @@ drivers/circadian/              the SIMPLE one: two ends of the day. NO credenti
 drivers/curve/                  the FULL one: every point, and a colour per point. NO credential
                                 screen
   pair/                         targets.html is a COPY of the controller's; curve.html is its own
+  repair/                       exact copies of pair/, generated — see platform §8
+drivers/daylight/               brightness from the room, and the ONLY device type that reads a
+                                sensor. NO credential screen
+  pair/                         targets.html is a COPY of the controller's; daylight.html is its
+                                own — and is byte-copied into the three views that carry the
+                                shared daylight card. See below
   repair/                       exact copies of pair/, generated — see platform §8
 drivers/schedule/               virtual device, driver, three pairing views
   pair/                         credential.html and targets.html are COPIES of the
@@ -114,6 +142,14 @@ scripts/verify-hardware.mjs     most of the hardware pass. Talks to a REAL Homey
                                 (platform §2). Names everything it builds `[verify] …` and
                                 touches nothing else — a device you paired is never
                                 selected, written to or deleted
+scripts/probe-lights.mjs        every light on a REAL Homey, pushed until it misbehaves. Reports
+                                findings — each naming the assumption it breaks and its file:line —
+                                so a per-vendor strategy table could be designed from evidence
+                                rather than from one Homey. NOT a pass: nothing gates a release,
+                                nothing runs in CI. Needs ONE key, and it writes to lamps you
+                                paired: one at a time, snapshot first, restore verified. Default
+                                scope is HOMEY_TEST_ROOM; --all is typed, never defaulted. Reports
+                                to .probe/ (gitignored), raw plus a redacted sibling
 scripts/render-views.mjs        every pairing screen to a PNG, plus a contact sheet. Headless
                                 Chrome, the same rasteriser artwork/export-assets.py uses
 scripts/render-icons.mjs        every icon at the size the App Store draws it — 24px of ink in a
@@ -152,7 +188,7 @@ README.md  FAQ.md  CHANGELOG.md  CONTRIBUTING.md
 
 # The Homey platform reference lives in `docs/homey-platform.md`
 
-Fifteen numbered sections on how Homey actually behaves — every one established against real
+Sixteen numbered sections on how Homey actually behaves — every one established against real
 hardware (Homey Pro 2023, firmware 13.4.0, homey-api 3.19.2) and documented nowhere else. **Read it
 before changing anything that talks to Homey.** It used to be the middle of this file; it moved out
 so that a human developer could find it under a name that says what it is.
@@ -178,6 +214,7 @@ tests carry one — `(platform §6)` means section 6 of that file. Keep writing 
 | [13](docs/homey-platform.md#13-requirehomey-only-resolves-on-a-homey-and-that-shapes-the-device-layer) | `require('homey')` only resolves ON a Homey — why the device layer is split in two |
 | [14](docs/homey-platform.md#14-pair-sessions-are-a-web-api-surface-and-pairing-can-be-scripted) | Pair sessions ARE a Web API surface — pairing and repair can be scripted |
 | [15](docs/homey-platform.md#15-homey-api-caches-every-getall-result-forever) | `homey-api` caches every `getAll` result forever — which is where 30 MB of a 48 MB footprint went |
+| [16](docs/homey-platform.md#16-geolocation-and-the-sun-the-sdk-will-not-compute-for-you) | Geolocation, and the sun the SDK will not compute for you — plus why a lux sensor must not go through the light seams |
 
 # Working on this codebase
 
@@ -335,10 +372,10 @@ Nothing else in the reference has been re-checked.
   proprietary to Athom B.V.; no warranty*. Bundling it in a Homey app is exactly the permitted use,
   but it does not inherit this repo's MIT licence and belongs in the rights register as its own line.
 
-## Two of the four device types share one flow lifecycle
+## Two of the five device types share one flow lifecycle
 
-(The other two — a circadian light and a Curve light — generate no Flows at all and appear nowhere
-below. See platform §12.)
+(The other three — a circadian light, a Curve light and a Daylight light — generate no Flows at all
+and appear nowhere below. See platform §12.)
 
 `FlowBridgeManager` takes `BindableInput` — `{ key, label, binding, variantKey? }` — not
 `SelectableInput`. A schedule has no physical control, no action and no magnitude, but it does have a
@@ -434,6 +471,23 @@ query was asking the OS about a surface the OS does not own. There is no query t
 container's own colour, so the honest answer is to match the one panel Homey actually draws. The
 colour TOKENS stay, because they are what makes a palette change one edit rather than five;
 `test/unit/pair-view-styles.test.ts` fails if a scheme query reappears in any view.
+
+**The daylight card is ONE function copied into four views, and a test is what makes that safe.**
+A daylight response is one configuration per device and four of the five device types can hold one,
+so the same sensor picker, lux range, two ends and live readout appear on four screens. There is
+nowhere to put a module — see the note above — so it is `function daylightCard()` byte-identical in
+`drivers/daylight/pair/daylight.html`, `drivers/schedule/pair/schedule.html`,
+`drivers/circadian/pair/ends.html` and `drivers/curve/pair/curve.html`, plus a second delimited CSS
+block beside the shared base. `test/unit/pair-view-styles.test.ts` asserts both identical wherever
+they appear, and asserts that every carrier has the `node`, `clear` and `emit` the card closes over.
+
+Two things make the copy work rather than merely be safe. It takes **no arguments**: everything it
+needs is already in every view's scope, which is what lets the body be identical while the
+surrounding screen is not. And it is **self-contained on the wire** — it calls `getDaylight`,
+`listSensors` and `setDaylight` itself, and all four drivers answer those three, so the host screen
+never threads a response through its own reply. Its classes are all `dl-`prefixed and defined in its
+own CSS block, even where the host view has something identical: two of the four carriers define no
+`.help` or `.field` at all, and a card that borrowed them rendered unstyled there.
 
 **Edit a pair view, then run `npm run sync:views`.** Every `repair/` folder holds byte copies of its
 `pair/`, and the schedule driver's `credential.html` and `targets.html` are byte copies of the
@@ -550,6 +604,63 @@ Load-bearing product guarantees, not implementation details:
   looks at targets, so it returns early while `flowsHealthy` is false — otherwise it reported 'ready'
   straight over the top of "no time trigger card on this Homey", and the schedule looked well and
   never fired.
+- **The daylight loop terminates, and two constants are what make it.** A `measure_luminance` sensor
+  in the room whose lamps it drives reads those lamps as well as the sky, so this is a closed loop —
+  and an undamped closed loop hunts: a room that visibly pulses once a minute for as long as the app
+  runs. `DAYLIGHT_DEADBAND` (0.02 perceptual) is what makes it SETTLE, because inside the band there
+  is no next write to provoke the next reading. `MAX_STEP_PER_TICK` (0.05) is a slew limit, so any
+  residual movement is a fade rather than a flash. **They must stay in that order** — the step
+  strictly larger than the band — or a target just outside the band is approached in increments that
+  never leave it, and the lamp creeps and stalls. The app damps this loop; it does not remove it, and
+  the FAQ says so and names the sensor placements that avoid it.
+- **The slew is measured from the AIM, never from the lamp's reported level.** Slewing from what the
+  lamp says looks more honest and stalls: `dim` on a lamp declaring `decimals: 1` moves in tenths, so
+  through γ = 2.2 every perceptual aim from 0.10 to about 0.45 quantises to the same 0.1. Those
+  writes are genuine no-ops and are rightly dropped — but an aim that only advanced on a successful
+  write would never leave 0.10 while the room went dark around it. So `aim` advances every pass and
+  `committed` is success-gated, and the two are separate maps for exactly that reason.
+- **A lamp that refuses a colour while it is off is not a lamp in ill health, and is never counted
+  as one.** Four of thirteen Hue bulbs behind one bridge decline a pre-stage write as "soft off"
+  every time; a dead lamp refuses identically, and pre-staging never sends the `dim` write that would
+  tell the two apart. So `PlannedWrite.preStage` excludes that FAILURE from `unwritableTargets()` —
+  one way only, because a pre-stage success reached the bridge and is real evidence — and the
+  circadian runtime stops offering that one lamp a colour after three refusals running, clearing the
+  count when it is next switched on. Without the first half, healthy lamps reported themselves as not
+  responding all night; without the second, we asked six hundred times a night and never listened.
+  Both halves ship together: suppression alone would freeze the streak at exactly the tripping value
+  and remove the only writes that could clear it.
+- **A Daylight light never switches a lamp on or off, and has no pre-stage option at all.** A `dim`
+  write turns an off lamp on — measured, not suspected — so pre-staging is a colour-only idea and a
+  brightness-only device type has nothing to pre-stage. It writes to lamps that are already on. That
+  is the same promise the two curve-driven types make (platform §12), with one fewer setting to get
+  wrong.
+- **A brightness that follows the daylight keeps the number it replaces, as the fallback.** Four
+  paths lead back to it and all four are real: no flag, no response on the plan, no evaluator wired,
+  or an evaluator that cannot tell how light it is (`source: 'none'` — a Homey never told where it is,
+  with a flat battery in its sensor). A window that came on at nothing would be worse than one that
+  came on at the level somebody chose last month. It is the reason the stored value sits beside the
+  flag rather than being replaced by it, and it is why `fromDaylight` is refused without a
+  `brightness` in every sanitiser and every validator.
+- **A schedule window samples the daylight at its boundary; a curve follows it.** A schedule fires
+  AT a time and does not follow anything afterwards — that is what a Daylight light is for. Both are
+  stated on the pairing screen and in the FAQ rather than left to be discovered, because the two
+  behaviours look identical for the first evening.
+- **A lux sensor never reaches the light seams.** `measure_luminance` is `setable: false` and
+  declares no `min`/`max` (platform §16), and the `Capability` union in the intent planner is the set
+  of things this app WRITES. `lib/daylight/luminance-source.ts` subscribes to it directly, with the
+  same `makeCapabilityInstance` + `api.track()` teardown pattern, ref-counted so five devices naming
+  one sensor cost one subscription. Widening `Capability` would put a read-only sensor in the write
+  path.
+- **`Number(null)` is 0, and 0 lux is pitch dark.** A sensor whose integration reports `null` on a
+  flat battery would drive a whole room to the dark end of its response with a number it never sent.
+  So every lux and every latitude goes through an explicit guard rather than a bare coercion — found
+  by the test that fires every junk value at a live listener, and the reason `0, 0` is refused as a
+  location as well.
+- **A sensor reading is never treated as stale.** Many Zigbee sensors report only on change, so a
+  quiet sensor in a stable room is telling the truth, and a timeout would fall back to the sky
+  precisely then. Unusable means gone, unavailable, or never having reported a finite number. A
+  FROZEN sensor is made visible instead: every reading's age is on the settings page and in
+  diagnostics, which is the only thing that can reveal one.
 
 ## Built with AI
 

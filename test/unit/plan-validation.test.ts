@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 
 import {
   validateControllerProfile, validateSchedulePlan, validateCircadianPlan,
-  validManagedFlowRefs,
+  validateDaylightPlan, validManagedFlowRefs,
 } from '../../lib/validation/plans';
 import { runMigrationChain } from '../../lib/support/migrations';
 import { DEFAULT_BEHAVIOR } from '../../lib/mapping/mapping-types';
 import { DEFAULT_POINTS } from '../../lib/circadian/circadian-types';
+import { DEFAULT_RESPONSE } from '../../lib/daylight/daylight-types';
 
 /**
  * Persisted data is not trusted data.
@@ -59,6 +60,13 @@ const validCircadian = () => ({
   preStage: false,
 });
 
+const validDaylight = () => ({
+  schemaVersion: 1,
+  enabled: true,
+  target: { kind: 'devices', deviceIds: ['l1'] },
+  response: { ...DEFAULT_RESPONSE, sensors: ['sensor-a'] },
+});
+
 describe('the happy path passes unchanged', () => {
   test('a controller profile', () => {
     assert.deepEqual(validateControllerProfile(validProfile()), validProfile());
@@ -70,6 +78,29 @@ describe('the happy path passes unchanged', () => {
 
   test('a circadian plan, including the default curve', () => {
     assert.deepEqual(validateCircadianPlan(validCircadian()), validCircadian());
+  });
+
+  test('a daylight plan, including the default response', () => {
+    assert.deepEqual(validateDaylightPlan(validDaylight()), validDaylight());
+  });
+
+  test('a plan may follow the daylight where it has a response to follow', () => {
+    const following = {
+      ...validSchedule(),
+      daylight: DEFAULT_RESPONSE,
+      entries: [{ ...validSchedule().entries[0], fromDaylight: true }],
+    };
+    assert.deepEqual(validateSchedulePlan(following), following);
+  });
+
+  test('a daylight response may have its two ends either way round', () => {
+    // Direction is the user's choice, not a mode, so the validator must not have
+    // an opinion about which end is larger.
+    const following = {
+      ...validDaylight(),
+      response: { ...DEFAULT_RESPONSE, dark: 0.25, bright: 0.9 },
+    };
+    assert.deepEqual(validateDaylightPlan(following), following);
   });
 
   test('an optional field that is absent stays absent', () => {
@@ -172,13 +203,56 @@ describe('every rejection names the field', () => {
         { ...validSchedule().entries[0], id: 'both', onAt: 300, end: { kind: 'duration', minutes: 30 } },
       ],
     }), /SchedulePlan\.entries contains more than one entry with id "both"/],
+    ['a daylight response with no span, so the level would be a NaN', () => ({
+      ...validDaylight(),
+      response: { ...DEFAULT_RESPONSE, darkLux: 100, brightLux: 100 },
+    }), /DaylightPlan\.response\.brightLux is not above darkLux/],
+    ['a daylight response with an inverted span', () => ({
+      ...validDaylight(),
+      response: { ...DEFAULT_RESPONSE, darkLux: 900, brightLux: 20 },
+    }), /DaylightPlan\.response\.brightLux is not above darkLux/],
+    ['a daylight response naming one sensor twice, so it is weighted twice', () => ({
+      ...validDaylight(),
+      response: { ...DEFAULT_RESPONSE, sensors: ['a', 'a'] },
+    }), /DaylightPlan\.response\.sensors names "a" more than once/],
+    ['a daylight response missing an end, which is asked for a number every tick', () => ({
+      ...validDaylight(),
+      response: { sensors: [], darkLux: 5, brightLux: 500, dark: 0.9 },
+    }), /DaylightPlan\.response\.bright is not a finite number/],
+    ['a daylight response with a lux value no sensor could report', () => ({
+      ...validDaylight(),
+      response: { ...DEFAULT_RESPONSE, brightLux: 5_000_000 },
+    }), /DaylightPlan\.response\.brightLux is above 100000/],
+    ['a window that follows the daylight on a device that has no response', () => ({
+      ...validSchedule(),
+      entries: [{ ...validSchedule().entries[0], fromDaylight: true }],
+    }), /SchedulePlan\.entries follows the daylight, but this device has no daylight response/],
+    ['a window that follows the daylight with no brightness to fall back to', () => ({
+      ...validSchedule(),
+      daylight: DEFAULT_RESPONSE,
+      entries: [{
+        id: 's1', onAt: 1320, days: null, end: { kind: 'time', at: 60 }, fromDaylight: true,
+      }],
+    }), /SchedulePlan\.entries\[0\]\.fromDaylight is set while the window carries no brightness/],
+    ['a curve point that follows the daylight on a device that has no response', () => ({
+      ...validCircadian(),
+      adjustBrightness: false,
+      points: DEFAULT_POINTS.map((p, i) => ({ ...p, brightness: 0.5, ...(i === 0 ? { fromDaylight: true } : {}) })),
+    }), /CircadianPlan\.points follows the daylight, but this device has no daylight response/],
+    ['a curve point that follows the daylight with no brightness', () => ({
+      ...validCircadian(),
+      daylight: DEFAULT_RESPONSE,
+      points: DEFAULT_POINTS.map((p, i) => ({ ...p, ...(i === 0 ? { fromDaylight: true } : {}) })),
+    }), /CircadianPlan\.points\[0\]\.fromDaylight is set while the point carries no brightness/],
   ];
 
   for (const [name, build, expected] of cases) {
     test(name, () => {
       const validate = expected.source.startsWith('ControllerProfile')
         ? validateControllerProfile
-        : expected.source.startsWith('SchedulePlan') ? validateSchedulePlan : validateCircadianPlan;
+        : expected.source.startsWith('SchedulePlan') ? validateSchedulePlan
+          : expected.source.startsWith('DaylightPlan') ? validateDaylightPlan
+            : validateCircadianPlan;
       assert.throws(() => validate(build()), expected);
     });
   }
@@ -203,6 +277,7 @@ describe('fuzzed input rejects rather than crashing', () => {
     ['controller', validateControllerProfile],
     ['schedule', validateSchedulePlan],
     ['circadian', validateCircadianPlan],
+    ['daylight', validateDaylightPlan],
   ] as const) {
     test(`${name}: every nasty value throws a ValidationError with a message`, () => {
       for (const value of NASTY) {
@@ -278,7 +353,7 @@ describe('the shared migration runner', () => {
     assert.equal(result.fromVersion, 0);
     assert.equal(result.migrated, true);
     assert.deepEqual(result.steps, [0]);
-    assert.equal((result.value as any).filled, true);
+    assert.equal((result.plan as any).filled, true);
   });
 
   test('a PRESENT non-integer version is malformed, not 0', () => {

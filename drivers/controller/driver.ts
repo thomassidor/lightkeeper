@@ -18,6 +18,7 @@ import {
 import { groupSourcesByRoom } from '../../lib/pairing/source-list';
 import { mappingGroups, mappingRuleRows, ruleTargetFor } from '../../lib/pairing/mapping-screen';
 import { deriveControllerName } from '../../lib/pairing/derive-name';
+import { messageOf } from '../../lib/support/homey-errors';
 
 /**
  * The Driver owns: pair/repair session handlers, UI data
@@ -91,7 +92,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
           this.log(`pair/${name} ok`);
           return result;
         } catch (error) {
-          this.error(`pair/${name} failed:`, (error as Error)?.message, (error as Error)?.stack);
+          this.error(`pair/${name} failed:`, messageOf(error), (error as Error)?.stack);
           throw error;
         }
       });
@@ -152,7 +153,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
       // the new device's own surface hashes or the next health check reports the
       // surface as moved. See applyReattach.
       const updated = HealthMonitor.applyReattach(profile, candidate, discovered);
-      await device.applyProfile(updated);
+      await device.applyPlan(updated);
 
       return { mappings: updated.mappings.length, deviceName: candidate.deviceName };
     });
@@ -338,7 +339,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
       this.preflightBindings(profile);
 
       if (device) {
-        await device.applyProfile(profile);
+        await device.applyPlan(profile);
         return { updated: true };
       }
 

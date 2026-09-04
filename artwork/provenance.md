@@ -5,18 +5,37 @@ to a shipped file is lost on the next export. What to produce, and why, is in
 [`asset-spec.md`](asset-spec.md); how Homey consumes it is in
 [`../docs/homey-platform.md`](../docs/homey-platform.md) §10.
 
-## Nothing is a placeholder any more
+## Two placeholders, and they are a publish blocker
 
-Every shipped graphic comes from a master drawn for it. The Curve light was the last one outstanding
-— it split out of the circadian light in 0.5.0 and shipped with that driver's graphics, which
-Athom's automated reviewer would have flagged as byte-identical reuse — and it got
+**The Daylight light's two graphics are PLACEHOLDERS**, added with the device type on
+**3 September 2026** for 0.6.0:
+
+| File | What it is now | What it needs to be |
+|---|---|---|
+| `daylight-icon-master.svg` | A plain stroked circle | Line art that says "brightness from the light in the room". A bare circle reads as a dot beside four icons that mean something, and at the 24 px the App Store draws a driver icon into (§10) that is all it will be |
+| `daylight-device-master.png` | A flat violet disc on studio white | **Photography.** Homey's guideline 1.4 rejects a flat shape as a device image, which is why the other four masters are photographs. This one would be rejected on sight |
+
+Both satisfy every automated check — that is deliberate, so the device type can ship, install and be
+tested — and neither is finished work. **Replacing them is a release blocker before publishing**, and
+it is recorded here, in `artwork/asset-spec.md`'s table, in `docs/homey-review-notes.md`'s known
+limitations, and in each master's own comment. Four places rather than one, because a placeholder
+recorded once is a placeholder that ships.
+
+`test/unit/assets.test.ts`'s `PENDING_ARTWORK` set is still **empty**, and correctly so: that set
+excuses an icon from the no-two-identical comparison, and a circle is not identical to anything. The
+placeholder is a *quality* problem, which no test can hold — hence this section.
+
+### What came before
+
+Every other shipped graphic comes from a master drawn for it. The Curve light was the last one
+outstanding — it split out of the circadian light in 0.5.0 and shipped with that driver's graphics,
+which Athom's automated reviewer would have flagged as byte-identical reuse — and it got
 `curve-icon-master.svg` and `curve-device-master.png` of its own on **27 August 2026**, before
-release. `test/unit/assets.test.ts`'s `PENDING_ARTWORK` set is now empty, so every icon is compared
-against every other with no exemption.
+release.
 
-**If that ever changes**, record it in all three places rather than one: the target entry in
-`artwork/export-assets.py`, an entry in `PENDING_ARTWORK`, and here. A test asserts each pending
-entry names a real icon target, so the list cannot outlive what it excuses.
+**If a genuine byte-identical reuse ever happens again**, record it in all three places rather than
+one: the target entry in `artwork/export-assets.py`, an entry in `PENDING_ARTWORK`, and here. A test
+asserts each pending entry names a real icon target, so the list cannot outlive what it excuses.
 
 
 ## The masters

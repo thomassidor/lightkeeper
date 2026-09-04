@@ -1,4 +1,4 @@
-import type { DeviceCatalog } from '../device-catalog';
+import { DeviceCatalog } from '../device-catalog';
 import type { TargetSpec } from '../outputs/light-intent';
 
 /**
@@ -20,6 +20,26 @@ export interface PickerLight {
   capabilities: string[];
 }
 
+/**
+ * Actual lights first, then everything else that merely has `onoff`.
+ *
+ * The `onoff` rule is right and stays — a plug with a lamp in it is somebody's
+ * light. What it costs is a picker that offers, on the reference Homey, 54
+ * "lights" including a dishwasher, a NAS, a tablet and an air purifier. Sorting
+ * rather than filtering keeps every one of them reachable and stops them sitting
+ * between two bulbs; the view labels the second group so the order is legible
+ * rather than mysterious.
+ *
+ * Alphabetical within each group, as before, so a room of ordinary bulbs looks
+ * exactly as it did.
+ */
+function sortLights<T extends { name: string; isLight: boolean }>(lights: T[]): T[] {
+  return [...lights].sort((a, b) => {
+    if (a.isLight !== b.isLight) return a.isLight ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
 export async function listTargetsPayload(
   catalog: DeviceCatalog,
   current: TargetSpec | undefined,
@@ -37,6 +57,8 @@ export async function listTargetsPayload(
       name: device.name,
       zoneName: device.zoneName,
       available: device.available,
+      // Offered, and not pretended to be a bulb. See sortLights().
+      isLight: DeviceCatalog.isLightClass(device),
       capabilities: device.capabilities.filter((c: string) =>
         (OFFERED_CAPABILITIES as readonly string[]).includes(c)),
       selected: selected.has(device.id),
@@ -48,7 +70,7 @@ export async function listTargetsPayload(
       .sort((a, b) => a.zoneName.localeCompare(b.zoneName))
       .map(room => ({
         zoneName: room.zoneName,
-        lights: (room.lights as any[]).sort((a, b) => a.name.localeCompare(b.name)),
+        lights: sortLights(room.lights as any[]),
       })),
     zones: zones.map((zone: any) => ({ id: zone.id, name: zone.name })),
     current: current ?? null,
@@ -59,8 +81,8 @@ export async function listTargetsPayload(
 export async function targetDeviceIds(catalog: DeviceCatalog, spec: TargetSpec): Promise<string[]> {
   if (spec.kind === 'devices') return spec.deviceIds;
 
-  const inZone = await catalog.devicesInZone(spec.zoneId, spec.includeSubzones);
-  return inZone.filter((d: any) => d.capabilities.includes('onoff')).map((d: any) => d.id);
+  const inZone = await catalog.lightsInZone(spec.zoneId, spec.includeSubzones);
+  return inZone.map(d => d.id);
 }
 
 /** The chosen lights, named, for per-rule and per-schedule display. */

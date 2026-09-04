@@ -33,6 +33,21 @@ const DRIVERS = join(ROOT, 'drivers');
 const START = '/* ==== shared base:';
 const END = '/* ==== end shared base ==== */';
 
+/**
+ * The SECOND delimited block, and the reason there is one.
+ *
+ * A daylight response is one configuration per device, and four of the five
+ * device types can hold one — so the same sensor picker, lux range, two ends and
+ * live readout appear on four screens. There is nowhere to put a stylesheet (see
+ * the header), so it is four copies, policed exactly as the base above is.
+ *
+ * Unlike the base, it is NOT in every view: a controller stores no brightness
+ * and has no daylight card. So the test over it asserts identity across the
+ * views that have it, and that there is more than one of them.
+ */
+const CARD_START = '/* ==== shared daylight card:';
+const CARD_END = '/* ==== end shared daylight card ==== */';
+
 /** Every pair view in the repository, as "<driver>/<file>" -> its root id. */
 const VIEWS: Record<string, string> = Object.fromEntries(
   readdirSync(DRIVERS, { withFileTypes: true })
@@ -64,6 +79,25 @@ function baseBlock(view: string): string {
   assert.ok(to > from, `${view}: shared base end marker is missing or misplaced`);
 
   return text.slice(from, to + END.length)
+    .replaceAll(`#${VIEWS[view]}`, '#ROOT');
+}
+
+/**
+ * The shared daylight-card block, normalised the same way, or null where the
+ * view does not carry one.
+ *
+ * Null rather than a failure, because not carrying it is legitimate: only the
+ * device types that store a brightness have a response to configure.
+ */
+function cardBlock(view: string): string | null {
+  const text = read(view);
+  const from = text.indexOf(CARD_START);
+  if (from === -1) return null;
+
+  const to = text.indexOf(CARD_END);
+  assert.ok(to > from, `${view}: shared daylight card end marker is missing or misplaced`);
+
+  return text.slice(from, to + CARD_END.length)
     .replaceAll(`#${VIEWS[view]}`, '#ROOT');
 }
 
@@ -106,6 +140,33 @@ describe('pair view styles', () => {
         `${view}'s shared base has drifted from ${views[0]}'s — `
         + 'the block is duplicated because the views share one document, '
         + "so a change has to be made in every file, including the other driver's",
+      );
+    }
+  });
+
+  test('the shared daylight card block is identical wherever it appears', () => {
+    /**
+     * The same argument as the base block above, one level down. Four screens
+     * carry this card — a Daylight light, a schedule, a circadian light and a
+     * Curve light — because a daylight response is ONE configuration per device
+     * and four device types can hold one. There is nowhere to put a stylesheet,
+     * so the duplication is made safe rather than avoided.
+     */
+    const carriers = Object.keys(VIEWS).filter(view => cardBlock(view) !== null);
+
+    assert.ok(
+      carriers.length > 1,
+      `expected several views to carry the daylight card, found ${carriers.length}: `
+      + `${carriers.join(', ')}`,
+    );
+
+    const reference = cardBlock(carriers[0]);
+    for (const view of carriers.slice(1)) {
+      assert.equal(
+        cardBlock(view), reference,
+        `${view}'s daylight card CSS has drifted from ${carriers[0]}'s — `
+        + 'the block is duplicated because the views share one document, '
+        + 'so a change has to be made in every file that has it',
       );
     }
   });
@@ -292,6 +353,33 @@ describe('pair view script helpers', () => {
 
   test('setSummary() is identical everywhere it appears', () => {
     assertIdentical('setSummary');
+  });
+
+  test('daylightCard() is identical everywhere it appears', () => {
+    /**
+     * The whole daylight card, as ONE function, byte-identical on four screens.
+     *
+     * It is the largest thing this file guards, and the most worth guarding: a
+     * daylight response is one configuration per device and four of the five
+     * device types can hold one, so the sensor picker, the lux range, the two
+     * ends and the live readout appear four times. The function takes no
+     * arguments and closes over `Homey`, `emit`, `node` and `clear` — the four
+     * things every carrier already has — which is exactly what lets the body be
+     * identical while the surrounding screen is not.
+     */
+    assertIdentical('daylightCard');
+  });
+
+  test('every view carrying the daylight card has what it closes over', () => {
+    // It uses `node` and `clear` without declaring them. Two of the carriers
+    // build their rows as markup strings and had neither before, so this is the
+    // dependency that would otherwise fail at runtime on one screen only.
+    for (const view of Object.keys(VIEWS)) {
+      if (!helper(view, 'daylightCard')) continue;
+      assert.ok(helper(view, 'node'), `${view} carries the daylight card but has no node()`);
+      assert.ok(helper(view, 'clear'), `${view} carries the daylight card but has no clear()`);
+      assert.ok(helper(view, 'emit'), `${view} carries the daylight card but has no emit()`);
+    }
   });
 
   test('emit() appears in every view, because it is the only way out', () => {

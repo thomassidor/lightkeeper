@@ -1,4 +1,5 @@
 import { test, describe } from 'node:test';
+import { ownsNothing, zoneLights } from '../support/fake-catalog';
 import assert from 'node:assert/strict';
 
 import {
@@ -62,6 +63,8 @@ function harness(options: {
     device: async (id: string) => options.devices.find(d => d.id === id),
     allDevices: async () => options.devices,
     devicesInZone: async () => options.devices,
+    lightsInZone: zoneLights(async () => options.devices),
+    isOwnDevice: ownsNothing,
   } as any;
 
   const discovery = {

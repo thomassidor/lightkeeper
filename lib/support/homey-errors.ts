@@ -13,6 +13,16 @@
  * forward deliberately — but an error
  * from anywhere else in the stack, or from a future client, may arrive with
  * only its text intact. Both routes are read, and both are tested.
+ *
+ * **Both predicates have exactly ONE caller, by design.** `isNotFound` is used
+ * only by `flow-bridge-manager.ts` and `isTransportFailure` only by
+ * `homey-api-service.ts` — `light-target-adapter.ts` mentions the latter in a
+ * comment explaining why it is the wrong instrument there. The narrowness in
+ * each direction is the whole content of this module, and it is tested on its
+ * own; one call site is not evidence it should be inlined into that call site.
+ *
+ * `messageOf` and `redactedMessage` below are the opposite case: 47 call sites
+ * that each used to hand-roll the coercion.
  */
 
 interface StatusCarrying {
@@ -90,4 +100,61 @@ export function isTransportFailure(error: unknown): boolean {
   if (!message) return false;
   return /socket hang up|connection (?:reset|refused|closed|lost)|not connected|disconnected|network|timed? ?out|ECONN|EPIPE|ETIMEDOUT/i
     .test(message);
+}
+
+/**
+ * Anything key-shaped, anywhere in a string. Whole keys first so a full key
+ * collapses to one `<redacted>` rather than three.
+ *
+ * 20+ CONTIGUOUS hex characters cannot be a Homey id: those are UUIDs, whose
+ * longest unbroken hex run is the 12-character final group. So the secret
+ * segment can be matched on its own without eating device or flow ids out of
+ * the very log lines that make a failure diagnosable.
+ */
+const KEY_MATERIAL = /[0-9a-f-]{36}:[0-9a-f-]{36}:[0-9a-f]{20,}|[0-9a-f]{20,}/gi;
+
+/**
+ * Scrub key material from text that is about to be logged or shown.
+ *
+ * Belt and braces behind `sanitizedWriteError()`. An upstream error can quote
+ * the offending request back, token and all, and "the key is never logged" has
+ * to hold for strings we did not author.
+ *
+ * It lives here rather than in `credential-service.ts` — which re-exports it,
+ * so every existing importer is unaffected — because `redactedMessage()` below
+ * needs it and `support/` must not come to depend on a service module.
+ */
+export function redactKeyMaterial(text: string): string {
+  return text.replace(KEY_MATERIAL, '<redacted>');
+}
+
+/**
+ * An error's message, as a string, whatever was actually thrown.
+ *
+ * A `catch` binds `unknown`, and a rejected promise can carry anything — a
+ * string, `undefined`, a plain object. This was hand-rolled as
+ * `(error as Error)?.message ?? '<fallback>'` at 48 sites across 27 files, with
+ * the fallback wording differing between them for no reason anybody chose.
+ *
+ * NOT interchangeable with `redactedMessage()` below. Use this for an error
+ * that has never been near the API key; use that one for anything on a write
+ * path.
+ */
+export function messageOf(error: unknown): string {
+  const message = (error as { message?: unknown } | undefined | null)?.message;
+  if (typeof message === 'string' && message.length > 0) return message;
+  return String(error ?? 'unknown error');
+}
+
+/**
+ * The same, scrubbed — for anything that has been near the API key.
+ *
+ * The pairing is deliberate and the choice between them is a real one: a write
+ * error can echo the token back in its own message, so a log line on that path
+ * must go through here. CLAUDE.md's key-hygiene property is what this holds up,
+ * and `test/unit/diagnostics-redaction.test.ts` asserts it against serialised
+ * output.
+ */
+export function redactedMessage(error: unknown): string {
+  return redactKeyMaterial(messageOf(error));
 }

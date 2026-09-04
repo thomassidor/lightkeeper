@@ -83,6 +83,19 @@ const FIRST_CALL: Record<string, { event: string; reply: unknown }> = {
       adjustBrightness: false, preStage: false, timezone: 'Europe/Copenhagen',
     },
   },
+  'daylight.html': {
+    event: 'getDaylight',
+    reply: {
+      standalone: true,
+      support: { onoff: 1, dim: 1, light_temperature: 1, total: 1 },
+      lights: [{ id: 'l1', name: 'Lamp', zoneName: 'Hall' }],
+      response: { sensors: [], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 },
+      limits: { minLux: 0.1, maxLux: 100000 },
+      now: { level: 1, brightness: 0.25, source: 'sky', elevation: 42 },
+      sky: { elevation: 42, level: 1, location: { latitude: 55.68, longitude: 12.57 } },
+      sensorReadings: [],
+    },
+  },
   'ends.html': {
     event: 'getEnds',
     reply: {

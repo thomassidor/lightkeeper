@@ -65,7 +65,7 @@ export function boundaryDayMatches(
  * evening. The start boundary is inclusive and the off boundary exclusive, so a
  * schedule is never "active" at the instant it ends.
  */
-export function activeWindow(
+function activeWindow(
   entry: ScheduleEntry,
   now: LocalClock,
 ): { startDay: IsoWeekday; elapsed: number } | null {

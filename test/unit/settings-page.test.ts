@@ -29,6 +29,9 @@ const EMPTY = {
   controllers: [],
   schedules: [],
   circadian: [],
+  daylight: [],
+  sky: null,
+  sensors: [],
   recentEvents: [],
   recentWrites: [],
 };
@@ -73,6 +76,19 @@ const POPULATED = {
     preStage: false,
     preStageDisabled: null,
   }],
+  daylight: [{
+    id: 'lk-dayl-1',
+    state: 'ready',
+    name: 'Kitchen daylight',
+    enabled: true,
+    now: { level: 0.4, brightness: 0.62, source: 'sensors', elevation: 18 },
+    response: { sensors: ['s1'], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 },
+    targetNames: ['Hall lamp'],
+    overridden: 0,
+    sensors: [{ deviceId: 's1', name: 'Hall motion', lux: 240, at: 1_756_000_000_000, available: true }],
+  }],
+  sky: { elevation: 18, level: 0.55, location: { latitude: 55.68, longitude: 12.57 } },
+  sensors: [{ deviceId: 's1', name: 'Hall motion', lux: 240, at: 1_756_000_000_000, available: true }],
   recentEvents: [
     { at: 1_756_000_000_000, cardId: 'x:bridge_event', controller: 'lk-ctrl-1', eventKey: 'button1:short', accepted: true },
   ],
@@ -168,22 +184,78 @@ describe('the settings page on a Homey with nothing set up (the old 1.2)', () =>
 });
 
 describe('the settings page with one of every device type (the old 8.1)', () => {
-  test('all four sections list something', async () => {
+  test('all five sections list something', async () => {
     const view = open(POPULATED);
     await view.settle();
 
     assert.ok(textOf(view, 'controllers').includes('Hall remote'));
     assert.ok(textOf(view, 'schedules').includes('Evening'));
     assert.ok(textOf(view, 'circadian').includes('Living room day'));
+    assert.ok(textOf(view, 'daylight').includes('Kitchen daylight'));
     assert.equal(view.byId('credText')!.textContent, 'settings.keyValid');
     assert.equal(view.byId('credText')!.className, 'msg ready');
 
-    for (const id of ['controllers', 'schedules', 'circadian']) {
+    for (const id of ['controllers', 'schedules', 'circadian', 'daylight']) {
       assert.ok(
         !textOf(view, id).includes('settings.no'),
         `#${id} still shows its empty-state sentence with data present`,
       );
     }
+  });
+
+  test('a Daylight light says WHERE its brightness came from', async () => {
+    /**
+     * The one fact that makes this device type supportable. "Sensors" and "sun"
+     * behave very differently — one measures the room, one infers it — so
+     * somebody whose lamps are not doing what they expect has to know which of
+     * the two is answering before anything else on this page helps.
+     */
+    const view = open(POPULATED);
+    await view.settle();
+
+    const text = textOf(view, 'daylight');
+    assert.ok(text.includes('settings.daylightNow'), `no brightness line in "${text}"`);
+    assert.ok(text.includes('Hall motion'), 'the sensor it is reading is not named');
+  });
+
+  test('the sky readout is shown even with no Daylight light configured', async () => {
+    // Independent of any device on purpose: "does it know where the sun is" is a
+    // question about the app, and it is the fastest check that the geolocation
+    // permission resolved on this Homey.
+    const view = open({ ...EMPTY, sky: { elevation: 18, level: 0.55, location: null }, sensors: [] });
+    await view.settle();
+
+    const text = textOf(view, 'daylight');
+    assert.ok(text.includes('settings.daylightSky'), `no sky line in "${text}"`);
+    assert.ok(text.includes('settings.noDaylight'), 'and it still says nothing is set up');
+  });
+
+  test('no location is reported as such rather than as a broken device', async () => {
+    // Amber, not red: a Homey with no location is not broken, and a household
+    // with a light sensor does not need one at all.
+    const view = open({ ...EMPTY, sky: null, sensors: [] });
+    await view.settle();
+
+    const text = textOf(view, 'daylight');
+    assert.ok(text.includes('settings.daylightNoLocation'), `no location notice in "${text}"`);
+  });
+
+  test('a frozen sensor is visible through the AGE of its reading', async () => {
+    /**
+     * The one failure this feature cannot detect for itself. A reading is never
+     * treated as stale — many Zigbee sensors report only on change, so a quiet
+     * sensor in a stable room is telling the truth (platform §16) — which leaves
+     * the age as the only thing on screen that can reveal one that has stopped.
+     */
+    const view = open({
+      ...EMPTY,
+      sky: { elevation: 18, level: 0.55, location: null },
+      sensors: [{ deviceId: 's1', name: 'Hall motion', lux: 240, at: Date.now() - 7_200_000, available: true }],
+    });
+    await view.settle();
+
+    const text = textOf(view, 'daylight');
+    assert.ok(text.includes('settings.daylightSensorLux'), `no reading line in "${text}"`);
   });
 
   test('a schedule shows its window, and the clock it will fire on (T44)', async () => {

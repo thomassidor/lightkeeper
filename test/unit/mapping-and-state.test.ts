@@ -182,7 +182,7 @@ describe('migrations', () => {
       mappings: [{ id: 'r1', function: 'toggle', inputKey: 'k1', target: null }],
     };
 
-    const { profile, migrated, fromVersion } = migrateProfile(legacy);
+    const { plan: profile, migrated, fromVersion } = migrateProfile(legacy);
 
     assert.equal(migrated, true);
     assert.equal(fromVersion, 0);

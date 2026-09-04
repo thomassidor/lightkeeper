@@ -23,7 +23,14 @@
  */
 
 export interface MigrationResult<T> {
-  value: T;
+  /**
+   * Named `plan` rather than `value` because every one of the five chains
+   * renamed it on the way out — four to `plan` and the controller's to
+   * `profile` — each through a ~20-line adapter and a result interface with no
+   * consumer outside its own file. `PlanMigration` in the device layer is now
+   * satisfied structurally, so a chain can be returned straight to it.
+   */
+  plan: T;
   migrated: boolean;
   fromVersion: number;
   /** The versions stepped THROUGH, in order. Diagnostics only. */
@@ -94,7 +101,7 @@ export function runMigrationChain<T>(raw: unknown, chain: MigrationChain<T>): Mi
   }
 
   return {
-    value: validate(working),
+    plan: validate(working),
     migrated: steps.length > 0,
     fromVersion,
     steps,

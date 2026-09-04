@@ -270,13 +270,6 @@ function deviceMatchesFilter(
 
 
 /**
- * Fingerprint the trigger and capability schema used at configuration
- * time: card owner URI, card ID, argument names and types, enum values, token
- * IDs and types. Strictly stronger than hashing the generated flow alone,
- * because it detects an integration changing an argument the flow happens not
- * to set.
- */
-/**
  * The version of the normalizer whose OUTPUT a v2 fingerprint describes.
  *
  * Bumped when a change to normalisation would produce a different catalogue from
@@ -339,6 +332,19 @@ function fingerprintV2Of(device: CatalogDevice, cards: DiscoveredTriggerCard[]):
   return createHash('sha256').update(JSON.stringify(shape)).digest('hex').slice(0, 32);
 }
 
+/**
+ * The V1 fingerprint: card owner URI, card ID, argument names and types, enum
+ * values, token IDs and types.
+ *
+ * Stronger than hashing the generated flow alone, because it detects an
+ * integration changing an argument the flow happens not to set.
+ *
+ * FROZEN. Installed profiles store v1 hashes and `HealthMonitor` compares
+ * against them, so any change to what this traverses would report
+ * `needs_repair` on every installed controller at once — a mass false alarm
+ * about a surface that had not moved. `fingerprintV2Of` above is where new
+ * strictness goes.
+ */
 function fingerprintOf(device: CatalogDevice, cards: DiscoveredTriggerCard[]): string {
   const shape = {
     ownerUri: device.ownerUri,

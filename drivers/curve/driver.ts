@@ -1,11 +1,16 @@
 import { mintDeviceId } from '../../lib/bridge/flow-bridge-manager';
 import { validateTargetAgainstCatalog } from '../../lib/validation/pairing-dto';
 import Homey from 'homey';
+import { randomUUID } from 'node:crypto';
 
 import {
   listTargetsPayload, resolveSummary, targetLights,
 } from '../../lib/pairing/target-picker';
 import { deriveSuffixedName } from '../../lib/pairing/derive-name';
+import { listSensorsPayload } from '../../lib/pairing/sensor-picker';
+import {
+  DEFAULT_RESPONSE, MAX_LUX, MIN_LUX, sanitiseResponse, type DaylightResponse,
+} from '../../lib/daylight/daylight-types';
 import { CURRENT_CURVE_SCHEMA_VERSION } from '../../lib/circadian/curve-migrations';
 import {
   DEFAULT_POINTS, MAX_POINTS, MIN_POINTS, sanitiseCurve,
@@ -13,6 +18,7 @@ import {
 } from '../../lib/circadian/circadian-types';
 import { PALETTE } from '../../lib/circadian/palette';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
+import { messageOf } from '../../lib/support/homey-errors';
 
 /**
  * The curve controller's driver: pair/repair session handlers, the data its two
@@ -34,6 +40,7 @@ import type { TargetSpec } from '../../lib/outputs/light-intent';
  */
 
 interface SessionState {
+  daylight?: DaylightResponse;
   target?: TargetSpec;
   points: CircadianPoint[];
   adjustBrightness: boolean;
@@ -61,6 +68,9 @@ module.exports = class CurveDriver extends Homey.Driver {
       points: plan?.points?.length ? plan.points : [...DEFAULT_POINTS],
       adjustBrightness: plan?.adjustBrightness ?? false,
       preStage: plan?.preStage ?? false,
+      // Seeded so a repair session opens the card on what the device already
+      // has rather than on the defaults.
+      daylight: plan?.daylight,
     }, device);
   }
 
@@ -68,6 +78,22 @@ module.exports = class CurveDriver extends Homey.Driver {
     const state: SessionState = {
       points: [...DEFAULT_POINTS], adjustBrightness: false, preStage: false, ...initial,
     };
+
+    /**
+     * This session's claim on the shared sensor service, and why it needs an id
+     * of its own.
+     *
+     * The daylight card shows what each chosen sensor currently reads, and a
+     * sensor nobody is subscribed to has no reading — so the session has to
+     * retain them while it is open. `retain` is ref-counted and TOTAL per owner,
+     * so a fixed string would make two people pairing at once release each
+     * other's sensors, and either screen would silently start showing the sky.
+     *
+     * Released on `disconnect` below. Without that, abandoning a pairing screen
+     * leaves a subscription on somebody's battery-powered motion sensor for as
+     * long as the app runs.
+     */
+    const sessionOwner = `pair-${randomUUID()}`;
 
     /**
      * Wrap every handler so failures reach the CLI log. A handler that throws
@@ -81,7 +107,7 @@ module.exports = class CurveDriver extends Homey.Driver {
           this.log(`pair/${name} ok`);
           return result;
         } catch (error) {
-          this.error(`pair/${name} failed:`, (error as Error)?.message, (error as Error)?.stack);
+          this.error(`pair/${name} failed:`, messageOf(error), (error as Error)?.stack);
           throw error;
         }
       });
@@ -208,6 +234,56 @@ module.exports = class CurveDriver extends Homey.Driver {
       }
     });
 
+    // ------------------------------------------------------------- daylight
+
+    /**
+     * The three handlers the shared daylight card calls.
+     *
+     * Byte-identical on all four drivers that carry that card, and deliberately
+     * SEPARATE from this driver's own `get`/`set` pair rather than folded into
+     * it. That is what lets one view file serve four screens: the card fetches
+     * and pushes its own response and never asks the surrounding screen to
+     * thread it through.
+     */
+    handler('listSensors', async () => listSensorsPayload(
+      this.app.catalog, state.daylight?.sensors ?? [],
+    ));
+
+    handler('getDaylight', async () => {
+      const response = state.daylight ?? DEFAULT_RESPONSE;
+      return {
+        // FALSE here: this card is a section of this driver's own screen, which
+        // owns the Save and the Test. Only the Daylight light's own screen is
+        // the card, and only there does it draw a footer.
+        standalone: false,
+        response,
+        limits: { minLux: MIN_LUX, maxLux: MAX_LUX },
+        now: this.app.daylight.evaluate(response),
+        sky: this.app.daylight.sky(),
+        sensorReadings: this.app.daylight.sensors(),
+      };
+    });
+
+    handler('setDaylight', async (payload: unknown) => {
+      const result = sanitiseResponse((payload as { response?: unknown })?.response ?? payload);
+      for (const field of result.corrected) {
+        this.log(`Corrected daylight ${field} to its default: the screen sent something unusable`);
+      }
+      state.daylight = result.response;
+
+      // Retained before `now` can mean anything: a sensor nobody is subscribed
+      // to has no reading, and the card would show the sky for a device that has
+      // just been given a sensor.
+      await this.app.luminance.retain(result.response.sensors, sessionOwner);
+
+      return {
+        response: result.response,
+        corrected: result.corrected,
+        now: this.app.daylight.evaluate(result.response),
+        sensorReadings: this.app.daylight.sensors(),
+      };
+    });
+
     // ----------------------------------------------------------------- save
 
     handler('save', async (name: string) => {
@@ -226,6 +302,22 @@ module.exports = class CurveDriver extends Homey.Driver {
           store: { curve: plan },
         },
       };
+    });
+
+    /**
+     * Give the sensors back when the screen closes, however it closes.
+     *
+     * Saved, cancelled or abandoned — all three arrive here, and all three must
+     * release. A saved device retains its own sensors under its own device id,
+     * so releasing this session's claim never takes a live device's subscription
+     * with it; that is exactly what the ref count is for.
+     */
+    session.setHandler('disconnect', async () => {
+      try {
+        await this.app.luminance.release(sessionOwner);
+      } catch (error) {
+        this.error('Releasing the pairing session sensors failed:', messageOf(error));
+      }
     });
   }
 
@@ -259,6 +351,9 @@ module.exports = class CurveDriver extends Homey.Driver {
       target: state.target,
       points: state.points,
       adjustBrightness: state.adjustBrightness,
+      // Absent stays absent: `undefined` is "this device has no response", and
+      // the validator refuses a point that follows the daylight without one.
+      ...(state.daylight !== undefined ? { daylight: state.daylight } : {}),
       preStage: state.preStage,
     };
   }

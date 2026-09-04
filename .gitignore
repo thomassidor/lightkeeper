@@ -16,6 +16,14 @@
 # here when the environment variables are not set. Both are credentials.
 /scripts/hardware-env.json
 
+# `node scripts/probe-lights.mjs` writes its reports here. The raw one is a
+# capture from a real Homey — every light and room in the house, by name, plus
+# whatever a platform error quoted back — so it falls under the same rule as
+# test/fixtures/raw/. The `.redacted.json` sibling next to it is the one meant
+# for sharing, and it is ignored too: promoting it is a deliberate act, not a
+# side effect of running the probe.
+/.probe/
+
 # `npm run render:views` renders every pairing screen here for a look. Generated,
 # never reviewed as source, and it holds whatever the fixtures say — which keeps
 # the "nothing that looks like a capture from a real Homey" rule easy to keep.
@@ -27,6 +35,9 @@
 # Editors and OS
 .vscode/
 .idea/
+# Obsidian keeps a vault config beside the notes it opens; docs/ is a plain
+# folder of Markdown to everyone else.
+.obsidian/
 .DS_Store
 Thumbs.db
 __pycache__/

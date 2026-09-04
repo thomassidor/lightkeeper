@@ -1,4 +1,5 @@
 import { test, describe } from 'node:test';
+import { ownsNothing, zoneLights } from '../support/fake-catalog';
 import assert from 'node:assert/strict';
 
 import { deriveControllerName, deriveSuffixedName } from '../../lib/pairing/derive-name';
@@ -44,6 +45,8 @@ function catalog(lights: PickerLight[], zones: Array<{ id: string; name: string 
     allZones: async () => zones,
     device: async (id: string) => devices.find(d => d.id === id) ?? null,
     devicesInZone: async () => devices,
+    lightsInZone: zoneLights(async () => devices),
+    isOwnDevice: ownsNothing,
   } as unknown as DeviceCatalog;
 }
 
@@ -103,11 +106,12 @@ describe('the name a new device gets', () => {
     );
   });
 
-  test('the suffix is the only thing that differs between three device types', () => {
+  test('the suffix is the only thing that differs between four device types', () => {
     // The reason this is one function: circadian, curve and schedule held three
-    // copies of it, and three copies drift.
-    const suffixes = ['circadian', 'curve', 'schedule'];
-    assert.equal(new Set(suffixes).size, 3, 'and they are genuinely different words');
+    // copies of it, and three copies drift. Daylight is the fourth caller and
+    // added no fourth copy.
+    const suffixes = ['circadian', 'curve', 'schedule', 'daylight'];
+    assert.equal(new Set(suffixes).size, 4, 'and they are genuinely different words');
   });
 });
 

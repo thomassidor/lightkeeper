@@ -1,14 +1,19 @@
 import type { HomeyApiService } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
+import type { DaylightEvaluator } from '../daylight/daylight-evaluator';
 import { CommandScheduler, type WriteOutcome } from '../outputs/command-scheduler';
 import { LightTargetAdapter, type WriteRecord } from '../outputs/light-target-adapter';
 import { TargetResolver } from '../outputs/target-resolver';
-import { TargetStateCache } from '../outputs/target-state-cache';
+import {
+  OVERRIDE_SETTLE_MS,
+  OVERRIDE_TOLERANCE,
+  TargetStateCache,
+  stepFromDecimals,
+} from '../outputs/target-state-cache';
 import { planIntent, type Capability, type PlannedWrite } from '../outputs/intent-planner';
 import { toDevice } from '../outputs/light-intent';
 import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
-import { sameDetail } from '../profiles/controller-profile';
 import { assessTargets } from '../runtime/target-health';
 import {
   diffTargets, releaseTarget, resolveSnapshot, type TargetSnapshot,
@@ -20,7 +25,9 @@ import { withDefaults, type Timers } from '../support/timers';
 // a second copy of the Intl handling and its fallback.
 import { describeClock, localNow } from '../time/local-clock';
 import { nextPointAfter, resolvePoints, valueAt, type CurveValue } from './circadian-curve';
-import { formatMinutes, type CircadianPlan } from './circadian-types';
+import { formatMinutes, type CircadianPlan, type CircadianPoint } from './circadian-types';
+import { messageOf } from '../support/homey-errors';
+import { VisibleState } from '../runtime/visible-state';
 
 /**
  * One circadian light, live.
@@ -46,16 +53,7 @@ import { formatMinutes, type CircadianPlan } from './circadian-types';
  */
 
 export interface CircadianRuntimeDeps {
-  /**
-   * One app-wide log of every write attempted by ANY runtime.
-   *
-   * Optional so the pairing screen's ephemeral rigs (which have no app) still
-   * work unchanged. Its consumer is the settings page: "did anything reach a
-   * light" is a question about the whole Homey, and answering it from the
-   * FIRST controller's log — which is what api.ts did — made it permanently
-   * empty for a household that runs only schedules, and permanently
-   * misleading for one that runs both.
-   */
+  /** @see WriteRecord — one app-wide log of every write by ANY runtime. */
   onWriteResult?: (entry: WriteRecord) => void;
   api: HomeyApiService;
   catalog: DeviceCatalog;
@@ -81,6 +79,14 @@ export interface CircadianRuntimeDeps {
    * ends are expanded into points by its device layer before they get here.
    */
   kind?: 'circadian' | 'curve';
+  /**
+   * Sun position and sensor readings, for a point whose brightness follows the
+   * daylight.
+   *
+   * OPTIONAL, so the pairing screen's ephemeral rigs and every existing test
+   * keep working unchanged — and because a plan with no `daylight` never asks.
+   */
+  daylight?: DaylightEvaluator;
 }
 
 export interface CircadianAction {
@@ -144,22 +150,6 @@ export interface CircadianAction {
  */
 const COLOR_STEP = 0.03;
 
-/**
- * How far a reported colour must be from the one we wrote before it counts as
- * somebody overriding us.
- *
- * Comfortably above `light_temperature`'s own 0.01 resolution (platform §6), so
- * a bridge that rounds our 0.47 to 0.46 does not read as a human reaching for
- * the Hue app — and far below any change a person would make on purpose.
- */
-const OVERRIDE_TOLERANCE = 0.03;
-
-/**
- * Changes arriving this soon after our own write are ours: a bridge can report
- * an intermediate value part-way through a transition, and the echo dedupe in
- * TargetStateCache only covers an EXACT repeat within 1.5 s.
- */
-const SETTLE_MS = 3000;
 
 /** Mirrors the adapter's own post-write check, in the opposite direction. */
 const PRE_STAGE_CHECK_MS = 1500;
@@ -182,6 +172,31 @@ const PRE_STAGE_CHECK_MS = 1500;
  * the pair off the hue outcome.
  */
 const PRE_STAGE_CAPABILITIES: readonly Capability[] = ['light_temperature', 'light_hue'];
+
+/**
+ * How many ticks in a row a lamp may refuse a colour while off before this
+ * runtime stops offering it one.
+ *
+ * The third outcome of writing to an off lamp is that the integration declines
+ * it outright (platform §6), and unlike the second it is neither a surprise nor
+ * recoverable: measured 4 September 2026, 4 of 13 Hue bulbs behind one bridge
+ * answered `is "soft off", command (.color_temperature.mirek) may not have
+ * effect` every single time, while 9 on the same bridge took the write and
+ * stayed off. Left alone, a curve retried the refused write once a minute for
+ * as long as the household had the lamp switched off — some six hundred rejected
+ * writes a night, per lamp, filling the bounded write and failure logs with the
+ * one thing nobody needs to see six hundred times.
+ *
+ * Three because a tick is a minute, so three is three minutes: a decline costs
+ * nothing, so there is no reason to be quick about it, and more than one is
+ * needed or a single transient rejection parks a lamp for the evening.
+ *
+ * Deliberately NOT the same constant as `LightTargetAdapter.UNWRITABLE_AFTER_WRITES`,
+ * which happens to share the number. That one asks "is this lamp reachable at
+ * all"; this one asks "is it worth offering this lamp a colour while it is off",
+ * and the two would drift apart the moment either question changed.
+ */
+const PRE_STAGE_DECLINES_BEFORE_SKIP = 3;
 
 /**
  * What `diagnostics()` returns. See ControllerDiagnostics for why it is typed.
@@ -217,7 +232,12 @@ export interface CircadianDiagnostics {
    * at the same warmth: exactly the field a "my Curve light went the wrong
    * colour" report needs.
    */
-  points: Array<{ id: string; at: string; warmth: number; brightness?: number; color?: string }>;
+  points: Array<{
+    id: string; at: string; warmth: number; brightness?: number;
+    /** Whether this point's brightness is the stored number or a fallback. */
+    fromDaylight?: boolean;
+    color?: string;
+  }>;
   /** Where the curve is now, and where it goes next. */
   now: CurveValue | null;
   nextPoint: { id: string; at: string; inMinutes: number } | null;
@@ -263,6 +283,22 @@ export interface CircadianDiagnostics {
       warmth?: number;
       color?: { hue: number; saturation: number };
     } | null;
+    /**
+     * This lamp refuses a colour while it is off, so pre-staging has stopped
+     * offering it one. See PRE_STAGE_DECLINES_BEFORE_SKIP.
+     *
+     * Reported because `preStage: true`, this lamp `on: false`, and no writes
+     * going to it are three facts that together read as a broken runtime. This
+     * is the fourth, and it is what makes them read as a working one. Distinct
+     * from the device-level `preStageDisabled` on purpose: conflating them is
+     * how a reader would conclude pre-staging had been switched off for every
+     * lamp rather than declined by one.
+     *
+     * `reason` is the integration's own sentence, kept because once we stop
+     * writing it ages out of the bounded `recentFailures` and this becomes the
+     * only surviving record of why.
+     */
+    preStageDeclined?: { at: number; count: number; reason: string };
   }>;
   lastAction: CircadianAction | null;
   recentFailures: readonly unknown[];
@@ -277,7 +313,7 @@ export class CircadianRuntime {
   private scheduler: CommandScheduler | null = null;
   private targetIds: string[] = [];
   private targetNames: string[] = [];
-  private state: ControllerState = 'disabled';
+  private readonly visible: VisibleState;
   private lastAction: CircadianAction | null = null;
 
   /**
@@ -295,6 +331,27 @@ export class CircadianRuntime {
 
   /** Set when pre-staging disabled itself; reported in diagnostics, never hidden. */
   private preStageDisabled: { at: number; deviceId: string } | null = null;
+
+  /**
+   * Lamps that have refused a colour while off, and how often in a row.
+   *
+   * Per LAMP and in memory, which is the whole difference between this and
+   * `preStageDisabled` above. That one is device-wide and PERSISTED because the
+   * fact it records — a colour write switched a lamp on — is a user-visible
+   * surprise about an integration that must not repeat tomorrow night. A
+   * decline is neither: nothing happens to the lamp at all, and it is measured
+   * to be per-lamp rather than per-integration (4 refusing against 9 staging on
+   * one bridge, 4 September 2026). Firing the device-wide switch on it would
+   * take pre-staging away from the nine lamps that demonstrably work, on the
+   * evidence of four that do not.
+   *
+   * Not persisted, for the same reason the overrides are not: the fact costs
+   * one write to re-derive, and it can go stale invisibly — new firmware, a
+   * bulb replaced under the same id, a lamp that is now merely off rather than
+   * "soft off". Stored, it would be undetectable and unfixable.
+   */
+  private readonly preStageDeclines =
+    new Map<string, { at: number; count: number; reason: string }>();
 
   /**
    * Pre-stage probes, keyed BY DEVICE and carrying the write generation that
@@ -319,18 +376,20 @@ export class CircadianRuntime {
     private plan: CircadianPlan,
     private readonly deps: CircadianRuntimeDeps,
   ) {
-    // In the constructor BODY, not a field initialiser: a field initialiser runs
-    // before the parameter property `deps` is assigned, so `withDefaults(this.deps)`
-    // there silently resolves to real timers and every injected clock is ignored.
+    // Both in the constructor BODY, not in field initialisers: a field
+    // initialiser runs before the parameter property `deps` is assigned, so
+    // `withDefaults(this.deps)` there silently resolved to real timers and every
+    // injected clock was ignored. `visible` would fail the same way, silently.
+    this.visible = new VisibleState((state, detail) => deps.onStateChange(state, detail));
     this.timers = withDefaults(deps);
     this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log);
     if (deps.onWriteResult) this.adapter.setWriteSink(deps.onWriteResult);
     this.resolver = new TargetResolver(deps.catalog);
   }
 
-  get currentState(): ControllerState { return this.state; }
+  get currentState(): ControllerState { return this.visible.current; }
   /** The reason for that state, so the device layer can report it verbatim. */
-  get currentDetail(): StateDetail | undefined { return this.lastDetail; }
+  get currentDetail(): StateDetail | undefined { return this.visible.currentDetail; }
   get currentPlan(): CircadianPlan { return this.plan; }
 
   /**
@@ -401,7 +460,7 @@ export class CircadianRuntime {
     this.scheduler = new CommandScheduler({
       minWriteIntervalMs: DEFAULT_BEHAVIOR.minWriteIntervalMs,
       onError: (deviceId, capability, error) =>
-        this.deps.log(`Write failed on ${deviceId}/${capability}:`, (error as Error)?.message),
+        this.deps.log(`Write failed on ${deviceId}/${capability}:`, messageOf(error)),
     }, (deviceId, capability, value, options) =>
       this.adapter.write(deviceId, capability, value, options));
 
@@ -460,6 +519,16 @@ export class CircadianRuntime {
       }
 
       if (value === true) {
+        /**
+         * A lamp that is on can be asked again next time it is off.
+         *
+         * This is what keeps the suppression from being sticky until a
+         * restart. Each off-period re-tests once, at three futile writes, so a
+         * replaced bulb or a firmware fix recovers by itself — and a lamp that
+         * still refuses costs three writes an evening instead of six hundred.
+         */
+        this.preStageDeclines.delete(deviceId);
+
         // The whole point of the feature. Forced past the "has the curve moved"
         // gate: the lamp has just restored whatever colour it was last at, so
         // what we wrote an hour ago says nothing about what it is showing now.
@@ -502,7 +571,7 @@ export class CircadianRuntime {
     const last = this.lastWritten.get(deviceId);
     // The settle window is shared with the temperature path: it is about how
     // long ago WE touched this lamp, not about which axis we touched.
-    if (last && this.now() - last.at < SETTLE_MS) return;
+    if (last && this.now() - last.at < OVERRIDE_SETTLE_MS) return;
 
     const ours = this.lastColorWritten.get(deviceId);
     if (ours) {
@@ -529,7 +598,7 @@ export class CircadianRuntime {
     if (last) {
       // Still settling from our own write, or within the rounding a bridge is
       // entitled to apply to it.
-      if (this.now() - last.at < SETTLE_MS) return;
+      if (this.now() - last.at < OVERRIDE_SETTLE_MS) return;
       const ours = last[field];
       if (ours !== undefined && Math.abs(reported - ours) <= OVERRIDE_TOLERANCE) return;
     }
@@ -565,7 +634,43 @@ export class CircadianRuntime {
   currentValue(): CurveValue | null {
     if (this.plan.points.length === 0) return null;
     const clock = localNow(this.deps.timezone(), this.now());
-    return valueAt(this.plan.points, clock.minutesOfDay);
+    return valueAt(this.resolvedPoints(), clock.minutesOfDay);
+  }
+
+  /**
+   * The plan's points with every `fromDaylight` brightness turned into a NUMBER.
+   *
+   * Resolved here rather than inside the curve, and that is the whole design of
+   * this feature's circadian half. `lib/circadian/circadian-curve.ts` is pure
+   * maths over numbers; teaching it about sensors would put a Homey dependency
+   * into the one file that is the feature's correctness in eighty lines. Doing
+   * it here instead means a segment between a fixed point and a daylight one is
+   * an ordinary blend, and `valueAt` is unchanged.
+   *
+   * Called on every tick, and cheap: the evaluator reads a cached sensor value
+   * and does one solar calculation, both in memory.
+   *
+   * The plan's own array is returned untouched in the common case — no response,
+   * or no point that wants one — so a curve that does not use this feature pays
+   * nothing for it, not even an allocation.
+   */
+  private resolvedPoints(): CircadianPoint[] {
+    const response = this.plan.daylight;
+    if (response === undefined) return this.plan.points;
+    if (!this.plan.points.some(point => point.fromDaylight === true)) return this.plan.points;
+
+    const evaluator = this.deps.daylight;
+    if (evaluator === undefined) return this.plan.points;
+
+    const verdict = evaluator.evaluate(response);
+    // Nothing can tell how light it is, so every point keeps the brightness the
+    // user set. The same fallback a schedule window takes, and the reason the
+    // stored number is kept beside the flag rather than replaced by it.
+    if (verdict.source === 'none') return this.plan.points;
+
+    return this.plan.points.map(point => (point.fromDaylight === true
+      ? { ...point, brightness: verdict.brightness }
+      : point));
   }
 
   /**
@@ -607,6 +712,23 @@ export class CircadianRuntime {
         skipped += 1;
         continue;
       }
+
+      /**
+       * And not worth writing to at all once it has refused, three ticks
+       * running, to take a colour while off.
+       *
+       * Note what this is NOT: it is not `disablePreStage()`, it is one lamp,
+       * it does not persist, and `this.plan.preStage` stays `true` — every
+       * other target goes on being pre-staged, because the refusal is measured
+       * to be a property of the lamp rather than of the integration. The lamp
+       * is offered a colour again the moment it is switched on (see
+       * onCapabilityChange), so an off-period costs three futile writes rather
+       * than one a minute all night.
+       */
+      if (!isOn && this.preStageRefused(deviceId)) {
+        skipped += 1;
+        continue;
+      }
       eligible.push(deviceId);
     }
 
@@ -642,6 +764,21 @@ export class CircadianRuntime {
         preStaged.set(write.deviceId, generation);
       }
 
+      /**
+       * MARKED wider than ARMED, and the two loops must not be merged.
+       *
+       * Arming is one probe per batch, so it filters on PRE_STAGE_CAPABILITIES
+       * — `light_hue` only on the colour leg, because mode and saturation ride
+       * with it. Marking has a different job: it tells the adapter which write
+       * failures are evidence of nothing (see `noteWriteHealth`), and a colour
+       * batch's `light_saturation` failure counts against a lamp's health
+       * exactly as its hue failure does. Marking only what arms a probe left
+       * the bug alive at two-thirds speed.
+       */
+      for (const write of writes) {
+        if (preStaged.has(write.deviceId)) write.preStage = true;
+      }
+
       const { completion } = this.scheduler.submit(writes);
 
       /**
@@ -660,14 +797,28 @@ export class CircadianRuntime {
       fireAndForget(completion.then(outcomes => {
         this.noteOutcomes(outcomes);
         for (const outcome of outcomes) {
-          if (outcome.status !== 'succeeded') continue;
           // The same allowlist as the arming loop above. Widening only one of
           // the two leaves the other filtering every hue outcome out, and the
-          // probe still never arms.
+          // probe still never arms. It is also what makes a decline count ONCE
+          // per tick: a colour batch carries mode and saturation too, and three
+          // would then mean one minute rather than three.
           if (!PRE_STAGE_CAPABILITIES.includes(outcome.capability)) continue;
           const generation = preStaged.get(outcome.deviceId);
           if (generation === undefined) continue;
-          this.verifyStayedOff(outcome.deviceId, generation);
+
+          if (outcome.status === 'succeeded') {
+            // It took the colour, so whatever it refused before is history.
+            this.preStageDeclines.delete(outcome.deviceId);
+            this.verifyStayedOff(outcome.deviceId, generation);
+            continue;
+          }
+
+          // `failed` and nothing else: `coalesced` means a newer write owns the
+          // capability, `dropped_capacity` and `cancelled` mean we never asked.
+          // None of the three is the lamp saying no — the same rule
+          // noteOutcomes() lives by, in the other direction.
+          if (outcome.status !== 'failed') continue;
+          this.noteDecline(outcome.deviceId, outcome.error);
         }
       }), this.deps.log, 'Circadian write bookkeeping');
     }
@@ -850,12 +1001,18 @@ export class CircadianRuntime {
     return Math.abs(next - previous) >= this.stepFor(deviceId, field);
   }
 
+  /**
+   * The deadband for one field on one lamp.
+   *
+   * 0.01 where the lamp declares no resolution: this gate needs SOME threshold
+   * to compare against, unlike the intent planner, which reads the same
+   * primitive and treats "no declared resolution" as "nothing is being rounded
+   * away". See `stepFromDecimals`.
+   */
   private stepFor(deviceId: string, field: 'warmth' | 'brightness'): number {
     const capabilities = this.cache.capabilitiesOf(deviceId);
     const options = field === 'warmth' ? capabilities?.light_temperature : capabilities?.dim;
-    const decimals = options?.decimals;
-    if (decimals === undefined || !Number.isFinite(decimals)) return 0.01;
-    return Math.pow(10, -Math.max(0, Math.floor(decimals)));
+    return stepFromDecimals(options?.decimals) ?? 0.01;
   }
 
   /**
@@ -993,6 +1150,34 @@ export class CircadianRuntime {
     this.probes.set(deviceId, { timer, generation });
   }
 
+  /**
+   * Has this lamp refused a colour while off often enough to stop being asked?
+   *
+   * A count rather than a flag so the reason survives in diagnostics with the
+   * integration's own words, and so that clearing it is a delete rather than a
+   * second piece of state to keep in step.
+   */
+  private preStageRefused(deviceId: string): boolean {
+    return (this.preStageDeclines.get(deviceId)?.count ?? 0) >= PRE_STAGE_DECLINES_BEFORE_SKIP;
+  }
+
+  /**
+   * Record one refusal, and say so ONCE — on the tick that crosses the
+   * threshold.
+   *
+   * Once, because the alternative is the noise this exists to stop: the
+   * adapter's own per-(device, capability) rate limit on failure logging is 60
+   * seconds, which is exactly the tick period, so every refusal was already
+   * getting a line of its own all night.
+   */
+  private noteDecline(deviceId: string, reason: string): void {
+    const count = (this.preStageDeclines.get(deviceId)?.count ?? 0) + 1;
+    this.preStageDeclines.set(deviceId, { at: this.now(), count, reason });
+    if (count !== PRE_STAGE_DECLINES_BEFORE_SKIP) return;
+    this.deps.log(`${deviceId} refused a colour while off ${count} times running, so it will not `
+      + `be pre-staged again until it is switched on: ${reason}`);
+  }
+
   /** Drop a device's outstanding pre-stage probe, if it has one. */
   private cancelProbe(deviceId: string): void {
     const existing = this.probes.get(deviceId);
@@ -1107,7 +1292,10 @@ export class CircadianRuntime {
         );
 
       for (const write of planned.writes) {
-        await this.adapter.write(deviceId, write.capability, write.value);
+        // Flagged like any other pre-stage write: this IS the definitive one,
+        // and a screen the user is standing in front of must not book a failure
+        // against a lamp whose refusal it is about to explain to them.
+        await this.adapter.write(deviceId, write.capability, write.value, { preStage: true });
       }
     } catch (error) {
       return {
@@ -1115,7 +1303,7 @@ export class CircadianRuntime {
         ...(name ? { name } : {}),
         stayedOff: false,
         restored: true,
-        reason: (error as Error)?.message ?? String(error),
+        reason: messageOf(error),
       };
     }
 
@@ -1147,7 +1335,9 @@ export class CircadianRuntime {
       return;
     }
 
-    const assessment = await assessTargets(this.deps.catalog, this.plan.target);
+    const assessment = await assessTargets(
+      this.deps.catalog, this.plan.target, this.adapter.unwritableTargets(),
+    );
     if (assessment.state === 'needs_repair') {
       this.setState(assessment.state, assessment.detail);
       return;
@@ -1213,6 +1403,7 @@ export class CircadianRuntime {
       // must not be gated against what we wrote to it while it was ours.
       this.lastColorWritten.delete(deviceId);
       this.pendingColor.delete(deviceId);
+      this.preStageDeclines.delete(deviceId);
       this.cancelProbe(deviceId);
     }
 
@@ -1252,6 +1443,7 @@ export class CircadianRuntime {
     // from the old one — and declining the first write.
     this.lastColorWritten.clear();
     this.pendingColor.clear();
+    this.preStageDeclines.clear();
     this.targetIds = [];
     this.targetNames = [];
     // Or the next refresh diffs the new plan's targets against the old plan's.
@@ -1267,29 +1459,11 @@ export class CircadianRuntime {
     await this.stop();
   }
 
-  /**
-   * Adopt a state, and tell the device layer when anything a user could SEE
-   * has changed.
-   *
-   * The comparison used to be `state === state` alone, which is not what the
-   * device layer renders: it renders the state AND its detail, and the detail
-   * is where the sentence lives. So a device that went from "the API key
-   * expired" to "the API key has no Flow permission" — both `needs_credential`
-   * — kept showing the first message, and the user re-minted a key with the
-   * same problem because the app never stopped telling them to.
-   */
+  /** See `VisibleState`, which owns the when-did-it-move rule. */
   private setState(state: ControllerState, detail?: StateDetail): void {
-    if (this.state === state && sameDetail(this.lastDetail, detail)) return;
-    this.state = state;
-    this.lastDetail = detail;
-    this.stateRevision += 1;
-    this.deps.onStateChange(state, detail);
+    this.visible.set(state, detail);
   }
 
-  /** The detail last handed to the device layer, for the comparison above. */
-  private lastDetail: StateDetail | undefined;
-  /** Diagnostics only: how many times the visible state has actually moved. */
-  private stateRevision = 0;
 
   /** Never exposes secrets or unrelated Homey configuration. */
   diagnostics(): CircadianDiagnostics {
@@ -1304,9 +1478,9 @@ export class CircadianRuntime {
       // How many times the VISIBLE state has moved. A device stuck on a
       // stale message with a rising revision means the device layer is not
       // rendering what it is being told.
-      stateRevision: this.stateRevision,
+      stateRevision: this.visible.revision,
       name: this.deps.displayName(),
-      state: this.state,
+      state: this.visible.current,
       enabled: this.plan.enabled,
       // The two facts every "it went the wrong colour at the wrong time" report
       // needs, and the only place the resolved timezone is visible at all.
@@ -1317,6 +1491,13 @@ export class CircadianRuntime {
         at: formatMinutes(point.minute),
         warmth: point.warmth,
         ...(point.brightness !== undefined ? { brightness: point.brightness } : {}),
+        // Read off the STORED point, because `resolvePoints` returns the curve's
+        // own shape and does not carry the flag. Reported beside the stored
+        // brightness rather than instead of it: that number is the fallback, and
+        // "it used 40% when it should have followed the room" and "it followed
+        // the room and the room said 40%" look identical without both.
+        ...(this.plan.points.some(p => p.id === point.id && p.fromDaylight === true)
+          ? { fromDaylight: true } : {}),
         ...(point.color !== undefined ? { color: point.color } : {}),
       })),
       now: value,
@@ -1335,6 +1516,9 @@ export class CircadianRuntime {
         canColor: this.cache.supports(id, 'light_hue'),
         overridden: this.overrides.has(id),
         lastWritten: this.lastWrittenFor(id),
+        ...(this.preStageDeclines.has(id)
+          ? { preStageDeclined: this.preStageDeclines.get(id)! }
+          : {}),
       })),
       lastAction: this.lastAction,
       recentFailures: this.adapter.failures(),

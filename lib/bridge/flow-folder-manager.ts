@@ -1,7 +1,7 @@
 import type { HomeyApiService } from '../homey-api-service';
-import { redactKeyMaterial } from '../credential-service';
 import { KeyedMutex } from '../support/keyed-mutex';
 import { NO_CACHE } from '../flow-card-catalogue';
+import { redactedMessage } from '../support/homey-errors';
 
 /**
  * Everything this app knows about Homey's Flow FOLDERS.
@@ -115,8 +115,7 @@ export class FlowFolderManager {
     return this.mutex.run(ROOT_FOLDER_LOCK, async () => {
       try {
         const client = await this.api.read();
-        const records = (Object.values(await client.flow.getFlowFolders(NO_CACHE)) as any[])
-          .map(toRecord);
+        const records = await readFolders(client);
         const folders = new Map(records.map(f => [f.id, f]));
 
         const existing = records.find(f => f.name === MANAGED_FOLDER_NAME && f.parent === null);
@@ -209,8 +208,7 @@ export class FlowFolderManager {
   private async findByName(view: FolderView, name: string): Promise<string | undefined> {
     try {
       const client = await this.api.read();
-      const records = (Object.values(await client.flow.getFlowFolders(NO_CACHE)) as any[])
-        .map(toRecord);
+      const records = await readFolders(client);
       // Folded back in, so the rest of this pass sees what we just learned.
       for (const record of records) view.folders.set(record.id, record);
       return records.find(f => f.parent === view.root && f.name === name)?.id;
@@ -334,7 +332,7 @@ export class FlowFolderManager {
 
   /** Redacted as well as sanitised upstream: these lines go to the app log. */
   private warn(what: string, error: unknown): void {
-    this.log(`${what}:`, redactKeyMaterial(String((error as Error)?.message ?? '')));
+    this.log(`${what}:`, redactedMessage(error));
   }
 }
 
@@ -353,4 +351,17 @@ function toRecord(raw: any): FolderRecord {
     name: String(raw?.name ?? ''),
     parent: raw?.parent ? String(raw.parent) : null,
   };
+}
+
+/**
+ * Every flow folder on the Homey, normalised.
+ *
+ * `NO_CACHE` at the call site rather than defaulted anywhere: `homey-api`
+ * retains every `getAll` result for the life of the client (platform §15), and
+ * a wrapper that supplied the flag by default would be a wrapper somebody could
+ * bypass. It is passed explicitly here, once, and this is the only folder read
+ * in the module.
+ */
+async function readFolders(client: any): Promise<FolderRecord[]> {
+  return (Object.values(await client.flow.getFlowFolders(NO_CACHE)) as any[]).map(toRecord);
 }

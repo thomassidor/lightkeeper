@@ -137,6 +137,17 @@ ICONS = [
         'stroke': 5.5,
         'house': DEVICE_STROKE,
     },
+    {
+        # PLACEHOLDER. A plain circle, and a release blocker until it is drawn -
+        # see the master's own comment and artwork/provenance.md.
+        'master': 'daylight-icon-master.svg',
+        'out': ROOT / 'drivers' / 'daylight' / 'assets' / 'icon.svg',
+        'title': 'Daylight light',
+        'desc': 'A plain open circle.',
+        'fit': (2.5526, -173.5, -173.5),
+        'stroke': 5.5,
+        'house': DEVICE_STROKE,
+    },
 ]
 
 # ---------------------------------------------------------------------- images
@@ -168,6 +179,13 @@ DEVICES = [
     {
         'master': 'curve-device-master.png',
         'out': ROOT / 'drivers' / 'curve' / 'assets' / 'images',
+    },
+    {
+        # PLACEHOLDER, and it cannot ship: Homey's guideline 1.4 rejects a flat
+        # shape as a device image and asks for photography, which is why the
+        # four above are photographs. See artwork/provenance.md.
+        'master': 'daylight-device-master.png',
+        'out': ROOT / 'drivers' / 'daylight' / 'assets' / 'images',
     },
 ]
 DEVICE_SIZES = {'small.png': (75, 75), 'large.png': (500, 500), 'xlarge.png': (1000, 1000)}

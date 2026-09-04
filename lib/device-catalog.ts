@@ -57,7 +57,39 @@ export class DeviceCatalog {
    */
   private generation = 0;
 
-  constructor(private readonly api: HomeyApiService) {}
+  /**
+   * `ownAppId` is `homey.manifest.id`, and it is what keeps this app out of its
+   * own light picker.
+   *
+   * Optional because the ephemeral pairing rigs and the tests construct a
+   * catalogue without an app around them; passing nothing means nothing is
+   * excluded, which is what those callers want.
+   */
+  constructor(
+    private readonly api: HomeyApiService,
+    private readonly ownAppId: string | null = null,
+  ) {}
+
+  /**
+   * Ours, and therefore never a light.
+   *
+   * A circadian, Curve or schedule device declares `class: "service"` with an
+   * `onoff` capability — the pause switch on its own tile — so it satisfies
+   * `lightCandidates()` exactly as a bulb does. One Lightkeeper device driving
+   * another is a loop: writing `onoff` to a schedule pauses it, and a curve
+   * pointed at its sibling fights it every minute.
+   *
+   * The picker is not even the dangerous half. `targetDeviceIds()` resolves a
+   * ZONE by sweeping up every `onoff` device in it, so a user who chose "all
+   * lights in the Studio" never saw these offered and got them anyway.
+   *
+   * The probe script has excluded them from its own light list since it was
+   * written (`scripts/probe-lights.mjs`, APP_ID); the app had not.
+   */
+  isOwnDevice(device: { ownerUri: string | null }): boolean {
+    if (this.ownAppId === null) return false;
+    return device.ownerUri === `homey:app:${this.ownAppId}`;
+  }
 
   /** Zone and device changes invalidate the cache (zone re-resolution). */
   async watch(onChange: () => void): Promise<void> {
@@ -123,10 +155,48 @@ export class DeviceCatalog {
     return devices.filter(d => wanted.has(d.zone));
   }
 
-  /** Anything that can be driven as a light — never hard-filtered on class alone. */
+  /**
+   * Anything that can be driven as a light — never hard-filtered on class alone.
+   *
+   * `onoff` is the whole rule, deliberately: a smart plug with a lamp in it is
+   * somebody's light, and filtering on `class === 'light'` would silently do
+   * nothing when they picked it. The one exclusion is our OWN devices — see
+   * `isOwnDevice()`.
+   *
+   * The cost of the rule, measured on the reference Homey: 54 candidates,
+   * including a dishwasher, a NAS, a tablet and an air purifier. That is why
+   * `isLightClass()` exists — the picker keeps offering them and stops
+   * presenting them as bulbs.
+   */
   async lightCandidates(): Promise<CatalogDevice[]> {
     const devices = await this.allDevices();
-    return devices.filter(d => d.capabilities.includes('onoff'));
+    return devices.filter(d => d.capabilities.includes('onoff') && !this.isOwnDevice(d));
+  }
+
+  /**
+   * The lights a ZONE target resolves to — one predicate, four callers.
+   *
+   * `TargetResolver`, `targetDeviceIds()` and `assessTargets()` each kept their
+   * own `inZone.filter(d => d.capabilities.includes('onoff'))`, so the
+   * own-device exclusion had to be added in three places or it was not added at
+   * all. Exactly the drift `target-health.ts` was extracted to stop.
+   */
+  async lightsInZone(zoneId: string, includeSubzones: boolean): Promise<CatalogDevice[]> {
+    const inZone = await this.devicesInZone(zoneId, includeSubzones);
+    return inZone.filter(d => d.capabilities.includes('onoff') && !this.isOwnDevice(d));
+  }
+
+  /**
+   * Does this device claim to be a light, as opposed to merely being drivable
+   * as one?
+   *
+   * `virtualClass` counts: it is what Homey sets when a user tells it a socket
+   * is really a lamp, which is exactly this question answered by the person who
+   * owns the room. Read nowhere on the target path before this — the field was
+   * carried in the catalogue and consulted only for trigger-card matching.
+   */
+  static isLightClass(device: { class: string; virtualClass: string | null }): boolean {
+    return device.class === 'light' || device.virtualClass === 'light';
   }
 
   /** How many of these targets support each light capability. */

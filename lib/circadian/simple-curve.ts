@@ -2,6 +2,7 @@ import { MINUTES_PER_DAY } from '../time/wall-clock';
 import { sanitiseUnitInterval } from '../validation/unit-interval';
 import type { CircadianPlan, CircadianPoint } from './circadian-types';
 import type { TargetSpec } from '../outputs/light-intent';
+import type { DaylightResponse } from '../daylight/daylight-types';
 
 /**
  * A circadian light with no curve to draw: two ends of the day, and a shape.
@@ -31,6 +32,19 @@ export interface CircadianEnd {
    * half a brightness curve would have to invent the other half.
    */
   brightness?: number;
+  /**
+   * Take this end's brightness from the daylight instead of from the number
+   * above.
+   *
+   * Per END rather than for the whole device, because the two ends of the day are
+   * genuinely different questions — "as bright as the room needs at night" and
+   * "as bright as the room needs at noon" — and somebody may well want one of
+   * them answered by a sensor and the other by hand.
+   *
+   * The number STAYS and becomes the fallback. See the same field on a schedule
+   * entry for why that is the load-bearing half of the design.
+   */
+  fromDaylight?: boolean;
 }
 
 export interface SimpleCircadianPlan {
@@ -44,6 +58,11 @@ export interface SimpleCircadianPlan {
   coolest: CircadianEnd;
   /** Follow the brightness as well as the temperature. See CircadianEnd. */
   adjustBrightness: boolean;
+  /**
+   * ONE daylight response for the whole device, or none. See the same field on
+   * `SchedulePlan` for why it is inline and why it is per device.
+   */
+  daylight?: DaylightResponse;
   /** Write to lights that are OFF. Opt-in and self-disabling; see §12. */
   preStage: boolean;
 }
@@ -107,6 +126,10 @@ export function expandSimplePlan(plan: SimpleCircadianPlan): CircadianPlan {
       anchor: { kind: 'clock', at: minute % MINUTES_PER_DAY },
       warmth: source.temperature,
       ...(withBrightness ? { brightness: source.brightness! } : {}),
+      // Carried onto every point derived from that end, so the runtime sees the
+      // flag wherever the shape put it. Only alongside a brightness, for the
+      // same reason the field itself is only meaningful with one.
+      ...(withBrightness && source.fromDaylight === true ? { fromDaylight: true } : {}),
     };
   });
 
@@ -116,6 +139,10 @@ export function expandSimplePlan(plan: SimpleCircadianPlan): CircadianPlan {
     target: plan.target,
     points,
     adjustBrightness: withBrightness,
+    // Carried through, because the expanded plan is what the runtime evaluates
+    // and a response left behind here would leave every `fromDaylight` above
+    // pointing at nothing.
+    ...(plan.daylight !== undefined ? { daylight: plan.daylight } : {}),
     preStage: plan.preStage,
   };
 }
@@ -185,6 +212,10 @@ export function sanitiseSimplePlan(raw: unknown): {
       ...(brightness !== null && brightness > 0
         ? { brightness }
         : { brightness: fallback.brightness! }),
+      // An end always ends up with a brightness above, so there is no "only
+      // alongside one" check to make here — unlike a curve point or a schedule
+      // window, where a brightness is genuinely optional.
+      ...(given.fromDaylight === true ? { fromDaylight: true } : {}),
     };
   };
 

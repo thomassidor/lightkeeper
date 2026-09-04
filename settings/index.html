@@ -158,6 +158,9 @@
 <h2 data-i18n="settings.circadian"></h2>
 <div id="circadian"></div>
 
+<h2 data-i18n="settings.daylight"></h2>
+<div id="daylight"></div>
+
 <h2 data-i18n="settings.flowsTitle"></h2>
 <div class="card">
   <p id="orphanText" class="tight" data-i18n="settings.checking"></p>
@@ -338,21 +341,66 @@
       renderControllers(status.controllers || []);
       renderSchedules(status.schedules || []);
       renderCircadian(status.circadian || []);
+      renderDaylight(status.daylight || [], status.sky, status.sensors || []);
+    });
+  }
+
+  /**
+   * One section of device cards: the frame every one of the four shares.
+   *
+   * `renderControllers`, `renderSchedules`, `renderCircadian` and
+   * `renderDaylight` each opened with the same fourteen lines - the list, the
+   * empty-list guard, the paused label/class pair, the card, the state chip and
+   * the name - and the "paused is not a fault" comment appeared in three of
+   * them. `fill` writes everything after the name, because that genuinely
+   * differs: a schedule puts its flow count on the controls line, a circadian
+   * light adds a pre-stage note, a Daylight light names its own sensors.
+   *
+   * `emptyText` is the RESOLVED string, not a locale key: `locales.test.ts`
+   * scans the source for `t('...')` literals to prove every defined key is
+   * rendered, and a key arriving through a variable is one it cannot see. It
+   * caught this the moment the key moved.
+   *
+   * A CONTROLLER summary carries no `enabled` field at all, so `enabled ===
+   * false` is false for one and the chip falls through to its state - which is
+   * what it did before, where `disabled` reads "Disabled" rather than "Paused".
+   */
+  function renderDeviceSection(id, devices, emptyText, fill, before) {
+    var list = clear(document.getElementById(id));
+    // After the clear and BEFORE the empty guard: the daylight section leads
+    // with a sky card that must survive an empty device list, and clearing
+    // inside this helper is what makes the ordering the helper's business.
+    if (before) before(list);
+    if (!devices.length) {
+      list.appendChild(node('p', null, emptyText));
+      return;
+    }
+    devices.forEach(function (device) {
+      // Paused is not a fault, so it gets its own label rather than borrowing
+      // the controller's "Disabled".
+      var paused = device.enabled === false;
+      var el = node('div', 'card');
+      el.appendChild(node('span', 'state ' + (paused ? 'flat' : stateClass(device.state)),
+        paused ? t('statePaused') : stateLabel(device.state)));
+      el.appendChild(document.createTextNode(' '));
+      // A controller names its remote (`sourceName`); the other three name
+      // themselves. No summary carries both.
+      el.appendChild(node('strong', null,
+        device.sourceName || device.name || t('controllerFallback')));
+      fill(el, device);
+      list.appendChild(el);
+    });
+  }
+
+  /** The line every card carries: which lights this device drives. */
+  function controlsLine(device) {
+    return t('controls', {
+      names: (device.targetNames || []).join(', ') || t('noLights'),
     });
   }
 
   function renderControllers(controllers) {
-    var list = clear(document.getElementById('controllers'));
-    if (!controllers.length) {
-      list.appendChild(node('p', null, t('noControllers')));
-      return;
-    }
-    controllers.forEach(function (controller) {
-      var el = node('div', 'card');
-      el.appendChild(node('span', 'state ' + stateClass(controller.state), stateLabel(controller.state)));
-      el.appendChild(document.createTextNode(' '));
-      el.appendChild(node('strong', null, controller.sourceName || t('controllerFallback')));
-
+    renderDeviceSection('controllers', controllers, t('noControllers'), function (el, controller) {
       var meta = node('p', 'entry-meta', t('mappingsAndFlows', {
         mappings: controller.mappings,
         flows: controller.managedFlows,
@@ -362,11 +410,7 @@
         meta.appendChild(node('strong', null, t('notStarted')));
       }
       el.appendChild(meta);
-
-      el.appendChild(node('p', 'entry-sub', t('controls', {
-        names: (controller.targetNames || []).join(', ') || t('noLights'),
-      })));
-      list.appendChild(el);
+      el.appendChild(node('p', 'entry-sub', controlsLine(controller)));
     });
   }
 
@@ -382,22 +426,7 @@
   }
 
   function renderSchedules(schedules) {
-    var list = clear(document.getElementById('schedules'));
-    if (!schedules.length) {
-      list.appendChild(node('p', null, t('noSchedules')));
-      return;
-    }
-    schedules.forEach(function (schedule) {
-      // Paused is not a fault, so it gets its own label rather than borrowing
-      // the controller's "Disabled".
-      var label = schedule.enabled === false ? t('statePaused') : stateLabel(schedule.state);
-      var cls = schedule.enabled === false ? 'flat' : stateClass(schedule.state);
-
-      var el = node('div', 'card');
-      el.appendChild(node('span', 'state ' + cls, label));
-      el.appendChild(document.createTextNode(' '));
-      el.appendChild(node('strong', null, schedule.name || t('controllerFallback')));
-
+    renderDeviceSection('schedules', schedules, t('noSchedules'), function (el, schedule) {
       var meta = node('p', 'entry-meta');
       var entries = schedule.entries || [];
       if (!entries.length) meta.textContent = t('scheduleNoEntries');
@@ -414,8 +443,7 @@
       el.appendChild(meta);
 
       el.appendChild(node('p', 'entry-sub',
-        t('controls', { names: (schedule.targetNames || []).join(', ') || t('noLights') })
-        + ' \u00b7 ' + t('scheduleFlows', { flows: schedule.managedFlows })));
+        controlsLine(schedule) + ' \u00b7 ' + t('scheduleFlows', { flows: schedule.managedFlows })));
 
       // Which clock the times above are read against. "It fired an hour out" is
       // almost always this line — and `timezoneResolved: false` means the app
@@ -425,8 +453,6 @@
       });
       if (schedule.timezoneResolved === false) clock += ' \u00b7 ' + t('clockUnresolved');
       el.appendChild(node('p', 'entry-sub', clock));
-
-      list.appendChild(el);
     });
   }
 
@@ -468,22 +494,7 @@
    * on purpose looks exactly like one that has stopped by accident.
    */
   function renderCircadian(devices) {
-    var list = clear(document.getElementById('circadian'));
-    if (!devices.length) {
-      list.appendChild(node('p', null, t('noCircadian')));
-      return;
-    }
-    devices.forEach(function (device) {
-      // Paused is not a fault, so it borrows the schedule's label rather than
-      // the controller's "Disabled".
-      var label = device.enabled === false ? t('statePaused') : stateLabel(device.state);
-      var cls = device.enabled === false ? 'flat' : stateClass(device.state);
-
-      var el = node('div', 'card');
-      el.appendChild(node('span', 'state ' + cls, label));
-      el.appendChild(document.createTextNode(' '));
-      el.appendChild(node('strong', null, device.name || t('controllerFallback')));
-
+    renderDeviceSection('circadian', devices, t('noCircadian'), function (el, device) {
       var meta = node('p', 'entry-meta',
         device.now ? curveNowText(device.now, device.nextPoint) : t('notStarted'));
       if (device.overridden) {
@@ -494,17 +505,115 @@
       }
       el.appendChild(meta);
 
-      el.appendChild(node('p', 'entry-sub', t('controls', {
-        names: (device.targetNames || []).join(', ') || t('noLights'),
-      })));
+      el.appendChild(node('p', 'entry-sub', controlsLine(device)));
       if (device.preStageDisabled) {
         el.appendChild(node('p', 'entry-sub', t('circadianPreStageOff')));
       }
       el.appendChild(node('p', 'entry-sub', t('scheduleClock', {
         local: device.localTime || unknown(), zone: device.timezone || unknown(),
       })));
+    });
+  }
 
-      list.appendChild(el);
+  /**
+   * How long ago a sensor reading arrived, in words.
+   *
+   * Shown because a FROZEN sensor is the one failure this feature cannot detect
+   * for itself. A reading is never treated as stale — many Zigbee sensors report
+   * only on change, so a quiet sensor in a stable room is telling the truth
+   * (platform §16) — which means the age is the only thing on this page that can
+   * reveal a sensor that has simply stopped.
+   */
+  function sensorAgeText(at) {
+    if (at === null || at === undefined) return t('daylightNoReading');
+    var minutes = Math.floor((Date.now() - Number(at)) / 60000);
+    if (!isFinite(minutes) || minutes < 1) return t('daylightAgeNow');
+    if (minutes < 60) return t('daylightAgeMinutes', { minutes: minutes });
+    return t('daylightAgeHours', { hours: Math.floor(minutes / 60) });
+  }
+
+  /**
+   * The sky and every watched sensor, for the whole Homey.
+   *
+   * ABOVE the per-device cards and independent of them, because "does this thing
+   * know where the sun is at all" is a question about the app rather than about a
+   * device — and a null elevation here is the single fastest way to see that the
+   * geolocation permission did not resolve on this Homey.
+   */
+  function renderSky(list, sky, sensors) {
+    var card = node('div', 'card');
+
+    if (!sky || sky.elevation === null || sky.elevation === undefined) {
+      card.appendChild(node('span', 'state partial', t('daylightNoLocation')));
+      card.appendChild(node('p', 'entry-sub', t('daylightNoLocationHelp')));
+    } else {
+      card.appendChild(node('span', 'state ready', t('daylightSky', {
+        degrees: Math.round(sky.elevation),
+      })));
+    }
+
+    if (!sensors.length) {
+      card.appendChild(node('p', 'entry-sub', t('daylightNoSensors')));
+    } else {
+      sensors.forEach(function (sensor) {
+        var row = node('p', 'entry-sub');
+        row.appendChild(document.createTextNode(sensor.name || sensor.deviceId));
+        row.appendChild(separator());
+        if (!sensor.available) {
+          row.appendChild(document.createTextNode(t('daylightSensorGone')));
+        } else if (sensor.lux === null || sensor.lux === undefined) {
+          row.appendChild(document.createTextNode(t('daylightNoReading')));
+        } else {
+          row.appendChild(document.createTextNode(t('daylightSensorLux', {
+            lux: Math.round(sensor.lux), age: sensorAgeText(sensor.at),
+          })));
+        }
+        card.appendChild(row);
+      });
+    }
+
+    list.appendChild(card);
+  }
+
+  /**
+   * Daylight lights, which report a brightness and — crucially — WHERE it came
+   * from.
+   *
+   * "Sensors" and "sun" behave very differently: one measures the room and one
+   * infers it. Somebody whose lamps are not doing what they expect needs to know
+   * which of the two is answering before anything else on this page helps, so it
+   * is named rather than implied.
+   */
+  function renderDaylight(devices, sky, sensors) {
+    renderDeviceSection('daylight', devices, t('noDaylight'), function (el, device) {
+      var now = device.now;
+      var meta = node('p', 'entry-meta');
+      if (!now || now.source === 'none') {
+        meta.appendChild(document.createTextNode(t('daylightUnknown')));
+      } else {
+        meta.appendChild(document.createTextNode(t('daylightNow', {
+          percent: Math.round(now.brightness * 100),
+          source: now.source === 'sensors' ? t('daylightFromSensors') : t('daylightFromSky'),
+        })));
+      }
+      if (device.overridden) {
+        meta.appendChild(separator());
+        meta.appendChild(document.createTextNode(
+          t('circadianOverridden', { count: device.overridden }),
+        ));
+      }
+      el.appendChild(meta);
+      el.appendChild(node('p', 'entry-sub', controlsLine(device)));
+
+      // This device's own sensors, named. The shared list above is every sensor
+      // on the Homey; which of them THIS device is reading is the fact that
+      // explains its brightness.
+      var mine = device.sensors || [];
+      el.appendChild(node('p', 'entry-sub', mine.length
+        ? t('daylightUsing', { names: mine.map(function (s) { return s.name; }).join(', ') })
+        : t('daylightUsingSky')));
+    }, function (list) {
+      renderSky(list, sky, sensors);
     });
   }
 

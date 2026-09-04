@@ -34,10 +34,10 @@ full evidence including the server-side stack trace.
 | Light schedule | **Yes** | Same — two Flows per window |
 | Circadian light | No | Generates no Flows at all |
 | Curve light | No | Same engine, same answer |
+| Daylight light | No | Same answer, different job |
 
-The two curve-driven types watch your lights over the app's own connection and write to them
-directly, so pairing them starts straight at the light picker. They also keep working when a key
-expires.
+Those three watch your lights over the app's own connection and write to them directly, so pairing
+them starts straight at the light picker. They also keep working when a key expires.
 
 ### What is the key used for, exactly?
 
@@ -83,6 +83,50 @@ at night, cool in the day". There is **no way to convert one into the other** �
 mechanism for changing a device's driver — but adding one is cheap, since neither needs an API key
 or writes any Flows.
 
+### What does a Daylight light do that a schedule cannot?
+
+A schedule happens **at a time**. A Daylight light happens **all the time**.
+
+Both can set a brightness from how light the room is — a schedule window can be set to follow the
+daylight just as a Daylight light does. The difference is when they look: a window reads it once,
+at the moment it comes on, and then leaves the lights where it put them. A Daylight light keeps
+looking, and keeps adjusting, for as long as the lights are on.
+
+So: a window that follows the daylight is right for "come on at whatever level the room needs at
+seven". A Daylight light is right for "keep this room at a comfortable level all evening as the
+light goes".
+
+### Do I need a light sensor for a Daylight light?
+
+No. Without one it uses **how high the sun is**, worked out from your Homey's own location — which
+Homey asked you for during setup, so you almost certainly have one. That handles the shape of the
+day perfectly well: dark before dawn, bright at noon, dark again after dusk.
+
+What a sensor adds is everything the sun cannot know: your curtains, which way the room faces, and
+whether today is overcast. If you have one — and most motion sensors do — it is used in preference,
+and the pairing screen shows you what it currently reads so you can set the two lux numbers against
+something real rather than guessing.
+
+### Can a light sensor be in the same room as the lights it drives?
+
+Yes, and it is worth knowing what happens when it is: **the sensor measures your lamps as well as
+the daylight.** Brighten the lamps and the reading goes up, which asks for dimmer lamps, which lowers
+the reading. That is a loop, and left alone a loop like that makes a room pulse.
+
+Lightkeeper damps it. It ignores changes below a threshold you would not see anyway, and it moves in
+small steps rather than jumping — so in practice the lights settle after a few adjustments and then
+stay put. It does not remove the loop, and it cannot.
+
+The placements that behave, in order:
+
+1. **A sensor facing a window**, or on a sill. It sees far more daylight than lamplight, so your
+   lamps barely move the reading.
+2. **A sensor in another room** that gets similar light. Nothing you do to these lamps reaches it.
+3. **No sensor at all.** The sun cannot be affected by your lamps, and for "dim as the morning comes
+   up" it is genuinely enough.
+
+If your lights do keep hunting, unpick the sensor: the sun alone is the reliable answer.
+
 ---
 
 ## Everyday use
@@ -117,6 +161,15 @@ neither needs any reconfiguration.
 
 They will disagree. A schedule's warmth is applied at its boundary and then overwritten by the
 circadian light within a few minutes. **Use one or the other on a given lamp.**
+
+The same goes for a **Daylight light and anything else that sets brightness** on the same lamp: a
+Daylight light adjusts continuously, so it wins, and whatever the other device set is overwritten
+within a minute. If you want a schedule's window and the daylight on one lamp, do not add a second
+device — set that window to **follow the daylight** instead. That is what the option is for.
+
+One pair that does NOT conflict: a Daylight light and a circadian or Curve light on the same lamp,
+where the colour-following device is not also set to change brightness. They are then writing to
+different axes — one to the brightness, one to the warmth — and neither undoes the other.
 
 ### Why does my light only change colour every few minutes?
 
@@ -180,6 +233,19 @@ classifies them so it can send you to the right fix.
 live session, and two holders appear to invalidate one another — the symptom is a key that
 "randomly" stops working.
 
+### A Daylight light says it cannot tell how light it is
+
+It has no light sensor reporting and no location to work the sun out from, so it is leaving your
+lights alone rather than guessing. Either fix works:
+
+- **Set your Homey's location** — Homey's own Settings → Location. Nothing else is needed; the app
+  reads the latitude to work out how high the sun is, and it never leaves the Homey.
+- **Or pick a light sensor** in Repair. Most motion sensors have one, and a sensor needs no location
+  at all.
+
+Homey settings → Lightkeeper shows which of the two it is: the Daylight lights section leads with
+the sun's current height, or says the Homey has not told it where it is.
+
 ### A light is unavailable
 
 Bring it and its integration back online. Zone targets resolve at the moment of use, so a light that
@@ -187,8 +253,18 @@ comes back is included again without any reconfiguration.
 
 ### Brightness keeps changing on its own
 
-Every ramp stops unconditionally after 10 seconds, because release events do get lost. If your remote
-exposes no release event, Lightkeeper offers stepping rather than a hold ramp in the first place.
+Two different answers, depending on which device you have.
+
+**From a remote:** every ramp stops unconditionally after 10 seconds, because release events do get
+lost. If your remote exposes no release event, Lightkeeper offers stepping rather than a hold ramp
+in the first place.
+
+**From a Daylight light:** it is meant to, as the light in the room changes — but it should settle
+and then stay put, not keep moving. If it keeps moving minute after minute, its light sensor is
+almost certainly in the same room as the lights it is driving, and is measuring them.
+[What to do about that](#can-a-light-sensor-be-in-the-same-room-as-the-lights-it-drives). Homey
+settings → Lightkeeper lists every write the app has made, which is the quickest way to tell
+"settled" from "hunting".
 
 ### A schedule did not fire
 
@@ -260,6 +336,21 @@ Stated plainly, because a limit you find out about later is worse than one you w
   the lights lose their colour towards the middle of that segment and pick the new one up on the way
   out. It is the same rule as the bullet above, applied to the one case where both ends *are* a
   colour: pale is what any two colours have in common.
+- **A Daylight light never switches a light on or off either.** It only dims lights that are already
+  on, and brightness is never written to a light that is off — a brightness write turns an off lamp
+  on, which is measured rather than suspected.
+- **A light sensor in the same room as the lights it drives measures those lights too.** Lightkeeper
+  damps the resulting hunting — a threshold below what you would see, and small steps rather than
+  jumps — but cannot remove it. [Which placements behave](#can-a-light-sensor-be-in-the-same-room-as-the-lights-it-drives).
+- **A Daylight light needs either a light sensor or your Homey's location.** With neither it says so
+  and leaves your lights alone rather than guessing.
+- **A schedule window that follows the daylight reads it once, when the window starts**, and does not
+  follow it afterwards. A schedule happens at a time; add a Daylight light for the other thing.
+- **One daylight setup per device.** All the windows, points or ends on one device that follow the
+  daylight share the same sensors and the same two brightness ends. If you need two different
+  responses, add a second device — the same answer the twelve-window cap gives.
+- **Several light sensors are averaged**, not weighted, and not "the brightest wins". The sensors you
+  pick are the weighting: do not pick one whose opinion of the room you do not want.
 - **The dimmest brightness you can set is 10%.** Below that there is nothing left to send a lamp:
   brightness is stored the way it is perceived rather than the way a lamp is addressed, and under
   about 9% the conversion rounds to zero, which most lamps read as off.
@@ -322,6 +413,6 @@ segment that wraps midnight — and every rule about when a write is worth makin
 tests, and the pairing screen's **Try it now** proves the whole write path against your own lamps
 before you save.
 
-Over 1000 unit tests, type-clean, validated at `publish` level. The test fixtures are transcribed verbatim
+Over 1200 unit tests, type-clean, validated at `publish` level. The test fixtures are transcribed verbatim
 from the four real remotes above, and the expected results are written by hand beside them, so the
 tests prove the code rather than the fixture.

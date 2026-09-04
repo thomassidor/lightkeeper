@@ -1,4 +1,5 @@
 import { test, describe } from 'node:test';
+import { ownsNothing, zoneLights } from '../support/fake-catalog';
 import assert from 'node:assert/strict';
 
 import { TargetResolver } from '../../lib/outputs/target-resolver';
@@ -40,6 +41,8 @@ function catalog(devices: CatalogDevice[]): DeviceCatalog {
   return {
     device: async (id: string) => devices.find(d => d.id === id),
     devicesInZone: async () => devices,
+    lightsInZone: zoneLights(async () => devices),
+    isOwnDevice: ownsNothing,
   } as unknown as DeviceCatalog;
 }
 

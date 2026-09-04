@@ -15,6 +15,14 @@
  *    first field.
  *
  * These are field-wise, and each says which fields it deliberately ignores.
+ *
+ * **Two of these three have exactly ONE caller each, by design.**
+ * `sameCatalogue` is called only by `controller-runtime.ts` and `canonical`
+ * only by `controller-profile.ts`. The plural filename invites a search for the
+ * others; there are none, and that is not a sign the extraction was premature.
+ * Each is a written-down argument about what "the same" means on one specific
+ * shape, tested independently, and the call site is a one-liner that would
+ * otherwise carry none of the reasoning.
  */
 
 import type { ManagedFlowReference } from '../profiles/controller-profile';

@@ -23,6 +23,68 @@ export interface TargetRuntimeState {
   desiredSaturation?: number;
 }
 
+/**
+ * The five capability values a target's live state is seeded from.
+ *
+ * Named, and read by `liveValuesOf()` below, because it was written out twice —
+ * once in `target-resolver.ts`'s `primeCache()` and once in
+ * `light-target-adapter.ts`'s `refresh()` — and the two DRIFTED. The adapter
+ * passed three of the five, so a refresh blanked the hue and saturation
+ * `primeCache()` had just seeded, and the next hue echo read as somebody
+ * reaching for the vendor app. One shape and one reader make that impossible
+ * rather than merely fixed.
+ */
+export interface LiveValues {
+  onoff?: boolean;
+  dim?: number;
+  light_temperature?: number;
+  light_hue?: number;
+  light_saturation?: number;
+}
+
+/**
+ * Pull those five off a device as `homey-api` handed it back.
+ *
+ * `capabilitiesObj` is optional all the way down because the client genuinely
+ * may not send it, and every field is optional because a lamp need not have the
+ * capability at all — an absent value must stay absent rather than becoming 0,
+ * which is why nothing here coerces (CLAUDE.md: `Number(null)` is 0, and 0 lux
+ * is pitch dark; the same trap, one axis over).
+ */
+export function liveValuesOf(device: {
+  capabilitiesObj?: Record<string, { value?: unknown } | undefined>;
+}): LiveValues {
+  const obj = device.capabilitiesObj;
+  return {
+    onoff: obj?.onoff?.value as boolean | undefined,
+    dim: obj?.dim?.value as number | undefined,
+    light_temperature: obj?.light_temperature?.value as number | undefined,
+    light_hue: obj?.light_hue?.value as number | undefined,
+    light_saturation: obj?.light_saturation?.value as number | undefined,
+  };
+}
+
+/**
+ * The smallest change a capability declaring `decimals` can represent, or
+ * `undefined` where it declares none.
+ *
+ * `10^-decimals`, and that arithmetic was written out twice — in the intent
+ * planner's `representableStep` and in the circadian runtime's `stepFor`.
+ *
+ * The MISS CASE deliberately stays at the call sites, because the two callers
+ * mean opposite things by it and both are right. The planner treats `undefined`
+ * as "nothing is being rounded away, so a zero is a zero the caller asked for" —
+ * `litDim` and `advanceDim` both depend on that, and a helper defaulting to 0.01
+ * would silently arm those safety nets on lamps that declare no resolution. The
+ * runtime falls back to 0.01 as a deadband floor, because it needs SOME
+ * threshold to compare against. So this returns `undefined` and lets each say
+ * what it wants done about it.
+ */
+export function stepFromDecimals(decimals: number | undefined): number | undefined {
+  if (decimals === undefined || !Number.isFinite(decimals)) return undefined;
+  return Math.pow(10, -Math.max(0, Math.floor(decimals)));
+}
+
 /** Capability metadata read per target — never assumed uniform. */
 export interface CapabilityOptions {
   min: number;
@@ -53,6 +115,28 @@ export interface TargetCapabilities {
  * the ramp engine) cancelling ramps spuriously.
  */
 const ECHO_DEDUPE_MS = 1500;
+
+/**
+ * How far a reported value must be from the one we wrote before it counts as
+ * somebody overriding us, and how long after our own write a change is still
+ * ours.
+ *
+ * The tolerance is comfortably above `light_temperature`'s own 0.01 resolution
+ * (platform §6), so a bridge that rounds our 0.47 to 0.46 does not read as a
+ * human reaching for the vendor app — and far below any change a person would
+ * make on purpose.
+ *
+ * The settle window exists because `ECHO_DEDUPE_MS` above only covers an EXACT
+ * repeat within 1.5 s: a bridge can report an intermediate value part-way
+ * through a transition, and that is still our write arriving late.
+ *
+ * They live here, beside the echo dedupe they extend, because the circadian and
+ * daylight runtimes each declared their own copy — the daylight one under the
+ * comment "Both copied from the circadian runtime, because both mean the same
+ * thing there", which is an argument for one definition rather than two.
+ */
+export const OVERRIDE_TOLERANCE = 0.03;
+export const OVERRIDE_SETTLE_MS = 3000;
 
 export class TargetStateCache {
   private readonly states = new Map<string, TargetRuntimeState>();
@@ -97,13 +181,7 @@ export class TargetStateCache {
   }
 
   /** Seed from live device values at startup — never from persisted queues. */
-  initialise(deviceId: string, actual: {
-    onoff?: boolean;
-    dim?: number;
-    light_temperature?: number;
-    light_hue?: number;
-    light_saturation?: number;
-  }): void {
+  initialise(deviceId: string, actual: LiveValues): void {
     const state = this.state(deviceId);
     state.actualOn = actual.onoff;
     state.actualDim = actual.dim;

@@ -1,4 +1,5 @@
 import { test, describe } from 'node:test';
+import { ownsNothing, zoneLights } from '../support/fake-catalog';
 import assert from 'node:assert/strict';
 
 import { CircadianRuntime } from '../../lib/circadian/circadian-runtime';
@@ -71,11 +72,25 @@ function harness(options: {
   plan?: CircadianPlan;
   devices?: FakeDevice[];
   now?: number;
-  /** An integration that declines a write, the way a Hue Bridge does. */
-  refuseWrite?: { capability: string; message: string };
+  /**
+   * An integration that declines a write, the way a Hue Bridge does.
+   *
+   * `when` is what lets a lamp refuse a colour while it is OFF and take one
+   * once it is on — which is the actual measured behaviour (platform §6's third
+   * outcome) and cannot be expressed by refusing unconditionally.
+   */
+  refuseWrite?: {
+    capability: string;
+    message: string;
+    when?: (device: FakeDevice) => boolean;
+  };
+  /** A stand-in evaluator, for the points that follow the daylight. */
+  daylight?: { evaluate: () => { brightness: number; source: string } };
 } = {}) {
   const devices = options.devices ?? [light('l1'), light('l2')];
   const writes: Array<{ deviceId: string; capability: string; value: unknown }> = [];
+  /** Every write ATTEMPTED, refused or not. See setCapabilityValue below. */
+  const attempts: Array<{ deviceId: string; capability: string; value: unknown }> = [];
   const states: Array<{ state: string; detail?: unknown }> = [];
   const plans: CircadianPlan[] = [];
   const logs: string[] = [];
@@ -89,7 +104,12 @@ function harness(options: {
     return {
       ...device,
       async setCapabilityValue({ capabilityId, value }: { capabilityId: string; value: unknown }) {
-        if (options.refuseWrite?.capability === capabilityId) {
+        // BEFORE the refusal, and `writes` is after it. A refused write is
+        // invisible in `writes` by construction, which is exactly what a test
+        // counting how often we retry a refusing lamp has to see.
+        attempts.push({ deviceId: id, capability: capabilityId, value });
+        if (options.refuseWrite?.capability === capabilityId
+          && (options.refuseWrite.when?.(device) ?? true)) {
           throw new Error(options.refuseWrite.message);
         }
         writes.push({ deviceId: id, capability: capabilityId, value });
@@ -121,6 +141,8 @@ function harness(options: {
   const catalog = {
     async device(id: string) { return inCatalogue.find(d => d.id === id); },
     async devicesInZone() { return inCatalogue; },
+    lightsInZone: zoneLights(async () => inCatalogue),
+    isOwnDevice: ownsNothing,
   } as unknown as DeviceCatalog;
 
   const runtime = new CircadianRuntime('circ-1', options.plan ?? plan(), {
@@ -138,11 +160,14 @@ function harness(options: {
     clearTimeout: () => { /* nothing to cancel in a list */ },
     log: (...args: unknown[]) => logs.push(args.join(' ')),
     onStateChange: (state, detail) => states.push({ state, detail }),
+    // Absent unless a test asks, which is the shape a curve with no daylight
+    // response runs in — and the shape every other test in this file runs in.
+    ...(options.daylight ? { daylight: options.daylight as any } : {}),
     onPlanChange: async p => { plans.push(p); },
   });
 
   return {
-    runtime, writes, states, plans, logs, devices,
+    runtime, writes, attempts, states, plans, logs, devices,
     /**
      * Whether Homey still holds a capability listener for this device.
      *
@@ -587,6 +612,136 @@ describe('pre-staging that turns out to be unsafe', () => {
 
     // And it did NOT switch the lamp off to "restore" a lamp it never touched.
     assert.deepEqual(h.writes.filter(w => w.capability === 'onoff'), []);
+  });
+
+  /**
+   * The runtime knew about the third outcome in one place only — the pairing
+   * screen's probe, above — and the runtime itself did not.
+   *
+   * Measured 4 September 2026: 4 of 13 Hue bulbs behind one bridge refuse a
+   * colour while off, every time, and 9 on the same bridge take it and stay
+   * off. A failed write leaves `lastWritten` alone on purpose (it is the retry
+   * mechanism), so the refusal was re-sent every tick for as long as the lamp
+   * was switched off — some six hundred a night, per lamp.
+   */
+  test('a lamp that refuses a colour while off is not asked for ever', async () => {
+    const h = harness({
+      plan: plan({ preStage: true, target: { kind: 'devices', deviceIds: ['l1'] } }),
+      devices: [light('l1', undefined, { onoff: false })],
+      refuseWrite: {
+        capability: 'light_temperature',
+        message: 'device (light) abc is "soft off", command (.color_temperature.mirek) '
+          + 'may not have effect',
+      },
+    });
+
+    await h.runtime.start();
+    await applied(h);
+    for (let i = 0; i < 4; i += 1) {
+      h.advance(60_000);
+      await h.runtime.tick();
+      await applied(h);
+    }
+
+    const asked = h.attempts.filter(a => a.capability === 'light_temperature');
+    assert.equal(asked.length, 3,
+      `three refusals and then silence, not one a minute — saw ${asked.length}`);
+  });
+
+  test('and the reason is in the diagnostics, so one silent lamp is legible', async () => {
+    const h = harness({
+      plan: plan({ preStage: true, target: { kind: 'devices', deviceIds: ['l1'] } }),
+      devices: [light('l1', undefined, { onoff: false })],
+      refuseWrite: {
+        capability: 'light_temperature',
+        message: 'device (light) abc is "soft off", command (.color_temperature.mirek) '
+          + 'may not have effect',
+      },
+    });
+
+    await h.runtime.start();
+    await applied(h);
+    for (let i = 0; i < 2; i += 1) {
+      h.advance(60_000);
+      await h.runtime.tick();
+      await applied(h);
+    }
+
+    const target = h.runtime.diagnostics().targets.find(t => t.id === 'l1')!;
+    assert.equal(target.preStageDeclined?.count, 3);
+    assert.match(target.preStageDeclined?.reason ?? '', /soft off/,
+      "the integration's own sentence, kept because it ages out of recentFailures");
+
+    // And it is NOT the device-wide switch: one lamp declining must not read as
+    // pre-staging having been turned off for every lamp.
+    assert.equal(h.runtime.diagnostics().preStage, true);
+    assert.equal(h.runtime.diagnostics().preStageDisabled, null);
+  });
+
+  test('a decline does not take pre-staging from the lamps that stage correctly', async () => {
+    // The measured split, in one house: `l1` refuses while off, `l2` does not.
+    const h = harness({
+      plan: plan({ preStage: true, target: { kind: 'devices', deviceIds: ['l1', 'l2'] } }),
+      devices: [
+        light('l1', undefined, { onoff: false }),
+        light('l2', undefined, { onoff: false }),
+      ],
+      refuseWrite: {
+        capability: 'light_temperature',
+        message: 'device (light) abc is "soft off", command (.color_temperature.mirek) '
+          + 'may not have effect',
+        when: device => device.id === 'l1',
+      },
+    });
+
+    await h.runtime.start();
+    await applied(h);
+    // Long enough for the curve to move past the per-lamp deadband more than
+    // once, so "still being staged" is a count and not a single write.
+    for (let i = 0; i < 12; i += 1) {
+      h.advance(60_000);
+      await h.runtime.tick();
+      await applied(h);
+    }
+
+    assert.equal(h.attempts.filter(a => a.deviceId === 'l1').length, 3,
+      'the refusing lamp is asked three times and then left alone');
+    assert.ok(h.writes.filter(w => w.deviceId === 'l2').length > 1,
+      'the lamp that stages correctly goes on being staged');
+  });
+
+  test('the lamp is offered a colour again after it has been switched on', async () => {
+    const h = harness({
+      plan: plan({ preStage: true, target: { kind: 'devices', deviceIds: ['l1'] } }),
+      devices: [light('l1', undefined, { onoff: false })],
+      refuseWrite: {
+        capability: 'light_temperature',
+        message: 'device (light) abc is "soft off", command (.color_temperature.mirek) '
+          + 'may not have effect',
+        when: device => device.capabilitiesObj.onoff?.value !== true,
+      },
+    });
+
+    await h.runtime.start();
+    await applied(h);
+    for (let i = 0; i < 3; i += 1) {
+      h.advance(60_000);
+      await h.runtime.tick();
+      await applied(h);
+    }
+    const beforeCycle = h.attempts.filter(a => a.capability === 'light_temperature').length;
+
+    // Somebody switches it on and off again. Each off-period re-tests once, so
+    // a replaced bulb or a firmware fix recovers without an app restart.
+    h.report('l1', 'onoff', true);
+    await applied(h);
+    h.report('l1', 'onoff', false);
+    h.advance(60_000);
+    await h.runtime.tick();
+    await applied(h);
+
+    assert.ok(h.attempts.filter(a => a.capability === 'light_temperature').length > beforeCycle,
+      'the suppression is per off-period, not sticky until a restart');
   });
 
   /**
@@ -1060,5 +1215,110 @@ describe('the diagnostics can describe a Curve light', () => {
     const target = h.runtime.diagnostics().targets[0];
     assert.equal(target.canWarm, false);
     assert.equal(target.canColor, true, 'it is driven perfectly well, on the other axis');
+  });
+});
+
+describe('a curve point whose brightness follows the daylight', () => {
+  const RESPONSE = { sensors: ['s1'], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 };
+
+  const evaluator = (brightness: number, source = 'sensors') => ({
+    evaluate: () => ({ brightness, source }),
+  });
+
+  /** Both points follow the daylight, so the whole curve does. */
+  const following = (over: Partial<CircadianPlan> = {}) => plan({
+    points: [
+      { id: 'day', anchor: { kind: 'clock', at: 12 * 60 }, warmth: 0.2, brightness: 0.5, fromDaylight: true },
+      { id: 'night', anchor: { kind: 'clock', at: 23 * 60 }, warmth: 1, brightness: 0.5, fromDaylight: true },
+    ],
+    adjustBrightness: true,
+    daylight: RESPONSE,
+    ...over,
+  });
+
+  test('the curve reads the daylight, not the stored number', async () => {
+    const h = harness({ plan: following(), daylight: evaluator(0.8) });
+    await h.runtime.start();
+    await h.runtime.drain();
+
+    // Both points at the same daylight brightness, so every minute of the day
+    // is that brightness however the interpolation lands.
+    assert.equal(h.runtime.currentValue()!.brightness, 0.8);
+  });
+
+  test('and it FOLLOWS: a later tick reads it again', async () => {
+    /**
+     * The difference from a schedule window, which samples once at its boundary.
+     * A curve has a value at every minute and a tick to re-ask on, so this
+     * really does track the room — and that is the reason both device types
+     * exist rather than one.
+     */
+    let brightness = 0.9;
+    const h = harness({
+      plan: following(),
+      daylight: { evaluate: () => ({ brightness, source: 'sensors' }) },
+    });
+    await h.runtime.start();
+    await h.runtime.drain();
+    assert.equal(h.runtime.currentValue()!.brightness, 0.9);
+
+    // A cloud passes.
+    brightness = 0.3;
+    assert.equal(h.runtime.currentValue()!.brightness, 0.3);
+  });
+
+  test('a point that does NOT follow keeps its own number, in the same curve', async () => {
+    // A mixed curve is the interesting case: the segment between a fixed point
+    // and a daylight one has to be an ordinary blend, which is exactly what
+    // resolving to numbers before valueAt() buys.
+    const h = harness({
+      plan: following({
+        points: [
+          { id: 'day', anchor: { kind: 'clock', at: 12 * 60 }, warmth: 0.2, brightness: 0.4 },
+          { id: 'night', anchor: { kind: 'clock', at: 23 * 60 }, warmth: 1, brightness: 0.5, fromDaylight: true },
+        ],
+      }),
+      daylight: evaluator(0.9),
+      // 22:15 Copenhagen: an hour before the night point, deep in the segment.
+      now: EVENING,
+    });
+    await h.runtime.start();
+
+    const brightness = h.runtime.currentValue()!.brightness!;
+    assert.ok(brightness > 0.4 && brightness < 0.9, `expected a blend, got ${brightness}`);
+  });
+
+  test('falls back to the stored numbers when nothing can tell how light it is', async () => {
+    const h = harness({ plan: following(), daylight: evaluator(0.8, 'none') });
+    await h.runtime.start();
+
+    assert.equal(h.runtime.currentValue()!.brightness, 0.5);
+  });
+
+  test('falls back with a response but no evaluator wired', async () => {
+    const h = harness({ plan: following() });
+    await h.runtime.start();
+
+    assert.equal(h.runtime.currentValue()!.brightness, 0.5);
+  });
+
+  test('a curve with no daylight response pays nothing for the feature', async () => {
+    // The plan's own array is returned untouched — not even an allocation — so a
+    // curve that does not use this is exactly as it was.
+    const h = harness({ plan: plan(), daylight: evaluator(0.8) });
+    await h.runtime.start();
+
+    assert.equal(h.runtime.currentValue()!.brightness, undefined);
+  });
+
+  test('the report names which points follow the daylight', async () => {
+    const h = harness({ plan: following(), daylight: evaluator(0.8) });
+    await h.runtime.start();
+
+    const points = h.runtime.diagnostics().points;
+    assert.deepEqual(points.map(p => p.fromDaylight), [true, true]);
+    // The stored fallback is reported beside it, because "it used 50% when it
+    // should have followed the room" needs both numbers to tell apart.
+    assert.deepEqual(points.map(p => p.brightness), [0.5, 0.5]);
   });
 });

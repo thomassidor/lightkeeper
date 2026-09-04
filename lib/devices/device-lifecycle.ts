@@ -2,6 +2,7 @@ import { KeyedMutex } from '../support/keyed-mutex';
 import { fireAndForget } from '../support/async';
 import { validManagedFlowRefs } from '../validation/plans';
 import type { ControllerState, StateDetail, ManagedFlowReference } from '../profiles/controller-profile';
+import { messageOf } from '../support/homey-errors';
 
 /**
  * Everything a Lightkeeper virtual device does that is not the SDK.
@@ -268,7 +269,7 @@ export class DeviceLifecycle<
       const validation = (error as Error)?.name === 'ValidationError';
       this.quarantineOverride = validation ? 'state.invalidConfiguration' : null;
       this.owner.error(
-        `Could not load ${this.owner.storeKey}:`, (error as Error)?.message,
+        `Could not load ${this.owner.storeKey}:`, messageOf(error),
       );
       return null;
     }
@@ -317,7 +318,7 @@ export class DeviceLifecycle<
         // The new plan never started. Put the old one back — store first, so a
         // restart during the recovery below finds the configuration that is
         // actually running rather than the one that failed.
-        this.owner.error('Applying the new configuration failed:', (error as Error)?.message);
+        this.owner.error('Applying the new configuration failed:', messageOf(error));
         await this.rollback(previous, error);
         throw error;
       }
@@ -360,9 +361,9 @@ export class DeviceLifecycle<
     } catch (error) {
       // Both the new plan and the old one failed to start. Say so with the
       // ORIGINAL failure: that is the one the user's change caused.
-      this.owner.error('Could not restore the previous configuration:', (error as Error)?.message);
+      this.owner.error('Could not restore the previous configuration:', messageOf(error));
       await this.owner.setUnavailable(
-        messageOf(cause) ?? this.owner.translate('state.needsRepair'),
+        messageOrNull(cause) ?? this.owner.translate('state.needsRepair'),
       );
     }
   }
@@ -512,7 +513,7 @@ export class DeviceLifecycle<
           // verdict took the device unavailable on a state that had already been
           // superseded, and `appliedSeq` moved BACKWARDS, after which verdicts
           // newer than the stale one stopped being rejected.
-          this.owner.error('Could not persist the plan:', (error as Error)?.message);
+          this.owner.error('Could not persist the plan:', messageOf(error));
           if (seq < this.appliedSeq) return;
           this.appliedSeq = seq;
           await this.owner.setUnavailable(this.owner.translate('state.persistFailed'));
@@ -546,7 +547,19 @@ function fallbackKeyFor(state: ControllerState): string {
   }
 }
 
-function messageOf(error: unknown): string | null {
+/**
+ * An error's message only if it has a real one — `null` otherwise.
+ *
+ * Deliberately NOT `messageOf()` from `support/homey-errors.ts`, which always
+ * returns a string. The difference is load-bearing at exactly one call site:
+ * the unavailable text a user reads on the device tile falls back to a
+ * TRANSLATED sentence when the error carries nothing worth showing, and a
+ * helper that answered "unknown error" or "[object Object]" instead would put
+ * that in front of them. `null` is what lets `??` reach the locale key.
+ *
+ * Log lines want the other one, and use it.
+ */
+function messageOrNull(error: unknown): string | null {
   const message = String((error as Error | undefined)?.message ?? '');
   return message.length > 0 ? message : null;
 }

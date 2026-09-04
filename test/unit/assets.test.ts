@@ -81,8 +81,8 @@ describe('shipped images', () => {
     // driver added or removed reads as what it is instead of as an off-by-one.
     assert.deepEqual(
       drivers.map(d => d.id).sort(),
-      ['circadian', 'controller', 'curve', 'schedule'],
-      'the four device types',
+      ['circadian', 'controller', 'curve', 'daylight', 'schedule'],
+      'the five device types',
     );
     for (const driver of drivers) {
       assert.ok(driver.images, `driver ${driver.id} declares no images`);

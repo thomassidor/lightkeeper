@@ -150,7 +150,7 @@ what each one would do, then refuses.
 
 | Command | What it does |
 |---|---|
-| `pair` | **creates** one of each of the four device types, its own even if you already have some |
+| `pair` | **creates** one of each of the five device types, its own even if you already have some |
 | `schedule` | replaces a schedule's windows and fires them; restores both afterwards |
 | `preview` | writes the current curve to your lamps, and probes one that is off |
 | `rejoin` | switches one of your lamps off and on, and sets a colour on it by hand |
@@ -196,6 +196,111 @@ widened after it is created.
 A finger on a remote (T9-T11), and eyes on a screen (T3, T53, T54). The first page of
 [`hardware-test-plan.md`](hardware-test-plan.md) is what is left for a person: mint the keys, press
 the remote three ways, look at the contact sheet.
+
+## Probing the lights
+
+`node scripts/probe-lights.mjs <command…>` walks the lights on a real Homey and reports which of
+them break the assumptions the output path is built on — each finding naming the assumption, its
+`file:line`, and the measurement behind it. It is not a pass, nothing here gates a release, and it
+runs in no CI: the app's own rules are the unit suite, which does fail. This produces evidence,
+which is what a per-vendor strategy table would have to be designed from.
+
+```bash
+node scripts/probe-lights.mjs                          # inventory of the configured room. Default
+node scripts/probe-lights.mjs plan --all               # what a full run would do. Writes NOTHING
+node scripts/probe-lights.mjs inventory --all          # every light's declared metadata, read-only
+node scripts/probe-lights.mjs full --yes               # the battery, configured room
+node scripts/probe-lights.mjs full --yes --all         # the battery, whole house. Slow
+node scripts/probe-lights.mjs full --yes --quick --all # one lamp per integration
+node scripts/probe-lights.mjs axes modes --yes --light "Desk lamp"
+node scripts/probe-lights.mjs eyes --yes --all         # the one question a machine cannot ask
+```
+
+Read-only, no confirmation needed: `inventory` and `plan`. The write phases are `echo`, `offphase`,
+`axes`, `modes`, `stress` and `eyes`; `full` is all of them except `eyes`. Run a write phase without
+`--yes` and it prints, one sentence each, what every phase would do to the household, then refuses.
+
+Selection: `--zone <name>`, `--light <name|id>`, `--driver <substring>` (all repeatable),
+`--all`. Scope: `--quick`, `--sample N`, `--stress-all`. Also `--max-minutes N` (default 45),
+`--repeat N`, `--stop-on-error`, `--json <path>`, `--redacted <path>`, `--no-json`,
+`--fail-on <severity>`.
+
+**It writes to lamps you paired yourself, and it cannot do otherwise.** The hardware pass confines
+itself to devices it created and named `[verify] …`; a lamp is somebody's light, it cannot be
+marked, and probing it means writing to it. So the containment here is different in kind: one lamp
+at a time, read first and restored afterwards with the restore **verified** capability by
+capability, at most one lamp ever mid-battery, and a failed restore reprinted at the end as a list
+of lights to set by hand.
+
+**The default scope is `HOMEY_TEST_ROOM`, and `--all` is deliberately typed rather than defaulted.**
+A corpus wants the whole house — one Hue bulb tells you about Hue, not about the Ikea driver in the
+hall — but a new destructive script should not reach a child's bedroom by accident. House-wide runs
+outside 08:00-22:00 print a warning and carry on; a guard you have to defeat every evening becomes a
+`--force` that lives in your shell history.
+
+**Each lamp goes dark for about twenty seconds** while `offphase` asks what it does with a value
+written while off — platform §6's three outcomes, and a fourth nobody had looked for. Power is
+transitioned once per lamp and restored the moment that phase ends.
+
+**`inventory` is the dry run, and the mode worth running on somebody else's Homey.** No `--yes`, no
+writes at all, and it already produces every metadata finding: declared ranges the app would
+mis-clamp, a resolution coarser than the circadian override tolerance, `setable: false` on something
+the app writes, a colour-only lamp that an all-temperature curve writes nothing to.
+
+**A lamp that rejects three writes in a row is demoted and its battery stops.** `PROBE_UNREACHABLE`,
+the sibling of `PROBE_INTERFERENCE`: every step here reads what a lamp *reports* to decide what a
+write did, and a lamp that took no write reports whatever it was already holding — so a gated axis
+and a bulb switched off at the wall look identical. Findings already emitted for that lamp are marked
+`inconclusive`, and rejected writes are kept out of the ack latencies (their durations go to
+`latency.<capability>.failed`, which is time-to-error and worth its own number). The first full run
+is why: one unreachable Hue bulb produced both criticals and two of the three highs.
+
+**A stopped run says so, in the report.** `stopped` names the reason and how far it got, each lamp
+carries `probed`, and the per-integration rollup counts probed lamps rather than selected ones. A
+run cancelled after fifteen of fifty-four used to roll up as "Philips Hue: 35 lamp(s)".
+
+**The per-driver cadence slot goes to a lamp that actually measured something.** `stress` runs once
+per integration, because a bridge is shared. It used to claim the slot before running, so the first
+lamp on a driver took it whatever became of it — and lamps are walked in id order.
+
+**Every code a run produced is explained in the report itself**, under `findingsCatalogue`: the
+severity, the headline and the assumption with its `file:line`. Anything `high` or worse also prints
+its assumption in the summary. That text used to live only in this script's source.
+
+**Findings never fail the run.** They are the product, not errors. Exit 1 means a restore failed or
+the probe itself did — in either case a person has to look. `--fail-on <severity>` if you want
+otherwise.
+
+**Reports go to `.probe/`, which is gitignored, and there are two of them.** The raw one names your
+devices and rooms; the `.redacted.json` sibling pseudonymises every id and strips every name,
+address and wall-clock time while keeping all the physics, and is the one to share. Ids are
+pseudonymised rather than deleted, consistently, because the trace has to stay followable — the same
+reason [`test/fixtures/README.md`](../test/fixtures/README.md) gives. If anything identifying
+survives the scrub, the redacted file is **not written** and the run says so.
+
+Configuration is the hardware pass's, above — the same `scripts/hardware-env.json` and the same
+environment variables — with one difference: this needs **one** key, and it warns loudly if that key
+is the one the app holds, because a key holds a single live session
+([platform §2](homey-platform.md#2-api-key-sessions-die-routinely)).
+
+It also asks the app, best-effort, which lamps a live circadian, Curve or schedule device is driving
+right now, and names them. Our writes look like a human override to those devices, and a curve drops
+an overridden lamp until it is power-cycled. It tells you and changes nothing: a script that
+silently switches off your lighting automation to get a cleaner number is worse than the number is
+good.
+
+### What the probe cannot answer
+
+**Whether a high `light_temperature` is physically warmer.** There is no colorimeter. It can prove
+the axis is monotone, that the reported value is not the inverse of the written one, what the
+effective range is and how coarse it is — but a driver that maps the axis backwards *consistently*
+is invisible to any amount of API traffic, so `eyes` asks a person, once per integration.
+
+Nor anything about perception, nor whether a lamp is physically on, nor time-to-light, nor anything
+upstream of the write. `stress` reproduces the scheduler's cadence; it does not run the scheduler, so
+a `RATE_` finding is a fact about the lamp and not proof the app misbehaves — the coalescer may well
+mask it. And one run is one sample: `--repeat N` exists for that. The full list is in the script's
+own header and in every report, under `cannotAnswer`.
 
 ## Releasing
 

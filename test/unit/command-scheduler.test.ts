@@ -240,4 +240,39 @@ describe('command scheduler', () => {
 
     assert.equal(written.length, 2, 'excess targets are dropped rather than queued unbounded');
   });
+
+  /**
+   * The flags ride to the executor, and a coalesced write hands over its own.
+   *
+   * `preStage` decides whether a failure counts against a lamp's health
+   * (`LightTargetAdapter.noteWriteHealth`), so a flag lost in the queue is a
+   * healthy lamp reported as broken — or, the other way round, a dead one
+   * reported as fine. Neither is visible anywhere but here.
+   */
+  test('the write flags survive the queue, and the newer write owns them', async () => {
+    const clock = new FakeClock();
+    const seen: Array<{ capability: Capability; preStage?: boolean }> = [];
+    const scheduler = new CommandScheduler({
+      minWriteIntervalMs: 10,
+      setTimeout: clock.setTimeout,
+      clearTimeout: clock.clearTimeout,
+      now: clock.nowFn,
+    }, async (_deviceId, capability, _value, options) => {
+      seen.push({ capability, preStage: options?.preStage });
+    });
+
+    scheduler.submit([
+      { deviceId: 'd1', capability: 'light_temperature', value: 0.5, preStage: true },
+      { deviceId: 'd1', capability: 'light_hue', value: 0.2, preStage: true },
+      // Supersedes the hue above before either is flushed: the value that goes
+      // out is this one, so the flags that go with it are this one's.
+      { deviceId: 'd1', capability: 'light_hue', value: 0.4 },
+    ]);
+    await clock.advance(100);
+
+    assert.deepEqual(seen, [
+      { capability: 'light_temperature', preStage: true },
+      { capability: 'light_hue', preStage: false },
+    ]);
+  });
 });

@@ -1,5 +1,5 @@
 import type { DeviceCatalog, CatalogDevice } from '../device-catalog';
-import { assessTargets } from './target-health';
+import { assessTargets, type UnwritableTargets } from './target-health';
 import type { SourceDiscoveryService } from '../source-discovery-service';
 import type {
   ControllerProfile, ControllerState, StateDetail,
@@ -37,7 +37,17 @@ export class HealthMonitor {
     private readonly credentialValid: () => boolean,
   ) {}
 
-  async assess(profile: ControllerProfile): Promise<HealthAssessment> {
+  /**
+   * `unwritable` comes from the caller's own LightTargetAdapter, because the
+   * monitor is shared by every controller and the adapter is not: one
+   * HealthMonitor is built in app.ts, one adapter per runtime. Optional so the
+   * ephemeral pairing rigs and the tests that only care about availability can
+   * go on calling this with one argument.
+   */
+  async assess(
+    profile: ControllerProfile,
+    unwritable?: UnwritableTargets,
+  ): Promise<HealthAssessment> {
     if (!profile.enabled) return { state: 'disabled' };
 
     const source = await this.catalog.device(profile.source.deviceId);
@@ -93,7 +103,7 @@ export class HealthMonitor {
     // HealthMonitor kept its own copy of this arithmetic, down to the same
     // locale keys and the same tokens, while target-health.ts claimed in its
     // own docblock to have taken it over.
-    const targets = await assessTargets(this.catalog, profile.target);
+    const targets = await assessTargets(this.catalog, profile.target, unwritable);
     return targets.detail
       ? { state: targets.state, detail: targets.detail }
       : { state: targets.state };
@@ -194,21 +204,6 @@ export function matchesOwnerAndDriver(device: CatalogDevice, profile: Controller
 }
 
 /**
- * Has the remote's event surface moved since this controller was configured?
- *
- * Versioned on purpose. `fingerprintV2` hashes more than v1 does — argument
- * filters, numeric bounds, a token's title (which carries the scale, and
- * therefore the difference between a nudge and a slam), the card's full id and
- * uri, and the normalizer's own version. Comparing v2 against a profile that
- * only ever stored v1 would disagree every time, so every installed controller
- * would report needs_repair on the upgrade — a mass false alarm about a surface
- * that had not moved.
- *
- * So: a profile that carries a v2 hash is compared on v2, and one that does not
- * keeps v1 semantics until it is next saved or repaired. That upgrade is
- * one-way; nothing writes a profile without a v2 any more.
- */
-/**
  * Is this a DIFFERENT device of the same shape?
  *
  * Deliberately not `surfaceMoved()`, and the difference is the whole of why
@@ -235,6 +230,21 @@ export function surfaceIsPortablyTheSame(
   return discovered.fingerprint === profile.source.eventSurfaceFingerprint;
 }
 
+/**
+ * Has the remote's event surface moved since this controller was configured?
+ *
+ * Versioned on purpose. `fingerprintV2` hashes more than v1 does — argument
+ * filters, numeric bounds, a token's title (which carries the scale, and
+ * therefore the difference between a nudge and a slam), the card's full id and
+ * uri, and the normalizer's own version. Comparing v2 against a profile that
+ * only ever stored v1 would disagree every time, so every installed controller
+ * would report needs_repair on the upgrade — a mass false alarm about a surface
+ * that had not moved.
+ *
+ * So: a profile that carries a v2 hash is compared on v2, and one that does not
+ * keeps v1 semantics until it is next saved or repaired. That upgrade is
+ * one-way; nothing writes a profile without a v2 any more.
+ */
 export function surfaceMoved(
   profile: ControllerProfile,
   discovered: { fingerprint: string; fingerprintV2?: string },

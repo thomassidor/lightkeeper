@@ -200,6 +200,75 @@
      inside the card's own padding as a stray gap. */
   #end-root .card > .help:last-child { margin-bottom: 0; }
 
+  /* ==== shared daylight card: identical in every view that carries it ====
+     The daylight response is ONE configuration per device, and four of the five
+     device types can hold one — a Daylight light, a schedule, a circadian light
+     and a Curve light. So this card is four copies of the same screen furniture,
+     for the same reason the base above is: all views of a session share one
+     document, there is nowhere to put a stylesheet, and Homey will not follow a
+     reference.
+
+     Made safe the same way, too: test/unit/pair-view-styles.test.ts slices this
+     block out of every view that has it, normalises the root id, and fails on
+     any difference. Edit it in all of them, or in none.
+
+     EVERY class is `dl-`prefixed and defined HERE, even where the host view has
+     something identical of its own. That is deliberate: the card lands in four
+     different stylesheets whose `.help` and `.field` differ in their margins,
+     and one of the four defined none of them at all — so a card that borrowed
+     them rendered unstyled on that screen and slightly wrong on two others.
+     Owning its own furniture is what makes the card the same thing everywhere.
+
+     Every colour is a token from the base. A literal here is a token that is
+     missing. */
+  #end-root .dl-card { display: block; }
+  #end-root .dl-card.dl-off { display: none; }
+
+  #end-root .dl-field { margin-bottom: 14px; }
+  #end-root .dl-field:last-child { margin-bottom: 0; }
+  #end-root .dl-label { font-size: 12px; font-weight: 600; text-transform: uppercase;
+                  letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 6px 2px; }
+  #end-root .dl-help { font-size: 12.5px; line-height: 1.5; color: var(--lk-muted);
+                 margin: 2px 0 10px 2px; }
+  #end-root .dl-blocktitle { font-size: 15px; font-weight: 600; color: var(--lk-ink); }
+  #end-root .dl-blockhelp { font-size: 12.5px; line-height: 1.5; color: var(--lk-muted);
+                      margin: 4px 0 12px; }
+  #end-root .dl-slider { display: flex; align-items: center; gap: 10px; }
+  #end-root .dl-slider input[type=range] { flex: 1; min-width: 0; accent-color: var(--lk-accent);
+                                     height: 28px; }
+  #end-root .dl-value { font-size: 13px; color: var(--lk-sub); flex: none;
+                  min-width: 62px; text-align: right; }
+  #end-root .dl-acts { display: flex; gap: 7px; }
+  #end-root .dl-acts .btn { flex: 1; }
+  #end-root .dl-result { font-size: 13px; color: var(--lk-sub); margin-top: 8px; }
+
+  /* The live readout, which sits ABOVE the controls it explains: two numbers
+     labelled "dark" and "bright" cannot be chosen without knowing what the room
+     currently reads. */
+  #end-root .dl-reading { display: flex; align-items: baseline; justify-content: space-between;
+                    gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--lk-line); }
+  #end-root .dl-reading:last-child { border-bottom: none; padding-bottom: 0; }
+  #end-root .dl-reading .dl-what { font-size: 13.5px; color: var(--lk-body); }
+  #end-root .dl-reading .dl-val { font-size: 13.5px; font-weight: 600; color: var(--lk-ink);
+                            flex: none; text-align: right; }
+  /* An unknown reading is deliberately NOT styled as an error: a Homey with no
+     light sensor is the normal case, and the sun answers for it. */
+  #end-root .dl-reading .dl-val.dl-unknown { font-weight: 500; color: var(--lk-muted); }
+
+  /* The lux range: two numbers side by side, because they are one setting. */
+  #end-root .dl-lux { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  #end-root .dl-lux input[type=number] { width: 100%; box-sizing: border-box; padding: 12px 13px;
+                                   font-size: 15px; border: 1.5px solid var(--lk-field);
+                                   border-radius: 11px; background: var(--lk-surface);
+                                   color: var(--lk-ink); font-family: inherit;
+                                   -webkit-appearance: none; appearance: none; }
+  #end-root .dl-lux input[type=number]:focus { outline: none; border-color: var(--lk-accent);
+                                         box-shadow: 0 0 0 3px var(--lk-ring); }
+
+  /* A sensor row carries its current reading, which is what makes the lux range
+     above choosable rather than a guess. */
+  #end-root .dl-tile-lux { font-size: 12.5px; color: var(--lk-muted); margin-top: 3px; }
+  /* ==== end shared daylight card ==== */
 </style>
 
 <div class="wrap" id="end-root">
@@ -218,6 +287,67 @@
   </div>
 
   <div id="end-list"></div>
+
+  <!-- ==== shared daylight card ====
+       Byte-identical markup in every view that carries it, for the reason its
+       CSS block gives. `dl-off` until something references the response, because
+       a screen that already has twelve windows on it should not also carry a
+       sensor picker nobody asked for. -->
+  <div class="section dl-card dl-off" id="dl-card">
+    <div class="section-title" data-i18n="daylight.nowTitle"></div>
+    <div class="card" id="dl-now"></div>
+
+    <div class="section-title" data-i18n="daylight.sensorsTitle"></div>
+    <p class="dl-help" data-i18n="daylight.sensorsHelp"></p>
+    <div id="dl-sensors"></div>
+
+    <div class="section-title" data-i18n="daylight.rangeTitle"></div>
+    <div class="card">
+      <p class="dl-help" data-i18n="daylight.rangeHelp"></p>
+      <div class="dl-lux">
+        <div class="dl-field">
+          <div class="dl-label" data-i18n="daylight.luxDark"></div>
+          <input type="number" id="dl-dark-lux" min="0" step="1" inputmode="numeric">
+        </div>
+        <div class="dl-field">
+          <div class="dl-label" data-i18n="daylight.luxBright"></div>
+          <input type="number" id="dl-bright-lux" min="0" step="1" inputmode="numeric">
+        </div>
+      </div>
+    </div>
+
+    <div class="section-title" data-i18n="daylight.endsTitle"></div>
+    <div class="card">
+      <p class="dl-help" data-i18n="daylight.endsHelp"></p>
+      <div class="dl-field">
+        <div class="dl-label" data-i18n="daylight.endDark"></div>
+        <div class="dl-slider">
+          <input type="range" id="dl-dark" min="10" max="100" step="5">
+          <span class="dl-value" id="dl-dark-value"></span>
+        </div>
+      </div>
+      <div class="dl-field">
+        <div class="dl-label" data-i18n="daylight.endBright"></div>
+        <div class="dl-slider">
+          <input type="range" id="dl-bright" min="10" max="100" step="5">
+          <span class="dl-value" id="dl-bright-value"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Standalone only: on the other three drivers the surrounding screen owns
+         the footer, and two Test buttons doing different things is worse than
+         either. -->
+    <div class="card" id="dl-preview-card" hidden>
+      <div class="dl-blocktitle" data-i18n="daylight.previewTitle"></div>
+      <div class="dl-blockhelp" data-i18n="daylight.previewHelp"></div>
+      <div class="dl-acts">
+        <button class="btn" id="dl-preview" data-i18n="daylight.preview"></button>
+      </div>
+      <div class="dl-result" id="dl-preview-result"></div>
+    </div>
+  </div>
+  <!-- ==== end shared daylight card ==== -->
 
   <!-- Two live controls used to sit here as two bare buttons, one under the
        other, reading "Test it" and "Try it now" — near-synonyms in the same
@@ -331,6 +461,392 @@ function __lkBootEn(Homey) {
   }
 
   /**
+   * The daylight card: ONE configuration per device, on four different screens.
+   *
+   * A Daylight light's whole plan IS a daylight response, and a schedule, a
+   * circadian light and a Curve light may each carry one for the rows that
+   * follow it. That is four copies of the same sensor picker, the same lux range,
+   * the same two ends and the same live readout — so it is written once here and
+   * copied byte-for-byte, exactly as the shared CSS base above is, and for the
+   * same reason: all views of a session share ONE document, there is nowhere to
+   * put a module, and Homey will not follow a reference.
+   *
+   * `test/unit/pair-view-styles.test.ts` asserts this function identical across
+   * every view that has it. Edit it in all of them, or in none.
+   *
+   * It takes NO arguments and closes over the four things every view already
+   * has: `Homey`, `emit`, `node` and `clear`. That is what lets the body be
+   * identical while the surrounding screen is not.
+   *
+   * It is self-contained on the wire too: it calls `getDaylight`, `listSensors`
+   * and `setDaylight` itself, and all four drivers answer those three. The host
+   * screen therefore does not have to thread a response through its own reply,
+   * and the card can refresh its own readout without asking the screen first.
+   */
+  /**
+   * The daylight card: ONE configuration per device, on four different screens.
+   *
+   * A Daylight light's whole plan IS a daylight response, and a schedule, a
+   * circadian light and a Curve light may each carry one for the rows that
+   * follow it. That is four copies of the same sensor picker, the same lux range,
+   * the same two ends and the same live readout — so it is written once here and
+   * copied byte-for-byte, exactly as the shared CSS base above is, and for the
+   * same reason: all views of a session share ONE document, there is nowhere to
+   * put a module, and Homey will not follow a reference.
+   *
+   * `test/unit/pair-view-styles.test.ts` asserts this function identical across
+   * every view that has it. Edit it in all of them, or in none.
+   *
+   * It takes NO arguments and closes over the four things every view already
+   * has: `Homey`, `emit`, `node` and `clear`. That is what lets the body be
+   * identical while the surrounding screen is not.
+   *
+   * It is self-contained on the wire too: it calls `getDaylight`, `listSensors`
+   * and `setDaylight` itself, and all four drivers answer those three. The host
+   * screen therefore does not have to thread a response through its own reply,
+   * and the card can refresh its own readout without asking the screen first.
+   */
+  function daylightCard() {
+    /**
+     * Every key this card can render, written out as a LITERAL.
+     *
+     * Not assembled from a prefix. `Homey.__` is given whatever string it is
+     * given, so `'daylight.' + key` works at runtime and is invisible to
+     * test/unit/locales.test.ts — which finds keys by scanning the source for
+     * quoted `group.key` literals, in BOTH directions. A key referenced only by
+     * assembly reads as defined-but-never-rendered; one removed from en.json
+     * reads as nothing at all, and the screen would ship showing a raw key.
+     */
+    var KEYS = {
+      nowSky: 'daylight.nowSky',
+      nowSkyValue: 'daylight.nowSkyValue',
+      nowSkyUnknown: 'daylight.nowSkyUnknown',
+      nowSensors: 'daylight.nowSensors',
+      nowNoSensors: 'daylight.nowNoSensors',
+      nowResult: 'daylight.nowResult',
+      nowResultValue: 'daylight.nowResultValue',
+      nowUnknown: 'daylight.nowUnknown',
+      sourceSensors: 'daylight.sourceSensors',
+      sourceSky: 'daylight.sourceSky',
+      sensorsNone: 'daylight.sensorsNone',
+      sensorsNoneHelp: 'daylight.sensorsNoneHelp',
+      sensorLux: 'daylight.sensorLux',
+      sensorReading: 'daylight.sensorReading',
+      sensorNoReading: 'daylight.sensorNoReading',
+      sensorUnavailable: 'daylight.sensorUnavailable',
+      ageNow: 'daylight.ageNow',
+      ageMinutes: 'daylight.ageMinutes',
+      ageHours: 'daylight.ageHours',
+      percent: 'daylight.percent',
+      preview: 'daylight.preview',
+      previewing: 'daylight.previewing',
+      previewed: 'daylight.previewed'
+    };
+
+    function t(key, tokens) {
+      return Homey.__(KEYS[key], tokens || {});
+    }
+
+    var el = {
+      card: document.getElementById('dl-card'),
+      now: document.getElementById('dl-now'),
+      sensors: document.getElementById('dl-sensors'),
+      darkLux: document.getElementById('dl-dark-lux'),
+      brightLux: document.getElementById('dl-bright-lux'),
+      dark: document.getElementById('dl-dark'),
+      bright: document.getElementById('dl-bright'),
+      darkValue: document.getElementById('dl-dark-value'),
+      brightValue: document.getElementById('dl-bright-value'),
+      previewCard: document.getElementById('dl-preview-card'),
+      preview: document.getElementById('dl-preview'),
+      previewResult: document.getElementById('dl-preview-result')
+    };
+
+    var model = {
+      standalone: false,
+      response: { sensors: [], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 },
+      limits: { minLux: 0.1, maxLux: 100000 },
+      now: null,
+      sky: null,
+      readings: [],
+      rooms: [],
+      loaded: false
+    };
+
+    function percentOf(value) {
+      return Math.round(Number(value) * 100);
+    }
+
+    /**
+     * How long ago a reading arrived, in words.
+     *
+     * A reading is never treated as stale — many Zigbee sensors report only on
+     * change, so a quiet sensor in a stable room is telling the truth — which
+     * leaves its AGE as the only thing on screen that can reveal one that has
+     * simply stopped.
+     */
+    function ageText(at) {
+      if (at === null || at === undefined) return '';
+      var minutes = Math.floor((Date.now() - Number(at)) / 60000);
+      if (!isFinite(minutes) || minutes < 1) return t('ageNow');
+      if (minutes < 60) return t('ageMinutes', { minutes: String(minutes) });
+      return t('ageHours', { hours: String(Math.floor(minutes / 60)) });
+    }
+
+    function reading(what, value, unknown) {
+      var row = node('div', 'dl-reading');
+      row.appendChild(node('span', 'dl-what', what));
+      row.appendChild(node('span', unknown ? 'dl-val dl-unknown' : 'dl-val', value));
+      return row;
+    }
+
+    function readingFor(deviceId) {
+      for (var i = 0; i < model.readings.length; i++) {
+        if (model.readings[i].deviceId === deviceId) return model.readings[i];
+      }
+      return null;
+    }
+
+    function renderNow() {
+      clear(el.now);
+
+      var sky = model.sky || {};
+      if (sky.elevation === null || sky.elevation === undefined) {
+        el.now.appendChild(reading(t('nowSky'), t('nowSkyUnknown'), true));
+      } else {
+        el.now.appendChild(reading(t('nowSky'), t('nowSkyValue', {
+          degrees: String(Math.round(Number(sky.elevation)))
+        }), false));
+      }
+
+      var chosen = model.response.sensors || [];
+      if (chosen.length === 0) {
+        el.now.appendChild(reading(t('nowSensors'), t('nowNoSensors'), true));
+      } else {
+        for (var i = 0; i < chosen.length; i++) {
+          var found = readingFor(chosen[i]);
+          var name = found && found.name ? found.name : chosen[i];
+          if (!found || !found.available || found.lux === null || found.lux === undefined) {
+            el.now.appendChild(reading(name, t('sensorNoReading'), true));
+          } else {
+            el.now.appendChild(reading(name, t('sensorReading', {
+              lux: String(Math.round(Number(found.lux))), age: ageText(found.at)
+            }), false));
+          }
+        }
+      }
+
+      if (!model.now || model.now.source === 'none') {
+        el.now.appendChild(reading(t('nowResult'), t('nowUnknown'), true));
+        return;
+      }
+      el.now.appendChild(reading(t('nowResult'), t('nowResultValue', {
+        percent: String(percentOf(model.now.brightness)),
+        source: model.now.source === 'sensors' ? t('sourceSensors') : t('sourceSky')
+      }), false));
+    }
+
+    /**
+     * The sensor list, grouped by room, each row carrying its current reading.
+     *
+     * Built as NODES rather than as a markup string, so nothing here needs
+     * escaping — a device name is user-supplied text and this is the safest
+     * shape for it.
+     *
+     * The empty state is not an error. Most households own no light sensor at
+     * all, and the sun answers for them perfectly well, so it says so.
+     */
+    function renderSensors() {
+      clear(el.sensors);
+
+      if (model.rooms.length === 0) {
+        var none = node('div', 'card');
+        none.appendChild(node('div', 'dl-blocktitle', t('sensorsNone')));
+        none.appendChild(node('div', 'dl-blockhelp', t('sensorsNoneHelp')));
+        el.sensors.appendChild(none);
+        return;
+      }
+
+      var chosen = model.response.sensors || [];
+      for (var r = 0; r < model.rooms.length; r++) {
+        var room = model.rooms[r];
+        el.sensors.appendChild(node('div', 'section-title', room.zoneName));
+        for (var s = 0; s < room.sensors.length; s++) {
+          var sensor = room.sensors[s];
+          var tile = node('button', chosen.indexOf(sensor.id) !== -1 ? 'tile sel' : 'tile');
+          tile.type = 'button';
+          tile.dataset.sensor = sensor.id;
+          tile.appendChild(node('div', 'name', sensor.name));
+          if (!sensor.available) {
+            tile.appendChild(node('div', 'dl-tile-lux', t('sensorUnavailable')));
+          } else if (sensor.lux === null || sensor.lux === undefined) {
+            tile.appendChild(node('div', 'dl-tile-lux', t('sensorNoReading')));
+          } else {
+            tile.appendChild(node('div', 'dl-tile-lux', t('sensorLux', {
+              lux: String(Math.round(Number(sensor.lux)))
+            })));
+          }
+          el.sensors.appendChild(tile);
+        }
+      }
+    }
+
+    function renderControls() {
+      el.darkLux.value = String(model.response.darkLux);
+      el.brightLux.value = String(model.response.brightLux);
+      el.dark.value = String(percentOf(model.response.dark));
+      el.bright.value = String(percentOf(model.response.bright));
+      el.darkValue.textContent = t('percent', { value: String(percentOf(model.response.dark)) });
+      el.brightValue.textContent = t('percent', { value: String(percentOf(model.response.bright)) });
+      el.previewCard.hidden = !model.standalone;
+    }
+
+    function render() {
+      if (!model.loaded) return;
+      renderNow();
+      renderSensors();
+      renderControls();
+    }
+
+    function payload() {
+      return {
+        sensors: (model.response.sensors || []).slice(),
+        darkLux: Number(el.darkLux.value),
+        brightLux: Number(el.brightLux.value),
+        dark: Number(el.dark.value) / 100,
+        bright: Number(el.bright.value) / 100
+      };
+    }
+
+    /**
+     * Push, and take back what the driver made of it.
+     *
+     * The reply is authoritative rather than an acknowledgement:
+     * `sanitiseResponse` corrects per field — an inverted lux range resets both
+     * ends, a brightness under the floor comes up to it — and a card that went
+     * on showing what the user typed would be a card saving something different
+     * from what it says.
+     */
+    function push() {
+      return emit('setDaylight', { response: payload() }).then(function (result) {
+        model.response = result.response;
+        model.now = result.now;
+        model.readings = result.sensorReadings || [];
+        render();
+        return result;
+      });
+    }
+
+    /**
+     * A push whose failure must not be swallowed by the caller's happy path.
+     *
+     * Every fire-and-forget site needs its own catch: an unhandled rejection
+     * inside the pairing container is a screen that silently stops responding.
+     */
+    function pushQuietly() {
+      push().catch(function (err) {
+        el.previewResult.textContent = String(err && err.message ? err.message : err);
+      });
+    }
+
+    el.sensors.addEventListener('click', function (event) {
+      var tile = event.target && event.target.closest ? event.target.closest('.tile') : null;
+      if (!tile || !tile.dataset.sensor) return;
+
+      var id = tile.dataset.sensor;
+      var chosen = (model.response.sensors || []).slice();
+      var at = chosen.indexOf(id);
+      if (at === -1) chosen.push(id);
+      else chosen.splice(at, 1);
+      model.response.sensors = chosen;
+
+      // Rendered before the round trip so the tap feels immediate, and again
+      // from the reply, which is the authority.
+      render();
+      pushQuietly();
+    });
+
+    el.dark.addEventListener('input', function () {
+      el.darkValue.textContent = t('percent', { value: String(el.dark.value) });
+    });
+    el.bright.addEventListener('input', function () {
+      el.brightValue.textContent = t('percent', { value: String(el.bright.value) });
+    });
+
+    // `change` rather than `input` for the push: a slider dragged across its
+    // range fires input for every pixel, and each one is a round trip.
+    el.dark.addEventListener('change', pushQuietly);
+    el.bright.addEventListener('change', pushQuietly);
+    el.darkLux.addEventListener('change', pushQuietly);
+    el.brightLux.addEventListener('change', pushQuietly);
+
+    el.preview.addEventListener('click', function () {
+      el.preview.disabled = true;
+      el.preview.textContent = t('previewing');
+      el.previewResult.textContent = '';
+
+      push().then(function () {
+        return emit('previewNow');
+      }).then(function (outcome) {
+        el.previewResult.textContent = t('previewed', {
+          writes: String((outcome && outcome.writes) || 0)
+        });
+      }).catch(function (err) {
+        el.previewResult.textContent = String(err && err.message ? err.message : err);
+      }).then(function () {
+        el.preview.disabled = false;
+        el.preview.textContent = t('preview');
+      });
+    });
+
+    return {
+      /** Fetch everything this card needs. Two calls, because two handlers. */
+      load: function () {
+        return Promise.all([emit('getDaylight'), emit('listSensors')]).then(function (replies) {
+          var data = replies[0] || {};
+          var sensors = replies[1] || {};
+
+          model.standalone = data.standalone === true;
+          if (data.response) model.response = data.response;
+          if (data.limits) model.limits = data.limits;
+          model.now = data.now || null;
+          model.sky = data.sky || null;
+          model.readings = data.sensorReadings || [];
+          model.rooms = sensors.rooms || [];
+          model.loaded = true;
+
+          // Bounded by what the driver will actually accept, so a number the
+          // sanitiser would clamp cannot be typed in the first place.
+          el.darkLux.min = String(model.limits.minLux);
+          el.darkLux.max = String(model.limits.maxLux);
+          el.brightLux.min = String(model.limits.minLux);
+          el.brightLux.max = String(model.limits.maxLux);
+
+          render();
+          return data;
+        });
+      },
+      /** Whether this device's own plan IS the response. */
+      isStandalone: function () {
+        return model.standalone;
+      },
+      /**
+       * Show or hide the card.
+       *
+       * The host screen decides: a Daylight light always shows it, and the other
+       * three show it only once a row actually follows the daylight. A schedule
+       * screen that already carries twelve windows should not also carry a
+       * sensor picker nobody asked for.
+       */
+      setUsed: function (used) {
+        el.card.className = used ? 'section dl-card' : 'section dl-card dl-off';
+      },
+      /** Push the current controls, for a host screen saving its own plan. */
+      push: push
+    };
+  }
+
+  /**
    * Two ends of the day, and the shape between them is not ours to choose.
    *
    * This screen deliberately has no times on it. The shape is a constant in
@@ -362,6 +878,50 @@ function __lkBootEn(Homey) {
     { key: 'warmest', label: 'circadian.end_warmest' },
     { key: 'coolest', label: 'circadian.end_coolest' }
   ];
+
+  /**
+   * The shared daylight card, as a SECTION of this screen rather than a screen.
+   *
+   * Named `dlCard` rather than `card` because `render()` below already has a
+   * local `card` for each end's own box, and shadowing that would be a bug
+   * nobody would see until the second end failed to draw.
+   */
+  var dlCard = daylightCard();
+
+  /**
+   * "Set a brightness" or "Follow the daylight", per END.
+   *
+   * Per end rather than per device, because the two ends of the day are
+   * genuinely different questions — how bright the room needs to be at night,
+   * and at noon — and somebody may well want one answered by a sensor and the
+   * other by hand.
+   *
+   * The slider stays visible either way. Following the daylight does not throw
+   * the number away: it is the fallback for when no sensor is reporting and the
+   * Homey has no location, and a control that vanished would leave that value
+   * unreachable and unexplained.
+   */
+  function endDaylightChoice(end) {
+    var select = document.createElement('select');
+    var fixed = document.createElement('option');
+    fixed.value = 'fixed';
+    fixed.textContent = Homey.__('daylight.modeFixed');
+    var following = document.createElement('option');
+    following.value = 'daylight';
+    following.textContent = Homey.__('daylight.modeDaylight');
+    select.appendChild(fixed);
+    select.appendChild(following);
+    select.value = model[end].fromDaylight === true ? 'daylight' : 'fixed';
+
+    select.addEventListener('change', function () {
+      model[end].fromDaylight = select.value === 'daylight';
+      // Re-rendered rather than patched: the shared card appears with the first
+      // end that follows the daylight and goes away with the last.
+      render();
+      pushQuietly();
+    });
+    return select;
+  }
 
   function warmthText(value) {
     if (value >= 0.9) return Homey.__('schedule.warmthWarmest');
@@ -440,7 +1000,11 @@ function __lkBootEn(Homey) {
       if (model.support.dim > 0 && model.adjustBrightness) {
         var brightness = node('div', 'field');
         brightness.appendChild(node('div', 'label', Homey.__('circadian.brightness')));
+        brightness.appendChild(endDaylightChoice(end));
         brightness.appendChild(slider(end, 'brightness', 10, 100));
+        if (model[end].fromDaylight === true) {
+          brightness.appendChild(node('div', 'help', Homey.__('daylight.fallbackHelp')));
+        }
         card.appendChild(brightness);
       }
 
@@ -455,6 +1019,11 @@ function __lkBootEn(Homey) {
     document.getElementById('end-adjustBrightness').checked = model.adjustBrightness;
     document.getElementById('end-preStage').checked = model.preStage;
     syncProbe();
+
+    // The card is a section of this screen and only earns its space once an end
+    // actually follows the daylight.
+    dlCard.setUsed(model.adjustBrightness
+      && (model.warmest.fromDaylight === true || model.coolest.fromDaylight === true));
 
     document.getElementById('end-summary').textContent = Homey.__('circadian.endsSummary', {
       lights: model.lights.length,
@@ -620,6 +1189,16 @@ function __lkBootEn(Homey) {
     model.lights = data.lights || [];
     model.timezone = data.timezone;
     render();
+    /**
+     * The daylight card loads itself, AFTER the ends are on screen.
+     *
+     * Its own two round trips rather than fields threaded through `getEnds`,
+     * which is what lets the card be byte-identical on four screens. Chained
+     * rather than parallel so the ends never wait on a sensor list, and with its
+     * own catch: a Homey that cannot answer `listSensors` must leave this screen
+     * working with the brightness set by hand rather than blank.
+     */
+    return dlCard.load().then(render);
   }).catch(function (err) {
     show('bad', err.message || String(err));
   });

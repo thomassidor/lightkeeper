@@ -1,6 +1,6 @@
 import type { CircadianPlan } from './circadian-types';
 import { withFlooredBrightness } from '../outputs/light-intent';
-import { runMigrationChain, type MigrationStep } from '../support/migrations';
+import { runMigrationChain, type MigrationResult, type MigrationStep } from '../support/migrations';
 import { validateCircadianPlan } from '../validation/plans';
 
 /**
@@ -66,24 +66,11 @@ const CURVE_MIGRATIONS: Record<number, CurveMigration> = {
   }),
 };
 
-export interface CurveMigrationResult {
-  plan: CircadianPlan;
-  migrated: boolean;
-  fromVersion: number;
-  steps: number[];
-}
-
-export function migrateCurvePlan(raw: unknown): CurveMigrationResult {
-  const result = runMigrationChain(raw, {
+export function migrateCurvePlan(raw: unknown): MigrationResult<CircadianPlan> {
+  return runMigrationChain(raw, {
     label: 'Curve',
     current: CURRENT_CURVE_SCHEMA_VERSION,
     table: CURVE_MIGRATIONS,
     validate: validateCircadianPlan,
   });
-  return {
-    plan: result.value,
-    migrated: result.migrated,
-    fromVersion: result.fromVersion,
-    steps: result.steps,
-  };
 }

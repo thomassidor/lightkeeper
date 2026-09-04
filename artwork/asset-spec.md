@@ -29,6 +29,8 @@ which of these rules a validator enforces versus a human reviewer, is in
 | `drivers/circadian/assets/images/{small,large,xlarge}.png` | Render of a device showing the warm-to-cool arc | The same two places |
 | `drivers/curve/assets/icon.svg` | Line-art three-point curve above a baseline | This device type's icon when adding a device, and on its tile afterwards |
 | `drivers/curve/assets/images/{small,large,xlarge}.png` | Render of a device showing a four-point coloured curve | The same two places |
+| `drivers/daylight/assets/icon.svg` | **PLACEHOLDER** — a plain stroked circle | This device type's icon when adding a device, and on its tile afterwards |
+| `drivers/daylight/assets/images/{small,large,xlarge}.png` | **PLACEHOLDER** — a flat violet disc on white, which guideline 1.4 rejects | The same two places |
 | `artwork/readme/banner.png` | The hero photograph with the logo on a rounded violet tile | The top of `README.md`. Ships nowhere; built by the same script |
 
 Rules, for whoever draws or generates the next set:
@@ -45,6 +47,10 @@ Rules, for whoever draws or generates the next set:
   to reach every edge — no borders, no letterboxing. No Homey logo, name or hardware.
 - **`xlarge` is optional** and no validator ever opens it, but ship it: it is what a
   high-resolution screen gets.
+
+**The two rows marked PLACEHOLDER are a publish blocker**, not a style note: they satisfy every
+automated check and neither is finished work. The full record, and what each needs to become, is in
+[`provenance.md`](provenance.md#two-placeholders-and-they-are-a-publish-blocker).
 
 ## Prompts for the five images
 

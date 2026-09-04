@@ -129,7 +129,7 @@ const BRIDGE_CARDS = ['bridge_event', 'bridge_numeric_event', 'bridge_token_even
 
 /** The two drivers that own Flows, and the two that must never own one (platform §12). */
 const FLOW_OWNING_DRIVERS = ['controller', 'schedule'];
-const FLOWLESS_DRIVERS = ['circadian', 'curve'];
+const FLOWLESS_DRIVERS = ['circadian', 'curve', 'daylight'];
 
 const here = dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
 
@@ -1259,7 +1259,7 @@ async function commandFlows(api) {
   // one of them is not cosmetic — it means something built a bridge that should
   // not exist.
   for (const driver of FLOWLESS_DRIVERS) {
-    const line = driver === 'circadian' ? 'T23' : 'T30';
+    const line = driver === 'circadian' ? 'T23' : driver === 'curve' ? 'T30' : 'T79';
     const owned = devices.filter(d => d.driver === driver);
     if (owned.length === 0) {
       report(line, 'SKIPPED', `no ${driver} device built by this pass — ${NOTHING_OF_OURS}`);
@@ -2759,6 +2759,7 @@ async function commandTeardown(api) {
 
   /** The plan's order: the two that own no Flows first. */
   const ORDER = [
+    { driver: 'daylight', line: 'T80', ownsFlows: false },
     { driver: 'curve', line: 'T48', ownsFlows: false },
     { driver: 'circadian', line: 'T49', ownsFlows: false },
     { driver: 'schedule', line: 'T50', ownsFlows: true },
@@ -2976,6 +2977,7 @@ async function commandPair(api, room) {
     { driver: 'schedule', line: 'T13', build: buildSchedule },
     { driver: 'circadian', line: 'T20', build: buildCircadian },
     { driver: 'curve', line: 'T26', build: buildCurve },
+    { driver: 'daylight', line: 'T77', build: buildDaylight },
   ];
 
   for (const step of PLAN) {
@@ -3244,6 +3246,12 @@ async function pickLights(session, room) {
     const at = (index) => ordered[Math.min(index, ordered.length - 1)];
     const chosen = {
       circadian: at(0), curve: at(1), schedule: at(2), controller: at(3),
+      // `at()` clamps, so a reference room with fewer than five lamps hands the
+      // same one to more than one device type. That is fine for this pass and is
+      // the existing behaviour for four; a Daylight light writing `dim` to a
+      // lamp a Curve light is writing `light_temperature` to is two axes on one
+      // lamp, not a conflict.
+      daylight: at(4),
     };
     note('lamps chosen: ' + Object.entries(chosen)
       .map(([kind, light]) => `${kind}=${light.name}`).join(', '));
@@ -3504,11 +3512,65 @@ async function buildCurve(session, open, lights) {
   return dtoFrom(await session.emit(open, 'save', ''));
 }
 
+/** @param {any} session @param {any} open @param {any} lights */
+async function buildDaylight(session, open, lights) {
+
+  report('T77', 'OK', 'the Daylight driver exposes no credential handler either');
+
+  await session.emit(open, 'selectTargets', targetOfLight(lights.daylight));
+
+  /** @type {any} */
+  const card = await session.emit(open, 'getDaylight');
+  const response = card?.response;
+  const sky = card?.sky;
+
+  /**
+   * The two facts this line exists for, and the FIRST is the one no unit test
+   * can reach: whether `homey:manager:geolocation` actually resolved on a real
+   * Homey. A null elevation here means the permission was refused or the Homey
+   * has never been told where it is — different problems, both invisible from
+   * the outside until a room is dim at the wrong hour (platform §16).
+   */
+  report('T78', sky && typeof sky.elevation === 'number' ? 'OK' : 'FAILED',
+    sky && typeof sky.elevation === 'number'
+      ? `the sun is ${Math.round(sky.elevation)}° above the horizon at `
+        + `${sky.location?.latitude}, ${sky.location?.longitude}`
+      : 'no sun elevation — the geolocation permission did not resolve, or this '
+        + 'Homey has no location set');
+
+  const sensorList = /** @type {any} */ (await session.emit(open, 'listSensors'));
+  const rooms = /** @type {any[]} */ (sensorList?.rooms ?? []);
+  const offered = rooms.reduce((total, room) => total + (room.sensors?.length ?? 0), 0);
+  note(`light sensors offered: ${offered}`
+    + (offered === 0 ? ' — nothing on this Homey reports measure_luminance, so the sun answers' : ''));
+
+  /**
+   * Saved with the response the driver itself offered, and with no sensor
+   * selected.
+   *
+   * Deliberately no sensor: this pass builds and deletes its own devices and
+   * must not subscribe to a household's battery-powered motion sensor as a side
+   * effect. The sun half is what T78 above proves, and it is the half that
+   * works on every Homey.
+   */
+  const saved = /** @type {any} */ (await session.emit(open, 'setDaylight', {
+    response: { ...response, sensors: [] },
+  }));
+  report('T77', saved?.response?.brightLux > saved?.response?.darkLux ? 'OK' : 'FAILED',
+    `response accepted: dark at ${saved?.response?.darkLux} lx, bright at `
+    + `${saved?.response?.brightLux} lx, ends ${Math.round((saved?.response?.dark ?? 0) * 100)}% `
+    + `and ${Math.round((saved?.response?.bright ?? 0) * 100)}%`
+    + (saved?.corrected?.length ? ` — corrected: ${saved.corrected.join(', ')}` : '')
+    + `, reading from the ${saved?.now?.source}`);
+
+  return dtoFrom(await session.emit(open, 'save', ''));
+}
+
 /**
  * The device DTO out of a `save`, marked as ours, or null with a reason.
  *
  * The one function every device this script creates passes through, which is why
- * the mark goes on HERE rather than in each of the four builders: a fifth driver
+ * the mark goes on HERE rather than in each of the five builders: a sixth driver
  * cannot be added without inheriting it.
  *
  * The name is PREFIXED rather than replaced, and the driver is still asked to
@@ -3586,6 +3648,15 @@ async function commandRepair(api) {
     curve: [
       { event: 'listTargets', seeded: (r) => r?.current != null },
       { event: 'getCurve', seeded: (r) => (r?.points?.length ?? 0) > 0 },
+    ],
+    daylight: [
+      { event: 'listTargets', seeded: (r) => r?.current != null },
+      // Both halves: the response it stored, and that it can still tell how
+      // light it is. `source: 'none'` on a repair read is the shape a Homey with
+      // no location and no sensor produces, and it is worth seeing here rather
+      // than only in the device's own health verdict.
+      { event: 'getDaylight', seeded: (r) => r?.response?.brightLux > r?.response?.darkLux },
+      { event: 'listSensors', seeded: (r) => Array.isArray(r?.rooms) },
     ],
   };
 

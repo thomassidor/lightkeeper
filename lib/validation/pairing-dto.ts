@@ -77,15 +77,13 @@ export interface MappingRuleDto {
 }
 
 /**
- * The mapping screen's rows.
+ * The mapping screen's rows: shape errors THROW; rows that no longer belong are
+ * DROPPED and named.
  *
  * `groupKey` is checked against the lights ALREADY CHOSEN, not against the whole
  * Homey: a rule aimed at a light the controller does not target is a rule the
  * user cannot have meant, and it would resolve to a light they never selected on
  * the previous screen.
- */
-/**
- * Shape errors THROW; rows that no longer belong are DROPPED and named.
  *
  * The distinction is the whole of this signature. A malformed payload is a bug
  * in the view and refusing it is right. But a row whose light was deselected on

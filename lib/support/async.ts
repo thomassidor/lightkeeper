@@ -1,3 +1,4 @@
+import { messageOf } from '../support/homey-errors';
 /**
  * Fire-and-forget with a rejection handler.
  *
@@ -16,6 +17,6 @@ export function fireAndForget(
   label: string,
 ): void {
   promise.catch((error: unknown) => {
-    log(`${label} failed:`, (error as Error)?.message ?? error);
+    log(`${label} failed:`, messageOf(error));
   });
 }

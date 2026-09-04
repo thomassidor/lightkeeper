@@ -5,13 +5,14 @@ const api = require('../../api') as {
   previewDevice(args: any): Promise<any>;
   testPreStage(args: any): Promise<any>;
   tickCurves(args: any): Promise<any>;
+  tickDaylight(args: any): Promise<any>;
   testScheduleBoundary(args: any): Promise<any>;
   setScheduleEntries(args: any): Promise<any>;
   testControllerFunction(args: any): Promise<any>;
 };
 
 /**
- * The six "try it now" routes.
+ * The seven "try it now" routes.
  *
  * Each wraps a method the runtimes already had and that a pair session already
  * called; what is new is that the app itself, and `scripts/verify-hardware.mjs`
@@ -32,6 +33,7 @@ const api = require('../../api') as {
 const SCHEDULE_ID = 'lk-sched-1755500000000-200001';
 const CURVE_ID = 'lk-circ-1755500000000-300001';
 const CONTROLLER_ID = 'lk-ctrl-1755500000000-100001';
+const DAYLIGHT_ID = 'lk-dayl-1755500000000-400001';
 
 /** One stored window, 20:00 for two hours, every day. */
 const WINDOW = { id: 'a', onAt: 20 * 60, days: null, end: { kind: 'duration', minutes: 120 } };
@@ -41,6 +43,7 @@ interface Recorded {
   drained: number;
   probed: number;
   tickedAll: number;
+  tickedDaylight: number;
   boundaries: Array<{ entryId: string; boundary: string }>;
   functions: Array<{ func: string; deviceIds?: string[] }>;
   plans: unknown[];
@@ -49,6 +52,7 @@ interface Recorded {
 
 function homey(options: {
   curves?: string[];
+  daylight?: string[];
   schedules?: string[];
   controllers?: string[];
   /** Schedule devices the driver can enumerate, by data.id. */
@@ -58,7 +62,7 @@ function homey(options: {
   applyFails?: string;
 } = {}) {
   const recorded: Recorded = {
-    applied: [], drained: 0, probed: 0, tickedAll: 0,
+    applied: [], drained: 0, probed: 0, tickedAll: 0, tickedDaylight: 0,
     boundaries: [], functions: [], plans: [], storeWrites: 0,
   };
 
@@ -104,6 +108,17 @@ function homey(options: {
     tickAll: async () => { recorded.tickedAll += 1; },
   };
 
+  /**
+   * A Daylight light answers the same `applyNow`/`drain` pair, which is the
+   * whole reason ONE preview route serves two registries. Reusing the `curve`
+   * factory is the point rather than a shortcut: if the two runtimes' surfaces
+   * ever diverge, that route stops being honest and this stops compiling.
+   */
+  const daylights = {
+    ...registry(options.daylight ?? [], curve),
+    tickAll: async () => { recorded.tickedDaylight += 1; },
+  };
+
   const devices = (options.installedSchedules ?? []).map(id => ({
     getData: () => ({ id }),
     getStoreValue: (key: string) => {
@@ -125,6 +140,7 @@ function homey(options: {
     homey: {
       app: {
         curves,
+        daylights,
         schedules: registry(options.schedules ?? [], schedule),
         controllers: registry(options.controllers ?? [], controller),
         log: () => undefined,
@@ -160,8 +176,30 @@ describe('POST /devices/:id/preview (T21, T27, T28)', () => {
     const { homey: h } = homey({ curves: [] });
     await assert.rejects(
       () => api.previewDevice({ homey: h, params: { id: CURVE_ID } }),
-      /no circadian or Curve light with id "lk-circ-1755500000000-300001" is running/,
+      /no circadian, Curve or Daylight light with id "lk-circ-1755500000000-300001" is running/,
     );
+  });
+
+  test('a Daylight light previews through the SAME route', async () => {
+    // Two registries, one route: "apply this device's plan to its lights now"
+    // is the same request whether the plan is a curve or a daylight response,
+    // and a second route would mean a caller that has to know which kind of
+    // device it is holding an id for.
+    const { homey: h, recorded } = homey({ daylight: [DAYLIGHT_ID] });
+
+    const result = await api.previewDevice({ homey: h, params: { id: DAYLIGHT_ID } });
+
+    assert.deepEqual(result, { writes: 2, skipped: 1 });
+    assert.deepEqual(recorded.applied, [{ id: DAYLIGHT_ID, reason: 'preview', force: true }]);
+    assert.equal(recorded.drained, 1);
+  });
+
+  test('a curve id is still found when Daylight lights are running too', async () => {
+    // The fallback must not shadow the first registry.
+    const { homey: h, recorded } = homey({ curves: [CURVE_ID], daylight: [DAYLIGHT_ID] });
+
+    await api.previewDevice({ homey: h, params: { id: CURVE_ID } });
+    assert.deepEqual(recorded.applied, [{ id: CURVE_ID, reason: 'preview', force: true }]);
   });
 
   test('a missing id is refused before anything is looked up', async () => {
@@ -207,6 +245,26 @@ describe('POST /curves/tick', () => {
   test('with nothing running it reports zero rather than failing', async () => {
     const { homey: h } = homey({ curves: [] });
     assert.deepEqual(await api.tickCurves({ homey: h }), { ticked: 0 });
+  });
+});
+
+describe('POST /daylight/tick', () => {
+  test('one call ticks every Daylight light, and says how many', async () => {
+    // Its own route rather than folded into tickCurves, because a pass watching
+    // whether the daylight loop settles wants to advance THAT clock and nothing
+    // else — and because the other name would then be a lie.
+    const { homey: h, recorded } = homey({
+      daylight: [DAYLIGHT_ID, 'lk-dayl-1755500000000-400002'],
+    });
+
+    assert.deepEqual(await api.tickDaylight({ homey: h }), { ticked: 2 });
+    assert.equal(recorded.tickedDaylight, 1);
+    assert.equal(recorded.tickedAll, 0, 'it must not tick the curves as well');
+  });
+
+  test('with nothing running it reports zero rather than failing', async () => {
+    const { homey: h } = homey({ daylight: [] });
+    assert.deepEqual(await api.tickDaylight({ homey: h }), { ticked: 0 });
   });
 });
 
