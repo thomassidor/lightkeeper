@@ -86,7 +86,8 @@ lib/
   outputs/                      intents, perceptual curve, planner, scheduler, ramp engine,
                                 target resolver, target-state cache
   bridge/                       binding compiler, flow bridge manager, flow folders
-  runtime/                      controller runtime, manager, health monitor, shared target health
+  runtime/                      controller runtime, manager, health monitor, shared target
+                                health, and the visible-state holder all four runtimes compose
   profiles/                     profile schema, migrations
   schedules/                    types, window maths, local clock, bindings, runtime, manager,
                                 time-card discovery, migrations
@@ -104,7 +105,11 @@ lib/
   pairing/                      the light picker, the SENSOR picker, the remote picker, the
                                 mapping screen's sections and the default device names — every
                                 pairing DECISION, lifted out of driver.ts so it can be tested
-                                (platform §13)
+                                (platform §13). pair-session.ts is the same lift for the
+                                MECHANICS: the handler wrapper, the sensor retain/release
+                                ref-count, the light picker's two handlers, the daylight card's
+                                three, save-and-name, the credential pair and the curve preview —
+                                each of which was the same block in four or five drivers
   support/                      the primitives every layer uses: the per-KEY mutex and the
                                 single-flight coalescer, the bounded ring log, the migration-chain
                                 runner, the injectable Timers seam, error-shape classification,

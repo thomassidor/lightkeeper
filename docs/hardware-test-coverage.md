@@ -109,6 +109,7 @@ These were hardware steps. They are tests now, and they fail. Where a line survi
 | `pair-view-boot.test.ts` | every view runs and asks the driver for its data |
 | `repair-views.test.ts` | the `unknown_error_getting_file` that made Repair a dead end |
 | `pairing-sessions.test.ts` | the one-light collapse, the default names, the remote picker |
+| `pair-session.test.ts` | the pairing MECHANICS all five drivers share — the handler wrapper logging AND re-throwing, the sensor retain/release ref-count, save-and-name per device type, `nextView` per driver, the credential probe creating a folder and deleting it again, the curve preview's force-and-drain. **None of it was reachable before**: platform §13 means a file containing `extends Homey.Driver` cannot be imported by a test, so the daylight card's three handlers were guaranteed identical across four drivers by a comment. T87-T89 remain for what the SDK decides on the other side of the seam — whether Homey still routes each handler, still accepts the `createDevice` shape, and still finds a repair's device |
 | `assets.test.ts` | T3's measurable half: five pictures, five distinct, correct sizes |
 | `schedule-window.test.ts`, `schedule-bindings.test.ts` | midnight-crossing windows and their labels |
 | `curve-colour.test.ts`, `circadian-curve.test.ts` | the shade between two coloured points |

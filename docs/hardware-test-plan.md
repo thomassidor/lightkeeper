@@ -80,10 +80,11 @@ The script cannot do these. Report each by its number.
 **0.6.0 — a fifth device type, and the first thing in this app that reads a sensor.** Most of it is
 provable without a Homey and is: the solar arithmetic is asserted against values astronomy fixes
 independently, the two anti-hunting dampers are pinned by unit tests, and the sanitisers and
-validators have their own. What no test can settle is the four lines below, and the reason is the
-same each time — they depend on a real permission, a real sensor, or ten minutes of a real room.
+validators have their own. What no test can settle is the lines below, and the reason is nearly
+always the same — they depend on a real permission, a real sensor, ten minutes of a real room, or a
+pair session, which is a live Web API surface rather than something a suite can call (platform §14).
 
-`node scripts/verify-hardware.mjs full --yes` answers **T77-T80** on its own. **T81-T86 need you.**
+`node scripts/verify-hardware.mjs full --yes` answers **T77-T80** on its own. **T81-T89 need you.**
 
 - [ ] **T81** *The permission, and it is the first thing to check.* Homey settings → Lightkeeper.
       The **Daylight lights** section now leads with a sky readout. Confirm it names a **plausible
@@ -133,6 +134,41 @@ same each time — they depend on a real permission, a real sensor, or ten minut
       more. Before this release the device reported not-responding and, where every lamp behaved this
       way, took itself offline — at no predictable moment, because a circadian light only re-assesses
       its health when a target's availability moves or the app restarts.
+
+**The pairing screens now share their mechanics, and that is what T87-T89 are for.** Every driver's
+handler wrapper, light picker, daylight card, save-and-name, credential pair and curve preview moved
+into `lib/pairing/pair-session.ts`, and a unit suite now covers them — where before there was none
+at all, because platform §13 means a file containing `extends Homey.Driver` cannot be imported by a
+test. What those tests cannot reach is the SDK on the other side of the seam: whether Homey still
+routes each handler, whether `createDevice` still accepts the shape, and whether a repair still
+finds its device. Three lines, and they are cheap — pair and repair each device type once.
+
+- [ ] **T87** *Pair all five, once each.* A controller, a schedule, a circadian light, a Curve light
+      and a Daylight light. For each, confirm three things that now come from ONE place and would all
+      be wrong together if a parameter were: the **default name** offered on the last screen reads
+      like its device type ("Kitchen circadian", "Hall schedule") rather than another type's word;
+      the light picker's subtitle names **that** device type; and the device **survives a restart of
+      the app** with its configuration intact. That last one is the store-key check and the only one
+      that matters — the key a driver saves under is also the key its migration chain reads, so a
+      wrong one produces a device that pairs happily and comes back empty.
+      Also confirm the credential screen still goes to **the remote picker for a controller** and
+      **straight to the lights for a schedule**: the view is a byte-for-byte copy shared between the
+      two (platform §8), so `nextView` is the driver's answer and the two are now one line apart.
+- [ ] **T88** *Repair all five, once each.* Device → Maintenance → Repair, change something small,
+      save. Confirm it reports success and that **no second device appears** — the repair path is one
+      `if (device)` inside the shared save handler, and getting it wrong leaves the household with
+      two devices doing the same job. Then confirm the change actually took, on the settings page.
+- [ ] **T89** *The sensor claim, which is the one thing here that leaks if it is wrong.* A pairing
+      screen retains its chosen lux sensors so the card can show what they read, and releases them
+      on `disconnect` however the screen closes. Open a **Daylight light** pairing, choose a sensor,
+      confirm it appears in **Homey settings → Lightkeeper → Daylight lights** as a watched sensor
+      with a reading age — then **cancel the pairing** and confirm it disappears from that list
+      again. Repeat with the daylight card inside a **schedule** window, which reaches the same
+      ref-count by a different screen. Then pair a Daylight light properly and confirm its sensor
+      **stays** watched: the count is per owner, so a session releasing its claim must never take a
+      live device's subscription with it. Get this wrong and an abandoned pairing leaves a
+      subscription on somebody's battery-powered motion sensor for as long as the app runs, which is
+      invisible from every screen except that list.
 
 ### Last run — 2 September 2026, Homey Pro 2023, firmware 13.5.0-rc.4, app 0.5.1 + the code-review pass
 
