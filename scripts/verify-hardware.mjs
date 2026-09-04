@@ -3029,10 +3029,15 @@ async function commandPair(api, room) {
       const registered = await waitFor(async () => {
         /** @type {any} */
         const status = await app.get('/').catch(() => null);
+        // All FIVE lists. `daylight` is its own key in the status response —
+        // a Daylight light is not folded into `circadian` the way a Curve light
+        // is — and leaving it out meant T77 could only ever fail: the device
+        // initialised fine and was looked for in three lists it is never in.
         const all = [
           .../** @type {any[]} */ (status?.controllers ?? []),
           .../** @type {any[]} */ (status?.schedules ?? []),
           .../** @type {any[]} */ (status?.circadian ?? []),
+          .../** @type {any[]} */ (status?.daylight ?? []),
         ];
         return all.find(entry => runtimeId(entry) === device.dataId) ?? null;
       }, {

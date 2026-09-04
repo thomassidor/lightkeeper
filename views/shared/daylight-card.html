@@ -1,0 +1,60 @@
+<!-- ==== shared daylight card ====
+       Byte-identical markup in every view that carries it, for the reason its
+       CSS block gives. `dl-off` until something references the response, because
+       a screen that already has twelve windows on it should not also carry a
+       sensor picker nobody asked for. -->
+  <div class="section dl-card dl-off" id="dl-card">
+    <div class="section-title" data-i18n="daylight.nowTitle"></div>
+    <div class="card" id="dl-now"></div>
+
+    <div class="section-title" data-i18n="daylight.sensorsTitle"></div>
+    <p class="dl-help" data-i18n="daylight.sensorsHelp"></p>
+    <div id="dl-sensors"></div>
+
+    <div class="section-title" data-i18n="daylight.rangeTitle"></div>
+    <div class="card">
+      <p class="dl-help" data-i18n="daylight.rangeHelp"></p>
+      <div class="dl-lux">
+        <div class="dl-field">
+          <div class="dl-label" data-i18n="daylight.luxDark"></div>
+          <input type="number" id="dl-dark-lux" min="0" step="1" inputmode="numeric">
+        </div>
+        <div class="dl-field">
+          <div class="dl-label" data-i18n="daylight.luxBright"></div>
+          <input type="number" id="dl-bright-lux" min="0" step="1" inputmode="numeric">
+        </div>
+      </div>
+    </div>
+
+    <div class="section-title" data-i18n="daylight.endsTitle"></div>
+    <div class="card">
+      <p class="dl-help" data-i18n="daylight.endsHelp"></p>
+      <div class="dl-field">
+        <div class="dl-label" data-i18n="daylight.endDark"></div>
+        <div class="dl-slider">
+          <input type="range" id="dl-dark" min="10" max="100" step="5">
+          <span class="dl-value" id="dl-dark-value"></span>
+        </div>
+      </div>
+      <div class="dl-field">
+        <div class="dl-label" data-i18n="daylight.endBright"></div>
+        <div class="dl-slider">
+          <input type="range" id="dl-bright" min="10" max="100" step="5">
+          <span class="dl-value" id="dl-bright-value"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Standalone only: on the other three drivers the surrounding screen owns
+         the footer, and two Test buttons doing different things is worse than
+         either. -->
+    <div class="card" id="dl-preview-card" hidden>
+      <div class="dl-blocktitle" data-i18n="daylight.previewTitle"></div>
+      <div class="dl-blockhelp" data-i18n="daylight.previewHelp"></div>
+      <div class="dl-acts">
+        <button class="btn" id="dl-preview" data-i18n="daylight.preview"></button>
+      </div>
+      <div class="dl-result" id="dl-preview-result"></div>
+    </div>
+  </div>
+  <!-- ==== end shared daylight card ==== -->

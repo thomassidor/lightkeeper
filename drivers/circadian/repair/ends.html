@@ -4,11 +4,30 @@
      document, so unscoped class names bleed between screens (see the script
      header).
 
-     That also means these ~110 lines cannot be de-duplicated into a stylesheet
-     — there is nowhere to put one. So the duplication is made safe instead:
-     test/unit/pair-view-styles.test.ts compares every copy with the root
-     id normalised and fails on any difference. Edit this block in all
-     files, or in none of them.
+     GENERATED. This block is spliced into every pair view by
+     `npm run sync:views` from views/shared/base.css, where the placeholder
+     ROOT-ID stands in for each view's own root element id. **Edit that file, not
+     this one** — a change here is overwritten on the next sync, and
+     `npm run sync:views:check` fails in CI until the two agree. It used to be
+     authored by hand in all thirteen views, under an instruction to "edit this
+     block in all files, or in none of them".
+
+     It is still copied on disk rather than linked, and that part has not
+     changed: Homey needs a real file per folder and will not follow a reference
+     (platform §8). What HAS changed is the count of places a human edits: one.
+
+     A real stylesheet link may turn out to be possible — the Homey does serve a
+     sibling file next to a pair view, measured on hardware and written up in
+     platform §8, which is more than the old comment here believed. What is still
+     unmeasured is whether an injected view's own external reference loads at all
+     once the pairing container has put the view into its shared document. Until
+     somebody checks that with the Homey app open, splicing is the honest answer.
+
+     NOTE for whoever edits this comment: no HTML tag literals in here. The boot
+     harness finds a view's script by searching for a script tag, so writing one
+     inside this stylesheet made it evaluate the CSS as JavaScript — which fails
+     on the word `export` in the palette note below, forty lines from anything
+     that looked related.
 
      Colours are tokens so a colour lives in ONE place, not so a second scheme
      can restate them: there IS no second scheme. Homey renders a pairing view
@@ -203,14 +222,15 @@
   /* ==== shared daylight card: identical in every view that carries it ====
      The daylight response is ONE configuration per device, and four of the five
      device types can hold one — a Daylight light, a schedule, a circadian light
-     and a Curve light. So this card is four copies of the same screen furniture,
-     for the same reason the base above is: all views of a session share one
-     document, there is nowhere to put a stylesheet, and Homey will not follow a
-     reference.
+     and a Curve light. So this card lands in four different views, for the same
+     reason the base above does: all views of a session share one document, and
+     Homey will not follow a reference (platform §8).
 
-     Made safe the same way, too: test/unit/pair-view-styles.test.ts slices this
-     block out of every view that has it, normalises the root id, and fails on
-     any difference. Edit it in all of them, or in none.
+     GENERATED, like the base: spliced by `npm run sync:views` from
+     views/shared/daylight-card.css. **Edit that file, not this one.** The markup
+     and the `daylightCard()` function come from views/shared/daylight-card.html
+     and views/shared/daylight-card.js the same way, so the whole card is one
+     authored copy in three files rather than four hand-kept ones in eight.
 
      EVERY class is `dl-`prefixed and defined HERE, even where the host view has
      something identical of its own. That is deliberate: the card lands in four

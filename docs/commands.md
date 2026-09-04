@@ -47,6 +47,12 @@ npm run sync:views             # pair -> repair, and shared views between driver
 npm run sync:views:check       # what sync WOULD copy; writes nothing, exits 1 on drift
 ```
 
+**Edit `views/shared/` for anything that appears in more than one view** — the CSS base, `emit()`,
+or the daylight card — then run `sync:views`. Those blocks are spliced into every pair view, with
+`#ROOT` replaced by each view's own root id, so editing a view directly is overwritten on the next
+sync. `views/shared/` lives outside `drivers/` because the CLI treats every directory in there as a
+driver, and `.homeyignore` keeps it out of the app archive.
+
 Edit a view under `drivers/*/pair/`, then run `sync:views` — **nothing runs it for you**, and
 `npm test` fails on drift. Edit the *controller's* copy of a shared view, never the schedule's or a
 light's. Every `repair/` folder is byte copies of its `pair/` because Homey needs a real file in

@@ -5,16 +5,23 @@ import { join } from 'node:path';
 
 /**
  * Pair views are injected into ONE document (see any view's script header), so
- * they cannot share a stylesheet — there is nowhere to serve one from — and every
- * CSS rule has to be scoped to the view's own root id. The consequence is ~150
- * lines of base CSS duplicated once per view, plus a handful of script helpers
- * that cannot be imported either.
+ * every CSS rule has to be scoped to the view's own root id and Homey will not
+ * follow a reference between them. The consequence is a 129-line base block, an
+ * `emit()`, and — on four views — a whole daylight card, present once per view
+ * file.
  *
- * That duplication cannot be removed, so it is made safe instead: this test
- * compares every copy with the root id normalised away. Without it the first
- * person to fix a colour in one view ships the others disagreeing, which is
- * exactly the drift that left the flow using an off-brand accent in some places
- * and the brand navy in others.
+ * **Those blocks are now GENERATED**, spliced from `views/shared/` by
+ * `npm run sync:views`, so `npm run sync:views:check` is what catches a view
+ * that has drifted from its source. This test is still worth its keep, and for a
+ * different reason than when it was written: it asserts the PROPERTY the splice
+ * is supposed to produce — every copy identical once the root id is normalised
+ * away — rather than trusting the script that produces it. A splice with the
+ * substitution wrong would pass `--check` (source and output would agree) and
+ * fail here.
+ *
+ * Before the splice existed this was the only guard, and the drift it caught was
+ * real: the flow used an off-brand accent in some views and the brand navy in
+ * others.
  *
  * Views are DISCOVERED from disk, across every driver, and each root id is read
  * out of the file rather than listed here — a second driver's views were

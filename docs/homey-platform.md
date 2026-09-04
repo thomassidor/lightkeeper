@@ -446,6 +446,49 @@ separate sessions with separate documents, and the one branch that differs (`cre
 `npm run sync:views` and held there by `test/unit/repair-views.test.ts`, which is the only
 thing that can catch a missing repair view before hardware does.
 
+**A pair view's folder is served as static files, and NOT only its `.html`.** Measured on
+hardware, 4 September 2026, firmware 13.5.0-rc.4. The Homey serves a pair view at
+
+```
+GET /app/<appId>/drivers/<driverId>/pair/<viewId>.html      200  text/html
+```
+
+and it serves siblings in that same folder, with correct MIME types:
+
+| Path under the app | Status | `content-type` |
+|---|---|---|
+| `drivers/daylight/pair/daylight.html` | 200 | `text/html` |
+| `drivers/daylight/pair/daylight.assets/probe.js` | 200 | `application/javascript` |
+| `drivers/daylight/pair/probe-sibling.js` | 200 | `application/javascript` |
+| `drivers/daylight/pair/probe.css` | 200 | `text/css` |
+| `drivers/daylight/repair/daylight.html` | 200 | `text/html` |
+| `drivers/daylight/assets/icon.svg`, `assets/icon.svg` | 200 | `image/svg+xml` |
+| `settings/index.html` | 200 | `text/html` |
+
+It is a WHITELIST of directories rather than a static server over the whole app: `app.json`,
+`package.json`, `app.js` and `locales/en.json` all return 404, and so does a non-existent file
+inside a served folder. The `<viewId>.assets/` shape is the one the CLI's own `HomeyCompose.js`
+materialises for a templated view — it copies `<template>/assets` to
+`drivers/<id>/pair/<viewId>.assets` and replaces `{{assets}}` in the HTML with that path — so the
+convention is Athom's, not ours.
+
+**Why this matters, and what it does NOT yet settle.** Every pair view carries a ~78-line CSS base,
+an `emit()`, and — on four of them — a ~250-line `daylightCard()`, all hand-copied, because the
+in-code comment said "there is nowhere to put a stylesheet". There is: the file would be served.
+What is still unmeasured is whether a `<script src>` or `<link rel="stylesheet">` inside a view
+actually LOADS once the pairing container has injected that view into its shared document, and if
+so whether it runs before the view's own inline boot code.
+
+One inference worth recording, because it narrows the question: the views' INLINE `<script>` blocks
+do run, and `innerHTML` never executes a script of any kind — so the container is not using plain
+`innerHTML`. It must be re-creating script elements from the parsed HTML, which is the standard
+workaround, and that mechanism does load an external `src` — asynchronously. So the expected answer
+is "it loads, but not before the inline boot", meaning the boot would have to wait on `onload`.
+Expected is not measured. **The test is one minute with the Homey app open:** add a
+`<script src="daylight.assets/probe.js">` that sets a global and `emit()`s a line back to the
+driver, open the Daylight light's pairing screen, and read the app log — a pair view runs in the
+CLIENT, so `console.log` never reaches the Homey and the reply has to come back through `emit()`.
+
 **The same applies between drivers.** The API-key screen and the light picker are one screen each,
 used by both the controller and the schedule driver, and Homey will not follow a reference: each
 driver needs its own real file. So `drivers/schedule/pair/credential.html` and `targets.html` are

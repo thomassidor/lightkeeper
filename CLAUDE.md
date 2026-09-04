@@ -43,7 +43,8 @@ npm run lint                   # eslint, type-checked. See eslint.config.mjs for
 npm run validate               # homey app validate --level publish, CLI from the lockfile
 npx homey app install          # persistent install on a real Homey
 npx homey app run --remote     # live logs, TEMPORARY — see below
-npm run sync:views             # pair -> repair, and shared views between drivers. See platform §8
+npm run sync:views             # splices views/shared/ into every pair view, then pair -> repair
+                               # and shared views between drivers. See platform §8
 npm run sync:views:check       # what sync WOULD copy; writes nothing, exits 1 on drift. CI runs it
 npm run render:views           # draw every pairing screen to .views/ — needs Chrome, not CI
 npm run render:icons           # draw every icon at the App Store's 24px box. Chrome, not CI
@@ -166,6 +167,9 @@ scripts/dump-card-fixtures.mjs  writes test/fixtures/cards/*.json from the hand-
                                 committed artefact and card-fixtures.test.ts fails on drift
 scripts/hardware-env.json       GITIGNORED. A Homey address and two Personal API Keys, read by
                                 verify-hardware.mjs when the env vars are not set
+views/shared/                   NOT bundled. The one authored copy of each block that appears
+                                in every pair view — the CSS base, emit(), and the daylight card's
+                                CSS, markup and script. `npm run sync:views` splices them in
 settings/index.html             app settings page
 locales/en.json                 all user-facing strings
 .homeycompose/                  the manifest's SOURCE; app.json is generated from it
@@ -464,10 +468,26 @@ English–Danish glossary kept from the removed translation.
 **Pair views share ONE document.** The views under `drivers/*/pair/` are injected into the pairing
 container's document rather than getting their own iframe. They must not load `homey.js` themselves,
 every CSS rule is scoped to the view's root id, and the boot guard lives on the root element rather
-than in a global. Each file's header explains this. The ~150-line shared CSS base is byte-identical
-in every view, across every driver, and so is `emit()`, which appears in all of them because it is
-the only way out. `test/unit/pair-view-styles.test.ts` fails on any drift in either — it compared
-only the CSS until `emit()` was found carrying a timeout in one view and not the others.
+than in a global. Each file's header explains this.
+
+**The shared blocks are GENERATED, and `views/shared/` is where they are authored.** The 129-line
+CSS base and `emit()` appear in all 26 view files; the daylight card — 69 lines of CSS, 60 of markup
+and a 339-line `daylightCard()` — appears in 8. All of it used to be authored by hand in every copy,
+under an in-file instruction to "edit this block in all files, or in none of them", with
+`test/unit/pair-view-styles.test.ts` asserting they stayed identical. `npm run sync:views` now
+splices them from `views/shared/{base.css,emit.js,daylight-card.css,daylight-card.html,daylight-card.js}`,
+substituting each view's own root id for `#ROOT` — the same normalisation that test does in reverse.
+**Edit the source, never the view.** `npm run sync:views:check` fails in CI until they agree.
+
+`views/shared/` sits OUTSIDE `drivers/` because the CLI treats every directory under `drivers/` as a
+driver and fails pre-processing with `ENOENT: … driver.compose.json`; `.homeyignore` keeps it out of
+the archive, since nothing on a Homey reads it.
+
+On-disk duplication is unchanged and has to be — Homey needs a real file per folder and will not
+follow a reference (platform §8). What changed is that a human edits one file instead of thirteen.
+A real `<link>`/`<script src>` may yet be possible: the Homey does serve a sibling file next to a
+pair view (measured, platform §8). What is unmeasured is whether an injected view's own external
+reference loads once the pairing container has placed it in the shared document.
 
 The other shared helpers — `stabiliseScrollbar()`, `escapeHtml()`, `node()`, `clear()`, `pad()` —
 are byte-identical **wherever they appear**, which is not everywhere: `escapeHtml()` exists in the
@@ -493,7 +513,7 @@ container's own colour, so the honest answer is to match the one panel Homey act
 colour TOKENS stay, because they are what makes a palette change one edit rather than five;
 `test/unit/pair-view-styles.test.ts` fails if a scheme query reappears in any view.
 
-**The daylight card is ONE function copied into four views, and a test is what makes that safe.**
+**The daylight card is ONE function, spliced into four views.**
 A daylight response is one configuration per device and four of the five device types can hold one,
 so the same sensor picker, lux range, two ends and live readout appear on four screens. There is
 nowhere to put a module — see the note above — so it is `function daylightCard()` byte-identical in

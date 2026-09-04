@@ -4,6 +4,22 @@
  *
  * Two copies happen here, for two different platform reasons.
  *
+ * **Shared BLOCKS, inside a view.** Every pair view carries the same ~129-line
+ * CSS base and the same `emit()`; four of them carry the same ~470-line daylight
+ * card. All views of a pairing session share ONE document, so every rule is
+ * scoped to the view's own root id and there is no module loader to reach for —
+ * which is why these were authored by hand in all thirteen views, with
+ * `test/unit/pair-view-styles.test.ts` asserting they stayed identical. They are
+ * now spliced from `views/shared/`, so there is one authored copy and the
+ * test guards the splice rather than a human's diligence.
+ *
+ * `#ROOT` in a shared stylesheet is replaced with the view's own root id, which
+ * is exactly the normalisation that test already does in reverse.
+ *
+ * On-disk duplication is UNCHANGED and has to be: Homey needs a real file per
+ * folder and will not follow a reference (platform §8). What changed is that
+ * nobody edits it thirteen times.
+ *
  * **pair → repair, per driver.** Homey serves pair views from
  * `drivers/<id>/pair/<viewId>.html` and repair views from
  * `drivers/<id>/repair/<viewId>.html` — two separate folders, as the CLI's own
@@ -53,6 +69,118 @@ export const SHARED_VIEWS = ['credential.html', 'targets.html'];
 export const SHARED_SOURCE_DRIVER = 'controller';
 
 /**
+ * Where the one authored copy of each shared block lives.
+ *
+ * OUTSIDE `drivers/`, and that is not a preference: the CLI treats every
+ * directory under `drivers/` as a driver and fails pre-processing with
+ * `ENOENT: … drivers/_shared/driver.compose.json` before it validates anything.
+ * These are authored fragments spliced at sync time, so nothing on a Homey
+ * reads them — `.homeyignore` keeps them out of the archive.
+ */
+export const SHARED_DIR = join(ROOT, 'views', 'shared');
+
+/**
+ * The delimited regions, and the functions, spliced into every pair view.
+ *
+ * `optional: true` means a view that does not carry the region is left alone
+ * rather than failing — only the four device types that store a brightness have
+ * a daylight response to configure. The base and `emit()` are NOT optional: a
+ * view without either is a broken view, and saying so here is cheaper than
+ * finding out on a phone.
+ */
+/**
+ * @typedef {{ source: string; scoped: boolean; optional?: boolean }} SharedBlockBase
+ * @typedef {SharedBlockBase & { kind: 'delimited'; start: string; end: string }} DelimitedBlock
+ * @typedef {SharedBlockBase & { kind: 'function'; name: string }} FunctionBlock
+ * @typedef {DelimitedBlock | FunctionBlock} SharedBlock
+ */
+
+/** @type {SharedBlock[]} */
+const BLOCKS = [
+  {
+    source: 'base.css',
+    kind: 'delimited',
+    start: '/* ==== shared base:',
+    end: '/* ==== end shared base ==== */',
+    scoped: true,
+  },
+  { source: 'emit.js', kind: 'function', name: 'emit', scoped: false },
+  {
+    source: 'daylight-card.css',
+    kind: 'delimited',
+    start: '/* ==== shared daylight card:',
+    end: '/* ==== end shared daylight card ==== */',
+    scoped: true,
+    optional: true,
+  },
+  {
+    source: 'daylight-card.html',
+    kind: 'delimited',
+    start: '<!-- ==== shared daylight card',
+    end: 'end shared daylight card ==== -->',
+    scoped: false,
+    optional: true,
+  },
+  { source: 'daylight-card.js', kind: 'function', name: 'daylightCard', scoped: false, optional: true },
+];
+
+/**
+ * A view's own root element id, which every scoped rule is prefixed with.
+ *
+ * Read from the markup rather than tabulated, so adding a view needs no edit
+ * here — the same regex `pair-view-styles.test.ts` uses.
+ *
+ * @param {string} text
+ * @returns {string | null}
+ */
+function rootIdOf(text) {
+  const match = /class="wrap" id="([\w-]+)"/.exec(text);
+  return match?.[1] ?? null;
+}
+
+/**
+ * Replace `start`…`end` inclusive. Returns null where the region is absent.
+ *
+ * @param {string} text
+ * @param {string} start
+ * @param {string} end
+ * @param {string} replacement
+ * @returns {string | null}
+ */
+function spliceDelimited(text, start, end, replacement) {
+  const from = text.indexOf(start);
+  if (from === -1) return null;
+  const to = text.indexOf(end, from);
+  if (to === -1) return null;
+  return text.slice(0, from) + replacement + text.slice(to + end.length);
+}
+
+/**
+ * Replace `function <name>(…) { … }`, matched to its closing brace.
+ *
+ * Brace counting rather than a regex because the bodies contain braces, and the
+ * same walk `pair-view-styles.test.ts` uses to extract them.
+ *
+ * @param {string} text
+ * @param {string} name
+ * @param {string} replacement
+ * @returns {string | null}
+ */
+function spliceFunction(text, name, replacement) {
+  const at = text.indexOf(`function ${name}(`);
+  if (at === -1) return null;
+  let depth = 0;
+  for (let i = text.indexOf('{', at); i < text.length; i += 1) {
+    if (text[i] === '{') depth += 1;
+    else if (text[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return text.slice(0, at) + replacement + text.slice(i + 1);
+    }
+  }
+  return null;
+}
+
+/**
  * Do the work, or report what it would do.
  *
  * A function rather than top-level statements — see the header for why that is
@@ -91,6 +219,54 @@ export function sync(options = {}) {
     .filter(entry => entry.isDirectory())
     .map(entry => entry.name)
     .sort();
+
+  // 0. Shared BLOCKS, into every pair view. FIRST, so that the two copies below
+  //    inherit the spliced content rather than needing a second pass.
+  const sources = new Map(
+    BLOCKS.map(block => [block.source, readFileSync(join(SHARED_DIR, block.source), 'utf8').trimEnd()]),
+  );
+
+  for (const driverId of driverIds) {
+    const pairDir = join(DRIVERS, driverId, 'pair');
+    if (!existsSync(pairDir)) continue;
+
+    for (const file of readdirSync(pairDir).filter(name => name.endsWith('.html')).sort()) {
+      const path = join(pairDir, file);
+      const before = readFileSync(path, 'utf8');
+      const root = rootIdOf(before);
+      if (!root) throw new Error(`${driverId}/pair/${file} has no <div class="wrap" id="…"> root`);
+
+      let after = before;
+      for (const block of BLOCKS) {
+        const body = block.scoped
+          ? /** @type {string} */ (sources.get(block.source)).replaceAll('#ROOT', `#${root}`)
+          : /** @type {string} */ (sources.get(block.source));
+
+        const next = block.kind === 'delimited'
+          ? spliceDelimited(after, block.start, block.end, body)
+          : spliceFunction(after, block.name, body);
+
+        if (next === null) {
+          if (block.optional) continue;
+          throw new Error(
+            `${driverId}/pair/${file} is missing the required shared block "${block.source}"`,
+          );
+        }
+        after = next;
+      }
+
+      if (after === before) continue;
+      const label = `${driverId}/pair/${file} <- views/shared/`;
+      if (CHECK_ONLY) {
+        drifted.push(label);
+        copies += 1;
+        continue;
+      }
+      writeFileSync(path, after);
+      copies += 1;
+      console.log(label);
+    }
+  }
 
   // 1. Shared views, out of the source driver and into every other one.
   for (const driverId of driverIds) {

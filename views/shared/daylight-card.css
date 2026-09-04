@@ -1,0 +1,70 @@
+/* ==== shared daylight card: identical in every view that carries it ====
+     The daylight response is ONE configuration per device, and four of the five
+     device types can hold one — a Daylight light, a schedule, a circadian light
+     and a Curve light. So this card lands in four different views, for the same
+     reason the base above does: all views of a session share one document, and
+     Homey will not follow a reference (platform §8).
+
+     GENERATED, like the base: spliced by `npm run sync:views` from
+     views/shared/daylight-card.css. **Edit that file, not this one.** The markup
+     and the `daylightCard()` function come from views/shared/daylight-card.html
+     and views/shared/daylight-card.js the same way, so the whole card is one
+     authored copy in three files rather than four hand-kept ones in eight.
+
+     EVERY class is `dl-`prefixed and defined HERE, even where the host view has
+     something identical of its own. That is deliberate: the card lands in four
+     different stylesheets whose `.help` and `.field` differ in their margins,
+     and one of the four defined none of them at all — so a card that borrowed
+     them rendered unstyled on that screen and slightly wrong on two others.
+     Owning its own furniture is what makes the card the same thing everywhere.
+
+     Every colour is a token from the base. A literal here is a token that is
+     missing. */
+  #ROOT .dl-card { display: block; }
+  #ROOT .dl-card.dl-off { display: none; }
+
+  #ROOT .dl-field { margin-bottom: 14px; }
+  #ROOT .dl-field:last-child { margin-bottom: 0; }
+  #ROOT .dl-label { font-size: 12px; font-weight: 600; text-transform: uppercase;
+                  letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 6px 2px; }
+  #ROOT .dl-help { font-size: 12.5px; line-height: 1.5; color: var(--lk-muted);
+                 margin: 2px 0 10px 2px; }
+  #ROOT .dl-blocktitle { font-size: 15px; font-weight: 600; color: var(--lk-ink); }
+  #ROOT .dl-blockhelp { font-size: 12.5px; line-height: 1.5; color: var(--lk-muted);
+                      margin: 4px 0 12px; }
+  #ROOT .dl-slider { display: flex; align-items: center; gap: 10px; }
+  #ROOT .dl-slider input[type=range] { flex: 1; min-width: 0; accent-color: var(--lk-accent);
+                                     height: 28px; }
+  #ROOT .dl-value { font-size: 13px; color: var(--lk-sub); flex: none;
+                  min-width: 62px; text-align: right; }
+  #ROOT .dl-acts { display: flex; gap: 7px; }
+  #ROOT .dl-acts .btn { flex: 1; }
+  #ROOT .dl-result { font-size: 13px; color: var(--lk-sub); margin-top: 8px; }
+
+  /* The live readout, which sits ABOVE the controls it explains: two numbers
+     labelled "dark" and "bright" cannot be chosen without knowing what the room
+     currently reads. */
+  #ROOT .dl-reading { display: flex; align-items: baseline; justify-content: space-between;
+                    gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--lk-line); }
+  #ROOT .dl-reading:last-child { border-bottom: none; padding-bottom: 0; }
+  #ROOT .dl-reading .dl-what { font-size: 13.5px; color: var(--lk-body); }
+  #ROOT .dl-reading .dl-val { font-size: 13.5px; font-weight: 600; color: var(--lk-ink);
+                            flex: none; text-align: right; }
+  /* An unknown reading is deliberately NOT styled as an error: a Homey with no
+     light sensor is the normal case, and the sun answers for it. */
+  #ROOT .dl-reading .dl-val.dl-unknown { font-weight: 500; color: var(--lk-muted); }
+
+  /* The lux range: two numbers side by side, because they are one setting. */
+  #ROOT .dl-lux { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  #ROOT .dl-lux input[type=number] { width: 100%; box-sizing: border-box; padding: 12px 13px;
+                                   font-size: 15px; border: 1.5px solid var(--lk-field);
+                                   border-radius: 11px; background: var(--lk-surface);
+                                   color: var(--lk-ink); font-family: inherit;
+                                   -webkit-appearance: none; appearance: none; }
+  #ROOT .dl-lux input[type=number]:focus { outline: none; border-color: var(--lk-accent);
+                                         box-shadow: 0 0 0 3px var(--lk-ring); }
+
+  /* A sensor row carries its current reading, which is what makes the lux range
+     above choosable rather than a guess. */
+  #ROOT .dl-tile-lux { font-size: 12.5px; color: var(--lk-muted); margin-top: 3px; }
+  /* ==== end shared daylight card ==== */
