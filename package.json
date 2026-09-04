@@ -42,7 +42,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "homey-api": "3.19.2"
+    "homey-api": "3.19.3"
   },
   "devDependencies": {
     "@tsconfig/node16": "^16.1.9",
