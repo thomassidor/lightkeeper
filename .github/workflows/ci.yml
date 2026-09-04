@@ -21,10 +21,11 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      # SHA-pinned, not tag-pinned: a mutable `v4` tag is a supply-chain
+      # SHA-pinned, not tag-pinned: a mutable major tag is a supply-chain
       # write-primitive into every run of this workflow. Dependabot bumps the
-      # pin (see .github/dependabot.yml) so the comment and the SHA move
-      # together.
+      # pin (see .github/dependabot.yml) so the trailing version comment and
+      # the SHA move together — that comment is a label, never what resolves.
+      # Deliberately naming no version here: this text outlived `v4`.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # 22, to stay close to what current Homey Pro firmware runs. homey-api
