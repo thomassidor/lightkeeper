@@ -19,6 +19,15 @@ Added:
   either takes over as the daylight goes or follows the day. It reads `measure_luminance` sensors the
   household already owns, averaging several, and where there are none it reads **how high the sun
   is**, computed from the Homey's own position.
+  With no sensor it also asks **when this room gets the most sun** — morning, the middle of the day,
+  afternoon, or not at all. The sun's height alone is symmetric about noon, so without that answer a
+  room that gets its light at 5pm was treated as though it got it at 7am, and no other setting could
+  say otherwise. It is asked as an observation rather than as a compass direction, because somebody
+  who lives in a room knows when the light comes in, and because it then absorbs what a bearing
+  cannot: an east window with a wall across it gets its sun in the afternoon. "Not at all" is the
+  default and behaves exactly as before, and no answer can ever make a room read brighter than the
+  sky itself. The question does not appear at all once a sensor is chosen — a sensor measures the
+  room, so a model of it would be a guess laid over a measurement.
   Like the two curve-driven types it generates **no Flows** and needs no API key, it only dims lights
   that are already on, and it never switches one on or off — brightness is never written to a light
   that is off, which is measured rather than assumed (platform §12).

@@ -282,6 +282,9 @@ a sensor:
   high the sun is, worked out from your Homey's own location. Two settings: how bright the lights
   should be when the room is dark, and when it is bright. Which is higher is up to you, so it will
   either take over as the daylight goes or follow the day.
+- **When there is no sensor, it asks when the room gets the most sun** — morning, the middle of the
+  day, afternoon, or not at all. The sun's height alone cannot tell morning from afternoon, so
+  without that a room that brightens at 5pm was treated as though it brightened at 7am.
 - **A schedule, a circadian light or a Curve light can follow the daylight too**, on whichever
   windows, points or ends you choose, instead of a brightness you set by hand. The brightness you
   set stays put as the fallback for when nothing can tell how light it is.
