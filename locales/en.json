@@ -170,7 +170,6 @@
     "colourNone": "Warmth",
     "colourHelp": "A colour replaces this point's warmth on lights that can show one. Lights that cannot are set to the warmth instead, so the shape of the curve is the same on every lamp."
   },
-
   "daylight": {
     "title": "How light is it already?",
     "subtitle": "Lightkeeper sets these lights' brightness from how much light is in the room already — dimming them when the daylight is doing the work, or the other way round if you prefer. Only lights that are already on are dimmed; this never switches anything on.",
@@ -196,6 +195,7 @@
     "ageNow": "just now",
     "ageMinutes": "__minutes__ min ago",
     "ageHours": "__hours__ h ago",
+    "ageDays": "__days__ days ago",
     "rangeTitle": "What counts as dark and bright",
     "rangeHelp": "In lux, the unit light sensors report. At or below the first number the room counts as fully dark; at or above the second, fully bright. The readings above are the best guide to both.",
     "luxDark": "Dark at",
@@ -219,12 +219,10 @@
     "fallbackHelp": "The brightness below is the fallback, used when no light sensor is reporting and your Homey has no location.",
     "atBoundaryHelp": "The brightness is read once, when this window starts, and does not follow the room afterwards — a schedule happens at a time. Add a Daylight light if you want it followed all evening. The brightness below is the fallback when nothing can tell how light it is."
   },
-
   "curve": {
     "title": "Draw the day",
     "subtitle": "Set what your lights should look like at each point of the day, and Lightkeeper moves them smoothly between those points. Any point can be a colour instead of a warmth."
   },
-
   "palette": {
     "candle": "Candle",
     "amber": "Amber",
@@ -344,6 +342,7 @@
     "daylightAgeNow": "just now",
     "daylightAgeMinutes": "__minutes__ min ago",
     "daylightAgeHours": "__hours__ h ago",
+    "daylightAgeDays": "__days__ days ago",
     "daylightNow": "Holding these lights at __percent__%, from the __source__.",
     "daylightFromSensors": "light sensors",
     "daylightFromSky": "sun",

@@ -476,6 +476,7 @@ function __lkBootDl(Homey) {
       ageNow: 'daylight.ageNow',
       ageMinutes: 'daylight.ageMinutes',
       ageHours: 'daylight.ageHours',
+      ageDays: 'daylight.ageDays',
       percent: 'daylight.percent',
       preview: 'daylight.preview',
       previewing: 'daylight.previewing',
@@ -529,7 +530,14 @@ function __lkBootDl(Homey) {
       var minutes = Math.floor((Date.now() - Number(at)) / 60000);
       if (!isFinite(minutes) || minutes < 1) return t('ageNow');
       if (minutes < 60) return t('ageMinutes', { minutes: String(minutes) });
-      return t('ageHours', { hours: String(Math.floor(minutes / 60)) });
+      if (minutes < 60 * 48) return t('ageHours', { hours: String(Math.floor(minutes / 60)) });
+      // DAYS past two, because hours stop being legible: two sensors in the
+      // first house this was measured in had last reported 53 and 59 days
+      // earlier, and both rendered as "1414 h ago" — true, and unreadable as
+      // the "this sensor is dead" it actually meant. Homey still reports such a
+      // sensor as available and it still returns a finite number, so the age is
+      // the ONLY thing that can reveal it (platform §16).
+      return t('ageDays', { days: String(Math.floor(minutes / 1440)) });
     }
 
     function reading(what, value, unknown) {

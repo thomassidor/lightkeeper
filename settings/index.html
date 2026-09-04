@@ -529,7 +529,10 @@
     var minutes = Math.floor((Date.now() - Number(at)) / 60000);
     if (!isFinite(minutes) || minutes < 1) return t('daylightAgeNow');
     if (minutes < 60) return t('daylightAgeMinutes', { minutes: minutes });
-    return t('daylightAgeHours', { hours: Math.floor(minutes / 60) });
+    if (minutes < 60 * 48) return t('daylightAgeHours', { hours: Math.floor(minutes / 60) });
+    // See the same branch in the shared daylight card: past two days, hours
+    // stop being legible and a dead sensor reads as noise.
+    return t('daylightAgeDays', { days: Math.floor(minutes / 1440) });
   }
 
   /**

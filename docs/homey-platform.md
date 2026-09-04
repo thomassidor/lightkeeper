@@ -1276,3 +1276,40 @@ hand.
 actually report — scale, resolution and reporting interval, which are per-integration and where the
 `darkLux` / `brightLux` defaults of 5 and 500 will be judged — is what
 `node scripts/probe-lights.mjs inventory --all` is for, and is not yet established.*
+
+### What a real house's lux sensors actually report
+
+Measured 4 September 2026 from Homey's own Insights history — four
+`measure_luminance` sensors in one house, 288 samples each over 24 h (Insights
+serves 5-minute buckets at `last24Hours`; coarser resolutions bucket-AVERAGE, and
+`last31Days` returns ~4 points a day, which flattens exactly the peaks a response
+has to span). `insights.getLogEntries({ id, resolution })` returns
+`{ values: [{ t, v }] }`.
+
+| Sensor | min | p50 | p95 | max | distinct values / 288 | last reported |
+|---|---|---|---|---|---|---|
+| Kitchen motion | 1 | 174 | 1278 | 1289 | 194 | 2 min ago |
+| Activity room (Hue) | 1 | 4.2 | 64.5 | 164 | 172 | 2 min ago |
+| Utility room (Hue) | 1 | 1 | 1 | 1 | **1** | **52.6 days ago** |
+| Studio motion | 73.55 | 73.55 | 73.55 | 73.55 | **1** | **58.9 days ago** |
+
+Two things follow, and both matter more than the numbers.
+
+**Half the sensors in this house are FROZEN, and Homey reports them as
+`available: true` with a finite value.** They are indistinguishable from a
+genuinely constant room by anything except the reading's age. This is the case
+the app's rule was written for — "a sensor reading is never treated as stale,
+because many Zigbee sensors report only on change, so a quiet sensor in a stable
+room is telling the truth" — and it is now measured rather than hypothesised:
+the rule is right, and the age display is the only thing standing between a user
+and a Daylight light that holds one brightness forever. Worse, the frozen Studio
+sensor is in the room whose lamps this household actually automates.
+
+**`brightLux = 500` suits a kitchen and almost nothing else.** Of the two LIVE
+sensors, one reaches 1278 lx and the other tops out at 164 with a p95 of 64.5.
+A response spanning 5 → 500 in the second room would sit near its dark end all
+day, hold the lamps near full, and read as "this feature does nothing". The
+defaults are one household's evidence, so they are recorded here rather than
+changed on the strength of it — but the shape of the answer is that a global
+`brightLux` cannot be right for both a south-facing kitchen and an interior
+room, and the sensor's own history is available at pairing time.

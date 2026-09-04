@@ -93,6 +93,13 @@ pair session, which is a live Web API surface rather than something a suite can 
       calculator](https://gml.noaa.gov/grad/solcalc/) for your latitude and the current minute — a
       sign error or a UTC slip produces a number that looks entirely reasonable and is wrong, and
       this is the only place it shows.
+**T82 is now PARTLY answered, from Insights rather than by watching a sensor.** Homey logs every
+capability, so four real sensors' distributions were read out of history on 4 September 2026 — the
+table is in platform §16. What it settled: the scale (lx, two decimals), that `brightLux = 500`
+suits a kitchen and overshoots an interior room badly, and that **two of the four sensors had not
+reported for 53 and 59 days while Homey still called them `available`**. What it cannot settle is
+the part below that needs a hand over a sensor: whether the reading follows, and on what latency.
+
 - [ ] **T82** *Needs a real `measure_luminance` device, and there is no substitute.* Pair a
       **Daylight light** by hand and pick a light sensor — most motion sensors have one. Confirm the
       pairing screen shows that sensor's **current reading in lux and its age**, and that "So your
