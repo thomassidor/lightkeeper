@@ -561,11 +561,14 @@ Load-bearing product guarantees, not implementation details:
   wherever rounding would eat a positive request. Zero still means zero — only a request for light
   is kept as light. `advanceDim()` is the same guarantee for relative steps, and its docblock carries
   the longer argument.
-- **A lamp is never sent a value the mode it is in makes it ignore.** A lamp in colour mode refuses
-  a colour temperature and vice versa — silently, reporting the write as accepted (platform §6) — so
-  `planColor()` and `planTemperature()` each emit `light_mode` ahead of the value it enables, and
-  `WRITE_ORDER` keeps that order through the queue. The consequence for anything filtering planned
-  writes: **decide per DEVICE, never per write.** A `light_mode` value is a string, so a numeric
+- **A lamp is never sent a value the mode it is in makes it ignore.** Some lamps in colour mode
+  refuse a colour temperature and vice versa — silently, reporting the write as accepted
+  (platform §6) — so `planColor()` and `planTemperature()` each emit `light_mode` ahead of the value
+  it enables, and `WRITE_ORDER` keeps that order through the queue. Gating lamps are rare, one in
+  roughly thirty-six measured across three probe runs, and that is the case FOR writing the mode
+  unconditionally rather than against it: it costs one 212 ms ack on the lamps that do not gate, and
+  §6 measured that a lamp cannot be asked which kind it is. The consequence for anything filtering
+  planned writes: **decide per DEVICE, never per write.** A `light_mode` value is a string, so a numeric
   deadband applied to it compares `NaN` and silently drops the mode write while letting the value
   through — which is exactly how a Curve light came to sit on the colour it last held. The colour leg
   has always decided per device; the temperature leg now does too.
@@ -661,9 +664,10 @@ Load-bearing product guarantees, not implementation details:
   write would never leave 0.10 while the room went dark around it. So `aim` advances every pass and
   `committed` is success-gated, and the two are separate maps for exactly that reason.
 - **A lamp that refuses a colour while it is off is not a lamp in ill health, and is never counted
-  as one.** Four of thirteen Hue bulbs behind one bridge decline a pre-stage write as "soft off"
-  every time; a dead lamp refuses identically, and pre-staging never sends the `dim` write that would
-  tell the two apart. So `PlannedWrite.preStage` excludes that FAILURE from `unwritableTargets()` —
+  as one.** Roughly half the Hue bulbs behind one bridge decline a pre-stage write as "soft off"
+  every time — four of thirteen on the first count, seven of sixteen on a wider run the same day; a
+  dead lamp refuses identically, and pre-staging never sends the `dim` write that would tell the two
+  apart. So `PlannedWrite.preStage` excludes that FAILURE from `unwritableTargets()` —
   one way only, because a pre-stage success reached the bridge and is real evidence — and the
   circadian runtime stops offering that one lamp a colour after three refusals running, clearing the
   count when it is next switched on. Without the first half, healthy lamps reported themselves as not

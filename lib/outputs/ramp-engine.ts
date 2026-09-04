@@ -39,7 +39,19 @@ export interface ActiveRamp {
   ticks: number;
 }
 
-export type RampTick = (intent: LightIntent) => void;
+/**
+ * A ramp tick. The `ramp` argument carries `ticks`, already incremented, so the
+ * first tick of a hold is `1`.
+ *
+ * The controller uses it to send `light_mode` once per hold rather than once
+ * per tick. `planTemperature()` emits the mode write ahead of every
+ * temperature (platform §6) and the controller applies no deadband, so a
+ * ten-second warmer/colder hold re-sent it on every flush — and because
+ * `runFlush` awaits its writes in order, a mode ack (212 ms median, measured
+ * across sixteen lamps) landed in front of every value write and roughly halved
+ * the hold's step rate.
+ */
+export type RampTick = (intent: LightIntent, ramp: ActiveRamp) => void;
 
 export type RampStopReason =
   | 'released'
@@ -99,7 +111,7 @@ export class RampEngine {
       ramp.ticks += 1;
       this.onTick(ramp.kind === 'brightness'
         ? { type: 'brightness_delta', delta: deltaPerTick }
-        : { type: 'temperature_delta', delta: deltaPerTick });
+        : { type: 'temperature_delta', delta: deltaPerTick }, ramp);
     }, TICK_MS);
 
     this.ramps.set(controlId, { ramp, handle });

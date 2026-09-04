@@ -94,8 +94,9 @@ them.
 Fixed:
 
 - **A Curve light could keep the colour it last held instead of going back to white.** A lamp
-  sitting in colour mode refuses a colour temperature outright (platform §6), so switching axes
-  needs a `light_mode` write to land first — and `planTemperature` emits exactly that, ahead of the
+  sitting in colour mode can refuse a colour temperature outright (platform §6 — measured on one
+  lamp then, and since counted at roughly one in thirty-six), so switching axes needs a `light_mode`
+  write to land first — and `planTemperature` emits exactly that, ahead of the
   temperature. The circadian runtime's "has the curve moved far enough to be worth a write" gate ran
   per write, and handed the mode write it compared the string `'temperature'`: `Math.abs('temperature'
   - previous)` is `NaN`, `NaN >= step` is false, so the mode write was dropped whenever a warmth had

@@ -813,6 +813,44 @@ describe('the light picker', () => {
     assert.deepEqual(rooms, ['Kitchen'], 'grouped per room — a flat grid of a whole house is unusable');
   });
 
+  /**
+   * `lightCandidates()` offers anything with `onoff`, deliberately — a smart
+   * plug with a lamp in it is somebody's light, and filtering on
+   * `class === 'light'` would silently do nothing when they picked it. The
+   * measured cost on the reference Homey, 4 September 2026: 54 candidates
+   * including three sockets, a fan, a dishwasher and a NAS. So the payload
+   * marks them and sorts them last, and this is the branch that draws the mark
+   * — untested until a fixture carried `isLight: false` at all, since
+   * `undefined` renders nothing.
+   */
+  test('a candidate that is not a light says so, without being hidden', async () => {
+    const mixed = {
+      rooms: [{
+        zoneName: 'Kitchen',
+        lights: [
+          { id: 'l1', name: 'Ceiling', capabilities: ['onoff', 'dim'], selected: false, isLight: true },
+          { id: 'p1', name: 'Dishwasher', capabilities: ['onoff'], selected: false, isLight: false },
+        ],
+      }],
+      zones: [{ id: 'z1', name: 'Kitchen' }],
+    };
+
+    const view = open({ listTargets: mixed, selectTargets: { count: 0, support } });
+    await view.settle();
+
+    assert.ok(!view.error, String(view.error));
+    assert.equal(tiles(view).length, 2, 'offered, never filtered out');
+
+    const meta = view.root.descendants()
+      .filter(n => (n.className ?? '').split(' ').includes('meta'))
+      .map(n => n.textContent ?? '');
+
+    // The harness leaves `Homey.__` returning the key.
+    assert.ok(!meta[0]!.includes('targets.notALight'), 'a real light carries no marker');
+    assert.ok(meta[1]!.includes('targets.notALight'),
+      `the dishwasher must not read as a bulb, got ${JSON.stringify(meta[1])}`);
+  });
+
   test('tapping a light selects it and tells the driver', async () => {
     const view = open({ listTargets: HOUSE, selectTargets: { count: 1, support } });
     await view.settle();

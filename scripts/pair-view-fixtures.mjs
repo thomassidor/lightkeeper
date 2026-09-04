@@ -16,10 +16,22 @@
  */
 
 /** Lights the picker and every downstream screen agree about. */
+/**
+ * `isLight` is what the picker marks a candidate with, and the last entry is
+ * why the field is here: everything with `onoff` is offered, so a real house
+ * puts sockets and fans in this list — three sockets, a fan, a dishwasher and a
+ * NAS among 54 candidates on the reference Homey, 4 September 2026. The contact
+ * sheet has to show the marker, or a screen that draws a dishwasher as a bulb
+ * looks correct in review.
+ *
+ * Appended LAST on purpose: five call sites take `LIGHTS.slice(0, 2)` for the
+ * mapping and preview screens, where a socket has no business being.
+ */
 const LIGHTS = [
-  { id: 'l1', name: 'Ceiling', zoneName: 'Living room', capabilities: ['onoff', 'dim', 'light_temperature'] },
-  { id: 'l2', name: 'Reading lamp', zoneName: 'Living room', capabilities: ['onoff', 'dim', 'light_temperature'] },
-  { id: 'l3', name: 'Worktop', zoneName: 'Kitchen', capabilities: ['onoff', 'dim'] },
+  { id: 'l1', name: 'Ceiling', zoneName: 'Living room', capabilities: ['onoff', 'dim', 'light_temperature'], isLight: true },
+  { id: 'l2', name: 'Reading lamp', zoneName: 'Living room', capabilities: ['onoff', 'dim', 'light_temperature'], isLight: true },
+  { id: 'l3', name: 'Worktop', zoneName: 'Kitchen', capabilities: ['onoff', 'dim'], isLight: true },
+  { id: 'p1', name: 'Dishwasher', zoneName: 'Kitchen', capabilities: ['onoff'], isLight: false },
 ];
 
 const SUPPORT = { onoff: 3, dim: 3, light_temperature: 2, total: 3 };

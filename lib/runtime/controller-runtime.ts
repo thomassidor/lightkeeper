@@ -368,7 +368,14 @@ export class ControllerRuntime {
     );
 
     this.ramps = new RampEngine(
-      intent => fireAndForget(this.runIntent(intent), this.deps.log, 'A ramp tick'),
+      /**
+       * `modeAlreadySet` after the first tick: the mode is established once per
+       * hold, not once per flush. See RampTick and runIntent.
+       */
+      (intent, ramp) => fireAndForget(
+        this.runIntent(intent, this.targetIds, { modeAlreadySet: ramp.ticks > 1 }),
+        this.deps.log, 'A ramp tick',
+      ),
       (controlId, reason) => this.deps.log(`Ramp on ${controlId} stopped: ${reason}`),
     );
 
@@ -576,8 +583,30 @@ export class ControllerRuntime {
   }
 
   /** Shared by live events and the Test control, which needs no flow. */
-  async runIntent(intent: LightIntent, targetIds: string[] = this.targetIds): Promise<{ writes: number; skipped: number }> {
+  async runIntent(
+    intent: LightIntent,
+    targetIds: string[] = this.targetIds,
+    options: { modeAlreadySet?: boolean } = {},
+  ): Promise<{ writes: number; skipped: number }> {
     const plan = planIntent(intent, targetIds, this.cache, this.profile.behavior);
+
+    /**
+     * Drop the `light_mode` write when the caller has already established the
+     * mode on these lamps moments ago. Only a ramp passes this, and only after
+     * its first tick.
+     *
+     * It is deliberately NOT a memory of each lamp's mode. The app subscribes
+     * to `light_mode` nowhere, and platform §6 measured that a lamp may accept
+     * `'temperature'` and go on reporting `'color'` — so a remembered mode
+     * cannot be checked, and a person switching a lamp to colour in the vendor
+     * app would be invisible to it. Every later temperature would then be
+     * silently discarded on a lamp that gates, which is the bug §6 exists to
+     * record. Scoped to one hold it cannot mask that: the mode was acked 100 ms
+     * earlier by this same runtime, and the next hold sends it again.
+     */
+    const writes = options.modeAlreadySet
+      ? plan.writes.filter(write => write.capability !== 'light_mode')
+      : plan.writes;
 
     // `this.scheduler?.submit()` used to swallow this case entirely: the intent
     // was recorded as N writes while nothing was ever queued, which looked
@@ -591,14 +620,18 @@ export class ControllerRuntime {
       return { writes: 0, skipped: plan.skipped.length };
     }
 
-    this.scheduler.submit(plan.writes);
-    this.lastIntent = { intent, at: Date.now(), writes: plan.writes.length, skipped: plan.skipped.length };
-    return { writes: plan.writes.length, skipped: plan.skipped.length };
+    this.scheduler.submit(writes);
+    this.lastIntent = { intent, at: Date.now(), writes: writes.length, skipped: plan.skipped.length };
+    return { writes: writes.length, skipped: plan.skipped.length };
   }
 
   /** Test controls execute immediately — waiting on a burst window would feel broken. */
-  async runIntentNow(intent: LightIntent, targetIds: string[] = this.targetIds): Promise<{ writes: number; skipped: number }> {
-    const result = await this.runIntent(intent, targetIds);
+  async runIntentNow(
+    intent: LightIntent,
+    targetIds: string[] = this.targetIds,
+    options: { modeAlreadySet?: boolean } = {},
+  ): Promise<{ writes: number; skipped: number }> {
+    const result = await this.runIntent(intent, targetIds, options);
     await this.scheduler?.drain();
     return result;
   }

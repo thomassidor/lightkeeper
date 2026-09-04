@@ -921,9 +921,16 @@ export class CircadianRuntime {
          * value, `Math.abs('temperature' - previous)` is `NaN`, and `NaN >= step`
          * is false — so the mode write was dropped whenever a warmth had ever
          * been written to that lamp. The temperature then went to a lamp still
-         * in colour mode, which platform §6 measured is refused outright: a
-         * Curve light with one coloured point and one temperature point came
-         * back round to white and stayed the colour it was.
+         * in colour mode, which platform §6 measured is refused on a lamp that
+         * gates: a Curve light with one coloured point and one temperature point
+         * came back round to white and stayed the colour it was.
+         *
+         * Gating lamps are RARE — one in roughly thirty-six across three probe
+         * runs on one integration — which is the argument for this filter
+         * rather than against it. The mode write costs one ack on the other
+         * thirty-five and is the difference between working and silently doing
+         * nothing on the one, and §6 measured that the mode cannot be read back
+         * to find out which kind a lamp is.
          *
          * Nor can the mode write simply be exempted from the filter: it would
          * then go out on every tick for the whole life of a flat segment.
@@ -1266,9 +1273,11 @@ export class CircadianRuntime {
        * `light_mode` first, unlike every production pre-stage write, which goes
        * through `planIntent`. Platform §6 measured that a lamp sitting in colour
        * mode refuses a temperature "from anything — this app or a direct API
-       * write", so on such a lamp the probe changed nothing, the lamp stayed
-       * off, and it reported `stayedOff: true` — a FALSE PASS on the exact
-       * question it exists to answer.
+       * write". On such a lamp the probe changed nothing, the lamp stayed off,
+       * and it reported `stayedOff: true` — a FALSE PASS on the exact question
+       * it exists to answer. That it takes a gating lamp to expose (one in
+       * roughly thirty-six, §6) is what made it a false pass rather than a
+       * failing test: it passes on nearly every lamp there is.
        *
        * The planner also picks the right axis: a colour-capable lamp under a
        * coloured point is written the point's colour, which is what pre-staging

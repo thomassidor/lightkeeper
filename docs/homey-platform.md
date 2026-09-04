@@ -8,11 +8,15 @@ This is how Homey actually behaves, as opposed to how it appears to, and it is d
 else. Every section was established against real hardware: Homey Pro 2023, firmware 13.4.0-13.4.1,
 homey-api 3.19.2.
 
-**The reference Homey has since moved to firmware 13.5.0-rc.4** (observed 2 September 2026). Only §9
-has been re-checked against it — one row of its card table had gone stale, and the card this app
-depends on had not. Everything else here still rests on 13.4.x, so a surprise on a newer firmware is
-a reason to re-derive the section rather than to disbelieve it. Prefer updating a section over stripping it — each one is a decision reasoned
-through once, or a platform fact that cost real hardware to establish.
+**The reference Homey has since moved to firmware 13.5.0-rc.4** (observed 2 September 2026). Two
+sections have been re-checked against it. §9: one row of its card table had gone stale, and the card
+this app depends on had not. §6: re-measured across 37 lamps by `scripts/probe-lights.mjs` on 3-4
+September 2026, which walked back the mode gate, settled the clamp and put counts on the rest — that
+section now carries dates and sample sizes on each claim, and is the model for what re-deriving one
+looks like. Everything else here still rests on 13.4.x, so a surprise on a newer firmware is a
+reason to re-derive the section rather than to disbelieve it. Prefer updating a section over
+stripping it — each one is a decision reasoned through once, or a platform fact that cost real
+hardware to establish.
 
 Who this is for: anyone changing this code, human or agent. [`../CLAUDE.md`](../CLAUDE.md) has the
 repo's own conventions and working practices and links back here;
@@ -220,8 +224,24 @@ bridge, both behaviours.
 
 **Widened again on 4 September 2026, and the gate is rarer than that.** The same step ran across
 another fourteen lamps and **not one of them gated**: every temperature written in colour mode with
-no mode write landed, and the lamp reported itself in temperature mode afterwards. So across the two
-runs the count is one gating lamp in roughly twenty-four, on one integration.
+no mode write landed. A second run the same afternoon added twelve more, also none gating. So across
+the three runs the count is one gating lamp in roughly thirty-six, on one integration.
+
+**But a lamp does not always report the mode it just accepted.** The morning run had every lamp
+reporting itself in temperature mode afterwards, and that sentence stood here until the afternoon
+one recorded `MODE_NOT_REPORTED` on **two of twelve**: written `light_mode: 'temperature'`, acked
+`ok: true`, and still reporting `'color'`. The mode therefore cannot be read back to discover what a
+lamp did with it — which is the independent reason a probe-and-remember cannot work (below), and why
+`verify-hardware.mjs` keeps `light_mode` in `ENABLER_CAPABILITIES` rather than asserting on its
+round trip.
+
+The mode write is also the cheapest and the least informative write this app makes. Across sixteen
+lamps and 252 writes its ack sat at a median of **212 ms, range 210-220 ms** — tighter than any
+value write on the same lamps (`light_temperature` 278 ms, spread to 492 ms) and unmoved by whether
+the bulb could be reached at all: on a lamp where every value write failed, `light_mode` went on
+acking in 210 ms. That is the Hue app satisfying it locally without going to the bulb, which is
+exactly what `light-target-adapter.ts` depends on when it refuses to let a `light_mode` success
+clear a failure streak.
 
 That does not weaken the fix; it is the argument FOR the fix as written. `planColor()` and
 `planTemperature()` emit `light_mode` unconditionally, so on a gating lamp it is the difference
@@ -247,29 +267,42 @@ on the same pass: 0.930 written and 0.850 held on a bulb at its warm ceiling; 0.
 0.840 held. So a check that a write "took" has to allow roughly 0.1 — loose enough for quantisation,
 far tighter than the 0.44 gap a discarded write leaves.
 
-**That was not reproduced, and the numbers have the shape of the mode gate.** Seven-rung ladders on
-`dim` and `light_temperature` across ten Hue bulbs, 3 September 2026: `maxDelta: 0` on **every** axis
-— `dim`, `light_temperature`, `light_hue` and `light_saturation` — with all seven rungs distinct and
-monotone, and `light_temperature` reaching both `0` and `1` with no warm-ceiling clamp anywhere.
-These lamps report back exactly what they were written.
+**Doubted on 3 September, settled on 4 September: the clamp is real, and it is at the ENDS only.**
+The 3 September ladders reported `maxDelta: 0` on every axis — `dim`, `light_temperature`,
+`light_hue` and `light_saturation` — with all seven rungs distinct and monotone and
+`light_temperature` reaching both `0` and `1`, which read as "these lamps report back exactly what
+they were written". That conclusion was drawn from the wrong echo. A Hue write produces two (see
+below) and the FIRST carries the value that was **requested**. The raw traces of the second
+4 September run show `light_temperature` written `0` echoing `0` and then **`0.28`**, and written
+`1` echoing `1` and then **`0.87`** — on seven devices, six Philips Hue bulbs and one virtual light
+group, both ends on six of them. The correction arrives **332-1391 ms** after the write.
 
-The awkward part is that "0.930 written, 0.850 held on a bulb at its warm ceiling" is the same
-picture as this section's own gate example, "written 0.430, held 0.870" — a lamp reporting the value
-it was already holding. A clamp and a discard are indistinguishable from a single write, and the two
-measurements were taken on the same pass, before the gate was understood. So at least part of the
-0.1 figure may have been the mode gate read as quantisation.
+The middle of the axis is exact. 124 intermediate rungs echoed the written value back to the digit;
+the four that did not were all on the three Studio devices that the run listed in
+`conflicts.overlapping`, which is interference rather than the lamp. So this is endpoint clamping —
+a bulb's own mired limits mapped onto Homey's 0-1 — and not quantisation.
 
-Not resolved here, and deliberately nothing is changed on the strength of one run against one
-integration. What it means for the two numbers that were calibrated against it:
+**Which makes a clamp separable from a discard after all, from the API alone.** The paragraph above
+says the two are indistinguishable, and from a single write they are: "0.930 written, 0.850 held" is
+the same picture as this section's own gate example, "written 0.430, held 0.870". They are
+distinguishable from a write plus its SETTLED echo. A clamp lands on the lamp's own ceiling and
+reports it every time, for any value past it. A discard leaves whatever the lamp was already
+holding — which is what the 3 September gate finding actually saw: it read 0.870 for a written
+0.500, and 0.870 is the ceiling its own ladder had written a moment earlier, not a clamp of 0.500.
 
-- `OVERRIDE_TOLERANCE` (0.03, the circadian override band) has more headroom than was believed. A
-  lamp reporting our own write back exactly cannot trip it at all.
+What it means for the two numbers that were calibrated against it:
+
+- `OVERRIDE_TOLERANCE` (0.03, the circadian override band) is safe, but not for the reason
+  previously given here. At an endpoint a lamp does NOT report our write back exactly: asking for 1
+  and being told 0.87 is a 0.13 discrepancy, four times the band. What keeps that from reading as a
+  human reaching for the vendor app is `OVERRIDE_SETTLE_MS` (3000 ms), which discounts any report
+  arriving within three seconds of our own write — against a measured worst case of 1391 ms. The
+  settle window is load-bearing on every colour-capable Hue lamp in the house, not just on a bridge
+  that reports mid-transition.
 - `LAMP_TOLERANCE` (0.1 in `scripts/verify-hardware.mjs`, chosen "well above observed quantisation")
-  is looser than the current evidence supports, so the hardware pass would not notice a discarded
-  write of small magnitude.
-
-Settling it needs the ladder run again with the mode written first on a lamp known to gate, which is
-`probe-lights.mjs axes modes` on one lamp.
+  is about right at the ends, where 0.13 is the real gap, and too loose everywhere else, where the
+  evidence is now 124 exact echoes. A discarded write of small magnitude in the middle of the axis
+  would still pass the hardware pass unnoticed.
 
 **Writing to an "off" lamp has THREE outcomes, not two.** Pre-staging asks whether a lamp can be
 given a colour while off, and the answers are: it stays off (pre-staging works); it comes on (it does
@@ -282,7 +315,10 @@ pairing screen as that raw sentence under a button labelled "Test it".
 
 **Per-lamp is now a count rather than an inference.** 4 September 2026, thirteen colour-capable Hue
 bulbs behind one bridge with clean evidence: **four declined and nine staged**, and the split holds
-per lamp across both colour axes — a bulb that refuses a temperature refuses a hue. Every declining
+per lamp across both colour axes — a bulb that refuses a temperature refuses a hue. A wider run that
+afternoon reached sixteen of them and found **seven declining and nine staging**, so the proportion
+is stable and the refusal is common rather than exceptional: expect roughly half a household's Hue
+bulbs to decline a colour while off. Every declining
 bulb still took the `dim` write in the same step and came on, which is the only thing that separates
 "refuses colour while off" from "dead": the two genuinely dead bulbs in that run rejected every axis,
 `dim` included. Pre-staging never sends a `dim` to an off lamp, so from inside the app the refusal
@@ -333,6 +369,14 @@ second echo arriving.
 Twenty-seven lamps on 4 September 2026 say the same thing with the proportions filled in: **two
 echoes on twenty-two of them and one on five**, first echo 99-444 ms. Duplication is the norm and
 not the rule.
+
+**A second run that afternoon says which is which: it is a property of the INTEGRATION, not of the
+lamp.** Split by owner, the thirty-one measurements are unanimous within each one — Philips Hue
+**two echoes on twenty-four of twenty-four**, first echo 257-271 ms; virtual light groups **one echo
+on four of four**, 361-542 ms; IKEA one or two, 63-111 ms. The five singles in the paragraph above
+were a mixed bag being averaged. So "one or two" remains the only safe assumption for an integration
+nobody here has seen, and the 1500 ms dedupe window is nowhere near the 70 ms that separates a Hue
+pair.
 
 **Capability options are not uniform — read them, never assume:**
 

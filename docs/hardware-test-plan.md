@@ -84,7 +84,7 @@ validators have their own. What no test can settle is the lines below, and the r
 always the same — they depend on a real permission, a real sensor, ten minutes of a real room, or a
 pair session, which is a live Web API surface rather than something a suite can call (platform §14).
 
-`node scripts/verify-hardware.mjs full --yes` answers **T77-T80** on its own. **T81-T89 need you.**
+`node scripts/verify-hardware.mjs full --yes` answers **T77-T80** on its own. **T81-T90 need you.**
 
 - [ ] **T81** *The permission, and it is the first thing to check.* Homey settings → Lightkeeper.
       The **Daylight lights** section now leads with a sky readout. Confirm it names a **plausible
@@ -185,6 +185,18 @@ of an app restart.
       live device's subscription with it. Get this wrong and an abandoned pairing leaves a
       subscription on somebody's battery-powered motion sensor for as long as the app runs, which is
       invisible from every screen except that list.
+- [ ] **T90** *A warmer/colder HOLD, on a colour-capable lamp, and the one thing to look at is the
+      write log.* The controller now sends `light_mode` once per hold rather than once per flush,
+      because a mode ack costs 212 ms in front of every value write and the app applies no deadband
+      on this path (platform §6). Map a rampable control to **warmer** or **colder**, aim it at a Hue
+      bulb, and hold it for a few seconds. Then read the device's recent writes in **Homey settings →
+      Lightkeeper**: expect **one `light_mode` at the start of the hold and `light_temperature`
+      thereafter**, and confirm the lamp's colour still visibly travels — a hold that stopped working
+      altogether is what a mode write dropped too eagerly looks like. Release, hold again, and
+      confirm a **second** `light_mode` appears: each hold re-establishes the mode, which is what
+      protects a lamp somebody switched to colour in the vendor app in between.
+      No script covers this — `verify-hardware.mjs` has no ramp line, and a ramp needs a physical
+      control held by a hand.
 
 ### Last run — 4 September 2026, Homey Pro 2023, firmware 13.5.0-rc.4, app 0.6.0 + the simplification pass
 
