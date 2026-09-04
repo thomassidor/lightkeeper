@@ -4,7 +4,10 @@ import assert from 'node:assert/strict';
 import {
   handlerRegistrar,
   newSessionOwner,
+  registerCredentialHandlers,
+  registerCurvePreviewHandlers,
   registerDaylightCardHandlers,
+  registerSaveHandler,
   registerTargetHandlers,
   releaseOnDisconnect,
   timezoneOf,
@@ -40,6 +43,12 @@ interface Recorded {
   errors: string[];
   retained: Array<{ sensors: string[]; owner: string }>;
   released: string[];
+  credentials: string[];
+  probed: string[];
+  ephemeral: unknown[];
+  applied: Array<{ reason: string; force: boolean }>;
+  drained: number;
+  stopped: number;
 }
 
 interface RigOptions {
@@ -90,7 +99,10 @@ function lamp(id: string, name: string): FakeDevice {
  * here names `Homey.Driver`, so this file loads.
  */
 function rig(options: RigOptions = {}) {
-  const recorded: Recorded = { logs: [], errors: [], retained: [], released: [] };
+  const recorded: Recorded = {
+    logs: [], errors: [], retained: [], released: [],
+    credentials: [], probed: [], ephemeral: [], applied: [], drained: 0, stopped: 0,
+  };
   const devices = options.devices
     ?? [lux('lux-1', 'Hall sensor', 120), lamp('lamp-1', 'Hall lamp')];
 
@@ -124,6 +136,39 @@ function rig(options: RigOptions = {}) {
         release: options.release ?? (async (owner: string) => {
           recorded.released.push(owner);
         }),
+      },
+      credentials: {
+        getStatus: () => ({ present: true, valid: true, lastCheckedAt: 1 }),
+        setCredential: async (token: string, validate: (client: unknown) => Promise<void>) => {
+          // Driven with a client the REAL `flowWriteProbe` can use, so the test
+          // proves the probe runs rather than that a function was passed.
+          await validate({
+            flow: {
+              getFlowFolders: async () => ({}),
+              createFlowFolder: async () => {
+                recorded.probed.push('createFlowFolder');
+                return { id: 'probe-folder' };
+              },
+              deleteFlowFolder: async () => { recorded.probed.push('deleteFlowFolder'); },
+            },
+          });
+          recorded.credentials.push(token);
+          return { present: true, valid: true, lastCheckedAt: 2 };
+        },
+      },
+      curves: {
+        ephemeral: async (plan: unknown) => {
+          recorded.ephemeral.push(plan);
+          return {
+            applyNow: async (reason: string, opts: { force?: boolean }) => {
+              recorded.applied.push({ reason, force: opts.force === true });
+              return { writes: 3 };
+            },
+            drain: async () => { recorded.drained += 1; },
+            probePreStage: async () => ({ preStageSafe: true }),
+            stop: async () => { recorded.stopped += 1; },
+          };
+        },
       },
     },
   } as unknown as PairSessionHost;
@@ -314,5 +359,153 @@ describe('the shared daylight card handlers', () => {
 
     assert.match(payload, /lux-1/);
     assert.doesNotMatch(payload, /lamp-1/);
+  });
+});
+
+describe('the credential handlers', () => {
+  test('nextView is the driver\'s, because the view cannot know', async () => {
+    // The credential VIEW is a byte-for-byte copy shared between the controller
+    // and the schedule (platform §8), so what follows it is the driver's answer:
+    // a controller goes on to pick a remote, a schedule straight to its lights.
+    const { host, handler, call } = rig();
+
+    registerCredentialHandlers(host, handler, 'source');
+    const status = await call('getCredentialStatus') as { nextView: string; valid: boolean };
+
+    assert.equal(status.nextView, 'source');
+    assert.equal(status.valid, true);
+  });
+
+  test('setCredential proves a WRITE, not just a read', async () => {
+    // Reads succeed on credentials that cannot write (platform §1), so the
+    // probe is the whole point of this handler. If it were not called, an
+    // unusable key would be accepted and every generated Flow would fail later.
+    const { host, recorded, handler, call } = rig();
+
+    registerCredentialHandlers(host, handler, 'targets');
+    await call('setCredential', 'user:session:secret');
+
+    assert.deepEqual(recorded.credentials, ['user:session:secret']);
+    // It created a folder and deleted it again: the delete is in a `finally`,
+    // so a probe that proved the write never leaves one behind.
+    assert.deepEqual(recorded.probed, ['createFlowFolder', 'deleteFlowFolder']);
+  });
+});
+
+describe('the save handler', () => {
+  test('pairing returns a device for Homey to create', async () => {
+    const { host, handler, call } = rig();
+    const state: SharedSessionState = {};
+
+    registerSaveHandler(host, handler, state, {
+      idPrefix: 'dayl',
+      storeKey: 'daylight',
+      naming: { fallback: 'Daylight light', suffix: 'daylight' },
+      buildPlan: () => ({ schemaVersion: 1 }),
+    });
+    const result = await call('save', '') as {
+      created: boolean;
+      device: { name: string; data: { id: string }; store: Record<string, unknown> };
+    };
+
+    assert.equal(result.created, true);
+    // The plan lands under the driver's OWN store key — that key is also what
+    // its migration chain reads, so a wrong one is an unreadable device.
+    assert.deepEqual(result.device.store, { daylight: { schemaVersion: 1 } });
+    // `mintDeviceId` prefixes `lk-` so a human reading a Flow's arguments can
+    // see whose device it is; the kind follows.
+    assert.match(result.device.data.id, /^lk-dayl-/);
+  });
+
+  test('with no target chosen the name falls back, and does not throw', async () => {
+    // `buildPlan` is what refuses an empty target; naming must not race it to
+    // an exception, or the failure the user sees names the wrong thing.
+    const { host, handler, call } = rig();
+
+    registerSaveHandler(host, handler, {}, {
+      idPrefix: 'circ',
+      storeKey: 'circadian',
+      naming: { fallback: 'Circadian light', suffix: 'circadian' },
+      buildPlan: () => ({}),
+    });
+    const result = await call('save', '') as { device: { name: string } };
+
+    assert.equal(result.device.name, 'Circadian light');
+  });
+
+  test('a name typed by the user wins over the derived one', async () => {
+    const { host, handler, call } = rig();
+
+    registerSaveHandler(host, handler, {}, {
+      idPrefix: 'curv',
+      storeKey: 'curve',
+      naming: { fallback: 'Curve light', suffix: 'curve' },
+      buildPlan: () => ({}),
+    });
+    const result = await call('save', 'Kitchen curve') as { device: { name: string } };
+
+    assert.equal(result.device.name, 'Kitchen curve');
+  });
+
+  test('REPAIR applies to the device already there and creates nothing', async () => {
+    // Returning a device here would leave the household with two.
+    const { host, handler, call } = rig();
+    const applied: unknown[] = [];
+
+    registerSaveHandler(host, handler, {}, {
+      device: { applyPlan: async (plan: unknown) => { applied.push(plan); } },
+      idPrefix: 'sched',
+      storeKey: 'schedule',
+      naming: { fallback: 'Light schedule', suffix: 'schedule' },
+      buildPlan: () => ({ entries: [] }),
+    });
+    const result = await call('save', '') as { updated: boolean; created?: boolean };
+
+    assert.equal(result.updated, true);
+    assert.equal(result.created, undefined);
+    assert.deepEqual(applied, [{ entries: [] }]);
+  });
+});
+
+describe('the curve preview handlers', () => {
+  test('previewNow FORCES the write and drains before reporting', async () => {
+    // Forced because the user pressed a button and is owed a visible change even
+    // where the lights already match the curve; drained so the count reported is
+    // writes attempted rather than writes still queued behind the burst limit.
+    const { host, recorded, handler, call } = rig();
+
+    registerCurvePreviewHandlers(host, handler, () => ({ points: [] }) as never);
+    const outcome = await call('previewNow');
+
+    assert.deepEqual(outcome, { writes: 3 });
+    assert.deepEqual(recorded.applied, [{ reason: 'preview', force: true }]);
+    assert.equal(recorded.drained, 1);
+    assert.equal(recorded.stopped, 1);
+  });
+
+  test('the ephemeral runtime is stopped even when the preview throws', async () => {
+    // Leaking it would leave subscriptions on the household's lamps with nothing
+    // holding a handle to tear them down.
+    const { host, recorded, handler, call } = rig();
+
+    registerCurvePreviewHandlers(host, handler, () => {
+      throw new Error('a curve needs at least 2 points');
+    });
+
+    await assert.rejects(() => call('previewNow'), /at least 2 points/);
+    // Nothing was built, so nothing to stop — the guard is that buildPlan runs
+    // BEFORE the runtime exists.
+    assert.equal(recorded.ephemeral.length, 0);
+    assert.equal(recorded.stopped, 0);
+  });
+
+  test('testPreStage asks the runtime and stops it', async () => {
+    const { host, recorded, handler, call } = rig();
+
+    registerCurvePreviewHandlers(host, handler, () => ({ points: [] }) as never);
+    const result = await call('testPreStage');
+
+    assert.deepEqual(result, { preStageSafe: true });
+    assert.equal(recorded.stopped, 1);
   });
 });

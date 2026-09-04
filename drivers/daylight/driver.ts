@@ -1,11 +1,9 @@
 import Homey from 'homey';
 
-import { mintDeviceId } from '../../lib/bridge/flow-bridge-manager';
 import {
   resolveSummary, targetLights,
 } from '../../lib/pairing/target-picker';
 import { listSensorsPayload } from '../../lib/pairing/sensor-picker';
-import { deriveSuffixedName } from '../../lib/pairing/derive-name';
 import { CURRENT_DAYLIGHT_SCHEMA_VERSION } from '../../lib/daylight/daylight-migrations';
 import {
   DEFAULT_RESPONSE, MAX_LUX, MIN_LUX, sanitiseResponse,
@@ -15,6 +13,7 @@ import type { TargetSpec } from '../../lib/outputs/light-intent';
 import {
   handlerRegistrar,
   newSessionOwner,
+  registerSaveHandler,
   registerTargetHandlers,
   releaseOnDisconnect,
   type PairSessionHost,
@@ -216,35 +215,15 @@ module.exports = class DaylightDriver extends Homey.Driver {
 
     // ----------------------------------------------------------------- save
 
-    handler('save', async (name: string) => {
-      const plan = this.buildPlan(state);
-
-      if (device) {
-        await device.applyPlan(plan);
-        return { updated: true };
-      }
-
-      return {
-        created: true,
-        device: {
-          name: name || await this.deriveName(state),
-          data: { id: mintDeviceId('dayl') },
-          store: { daylight: plan },
-        },
-      };
+    registerSaveHandler(host, handler, state, {
+      device,
+      idPrefix: 'dayl',
+      storeKey: 'daylight',
+      naming: { fallback: 'Daylight light', suffix: 'daylight' },
+      buildPlan: () => this.buildPlan(state),
     });
 
     releaseOnDisconnect(host, session, sessionOwner);
-  }
-
-  /**
-   * A readable default name, so the last screen needs no text field — Homey lets
-   * the user rename a device afterwards, which is the natural place for it.
-   */
-  private async deriveName(state: SessionState): Promise<string> {
-    return deriveSuffixedName(this.app.catalog, state.target, {
-      fallback: 'Daylight light', suffix: 'daylight', zoneFallback: 'Zone',
-    });
   }
 
   private buildPlan(state: SessionState): DaylightPlan {

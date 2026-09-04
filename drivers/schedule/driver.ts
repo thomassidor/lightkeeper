@@ -1,10 +1,8 @@
-import { mintDeviceId } from '../../lib/bridge/flow-bridge-manager';
 import Homey from 'homey';
 
 import {
   resolveSummary, targetLights,
 } from '../../lib/pairing/target-picker';
-import { deriveSuffixedName } from '../../lib/pairing/derive-name';
 import {
   sanitiseResponse, type DaylightResponse,
 } from '../../lib/daylight/daylight-types';
@@ -14,11 +12,12 @@ import {
   type ScheduleBoundary, type ScheduleEntry, type SchedulePlan,
 } from '../../lib/schedules/schedule-types';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
-import { flowWriteProbe } from '../../lib/credential-service';
 import {
   handlerRegistrar,
   newSessionOwner,
+  registerCredentialHandlers,
   registerDaylightCardHandlers,
+  registerSaveHandler,
   registerTargetHandlers,
   releaseOnDisconnect,
   timezoneOf,
@@ -93,21 +92,7 @@ module.exports = class ScheduleDriver extends Homey.Driver {
 
     // ---------------------------------------------------------- credentials
 
-    handler('getCredentialStatus', async () => ({
-      ...this.app.credentials.getStatus(),
-      // The credential view is shared byte-for-byte between drivers, so it
-      // cannot know what follows it. The driver does.
-      nextView: 'targets',
-    }));
-
-    handler('setCredential', async (token: string) => {
-      // Validating with a READ is not enough: reads succeed on credentials that
-      // cannot write. Prove a write, then immediately clean it up.
-      return this.app.credentials.setCredential(
-        token,
-        (client: any) => flowWriteProbe(client, (...args: unknown[]) => this.log(...args)),
-      );
-    });
+    registerCredentialHandlers(host, handler, 'targets');
 
     handler('add_device', async () => true);
 
@@ -195,22 +180,12 @@ module.exports = class ScheduleDriver extends Homey.Driver {
 
     // ----------------------------------------------------------------- save
 
-    handler('save', async (name: string) => {
-      const plan = this.buildPlan(state);
-
-      if (device) {
-        await device.applyPlan(plan);
-        return { updated: true };
-      }
-
-      return {
-        created: true,
-        device: {
-          name: name || await this.deriveName(state),
-          data: { id: mintDeviceId('sched') },
-          store: { schedule: plan },
-        },
-      };
+    registerSaveHandler(host, handler, state, {
+      device,
+      idPrefix: 'sched',
+      storeKey: 'schedule',
+      naming: { fallback: 'Light schedule', suffix: 'schedule' },
+      buildPlan: () => this.buildPlan(state),
     });
 
     releaseOnDisconnect(host, session, sessionOwner);
@@ -218,16 +193,6 @@ module.exports = class ScheduleDriver extends Homey.Driver {
 
   private timezone(): string | null {
     return timezoneOf(this.pairHost());
-  }
-
-  /**
-   * A readable default name, so the last screen needs no text field — Homey lets
-   * the user rename a device afterwards, which is the natural place for it.
-   */
-  private async deriveName(state: SessionState): Promise<string> {
-    return deriveSuffixedName(this.app.catalog, state.target, {
-      fallback: 'Light schedule', suffix: 'schedule', zoneFallback: 'Zone',
-    });
   }
 
   private buildPlan(state: SessionState): SchedulePlan {

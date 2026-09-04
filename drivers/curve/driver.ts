@@ -1,10 +1,8 @@
-import { mintDeviceId } from '../../lib/bridge/flow-bridge-manager';
 import Homey from 'homey';
 
 import {
   resolveSummary, targetLights,
 } from '../../lib/pairing/target-picker';
-import { deriveSuffixedName } from '../../lib/pairing/derive-name';
 import {
   sanitiseResponse, type DaylightResponse,
 } from '../../lib/daylight/daylight-types';
@@ -18,7 +16,9 @@ import type { TargetSpec } from '../../lib/outputs/light-intent';
 import {
   handlerRegistrar,
   newSessionOwner,
+  registerCurvePreviewHandlers,
   registerDaylightCardHandlers,
+  registerSaveHandler,
   registerTargetHandlers,
   releaseOnDisconnect,
   timezoneOf,
@@ -176,39 +176,7 @@ module.exports = class CurveDriver extends Homey.Driver {
       };
     });
 
-    /**
-     * Apply the curve to the real lights, now, before anything is saved and
-     * before a device exists. The primary defence against a device that looks
-     * configured and does nothing.
-     */
-    handler('previewNow', async () => {
-      const runtime = await this.app.curves.ephemeral(this.buildPlan(state));
-      try {
-        // Forced: the user pressed a button and is owed a visible change, even
-        // where the lights happen to be close to the curve already.
-        const outcome = await runtime.applyNow('preview', { force: true });
-        // Drained, so the count reported is writes attempted rather than writes
-        // queued behind the burst limit.
-        await runtime.drain();
-        return outcome;
-      } finally {
-        await runtime.stop();
-      }
-    });
-
-    /**
-     * Prove pre-staging on this household's own lights rather than assuming it.
-     * A colour write to an off lamp turns it on through some integrations
-     * (platform §6), and this is the only way to find out which.
-     */
-    handler('testPreStage', async () => {
-      const runtime = await this.app.curves.ephemeral(this.buildPlan(state));
-      try {
-        return await runtime.probePreStage();
-      } finally {
-        await runtime.stop();
-      }
-    });
+    registerCurvePreviewHandlers(host, handler, () => this.buildPlan(state));
 
     // ------------------------------------------------------------- daylight
 
@@ -236,22 +204,12 @@ module.exports = class CurveDriver extends Homey.Driver {
 
     // ----------------------------------------------------------------- save
 
-    handler('save', async (name: string) => {
-      const plan = this.buildPlan(state);
-
-      if (device) {
-        await device.applyPlan(plan);
-        return { updated: true };
-      }
-
-      return {
-        created: true,
-        device: {
-          name: name || await this.deriveName(state),
-          data: { id: mintDeviceId('curv') },
-          store: { curve: plan },
-        },
-      };
+    registerSaveHandler(host, handler, state, {
+      device,
+      idPrefix: 'curv',
+      storeKey: 'curve',
+      naming: { fallback: 'Curve light', suffix: 'curve' },
+      buildPlan: () => this.buildPlan(state),
     });
 
     releaseOnDisconnect(host, session, sessionOwner);
@@ -259,16 +217,6 @@ module.exports = class CurveDriver extends Homey.Driver {
 
   private timezone(): string | null {
     return timezoneOf(this.pairHost());
-  }
-
-  /**
-   * A readable default name, so the last screen needs no text field — Homey lets
-   * the user rename a device afterwards, which is the natural place for it.
-   */
-  private async deriveName(state: SessionState): Promise<string> {
-    return deriveSuffixedName(this.app.catalog, state.target, {
-      fallback: 'Curve light', suffix: 'curve', zoneFallback: 'Zone',
-    });
   }
 
   private buildPlan(state: SessionState): CircadianPlan {

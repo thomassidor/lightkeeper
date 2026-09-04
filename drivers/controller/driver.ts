@@ -10,7 +10,6 @@ import { availableFunctions } from '../../lib/mapping/mapping-engine';
 import { groupByControl, type SelectableInput } from '../../lib/inputs/selectable-input';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
 import { HealthMonitor } from '../../lib/runtime/health-monitor';
-import { flowWriteProbe } from '../../lib/credential-service';
 import { findUncompilableBindings } from '../../lib/bridge/flow-binding-compiler';
 import {
   resolveSummary, targetDeviceIds, targetLights,
@@ -20,6 +19,7 @@ import { mappingGroups, mappingRuleRows, ruleTargetFor } from '../../lib/pairing
 import { deriveControllerName } from '../../lib/pairing/derive-name';
 import {
   handlerRegistrar,
+  registerCredentialHandlers,
   registerTargetHandlers,
   type PairSessionHost,
 } from '../../lib/pairing/pair-session';
@@ -106,21 +106,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
     // ---------------------------------------------------------- credentials
 
-    handler('getCredentialStatus', async () => ({
-      ...this.app.credentials.getStatus(),
-      // The credential view is shared byte-for-byte between drivers, so it
-      // cannot know what follows it. The driver does.
-      nextView: 'source',
-    }));
-
-    handler('setCredential', async (token: string) => {
-      // Validating with a READ is not enough: reads succeed on credentials that
-      // cannot write. Prove a write, then immediately clean it up.
-      return this.app.credentials.setCredential(
-        token,
-        (client: any) => flowWriteProbe(client, (...args: unknown[]) => this.log(...args)),
-      );
-    });
+    registerCredentialHandlers(host, handler, 'source');
 
     // The pairing view must emit 'add_device' after createDevice for the
     // device to actually be created — createDevice alone only stages it.
