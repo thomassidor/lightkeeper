@@ -145,6 +145,20 @@ The plan used to number every line `section.line` — 7.4 was the fourth line of
 
 Every other old number — 1.2, 2.1, 2.2, 2.3, 2.6, 2.8, 3.8, 4.3, 5.2, 5.3, 5.5, 5.6, 8.1, 9.2–9.4 — was already gone before the renumber and never got a `T`. Most were taken over by the suite, in the table above; the rest are below.
 
+## A green pass is only as honest as the list its check looks in
+
+On 4 September 2026 T77 failed with "the app never registered a runtime for it — it did not
+initialise" for a Daylight light that had initialised perfectly. The check polled the app's own
+status response and searched `controllers`, `schedules` and `circadian` — omitting `daylight`,
+which is its own key because a Daylight light is not folded in with the curve-driven types the way
+a Curve light is. The line could only ever fail.
+
+It is recorded here rather than only in the fix because the failure mode is general and this pass
+has fifteen-odd checks shaped the same way: a check that enumerates a union will go on passing when
+something is added to the union and not to the check — and, as here, will report the app broken when
+the app is fine. The honest signal the comment above `waitFor` describes (wait for the app's OWN
+registry, not for `available`) was right; the list under it was incomplete.
+
 ## What the script still cannot answer
 
 **The daylight feature's three genuine gaps, and each is a different KIND of gap.**

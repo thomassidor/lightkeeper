@@ -143,6 +143,11 @@ test. What those tests cannot reach is the SDK on the other side of the seam: wh
 routes each handler, whether `createDevice` still accepts the shape, and whether a repair still
 finds its device. Three lines, and they are cheap — pair and repair each device type once.
 
+**T87 and T88 are now mostly answered by `pair` and `repair`**, which build one of each of the
+five device types and open a repair session on each. Run 4 September 2026 (see the log below): both
+came back clean. What the script does NOT cover is marked below — a repair that SAVES, and survival
+of an app restart.
+
 - [ ] **T87** *Pair all five, once each.* A controller, a schedule, a circadian light, a Curve light
       and a Daylight light. For each, confirm three things that now come from ONE place and would all
       be wrong together if a parameter were: the **default name** offered on the last screen reads
@@ -154,10 +159,14 @@ finds its device. Three lines, and they are cheap — pair and repair each devic
       Also confirm the credential screen still goes to **the remote picker for a controller** and
       **straight to the lights for a schedule**: the view is a byte-for-byte copy shared between the
       two (platform §8), so `nextView` is the driver's answer and the two are now one line apart.
-- [ ] **T88** *Repair all five, once each.* Device → Maintenance → Repair, change something small,
-      save. Confirm it reports success and that **no second device appears** — the repair path is one
-      `if (device)` inside the shared save handler, and getting it wrong leaves the household with
-      two devices doing the same job. Then confirm the change actually took, on the settings page.
+- [ ] **T88** *Repair all five, once each — and SAVE.* Device → Maintenance → Repair, change
+      something small, save. Confirm it reports success and that **no second device appears** — the
+      repair path is one `if (device)` inside the shared save handler, and getting it wrong leaves
+      the household with two devices doing the same job. Then confirm the change actually took, on
+      the settings page.
+      The script's `repair` command reads every repair screen and **saves nothing**, so it proves
+      the screens answer with the right device's values and nothing about the save. This line is the
+      save.
 - [ ] **T89** *The sensor claim, which is the one thing here that leaks if it is wrong.* A pairing
       screen retains its chosen lux sensors so the card can show what they read, and releases them
       on `disconnect` however the screen closes. Open a **Daylight light** pairing, choose a sensor,
@@ -169,6 +178,45 @@ finds its device. Three lines, and they are cheap — pair and repair each devic
       live device's subscription with it. Get this wrong and an abandoned pairing leaves a
       subscription on somebody's battery-powered motion sensor for as long as the app runs, which is
       invisible from every screen except that list.
+
+### Last run — 4 September 2026, Homey Pro 2023, firmware 13.5.0-rc.4, app 0.6.0 + the simplification pass
+
+`node scripts/verify-hardware.mjs full --yes`: **71 OK, 1 failed, 0 skipped**, then **23 OK, 0
+failed** for a second `pair repair` after the failure was fixed, and **7 OK** for `teardown`. The
+two devices the pass did not create were untouched throughout and running at the end.
+
+**The one failure was in the harness, not the app.** T77 reported that a Daylight light "was created
+but the app never registered a runtime for it — it did not initialise". It had initialised perfectly.
+The check searched `controllers`, `schedules` and `circadian` in the status response and omitted
+`daylight`, which is its own key — so a Daylight light could only ever fail it. Fixed in
+`scripts/verify-hardware.mjs`; T77 passes and reads "built daylight … the app reports it ready".
+Worth remembering as a shape: a green pass is only as honest as the list the check looks in.
+
+**What this run established about the simplification work.** All five device types pair and all five
+repair with the shared pairing-session module (B1/B2) and the spliced views (C2b). Every default
+name came back as its own device type's — "Music Desk Lamp schedule", "Computer Desk Lamp curve",
+"Spot L | Studio daylight" — which is the `naming` parameter, the id prefix and the store key all
+arriving correctly from one place. And the two pre-existing devices survived the
+`MigrationResult.value` → `.plan` rename, which was the single most consequential change in the
+whole pass and the one no test could settle.
+
+**Memory, and a number not to chase.** T59/T60 read **56.3 MB PSS** after two full passes in one app
+lifetime — past the 50 MB ceiling. After `restart`: **34.8 MB**, which is the documented steady
+state (over Homey's 30 MB guideline, inside the 50 we accepted). So running the pass twice
+back-to-back inflates PSS by ~20 MB of high-water that a restart returns; that is churn, not a leak,
+and T59 should be read after a restart rather than after a marathon.
+
+**Platform §8 gained a measurement.** Probing the app's own HTTP surface established that the Homey
+serves files beside a pair view — `pair/<viewId>.assets/probe.js` as `application/javascript`, a
+bare `pair/probe.css` as `text/css` — while refusing `app.json`, `app.js` and `locales/en.json`. It
+is a directory whitelist, not a static server. That contradicts the in-code comment that said a
+shared stylesheet had "nowhere to put one", and it is why C2b's splice is a stepping stone rather
+than the end state. Still unmeasured, and needing the Homey app rather than the API: whether an
+injected view's own external reference loads once the pairing container has placed the view in its
+shared document. §8 carries the one-minute test.
+
+Still needing a person: T3, T9-T11, T53, T54, and the save half of T88 above.
+
 
 ### Last run — 2 September 2026, Homey Pro 2023, firmware 13.5.0-rc.4, app 0.5.1 + the code-review pass
 
