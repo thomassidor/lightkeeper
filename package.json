@@ -52,6 +52,6 @@
     "homey": "4.4.3",
     "tsx": "^4.23.13",
     "typescript": "^5.4.0",
-    "typescript-eslint": "^8.68.0"
+    "typescript-eslint": "^8.69.0"
   }
 }
