@@ -353,6 +353,13 @@ Nothing else in the reference has been re-checked.
   `homey@4.4.3` and `validate` runs it from the lockfile: an unpinned `npx homey` changes what
   "publish-level valid" means between two runs of one commit, and even a pinned `npx homey@4.4.3`
   leaves the CLI's own transitive tree free to move.
+- **`eslint` is at `^10`, and its Node floor is stricter than the app's own.** It declares
+  `^20.19.0 || ^22.13.0 || >=24`, so a local 22.12 gets an `EBADENGINE` warning on install (eslint
+  10.9.1 then ran clean on 22.12 anyway — the warning is npm's, not a refusal). `package.json`'s
+  `engines.node: >=20.11` describes the app running on a Homey and does not cover the linter; CI's
+  `node-version: 22` resolves to current 22.x and satisfies the floor. The bump was takeable because
+  `typescript-eslint@8.68.0` already declares `eslint ^10.0.0` in its peers — unlike the TypeScript
+  major that arrived in the same dependabot PR, which its peer range forbids outright.
 - **`compatibility: >=12.9.0`** — the floor we can stand behind, rather than the older `>=12.3.0`
   that was never tested. Note this is a *firmware* floor; the real hardware floor is Homey Pro
   2023 and newer, because earlier models cannot mint an API Key at all (platform §1).
