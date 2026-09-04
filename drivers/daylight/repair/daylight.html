@@ -206,6 +206,16 @@
      missing. */
   #dl-root .dl-card { display: block; }
   #dl-root .dl-card.dl-off { display: none; }
+  #dl-root .dl-sun.dl-off { display: none; }
+
+  /* One column, because the four answers are sentences rather than labels and
+     two of them wrap on a phone at any width worth supporting. */
+  #dl-root .dl-peaks { display: flex; flex-direction: column; gap: 8px; }
+  #dl-root .dl-peak { display: flex; align-items: center; gap: 10px; min-height: 44px;
+                   font-size: 14px; color: var(--lk-body); cursor: pointer;
+                   text-transform: none; letter-spacing: normal; }
+  #dl-root .dl-peak input { width: 22px; height: 22px; margin: 0; flex: none;
+                         accent-color: var(--lk-accent); cursor: pointer; }
 
   #dl-root .dl-field { margin-bottom: 14px; }
   #dl-root .dl-field:last-child { margin-bottom: 0; }
@@ -270,6 +280,17 @@
     <div class="section-title" data-i18n="daylight.sensorsTitle"></div>
     <p class="dl-help" data-i18n="daylight.sensorsHelp"></p>
     <div id="dl-sensors"></div>
+
+    <!-- Only when there is no sensor. A sensor MEASURES this room, so a model
+         of the room would be a guess laid over a reading. `dl-off` is the same
+         hiding mechanism the whole card uses. -->
+    <div class="dl-sun dl-off" id="dl-sun">
+      <div class="section-title" data-i18n="daylight.sunTitle"></div>
+      <div class="card">
+        <p class="dl-help" data-i18n="daylight.sunHelp"></p>
+        <div class="dl-peaks" id="dl-peaks"></div>
+      </div>
+    </div>
 
     <div class="section-title" data-i18n="daylight.rangeTitle"></div>
     <div class="card">
@@ -477,6 +498,10 @@ function __lkBootDl(Homey) {
       ageMinutes: 'daylight.ageMinutes',
       ageHours: 'daylight.ageHours',
       ageDays: 'daylight.ageDays',
+      sunNone: 'daylight.sunNone',
+      sunMorning: 'daylight.sunMorning',
+      sunMidday: 'daylight.sunMidday',
+      sunAfternoon: 'daylight.sunAfternoon',
       percent: 'daylight.percent',
       preview: 'daylight.preview',
       previewing: 'daylight.previewing',
@@ -490,6 +515,8 @@ function __lkBootDl(Homey) {
     var el = {
       card: document.getElementById('dl-card'),
       now: document.getElementById('dl-now'),
+      sun: document.getElementById('dl-sun'),
+      peaks: document.getElementById('dl-peaks'),
       sensors: document.getElementById('dl-sensors'),
       darkLux: document.getElementById('dl-dark-lux'),
       brightLux: document.getElementById('dl-bright-lux'),
@@ -638,6 +665,50 @@ function __lkBootDl(Homey) {
       }
     }
 
+    /**
+     * The four answers, and the reason they are radio buttons.
+     *
+     * A single choice from a closed set, so a select would hide three of four
+     * behind a tap and a segmented control would truncate "Middle of the day" on
+     * a phone. `PEAKS` pairs each stored value with its key; the order is the
+     * order they are offered in, with "no direct sun" first because it is the
+     * default and the commonest true answer for an interior room.
+     */
+    var PEAKS = [
+      { value: 'none', key: 'sunNone' },
+      { value: 'morning', key: 'sunMorning' },
+      { value: 'midday', key: 'sunMidday' },
+      { value: 'afternoon', key: 'sunAfternoon' }
+    ];
+
+    function renderSun() {
+      // Hidden outright when a sensor is chosen: the sensor measures this room,
+      // and asking about it as well would invite somebody to believe the answer
+      // still mattered.
+      var hasSensor = (model.response.sensors || []).length > 0;
+      el.sun.className = hasSensor ? 'dl-sun dl-off' : 'dl-sun';
+      if (hasSensor) return;
+
+      var current = model.response.sunPeak || 'none';
+      clear(el.peaks);
+      PEAKS.forEach(function (peak) {
+        var row = node('label', 'dl-peak');
+        var input = document.createElement('input');
+        input.type = 'radio';
+        input.name = 'dl-peak';
+        input.value = peak.value;
+        input.checked = peak.value === current;
+        input.addEventListener('change', function () {
+          if (!input.checked) return;
+          model.response.sunPeak = peak.value;
+          push();
+        });
+        row.appendChild(input);
+        row.appendChild(node('span', null, t(peak.key)));
+        el.peaks.appendChild(row);
+      });
+    }
+
     function renderControls() {
       el.darkLux.value = String(model.response.darkLux);
       el.brightLux.value = String(model.response.brightLux);
@@ -652,6 +723,7 @@ function __lkBootDl(Homey) {
       if (!model.loaded) return;
       renderNow();
       renderSensors();
+      renderSun();
       renderControls();
     }
 
@@ -661,7 +733,11 @@ function __lkBootDl(Homey) {
         darkLux: Number(el.darkLux.value),
         brightLux: Number(el.brightLux.value),
         dark: Number(el.dark.value) / 100,
-        bright: Number(el.bright.value) / 100
+        bright: Number(el.bright.value) / 100,
+        // From the MODEL, not the DOM: the radios are not rendered at all while
+        // a sensor is chosen, so reading them would send 'none' the moment
+        // somebody picked a sensor and undo an answer they had already given.
+        sunPeak: model.response.sunPeak || 'none'
       };
     }
 

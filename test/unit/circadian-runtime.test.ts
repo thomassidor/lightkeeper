@@ -1219,7 +1219,10 @@ describe('the diagnostics can describe a Curve light', () => {
 });
 
 describe('a curve point whose brightness follows the daylight', () => {
-  const RESPONSE = { sensors: ['s1'], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 };
+  const RESPONSE = {
+    sensors: ['s1'], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25,
+    sunPeak: 'none' as const,
+  };
 
   const evaluator = (brightness: number, source = 'sensors') => ({
     evaluate: () => ({ brightness, source }),

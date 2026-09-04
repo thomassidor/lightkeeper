@@ -1,4 +1,4 @@
-import { solarElevation } from './solar-elevation';
+import { solarElevation, solarPosition } from './solar-elevation';
 import {
   brightnessFor, levelFromElevation, resolveLevel, type DaylightSource,
 } from './daylight-response';
@@ -70,16 +70,29 @@ export class DaylightEvaluator {
    */
   evaluate(response: DaylightResponse): DaylightVerdict {
     const position = this.location();
-    const elevation = position === null
+    // Both at once, from one pass of the algorithm. The azimuth is what lets a
+    // response say WHEN its room gets its sun; see `SunPeak`.
+    const sun = position === null
       ? null
-      : solarElevation(position.latitude, position.longitude, this.now());
+      : solarPosition(position.latitude, position.longitude, this.now());
 
     const reading = response.sensors.length > 0
       ? this.deps.luminance.read(response.sensors)
       : null;
 
-    const { level, source } = resolveLevel(response, { elevation, reading });
-    return { level, brightness: brightnessFor(response, level), source, elevation };
+    const { level, source } = resolveLevel(response, {
+      elevation: sun?.elevation ?? null,
+      reading,
+      ...(sun !== null && position !== null
+        ? { azimuth: sun.azimuth, latitude: position.latitude }
+        : {}),
+    });
+    return {
+      level,
+      brightness: brightnessFor(response, level),
+      source,
+      elevation: sun?.elevation ?? null,
+    };
   }
 
   /**
@@ -93,6 +106,9 @@ export class DaylightEvaluator {
     const position = this.location();
     if (position === null) return { elevation: null, level: null, location: null };
 
+    // The BARE elevation ramp, with no room's orientation applied — this is the
+    // house-wide readout, and "what the sky offers" is the honest thing for it
+    // to report. Each device's own reading is in its diagnostics.
     const elevation = solarElevation(position.latitude, position.longitude, this.now());
     return { elevation, level: levelFromElevation(elevation), location: position };
   }

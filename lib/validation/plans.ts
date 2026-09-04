@@ -19,7 +19,9 @@ import {
 import type { CircadianEnd, SimpleCircadianPlan } from '../circadian/simple-curve';
 import {
   MAX_SENSORS, MAX_LUX, MIN_LUX,
+  isSunPeak,
   type DaylightPlan, type DaylightResponse,
+  type SunPeak,
 } from '../daylight/daylight-types';
 import type { LogicalSourceBinding, SelectableInput } from '../inputs/selectable-input';
 import type { InputAction } from '../inputs/input-event';
@@ -677,6 +679,17 @@ function optionalDaylight(
 }
 
 /**
+ * One of the four answers to "when does this room get the most sun".
+ *
+ * A fifth value cannot come from a screen, so a fifth means the store was
+ * written by something else.
+ */
+function requireSunPeak(value: unknown, path: string): SunPeak {
+  if (!isSunPeak(value)) fail(path, 'is not one of none, morning, midday or afternoon');
+  return value;
+}
+
+/**
  * One daylight response, validated at whichever of FOUR paths holds it.
  *
  * The `path` argument is what makes one function serve four stores: a Daylight
@@ -720,6 +733,15 @@ function validateDaylightResponse(raw: unknown, path: string): DaylightResponse 
     // rather than one that does less.
     dark: requireUnitInterval(response.dark, `${path}.dark`),
     bright: requireUnitInterval(response.bright, `${path}.bright`),
+    // REFUSED rather than defaulted, unlike the sanitiser's policy on the same
+    // field. The sanitiser reads a screen and repairs what it sends; this reads a
+    // STORED plan, where an unknown value means a partial write, a hand edit or
+    // a downgrade — and quarantining it with a named path is what tells somebody
+    // which device to repair. `undefined` is the exception: a plan written before
+    // this field existed is old, not corrupt, and the migration is what fills it.
+    sunPeak: response.sunPeak === undefined
+      ? 'none'
+      : requireSunPeak(response.sunPeak, `${path}.sunPeak`),
   };
 }
 

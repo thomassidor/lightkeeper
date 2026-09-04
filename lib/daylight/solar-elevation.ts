@@ -16,7 +16,7 @@
  * This is the standard NOAA solar-position algorithm, the same one the NOAA
  * calculator uses, in its published order: Julian day → mean longitude and
  * anomaly → equation of centre → apparent longitude → obliquity → declination →
- * equation of time → true solar time → hour angle → elevation.
+ * equation of time → true solar time → hour angle → elevation → azimuth.
  *
  * **Everything here is UTC**, deliberately. The instant is a millisecond count
  * and the longitude carries the rest; no timezone, no DST, no `Intl`. That is
@@ -54,6 +54,31 @@ function degrees(radians: number): number {
  * told where it is gets refused.
  */
 export function solarElevation(latitude: number, longitude: number, atMs: number): number {
+  return solarPosition(latitude, longitude, atMs).elevation;
+}
+
+/** Where the sun is: how high, and which way round. */
+export interface SolarPosition {
+  /** Degrees above the horizon, −90 … +90. Negative below it. */
+  elevation: number;
+  /**
+   * Degrees CLOCKWISE FROM NORTH, 0 … 360. 90 is due east, 180 due south.
+   *
+   * Needed because elevation alone is symmetric about solar noon, so it cannot
+   * tell an east-facing room from a west-facing one — 08:00 and 16:00 look
+   * identical to it. Which way the sun is round is the only thing that can.
+   */
+  azimuth: number;
+}
+
+/**
+ * Elevation AND azimuth, from one pass of the algorithm.
+ *
+ * One function rather than two because everything above the last four lines is
+ * shared: computing them separately would run the whole NOAA sequence twice and
+ * give two places for it to drift.
+ */
+export function solarPosition(latitude: number, longitude: number, atMs: number): SolarPosition {
   const century = (atMs / MS_PER_DAY + JULIAN_EPOCH - JULIAN_J2000) / DAYS_PER_CENTURY;
 
   // Geometric mean longitude and mean anomaly of the sun, degrees.
@@ -111,5 +136,27 @@ export function solarElevation(latitude: number, longitude: number, atMs: number
   // Clamped before acos: at the poles the two terms can sum to 1.0000000000000002
   // and acos of that is NaN, which propagates all the way to a lamp being sent
   // nothing at all.
-  return 90 - degrees(Math.acos(Math.min(1, Math.max(-1, cosZenith))));
+  const zenith = degrees(Math.acos(Math.min(1, Math.max(-1, cosZenith))));
+
+  /**
+   * Azimuth, in NOAA's published form.
+   *
+   * The denominator vanishes when the sun is exactly overhead or the observer is
+   * exactly at a pole; there is no meaningful bearing then, so it takes the
+   * hemisphere's noon direction rather than dividing by nearly zero. 0.001 is
+   * NOAA's own guard value.
+   */
+  let azimuth: number;
+  const denominator = Math.cos(radians(latitude)) * Math.sin(radians(zenith));
+  if (Math.abs(denominator) > 0.001) {
+    const ratio = (Math.sin(radians(latitude)) * Math.cos(radians(zenith))
+      - Math.sin(radians(declination))) / denominator;
+    azimuth = 180 - degrees(Math.acos(Math.min(1, Math.max(-1, ratio))));
+    // Before noon the sun is east of the meridian, after it west.
+    if (hourAngle > 0) azimuth = -azimuth;
+  } else {
+    azimuth = latitude > 0 ? 180 : 0;
+  }
+
+  return { elevation: 90 - zenith, azimuth: (azimuth + 360) % 360 };
 }

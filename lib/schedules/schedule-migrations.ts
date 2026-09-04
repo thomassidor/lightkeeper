@@ -2,6 +2,7 @@ import type { SchedulePlan } from './schedule-types';
 import { withFlooredBrightness } from '../outputs/light-intent';
 import { runMigrationChain, type MigrationResult, type MigrationStep } from '../support/migrations';
 import { validateSchedulePlan } from '../validation/plans';
+import { isRecord } from '../validation/guards';
 /**
  * A schedule plan's own migration chain, separate from the controller profile's.
  *
@@ -17,7 +18,7 @@ import { validateSchedulePlan } from '../validation/plans';
  * validator rather than a cast.
  */
 
-export const CURRENT_SCHEDULE_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEDULE_SCHEMA_VERSION = 3;
 
 export type ScheduleMigration = MigrationStep;
 
@@ -55,6 +56,24 @@ const SCHEDULE_MIGRATIONS: Record<number, ScheduleMigration> = {
     // Guarded rather than assumed: a step runs before the chain's validator, so
     // `entries` may be anything at all.
     entries: Array.isArray(plan.entries) ? plan.entries.map(withFlooredBrightness) : plan.entries,
+  }),
+  /**
+   * 2 → 3: the daylight response learns when its room gets the sun.
+   *
+   * `sunPeak` answers "when does this room get the most sun", and `'none'` means
+   * "do not model it" — the elevation ramp alone, which is exactly what every
+   * plan written before this field did. So the step is a no-op in behaviour and
+   * exists only so the schema version keeps describing one shape.
+   *
+   * Guarded on the response being THERE: `daylight` is optional on this plan,
+   * and a plan without one has nothing to add a field to.
+   */
+  2: plan => ({
+    ...plan,
+    schemaVersion: 3,
+    ...(isRecord(plan.daylight)
+      ? { daylight: { sunPeak: 'none', ...plan.daylight } }
+      : {}),
   }),
 };
 

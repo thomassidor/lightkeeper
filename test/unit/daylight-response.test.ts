@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 
 import {
   BRIGHT_ELEVATION, DARK_ELEVATION,
-  brightnessFor, levelFromElevation, levelFromLux, resolveLevel,
+  brightnessFor, levelFromElevation, levelFromLux, orientationFactor,
+  resolveLevel, windowAzimuthFor,
 } from '../../lib/daylight/daylight-response';
-import { DEFAULT_RESPONSE, type DaylightResponse } from '../../lib/daylight/daylight-types';
+import { DEFAULT_RESPONSE, SUN_PEAKS, type DaylightResponse } from '../../lib/daylight/daylight-types';
 
 /**
  * The response is where a measurement becomes a brightness, and three of its
@@ -29,6 +30,7 @@ import { DEFAULT_RESPONSE, type DaylightResponse } from '../../lib/daylight/dayl
 /** Lamps up as the daylight goes: the compensating case, and the default. */
 const COMPENSATE: DaylightResponse = {
   sensors: ['sensor-a'], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25,
+  sunPeak: 'none',
 };
 /** The same response with its ends swapped: the room follows the day instead. */
 const FOLLOW: DaylightResponse = { ...COMPENSATE, dark: 0.25, bright: 0.9 };
@@ -230,5 +232,116 @@ describe('resolveLevel - which input is believed', () => {
     const { level } = resolveLevel(DEFAULT_RESPONSE, { elevation: 40, reading: reading(800) });
     const brightness = brightnessFor(DEFAULT_RESPONSE, level);
     assert.equal(brightness, DEFAULT_RESPONSE.bright);
+  });
+});
+
+/**
+ * The orientation model: what "when does this room get the most sun" buys.
+ *
+ * Every assertion here is about a PROPERTY rather than a number, because the
+ * model is fitted to nothing and its numbers are a judgement. The properties are
+ * not: they are what makes it safe to ship over installed devices.
+ */
+describe('which way the room faces', () => {
+  const ROOM: DaylightResponse = {
+    sensors: [], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25, sunPeak: 'none',
+  };
+
+  /** Sun due east, due south, due west — the bearings, not times. */
+  const EAST = 90;
+  const SOUTH = 180;
+  const WEST = 270;
+
+  test('none returns the bare elevation ramp, to the bit', () => {
+    // The promise that makes this shippable: a device that never answered the
+    // question is unchanged, not approximately unchanged.
+    for (const elevation of [-10, -6, 0, 12, 25, 60]) {
+      for (const azimuth of [EAST, SOUTH, WEST, 0, 359]) {
+        const { level } = resolveLevel(ROOM, {
+          elevation, reading: null, azimuth, latitude: 55.7,
+        });
+        assert.equal(level, levelFromElevation(elevation),
+          `elevation ${elevation}, azimuth ${azimuth}`);
+      }
+    }
+  });
+
+  test('the factor is never above 1, so no room reads BRIGHTER than the sky', () => {
+    // The old model implicitly treated every room as optimally oriented, so
+    // every correction has to be downward — otherwise answering the question
+    // could make an installed device's lamps dimmer than before.
+    for (const peak of SUN_PEAKS) {
+      for (let azimuth = 0; azimuth < 360; azimuth += 5) {
+        const factor = orientationFactor(peak, 55.7, azimuth);
+        assert.ok(factor <= 1 + 1e-12, `${peak} at ${azimuth}° gave ${factor}`);
+        assert.ok(factor > 0, `${peak} at ${azimuth}° gave ${factor}`);
+      }
+    }
+  });
+
+  test('a north-facing room is dimmer than the sky but never dark', () => {
+    // Most of what reaches a room the sun never enters is diffuse skylight,
+    // which arrives from everywhere. A factor of zero would black it out at noon.
+    const midday: DaylightResponse = { ...ROOM, sunPeak: 'midday' };
+    const behind = orientationFactor(midday.sunPeak, 55.7, 0); // sun due north
+    assert.ok(behind > 0.2 && behind < 0.5, `expected a diffuse floor, got ${behind}`);
+  });
+
+  test('morning and afternoon rooms peak on OPPOSITE sides of noon', () => {
+    // The whole point. Elevation alone cannot do this: it is symmetric about
+    // solar noon, so 08:00 and 16:00 are the same number.
+    const morningRoom: DaylightResponse = { ...ROOM, sunPeak: 'morning' };
+    const afternoonRoom: DaylightResponse = { ...ROOM, sunPeak: 'afternoon' };
+
+    const atEast = (r: DaylightResponse) =>
+      resolveLevel(r, { elevation: 20, reading: null, azimuth: EAST, latitude: 55.7 }).level;
+    const atWest = (r: DaylightResponse) =>
+      resolveLevel(r, { elevation: 20, reading: null, azimuth: WEST, latitude: 55.7 }).level;
+
+    assert.ok(atEast(morningRoom) > atWest(morningRoom),
+      'a morning room should be brighter with the sun in the east');
+    assert.ok(atWest(afternoonRoom) > atEast(afternoonRoom),
+      'an afternoon room should be brighter with the sun in the west');
+    // And they are mirror images of each other.
+    assert.ok(Math.abs(atEast(morningRoom) - atWest(afternoonRoom)) < 1e-9,
+      'morning-at-east should equal afternoon-at-west');
+  });
+
+  test('the middle of the day faces SOUTH up north and NORTH down south', () => {
+    // The sun crosses the northern sky below the equator, so a hardcoded 180
+    // would put every southern-hemisphere midday room on the wrong side.
+    assert.equal(windowAzimuthFor('midday', 55.7), 180);
+    assert.equal(windowAzimuthFor('midday', -33.9), 0);
+    // Sunrise is in the east everywhere, so these do not flip.
+    assert.equal(windowAzimuthFor('morning', -33.9), 90);
+    assert.equal(windowAzimuthFor('afternoon', -33.9), 270);
+    assert.equal(windowAzimuthFor('none', 55.7), null);
+  });
+
+  test('a SENSOR overrides the model entirely', () => {
+    // A sensor measures this room. Modelling a room already measured would be
+    // applying a guess on top of a reading.
+    const facing: DaylightResponse = { ...ROOM, sensors: ['s1'], sunPeak: 'afternoon' };
+    const withSensor = resolveLevel(facing, {
+      elevation: 20,
+      reading: { lux: 500, deviceIds: ['s1'] },
+      azimuth: EAST,
+      latitude: 55.7,
+    });
+    assert.equal(withSensor.source, 'sensors');
+    assert.equal(withSensor.level, levelFromLux(facing, 500));
+  });
+
+  test('the level stays inside 0..1 whatever the inputs', () => {
+    for (const peak of SUN_PEAKS) {
+      for (const elevation of [-90, -6, 0, 45, 90]) {
+        for (const azimuth of [0, 90, 180, 270, 359]) {
+          const { level } = resolveLevel({ ...ROOM, sunPeak: peak }, {
+            elevation, reading: null, azimuth, latitude: 55.7,
+          });
+          assert.ok(level >= 0 && level <= 1, `${peak}/${elevation}/${azimuth} gave ${level}`);
+        }
+      }
+    }
   });
 });

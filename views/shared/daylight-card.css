@@ -22,6 +22,16 @@
      missing. */
   #ROOT .dl-card { display: block; }
   #ROOT .dl-card.dl-off { display: none; }
+  #ROOT .dl-sun.dl-off { display: none; }
+
+  /* One column, because the four answers are sentences rather than labels and
+     two of them wrap on a phone at any width worth supporting. */
+  #ROOT .dl-peaks { display: flex; flex-direction: column; gap: 8px; }
+  #ROOT .dl-peak { display: flex; align-items: center; gap: 10px; min-height: 44px;
+                   font-size: 14px; color: var(--lk-body); cursor: pointer;
+                   text-transform: none; letter-spacing: normal; }
+  #ROOT .dl-peak input { width: 22px; height: 22px; margin: 0; flex: none;
+                         accent-color: var(--lk-accent); cursor: pointer; }
 
   #ROOT .dl-field { margin-bottom: 14px; }
   #ROOT .dl-field:last-child { margin-bottom: 0; }

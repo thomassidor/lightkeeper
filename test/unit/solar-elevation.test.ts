@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { solarElevation } from '../../lib/daylight/solar-elevation';
+import { solarElevation, solarPosition } from '../../lib/daylight/solar-elevation';
 
 /**
  * Sixty lines of trigonometry with no way to eyeball the answer.
@@ -185,5 +185,115 @@ describe('solarElevation - longitude and time', () => {
     // The clock is an injected seam, and a test double handing back NaN must not
     // take a runtime down inside a tick.
     assert.ok(!Number.isFinite(solarElevation(55, 12, Number.NaN)));
+  });
+});
+
+/**
+ * Azimuth, against facts that hold whatever the implementation is.
+ *
+ * Elevation alone is symmetric about solar noon, so it cannot tell an
+ * east-facing room from a west-facing one. Azimuth is what can, which makes it
+ * worth the same treatment the elevation tests get: assertions about the sky
+ * rather than about this code.
+ */
+describe('where the sun is, round the compass', () => {
+  /**
+   * TRUE solar noon, found by looking for it.
+   *
+   * 12:00 UTC at Greenwich is not solar noon: the equation of time moves it by
+   * up to ±16 minutes, which is ±4° of hour angle, and asserting "due south at
+   * 12:00" therefore fails in March against a perfectly correct azimuth. Solar
+   * noon is DEFINED as the instant of maximum elevation, so the test finds that
+   * instant and asserts the property there — which is the property, rather than
+   * a proxy for it that needs a tolerance wide enough to hide a real error.
+   */
+  function trueSolarNoon(latitude: number, longitude: number, dayMs: number): number {
+    let best = dayMs;
+    let highest = -Infinity;
+    for (let minute = 0; minute < 1440; minute += 1) {
+      const at = dayMs + minute * 60_000;
+      const { elevation } = solarPosition(latitude, longitude, at);
+      if (elevation > highest) {
+        highest = elevation;
+        best = at;
+      }
+    }
+    return best;
+  }
+
+  const midnightUtc = (year: number, month: number, day: number) =>
+    Date.UTC(year, month - 1, day, 0, 0, 0);
+
+  test('due south at noon in the northern hemisphere', () => {
+    // The defining property of solar noon: the sun crosses the meridian. At 0°
+    // longitude that is within a quarter-degree once the equation of time is
+    // accounted for, which the implementation does.
+    for (const month of [3, 6, 9, 12]) {
+      const day = midnightUtc(2026, month, 21);
+      const { azimuth } = solarPosition(51.5, 0, trueSolarNoon(51.5, 0, day));
+      assert.ok(
+        Math.abs(azimuth - 180) < 0.5,
+        `month ${month}: expected 180° (due south), got ${azimuth.toFixed(3)}°`,
+      );
+    }
+  });
+
+  test('due NORTH at noon in the southern hemisphere', () => {
+    // The hemisphere flip, and the reason a "middle of the day" window cannot be
+    // hardcoded to face south.
+    for (const month of [3, 6, 9, 12]) {
+      const day = midnightUtc(2026, month, 21);
+      const { azimuth } = solarPosition(-33.9, 0, trueSolarNoon(-33.9, 0, day));
+      const fromNorth = Math.min(azimuth, 360 - azimuth);
+      assert.ok(
+        fromNorth < 0.5,
+        `month ${month}: expected 0/360° (due north), got ${azimuth.toFixed(3)}°`,
+      );
+    }
+  });
+
+  test('east of the meridian before noon, west of it after', () => {
+    const morning = solarPosition(51.5, 0, Date.UTC(2026, 5, 21, 8, 0, 0)).azimuth;
+    const afternoon = solarPosition(51.5, 0, Date.UTC(2026, 5, 21, 16, 0, 0)).azimuth;
+
+    assert.ok(morning < 180, `08:00 should be east of south, got ${morning.toFixed(1)}°`);
+    assert.ok(afternoon > 180, `16:00 should be west of south, got ${afternoon.toFixed(1)}°`);
+  });
+
+  test('the morning and afternoon bearings mirror about south', () => {
+    // Equal times either side of solar noon are equally far round the compass.
+    // This is the property that makes "when does this room get the most sun" a
+    // usable question: the answer maps to a bearing.
+    // Mirrored about TRUE solar noon, for the same reason as above.
+    const noon = trueSolarNoon(51.5, 0, midnightUtc(2026, 3, 21));
+    const before = solarPosition(51.5, 0, noon - 3 * 3_600_000).azimuth;
+    const after = solarPosition(51.5, 0, noon + 3 * 3_600_000).azimuth;
+
+    assert.ok(
+      Math.abs((180 - before) - (after - 180)) < 0.5,
+      `expected mirrored about 180°, got ${before.toFixed(2)}° and ${after.toFixed(2)}°`,
+    );
+  });
+
+  test('at midsummer in the far north the sun swings through north at midnight', () => {
+    // Above the arctic circle the midnight sun is UP and behind you. A formula
+    // that clamped azimuth to the southern half would report this as south.
+    const { elevation, azimuth } = solarPosition(78.2, 15.6, Date.UTC(2026, 5, 21, 23, 0, 0));
+    assert.ok(elevation > 0, `midnight sun should be up, got ${elevation.toFixed(1)}°`);
+    const fromNorth = Math.min(azimuth, 360 - azimuth);
+    assert.ok(fromNorth < 60, `expected roughly northward, got ${azimuth.toFixed(1)}°`);
+  });
+
+  test('azimuth is always a bearing, never NaN, even at a pole', () => {
+    for (const latitude of [90, -90, 0]) {
+      const { azimuth } = solarPosition(latitude, 0, Date.UTC(2026, 5, 21, 12, 0, 0));
+      assert.ok(Number.isFinite(azimuth), `latitude ${latitude} gave ${azimuth}`);
+      assert.ok(azimuth >= 0 && azimuth < 360, `latitude ${latitude} gave ${azimuth}`);
+    }
+  });
+
+  test('solarElevation agrees with solarPosition, because it delegates', () => {
+    const at = Date.UTC(2026, 3, 12, 7, 34, 0);
+    assert.equal(solarElevation(55.7, 12.1, at), solarPosition(55.7, 12.1, at).elevation);
   });
 });

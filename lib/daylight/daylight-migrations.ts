@@ -21,7 +21,7 @@ import { isRecord } from '../validation/guards';
  * deletes the other one.
  */
 
-export const CURRENT_DAYLIGHT_SCHEMA_VERSION = 1;
+export const CURRENT_DAYLIGHT_SCHEMA_VERSION = 2;
 
 export type DaylightMigration = MigrationStep;
 
@@ -53,6 +53,23 @@ const DAYLIGHT_MIGRATIONS: Record<number, DaylightMigration> = {
       },
     };
   },
+  /**
+   * 1 → 2: the response learns when its room gets the sun.
+   *
+   * `'none'` is "do not model it", which is what every version-1 plan did, so
+   * nothing changes for an installed device except that its schemaVersion now
+   * describes the shape it actually has.
+   *
+   * Spread AFTER the default so a plan that somehow already carries the field
+   * keeps its own value — the same order the steps above use.
+   */
+  1: plan => ({
+    ...plan,
+    schemaVersion: 2,
+    response: isRecord(plan.response)
+      ? { sunPeak: 'none', ...plan.response }
+      : plan.response,
+  }),
 };
 
 export function migrateDaylightPlan(raw: unknown): MigrationResult<DaylightPlan> {

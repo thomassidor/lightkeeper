@@ -30,6 +30,10 @@ function daylightCard() {
       ageMinutes: 'daylight.ageMinutes',
       ageHours: 'daylight.ageHours',
       ageDays: 'daylight.ageDays',
+      sunNone: 'daylight.sunNone',
+      sunMorning: 'daylight.sunMorning',
+      sunMidday: 'daylight.sunMidday',
+      sunAfternoon: 'daylight.sunAfternoon',
       percent: 'daylight.percent',
       preview: 'daylight.preview',
       previewing: 'daylight.previewing',
@@ -43,6 +47,8 @@ function daylightCard() {
     var el = {
       card: document.getElementById('dl-card'),
       now: document.getElementById('dl-now'),
+      sun: document.getElementById('dl-sun'),
+      peaks: document.getElementById('dl-peaks'),
       sensors: document.getElementById('dl-sensors'),
       darkLux: document.getElementById('dl-dark-lux'),
       brightLux: document.getElementById('dl-bright-lux'),
@@ -191,6 +197,50 @@ function daylightCard() {
       }
     }
 
+    /**
+     * The four answers, and the reason they are radio buttons.
+     *
+     * A single choice from a closed set, so a select would hide three of four
+     * behind a tap and a segmented control would truncate "Middle of the day" on
+     * a phone. `PEAKS` pairs each stored value with its key; the order is the
+     * order they are offered in, with "no direct sun" first because it is the
+     * default and the commonest true answer for an interior room.
+     */
+    var PEAKS = [
+      { value: 'none', key: 'sunNone' },
+      { value: 'morning', key: 'sunMorning' },
+      { value: 'midday', key: 'sunMidday' },
+      { value: 'afternoon', key: 'sunAfternoon' }
+    ];
+
+    function renderSun() {
+      // Hidden outright when a sensor is chosen: the sensor measures this room,
+      // and asking about it as well would invite somebody to believe the answer
+      // still mattered.
+      var hasSensor = (model.response.sensors || []).length > 0;
+      el.sun.className = hasSensor ? 'dl-sun dl-off' : 'dl-sun';
+      if (hasSensor) return;
+
+      var current = model.response.sunPeak || 'none';
+      clear(el.peaks);
+      PEAKS.forEach(function (peak) {
+        var row = node('label', 'dl-peak');
+        var input = document.createElement('input');
+        input.type = 'radio';
+        input.name = 'dl-peak';
+        input.value = peak.value;
+        input.checked = peak.value === current;
+        input.addEventListener('change', function () {
+          if (!input.checked) return;
+          model.response.sunPeak = peak.value;
+          push();
+        });
+        row.appendChild(input);
+        row.appendChild(node('span', null, t(peak.key)));
+        el.peaks.appendChild(row);
+      });
+    }
+
     function renderControls() {
       el.darkLux.value = String(model.response.darkLux);
       el.brightLux.value = String(model.response.brightLux);
@@ -205,6 +255,7 @@ function daylightCard() {
       if (!model.loaded) return;
       renderNow();
       renderSensors();
+      renderSun();
       renderControls();
     }
 
@@ -214,7 +265,11 @@ function daylightCard() {
         darkLux: Number(el.darkLux.value),
         brightLux: Number(el.brightLux.value),
         dark: Number(el.dark.value) / 100,
-        bright: Number(el.bright.value) / 100
+        bright: Number(el.bright.value) / 100,
+        // From the MODEL, not the DOM: the radios are not rendered at all while
+        // a sensor is chosen, so reading them would send 'none' the moment
+        // somebody picked a sensor and undo an answer they had already given.
+        sunPeak: model.response.sunPeak || 'none'
       };
     }
 

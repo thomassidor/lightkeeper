@@ -3,6 +3,7 @@ import { DEFAULT_SIMPLE_PLAN, endsFromPoints, type SimpleCircadianPlan } from '.
 import { withFlooredBrightness } from '../outputs/light-intent';
 import { runMigrationChain, type MigrationResult, type MigrationStep } from '../support/migrations';
 import { validateSimpleCircadianPlan } from '../validation/plans';
+import { isRecord } from '../validation/guards';
 /**
  * A circadian plan's own migration chain — a third store, a third schema.
  *
@@ -26,7 +27,7 @@ import { validateSimpleCircadianPlan } from '../validation/plans';
  *
  * 2 → 3 brings a stored brightness up to the floor a lamp can show.
  */
-export const CURRENT_CIRCADIAN_SCHEMA_VERSION = 3;
+export const CURRENT_CIRCADIAN_SCHEMA_VERSION = 4;
 
 export type CircadianMigration = MigrationStep;
 
@@ -107,6 +108,24 @@ const CIRCADIAN_MIGRATIONS: Record<number, CircadianMigration> = {
     schemaVersion: 3,
     warmest: withFlooredBrightness(plan.warmest),
     coolest: withFlooredBrightness(plan.coolest),
+  }),
+  /**
+   * 3 → 4: the daylight response learns when its room gets the sun.
+   *
+   * `sunPeak` answers "when does this room get the most sun", and `'none'` means
+   * "do not model it" — the elevation ramp alone, which is exactly what every
+   * plan written before this field did. So the step is a no-op in behaviour and
+   * exists only so the schema version keeps describing one shape.
+   *
+   * Guarded on the response being THERE: `daylight` is optional on this plan,
+   * and a plan without one has nothing to add a field to.
+   */
+  3: plan => ({
+    ...plan,
+    schemaVersion: 4,
+    ...(isRecord(plan.daylight)
+      ? { daylight: { sunPeak: 'none', ...plan.daylight } }
+      : {}),
   }),
 };
 

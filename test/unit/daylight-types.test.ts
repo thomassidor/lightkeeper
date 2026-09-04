@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   DEFAULT_RESPONSE, MAX_SENSORS, MIN_LUX,
+  SUN_PEAKS,
   sanitiseResponse, usableLocation,
 } from '../../lib/daylight/daylight-types';
 import { MINIMUM_BRIGHTNESS } from '../../lib/outputs/light-intent';
@@ -30,7 +31,10 @@ import {
  * here through a different mechanism from everywhere else.
  */
 
-const VALID = { sensors: ['a', 'b'], darkLux: 8, brightLux: 400, dark: 0.8, bright: 0.3 };
+const VALID = {
+  sensors: ['a', 'b'], darkLux: 8, brightLux: 400, dark: 0.8, bright: 0.3,
+  sunPeak: 'none' as const,
+};
 
 describe('sanitiseResponse - a valid response survives untouched', () => {
   test('every field is kept and nothing is reported', () => {
@@ -270,7 +274,10 @@ describe('the daylight migration chain', () => {
       schemaVersion: CURRENT_DAYLIGHT_SCHEMA_VERSION,
       enabled: false,
       target: TARGET,
-      response: { sensors: ['s1'], darkLux: 8, brightLux: 400, dark: 0.8, bright: 0.3 },
+      response: {
+        sensors: ['s1'], darkLux: 8, brightLux: 400, dark: 0.8, bright: 0.3,
+        sunPeak: 'none',
+      },
     };
     const { plan, migrated } = migrateDaylightPlan(stored);
 
@@ -299,5 +306,40 @@ describe('the daylight migration chain', () => {
       target: TARGET,
       response: { sensors: [], darkLux: 500, brightLux: 5, dark: 0.9, bright: 0.25 },
     }), /brightLux is not above darkLux/);
+  });
+});
+
+/**
+ * "When does this room get the most sun" — the one thing the two brightness
+ * ends cannot express.
+ *
+ * `dark` and `bright` are indexed on how bright it is OUTSIDE, and with no
+ * sensor that comes from the sun's elevation, which is symmetric about solar
+ * noon. So no combination of them can say "bright at 17:00, dim at 07:00".
+ */
+describe('the sun-peak answer', () => {
+  test('an absent answer means model nothing, and is not reported as corrected', () => {
+    // The default for every device that never answered, and for anybody who
+    // skips the question.
+    const { response, corrected } = sanitiseResponse({ ...VALID, sunPeak: undefined });
+    assert.equal(response.sunPeak, 'none');
+    assert.deepEqual(corrected, []);
+  });
+
+  test('each of the four answers survives', () => {
+    for (const peak of SUN_PEAKS) {
+      const { response, corrected } = sanitiseResponse({ ...VALID, sunPeak: peak });
+      assert.equal(response.sunPeak, peak);
+      assert.deepEqual(corrected, [], `on ${peak}`);
+    }
+  });
+
+  test('a fifth answer is corrected to none and SAID so', () => {
+    // A screen cannot send a fifth, so a fifth means a hand-edited store.
+    for (const junk of ['evening', '', 'MIDDAY', 0, null, {}, []]) {
+      const { response, corrected } = sanitiseResponse({ ...VALID, sunPeak: junk });
+      assert.equal(response.sunPeak, 'none', `on ${JSON.stringify(junk)}`);
+      assert.ok(corrected.includes('sunPeak'), `on ${JSON.stringify(junk)}`);
+    }
   });
 });

@@ -11,6 +11,17 @@
     <p class="dl-help" data-i18n="daylight.sensorsHelp"></p>
     <div id="dl-sensors"></div>
 
+    <!-- Only when there is no sensor. A sensor MEASURES this room, so a model
+         of the room would be a guess laid over a reading. `dl-off` is the same
+         hiding mechanism the whole card uses. -->
+    <div class="dl-sun dl-off" id="dl-sun">
+      <div class="section-title" data-i18n="daylight.sunTitle"></div>
+      <div class="card">
+        <p class="dl-help" data-i18n="daylight.sunHelp"></p>
+        <div class="dl-peaks" id="dl-peaks"></div>
+      </div>
+    </div>
+
     <div class="section-title" data-i18n="daylight.rangeTitle"></div>
     <div class="card">
       <p class="dl-help" data-i18n="daylight.rangeHelp"></p>

@@ -247,7 +247,10 @@ describe('schedule boundaries', () => {
 });
 
 describe('a window whose brightness follows the daylight', () => {
-  const RESPONSE = { sensors: ['s1'], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 };
+  const RESPONSE = {
+    sensors: ['s1'], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25,
+    sunPeak: 'none' as const,
+  };
 
   const window = (over: Record<string, unknown> = {}) => ({
     id: 'a', onAt: 22 * 60, days: null,

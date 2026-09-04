@@ -41,6 +41,37 @@ export const MAX_SENSORS = 8;
 export const MIN_LUX = 0.1;
 export const MAX_LUX = 100_000;
 
+/**
+ * When this room gets the most sun, as somebody who lives in it would say.
+ *
+ * The ONE thing the two brightness ends cannot express. `dark` and `bright` are
+ * indexed on how bright it is OUTSIDE, and with no sensor that comes from the
+ * sun's elevation — which is symmetric about solar noon. So 08:00 and 16:00 are
+ * indistinguishable, and a west-facing room that is bright at 17:00 is
+ * currently inexpressible. How MUCH sun a room gets is already expressible: a
+ * dim room sets a higher `bright`, so its lamps stay up even when the sun is
+ * high. Phase is what is missing, so phase is what is asked.
+ *
+ * Asked as an OBSERVATION rather than as a compass bearing, deliberately.
+ * Somebody who lives in a room knows when the sun comes in; a bearing makes
+ * them infer it from orientation, and then this code infers it back. It also
+ * absorbs what a bearing cannot: a window facing east with a neighbour's wall
+ * across it gets its light in the afternoon, and "afternoon" is then the true
+ * answer even though the compass says east.
+ *
+ * `'none'` is the default and means "do not model this at all" — the elevation
+ * ramp alone, exactly as before this existed. It is what an installed device
+ * migrates to and what anybody who skips the question gets.
+ */
+export type SunPeak = 'none' | 'morning' | 'midday' | 'afternoon';
+
+/** Every value the screen may offer, in the order it offers them. */
+export const SUN_PEAKS: readonly SunPeak[] = ['none', 'morning', 'midday', 'afternoon'];
+
+export function isSunPeak(value: unknown): value is SunPeak {
+  return typeof value === 'string' && (SUN_PEAKS as readonly string[]).includes(value);
+}
+
 export interface DaylightResponse {
   /**
    * `measure_luminance` devices, by id. Empty means the sun alone, which is a
@@ -55,6 +86,13 @@ export interface DaylightResponse {
   dark: number;
   /** Perceptual brightness 0–1 when it is fully bright outside. */
   bright: number;
+  /**
+   * When this room gets the most sun. See `SunPeak`.
+   *
+   * Only consulted when there is no sensor: a sensor measures this room and
+   * needs no model of it.
+   */
+  sunPeak: SunPeak;
 }
 
 export interface DaylightPlan {
@@ -79,6 +117,9 @@ export const DEFAULT_RESPONSE: DaylightResponse = {
   brightLux: 500,
   dark: 0.9,
   bright: 0.25,
+  // Model nothing until asked: an installed device and a skipped question both
+  // land here, and both behave exactly as they did before this field existed.
+  sunPeak: 'none',
 };
 
 export interface SanitisedResponse {
@@ -145,7 +186,16 @@ export function sanitiseResponse(raw: unknown): SanitisedResponse {
   const dark = sanitiseEnd(source.dark, DEFAULT_RESPONSE.dark, 'dark', corrected);
   const bright = sanitiseEnd(source.bright, DEFAULT_RESPONSE.bright, 'bright', corrected);
 
-  return { response: { sensors, darkLux, brightLux, dark, bright }, corrected };
+  // Anything that is not one of the four is 'none' rather than a rejection: a
+  // screen cannot send a fifth, so a fifth means a hand-edited store, and
+   // modelling nothing is the safe reading of it.
+  let sunPeak: SunPeak = DEFAULT_RESPONSE.sunPeak;
+  if (source.sunPeak !== undefined) {
+    if (isSunPeak(source.sunPeak)) sunPeak = source.sunPeak;
+    else corrected.push('sunPeak');
+  }
+
+  return { response: { sensors, darkLux, brightLux, dark, bright, sunPeak }, corrected };
 }
 
 /**

@@ -1,5 +1,5 @@
 import { ease, mix } from '../support/interpolate';
-import type { DaylightResponse } from './daylight-types';
+import type { DaylightResponse, SunPeak } from './daylight-types';
 
 /**
  * How much daylight there is, and what brightness that asks for.
@@ -73,6 +73,73 @@ export function levelFromLux(response: DaylightResponse, lux: number): number {
   return ease(clamp01((Math.log10(lux) - from) / (to - from)));
 }
 
+/**
+ * How much of the daylight a room with this orientation actually receives.
+ *
+ * The elevation ramp answers "how much daylight is there at all". This answers
+ * "how much of it comes in HERE", which is the question no other field can
+ * reach: `dark` and `bright` are indexed on the level, and the level is
+ * symmetric about solar noon, so nothing else can distinguish 08:00 from 16:00.
+ *
+ * A vertical window receives the direct beam in proportion to how square-on the
+ * sun is to it — `cos(sunAzimuth − windowAzimuth)`, zero once the sun is behind
+ * the wall. But a north-facing room is not dark at noon, because most of what
+ * reaches it is diffuse skylight, which arrives from everywhere and does not
+ * care which way the glass points. So the factor is a floor plus a directional
+ * share, never zero:
+ *
+ *     DIFFUSE_SHARE + (1 − DIFFUSE_SHARE) × max(0, cos(Δazimuth))
+ *
+ * Two properties this is chosen to have, both of which matter more than its
+ * precision:
+ *
+ *  - it is **at most 1**, so this can only ever make a room read DIMMER than
+ *    the sky alone suggested — never brighter. The previous model implicitly
+ *    treated every room as optimally oriented, so every correction is downward
+ *    and no existing device gets a brighter reading than it used to;
+ *  - `'none'` returns exactly 1, so a device that never answered the question
+ *    is bit-for-bit unchanged.
+ *
+ * It is a model of a room, fitted to nothing, and it will be wrong in detail. It
+ * is here because being wrong about WHEN by six hours is worse than being wrong
+ * about how much by a third — and the user can already correct the second with
+ * the `bright` slider.
+ */
+const DIFFUSE_SHARE = 0.35;
+
+/**
+ * Which way the window faces, from when the room gets its sun.
+ *
+ * Northern hemisphere: morning is east, afternoon west, and the middle of the
+ * day is SOUTH. South of the equator the last one is north — the sun crosses the
+ * northern sky — which is why this takes a latitude instead of hardcoding 180.
+ * Morning and afternoon do not flip: the sun still rises in the east everywhere.
+ */
+export function windowAzimuthFor(peak: SunPeak, latitude: number): number | null {
+  switch (peak) {
+    case 'morning': return 90;
+    case 'afternoon': return 270;
+    case 'midday': return latitude >= 0 ? 180 : 0;
+    default: return null;
+  }
+}
+
+export function orientationFactor(
+  peak: SunPeak,
+  latitude: number,
+  sunAzimuth: number,
+): number {
+  const window = windowAzimuthFor(peak, latitude);
+  if (window === null || !Number.isFinite(sunAzimuth)) return 1;
+
+  const delta = radians(((sunAzimuth - window + 540) % 360) - 180);
+  return DIFFUSE_SHARE + (1 - DIFFUSE_SHARE) * Math.max(0, Math.cos(delta));
+}
+
+function radians(degrees: number): number {
+  return degrees * (Math.PI / 180);
+}
+
 /** Sun elevation → level, on the two constants above. */
 export function levelFromElevation(degrees: number): number {
   if (!Number.isFinite(degrees)) return 0;
@@ -128,13 +195,32 @@ export interface ResolvedLevel {
  */
 export function resolveLevel(
   response: DaylightResponse,
-  inputs: { elevation: number | null; reading: DaylightReading | null },
+  inputs: {
+    elevation: number | null;
+    reading: DaylightReading | null;
+    /**
+     * The sun's bearing and the observer's latitude, for the orientation model.
+     *
+     * Optional together: without them the sky path is the bare elevation ramp,
+     * which is what it was before `sunPeak` existed. A caller that has an
+     * elevation has both, so absence means an older caller or a test that does
+     * not care — never a silently degraded live path.
+     */
+    azimuth?: number | undefined;
+    latitude?: number | undefined;
+  },
 ): ResolvedLevel {
+  // A SENSOR measures this room. It needs no model of the room, and applying one
+  // would be modelling something already measured.
   if (inputs.reading !== null && inputs.reading.deviceIds.length > 0) {
     return { level: levelFromLux(response, inputs.reading.lux), source: 'sensors' };
   }
   if (inputs.elevation !== null && Number.isFinite(inputs.elevation)) {
-    return { level: levelFromElevation(inputs.elevation), source: 'sky' };
+    const sky = levelFromElevation(inputs.elevation);
+    const oriented = inputs.azimuth !== undefined && inputs.latitude !== undefined
+      ? sky * orientationFactor(response.sunPeak, inputs.latitude, inputs.azimuth)
+      : sky;
+    return { level: clamp01(oriented), source: 'sky' };
   }
   return { level: 0, source: 'none' };
 }

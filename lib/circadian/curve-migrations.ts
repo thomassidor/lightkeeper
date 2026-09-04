@@ -2,6 +2,7 @@ import type { CircadianPlan } from './circadian-types';
 import { withFlooredBrightness } from '../outputs/light-intent';
 import { runMigrationChain, type MigrationResult, type MigrationStep } from '../support/migrations';
 import { validateCircadianPlan } from '../validation/plans';
+import { isRecord } from '../validation/guards';
 
 /**
  * The curve controller's own migration chain — a fourth store, a fourth schema.
@@ -18,7 +19,7 @@ import { validateCircadianPlan } from '../validation/plans';
  * plan lives under `curve` and the two-ended one under `circadian`.
  */
 
-export const CURRENT_CURVE_SCHEMA_VERSION = 2;
+export const CURRENT_CURVE_SCHEMA_VERSION = 3;
 
 export type CurveMigration = MigrationStep;
 
@@ -63,6 +64,24 @@ const CURVE_MIGRATIONS: Record<number, CurveMigration> = {
     // Guarded rather than assumed: a step runs before the chain's validator, so
     // `points` may be anything at all.
     points: Array.isArray(plan.points) ? plan.points.map(withFlooredBrightness) : plan.points,
+  }),
+  /**
+   * 2 → 3: the daylight response learns when its room gets the sun.
+   *
+   * `sunPeak` answers "when does this room get the most sun", and `'none'` means
+   * "do not model it" — the elevation ramp alone, which is exactly what every
+   * plan written before this field did. So the step is a no-op in behaviour and
+   * exists only so the schema version keeps describing one shape.
+   *
+   * Guarded on the response being THERE: `daylight` is optional on this plan,
+   * and a plan without one has nothing to add a field to.
+   */
+  2: plan => ({
+    ...plan,
+    schemaVersion: 3,
+    ...(isRecord(plan.daylight)
+      ? { daylight: { sunPeak: 'none', ...plan.daylight } }
+      : {}),
   }),
 };
 
