@@ -69,7 +69,7 @@ jobs:
       # Validates app.json, the compose sources, drivers, flow cards and
       # locales at the same level the App Store applies on submission.
       #
-      # The CLI is a devDependency at exactly 4.4.2 and runs from the
+      # The CLI is a devDependency at exactly 4.4.3 and runs from the
       # lockfile: an unpinned `npx homey` silently changes what "publish-level
       # valid" means between two runs of the same commit, so a green build
       # stops being evidence of anything. It also means `npm ci` above is the

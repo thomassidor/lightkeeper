@@ -350,8 +350,8 @@ Nothing else in the reference has been re-checked.
   A review recommended downgrading to `3.17.3` purely on the strength of that field — **do not**,
   on that evidence alone: it swaps a version proven on real hardware for one that never has been.
 - **CI runs Node 22**, to stay near current firmware. The CLI is a devDependency at exactly
-  `homey@4.4.2` and `validate` runs it from the lockfile: an unpinned `npx homey` changes what
-  "publish-level valid" means between two runs of one commit, and even a pinned `npx homey@4.4.2`
+  `homey@4.4.3` and `validate` runs it from the lockfile: an unpinned `npx homey` changes what
+  "publish-level valid" means between two runs of one commit, and even a pinned `npx homey@4.4.3`
   leaves the CLI's own transitive tree free to move.
 - **`compatibility: >=12.9.0`** — the floor we can stand behind, rather than the older `>=12.3.0`
   that was never tested. Note this is a *firmware* floor; the real hardware floor is Homey Pro
