@@ -5,7 +5,7 @@ import { DEFAULT_BEHAVIOR, FUNCTION_CAPABILITY, type LightFunction, type Mapping
 import {
   CURRENT_SCHEMA_VERSION, dedupeByInputKey, type ControllerProfile,
 } from '../../lib/profiles/controller-profile';
-import { validateMappingRules, validateTargetAgainstCatalog } from '../../lib/validation/pairing-dto';
+import { validateMappingRules } from '../../lib/validation/pairing-dto';
 import { availableFunctions } from '../../lib/mapping/mapping-engine';
 import { groupByControl, type SelectableInput } from '../../lib/inputs/selectable-input';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
@@ -13,12 +13,16 @@ import { HealthMonitor } from '../../lib/runtime/health-monitor';
 import { flowWriteProbe } from '../../lib/credential-service';
 import { findUncompilableBindings } from '../../lib/bridge/flow-binding-compiler';
 import {
-  listTargetsPayload, resolveSummary, targetDeviceIds, targetLights,
+  resolveSummary, targetDeviceIds, targetLights,
 } from '../../lib/pairing/target-picker';
 import { groupSourcesByRoom } from '../../lib/pairing/source-list';
 import { mappingGroups, mappingRuleRows, ruleTargetFor } from '../../lib/pairing/mapping-screen';
 import { deriveControllerName } from '../../lib/pairing/derive-name';
-import { messageOf } from '../../lib/support/homey-errors';
+import {
+  handlerRegistrar,
+  registerTargetHandlers,
+  type PairSessionHost,
+} from '../../lib/pairing/pair-session';
 
 /**
  * The Driver owns: pair/repair session handlers, UI data
@@ -44,6 +48,23 @@ interface SessionState {
 }
 
 module.exports = class ControllerDriver extends Homey.Driver {
+
+  /**
+   * What `lib/pairing/pair-session.ts` needs of this driver.
+   *
+   * Four members and no `Homey.Driver` among them, which is the point: the
+   * shared mechanics stay importable by a test (platform §13). Built per call
+   * because a session binds it once and it costs nothing.
+   */
+  private pairHost(): PairSessionHost {
+    return {
+      log: (...args: unknown[]) => this.log(...args),
+      error: (...args: unknown[]) => this.error(...args),
+      translate: (key: string) => this.homey.__(key),
+      clock: this.homey.clock,
+      app: this.app,
+    };
+  }
 
   private get app(): any {
     return this.homey.app;
@@ -80,23 +101,8 @@ module.exports = class ControllerDriver extends Homey.Driver {
       ...initial,
     };
 
-    /**
-     * Wrap every handler so failures reach the CLI log. A handler that throws
-     * inside a pairing view otherwise surfaces as a screen that simply does
-     * nothing, which is impossible to diagnose from the outside.
-     */
-    const handler = (name: string, fn: (...args: any[]) => Promise<unknown>) => {
-      session.setHandler(name, async (...args: any[]) => {
-        try {
-          const result = await fn(...args);
-          this.log(`pair/${name} ok`);
-          return result;
-        } catch (error) {
-          this.error(`pair/${name} failed:`, messageOf(error), (error as Error)?.stack);
-          throw error;
-        }
-      });
-    };
+    const host = this.pairHost();
+    const handler = handlerRegistrar(host, session);
 
     // ---------------------------------------------------------- credentials
 
@@ -205,23 +211,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
     // -------------------------------------------------------------- targets
 
-    // The targets view is ONE file shared by all four drivers (platform §8), so the
-    // line telling the user which lights these are has to be supplied per driver.
-    // Resolved here rather than in `lib/`, which cannot translate.
-    handler('listTargets', async () => ({
-      ...await listTargetsPayload(this.app.catalog, state.target),
-      subtitle: this.homey.__('targets.subtitleController'),
-    }));
-
-    handler('selectTargets', async (spec: unknown) => {
-      // The pairing channel is a webview, so this is the same class of boundary
-      // as a generated Flow's arguments: shape AND membership are checked before
-      // anything is persisted. A well-formed id naming something that is not a
-      // light saves a device that resolves to nothing.
-      const target = await validateTargetAgainstCatalog(spec, this.app.catalog);
-      state.target = target;
-      return resolveSummary(this.app.catalog, target);
-    });
+    registerTargetHandlers(host, handler, state, 'targets.subtitleController');
 
     // -------------------------------------------------------------- mapping
 

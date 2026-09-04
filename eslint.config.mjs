@@ -157,6 +157,9 @@ export default tseslint.config(
       // The Homey SDK's own untyped device surface.
       'lib/devices/lightkeeper-device.ts',
       'lib/devices/device-lifecycle.ts',
+      // ...and its pair-session surface. A handler declares the payload it
+      // expects, so `unknown[]` here makes every caller a type error.
+      'lib/pairing/pair-session.ts',
       // A generic FIFO whose resolvers are genuinely of any type.
       'lib/support/keyed-mutex.ts',
     ],

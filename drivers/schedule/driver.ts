@@ -1,15 +1,12 @@
 import { mintDeviceId } from '../../lib/bridge/flow-bridge-manager';
-import { validateTargetAgainstCatalog } from '../../lib/validation/pairing-dto';
 import Homey from 'homey';
-import { randomUUID } from 'node:crypto';
 
 import {
-  listTargetsPayload, resolveSummary, targetLights,
+  resolveSummary, targetLights,
 } from '../../lib/pairing/target-picker';
 import { deriveSuffixedName } from '../../lib/pairing/derive-name';
-import { listSensorsPayload } from '../../lib/pairing/sensor-picker';
 import {
-  DEFAULT_RESPONSE, MAX_LUX, MIN_LUX, sanitiseResponse, type DaylightResponse,
+  sanitiseResponse, type DaylightResponse,
 } from '../../lib/daylight/daylight-types';
 import { CURRENT_SCHEDULE_SCHEMA_VERSION } from '../../lib/schedules/schedule-migrations';
 import {
@@ -18,7 +15,15 @@ import {
 } from '../../lib/schedules/schedule-types';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
 import { flowWriteProbe } from '../../lib/credential-service';
-import { messageOf } from '../../lib/support/homey-errors';
+import {
+  handlerRegistrar,
+  newSessionOwner,
+  registerDaylightCardHandlers,
+  registerTargetHandlers,
+  releaseOnDisconnect,
+  timezoneOf,
+  type PairSessionHost,
+} from '../../lib/pairing/pair-session';
 
 /**
  * The schedule driver owns: pair/repair session handlers, the data its two
@@ -38,6 +43,23 @@ interface SessionState {
 }
 
 module.exports = class ScheduleDriver extends Homey.Driver {
+
+  /**
+   * What `lib/pairing/pair-session.ts` needs of this driver.
+   *
+   * Four members and no `Homey.Driver` among them, which is the point: the
+   * shared mechanics stay importable by a test (platform §13). Built per call
+   * because a session binds it once and it costs nothing.
+   */
+  private pairHost(): PairSessionHost {
+    return {
+      log: (...args: unknown[]) => this.log(...args),
+      error: (...args: unknown[]) => this.error(...args),
+      translate: (key: string) => this.homey.__(key),
+      clock: this.homey.clock,
+      app: this.app,
+    };
+  }
 
   private get app(): any {
     return this.homey.app;
@@ -65,39 +87,9 @@ module.exports = class ScheduleDriver extends Homey.Driver {
   private async bindSession(session: any, initial: Partial<SessionState>, device?: any) {
     const state: SessionState = { entries: [], ...initial };
 
-    /**
-     * Wrap every handler so failures reach the CLI log. A handler that throws
-     * inside a pairing view otherwise surfaces as a screen that simply does
-     * nothing, which is impossible to diagnose from the outside.
-     */
-    const handler = (name: string, fn: (...args: any[]) => Promise<unknown>) => {
-      session.setHandler(name, async (...args: any[]) => {
-        try {
-          const result = await fn(...args);
-          this.log(`pair/${name} ok`);
-          return result;
-        } catch (error) {
-          this.error(`pair/${name} failed:`, messageOf(error), (error as Error)?.stack);
-          throw error;
-        }
-      });
-    };
-
-    /**
-     * This session's claim on the shared sensor service, and why it needs an id
-     * of its own.
-     *
-     * The daylight card shows what each chosen sensor currently reads, and a
-     * sensor nobody is subscribed to has no reading — so the session has to
-     * retain them while it is open. `retain` is ref-counted and TOTAL per owner,
-     * so a fixed string would make two people pairing at once release each
-     * other's sensors, and either screen would silently start showing the sky.
-     *
-     * Released on `disconnect` below. Without that, abandoning a pairing screen
-     * leaves a subscription on somebody's battery-powered motion sensor for as
-     * long as the app runs.
-     */
-    const sessionOwner = `pair-${randomUUID()}`;
+    const host = this.pairHost();
+    const handler = handlerRegistrar(host, session);
+    const sessionOwner = newSessionOwner();
 
     // ---------------------------------------------------------- credentials
 
@@ -121,23 +113,7 @@ module.exports = class ScheduleDriver extends Homey.Driver {
 
     // -------------------------------------------------------------- targets
 
-    // The targets view is ONE file shared by all four drivers (platform §8), so the
-    // line telling the user which lights these are has to be supplied per driver.
-    // Resolved here rather than in `lib/`, which cannot translate.
-    handler('listTargets', async () => ({
-      ...await listTargetsPayload(this.app.catalog, state.target),
-      subtitle: this.homey.__('targets.subtitleSchedule'),
-    }));
-
-    handler('selectTargets', async (spec: unknown) => {
-      // The pairing channel is a webview, so this is the same class of boundary
-      // as a generated Flow's arguments: shape AND membership are checked before
-      // anything is persisted. A well-formed id naming something that is not a
-      // light saves a device that resolves to nothing.
-      const target = await validateTargetAgainstCatalog(spec, this.app.catalog);
-      state.target = target;
-      return resolveSummary(this.app.catalog, target);
-    });
+    registerTargetHandlers(host, handler, state, 'targets.subtitleSchedule');
 
     // ------------------------------------------------------------ schedules
 
@@ -195,33 +171,7 @@ module.exports = class ScheduleDriver extends Homey.Driver {
 
     // ------------------------------------------------------------- daylight
 
-    /**
-     * The three handlers the shared daylight card calls.
-     *
-     * Byte-identical on all four drivers that carry that card, and deliberately
-     * SEPARATE from this driver's own `get`/`set` pair rather than folded into
-     * it. That is what lets one view file serve four screens: the card fetches
-     * and pushes its own response and never asks the surrounding screen to
-     * thread it through.
-     */
-    handler('listSensors', async () => listSensorsPayload(
-      this.app.catalog, state.daylight?.sensors ?? [],
-    ));
-
-    handler('getDaylight', async () => {
-      const response = state.daylight ?? DEFAULT_RESPONSE;
-      return {
-        // FALSE here: this card is a section of this driver's own screen, which
-        // owns the Save and the Test. Only the Daylight light's own screen is
-        // the card, and only there does it draw a footer.
-        standalone: false,
-        response,
-        limits: { minLux: MIN_LUX, maxLux: MAX_LUX },
-        now: this.app.daylight.evaluate(response),
-        sky: this.app.daylight.sky(),
-        sensorReadings: this.app.daylight.sensors(),
-      };
-    });
+    registerDaylightCardHandlers(host, handler, state, sessionOwner);
 
     handler('setDaylight', async (payload: unknown) => {
       const result = sanitiseResponse((payload as { response?: unknown })?.response ?? payload);
@@ -263,29 +213,11 @@ module.exports = class ScheduleDriver extends Homey.Driver {
       };
     });
 
-    /**
-     * Give the sensors back when the screen closes, however it closes.
-     *
-     * Saved, cancelled or abandoned — all three arrive here, and all three must
-     * release. A saved device retains its own sensors under its own device id,
-     * so releasing this session's claim never takes a live device's subscription
-     * with it; that is exactly what the ref count is for.
-     */
-    session.setHandler('disconnect', async () => {
-      try {
-        await this.app.luminance.release(sessionOwner);
-      } catch (error) {
-        this.error('Releasing the pairing session sensors failed:', messageOf(error));
-      }
-    });
+    releaseOnDisconnect(host, session, sessionOwner);
   }
 
   private timezone(): string | null {
-    try {
-      return this.homey.clock?.getTimezone() ?? null;
-    } catch {
-      return null;
-    }
+    return timezoneOf(this.pairHost());
   }
 
   /**
