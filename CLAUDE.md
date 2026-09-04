@@ -317,6 +317,10 @@ repo stopped saying.
    Test lines are numbered `T1`, `T2`, … and **a number is never reused**: the release lines you
    write here carry on from the highest one already used, and last release's are deleted rather
    than renumbered. `hardware-test-coverage.md` keeps the map back to the old `section.line` scheme.
+   **If dependabot has a `homey-api` bump open, this is the step that decides it** — either take it
+   with this pass and move the pin (`package.json`, the two mentions in this file, the header of
+   `docs/homey-platform.md`, and `ci.yml`'s comment), or say on the PR why not. Green CI is not
+   evidence for that one dependency; hardware is.
 6. Run `npm run validate` — this is what regenerates `app.json`, so it is a required step and not
    just a check. Commit the regenerated `app.json` with the rest.
 7. Re-read `README.txt` if anything about what the app *is* changed.
@@ -360,6 +364,11 @@ Nothing else in the reference has been re-checked.
   `node-version: 22` resolves to current 22.x and satisfies the floor. The bump was takeable because
   `typescript-eslint@8.68.0` already declares `eslint ^10.0.0` in its peers — unlike the TypeScript
   major that arrived in the same dependabot PR, which its peer range forbids outright.
+- **A `typescript` major is gated by `typescript-eslint`, not by us.** `typescript-eslint@8.68.0`
+  declares `typescript >=4.8.4 <6.1.0`, so TypeScript 7 cannot be installed beside it at all:
+  `npm ci` fails on the peer conflict before a single file is compiled, which is what took
+  dependabot's grouped PR #4 red. `.github/dependabot.yml` ignores typescript majors for that
+  reason, and the signal to lift it is typescript-eslint's own next major saying it supports one.
 - **`compatibility: >=12.9.0`** — the floor we can stand behind, rather than the older `>=12.3.0`
   that was never tested. Note this is a *firmware* floor; the real hardware floor is Homey Pro
   2023 and newer, because earlier models cannot mint an API Key at all (platform §1).

@@ -5,11 +5,12 @@
 # nobody moves is a pin that goes stale. Dependabot moves the SHA and the
 # trailing version comment together.
 #
-# npm is grouped into one PR per week deliberately. This app has exactly one
-# runtime dependency — homey-api, pinned EXACTLY at the version verified on
-# real hardware (see CLAUDE.md, "Pinned versions"). Its bumps are NOT routine:
-# taking one means re-running the hardware pass, so they are opened for a human
-# to judge rather than merged on green CI.
+# npm groups the routine dev-dependency traffic into one PR per week, and
+# deliberately groups NOTHING else. This app has exactly one runtime dependency
+# — homey-api, pinned EXACTLY at the version verified on real hardware (see
+# CLAUDE.md, "Pinned versions"). Its bumps are NOT routine: taking one means
+# re-running the hardware pass, so they are opened for a human to judge rather
+# than merged on green CI.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -27,5 +28,24 @@ updates:
     commit-message:
       prefix: deps
     groups:
+      # Minor and patch only, and that restriction was earned. A group is one
+      # PR with ONE CI verdict, so the grouped PR #4 put three inert patches
+      # behind three majors — one of which (typescript 7) cannot be installed
+      # at all, so `npm ci` failed and took the patches down with it. Majors
+      # now arrive one per PR, each answerable on its own evidence.
       dev-dependencies:
         dependency-type: development
+        update-types: [minor, patch]
+    ignore:
+      # @types/node tracks the RUNTIME, not npm's latest. CI runs Node 22 and
+      # engines.node floors at 20.11, so types for Node 26 would type-check the
+      # app against APIs the Homey it runs on does not have.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # A typescript major is gated by typescript-eslint's peer range
+      # (`>=4.8.4 <6.1.0` at 8.68.0), not by anything in this repo: TypeScript 7
+      # fails `npm ci` on the peer conflict before a file is compiled. Lift this
+      # when typescript-eslint's own release notes say the next major is
+      # supported — its bumps still arrive here, so that is the signal.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
