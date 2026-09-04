@@ -26,9 +26,12 @@ import en from '../../locales/en.json' with { type: 'json' };
  * Three things this CANNOT see, so that nobody reads a green run as more than
  * it is:
  *
- * - Matching is key-shaped, so a key quoted only inside a COMMENT counts as
- *   referenced. A deleted call site whose comment survives keeps a dead key
- *   green.
+ * - Matching is key-shaped and prose is stripped first, so a key named only in
+ *   a docblock counts as neither referenced nor missing. It used to count as
+ *   REFERENCED, which kept a dead key green when a call site was deleted and its
+ *   comment survived — and, in the other direction, made a docblock that
+ *   mentioned a view's filename report a locale key by that name. A key in a
+ *   TRAILING comment is still seen; see `withoutProse`.
  * - It scans lib/, drivers/, settings/, app.ts and api.ts. Nothing in scripts/,
  *   which is correct today and silent if that changes.
  * - The inline `{ "en": … }` strings in the manifests are outside its remit
@@ -81,6 +84,35 @@ function sourceFiles(): string[] {
 }
 
 /**
+ * A file's code, with prose removed.
+ *
+ * LINE-oriented, and that is the load-bearing part rather than laziness. The
+ * obvious `/\*[\s\S]*?\*\/` swallows markup: applied to `settings/index.html`
+ * it matched from a CSS comment in the `<style>` block through to a `*\/` much
+ * further down and took nineteen live `data-i18n` attributes with it, which
+ * reads exactly like nineteen dead keys. Removing whole comment LINES cannot
+ * span anything.
+ *
+ * HTML comments are stripped as real blocks, because a `<!-- ... -->` in a
+ * pairing view genuinely spans lines and its first line does not start with a
+ * comment marker.
+ *
+ * What this deliberately does not catch is a key in a TRAILING comment
+ * (`save(); // see state.ready`). The dominant case is a docblock, and a
+ * stripper that chased trailing comments would have to know about strings.
+ */
+function withoutProse(source: string): string {
+  return source
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .split('\n')
+    .filter(line => {
+      const t = line.trim();
+      return !(t.startsWith('//') || t.startsWith('/*') || t.startsWith('*'));
+    })
+    .join('\n');
+}
+
+/**
  * Keys referenced anywhere in the source.
  *
  * Matching is KEY-shaped, not call-shaped: a key reaches the UI through
@@ -103,7 +135,7 @@ function referencedKeys(): Set<string> {
   const helper = /(?<![\w.])t\(\s*'([\w]+)'/g;
 
   for (const file of sourceFiles()) {
-    const text = readFileSync(file, 'utf8');
+    const text = withoutProse(readFileSync(file, 'utf8'));
 
     for (const m of text.matchAll(literal)) referenced.add(`${m[1]}.${m[2]}`);
 

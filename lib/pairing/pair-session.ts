@@ -158,14 +158,9 @@ export function timezoneOf(host: PairSessionHost): string | null {
  * The light picker's two handlers, which every driver has.
  *
  * `subtitleKey` is the only thing that differs between the five — one shared
- * light-picker view serves all of them (platform §8), so the line that says
- * WHICH lights these are has to come from the driver. Resolved here through the
- * host rather than in `lib/`, which cannot translate.
- *
- * The view's filename is deliberately not written out above. `locales.test.ts`
- * scans for key-shaped quoted strings, so a `<group>.<name>` in backticks reads
- * to it as a locale key — a documented blind spot of that test, and the reason
- * this paragraph names the view rather than quoting its file.
+ * `targets.html` serves all of them (platform §8), so the line that says WHICH
+ * lights these are has to come from the driver. Resolved here through the host
+ * rather than in `lib/`, which cannot translate.
  */
 export function registerTargetHandlers(
   host: PairSessionHost,
