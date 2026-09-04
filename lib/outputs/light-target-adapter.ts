@@ -3,6 +3,7 @@ import type { Capability, WriteValue } from './intent-planner';
 import type { TargetStateCache } from './target-state-cache';
 import { liveValuesOf } from './target-state-cache';
 import { fireAndForget } from '../support/async';
+import { withDefaults, type Timers } from '../support/timers';
 import { BoundedLog } from '../support/bounded-log';
 import { KeyedMutex } from '../support/keyed-mutex';
 import { NO_CACHE } from '../flow-card-catalogue';
@@ -81,16 +82,35 @@ export class LightTargetAdapter {
    * too: by a newer write, and by the device ceasing to be a target, which
    * previously there was no way to reach.
    */
-  private readonly pendingChecks = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly pendingChecks = new Map<string, unknown>();
 
   /** See setImpliedOnFallback. */
   private onImpliedOnFallback: ((deviceId: string) => Promise<void>) | null = null;
+
+  /**
+   * The clock and the timer, injectable.
+   *
+   * This was the last thing in the write path reading the wall clock directly:
+   * nine bare `this.timers.now()` calls and a bare `setTimeout` driving the implied-on
+   * probe, which can switch a lamp ON 1.5 s after somebody switched it off. That
+   * is a safety-relevant path and it could only be tested by waiting 1.6 real
+   * seconds — `isUnwritable()` and `unwritableTargets()` had even grown a `now`
+   * PARAMETER as a way around it, which is the shape of a workaround rather than
+   * a design.
+   *
+   * Optional, so every existing caller — the four runtimes and three test rigs —
+   * is unchanged and gets the real clock.
+   */
+  private readonly timers: Timers;
 
   constructor(
     private readonly api: HomeyApiService,
     private readonly cache: TargetStateCache,
     private readonly log: (...args: unknown[]) => void,
-  ) {}
+    timers?: Partial<Timers>,
+  ) {
+    this.timers = withDefaults(timers);
+  }
 
   /**
    * Device handles, cached.
@@ -150,7 +170,7 @@ export class LightTargetAdapter {
     deviceId: string; capability: Capability; value: WriteValue;
     ok: boolean; ms: number; error?: string; preStage?: boolean;
   }): void {
-    const record = { at: Date.now(), ...entry };
+    const record = { at: this.timers.now(), ...entry };
     this.recentWrites.add(record);
     this.onWriteResult?.(record);
     this.noteWriteHealth(entry.deviceId, entry.capability, entry.ok, entry.preStage === true);
@@ -271,7 +291,7 @@ export class LightTargetAdapter {
 
     const streak = this.failureStreaks.get(deviceId);
     if (!streak) {
-      this.failureStreaks.set(deviceId, { since: Date.now(), count: 1, announced: false });
+      this.failureStreaks.set(deviceId, { since: this.timers.now(), count: 1, announced: false });
       return;
     }
 
@@ -299,7 +319,7 @@ export class LightTargetAdapter {
 
   private isUnwritable(
     streak: { since: number; count: number },
-    now: number = Date.now(),
+    now: number = this.timers.now(),
   ): boolean {
     return streak.count >= LightTargetAdapter.UNWRITABLE_AFTER_WRITES
       && now - streak.since >= LightTargetAdapter.UNWRITABLE_AFTER_MS;
@@ -309,7 +329,7 @@ export class LightTargetAdapter {
    * The device ids a health check should treat as not working, whatever the
    * catalog says about them.
    */
-  unwritableTargets(now: number = Date.now()): Set<string> {
+  unwritableTargets(now: number = this.timers.now()): Set<string> {
     const out = new Set<string>();
     for (const [deviceId, streak] of this.failureStreaks) {
       if (this.isUnwritable(streak, now)) out.add(deviceId);
@@ -327,7 +347,7 @@ export class LightTargetAdapter {
     // back before setCapabilityValue resolves, and an unrecognised echo reads
     // as somebody using the Hue app.
     const seq = this.cache.noteEcho(deviceId, capability, value);
-    const startedAt = Date.now();
+    const startedAt = this.timers.now();
 
     try {
       const device = await this.deviceHandle(deviceId);
@@ -339,14 +359,14 @@ export class LightTargetAdapter {
       // the room had ever shown.
       this.cache.commitDesired(deviceId, capability, value, seq);
       this.noteWriteResult({
-        deviceId, capability, value, ok: true, ms: Date.now() - startedAt,
+        deviceId, capability, value, ok: true, ms: this.timers.now() - startedAt,
         ...(options.preStage ? { preStage: true } : {}),
       });
 
       if (options.impliesOn) this.verifyCameOn(deviceId, startedAt);
     } catch (error) {
       this.noteWriteResult({
-        deviceId, capability, value, ok: false, ms: Date.now() - startedAt,
+        deviceId, capability, value, ok: false, ms: this.timers.now() - startedAt,
         error: messageOf(error),
         ...(options.preStage ? { preStage: true } : {}),
       });
@@ -370,7 +390,7 @@ export class LightTargetAdapter {
     // unable to release its pending work.
     this.cancelPending(deviceId);
 
-    const timer = setTimeout(() => {
+    const timer = this.timers.setTimeout(() => {
       this.pendingChecks.delete(deviceId);
       fireAndForget((async () => {
         if (this.cache.state(deviceId).actualOn === true) return;
@@ -432,7 +452,7 @@ export class LightTargetAdapter {
   cancelPending(deviceId: string): void {
     const timer = this.pendingChecks.get(deviceId);
     if (timer === undefined) return;
-    clearTimeout(timer);
+    this.timers.clearTimeout(timer);
     this.pendingChecks.delete(deviceId);
   }
 
@@ -551,7 +571,7 @@ export class LightTargetAdapter {
    * outlives the controller that created it.
    */
   async unsubscribeAll(): Promise<void> {
-    for (const timer of this.pendingChecks.values()) clearTimeout(timer);
+    for (const timer of this.pendingChecks.values()) this.timers.clearTimeout(timer);
     this.pendingChecks.clear();
 
     for (const deviceId of [...this.subscriptions.keys()]) {
@@ -609,10 +629,10 @@ export class LightTargetAdapter {
     const message = messageOf(error);
     // Newest first, like every other diagnostic log — this one was the odd
     // one out (push/shift), so the settings page rendered it backwards.
-    this.recentFailures.add({ deviceId, capability, message, at: Date.now() });
+    this.recentFailures.add({ deviceId, capability, message, at: this.timers.now() });
 
     const key = `${deviceId}:${capability}`;
-    const now = Date.now();
+    const now = this.timers.now();
     const last = this.lastLoggedAt.get(key) ?? 0;
     if (now - last > 60_000) {
       this.lastLoggedAt.set(key, now);

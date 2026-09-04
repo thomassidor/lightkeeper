@@ -50,7 +50,25 @@ function harness() {
     adapter, cache, writes, logs,
     /** Somebody, or something, changes the lamp's power. */
     reportOnOff: (value: boolean) => listener?.(value),
-    /** Let the 1.5 s probe fire. */
+    /**
+     * Let the 1.5 s probe fire. REAL time, and 1.6 s per test of it.
+     *
+     * `LightTargetAdapter` now takes an injectable `Timers`, so the obvious move
+     * is a fake clock — 13 s of this suite is spent waiting for a timer whose
+     * only job is to be late. It does not drop in, and the reason is worth
+     * knowing before trying again: the stand-down compares a timestamp the CACHE
+     * recorded against one the ADAPTER recorded, so both have to share the clock
+     * (the cache does accept one) AND the rig has to advance it between the
+     * write and the user's action, because the comparison is strict and a frozen
+     * clock puts them in the same instant. With both of those done, one case —
+     * "a lamp switched off inside the window is left off" — still takes the
+     * corrective write, so something else in the echo/settle path is reading
+     * elapsed time in a way the fake clock does not reproduce.
+     *
+     * Left as real waiting rather than half-converted: a fast test that passes
+     * for the wrong reason is worse than a slow one that passes for the right
+     * one.
+     */
     async runProbe() {
       await new Promise(resolve => setTimeout(resolve, 1_600));
       await settle(4);
