@@ -1,3 +1,4 @@
+import { RuntimeLifetime, cleanupResources, startRuntime, SensorClaim } from '../runtime/runtime-resources';
 import type { HomeyApiService } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
 import { CommandScheduler, type WriteOutcome } from '../outputs/command-scheduler';
@@ -141,6 +142,8 @@ const MAX_STEP_PER_TICK = 0.05;
 const WATCHED: Capability[] = ['onoff', 'dim'];
 
 export class DaylightRuntime {
+  private readonly lifetime = new RuntimeLifetime();
+  private readonly sensorClaim: SensorClaim;
   private readonly cache = new TargetStateCache();
   private readonly adapter: LightTargetAdapter;
   private readonly resolver: TargetResolver;
@@ -203,6 +206,7 @@ export class DaylightRuntime {
     this.visible = new VisibleState((state, detail) => deps.onStateChange(state, detail));
     this.timers = withDefaults({ ...(deps.now !== undefined ? { now: deps.now } : {}) });
     this.resolver = new TargetResolver(deps.catalog);
+    this.sensorClaim = new SensorClaim(deps.luminance, controllerId);
     this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log);
     if (deps.onWriteResult) this.adapter.setWriteSink(deps.onWriteResult);
   }
@@ -214,20 +218,31 @@ export class DaylightRuntime {
   private now(): number { return this.timers.now(); }
 
   async start(): Promise<void> {
-    await this.buildRuntime();
-    await this.assessHealth();
-    // Not deferred to the first tick: a restart at dusk must correct the room
-    // now, not in up to a minute's time.
-    await this.applyNow('start');
+    return this.lifetime.start(async current => {
+      this.adapter.resume();
+      await this.buildRuntime(current);
+      if (!current()) return;
+      await this.assessHealth();
+      if (!current()) return;
+      // Not deferred to the first tick: a restart at dusk must correct the room
+      // now, not in up to a minute's time.
+      await this.applyNow('start');
+      if (!current()) return;
+    });
   }
 
   /** Targets, cache, queue and subscriptions — no health, no writes. */
   async startIdle(): Promise<void> {
-    await this.buildRuntime();
+    return this.lifetime.start(async current => {
+      this.adapter.resume();
+      await this.buildRuntime(current);
+      if (!current()) return;
+    });
   }
 
-  private async buildRuntime(): Promise<void> {
+  private async buildRuntime(current: () => boolean): Promise<void> {
     const resolved = await resolveSnapshot(this.resolver, this.plan.target);
+    if (!current()) return;
     this.snapshot = resolved;
     this.targetIds = resolved.ids;
     this.targetNames = resolved.names;
@@ -238,19 +253,27 @@ export class DaylightRuntime {
       onError: (deviceId, capability, error) =>
         this.deps.log(`Write failed on ${deviceId}/${capability}:`, messageOf(error)),
     }, (deviceId, capability, value, options) =>
-      this.adapter.write(deviceId, capability, value, options));
+      this.adapter.write(deviceId, capability, value, {
+        ...options,
+        eligible: () => current() && this.targetIds.includes(deviceId)
+          && (options?.eligible?.() ?? true)
+          && (capability !== 'dim' || this.cache.state(deviceId).actualOn === true),
+      }));
 
     // Ref-counted and shared: five devices naming one sensor cost one
     // subscription. Total for this owner, so a sensor dropped from the plan is
     // released by the same call that retains the new one.
-    await this.deps.luminance.retain(this.plan.response.sensors, this.controllerId);
+    await this.sensorClaim.retain(this.plan.response.sensors);
+    if (!current()) return;
 
     // Once, here. The tick deliberately does NOT refresh: live values arrive
     // over the subscriptions below, and re-reading every target every minute
     // would put a round trip per light per minute into an app that otherwise
     // only talks to Homey when something happens.
     await Promise.all(this.targetIds.map(id => this.adapter.refresh(id)));
+    if (!current()) return;
     await this.subscribeAll();
+    if (!current()) return;
   }
 
   private async subscribeAll(): Promise<void> {
@@ -275,6 +298,7 @@ export class DaylightRuntime {
     if (!external) return;
 
     if (capability === 'onoff') {
+      if (value === false) this.scheduler?.cancelTarget(deviceId);
       if (this.overrides.delete(deviceId)) {
         this.deps.log(`${deviceId} was power-cycled; daylight control resumes`);
       }
@@ -388,6 +412,7 @@ export class DaylightRuntime {
       wanted.set(deviceId, this.aimFor(deviceId, verdict.brightness, options.force === true));
     }
 
+    const current = this.lifetime.current();
     const writes = this.planWrites(wanted, options.force === true);
     // Recorded here rather than in noteOutcomes: an aim that only advanced on a
     // successful write would stall on any lamp whose resolution swallows a slew
@@ -408,7 +433,7 @@ export class DaylightRuntime {
       // failed — as done tells both gates the lamp is already where it needs to
       // be, and then every later tick agrees and the lamp never moves again.
       fireAndForget(
-        completion.then(outcomes => this.noteOutcomes(outcomes)),
+        completion.then(outcomes => { if (current()) this.noteOutcomes(outcomes); }),
         this.deps.log,
         'Daylight write bookkeeping',
       );
@@ -536,7 +561,7 @@ export class DaylightRuntime {
    */
   private noteOutcomes(outcomes: WriteOutcome[]): void {
     for (const outcome of outcomes) {
-      if (outcome.status !== 'succeeded') continue;
+      if (outcome.status !== 'succeeded' || !this.targetIds.includes(outcome.deviceId)) continue;
       if (outcome.capability !== 'dim') continue;
       this.committed.set(outcome.deviceId, {
         device: outcome.value as number,
@@ -597,68 +622,81 @@ export class DaylightRuntime {
 
   /** Devices or zones changed: re-resolve without tearing the queue down. */
   async refreshTargets(): Promise<void> {
-    const next = await resolveSnapshot(this.resolver, this.plan.target);
-    // The fingerprint, not the id list — see target-snapshot.ts. It matters here
-    // for the same reason it matters to a curve: every write is clamped and
-    // quantised against the target's own `dim` options, so a lamp re-paired
-    // under the same id with different `decimals` would be gated against a
-    // resolution it no longer has.
-    if (this.snapshot && this.snapshot.fingerprint === next.fingerprint) return;
+    return this.lifetime.run(async current => {
+      const next = await resolveSnapshot(this.resolver, this.plan.target);
+      if (!current()) return;
+      // The fingerprint, not the id list — see target-snapshot.ts. It matters here
+      // for the same reason it matters to a curve: every write is clamped and
+      // quantised against the target's own `dim` options, so a lamp re-paired
+      // under the same id with different `decimals` would be gated against a
+      // resolution it no longer has.
+      if (this.snapshot && this.snapshot.fingerprint === next.fingerprint) return;
 
-    const { removed } = diffTargets(this.snapshot, next);
-    for (const deviceId of removed) {
-      // The acceptance bar: after a light leaves the plan, switching it on must
-      // produce ZERO writes. It kept its capability subscription otherwise, and
-      // the rising edge of `onoff` is THE feature — so the runtime dutifully
-      // dimmed a lamp that was no longer any of its business.
-      await releaseTarget(deviceId, {
-        unsubscribe: id => this.adapter.unsubscribe(id),
-        cancelPending: id => this.adapter.cancelPending(id),
-        cache: this.cache,
-      });
-      this.overrides.delete(deviceId);
-      this.aim.delete(deviceId);
-      this.committed.delete(deviceId);
-    }
+      const { removed } = diffTargets(this.snapshot, next);
+      // Revoke membership before awaiting teardown, so concurrent ticks cannot
+      // enqueue fresh commands for a target we are already releasing.
+      this.targetIds = next.ids;
+      for (const deviceId of removed) {
+        // The acceptance bar: after a light leaves the plan, switching it on must
+        // produce ZERO writes. It kept its capability subscription otherwise, and
+        // the rising edge of `onoff` is THE feature — so the runtime dutifully
+        // dimmed a lamp that was no longer any of its business.
+        this.scheduler?.cancelTarget(deviceId);
+        await releaseTarget(deviceId, {
+          unsubscribe: id => this.adapter.unsubscribe(id),
+          cancelPending: id => this.adapter.cancelPending(id),
+          cache: this.cache,
+        });
+        if (!current()) return;
+        this.overrides.delete(deviceId);
+        this.aim.delete(deviceId);
+        this.committed.delete(deviceId);
+      }
 
-    this.snapshot = next;
-    this.targetIds = next.ids;
-    this.targetNames = next.names;
-    this.resolver.primeCache(next.devices, this.cache);
-    await Promise.all(next.ids.map(id => this.adapter.refresh(id)));
-    await this.subscribeAll();
-    this.deps.log(`Daylight targets re-resolved: ${next.ids.length} light(s)`);
+      this.snapshot = next;
+      this.targetNames = next.names;
+      this.resolver.primeCache(next.devices, this.cache);
+      await Promise.all(next.ids.map(id => this.adapter.refresh(id)));
+      if (!current()) return;
+      await this.subscribeAll();
+      if (!current()) return;
+      this.deps.log(`Daylight targets re-resolved: ${next.ids.length} light(s)`);
 
-    await this.applyNow('targets changed');
-    await this.assessHealth();
+      await this.applyNow('targets changed');
+      await this.assessHealth();
+    });
   }
 
   async updatePlan(plan: DaylightPlan): Promise<void> {
     this.plan = plan;
     await this.stop();
-    await this.start();
+    await startRuntime(this, () => this.start(), this.deps.log);
   }
 
   async stop(): Promise<void> {
     this.scheduler?.stop();
-    this.scheduler = null;
-    // The adapter's own pending checks outlive this runtime unless released.
-    await this.adapter.unsubscribeAll();
-    // Ref-counted, so this releases only this device's claim: a sensor another
-    // Lightkeeper device also named keeps its subscription.
-    await this.deps.luminance.release(this.controllerId);
-    this.cache.clear();
-    this.overrides.clear();
-    // Cleared for the reason the circadian runtime's colour record had to be:
-    // `updatePlan()` is stop-then-start and `start()`'s own apply is NOT forced,
-    // so a record from the old plan would have the deadband decline the new
-    // plan's first write.
-    this.aim.clear();
-    this.committed.clear();
-    this.targetIds = [];
-    this.targetNames = [];
-    // Or the next refresh diffs the new plan's targets against the old plan's.
-    this.snapshot = null;
+    this.adapter.suspend();
+    return this.lifetime.stop(async () => {
+      this.scheduler?.stop();
+      this.scheduler = null;
+      // The adapter's own pending checks outlive this runtime unless released.
+      await cleanupResources([
+        () => this.adapter.unsubscribeAll(),
+        () => this.sensorClaim.release(),
+      ], this.deps.log);
+      this.cache.clear();
+      this.overrides.clear();
+      // Cleared for the reason the circadian runtime's colour record had to be:
+      // `updatePlan()` is stop-then-start and `start()`'s own apply is NOT forced,
+      // so a record from the old plan would have the deadband decline the new
+      // plan's first write.
+      this.aim.clear();
+      this.committed.clear();
+      this.targetIds = [];
+      this.targetNames = [];
+      // Or the next refresh diffs the new plan's targets against the old plan's.
+      this.snapshot = null;
+    });
   }
 
   /**

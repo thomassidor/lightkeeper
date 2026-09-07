@@ -330,3 +330,25 @@ describe('capacity is honest', () => {
     assert.equal(h.written.length, 2);
   });
 });
+
+
+describe('target cancellation', () => {
+  test('cancels both pending writes and the undispatched tail of an active batch', async () => {
+    const h = harness({ hold: 'lamp' });
+    const first = h.scheduler.submit([
+      { deviceId: 'lamp', capability: 'onoff', value: true },
+      { deviceId: 'lamp', capability: 'dim', value: 0.4 },
+    ]);
+    const pending = h.scheduler.submit([{ deviceId: 'lamp', capability: 'dim', value: 0.8 }]);
+    h.scheduler.cancelTarget('lamp');
+    assert.equal((await pending.completion)[0]?.status, 'cancelled');
+    h.gate.resolve();
+    assert.ok((await first.completion).every(outcome => outcome.status === 'cancelled'));
+    assert.equal(h.written.length, 1, 'only the command already dispatched may execute');
+    assert.equal(h.errors.length, 0);
+    const next = h.scheduler.submit([{ deviceId: 'lamp', capability: 'dim', value: 0.6 }]);
+    await h.scheduler.drain();
+    assert.equal((await next.completion)[0]?.status, 'succeeded', 'a new target generation can write');
+    h.scheduler.stop();
+  });
+});

@@ -193,6 +193,8 @@ export class DeviceLifecycle<
   /** Every verdict gets a number; only the newest may be applied. */
   private stateSeq = 0;
   private appliedSeq = 0;
+  private planGeneration = 0;
+  private applying = false;
 
   constructor(private readonly owner: DeviceOwner<TPlan, TRuntime, TRuntimePlan>) {}
 
@@ -291,11 +293,18 @@ export class DeviceLifecycle<
   }
 
   private async registerPlan(plan: TPlan): Promise<TRuntime> {
+    const generation = ++this.planGeneration;
     return this.owner.registry().register(
       this.deviceId,
       plan,
-      (state: ControllerState, detail?: StateDetail) => this.onRuntimeState(state, detail),
-      async (updated: TPlan) => this.persistPlan(updated),
+      (state: ControllerState, detail?: StateDetail) => {
+        if (generation === this.planGeneration) this.onRuntimeState(state, detail);
+      },
+      async (updated: TPlan) => {
+        // During apply the runtime owns its candidate; only the final commit
+        // publishes it. Old runtimes can finish reconciliation after replacement.
+        if (!this.applying) await this.persistPlan(updated, generation);
+      },
       () => this.owner.getName(),
     );
   }
@@ -308,31 +317,30 @@ export class DeviceLifecycle<
    */
   async apply(incoming: TPlan): Promise<void> {
     return this.operations.run(OPS, async () => {
+      this.applying = true;
+      this.planGeneration += 1;
+      // Let an already-dispatched store write finish before taking the rollback
+      // snapshot. Queued writes from the old generation are discarded.
+      await this.operations.run('store', async () => {});
       const previous = this.storedPlan();
-      const merged = await this.owner.prepareApply(previous, incoming);
 
       let runtime: TRuntime;
+      let merged: TPlan;
       try {
+        merged = await this.owner.prepareApply(previous, incoming);
         runtime = await this.registerPlan(merged);
+        // The candidate is committed only once start has completed. This write
+        // is part of the transaction too: a failed save must not keep running.
+        await this.persistPlan(this.owner.planOf(runtime, merged));
       } catch (error) {
-        // The new plan never started. Put the old one back — store first, so a
-        // restart during the recovery below finds the configuration that is
-        // actually running rather than the one that failed.
+        // Startup or the final commit failed. Stop the candidate and restore
+        // the old store before rebuilding its runtime.
         this.owner.error('Applying the new configuration failed:', messageOf(error));
-        await this.rollback(previous, error);
+        try { await this.rollback(previous, error); }
+        finally { this.applying = false; }
         throw error;
       }
-
-      // Persist AFTER the register: what the runtime has learned (managed Flow
-      // references, in practice) is already folded into its own plan, and
-      // writing `merged` here would drop it.
-      //
-      // `merged` is passed as the BASE for the same reason it is not written
-      // directly. A device type that folds runtime-owned fields back onto a
-      // stored shape has to fold them onto the plan this apply is for; reading
-      // the store instead persisted the plan the user had just replaced,
-      // because this line deliberately runs before the store is written.
-      await this.persistPlan(this.owner.planOf(runtime, merged));
+      this.applying = false;
 
       if (this.owner.withPauseSwitch) {
         await this.owner.setCapabilityValue('onoff', this.owner.planEnabled(merged))
@@ -342,23 +350,32 @@ export class DeviceLifecycle<
       // The runtime's own verdict is the final word, not an unconditional
       // setAvailable(): a controller whose remote has vanished must not read as
       // ready merely because the save succeeded.
-      await this.publishState(runtime.currentState, runtime.currentDetail);
+      await this.publishState(runtime.currentState, runtime.currentDetail, false);
     });
   }
 
   /** Restore the plan that was running before a failed apply. */
   private async rollback(previous: TPlan | null, cause: unknown): Promise<void> {
+    this.planGeneration += 1;
     try {
-      if (previous) {
+      // Remove the candidate before touching storage: even failed recovery must
+      // leave no candidate dispatchable or controlling lights.
+      await this.owner.registry().unregister(this.deviceId);
+      await this.operations.run('store', async () => {
         await this.owner.setStoreValue(this.owner.storeKey, previous);
+      });
+      if (previous) {
         const runtime = await this.registerPlan(previous);
-        await this.publishState(runtime.currentState, runtime.currentDetail);
+        await this.persistPlan(this.owner.planOf(runtime, previous));
+        await this.publishState(runtime.currentState, runtime.currentDetail, false);
         return;
       }
       // Nothing was configured before, so there is nothing to put back.
-      await this.owner.registry().unregister(this.deviceId);
       await this.owner.setUnavailable(this.owner.translate(this.quarantineKey));
     } catch (error) {
+      this.planGeneration += 1;
+      try { await this.owner.registry().unregister(this.deviceId); }
+      catch (stopError) { this.owner.error('Stopping the failed recovery:', messageOf(stopError)); }
       // Both the new plan and the old one failed to start. Say so with the
       // ORIGINAL failure: that is the one the user's change caused.
       this.owner.error('Could not restore the previous configuration:', messageOf(error));
@@ -369,8 +386,11 @@ export class DeviceLifecycle<
   }
 
   /** Managed plan changes must survive a restart, or their Flows leak. */
-  private async persistPlan(plan: TPlan): Promise<void> {
-    await this.owner.setStoreValue(this.owner.storeKey, plan);
+  private async persistPlan(plan: TPlan, generation = this.planGeneration): Promise<void> {
+    await this.operations.run('store', async () => {
+      if (generation !== this.planGeneration) return;
+      await this.owner.setStoreValue(this.owner.storeKey, plan);
+    });
   }
 
   /** The pause switch on the tile, and anything the user's own Flows do to it. */
@@ -482,6 +502,7 @@ export class DeviceLifecycle<
    * rather than overwriting it.
    */
   onRuntimeState(state: ControllerState, detail?: StateDetail): void {
+    if (this.applying) return;
     fireAndForget(
       this.publishState(state, detail),
       (...args: unknown[]) => this.owner.error(...args),
@@ -489,19 +510,21 @@ export class DeviceLifecycle<
     );
   }
 
-  private async publishState(state: ControllerState, detail?: StateDetail): Promise<void> {
+  private async publishState(state: ControllerState, detail?: StateDetail, persist = true): Promise<void> {
+    const generation = this.planGeneration;
     const seq = ++this.stateSeq;
     return this.operations.run(STATE, async () => {
+      if (generation !== this.planGeneration) return;
       // Persist whatever the runtime has learned about its own plan. Read from
       // the runtime rather than from a closure: by the time this runs it is the
       // live answer, and a stale one would clobber newer references.
       const runtime = this.owner.registry().get(this.deviceId);
-      if (runtime) {
+      if (runtime && persist) {
         try {
           // The store is the base here: nothing newer has been written, and a
           // device type that folds runtime-owned fields back wants them on
           // whatever is currently persisted.
-          await this.persistPlan(this.owner.planOf(runtime, this.storedPlan()));
+          await this.persistPlan(this.owner.planOf(runtime, this.storedPlan()), generation);
         } catch (error) {
           // A plan we could not persist is a plan whose Flow references will not
           // survive a restart. Repair is the honest state, and it must not be
@@ -514,7 +537,7 @@ export class DeviceLifecycle<
           // superseded, and `appliedSeq` moved BACKWARDS, after which verdicts
           // newer than the stale one stopped being rejected.
           this.owner.error('Could not persist the plan:', messageOf(error));
-          if (seq < this.appliedSeq) return;
+          if (seq < this.appliedSeq || generation !== this.planGeneration) return;
           this.appliedSeq = seq;
           await this.owner.setUnavailable(this.owner.translate('state.persistFailed'));
           return;
@@ -523,7 +546,7 @@ export class DeviceLifecycle<
 
       // A verdict older than one already applied is stale — the classic case is
       // a register's callback landing after the apply that superseded it.
-      if (seq < this.appliedSeq) return;
+      if (seq < this.appliedSeq || generation !== this.planGeneration) return;
       this.appliedSeq = seq;
 
       if (this.availabilityFor(state)) {

@@ -1,3 +1,5 @@
+import type { LuminanceSource } from '../daylight/luminance-source';
+import { RuntimeLifetime, cleanupResources, startRuntime, SensorClaim } from '../runtime/runtime-resources';
 import type { HomeyApiService } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
 import type { DaylightEvaluator } from '../daylight/daylight-evaluator';
@@ -87,6 +89,7 @@ export interface CircadianRuntimeDeps {
    * keep working unchanged — and because a plan with no `daylight` never asks.
    */
   daylight?: DaylightEvaluator;
+  luminance?: LuminanceSource;
 }
 
 export interface CircadianAction {
@@ -307,6 +310,8 @@ export interface CircadianDiagnostics {
 }
 
 export class CircadianRuntime {
+  private readonly lifetime = new RuntimeLifetime();
+  private readonly sensorClaim: SensorClaim;
   private readonly cache = new TargetStateCache();
   private readonly adapter: LightTargetAdapter;
   private readonly resolver: TargetResolver;
@@ -385,6 +390,7 @@ export class CircadianRuntime {
     this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log);
     if (deps.onWriteResult) this.adapter.setWriteSink(deps.onWriteResult);
     this.resolver = new TargetResolver(deps.catalog);
+    this.sensorClaim = new SensorClaim(deps.luminance, controllerId);
   }
 
   get currentState(): ControllerState { return this.visible.current; }
@@ -427,19 +433,29 @@ export class CircadianRuntime {
   private readonly lastColorWritten = new Map<string, { hue: number; saturation: number }>();
 
   async start(): Promise<void> {
-    await this.buildRuntime();
-    await this.assessHealth();
-    // Not deferred to the first tick: a restart at 21:00 must correct the room
-    // now, not in up to a minute's time.
-    await this.applyNow('start');
+    return this.lifetime.start(async current => {
+      this.adapter.resume();
+      await this.buildRuntime(current);
+      if (!current()) return;
+      await this.assessHealth();
+      if (!current()) return;
+      // Not deferred to the first tick: a restart at 21:00 must correct the room
+      // now, not in up to a minute's time.
+      await this.applyNow('start');
+      if (!current()) return;
+    });
   }
 
   /** Targets, cache, queue and subscriptions — no health, no writes. */
   async startIdle(): Promise<void> {
-    await this.buildRuntime();
+    return this.lifetime.start(async current => {
+      this.adapter.resume();
+      await this.buildRuntime(current);
+      if (!current()) return;
+    });
   }
 
-  private async buildRuntime(): Promise<void> {
+  private async buildRuntime(current: () => boolean): Promise<void> {
     /**
      * `resolveSnapshot`, and the snapshot is RECORDED here.
      *
@@ -451,7 +467,10 @@ export class CircadianRuntime {
      * such a light on produces ZERO writes. And after `stop()`/`start()` the
      * field described the PREVIOUS plan's targets.
      */
+    await this.sensorClaim.retain(this.plan.daylight?.sensors ?? []);
+    if (!current()) return;
     const resolved = await resolveSnapshot(this.resolver, this.plan.target);
+    if (!current()) return;
     this.snapshot = resolved;
     this.targetIds = resolved.ids;
     this.targetNames = resolved.names;
@@ -462,7 +481,12 @@ export class CircadianRuntime {
       onError: (deviceId, capability, error) =>
         this.deps.log(`Write failed on ${deviceId}/${capability}:`, messageOf(error)),
     }, (deviceId, capability, value, options) =>
-      this.adapter.write(deviceId, capability, value, options));
+      this.adapter.write(deviceId, capability, value, {
+        ...options,
+        eligible: () => current() && this.targetIds.includes(deviceId)
+          && (options?.eligible?.() ?? true)
+          && (capability !== 'dim' || this.cache.state(deviceId).actualOn === true),
+      }));
 
     // Once, here. The tick deliberately does NOT refresh: live values arrive over
     // the subscriptions below, and re-reading every target every minute would put
@@ -470,7 +494,9 @@ export class CircadianRuntime {
     // Homey when something happens. (The schedule runtime does refresh before it
     // acts — it fires twice a day, off a cache that may be hours stale.)
     await Promise.all(this.targetIds.map(id => this.adapter.refresh(id)));
+    if (!current()) return;
     await this.subscribeAll();
+    if (!current()) return;
   }
 
   private async subscribeAll(): Promise<void> {
@@ -514,6 +540,7 @@ export class CircadianRuntime {
     if (!external) return;
 
     if (capability === 'onoff') {
+      if (value === false) this.scheduler?.cancelTarget(deviceId);
       if (this.overrides.delete(deviceId)) {
         this.deps.log(`${deviceId} was power-cycled; circadian control resumes`);
       }
@@ -732,6 +759,7 @@ export class CircadianRuntime {
       eligible.push(deviceId);
     }
 
+    const current = this.lifetime.current();
     const writes = this.planWrites(value, eligible, lit, options.force === true);
 
     if (!this.scheduler) {
@@ -795,8 +823,10 @@ export class CircadianRuntime {
        * the window could close before the lamp had even been asked.
        */
       fireAndForget(completion.then(outcomes => {
+        if (!current()) return;
         this.noteOutcomes(outcomes);
         for (const outcome of outcomes) {
+          if (!this.targetIds.includes(outcome.deviceId)) continue;
           // The same allowlist as the arming loop above. Widening only one of
           // the two leaves the other filtering every hue outcome out, and the
           // probe still never arms. It is also what makes a decline count ONCE
@@ -1038,7 +1068,7 @@ export class CircadianRuntime {
    */
   private noteOutcomes(outcomes: WriteOutcome[]): void {
     for (const outcome of outcomes) {
-      if (outcome.status !== 'succeeded') continue;
+      if (outcome.status !== 'succeeded' || !this.targetIds.includes(outcome.deviceId)) continue;
       const entry = this.lastWritten.get(outcome.deviceId) ?? { at: this.now() };
       if (outcome.capability === 'light_temperature') {
         entry.warmth = outcome.value as number;
@@ -1139,12 +1169,14 @@ export class CircadianRuntime {
    * asked for the test and is standing in front of the lamp.
    */
   private verifyStayedOff(deviceId: string, generation: number): void {
+    const current = this.lifetime.current();
     // One probe per device: a newer write cancels the older one's, because the
     // older one can no longer tell us anything about a lamp the newer write
     // has since touched.
     this.cancelProbe(deviceId);
 
     const timer = this.setTimer(() => {
+      if (!current() || !this.targetIds.includes(deviceId)) return;
       this.probes.delete(deviceId);
       // Superseded between scheduling and firing: this probe is about a write
       // that is no longer the last thing we did to this lamp.
@@ -1383,80 +1415,96 @@ export class CircadianRuntime {
 
   /** Devices or zones changed: re-resolve without tearing the queue down. */
   async refreshTargets(): Promise<void> {
-    const next = await resolveSnapshot(this.resolver, this.plan.target);
-    // The fingerprint, not the id list — see target-snapshot.ts. This runtime
-    // is the one where it matters most: it clamps every write to the target's
-    // own light_temperature range, so a lamp re-paired under the same id with
-    // a different range gets the wrong colour on every tick, forever.
-    if (this.snapshot && this.snapshot.fingerprint === next.fingerprint) return;
+    return this.lifetime.run(async current => {
+      const next = await resolveSnapshot(this.resolver, this.plan.target);
+      if (!current()) return;
+      // The fingerprint, not the id list — see target-snapshot.ts. This runtime
+      // is the one where it matters most: it clamps every write to the target's
+      // own light_temperature range, so a lamp re-paired under the same id with
+      // a different range gets the wrong colour on every tick, forever.
+      if (this.snapshot && this.snapshot.fingerprint === next.fingerprint) return;
 
-    const { removed } = diffTargets(this.snapshot, next);
-    for (const deviceId of removed) {
-      /**
-       * The acceptance bar for the whole task: after a light leaves the plan,
-       * switching it on must produce ZERO writes.
-       *
-       * It kept its capability subscription, so the rising edge of `onoff`
-       * still arrived — and the rising edge is THE feature (platform §12), so
-       * the runtime dutifully wrote a colour to a lamp that was no longer any
-       * of its business.
-       */
-      await releaseTarget(deviceId, {
-        unsubscribe: id => this.adapter.unsubscribe(id),
-        cancelPending: id => this.adapter.cancelPending(id),
-        cache: this.cache,
-      });
-      this.overrides.delete(deviceId);
-      this.lastWritten.delete(deviceId);
-      // Same reason as in stop(): a light that leaves and later rejoins the plan
-      // must not be gated against what we wrote to it while it was ours.
-      this.lastColorWritten.delete(deviceId);
-      this.pendingColor.delete(deviceId);
-      this.preStageDeclines.delete(deviceId);
-      this.cancelProbe(deviceId);
-    }
+      const { removed } = diffTargets(this.snapshot, next);
+      // Revoke membership before awaiting teardown, so concurrent ticks cannot
+      // enqueue fresh commands for a target we are already releasing.
+      this.targetIds = next.ids;
+      for (const deviceId of removed) {
+        /**
+         * The acceptance bar for the whole task: after a light leaves the plan,
+         * switching it on must produce ZERO writes.
+         *
+         * It kept its capability subscription, so the rising edge of `onoff`
+         * still arrived — and the rising edge is THE feature (platform §12), so
+         * the runtime dutifully wrote a colour to a lamp that was no longer any
+         * of its business.
+         */
+        this.scheduler?.cancelTarget(deviceId);
+        await releaseTarget(deviceId, {
+          unsubscribe: id => this.adapter.unsubscribe(id),
+          cancelPending: id => this.adapter.cancelPending(id),
+          cache: this.cache,
+        });
+        if (!current()) return;
+        this.overrides.delete(deviceId);
+        this.lastWritten.delete(deviceId);
+        // Same reason as in stop(): a light that leaves and later rejoins the plan
+        // must not be gated against what we wrote to it while it was ours.
+        this.lastColorWritten.delete(deviceId);
+        this.pendingColor.delete(deviceId);
+        this.preStageDeclines.delete(deviceId);
+        this.cancelProbe(deviceId);
+      }
 
-    this.snapshot = next;
-    this.targetIds = next.ids;
-    this.targetNames = next.names;
-    this.resolver.primeCache(next.devices, this.cache);
-    await Promise.all(next.ids.map(id => this.adapter.refresh(id)));
-    await this.subscribeAll();
-    this.deps.log(`Circadian targets re-resolved: ${next.ids.length} light(s)`);
+      this.snapshot = next;
+      this.targetNames = next.names;
+      this.resolver.primeCache(next.devices, this.cache);
+      await Promise.all(next.ids.map(id => this.adapter.refresh(id)));
+      if (!current()) return;
+      await this.subscribeAll();
+      if (!current()) return;
+      this.deps.log(`Circadian targets re-resolved: ${next.ids.length} light(s)`);
 
-    await this.applyNow('targets changed');
-    await this.assessHealth();
+      await this.applyNow('targets changed');
+      await this.assessHealth();
+    });
   }
 
   async updatePlan(plan: CircadianPlan): Promise<void> {
     this.plan = plan;
     await this.stop();
-    await this.start();
+    await startRuntime(this, () => this.start(), this.deps.log);
   }
 
   async stop(): Promise<void> {
-    for (const probe of this.probes.values()) this.clearTimer(probe.timer);
-    this.probes.clear();
-    this.writeGeneration.clear();
     this.scheduler?.stop();
-    this.scheduler = null;
-    // The adapter's own pending checks outlive this runtime unless released.
-    await this.adapter.unsubscribeAll();
-    this.cache.clear();
-    this.overrides.clear();
-    this.lastWritten.clear();
-    // The colour side of the same bookkeeping, and it used to be left standing
-    // here while its temperature counterpart was cleared. `updatePlan()` is
-    // stop-then-start and `start()`'s own apply is NOT forced, so a plan change
-    // left `colorHasMoved()` comparing the new curve's colour against a record
-    // from the old one — and declining the first write.
-    this.lastColorWritten.clear();
-    this.pendingColor.clear();
-    this.preStageDeclines.clear();
-    this.targetIds = [];
-    this.targetNames = [];
-    // Or the next refresh diffs the new plan's targets against the old plan's.
-    this.snapshot = null;
+    this.adapter.suspend();
+    return this.lifetime.stop(async () => {
+      for (const probe of this.probes.values()) this.clearTimer(probe.timer);
+      this.probes.clear();
+      this.writeGeneration.clear();
+      this.scheduler?.stop();
+      this.scheduler = null;
+      // The adapter's own pending checks outlive this runtime unless released.
+      await cleanupResources([
+        () => this.adapter.unsubscribeAll(),
+        () => this.sensorClaim.release(),
+      ], this.deps.log);
+      this.cache.clear();
+      this.overrides.clear();
+      this.lastWritten.clear();
+      // The colour side of the same bookkeeping, and it used to be left standing
+      // here while its temperature counterpart was cleared. `updatePlan()` is
+      // stop-then-start and `start()`'s own apply is NOT forced, so a plan change
+      // left `colorHasMoved()` comparing the new curve's colour against a record
+      // from the old one — and declining the first write.
+      this.lastColorWritten.clear();
+      this.pendingColor.clear();
+      this.preStageDeclines.clear();
+      this.targetIds = [];
+      this.targetNames = [];
+      // Or the next refresh diffs the new plan's targets against the old plan's.
+      this.snapshot = null;
+    });
   }
 
   /**

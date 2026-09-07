@@ -1,3 +1,5 @@
+import type { LuminanceSource } from '../daylight/luminance-source';
+import { startRuntime, previewOwner } from '../runtime/runtime-resources';
 import type { HomeyApiService } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
 import type { DaylightEvaluator } from '../daylight/daylight-evaluator';
@@ -40,6 +42,7 @@ export interface CircadianManagerDeps {
    * without one.
    */
   daylight?: DaylightEvaluator;
+  luminance?: LuminanceSource;
   /** `homey.setInterval` in the app; a stub in the tests, which drive tickAll(). */
   setInterval?: (fn: () => void, ms: number) => unknown;
   clearInterval?: (handle: unknown) => void;
@@ -79,8 +82,7 @@ export class CircadianRuntimeManager {
         onPlanChange,
         kind,
       });
-      await built.start();
-      return built;
+      return startRuntime(built, () => built.start(), this.deps.log);
     });
     // After the insert, not before: the ticker's guard is "is anything
     // registered", and starting it around a register that then threw left a
@@ -94,7 +96,7 @@ export class CircadianRuntimeManager {
    * real lights before anything is saved. Callers must stop it.
    */
   async ephemeral(plan: CircadianPlan): Promise<CircadianRuntime> {
-    const runtime = new CircadianRuntime('__test__', plan, {
+    const runtime = new CircadianRuntime(previewOwner(), plan, {
       ...this.baseDeps(),
       displayName: () => 'test',
       onStateChange: () => { /* a test rig has no health state */ },
@@ -102,8 +104,7 @@ export class CircadianRuntimeManager {
     });
     // Deliberately idle: the screen decides when to touch someone's lights, not
     // the act of opening it.
-    await runtime.startIdle();
-    return runtime;
+    return startRuntime(runtime, () => runtime.startIdle(), this.deps.log);
   }
 
   private baseDeps(): Omit<CircadianRuntimeDeps, 'onStateChange' | 'onPlanChange' | 'displayName'> {
@@ -113,6 +114,7 @@ export class CircadianRuntimeManager {
       ...(this.deps.onWriteResult ? { onWriteResult: this.deps.onWriteResult } : {}),
       timezone: this.deps.timezone,
       ...(this.deps.daylight ? { daylight: this.deps.daylight } : {}),
+      ...(this.deps.luminance ? { luminance: this.deps.luminance } : {}),
       log: this.deps.log,
     };
   }

@@ -52,6 +52,7 @@ const CATALOG_COALESCE_MS = 500;
 
 export class RuntimeRegistry<TRuntime extends RegisteredRuntime> {
   private readonly runtimes = new Map<string, TRuntime>();
+  private readonly registrations = new Map<string, object>();
   /** Held so shutdown can cancel a coalescing pass that has not fired yet. */
   private catalogChangeTimer: unknown = null;
   private readonly timers: Timers;
@@ -85,13 +86,29 @@ export class RuntimeRegistry<TRuntime extends RegisteredRuntime> {
    * depends on hearing about it.
    */
   async register(id: string, build: () => Promise<TRuntime>): Promise<TRuntime> {
-    await this.unregister(id);
-    const runtime = await build();
-    this.runtimes.set(id, runtime);
-    return runtime;
+    const registration = {};
+    this.registrations.set(id, registration);
+    try {
+      await this.stopRegistered(id);
+      if (this.registrations.get(id) !== registration) throw new Error('Registration cancelled');
+      const runtime = await build();
+      if (this.registrations.get(id) !== registration) {
+        await runtime.stop();
+        throw new Error('Registration cancelled');
+      }
+      this.runtimes.set(id, runtime);
+      return runtime;
+    } finally {
+      if (this.registrations.get(id) === registration) this.registrations.delete(id);
+    }
   }
 
   async unregister(id: string): Promise<void> {
+    this.registrations.delete(id);
+    await this.stopRegistered(id);
+  }
+
+  private async stopRegistered(id: string): Promise<void> {
     const runtime = this.runtimes.get(id);
     if (!runtime) return;
     // Remove BEFORE awaiting stop(): dispatch reads this map, and a runtime that
@@ -138,6 +155,7 @@ export class RuntimeRegistry<TRuntime extends RegisteredRuntime> {
    * whole point of the call.
    */
   async destroyAll(): Promise<void> {
+    this.registrations.clear();
     if (this.catalogChangeTimer !== null) {
       this.timers.clearTimeout(this.catalogChangeTimer);
       this.catalogChangeTimer = null;

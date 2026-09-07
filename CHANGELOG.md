@@ -6,6 +6,35 @@ release in a few bullets and one line for each older one; this is where the deta
 Newest first. Pre-1.0, so there are no major bumps for breaking changes: a change that would break
 something says so in its own entry instead.
 
+## 0.6.1
+
+Fixed:
+
+- Schedules, circadian lights and Curve lights retain their selected lux sensors for their
+  runtime lifetime. Closing pairing no longer changes a saved device's brightness source;
+  restarting also acquires the sensors without needing another Daylight device.
+- Failed sensor subscriptions no longer expose a permanently cached seed as a live reading.
+  Recovery retries start after one second and back off to at most once per minute. Releasing
+  the last owner cancels recovery. Successfully subscribed, quiet sensors still do not expire.
+- Automatic brightness commands are cancelled when a lamp is switched off or leaves its target
+  zone, including commands waiting in an active flush. Eligibility is checked again immediately
+  before dispatch. Commands already handed to Homey cannot be recalled.
+- A failed runtime start or preview releases acquired listeners and sensor claims. Startup and
+  target refresh cannot restore resources after teardown, and late completions cannot re-arm
+  implied-on probes or populate the replacement runtime's state.
+- Failure to persist an edited configuration restores the previous stored and running plan.
+  If recovery also fails, the candidate stays stopped and the device reports unavailable.
+  Delayed callbacks from replaced runtimes cannot overwrite the restored plan.
+
+Maintenance:
+
+- Shared startup, teardown and sensor-claim helpers keep ownership rules consistent across the
+  four engines. Preview instances have unique ownership IDs.
+- Added integration and concurrency regressions over real runtimes, scheduling, adapters,
+  sensor ownership and evaluation, with fake Homey boundaries and controlled failures.
+- No stored-plan migration or external API change. Hardware checks T91–T97 are documented in
+  the hardware test plan and have not been run for this change.
+
 ## 0.6.0
 
 A fifth device type, and the first thing in this app that reads a sensor rather than only writing to

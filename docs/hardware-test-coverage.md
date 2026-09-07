@@ -365,3 +365,17 @@ Worth knowing before deciding a rendered screen is a luxury.
 - **`npm run render:views`** draws every pairing screen with demo data (`scripts/pair-view-fixtures.mjs`) using headless Chrome, the same rasteriser `artwork/export-assets.py` uses. Output goes to `.views/`, gitignored.
 - The Curve light's coloured dot set a `fill` **attribute**, which the view's own stylesheet overrode. Every assertion about the attribute passed while the dot drew in the wrong colour. Only the render showed it, and the fix was to set `style.fill` instead.
 - The render is **not** the pairing sheet: Homey draws its own header and scroll container around a view (platform §8), and this shows the view alone.
+
+
+## 0.6.1 lifecycle and sensor recovery
+
+T91–T97 are pending hardware checks; none was run during implementation. The previous release's
+T81–T90 numbers remain retired. The saved hardware observations are in the test plan's run history.
+
+| Checks | Automated evidence | Hardware evidence still needed |
+|---|---|---|
+| T91–T92 | Runtime integration tests use real sensor ownership and evaluation through pairing disconnect, restart and concurrent previews. | Sensor reports and SDK pairing/disconnect behavior on a Homey. |
+| T93 | Sensor recovery tests advance backoff, replace the stale seed and cancel retries on last release. | Recovery against real connection failures. |
+| T94–T95 | Scheduler and runtime tests cancel queued and captured writes, including off during handle acquisition and zone removal. | Integration-specific dispatch and echo timing. |
+| T96 | Runtime tests fail after acquisition and delay refresh across stop; adapter tests reject late listeners and completions. | SDK resource behavior under a controlled startup failure. |
+| T97 | Device transaction tests inject commit/rollback failures and delayed callbacks. | Store failures on a disposable, instrumented test device. |

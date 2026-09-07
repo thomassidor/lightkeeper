@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import { LuminanceSource } from '../../lib/daylight/luminance-source';
 import type { DeviceCatalog } from '../../lib/device-catalog';
 import type { HomeyApiService } from '../../lib/homey-api-service';
+import { FakeTimers } from '../support/fake-timers';
+import { deferred, settle } from '../support/deferred';
 
 /**
  * One subscription per sensor, however many devices asked for it.
@@ -340,9 +342,9 @@ describe('LuminanceSource - the catalog, and failures', () => {
     assert.deepEqual(h.subscribeCalls, ['s1']);
     assert.equal(h.source.watched().length, 2);
     assert.ok(h.logs.some(line => line.includes('Could not subscribe to luminance on s2')));
-    // The catalog seed still stands, because getDevice failing is about the
-    // subscription and not about what the sensor last read.
-    assert.deepEqual(h.source.read(['s1', 's2'])!.deviceIds, ['s1', 's2']);
+    // A seed without a listener freezes indefinitely; use the healthy sensor.
+    assert.deepEqual(h.source.read(['s1', 's2'])!.deviceIds, ['s1']);
+    await h.source.destroy();
   });
 
   test('releasing an owner that holds nothing is a no-op', async () => {
@@ -363,5 +365,78 @@ describe('LuminanceSource - the catalog, and failures', () => {
     assert.deepEqual(h.source.watched(), [{
       deviceId: 's1', name: 'Hall motion', lux: 55, at: seededAt + 120_000, available: true,
     }]);
+  });
+});
+
+
+describe('sensor subscription recovery', () => {
+  function recovering() {
+    const timers = new FakeTimers();
+    let failing = true;
+    let lux = 10;
+    let attempts = 0;
+    let destroyed = 0;
+    let gate: Promise<void> | null = null;
+    const source = new LuminanceSource({
+      timers, log: () => {},
+      catalog: { device: async () => ({ name: 'sensor', available: true,
+        capabilities: ['measure_luminance'], capabilitiesObj: { measure_luminance: { value: lux } },
+      }) } as unknown as DeviceCatalog,
+      api: {
+        read: async () => ({ devices: { getDevice: async () => {
+          attempts += 1;
+          if (gate) await gate;
+          if (failing) throw new Error('temporarily unreachable');
+          return { capabilitiesObj: { measure_luminance: { value: lux } },
+            makeCapabilityInstance: () => ({ destroy: () => { destroyed += 1; } }) };
+        } } }),
+        track: (off: () => void) => off,
+      } as unknown as HomeyApiService,
+    });
+    return { source, timers, attempts: () => attempts, destroyed: () => destroyed,
+      recover: () => { failing = false; lux = 500; },
+      hold: (promise: Promise<void>) => { gate = promise; } };
+  }
+
+  test('retries with bounded backoff, recovers a fresh reading, and does not expire quiet sensors', async () => {
+    const h = recovering();
+    await h.source.retain(['s1'], 'device');
+    assert.equal(h.source.read(['s1']), null);
+    for (const delay of [1000, 2000, 4000, 8000, 16000, 32000, 60000, 60000]) {
+      const attempts = h.attempts();
+      h.timers.advance(delay - 1); await settle(12);
+      assert.equal(h.attempts(), attempts);
+      h.timers.advance(1); await settle(12);
+      assert.equal(h.attempts(), attempts + 1);
+      assert.equal(h.timers.pending, 1);
+    }
+    h.recover();
+    h.timers.advance(60000); await settle(12);
+    assert.equal(h.source.read(['s1'])?.lux, 500);
+    assert.equal(h.timers.pending, 0);
+    h.timers.advance(1000 * 60 * 60 * 24 * 90);
+    assert.equal(h.source.read(['s1'])?.lux, 500);
+    await h.source.release('device');
+    assert.equal(h.destroyed(), 1);
+  });
+
+  test('last-owner release cancels retries but another owner keeps them alive', async () => {
+    const h = recovering();
+    await h.source.retain(['s1'], 'a'); await h.source.retain(['s1'], 'b');
+    await h.source.release('a'); assert.equal(h.timers.pending, 1);
+    await h.source.release('b'); assert.equal(h.timers.pending, 0);
+    h.timers.advance(60000); await settle(12);
+    assert.equal(h.attempts(), 1);
+  });
+
+  test('release during handle acquisition cannot install a listener afterwards', async () => {
+    const h = recovering(); h.recover();
+    const gate = deferred(); h.hold(gate.promise);
+    const retaining = h.source.retain(['s1'], 'a'); await settle(12);
+    const releasing = h.source.release('a');
+    gate.resolve(); await Promise.all([retaining, releasing]);
+    assert.equal(h.source.watched().length, 0);
+    assert.equal(h.source.read(['s1']), null);
+    assert.equal(h.timers.pending, 0);
   });
 });

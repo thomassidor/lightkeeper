@@ -125,9 +125,9 @@ export async function releaseTarget(
     cache: TargetStateCache;
   },
 ): Promise<void> {
-  // Order matters: stop the events first, then drop the state they would have
-  // written to, then the timer that could still fire against both.
-  await parts.unsubscribe(deviceId);
+  // Cancel before the first await. Even a broken unsubscribe must not leave a
+  // delayed probe or cached eligibility behind for this target.
   parts.cancelPending(deviceId);
-  parts.cache.forget(deviceId);
+  try { await parts.unsubscribe(deviceId); }
+  finally { parts.cache.forget(deviceId); }
 }

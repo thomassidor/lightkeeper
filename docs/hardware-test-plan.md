@@ -75,128 +75,36 @@ The script cannot do these. Report each by its number.
 
 ## 4. This release
 
-*Rewritten each release — what is new or risky this time. Its lines carry on from the highest number used so far, and are retired rather than reused when the next release rewrites this section.*
+**0.6.1 — sensor ownership, runtime cleanup, cancellation and configuration recovery.**
 
-**0.6.0 — a fifth device type, and the first thing in this app that reads a sensor.** Most of it is
-provable without a Homey and is: the solar arithmetic is asserted against values astronomy fixes
-independently, the two anti-hunting dampers are pinned by unit tests, and the sanitisers and
-validators have their own. What no test can settle is the lines below, and the reason is nearly
-always the same — they depend on a real permission, a real sensor, ten minutes of a real room, or a
-pair session, which is a live Web API surface rather than something a suite can call (platform §14).
+These checks are **not yet run on hardware**. Unit and integration tests cover injected failures
+and controlled races; the checks below establish how the real Homey and its integrations behave.
+T81–T90 were the 0.6.0 release checks and are retired. Their recorded outcomes remain below.
 
-`node scripts/verify-hardware.mjs full --yes` answers **T77-T80** on its own. **T81-T90 need you.**
-
-- [ ] **T81** *The permission, and it is the first thing to check.* Homey settings → Lightkeeper.
-      The **Daylight lights** section now leads with a sky readout. Confirm it names a **plausible
-      sun elevation for the hour** rather than "This Homey has not said where it is".
-      Cross-check the number against [NOAA's own
-      calculator](https://gml.noaa.gov/grad/solcalc/) for your latitude and the current minute — a
-      sign error or a UTC slip produces a number that looks entirely reasonable and is wrong, and
-      this is the only place it shows.
-**T82 is now PARTLY answered, from Insights rather than by watching a sensor.** Homey logs every
-capability, so four real sensors' distributions were read out of history on 4 September 2026 — the
-table is in platform §16. What it settled: the scale (lx, two decimals), that `brightLux = 500`
-suits a kitchen and overshoots an interior room badly, and that **two of the four sensors had not
-reported for 53 and 59 days while Homey still called them `available`**. What it cannot settle is
-the part below that needs a hand over a sensor: whether the reading follows, and on what latency.
-
-- [ ] **T82** *Needs a real `measure_luminance` device, and there is no substitute.* Pair a
-      **Daylight light** by hand and pick a light sensor — most motion sensors have one. Confirm the
-      pairing screen shows that sensor's **current reading in lux and its age**, and that "So your
-      lights would be" says **from the sensors** rather than from the sun. Then cover the sensor with
-      your hand for a minute and confirm the reading follows.
-      *What this is really checking:* that `measure_luminance` arrives over the capability
-      subscription at all, and on what scale. Nothing establishes that but a real sensor
-      (platform §16). Note the numbers you see — the `darkLux` and `brightLux` defaults of 5 and 500
-      are a judgement, not a measurement, and this is the evidence that would change them.
-- [ ] **T83** *The one that needs ten minutes of a real room, and the one this device type lives or
-      dies by.* Point a Daylight light at the lamps **in the same room as its sensor** — the
-      configuration the FAQ warns about, and the one people will try first. Switch the lamps on and
-      watch **Homey settings → Lightkeeper → writes** for ten minutes.
-      **Confirm the writes STOP.** A handful while it settles is right; one every minute for ten
-      minutes is the closed loop hunting, and it means the deadband is too narrow for real sensor
-      jitter. If it hunts, report the numbers rather than adjusting anything: `DAYLIGHT_DEADBAND` and
-      `MAX_STEP_PER_TICK` in `lib/daylight/daylight-runtime.ts` are sized against a guess about
-      sensor noise, and this is the measurement.
-- [ ] **T84** *By eye.* Cover the sensor from T82 by hand while the lamps are on. The lamps should
-      **ease** to their new level over a minute or two rather than jumping. Then uncover it and
-      confirm they ease back. A jump means the slew limit is not being applied; no movement at all
-      means the change never crossed the deadband, which is a different answer and worth saying.
-- [ ] **T85** *The add-on, on the device type where it is easiest to see.* Give a **schedule** a
-      window a couple of minutes out, tick **Set the brightness**, and choose **Follow the
-      daylight**. Confirm the screen shows the boundary caveat, then let the window fire and confirm
-      the lamps come on at the level the card's readout predicted rather than at the slider's number.
-      Then switch the Homey's location off (Homey settings → Location) if you can, and confirm the
-      next firing falls back to the slider — that fallback is the whole reason the number is kept
-      beside the flag, and it is untested on hardware.
-- [ ] **T86** *The one the light probe found, and it needs a lamp that refuses.* From the 4 September
-      2026 probe run, four of thirteen colour-capable Hue bulbs refuse a colour written to them while
-      they are off — the report names them, and `OFF_WRITE_DECLINED` with "soft off" is how to find
-      the ones in your own house. Give a **circadian light** one of those lamps, switch **pre-staging
-      on**, and leave the lamp switched off for ten minutes with the curve ticking. Then read the
-      settings page: the device must still be **ready** rather than "1 of 1 lights are not
-      responding", and its target must carry `preStageDeclined` with the bridge's own sentence.
-      Confirm in the diagnostics' recent writes that it stopped trying after **three** attempts
-      rather than one a minute. Then switch the lamp on and off again and confirm it is retried once
-      more. Before this release the device reported not-responding and, where every lamp behaved this
-      way, took itself offline — at no predictable moment, because a circadian light only re-assesses
-      its health when a target's availability moves or the app restarts.
-
-**The pairing screens now share their mechanics, and that is what T87-T89 are for.** Every driver's
-handler wrapper, light picker, daylight card, save-and-name, credential pair and curve preview moved
-into `lib/pairing/pair-session.ts`, and a unit suite now covers them — where before there was none
-at all, because platform §13 means a file containing `extends Homey.Driver` cannot be imported by a
-test. What those tests cannot reach is the SDK on the other side of the seam: whether Homey still
-routes each handler, whether `createDevice` still accepts the shape, and whether a repair still
-finds its device. Three lines, and they are cheap — pair and repair each device type once.
-
-**T87 and T88 are now mostly answered by `pair` and `repair`**, which build one of each of the
-five device types and open a repair session on each. Run 4 September 2026 (see the log below): both
-came back clean. What the script does NOT cover is marked below — a repair that SAVES, and survival
-of an app restart.
-
-- [ ] **T87** *Pair all five, once each.* A controller, a schedule, a circadian light, a Curve light
-      and a Daylight light. For each, confirm three things that now come from ONE place and would all
-      be wrong together if a parameter were: the **default name** offered on the last screen reads
-      like its device type ("Kitchen circadian", "Hall schedule") rather than another type's word;
-      the light picker's subtitle names **that** device type; and the device **survives a restart of
-      the app** with its configuration intact. That last one is the store-key check and the only one
-      that matters — the key a driver saves under is also the key its migration chain reads, so a
-      wrong one produces a device that pairs happily and comes back empty.
-      Also confirm the credential screen still goes to **the remote picker for a controller** and
-      **straight to the lights for a schedule**: the view is a byte-for-byte copy shared between the
-      two (platform §8), so `nextView` is the driver's answer and the two are now one line apart.
-- [ ] **T88** *Repair all five, once each — and SAVE.* Device → Maintenance → Repair, change
-      something small, save. Confirm it reports success and that **no second device appears** — the
-      repair path is one `if (device)` inside the shared save handler, and getting it wrong leaves
-      the household with two devices doing the same job. Then confirm the change actually took, on
-      the settings page.
-      The script's `repair` command reads every repair screen and **saves nothing**, so it proves
-      the screens answer with the right device's values and nothing about the save. This line is the
-      save.
-- [ ] **T89** *The sensor claim, which is the one thing here that leaks if it is wrong.* A pairing
-      screen retains its chosen lux sensors so the card can show what they read, and releases them
-      on `disconnect` however the screen closes. Open a **Daylight light** pairing, choose a sensor,
-      confirm it appears in **Homey settings → Lightkeeper → Daylight lights** as a watched sensor
-      with a reading age — then **cancel the pairing** and confirm it disappears from that list
-      again. Repeat with the daylight card inside a **schedule** window, which reaches the same
-      ref-count by a different screen. Then pair a Daylight light properly and confirm its sensor
-      **stays** watched: the count is per owner, so a session releasing its claim must never take a
-      live device's subscription with it. Get this wrong and an abandoned pairing leaves a
-      subscription on somebody's battery-powered motion sensor for as long as the app runs, which is
-      invisible from every screen except that list.
-- [ ] **T90** *A warmer/colder HOLD, on a colour-capable lamp, and the one thing to look at is the
-      write log.* The controller now sends `light_mode` once per hold rather than once per flush,
-      because a mode ack costs 212 ms in front of every value write and the app applies no deadband
-      on this path (platform §6). Map a rampable control to **warmer** or **colder**, aim it at a Hue
-      bulb, and hold it for a few seconds. Then read the device's recent writes in **Homey settings →
-      Lightkeeper**: expect **one `light_mode` at the start of the hold and `light_temperature`
-      thereafter**, and confirm the lamp's colour still visibly travels — a hold that stopped working
-      altogether is what a mode write dropped too eagerly looks like. Release, hold again, and
-      confirm a **second** `light_mode` appears: each hold re-establishes the mode, which is what
-      protects a lamp somebody switched to colour in the vendor app in between.
-      No script covers this — `verify-hardware.mjs` has no ramp line, and a ramp needs a physical
-      control held by a hand.
+- [ ] **T91** Configure a schedule, a circadian light and a Curve light with a lux sensor,
+      without a standalone Daylight light using it. Close pairing completely, change the sensor's
+      reading, and verify the curve devices follow it and the schedule uses it at its next boundary.
+      Restart Lightkeeper and repeat. The source should remain the sensor, not the sky or fallback.
+- [ ] **T92** Configure two devices with the same sensor. Pause/resume and remove one device;
+      the remaining device must continue receiving readings. Open two previews and close one;
+      the other must continue. Close both and confirm no unowned sensor remains watched.
+- [ ] **T93** On a test setup with a controllable temporary API failure, interrupt sensor
+      subscription during startup. Restore connectivity and confirm recovery within one minute
+      without a restart. A sensor that failed to subscribe must not be used as a frozen input.
+- [ ] **T94** With a lit lamp following daylight or a curve, request a brightness update and
+      immediately switch the lamp off. Repeat across the household's integrations. Commands not
+      yet dispatched must be cancelled. Note integration echo delays: a command already sent to
+      Homey cannot be recalled, and an unreported off event cannot yet be observed by the app.
+- [ ] **T95** Move a lamp out of a controlled zone while changes are pending. Confirm no further
+      commands are sent after removal is processed, and switching the lamp on does not trigger
+      the old device. Re-add it and confirm normal control resumes.
+- [ ] **T96** Using a disposable test device and controlled startup failure, fail startup after
+      subscriptions are acquired. Confirm the failed device has no active listeners or sensor
+      claims and does not respond to power events. Repair successfully and confirm one response.
+- [ ] **T97** Using a disposable test device and injected storage failure, save changed settings.
+      Confirm failure restores the previous configuration, including after restart. Repeat with
+      first setup and failed recovery: no candidate should keep controlling lights. Do not fill
+      or damage the Homey's actual storage to induce this failure.
 
 ### Last run — 4 September 2026, Homey Pro 2023, firmware 13.5.0-rc.4, app 0.6.0 + the simplification pass
 

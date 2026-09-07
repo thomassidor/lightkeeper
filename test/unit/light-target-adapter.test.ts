@@ -4,6 +4,9 @@ import assert from 'node:assert/strict';
 import { LightTargetAdapter } from '../../lib/outputs/light-target-adapter';
 import { TargetStateCache } from '../../lib/outputs/target-state-cache';
 import type { HomeyApiService, Unsubscribe } from '../../lib/homey-api-service';
+import { FakeTimers } from '../support/fake-timers';
+import { deferred, settle } from '../support/deferred';
+import { WriteCancelled } from '../../lib/outputs/write-cancelled';
 
 /**
  * Subscriptions are the adapter's most leak-prone resource: refreshTargets()
@@ -209,5 +212,44 @@ describe('refresh reads live values, not a cached snapshot', () => {
     const h = harness();
     await h.adapter.refresh('light-1');
     assert.equal(h.getDeviceCalls[0].id, 'light-1');
+  });
+});
+
+
+describe('late work after adapter teardown', () => {
+  test('an in-flight completion cannot repopulate cache or arm an implied-on probe', async () => {
+    const gate = deferred();
+    const timers = new FakeTimers();
+    const cache = new TargetStateCache();
+    const api = { read: async () => ({ devices: { getDevice: async () => ({
+      setCapabilityValue: async () => gate.promise,
+    }) } }) } as unknown as HomeyApiService;
+    const adapter = new LightTargetAdapter(api, cache, () => {}, timers);
+    const writing = adapter.write('lamp', 'dim', 0.5, { impliesOn: true });
+    const cancelled = assert.rejects(writing, WriteCancelled);
+    await settle(12);
+    await adapter.unsubscribeAll(); cache.clear();
+    adapter.resume();
+    gate.resolve(); await cancelled;
+    assert.equal(cache.currentDim('lamp'), undefined);
+    assert.equal(timers.pending, 0);
+    assert.equal(adapter.writes().length, 0);
+    assert.equal(adapter.failures().length, 0);
+  });
+
+  test('an acquisition completing after teardown installs no listener', async () => {
+    const gate = deferred();
+    let created = 0;
+    const cache = new TargetStateCache();
+    cache.setCapabilities('lamp', { onoff: true });
+    const api = { read: async () => ({ devices: { getDevice: async () => {
+      await gate.promise;
+      return { makeCapabilityInstance: () => { created += 1; return { destroy() {} }; } };
+    } } }), track: (off: () => void) => off } as unknown as HomeyApiService;
+    const adapter = new LightTargetAdapter(api, cache, () => {});
+    const subscribing = adapter.subscribe('lamp', ['onoff']); await settle(12);
+    await adapter.unsubscribeAll(); adapter.resume();
+    gate.resolve(); await subscribing;
+    assert.equal(created, 0);
   });
 });

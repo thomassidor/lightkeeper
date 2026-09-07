@@ -8,6 +8,7 @@ import { BoundedLog } from '../support/bounded-log';
 import { KeyedMutex } from '../support/keyed-mutex';
 import { NO_CACHE } from '../flow-card-catalogue';
 import { messageOf } from '../support/homey-errors';
+import { WriteCancelled } from './write-cancelled';
 
 /**
  * Executes intents against targets and reconciles external changes.
@@ -57,6 +58,25 @@ export interface WriteRecord {
 }
 
 export class LightTargetAdapter {
+  private generation = 0;
+  private active = true;
+  private readonly targetGenerations = new Map<string, number>();
+
+  resume(): void { this.active = true; }
+
+  suspend(): void {
+    this.active = false;
+    this.generation += 1;
+    for (const timer of this.pendingChecks.values()) this.timers.clearTimeout(timer);
+    this.pendingChecks.clear();
+  }
+
+  private current(deviceId: string): () => boolean {
+    const generation = this.generation;
+    const target = this.targetGenerations.get(deviceId);
+    return () => this.active && generation === this.generation
+      && target === this.targetGenerations.get(deviceId);
+  }
   private readonly recentFailures = new BoundedLog<TargetFailure>(50);
   /** Rate-limit repeated transient errors from the same target. */
   private readonly lastLoggedAt = new Map<string, number>();
@@ -341,17 +361,21 @@ export class LightTargetAdapter {
     deviceId: string,
     capability: Capability,
     value: WriteValue,
-    options: { impliesOn?: boolean; preStage?: boolean } = {},
+    options: { impliesOn?: boolean; preStage?: boolean; eligible?: () => boolean } = {},
   ): Promise<void> {
-    // The echo registration goes BEFORE dispatch: a fast integration can call
-    // back before setCapabilityValue resolves, and an unrecognised echo reads
-    // as somebody using the Hue app.
-    const seq = this.cache.noteEcho(deviceId, capability, value);
+    const current = this.current(deviceId);
+    const eligible = () => current() && (options.eligible?.() ?? true);
+    if (!eligible()) throw new WriteCancelled();
     const startedAt = this.timers.now();
 
     try {
       const device = await this.deviceHandle(deviceId);
+      if (!eligible()) throw new WriteCancelled();
+      // Register only once dispatch is eligible, but before calling Homey: a
+      // fast integration can echo before setCapabilityValue resolves (§6).
+      const seq = this.cache.noteEcho(deviceId, capability, value);
       await device.setCapabilityValue({ capabilityId: capability, value });
+      if (!eligible()) throw new WriteCancelled();
       // The desired value goes AFTER, and only on success. Committing it up
       // front left the app believing a lamp was at a level it had never
       // reached whenever a write failed — and the next relative step planned
@@ -365,6 +389,7 @@ export class LightTargetAdapter {
 
       if (options.impliesOn) this.verifyCameOn(deviceId, startedAt);
     } catch (error) {
+      if (error instanceof WriteCancelled || !eligible()) throw new WriteCancelled();
       this.noteWriteResult({
         deviceId, capability, value, ok: false, ms: this.timers.now() - startedAt,
         error: messageOf(error),
@@ -384,6 +409,7 @@ export class LightTargetAdapter {
    * nothing in the normal case and cannot leave a light stuck off.
    */
   private verifyCameOn(deviceId: string, writtenAt: number): void {
+    const current = this.current(deviceId);
     // Per device, so a burst does not stack probes and a newer write cancels
     // the older one's. The set of loose timers it replaced could not be
     // cancelled per device at all, which is what made removing a target
@@ -393,6 +419,7 @@ export class LightTargetAdapter {
     const timer = this.timers.setTimeout(() => {
       this.pendingChecks.delete(deviceId);
       fireAndForget((async () => {
+        if (!current()) return;
         if (this.cache.state(deviceId).actualOn === true) return;
 
         /**
@@ -431,6 +458,7 @@ export class LightTargetAdapter {
 
         try {
           const device = await this.deviceHandle(deviceId);
+          if (!current()) return;
           await device.setCapabilityValue({ capabilityId: 'onoff', value: true });
           this.log(`${deviceId} did not switch on from a dim write; sent onoff explicitly`);
         } catch (error) {
@@ -498,8 +526,9 @@ export class LightTargetAdapter {
       deviceId: string, capability: Capability, value: unknown, external: boolean,
     ) => void,
   ): Promise<void> {
+    const current = this.current(deviceId);
     return this.subscriptionLock.run(deviceId, () =>
-      this.subscribeNow(deviceId, capabilities, onChange));
+      this.subscribeNow(deviceId, capabilities, onChange, current));
   }
 
   private async subscribeNow(
@@ -508,18 +537,24 @@ export class LightTargetAdapter {
     onChange?: (
       deviceId: string, capability: Capability, value: unknown, external: boolean,
     ) => void,
+    current: () => boolean = this.current(deviceId),
   ): Promise<void> {
+    if (!current()) return;
     // Replace, never stack. See the `subscriptions` field for why.
     await this.unsubscribeNow(deviceId);
+    if (!current()) return;
 
     const client = await this.api.read();
+    if (!current()) return;
     const device = await client.devices.getDevice({ id: deviceId });
+    if (!current()) return;
 
     const created: Unsubscribe[] = [];
     for (const capability of capabilities) {
       if (!this.cache.supports(deviceId, capability)) continue;
       try {
         const instance = device.makeCapabilityInstance(capability, (value: unknown) => {
+          if (!current()) return;
           const external = this.cache.applyExternalChange(deviceId, capability, value);
           // Never let a listener's failure take the subscription down with it:
           // this callback runs inside Homey's own event dispatch.
@@ -543,6 +578,9 @@ export class LightTargetAdapter {
 
   /** Drop every capability subscription for one target. */
   async unsubscribe(deviceId: string): Promise<void> {
+    this.targetGenerations.set(deviceId, (this.targetGenerations.get(deviceId) ?? 0) + 1);
+    this.cancelPending(deviceId);
+    this.handles.delete(deviceId);
     // A device that has stopped being a target takes its failure streak with
     // it. Cleared HERE and not in unsubscribeNow(), which subscribeNow() calls
     // to replace an existing subscription — and refreshTargets() re-subscribes
@@ -571,14 +609,14 @@ export class LightTargetAdapter {
    * outlives the controller that created it.
    */
   async unsubscribeAll(): Promise<void> {
-    for (const timer of this.pendingChecks.values()) this.timers.clearTimeout(timer);
-    this.pendingChecks.clear();
+    this.suspend();
 
     for (const deviceId of [...this.subscriptions.keys()]) {
       await this.unsubscribe(deviceId);
     }
     this.handles.clear();
     this.failureStreaks.clear();
+    this.targetGenerations.clear();
   }
 
   /**
@@ -600,9 +638,13 @@ export class LightTargetAdapter {
    * `onoff: true`, and the app reported `on=false` for the same device.
    */
   async refresh(deviceId: string): Promise<void> {
+    const current = this.current(deviceId);
+    if (!current()) return;
     const client = await this.api.read();
+    if (!current()) return;
     try {
       const device = await client.devices.getDevice({ id: deviceId, ...NO_CACHE });
+      if (!current()) return;
       /**
        * All five, because `initialise()` assigns all five.
        *
@@ -621,6 +663,7 @@ export class LightTargetAdapter {
        */
       this.cache.initialise(deviceId, liveValuesOf(device));
     } catch (error) {
+      if (!current()) return;
       this.recordFailure(deviceId, 'onoff', error);
     }
   }

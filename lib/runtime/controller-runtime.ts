@@ -1,3 +1,4 @@
+import { RuntimeLifetime, cleanupResources, startRuntime } from './runtime-resources';
 import type { HomeyApiService } from '../homey-api-service';
 import { classifyReconcileError } from './reconcile-failure';
 import type { CredentialStatus } from '../credential-service';
@@ -153,6 +154,7 @@ export interface ControllerDiagnostics {
 const WATCHED: Capability[] = ['onoff', 'dim', 'light_temperature'];
 
 export class ControllerRuntime {
+  private readonly lifetime = new RuntimeLifetime();
   private readonly cache = new TargetStateCache();
   private readonly adapter: LightTargetAdapter;
   private readonly resolver: TargetResolver;
@@ -190,19 +192,26 @@ export class ControllerRuntime {
   get currentProfile(): ControllerProfile { return this.profile; }
 
   async start(): Promise<void> {
-    if (!this.profile.enabled) {
-      this.setState('disabled');
-      return;
-    }
+    return this.lifetime.start(async current => {
+      this.adapter.resume();
+      if (!this.profile.enabled) {
+        this.setState('disabled');
+        return;
+      }
 
-    await this.refreshCatalogue();
-    await this.buildRuntime();
-    await this.reconcileFlows();
-    // Last, so a genuine health problem — the remote unpaired, or its event
-    // surface changed under us — wins over the target-count assessment
-    // buildRuntime() made. Without this the checks never ran in production at
-    // all: assess() had no caller outside the tests.
-    await this.assessHealth();
+      await this.refreshCatalogue();
+      if (!current()) return;
+      await this.buildRuntime(current);
+      if (!current()) return;
+      await this.reconcileFlows();
+      if (!current()) return;
+      // Last, so a genuine health problem — the remote unpaired, or its event
+      // surface changed under us — wins over the target-count assessment
+      // buildRuntime() made. Without this the checks never ran in production at
+      // all: assess() had no caller outside the tests.
+      await this.assessHealth();
+      if (!current()) return;
+    });
   }
 
   /**
@@ -299,7 +308,11 @@ export class ControllerRuntime {
    * which must work before save and therefore before any flow exists.
    */
   async startWithoutFlows(): Promise<void> {
-    await this.buildRuntime();
+    return this.lifetime.start(async current => {
+      this.adapter.resume();
+      await this.buildRuntime(current);
+      if (!current()) return;
+    });
   }
 
   /** Run one mapped function against its own targets, right now. */
@@ -307,6 +320,7 @@ export class ControllerRuntime {
     func: LightFunction,
     deviceIds?: string[],
   ): Promise<{ writes: number; skipped: number; targets: number }> {
+    const current = this.lifetime.current();
     const targets = deviceIds && deviceIds.length ? deviceIds : this.targetIds;
 
     // Re-read live state first. The device catalog is cached and only
@@ -314,6 +328,7 @@ export class ControllerRuntime {
     // against the state from before the first one — making group toggle see
     // "nothing is on" every time and only ever switch lights ON.
     await Promise.all(targets.map(id => this.adapter.refresh(id)));
+    if (!current()) return { writes: 0, skipped: 0, targets: targets.length };
 
     const intent = intentForFunction(func, this.profile.behavior);
     const result = await this.runIntentNow(intent, targets);
@@ -321,7 +336,7 @@ export class ControllerRuntime {
   }
 
   /** Rebuild targets, cache, engine and gate from the current profile. */
-  private async buildRuntime(): Promise<void> {
+  private async buildRuntime(current: () => boolean): Promise<void> {
     /**
      * `resolveSnapshot`, and the snapshot is RECORDED here.
      *
@@ -334,6 +349,7 @@ export class ControllerRuntime {
      * field described the PREVIOUS plan's targets.
      */
     const resolved = await resolveSnapshot(this.resolver, this.profile.target);
+    if (!current()) return;
     this.snapshot = resolved;
     this.targetIds = resolved.ids;
     this.targetNames = resolved.names;
@@ -341,6 +357,7 @@ export class ControllerRuntime {
 
     for (const device of resolved.devices) {
       await this.adapter.subscribe(device.id, WATCHED);
+      if (!current()) return;
     }
 
     this.engine = new MappingEngine(this.profile.mappings, this.profile.behavior);
@@ -384,7 +401,11 @@ export class ControllerRuntime {
       onError: (deviceId, capability, error) =>
         this.deps.log(`Write failed on ${deviceId}/${capability}:`, messageOf(error)),
     }, (deviceId, capability, value, options) =>
-      this.adapter.write(deviceId, capability, value, options));
+      this.adapter.write(deviceId, capability, value, {
+        ...options,
+        eligible: () => current() && this.targetIds.includes(deviceId)
+          && (options?.eligible?.() ?? true),
+      }));
 
     /**
      * The implied-on correction goes through the SCHEDULER, not straight at
@@ -642,63 +663,77 @@ export class ControllerRuntime {
    * writes that were already queued.
    */
   async refreshTargets(): Promise<void> {
-    const next = await resolveSnapshot(this.resolver, this.profile.target);
-    // The fingerprint, not the id list: a light re-paired under the same id
-    // with a different dim range, or one that went unavailable and came back,
-    // is a change the id list cannot see. See target-snapshot.ts.
-    if (this.snapshot && this.snapshot.fingerprint === next.fingerprint) return;
+    return this.lifetime.run(async current => {
+      const next = await resolveSnapshot(this.resolver, this.profile.target);
+      if (!current()) return;
+      // The fingerprint, not the id list: a light re-paired under the same id
+      // with a different dim range, or one that went unavailable and came back,
+      // is a change the id list cannot see. See target-snapshot.ts.
+      if (this.snapshot && this.snapshot.fingerprint === next.fingerprint) return;
 
-    const { removed, addedOrChanged } = diffTargets(this.snapshot, next);
+      const { removed, addedOrChanged } = diffTargets(this.snapshot, next);
+      // Revoke membership before awaiting teardown, so concurrent ticks cannot
+      // enqueue fresh commands for a target we are already releasing.
+      this.targetIds = next.ids;
 
-    for (const deviceId of removed) {
-      await releaseTarget(deviceId, {
-        unsubscribe: id => this.adapter.unsubscribe(id),
-        cancelPending: id => this.adapter.cancelPending(id),
-        cache: this.cache,
-      });
-    }
+      for (const deviceId of removed) {
+        this.scheduler?.cancelTarget(deviceId);
+        await releaseTarget(deviceId, {
+          unsubscribe: id => this.adapter.unsubscribe(id),
+          cancelPending: id => this.adapter.cancelPending(id),
+          cache: this.cache,
+        });
+        if (!current()) return;
+      }
 
-    // A control mid-ramp against a set that no longer exists has nothing left
-    // to ramp. Stopping is not merely tidy: the ramp writes on every tick.
-    if (next.ids.length === 0 && removed.length > 0) this.ramps?.stopAll('target_unavailable');
+      // A control mid-ramp against a set that no longer exists has nothing left
+      // to ramp. Stopping is not merely tidy: the ramp writes on every tick.
+      if (next.ids.length === 0 && removed.length > 0) this.ramps?.stopAll('target_unavailable');
 
-    this.snapshot = next;
-    this.targetIds = next.ids;
-    this.targetNames = next.names;
-    this.resolver.primeCache(next.devices, this.cache);
-    for (const deviceId of addedOrChanged) {
-      await this.adapter.subscribe(deviceId, WATCHED);
-    }
-    this.deps.log(`Targets re-resolved: ${next.ids.length} light(s)`);
+      this.snapshot = next;
+      this.targetNames = next.names;
+      this.resolver.primeCache(next.devices, this.cache);
+      for (const deviceId of addedOrChanged) {
+        await this.adapter.subscribe(deviceId, WATCHED);
+        if (!current()) return;
+      }
+      this.deps.log(`Targets re-resolved: ${next.ids.length} light(s)`);
 
-    // A target that came back, or one that vanished, changes the verdict —
-    // and without this the device kept whatever state it had until a restart.
-    await this.assessHealth();
+      // A target that came back, or one that vanished, changes the verdict —
+      // and without this the device kept whatever state it had until a restart.
+      await this.assessHealth();
+    });
   }
 
   async updateProfile(profile: ControllerProfile): Promise<void> {
     this.profile = profile;
     await this.stop();
-    await this.start();
+    await startRuntime(this, () => this.start(), this.deps.log);
   }
 
   async stop(): Promise<void> {
-    // Never leave a light mid-ramp across a restart.
-    this.ramps?.stopAll('shutdown');
-    this.ramps = null;
-    this.gate?.cancelAll();
-    this.gate = null;
     this.scheduler?.stop();
-    this.scheduler = null;
-    this.engine = null;
-    // Capability subscriptions and pending post-write checks are the adapter's,
-    // and outlive this runtime unless explicitly released.
-    await this.adapter.unsubscribeAll();
-    this.cache.clear();
-    this.targetIds = [];
-    this.targetNames = [];
-    // Or the next refresh diffs the new plan's targets against the old plan's.
-    this.snapshot = null;
+    this.adapter.suspend();
+    return this.lifetime.stop(async () => {
+      // Never leave a light mid-ramp across a restart.
+      this.ramps?.stopAll('shutdown');
+      this.ramps = null;
+      this.gate?.cancelAll();
+      this.gate = null;
+      this.scheduler?.stop();
+      this.scheduler = null;
+      this.engine = null;
+      // Capability subscriptions and pending post-write checks are the adapter's,
+      // and outlive this runtime unless explicitly released.
+      await cleanupResources([
+        () => this.adapter.unsubscribeAll(),
+      ], this.deps.log);
+      this.cache.clear();
+      this.targetIds = [];
+      this.targetNames = [];
+      // Or the next refresh diffs the new plan's targets against the old plan's.
+      this.snapshot = null;
+    });
   }
 
   /** Remove only resources demonstrably owned by this controller. */

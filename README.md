@@ -274,33 +274,18 @@ reads, what it stores, and for how long.
 
 ## Changelog
 
-**0.6.0** — the current release. A fifth kind of device, and the first thing in this app that reads
-a sensor:
+**0.6.1** — the current release. More reliable sensor input, cancellation and saving:
 
-- **A Daylight light** sets your lights' brightness from how much light is in the room already.
-  It reads any light sensors you own — most motion sensors have one — and where you have none, how
-  high the sun is, worked out from your Homey's own location. Two settings: how bright the lights
-  should be when the room is dark, and when it is bright. Which is higher is up to you, so it will
-  either take over as the daylight goes or follow the day.
-- **When there is no sensor, it asks when the room gets the most sun** — morning, the middle of the
-  day, afternoon, or not at all. The sun's height alone cannot tell morning from afternoon, so
-  without that a room that brightens at 5pm was treated as though it brightened at 7am.
-- **A schedule, a circadian light or a Curve light can follow the daylight too**, on whichever
-  windows, points or ends you choose, instead of a brightness you set by hand. The brightness you
-  set stays put as the fallback for when nothing can tell how light it is.
-- **It never switches a light on or off**, and only dims lights that are already on — the same rule
-  the circadian and Curve lights follow.
-- **A light sensor in the same room as the lights it drives measures those lights too.** Lightkeeper
-  damps the hunting that causes and cannot remove it; the [FAQ](FAQ.md#limits) says which sensor
-  placements behave.
-- **Fixed:** a circadian or Curve light with pre-staging on could report its lights as not responding
-  while they were simply switched off. Some Hue bulbs refuse a colour sent to a lamp that is off, and
-  that refusal was being read as a lamp that had stopped answering.
+- Schedules and curve-driven lights keep their selected sensors after setup closes and after restart.
+- Sensor connections recover automatically from temporary failures.
+- Pending brightness changes are cancelled when a lamp is switched off or leaves its selected room.
+- Failed setup releases its resources, and failed saves restore the previous configuration.
 
 Earlier releases, one line each:
 
 | Version | What changed |
 |---|---|
+| **0.6.0** | Daylight lights, room sun exposure, and daylight brightness inside schedules and curves |
 | **0.5.2** | Four fixes to the colour-following lights, and the dimmest brightness no longer meant off |
 | **0.5.1** | A shorter App Store listing, prose release notes, and icons legible at 24 px |
 | **0.5.0** | A Curve light as a fourth device type, a simpler circadian light, and less memory used |
