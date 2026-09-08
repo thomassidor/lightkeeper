@@ -1,3 +1,5 @@
+import type { LuminanceSource } from '../daylight/luminance-source';
+import { startRuntime, previewOwner } from '../runtime/runtime-resources';
 import type { HomeyApiService } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
 import type { DaylightEvaluator } from '../daylight/daylight-evaluator';
@@ -44,6 +46,7 @@ export interface ScheduleManagerDeps {
    * without one.
    */
   daylight?: DaylightEvaluator;
+  luminance?: LuminanceSource;
   log: (...args: unknown[]) => void;
 }
 
@@ -119,8 +122,7 @@ export class ScheduleRuntimeManager {
         onStateChange,
         onPlanChange,
       });
-      await runtime.start();
-      return runtime;
+      return startRuntime(runtime, () => runtime.start(), this.deps.log);
     });
   }
 
@@ -130,14 +132,13 @@ export class ScheduleRuntimeManager {
    * Callers must stop it.
    */
   async ephemeral(plan: SchedulePlan): Promise<ScheduleRuntime> {
-    const runtime = new ScheduleRuntime('__test__', plan, {
+    const runtime = new ScheduleRuntime(previewOwner(), plan, {
       ...this.baseDeps(),
       displayName: () => 'test',
       onStateChange: () => { /* a test rig has no health state */ },
       onPlanChange: async () => { /* ephemeral: nothing to persist */ },
     });
-    await runtime.startWithoutFlows();
-    return runtime;
+    return startRuntime(runtime, () => runtime.startWithoutFlows(), this.deps.log);
   }
 
   private baseDeps(): Omit<ScheduleRuntimeDeps, 'onStateChange' | 'onPlanChange' | 'displayName'> {
@@ -149,6 +150,7 @@ export class ScheduleRuntimeManager {
       ...(this.deps.onWriteResult ? { onWriteResult: this.deps.onWriteResult } : {}),
       timezone: this.deps.timezone,
       ...(this.deps.daylight ? { daylight: this.deps.daylight } : {}),
+      ...(this.deps.luminance ? { luminance: this.deps.luminance } : {}),
       log: this.deps.log,
     };
   }

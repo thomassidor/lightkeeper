@@ -1,3 +1,6 @@
+import { withDefaults, type Timers } from '../support/timers';
+import { fireAndForget } from '../support/async';
+import { NO_CACHE } from '../flow-card-catalogue';
 import { KeyedMutex } from '../support/keyed-mutex';
 import type { HomeyApiService, Unsubscribe } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
@@ -28,6 +31,8 @@ import { messageOf } from '../support/homey-errors';
  */
 
 interface Watched {
+  retry: unknown;
+  retryDelay: number;
   /** How many devices have retained this sensor. Zero means unsubscribe. */
   owners: Set<string>;
   off: Unsubscribe | null;
@@ -52,6 +57,7 @@ export interface LuminanceDeps {
   api: HomeyApiService;
   catalog: DeviceCatalog;
   now?: () => number;
+  timers?: Partial<Timers>;
   log: (...args: unknown[]) => void;
 }
 
@@ -60,10 +66,16 @@ export class LuminanceSource {
   /** Serialised per sensor: a read-then-create is only safe if two callers cannot both read absent. */
   private readonly lock = new KeyedMutex();
 
-  constructor(private readonly deps: LuminanceDeps) {}
+  private readonly claims = new Map<string, Set<string>>();
+  private readonly timers: Timers;
+  private stopped = false;
+
+  constructor(private readonly deps: LuminanceDeps) {
+    this.timers = withDefaults(deps.timers);
+  }
 
   private now(): number {
-    return this.deps.now?.() ?? Date.now();
+    return this.deps.now?.() ?? this.timers.now();
   }
 
   /**
@@ -74,26 +86,21 @@ export class LuminanceSource {
    * new one. A runtime calling this on every plan change is the intended use.
    */
   async retain(deviceIds: string[], owner: string): Promise<void> {
+    if (this.stopped) return;
+    const previous = this.claims.get(owner) ?? new Set<string>();
     const wanted = new Set(deviceIds);
-
-    for (const [deviceId, watched] of this.sensors) {
-      if (wanted.has(deviceId) || !watched.owners.has(owner)) continue;
-      watched.owners.delete(owner);
-      await this.dropIfUnwanted(deviceId);
-    }
-
-    for (const deviceId of wanted) {
-      await this.lock.run(deviceId, () => this.subscribeNow(deviceId, owner));
+    // Publish intent before awaiting: a release during acquisition invalidates it.
+    this.claims.set(owner, wanted);
+    for (const id of new Set([...previous, ...wanted])) {
+      await this.lock.run(id, () => this.reconcile(id));
     }
   }
 
   /** Give up every sensor one device held. Called from a runtime's stop(). */
   async release(owner: string): Promise<void> {
-    for (const [deviceId, watched] of [...this.sensors]) {
-      if (!watched.owners.has(owner)) continue;
-      watched.owners.delete(owner);
-      await this.dropIfUnwanted(deviceId);
-    }
+    const previous = this.claims.get(owner) ?? new Set<string>();
+    this.claims.delete(owner);
+    for (const id of previous) await this.lock.run(id, () => this.reconcile(id));
   }
 
   /**
@@ -104,9 +111,9 @@ export class LuminanceSource {
    * opinion of the room does not select it, and taking the maximum instead would
    * quietly let one window-facing sensor speak for a whole flat.
    *
-   * Usable excludes a sensor that is gone, one Homey reports unavailable, and
-   * one that has never reported a finite number. It deliberately does NOT
-   * exclude an OLD reading: many Zigbee sensors report only on change, so a
+   * Usable excludes a sensor that is gone, one Homey reports unavailable, one
+   * without a working subscription, and one without a finite reading. It does
+   * NOT exclude an OLD reading: many Zigbee sensors report only on change, so a
    * quiet sensor in a stable room is telling the truth, and a staleness timeout
    * would fall back to the sky exactly then. A frozen sensor is made visible
    * instead — `watched()` carries every reading's age, and the settings page
@@ -118,7 +125,7 @@ export class LuminanceSource {
 
     for (const deviceId of deviceIds) {
       const watched = this.sensors.get(deviceId);
-      if (watched === undefined || !watched.available) continue;
+      if (watched === undefined || !watched.available || watched.off === null) continue;
       if (watched.lux === null || !Number.isFinite(watched.lux)) continue;
       total += watched.lux;
       used.push(deviceId);
@@ -148,61 +155,91 @@ export class LuminanceSource {
    * as long as the app ran.
    */
   async onCatalogChange(): Promise<void> {
-    for (const [deviceId, watched] of this.sensors) {
-      await this.refreshMetadata(deviceId, watched);
+    for (const id of this.sensors.keys()) {
+      await this.lock.run(id, async () => {
+        const watched = this.sensors.get(id);
+        if (!watched) return;
+        await this.refreshMetadata(id, watched);
+        await this.reconcile(id);
+      });
     }
   }
 
   /** Drop every subscription. The app-level backstop, called from onUninit. */
   async destroy(): Promise<void> {
-    for (const [deviceId, watched] of [...this.sensors]) {
-      watched.owners.clear();
-      await this.dropIfUnwanted(deviceId);
+    this.stopped = true;
+    this.claims.clear();
+    for (const id of [...this.sensors.keys()]) {
+      await this.lock.run(id, () => this.reconcile(id));
     }
-    this.sensors.clear();
   }
 
-  private async subscribeNow(deviceId: string, owner: string): Promise<void> {
-    const existing = this.sensors.get(deviceId);
-    if (existing !== undefined) {
-      existing.owners.add(owner);
+  private ownersOf(deviceId: string): Set<string> {
+    return new Set([...this.claims].filter(([, ids]) => ids.has(deviceId)).map(([owner]) => owner));
+  }
+
+  /** All subscription mutations run under the sensor's lock. */
+  private async reconcile(deviceId: string): Promise<void> {
+    const owners = this.ownersOf(deviceId);
+    let watched = this.sensors.get(deviceId);
+    if (owners.size === 0 || this.stopped) {
+      if (watched) {
+        watched.owners.clear();
+        await this.dropIfUnwanted(deviceId);
+      }
       return;
     }
+    if (!watched) {
+      watched = {
+        owners, off: null, lux: null, at: null, name: deviceId, available: false,
+        retry: null, retryDelay: 1000,
+      };
+      this.sensors.set(deviceId, watched);
+    }
+    watched.owners = owners;
+    if (watched.off !== null || watched.retry !== null) return;
+    await this.subscribeNow(deviceId, watched);
+  }
 
-    const watched: Watched = {
-      owners: new Set([owner]), off: null, lux: null, at: null, name: deviceId, available: false,
-    };
-    // In the map BEFORE the awaits below, so a second retain() for the same
-    // sensor — which the lock has queued behind this one — adds an owner rather
-    // than building a second subscription to the same lamp.
-    this.sensors.set(deviceId, watched);
-
-    // Seeded from the catalog first, because a battery sensor may not report for
-    // many minutes and a device that has to wait for that is a device that
-    // reports needs_repair on every restart.
+  private async subscribeNow(deviceId: string, watched: Watched): Promise<void> {
+    const current = () => !this.stopped && this.sensors.get(deviceId) === watched
+      && this.ownersOf(deviceId).size > 0;
+    if (!current()) return;
+    // A failed subscription's old seed must not survive recovery.
+    watched.lux = null;
+    watched.at = null;
     await this.refreshMetadata(deviceId, watched);
-
+    if (!current()) return;
     try {
       const client = await this.deps.api.read();
-      const device = await client.devices.getDevice({ id: deviceId });
+      if (!current()) return;
+      const device = await client.devices.getDevice({ id: deviceId, ...NO_CACHE });
+      if (!current()) return;
+      const live = asLux(device.capabilitiesObj?.[LUMINANCE_CAPABILITY]?.value);
+      if (live !== null) {
+        watched.lux = live;
+        watched.at = this.now();
+      }
       const instance = device.makeCapabilityInstance(LUMINANCE_CAPABILITY, (value: unknown) => {
-        // Never let a listener's failure take the subscription down with it:
-        // this callback runs inside Homey's own event dispatch.
-        try {
-          this.note(deviceId, value);
-        } catch (error) {
-          this.deps.log(`Luminance listener for ${deviceId} threw:`, messageOf(error));
-        }
+        if (!current()) return;
+        try { this.note(deviceId, value); }
+        catch (error) { this.deps.log('Luminance listener failed:', messageOf(error)); }
       });
-      // track() hands back a wrapper that also removes itself from the service's
-      // teardown set, so tearing down here leaves nothing for destroy() to call
-      // a second time.
       watched.off = this.deps.api.track(() => instance.destroy());
+      watched.retryDelay = 1000;
     } catch (error) {
-      // Kept in the map with `off: null`. It has an owner, `available` is
-      // whatever the catalog said, and `read()` skips it — so the sky answers
-      // and the device reports why rather than failing to start.
-      this.deps.log(`Could not subscribe to luminance on ${deviceId}:`, messageOf(error));
+      this.deps.api.reportReadFailure?.(error);
+      this.deps.log('Could not subscribe to luminance on ' + deviceId + ':', messageOf(error));
+      if (!current()) return;
+      const delay = watched.retryDelay;
+      watched.retryDelay = Math.min(delay * 2, 60_000);
+      watched.retry = this.timers.setTimeout(() => {
+        watched.retry = null;
+        fireAndForget(this.lock.run(deviceId, () => this.reconcile(deviceId)),
+          this.deps.log, 'Retrying luminance subscription');
+      }, delay);
+      // Retry timers must not keep a stopped test/CLI process alive on their own.
+      (watched.retry as { unref?: () => void } | null)?.unref?.();
     }
   }
 
@@ -266,6 +303,8 @@ export class LuminanceSource {
     // Out of the map first, so a retain() racing this builds a fresh
     // subscription rather than adding an owner to one being torn down.
     this.sensors.delete(deviceId);
+    if (watched.retry !== null) this.timers.clearTimeout(watched.retry);
+    watched.retry = null;
     if (watched.off === null) return;
     try {
       await watched.off();

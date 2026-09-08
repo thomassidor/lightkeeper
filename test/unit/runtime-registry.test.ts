@@ -292,3 +292,20 @@ describe('teardown', () => {
     assert.equal(fresh.refreshed, 1);
   });
 });
+
+
+describe('registration cancelled during startup', () => {
+  for (const operation of ['unregister', 'destroyAll'] as const) {
+    test(operation + ' prevents a late build from becoming dispatchable', async () => {
+      const h = harness(); const gate = deferred(); const built = runtime('late');
+      const registering = h.registry.register('late', async () => { await gate.promise; return built; });
+      const cancelled = assert.rejects(registering, /Registration cancelled/);
+      await settle();
+      if (operation === 'unregister') await h.registry.unregister('late');
+      else await h.registry.destroyAll();
+      gate.resolve(); await cancelled;
+      assert.equal(h.registry.get('late'), undefined);
+      assert.equal(built.stopped, 1);
+    });
+  }
+});

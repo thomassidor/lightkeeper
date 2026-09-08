@@ -1,3 +1,4 @@
+import { startRuntime, previewOwner } from './runtime-resources';
 import { ControllerRuntime, type ControllerRuntimeDeps } from './controller-runtime';
 import type { HomeyApiService } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
@@ -101,8 +102,7 @@ export class ControllerRuntimeManager {
 
     return this.registry.register(controllerId, async () => {
       const runtime = new ControllerRuntime(controllerId, profile, runtimeDeps);
-      await runtime.start();
-      return runtime;
+      return startRuntime(runtime, () => runtime.start(), this.deps.log);
     });
   }
 
@@ -112,14 +112,13 @@ export class ControllerRuntimeManager {
    * stop it.
    */
   async ephemeral(profile: ControllerProfile): Promise<ControllerRuntime> {
-    const runtime = new ControllerRuntime('__test__', profile, {
+    const runtime = new ControllerRuntime(previewOwner(), profile, {
       ...this.baseDeps(),
       displayName: () => 'test',
       onStateChange: () => { /* a test rig has no health state */ },
       onProfileChange: async () => { /* ephemeral: nothing to persist */ },
     });
-    await runtime.startWithoutFlows();
-    return runtime;
+    return startRuntime(runtime, () => runtime.startWithoutFlows(), this.deps.log);
   }
 
   /**

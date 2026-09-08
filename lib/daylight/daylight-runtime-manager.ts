@@ -1,3 +1,4 @@
+import { startRuntime, previewOwner } from '../runtime/runtime-resources';
 import type { HomeyApiService } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
@@ -60,8 +61,6 @@ export interface DaylightManagerDeps {
  */
 export const TICK_MS = 60_000;
 
-/** Distinguishes concurrent preview runtimes. See `ephemeral()`. */
-let previewSeq = 0;
 
 export class DaylightRuntimeManager {
   /** See RuntimeRegistry: the Map, its ordering rules and the coalescer. */
@@ -94,8 +93,7 @@ export class DaylightRuntimeManager {
         displayName,
         onStateChange,
       });
-      await built.start();
-      return built;
+      return startRuntime(built, () => built.start(), this.deps.log);
     });
     // After the insert, not before: the ticker's guard is "is anything
     // registered", and starting it around a register that then threw left a
@@ -116,15 +114,14 @@ export class DaylightRuntimeManager {
      * sensors on the first `stop()`, and the second screen would quietly start
      * showing the sky instead of the room.
      */
-    const runtime = new DaylightRuntime(`__preview-${previewSeq += 1}__`, plan, {
+    const runtime = new DaylightRuntime(previewOwner(), plan, {
       ...this.baseDeps(),
       displayName: () => 'test',
       onStateChange: () => { /* a test rig has no health state */ },
     });
     // Deliberately idle: the screen decides when to touch someone's lights, not
     // the act of opening it.
-    await runtime.startIdle();
-    return runtime;
+    return startRuntime(runtime, () => runtime.startIdle(), this.deps.log);
   }
 
   private baseDeps(): Omit<DaylightRuntimeDeps, 'onStateChange' | 'displayName'> {

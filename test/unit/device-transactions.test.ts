@@ -587,3 +587,79 @@ describe('availability mapping and state text', () => {
     assert.equal(describe(undefined), 'state.needsRepair');
   });
 });
+
+
+describe('the final store write belongs to the apply transaction', () => {
+  test('a failed commit restores the previous stored and running configuration', async () => {
+    const h = harness();
+    h.registry.learnsRefs = false;
+    await h.lifecycle.apply({ enabled: true, value: 'old' });
+    h.owner.failStoreWrite = new Error('storage failed');
+    await assert.rejects(h.lifecycle.apply({ enabled: true, value: 'new' }), /storage failed/);
+    assert.equal(h.lifecycle.storedPlan()?.value, 'old');
+    assert.equal(h.registry.get('lk-test-1')?.plan.value, 'old');
+  });
+
+  test('a first save that cannot commit leaves no runtime or candidate plan', async () => {
+    const h = harness();
+    h.registry.learnsRefs = false;
+    h.owner.failStoreWrite = new Error('storage failed');
+    await assert.rejects(h.lifecycle.apply({ enabled: true, value: 'new' }), /storage failed/);
+    assert.equal(h.lifecycle.storedPlan(), null);
+    assert.equal(h.registry.get('lk-test-1'), undefined);
+    assert.equal(h.owner.available, false);
+  });
+
+  test('failed rollback leaves the candidate stopped and the device unavailable', async () => {
+    const h = harness();
+    h.registry.learnsRefs = false;
+    await h.lifecycle.apply({ enabled: true, value: 'old' });
+    h.owner.setStoreValue = async () => { throw new Error('persistent storage failure'); };
+    await assert.rejects(h.lifecycle.apply({ enabled: true, value: 'new' }), /persistent storage failure/);
+    assert.equal(h.registry.get('lk-test-1'), undefined);
+    assert.equal(h.owner.available, false);
+  });
+
+  test('a late callback from the replaced runtime cannot overwrite rollback', async () => {
+    const h = harness();
+    const callbacks: Array<(plan: Plan) => Promise<void>> = [];
+    const register = h.registry.register.bind(h.registry);
+    h.registry.register = async (id, plan, state, changed, name) => {
+      callbacks.push(changed);
+      return register(id, plan, state, changed, name);
+    };
+    await h.lifecycle.apply({ enabled: true, value: 'old' });
+    h.owner.failStoreWrite = new Error('storage failed');
+    await assert.rejects(h.lifecycle.apply({ enabled: true, value: 'new' }), /storage failed/);
+    await callbacks[1]!({ enabled: true, value: 'late candidate' });
+    await callbacks[0]!({ enabled: true, value: 'late incumbent' });
+    assert.equal(h.lifecycle.storedPlan()?.value, 'old');
+  });
+});
+
+
+test('rollback snapshots storage after an incumbent write already in flight', async () => {
+  const h = harness(); h.registry.learnsRefs = false;
+  let changed!: (plan: Plan) => Promise<void>;
+  const register = h.registry.register.bind(h.registry);
+  h.registry.register = async (id, plan, state, callback, name) => {
+    changed = callback;
+    return register(id, plan, state, callback, name);
+  };
+  await h.lifecycle.apply({ enabled: true, value: 'old' });
+  const gate = deferred();
+  const write = h.owner.setStoreValue.bind(h.owner);
+  h.owner.setStoreValue = async (key, value) => {
+    if ((value as Plan)?.value === 'old with learned refs') await gate.promise;
+    if ((value as Plan)?.value === 'new') throw new Error('commit failed');
+    return write(key, value);
+  };
+  const learning = changed({ enabled: true, value: 'old with learned refs' });
+  await settle();
+  const applying = h.lifecycle.apply({ enabled: true, value: 'new' });
+  const failed = assert.rejects(applying, /commit failed/);
+  await settle(); gate.resolve();
+  await learning; await failed;
+  assert.equal(h.lifecycle.storedPlan()?.value, 'old with learned refs');
+  assert.equal(h.registry.get('lk-test-1')?.plan.value, 'old with learned refs');
+});

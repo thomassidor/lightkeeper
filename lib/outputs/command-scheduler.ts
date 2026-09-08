@@ -1,6 +1,7 @@
 import type { Capability, PlannedWrite, WriteValue } from './intent-planner';
 import { withDefaults, type Timers } from '../support/timers';
 import { messageOf } from '../support/homey-errors';
+import { WriteCancelled } from './write-cancelled';
 
 /**
  * Coalesce bursts, serialise per-target writes, cap write
@@ -34,7 +35,7 @@ export type Executor = (
   deviceId: string,
   capability: Capability,
   value: WriteValue,
-  options?: { impliesOn?: boolean; preStage?: boolean },
+  options?: { impliesOn?: boolean; preStage?: boolean; eligible?: () => boolean },
 ) => Promise<void>;
 
 /**
@@ -96,6 +97,7 @@ interface PendingWrite {
 }
 
 interface DeviceQueue {
+  generation: number;
   /**
    * The id this queue is filed under.
    *
@@ -261,7 +263,7 @@ export class CommandScheduler {
     // Never rate-limit the FIRST write against a zero timestamp — that would
     // add minWriteIntervalMs of latency to every button press.
     queue = {
-      deviceId, pending: new Map(), timer: null,
+      deviceId, generation: 0, pending: new Map(), timer: null,
       lastWriteAt: Number.NEGATIVE_INFINITY, activeFlush: null,
     };
     this.queues.set(deviceId, queue);
@@ -311,6 +313,8 @@ export class CommandScheduler {
   }
 
   private async runFlush(deviceId: string, queue: DeviceQueue): Promise<void> {
+    const generation = queue.generation;
+    const eligible = () => !this.stopped && queue.generation === generation;
     try {
       const snapshot = [...queue.pending.entries()];
       queue.pending.clear();
@@ -330,7 +334,7 @@ export class CommandScheduler {
       // Serialised per target; failures are independent so one bad write
       // never blocks the rest of this device's burst, let alone other devices.
       for (const [capability, write] of snapshot) {
-        if (this.stopped) {
+        if (!eligible()) {
           for (const waiter of write.waiters) {
             waiter.settle({ status: 'cancelled', deviceId, capability, reason: 'scheduler stopped' });
           }
@@ -339,8 +343,9 @@ export class CommandScheduler {
         const startedAt = this.now();
         try {
           await this.executor(deviceId, capability, write.value, {
-            impliesOn: write.impliesOn, preStage: write.preStage,
+            impliesOn: write.impliesOn, preStage: write.preStage, eligible,
           });
+          if (!eligible()) throw new WriteCancelled();
           for (const waiter of write.waiters) {
             waiter.settle({
               status: 'succeeded', deviceId, capability,
@@ -348,6 +353,12 @@ export class CommandScheduler {
             });
           }
         } catch (error) {
+          if (error instanceof WriteCancelled) {
+            for (const waiter of write.waiters) {
+              waiter.settle({ status: 'cancelled', deviceId, capability, reason: error.message });
+            }
+            continue;
+          }
           this.options.onError?.(deviceId, capability, error);
           // The message only. The adapter has already classified and redacted
           // it; an error OBJECT from the API boundary can quote the key back
@@ -430,6 +441,21 @@ export class CommandScheduler {
 
       if (!worked) return;
     }
+  }
+
+  /** Invalidate even the undispatched tail of an active flush. */
+  cancelTarget(deviceId: string): void {
+    const queue = this.queues.get(deviceId);
+    if (!queue) return;
+    queue.generation += 1;
+    if (queue.timer !== null) this.timers.clearTimeout(queue.timer);
+    queue.timer = null;
+    for (const [capability, write] of queue.pending) {
+      for (const waiter of write.waiters) {
+        waiter.settle({ status: 'cancelled', deviceId, capability, reason: 'target cancelled' });
+      }
+    }
+    queue.pending.clear();
   }
 
   stop(): void {

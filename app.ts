@@ -240,6 +240,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       // A window, point or end may take its brightness from the daylight; the
       // evaluator is shared with the Daylight lights rather than rebuilt.
       daylight: this.daylight,
+      luminance: this.luminance,
       bridge: this.bridge,
       cards: this.cards,
       // The SDK's only timezone primitive, and the one every schedule decision
@@ -262,6 +263,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       // A window, point or end may take its brightness from the daylight; the
       // evaluator is shared with the Daylight lights rather than rebuilt.
       daylight: this.daylight,
+      luminance: this.luminance,
       timezone: () => {
         try {
           return this.homey.clock?.getTimezone();

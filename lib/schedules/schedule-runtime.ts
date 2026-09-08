@@ -1,3 +1,5 @@
+import type { LuminanceSource } from '../daylight/luminance-source';
+import { RuntimeLifetime, cleanupResources, startRuntime, SensorClaim } from '../runtime/runtime-resources';
 import type { HomeyApiService } from '../homey-api-service';
 import { classifyReconcileError } from '../runtime/reconcile-failure';
 import type { CredentialStatus } from '../credential-service';
@@ -80,6 +82,7 @@ export interface ScheduleRuntimeDeps {
    * usable sensor: the stored brightness stands.
    */
   daylight?: DaylightEvaluator;
+  luminance?: LuminanceSource;
 }
 
 export interface ScheduleAction {
@@ -178,6 +181,8 @@ export interface ScheduleDiagnostics {
 }
 
 export class ScheduleRuntime {
+  private readonly lifetime = new RuntimeLifetime();
+  private readonly sensorClaim: SensorClaim;
   private readonly cache = new TargetStateCache();
   private readonly adapter: LightTargetAdapter;
   private readonly resolver: TargetResolver;
@@ -219,6 +224,7 @@ export class ScheduleRuntime {
     this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log);
     if (deps.onWriteResult) this.adapter.setWriteSink(deps.onWriteResult);
     this.resolver = new TargetResolver(deps.catalog);
+    this.sensorClaim = new SensorClaim(deps.luminance, controllerId);
   }
 
   get currentState(): ControllerState { return this.visible.current; }
@@ -245,21 +251,32 @@ export class ScheduleRuntime {
   }
 
   async start(): Promise<void> {
-    await this.buildRuntime();
-    // Reconciled even while paused: pausing is "do not act", not "throw the
-    // Flows away". Deleting and recreating two Flows per schedule on every pause
-    // would churn the user's Flow list and lose any folder they moved them to.
-    await this.reconcileFlows();
-    await this.assessHealth();
-    await this.catchUp();
+    return this.lifetime.start(async current => {
+      this.adapter.resume();
+      await this.buildRuntime(current);
+      if (!current()) return;
+      // Reconciled even while paused: pausing is "do not act", not "throw the
+      // Flows away". Deleting and recreating two Flows per schedule on every pause
+      // would churn the user's Flow list and lose any folder they moved them to.
+      await this.reconcileFlows();
+      if (!current()) return;
+      await this.assessHealth();
+      if (!current()) return;
+      await this.catchUp();
+      if (!current()) return;
+    });
   }
 
   /** Targets, capability cache and write queue. No flows, for the Test control. */
   async startWithoutFlows(): Promise<void> {
-    await this.buildRuntime();
+    return this.lifetime.start(async current => {
+      this.adapter.resume();
+      await this.buildRuntime(current);
+      if (!current()) return;
+    });
   }
 
-  private async buildRuntime(): Promise<void> {
+  private async buildRuntime(current: () => boolean): Promise<void> {
     /**
      * `resolveSnapshot`, and the snapshot is RECORDED here.
      *
@@ -271,7 +288,10 @@ export class ScheduleRuntime {
      * such a light on produces ZERO writes. And after `stop()`/`start()` the
      * field described the PREVIOUS plan's targets.
      */
+    await this.sensorClaim.retain(this.plan.daylight?.sensors ?? []);
+    if (!current()) return;
     const resolved = await resolveSnapshot(this.resolver, this.plan.target);
+    if (!current()) return;
     this.snapshot = resolved;
     this.targetIds = resolved.ids;
     this.targetNames = resolved.names;
@@ -282,7 +302,11 @@ export class ScheduleRuntime {
       onError: (deviceId, capability, error) =>
         this.deps.log(`Write failed on ${deviceId}/${capability}:`, messageOf(error)),
     }, (deviceId, capability, value, options) =>
-      this.adapter.write(deviceId, capability, value, options));
+      this.adapter.write(deviceId, capability, value, {
+        ...options,
+        eligible: () => current() && this.targetIds.includes(deviceId)
+          && (options?.eligible?.() ?? true),
+      }));
   }
 
   /**
@@ -575,6 +599,7 @@ export class ScheduleRuntime {
     boundary: ScheduleBoundary,
     note?: string,
   ): Promise<{ writes: number; skipped: number }> {
+    const current = this.lifetime.current();
     if (this.targetIds.length === 0) {
       this.lastAction = { at: this.now(), entryId: entry.id, boundary, writes: 0, skipped: 0, note: 'no targets' };
       return { writes: 0, skipped: 0 };
@@ -584,6 +609,7 @@ export class ScheduleRuntime {
     // Homey events, so planning against a stale cache is how a group action ends
     // up deciding "nothing is on" hours after the fact.
     await Promise.all(this.targetIds.map(id => this.adapter.refresh(id)));
+    if (!current()) return { writes: 0, skipped: 0 };
 
     /**
      * An off boundary while ANOTHER window is still running.
@@ -728,48 +754,62 @@ export class ScheduleRuntime {
 
   /** Devices or zones changed: re-resolve without tearing the queue down. */
   async refreshTargets(): Promise<void> {
-    const next = await resolveSnapshot(this.resolver, this.plan.target);
-    // See target-snapshot.ts: the id list cannot see a light re-paired under
-    // the same id with a different dim range, and a schedule that clamps to
-    // the old range writes the wrong level twice a day for as long as it runs.
-    if (this.snapshot && this.snapshot.fingerprint === next.fingerprint) return;
+    return this.lifetime.run(async current => {
+      const next = await resolveSnapshot(this.resolver, this.plan.target);
+      if (!current()) return;
+      // See target-snapshot.ts: the id list cannot see a light re-paired under
+      // the same id with a different dim range, and a schedule that clamps to
+      // the old range writes the wrong level twice a day for as long as it runs.
+      if (this.snapshot && this.snapshot.fingerprint === next.fingerprint) return;
 
-    const { removed } = diffTargets(this.snapshot, next);
-    for (const deviceId of removed) {
-      await releaseTarget(deviceId, {
-        unsubscribe: id => this.adapter.unsubscribe(id),
-        cancelPending: id => this.adapter.cancelPending(id),
-        cache: this.cache,
-      });
-    }
+      const { removed } = diffTargets(this.snapshot, next);
+      // Revoke membership before awaiting teardown, so concurrent ticks cannot
+      // enqueue fresh commands for a target we are already releasing.
+      this.targetIds = next.ids;
+      for (const deviceId of removed) {
+        this.scheduler?.cancelTarget(deviceId);
+        await releaseTarget(deviceId, {
+          unsubscribe: id => this.adapter.unsubscribe(id),
+          cancelPending: id => this.adapter.cancelPending(id),
+          cache: this.cache,
+        });
+        if (!current()) return;
+      }
 
-    this.snapshot = next;
-    this.targetIds = next.ids;
-    this.targetNames = next.names;
-    this.resolver.primeCache(next.devices, this.cache);
-    this.deps.log(`Schedule targets re-resolved: ${next.ids.length} light(s)`);
+      this.snapshot = next;
+      this.targetNames = next.names;
+      this.resolver.primeCache(next.devices, this.cache);
+      this.deps.log(`Schedule targets re-resolved: ${next.ids.length} light(s)`);
 
-    await this.assessHealth();
+      await this.assessHealth();
+    });
   }
 
   async updatePlan(plan: SchedulePlan): Promise<void> {
     this.plan = plan;
     await this.stop();
-    await this.start();
+    await startRuntime(this, () => this.start(), this.deps.log);
   }
 
   async stop(): Promise<void> {
     this.scheduler?.stop();
-    this.scheduler = null;
-    // The adapter's pending post-write checks outlive this runtime unless
-    // released — one firing after teardown would switch a light on 1.5 s after
-    // the schedule was told to stand down.
-    await this.adapter.unsubscribeAll();
-    this.cache.clear();
-    this.targetIds = [];
-    this.targetNames = [];
-    // Or the next refresh diffs the new plan's targets against the old plan's.
-    this.snapshot = null;
+    this.adapter.suspend();
+    return this.lifetime.stop(async () => {
+      this.scheduler?.stop();
+      this.scheduler = null;
+      // The adapter's pending post-write checks outlive this runtime unless
+      // released — one firing after teardown would switch a light on 1.5 s after
+      // the schedule was told to stand down.
+      await cleanupResources([
+        () => this.adapter.unsubscribeAll(),
+        () => this.sensorClaim.release(),
+      ], this.deps.log);
+      this.cache.clear();
+      this.targetIds = [];
+      this.targetNames = [];
+      // Or the next refresh diffs the new plan's targets against the old plan's.
+      this.snapshot = null;
+    });
   }
 
   /** Remove only what this schedule demonstrably owns. */
