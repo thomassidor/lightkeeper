@@ -369,6 +369,85 @@ describe('an obsolete flow is REPLACED, not duplicated', () => {
     assert.equal(result.deleted, 1, 'and the old flow goes');
   });
 
+  /**
+   * And a firmware that RENAMES the card's argument must not strand it either.
+   *
+   * A schedule's fingerprint is `time:<id>:<argument>`, so a renamed argument
+   * moves the fingerprint exactly as a moved card does — and platform §9
+   * records Athom doing precisely this to `cron:every`, which is now
+   * `cron:every_nth` with a different argument shape. `triggerIdMayHaveMoved`
+   * was then set and the id check skipped, but the ARGUMENT comparison still
+   * ran against the renamed key: `live['when']` is absent where we expected
+   * `when`, so it read as a mismatch, every schedule Flow read as user-edited,
+   * and the schedule was stuck in the very dead end the flag was added to
+   * remove.
+   *
+   * The card id here is deliberately UNCHANGED. That is what makes this a
+   * distinct case from the test above rather than a restatement of it.
+   */
+  test('a renamed trigger argument replaces the flow instead of reading as an edit', async () => {
+    const oldCard = {
+      id: 'homey:manager:cron:time_exactly',
+      uri: 'homey:flowcardtrigger:homey:manager:cron:time_exactly',
+      argument: 'time',
+    };
+    const renamed = { ...oldCard, argument: 'when' };
+
+    const h = harness({
+      flows: { 'f-old': asLiveFlow('f-old', 'lk-sched-1-1', scheduleInput('sched:0:on', '22:00', oldCard)) },
+    });
+
+    const result = await h.bridge.sync(request({
+      fingerprint: `time:${renamed.id}:${renamed.argument}`,
+      mapped: [scheduleInput('sched:0:on', '22:00', renamed)],
+      existing: [reference('f-old', 'sched:0:on', 'at:22:00', `time:${oldCard.id}:time`)],
+    }));
+
+    assert.deepEqual(
+      result.userEdited, [],
+      'an argument the platform renamed is not something the user did',
+    );
+    assert.equal(result.created, 1, 'the schedule is rebuilt against the new argument');
+    assert.equal(result.deleted, 1, 'and the old flow goes');
+  });
+
+  test('a RETIMED schedule is still an edit, even when our template moved', async () => {
+    /**
+     * The other side of the same coin, and the reason absence is forgiven while
+     * a different VALUE is not.
+     *
+     * A user who retimes a generated Flow from 22:00 to 23:00 in the Flow
+     * editor leaves the trigger card and our action arguments untouched, so
+     * before the argument comparison existed the app read the Flow as its own
+     * and went on firing at 22:00 while every screen said 23:00. Forgiving an
+     * absent key must not reopen that: the key is present here, with a
+     * different value.
+     */
+    const card = {
+      id: 'homey:manager:cron:time_exactly',
+      uri: 'homey:flowcardtrigger:homey:manager:cron:time_exactly',
+      argument: 'time',
+    };
+    const input = scheduleInput('sched:0:on', '22:00', card);
+    const live = asLiveFlow('f-old', 'lk-sched-1-1', input);
+    (live as any).trigger.args = { time: '23:00' };
+
+    const h = harness({ flows: { 'f-old': live } });
+
+    const result = await h.bridge.sync(request({
+      // Our own template moved too, so the id check is skipped — which is the
+      // case that used to be the only one anybody tested.
+      fingerprint: 'time:something:else',
+      mapped: [input],
+      existing: [reference('f-old', 'sched:0:on', 'at:22:00', 'time:old:time')],
+    }));
+
+    assert.deepEqual(
+      result.userEdited, ['f-old'],
+      'a time the user changed by hand must still read as their work',
+    );
+  });
+
   test('a user-edited flow is still left alone when our own template moved', async () => {
     const card = {
       id: 'homey:manager:cron:time_exactly',

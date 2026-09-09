@@ -22,7 +22,8 @@ import {
 import { describeClock, localNowResolved, type LocalClock } from '../time/local-clock';
 import { bindingsForPlan, eventKeyFor, parseEventKey } from './schedule-bindings';
 import {
-  activeEntries, activeWindowStartDay, boundaryDayMatches, offMinuteOf,
+  activeEntries, activeWindowStartDay, boundaryDayMatches,
+  boundaryClockMatches, offMinuteOf,
 } from './schedule-window';
 import type { TimeCardDiscovery } from './time-card-discovery';
 import { fireAndForget } from '../support/async';
@@ -545,7 +546,22 @@ export class ScheduleRuntime {
     const outcome = this.validate(eventKey);
     if (!outcome.accepted) {
       this.lastRejection = { at: this.now(), eventKey, reason: outcome.reason ?? 'refused' };
-      return outcome;
+
+      /**
+       * A retimed Flow is the one refusal worth reconciling for.
+       *
+       * Every other refusal describes a Flow that is fine and a moment that is
+       * not — a paused schedule, the wrong day, an unresolved clock. This one
+       * says the Flow itself no longer matches the plan, which is exactly what
+       * `hasBeenUserEdited()` is for, and reconciliation is the only thing that
+       * will put `flowEdited` on the tile. Without it the user sees a room lit
+       * at the wrong hour and a device reporting `ready` until the next restart.
+       *
+       * Fired and forgotten, because `handleEvent` is synchronous by contract
+       * and the answer to THIS event is already decided: no.
+       */
+      fireAndForget(this.reconcileFlows(), this.deps.log, 'Reconcile after a retimed boundary');
+      return { accepted: false, reason: outcome.reason };
     }
 
     const { entry, boundary } = outcome;
@@ -555,7 +571,7 @@ export class ScheduleRuntime {
 
   private validate(eventKey: string):
   | { accepted: true; entry: ScheduleEntry; boundary: ScheduleBoundary }
-  | { accepted: false; reason: string } {
+  | { accepted: false; reason: string; retimed?: boolean } {
     const parsed = parseEventKey(eventKey);
     if (!parsed) return { accepted: false, reason: `"${eventKey}" is not a schedule event key` };
 
@@ -580,6 +596,28 @@ export class ScheduleRuntime {
       return {
         accepted: false,
         reason: `${describeClock(clock)} is not one of this schedule's days`,
+      };
+    }
+
+    /**
+     * And the TIME, which nothing checked.
+     *
+     * The day was validated from the first version; the clock never was. A user
+     * who retimed a generated on-Flow from 22:00 to 15:00 in the Flow editor
+     * got a lit room at 15:00 every day with the tile saying `ready`.
+     * `hasBeenUserEdited()` would catch that edit — but reconciliation runs at
+     * start, on a plan change and on a credential change, and there is no
+     * periodic pass, so nothing looked until the next restart.
+     *
+     * `retimed: true` on the refusal is what makes the tile catch up now
+     * rather than at that restart: see `handleEvent`.
+     */
+    if (!boundaryClockMatches(entry, parsed.boundary, clock)) {
+      return {
+        accepted: false,
+        retimed: true,
+        reason: `${describeClock(clock)} is not when this schedule's `
+          + `${parsed.boundary} boundary belongs — the Flow looks retimed`,
       };
     }
 

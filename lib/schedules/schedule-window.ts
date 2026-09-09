@@ -94,6 +94,55 @@ export function isActive(entry: ScheduleEntry, now: LocalClock): boolean {
  * whichever happened to be stored second, so the same restart at the same minute
  * gave a different room depending on the order the user had added the rows in.
  */
+/**
+ * How far a boundary event may arrive from the minute it was scheduled for.
+ *
+ * The Flow engine fires on the minute and our own clock is read separately, so
+ * the two can disagree by a whisker either side of a minute boundary — and a
+ * refusal has to be about a Flow that was RETIMED, never about a second of
+ * skew. Two minutes is far more than that gap and far less than any retiming a
+ * person would make by hand in the Flow editor.
+ */
+const BOUNDARY_TOLERANCE_MINUTES = 2;
+
+/** Minutes from `minutesOfDay` forward to `target`, wrapping at midnight. */
+function minutesUntil(minutesOfDay: number, target: number): number {
+  return (target - minutesOfDay + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+}
+
+/**
+ * Does the CLOCK agree that this boundary belongs now?
+ *
+ * `boundaryDayMatches` has always checked the day; nothing checked the time.
+ * So a user who retimed a generated on-Flow from 22:00 to 15:00 in the Flow
+ * editor got a lit room at 15:00 every day, with the tile saying `ready` —
+ * `hasBeenUserEdited()` would catch that edit, but reconciliation only runs at
+ * start, on a plan change and on a credential change, so nothing looked until
+ * the next restart.
+ *
+ *  - an `on` must land inside the window it opens
+ *  - an `off` must land outside it
+ *
+ * Both are DST-tolerant by construction, because every comparison here is in
+ * wall-clock minutes and never converts a wall time to an instant. Two windows
+ * that TOUCH still both pass: the start boundary is inclusive and the off
+ * boundary exclusive, so at 22:00 the ending window is already inactive and the
+ * starting one is already active.
+ */
+export function boundaryClockMatches(
+  entry: ScheduleEntry,
+  boundary: 'on' | 'off',
+  now: LocalClock,
+): boolean {
+  const target = boundary === 'on' ? entry.onAt : offMinuteOf(entry) % MINUTES_PER_DAY;
+  // Fired a touch early: inside the tolerance, take the schedule's word for it
+  // rather than the clock's. `minutesUntil` wraps, so this is only ever the
+  // couple of minutes BEFORE the target, never the day either side of it.
+  if (minutesUntil(now.minutesOfDay, target) <= BOUNDARY_TOLERANCE_MINUTES) return true;
+
+  return boundary === 'on' ? isActive(entry, now) : !isActive(entry, now);
+}
+
 export function activeEntries(
   entries: readonly ScheduleEntry[],
   now: LocalClock,

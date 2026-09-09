@@ -186,8 +186,25 @@ function refusedSweep(kept: number, refused: SweepResult['refused']): SweepResul
  * Written out twice — once for the trigger's args and once for the action's —
  * byte-identical apart from which object was read.
  */
-function argsMatch(expected: Record<string, unknown>, live: Record<string, unknown>): boolean {
+function argsMatch(
+  expected: Record<string, unknown>,
+  live: Record<string, unknown>,
+  options: { forgiveAbsentKeys?: boolean } = {},
+): boolean {
   for (const [key, value] of Object.entries(expected)) {
+    /**
+     * An ABSENT key is forgiven only where the caller already knows our own
+     * template moved — see the `triggerIdMayHaveMoved` call site.
+     *
+     * A key present with a DIFFERENT value is still an edit, and that
+     * distinction is the whole point: it is what catches a schedule retimed
+     * from 22:00 to 23:00 in the Flow editor, which is the failure this
+     * comparison was added for.
+     *
+     * `'' ` and `undefined` are not distinguished by the comparison below —
+     * `String(live[key] ?? '')` — so the presence check has to be explicit.
+     */
+    if (options.forgiveAbsentKeys && !(key in live)) continue;
     if (String(live[key] ?? '') !== String(value)) return false;
   }
   return true;
@@ -1072,13 +1089,30 @@ export function hasBeenUserEdited(
   if (!options.triggerIdMayHaveMoved
     && String(live.trigger?.id ?? '') !== expected.trigger.id) return true;
 
-  // The trigger's ARGUMENTS count as ours too. Without this, a schedule whose
-  // time the user changed in the Flow itself read as untouched — the trigger id
-  // and our action arguments were still exactly what we wrote — so the app
-  // silently kept a flow that fires at a time no screen in the app admits to.
-  // Only the keys we generated are compared: Homey may echo back more than it
-  // was given, and a superset is not an edit.
-  if (!argsMatch(expected.trigger.args, live.trigger?.args ?? {})) return true;
+  /**
+   * The trigger's ARGUMENTS count as ours too. Without this, a schedule whose
+   * time the user changed in the Flow itself read as untouched — the trigger id
+   * and our action arguments were still exactly what we wrote — so the app
+   * silently kept a flow that fires at a time no screen in the app admits to.
+   * Only the keys we generated are compared: Homey may echo back more than it
+   * was given, and a superset is not an edit.
+   *
+   * When we already know our own template moved, an argument key that is
+   * ABSENT from the live flow is forgiven along with the trigger's identity.
+   * The two go together: platform §9 records Athom reshaping `cron:every` into
+   * `cron:every_nth` with a different argument shape, and a schedule's
+   * fingerprint is `time:<id>:<argument>` — so a firmware that renames the
+   * argument moves the fingerprint, `triggerIdMayHaveMoved` is set, the id
+   * check is skipped, and this comparison then failed on the renamed key
+   * instead. Every schedule Flow read as user-edited and the schedule was
+   * stuck in the very dead end the flag was added to remove.
+   *
+   * A key present with a different VALUE is still an edit, so the retimed
+   * schedule above is still caught.
+   */
+  if (!argsMatch(expected.trigger.args, live.trigger?.args ?? {}, {
+    forgiveAbsentKeys: options.triggerIdMayHaveMoved === true,
+  })) return true;
 
   const liveActions = (live.actions ?? []) as any[];
   const ours = liveActions.find(a => String(a?.id ?? '') === expected.actions[0]!.id);

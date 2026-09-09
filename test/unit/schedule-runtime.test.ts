@@ -167,7 +167,10 @@ const TUESDAY_1000 = Date.UTC(2026, 7, 18, 8, 0);
 
 describe('schedule boundaries', () => {
   test('an on event switches every target on', async () => {
-    const h = harness({ plan: plan(), now: TUESDAY_1000 });
+    // 22:15, inside the 22:00-23:30 window this plan describes. The clock
+    // matters: a boundary arriving hours from where it belongs is now refused
+    // as a retimed Flow, so a test at 10:00 would be asserting the wrong thing.
+    const h = harness({ plan: plan(), now: TUESDAY_2215 });
     await h.runtime.startWithoutFlows();
 
     const outcome = h.runtime.handleEvent(eventKeyFor('a', 'on'));
@@ -432,22 +435,106 @@ describe('refusing an event', () => {
   });
 
   test('the off event of a midnight-crossing window is accepted on the following day', async () => {
-    // Saturday 00:30 local. The window began at 23:30 on Friday, which is the
-    // day the schedule actually runs.
-    const saturday0030 = Date.UTC(2026, 7, 21, 22, 30);
+    // Saturday 01:30 local, which is when this window's own off boundary falls:
+    // it began at 23:30 on Friday and runs two hours. Friday is the day the
+    // schedule actually runs, and resolving that from a Saturday clock is what
+    // this test is about.
+    const saturday0130 = Date.UTC(2026, 7, 21, 23, 30);
     const h = harness({
       plan: plan({
         entries: [{
           id: 'a', onAt: 23 * 60 + 30, days: [5], end: { kind: 'duration', minutes: 120 },
         }],
       }),
-      now: saturday0030,
+      now: saturday0130,
     });
     await h.runtime.startWithoutFlows();
 
     assert.equal(h.runtime.handleEvent(eventKeyFor('a', 'off')).accepted, true);
     // The on event on that same Saturday is not Friday's, and is refused.
     assert.equal(h.runtime.handleEvent(eventKeyFor('a', 'on')).accepted, false);
+  });
+
+  /**
+   * A boundary is validated against the CLOCK as well as the day.
+   *
+   * The day was checked from the first version; the time never was. So a user
+   * who retimed a generated on-Flow from 22:00 to 15:00 in the Flow editor got
+   * a lit room at 15:00 every day, with the tile saying `ready`.
+   * `hasBeenUserEdited()` would catch that edit — but reconciliation runs at
+   * start, on a plan change and on a credential change, and there is no
+   * periodic pass, so nothing looked until the next restart.
+   */
+  test('an on event hours from its window is refused as a retimed Flow', async () => {
+    const h = harness({ plan: plan(), now: TUESDAY_1000 });
+    await h.runtime.startWithoutFlows();
+
+    const outcome = h.runtime.handleEvent(eventKeyFor('a', 'on'));
+
+    assert.equal(outcome.accepted, false, 'a lit room at 10:00 from a 22:00 schedule');
+    assert.match(String(outcome.reason), /retimed/);
+    await settle();
+    assert.deepEqual(h.writes, [], 'and nothing reached the lights');
+  });
+
+  test('an off event INSIDE its own window is refused too', async () => {
+    // The mirror case, and the one that would leave a room dark all evening:
+    // an off-Flow dragged back to 22:30 inside a 22:00-23:30 window.
+    const h = harness({ plan: plan(), now: TUESDAY_2215 });
+    await h.runtime.startWithoutFlows();
+
+    const outcome = h.runtime.handleEvent(eventKeyFor('a', 'off'));
+
+    assert.equal(outcome.accepted, false);
+    assert.match(String(outcome.reason), /retimed/);
+  });
+
+  test('and the refusal asks for a reconcile, so the tile catches up now', async () => {
+    // Every other refusal describes a Flow that is fine and a moment that is
+    // not. This one says the Flow no longer matches the plan, and
+    // reconciliation is the only thing that will put `flowEdited` on the tile —
+    // otherwise the user sees a room lit at the wrong hour and a device
+    // reporting `ready` until the next restart.
+    const h = harness({ plan: plan(), now: TUESDAY_1000 });
+    await h.runtime.startWithoutFlows();
+    const before = h.synced.length;
+
+    h.runtime.handleEvent(eventKeyFor('a', 'on'));
+    await settle();
+
+    assert.ok(h.synced.length > before, 'a retimed boundary must trigger a reconcile');
+  });
+
+  test('a boundary a minute early is still accepted, because clocks are clocks', async () => {
+    // The Flow engine fires on the minute and our clock is read separately, so
+    // a refusal must be about a Flow that was RETIMED, never about a second of
+    // skew. 21:59 for a 22:00 boundary is inside the tolerance.
+    const tuesday2159 = Date.UTC(2026, 7, 18, 19, 59);
+    const h = harness({ plan: plan(), now: tuesday2159 });
+    await h.runtime.startWithoutFlows();
+
+    assert.equal(h.runtime.handleEvent(eventKeyFor('a', 'on')).accepted, true);
+  });
+
+  test('two windows that touch both pass at the shared minute', async () => {
+    // 22:00 ends one window and starts the next. The start boundary is
+    // inclusive and the off boundary exclusive, so at that minute the ending
+    // window is already inactive and the starting one already active — and the
+    // tolerance covers it either way.
+    const tuesday2200 = Date.UTC(2026, 7, 18, 20, 0);
+    const h = harness({
+      plan: plan({
+        entries: [
+          { id: 'early', onAt: 20 * 60, days: null, end: { kind: 'duration', minutes: 120 } },
+          { id: 'late', onAt: 22 * 60, days: null, end: { kind: 'duration', minutes: 60 } },
+        ],
+      }),
+      now: tuesday2200,
+    });
+    await h.runtime.startWithoutFlows();
+
+    assert.equal(h.runtime.handleEvent(eventKeyFor('early', 'off')).accepted, true);
+    assert.equal(h.runtime.handleEvent(eventKeyFor('late', 'on')).accepted, true);
   });
 });
 
