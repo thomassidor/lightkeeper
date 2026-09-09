@@ -1,8 +1,10 @@
+import { RANGE_EXPANSION_CEILING } from '../inputs/selectable-input';
 import { CURRENT_SCHEMA_VERSION, type ControllerProfile } from './controller-profile';
 import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
 import { runMigrationChain, type MigrationResult, type MigrationStep } from '../support/migrations';
 import { validateControllerProfile } from '../validation/plans';
 import { isRecord } from '../validation/guards';
+
 /**
  * Every profile carries schemaVersion and migrates
  * deterministically at startup. Every historical schema
@@ -98,14 +100,27 @@ function migrateBinding(binding: Record<string, unknown>): Record<string, unknow
  * guess: `compileRange` refuses an empty one through `InvalidRangeError`, which
  * marks the control unsupported and names it — far better than a control that
  * looks configured and compiles to nothing.
+ *
+ * A pair WIDER than the ceiling gets the same treatment, and for a stronger
+ * reason. The ceiling is applied downstream, by `compileRange`, so this loop
+ * used to build the whole span first: a hand-edited or corrupted v1 profile
+ * saying `[0, 1e9]` allocated a billion-element array inside `onInit`, which
+ * does not fail — it hangs the device's startup and takes the memory with it.
+ * Real v1 profiles were twelve values or fewer, so nothing legitimate is
+ * refused, and refusing loudly is exactly what the paragraph above argues for.
  */
 function expandStoredRange(valueRange: unknown): number[] {
   if (!Array.isArray(valueRange) || valueRange.length !== 2) return [];
   const [from, to] = valueRange.map(Number);
   if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return [];
 
+  const first = Math.round(from);
+  const last = Math.round(to);
+  // BEFORE the loop, never after it: the array is the cost, not the check.
+  if (last - first + 1 > RANGE_EXPANSION_CEILING) return [];
+
   const values: number[] = [];
-  for (let value = Math.round(from); value <= Math.round(to); value += 1) values.push(value);
+  for (let value = first; value <= last; value += 1) values.push(value);
   return values;
 }
 

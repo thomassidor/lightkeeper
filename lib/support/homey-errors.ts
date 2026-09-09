@@ -60,15 +60,30 @@ function statusOf(error: unknown): number | null {
  * firing.
  */
 export function isNotFound(error: unknown): boolean {
-  if (statusOf(error) === 404) return true;
+  /**
+   * A status, where there is one, is the ANSWER — not merely one way to reach
+   * a yes.
+   *
+   * The message test used to run regardless, so a 409, a 423 or a 500 whose
+   * text happened to contain `404` read as "already gone". That is not
+   * hypothetical: the pattern was `(^|\D)404(\D|$)`, and Homey echoes device
+   * and flow ids back inside error messages, so a hex id carrying `404`
+   * between two non-digits — roughly one UUID in three hundred — was enough.
+   * The caller then treats the delete as done and drops the reference, while
+   * the Flow goes on firing under a controller id that is still live, which
+   * puts it beyond the orphan sweep too.
+   */
+  const status = statusOf(error);
+  if (status !== null) return status === 404;
 
-  const message = String((error as StatusCarrying | undefined)?.message ?? '');
+  const message = String((error as StatusCarrying | undefined)?.message ?? '').trim();
   if (!message) return false;
 
-  // `404 Not Found: <what>` is the shape the platform uses. The bare-word
-  // match is anchored to avoid catching, say, "Not Found" inside a flow name
-  // echoed back in some other error.
-  return /(^|\D)404(\D|$)/.test(message) || /^not[ _-]?found\b/i.test(message.trim());
+  // No status at all, so the platform's own shape is the only evidence there
+  // is: `404 Not Found: <what>`. ANCHORED, for the reason above — a number
+  // somewhere in a sentence is not a status code, and guessing that it is
+  // loses a live Flow.
+  return /^404\b/.test(message) || /^not[ _-]?found\b/i.test(message);
 }
 
 /**
@@ -98,7 +113,11 @@ export function isTransportFailure(error: unknown): boolean {
 
   const message = String(err.message ?? '');
   if (!message) return false;
-  return /socket hang up|connection (?:reset|refused|closed|lost)|not connected|disconnected|network|timed? ?out|ECONN|EPIPE|ETIMEDOUT/i
+  // `network` alone was too broad: a statusless `TypeError: Cannot read
+  // properties of undefined (reading 'networkName')` from our OWN code is not
+  // a dead socket, and reading it as one throws away a working client. Every
+  // other alternative here already names the failure rather than the subject.
+  return /socket hang up|connection (?:reset|refused|closed|lost)|not connected|disconnected|network (?:error|unreachable|is unreachable|timeout)|timed? ?out|ECONN|EPIPE|ETIMEDOUT/i
     .test(message);
 }
 

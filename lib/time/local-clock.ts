@@ -112,3 +112,34 @@ export function describeClock(clock: LocalClock): string {
   const minutes = clock.minutesOfDay % 60;
   return `${WEEKDAY_NAMES[clock.isoWeekday - 1]} ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
+
+/**
+ * The Homey's own timezone, or `undefined` — the one place that asks.
+ *
+ * `homey.clock.getTimezone()` is the SDK's only timezone primitive and every
+ * schedule and curve decision is made against it. Three things make this worth
+ * a function rather than three try/catches:
+ *
+ *  - **It is read per call, never cached.** A household that corrects its
+ *    Homey's timezone must not have to restart the app for a schedule to start
+ *    firing at the right hour.
+ *  - **`clock` can be absent.** Optional-chained rather than assumed, because a
+ *    pair-session rig has no Homey behind it and `getTimezone` has been
+ *    observed to throw on a Homey that has not resolved its own location yet.
+ *  - **`undefined` rather than a guess.** Every consumer already refuses to act
+ *    on an untrusted clock — `localNowResolved()` below is that refusal — and a
+ *    default of UTC would silently fire a 22:00 window at 23:00 or 00:00, which
+ *    is the worst possible way to be wrong about a schedule.
+ *
+ * It was three copies: two in `app.ts` and one, returning `null` instead of
+ * `undefined`, in `pair-session.ts`.
+ */
+export function timezoneOf(
+  clock: { getTimezone(): string } | undefined | null,
+): string | undefined {
+  try {
+    return clock?.getTimezone() ?? undefined;
+  } catch {
+    return undefined;
+  }
+}

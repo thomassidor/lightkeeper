@@ -301,9 +301,14 @@ export class CredentialService {
 
     const token = this.token;
     if (!token) {
-      const error = new Error('No API key stored — Lightkeeper cannot create its Flows without one.');
-      (error as { credentialFailure?: CredentialFailure }).credentialFailure = 'malformed';
-      throw error;
+      // Unannotated on purpose. This used to carry
+      // `credentialFailure = 'malformed'`, which was wrong twice: nothing reads
+      // the field off a thrown error — `sanitizedWriteError()` re-derives the
+      // class from the message and the status on the way out, and
+      // `classifyReconcileError()` reads the stored STATUS rather than the
+      // error — and "no key stored" is `present: false`, not a malformed one.
+      // A dead annotation that also said something untrue.
+      throw new Error('No API key stored — Lightkeeper cannot create its Flows without one.');
     }
 
     // Cleared on failure as well as success: caching a rejected promise would

@@ -185,6 +185,23 @@ export interface DeviceOwner<
 const OPS = 'ops';
 const STATE = 'state';
 
+/**
+ * Which locale key a failed load deserves. Module-level and pure, so it is
+ * testable without a device host.
+ */
+function quarantineKeyFor(error: unknown): string | null {
+  const name = (error as Error | undefined)?.name;
+  const kind = (error as { kind?: unknown } | undefined)?.kind;
+
+  // Intact configuration, wrong app version. Nothing to redo.
+  if (name === 'MigrationError' && kind === 'newer') return 'state.configurationFromNewerVersion';
+  // A shape no chain can make sense of, or one that failed its validator.
+  if (name === 'ValidationError') return 'state.invalidConfiguration';
+  if (name === 'MigrationError') return 'state.invalidConfiguration';
+  // Anything else: the owner's own "not configured" is the honest fallback.
+  return null;
+}
+
 export class DeviceLifecycle<
   TPlan,
   TRuntime extends DeviceRuntime<TRuntimePlan>,
@@ -265,12 +282,20 @@ export class DeviceLifecycle<
        * device goes unavailable and the STORE IS LEFT ALONE, so a fix in a later
        * version can still read whatever is there.
        *
-       * The two failures get different text because they need different actions:
-       * a version this build cannot understand means "update Lightkeeper", while
-       * a plan whose shape is wrong means "set this device up again".
+       * The THREE failures get different text because they need different
+       * actions: a store written by a later version of the app means "update
+       * Lightkeeper" and nothing else — the configuration is intact and a
+       * downgrade is the whole problem; a plan whose shape is wrong means "set
+       * this device up again"; and anything else falls back to the owner's own
+       * "not configured".
+       *
+       * The middle case used to swallow the first. `MigrationError` was a
+       * plain `Error`, so `name === 'ValidationError'` was false and it fell
+       * to the fallback — and somebody who had simply installed an older build
+       * was told to set their device up again, which would have destroyed the
+       * configuration that was fine. The comment already promised otherwise.
        */
-      const validation = (error as Error)?.name === 'ValidationError';
-      this.quarantineOverride = validation ? 'state.invalidConfiguration' : null;
+      this.quarantineOverride = quarantineKeyFor(error);
       this.owner.error(
         `Could not load ${this.owner.storeKey}:`, messageOf(error),
       );

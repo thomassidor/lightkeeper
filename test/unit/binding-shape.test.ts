@@ -296,6 +296,57 @@ describe('the schema 1 to 2 migration', () => {
     ],
   });
 
+  /**
+   * A range wider than the ceiling is refused BEFORE the array is built.
+   *
+   * The ceiling is applied downstream by `compileRange`, so the expansion used
+   * to walk the whole span first: a hand-edited or corrupted v1 profile saying
+   * `[0, 1e9]` allocated a billion-element array inside `onInit`. That does not
+   * throw — it hangs the device's startup and takes the memory with it, on a
+   * path with no timeout and no way for the user to see why.
+   *
+   * An empty list is the refusal the docblock already argued for: `compileRange`
+   * rejects one through `InvalidRangeError`, which marks the control unsupported
+   * and NAMES it. Real v1 profiles were twelve values or fewer, so nothing
+   * legitimate is turned away.
+   */
+  test('a range wider than the ceiling expands to nothing, not to a billion values', () => {
+    const absurd = oldProfile();
+    const range = (absurd.catalogue as any[])[0].binding;
+    range.valueRange = [0, 1e9];
+
+    const started = Date.now();
+    const { plan: profile } = migrateProfile(absurd);
+    const elapsed = Date.now() - started;
+
+    const bindings = (profile.catalogue ?? []).map(i => i.binding as any);
+    assert.deepEqual(bindings[0].values, [], 'the span was expanded rather than refused');
+    // Not a benchmark — an order-of-magnitude check. Building the array took
+    // seconds and hundreds of megabytes; refusing it is arithmetic.
+    assert.ok(elapsed < 1000, `migration took ${elapsed}ms`);
+  });
+
+  test('and a range at exactly the ceiling still expands', () => {
+    // Twelve is the ceiling, not the first refusal: BILRESA's own range is what
+    // the ceiling was chosen for, so the boundary has to be inclusive.
+    const wide = oldProfile();
+    (wide.catalogue as any[])[0].binding.valueRange = [1, 12];
+
+    const { plan: profile } = migrateProfile(wide);
+    const values = ((profile.catalogue ?? [])[0]!.binding as any).values;
+
+    assert.equal(values.length, 12);
+    assert.deepEqual(values, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  });
+
+  test('one past the ceiling is refused', () => {
+    const wide = oldProfile();
+    (wide.catalogue as any[])[0].binding.valueRange = [1, 13];
+
+    const { plan: profile } = migrateProfile(wide);
+    assert.deepEqual(((profile.catalogue ?? [])[0]!.binding as any).values, []);
+  });
+
   test('it runs, and lands on the current version', () => {
     const { plan: profile, migrated, fromVersion } = migrateProfile(oldProfile());
     assert.equal(migrated, true);

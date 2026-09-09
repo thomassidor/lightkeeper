@@ -566,6 +566,46 @@ describe('pre-staging that turns out to be unsafe', () => {
     assert.equal(outcome.restored, false);
   });
 
+  test('a probe whose runtime stops mid-wait writes nothing to the lamp', async () => {
+    /**
+     * The one timer in this runtime that `stop()` cannot cancel, so the wait is
+     * followed by a check rather than made cancellable — a probe is a request
+     * the USER made, and pausing the device mid-test must not leave them
+     * staring at a button that never answers.
+     *
+     * What must not happen is the work AFTER the wait: `refresh()` re-creates a
+     * cache entry `stop()` has just cleared, and the restore writes
+     * `onoff: false` — from a runtime that is no longer running, to a lamp the
+     * user's own test has just lit.
+     */
+    const h = harness({
+      plan: plan({ preStage: true }),
+      devices: [light('l1', undefined, { onoff: false }), light('l2')],
+    });
+    await h.runtime.startIdle();
+
+    const probe = h.runtime.probePreStage(0);
+    await settle();
+    // The device is deleted, or the app is shutting down, while the probe is
+    // sitting in its wait.
+    await h.runtime.stop();
+    const before = h.writes.length;
+
+    h.runTimers();
+    const outcome = await probe;
+
+    assert.equal(outcome.stayedOff, false);
+    assert.match(String(outcome.reason), /switched off before the test finished/);
+    assert.equal(
+      h.writes.length, before,
+      'a stopped runtime wrote to the lamp after its own teardown',
+    );
+    assert.equal(
+      h.writes.some(w => w.capability === 'onoff' && w.value === false), false,
+      'and the restore in particular must not run',
+    );
+  });
+
   test('the probe puts a lamp back that came on, because the user asked for the test', async () => {
     const h = harness({
       plan: plan({ preStage: true }),

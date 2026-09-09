@@ -1419,7 +1419,36 @@ export class CircadianRuntime {
       };
     }
 
+    /**
+     * The one timer in this file that `stop()` cannot cancel, so the wait is
+     * followed by a check rather than made cancellable.
+     *
+     * `probes` holds the handles `stop()` clears; this handle is deliberately
+     * not one of them, because a probe is a request the USER made and pausing
+     * the device mid-test should not leave them staring at a button that never
+     * answers. What must not happen is the work AFTER the wait: `refresh()`
+     * re-creates a cache entry that `stop()` has just cleared, and the restore
+     * below writes `onoff: false` to the lamp — from a runtime that is no
+     * longer running, to a lamp the user's own test has just lit.
+     *
+     * Both callers (`api.previewDevice`'s sibling route and the pairing
+     * screen's `testPreStage`) await the probe before stopping, so only a
+     * `destroyAll` landing mid-probe reaches this. It is reported as a result
+     * rather than thrown: the user asked a question and "the device was
+     * switched off while I was answering" is an answer.
+     */
+    const stillRunning = this.lifetime.current();
     await new Promise(resolve => this.setTimer(() => resolve(null), waitMs));
+    if (!stillRunning()) {
+      return {
+        deviceId,
+        ...(name ? { name } : {}),
+        stayedOff: false,
+        restored: false,
+        reason: 'the device was switched off before the test finished',
+      };
+    }
+
     await this.adapter.refresh(deviceId);
 
     const cameOn = this.cache.state(deviceId).actualOn === true;

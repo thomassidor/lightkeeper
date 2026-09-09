@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { timezoneOf as readTimezone } from '../time/local-clock';
 
 import { listTargetsPayload, resolveSummary } from './target-picker';
 import { listSensorsPayload } from './sensor-picker';
@@ -148,13 +149,14 @@ export function releaseOnDisconnect(
  * `null` rather than a guess: a schedule refuses to fire on a clock it does not
  * trust, and every screen that shows a time says so instead of showing one that
  * might be an hour out.
+ *
+ * The reading itself is `lib/time/local-clock.ts`'s `timezoneOf` — this is the
+ * host-shaped wrapper, and it keeps `null` because that is what the pairing
+ * DTOs carry. `undefined` and `null` mean the same thing here; only the wire
+ * format differs.
  */
 export function timezoneOf(host: PairSessionHost): string | null {
-  try {
-    return host.clock?.getTimezone() ?? null;
-  } catch {
-    return null;
-  }
+  return readTimezone(host.clock) ?? null;
 }
 
 /**

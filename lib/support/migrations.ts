@@ -63,11 +63,35 @@ export interface MigrationChain<T> {
  */
 const MAX_STEPS = 50;
 
+/**
+ * A migration that refused, and WHY — because the two reasons need different
+ * sentences from the device layer.
+ *
+ * `newer` means a store written by a later version of the app: the user's
+ * configuration is intact and the action is to update Lightkeeper. `malformed`
+ * means a shape this chain cannot make sense of at all, and the action is to
+ * set the device up again.
+ *
+ * A named class rather than a message the device layer greps, because
+ * `device-lifecycle.ts` used to switch on `name === 'ValidationError'` alone —
+ * so this throw, a plain `Error`, fell through to the "not configured" branch
+ * and the tile said "set this device up again" to somebody whose only problem
+ * was a downgrade. Its own comment promised the distinct text; only the code
+ * did not have it.
+ */
+export class MigrationError extends Error {
+  override readonly name = 'MigrationError';
+
+  constructor(readonly kind: 'newer' | 'malformed', message: string) {
+    super(message);
+  }
+}
+
 export function runMigrationChain<T>(raw: unknown, chain: MigrationChain<T>): MigrationResult<T> {
   const { label, current, table, validate } = chain;
 
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new Error(`Cannot migrate a ${label.toLowerCase()} that is not an object`);
+    throw new MigrationError('malformed', `Cannot migrate a ${label.toLowerCase()} that is not an object`);
   }
 
   let working = { ...(raw as Record<string, unknown>) };
@@ -76,7 +100,8 @@ export function runMigrationChain<T>(raw: unknown, chain: MigrationChain<T>): Mi
 
   if (fromVersion > current) {
     // Refusing beats corrupting: the newer shape is one this build cannot know.
-    throw new Error(
+    throw new MigrationError(
+      'newer',
       `${label} schema version ${fromVersion} is newer than this app understands `
       + `(${current}). Update Lightkeeper.`,
     );
@@ -85,17 +110,17 @@ export function runMigrationChain<T>(raw: unknown, chain: MigrationChain<T>): Mi
   let version = fromVersion;
   while (version < current) {
     if (steps.length >= MAX_STEPS) {
-      throw new Error(`${label} migration did not terminate after ${MAX_STEPS} steps`);
+      throw new MigrationError('malformed', `${label} migration did not terminate after ${MAX_STEPS} steps`);
     }
     const step = table[version];
-    if (!step) throw new Error(`No ${label.toLowerCase()} migration registered from version ${version}`);
+    if (!step) throw new MigrationError('malformed', `No ${label.toLowerCase()} migration registered from version ${version}`);
 
     working = step(working);
     steps.push(version);
 
     const next = typeof working.schemaVersion === 'number' ? working.schemaVersion : version + 1;
     if (next <= version) {
-      throw new Error(`${label} migration from ${version} did not advance the version`);
+      throw new MigrationError('malformed', `${label} migration from ${version} did not advance the version`);
     }
     version = next;
   }
@@ -120,7 +145,7 @@ export function runMigrationChain<T>(raw: unknown, chain: MigrationChain<T>): Mi
 function readVersion(value: unknown, label: string): number {
   if (value === undefined || value === null) return 0;
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    throw new Error(`${label} schema version is malformed`);
+    throw new MigrationError('malformed', `${label} schema version is malformed`);
   }
   return value;
 }

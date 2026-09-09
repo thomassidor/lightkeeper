@@ -1,6 +1,8 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { MigrationError } from '../../lib/support/migrations';
+
 import {
   DeviceLifecycle,
   type DeviceOwner,
@@ -456,6 +458,69 @@ describe('awaited persistence', () => {
     assert.equal(registry.registers.length, 0);
     assert.equal(owner.available, false);
     assert.equal(owner.unavailableText, 'state.noConfiguration');
+  });
+
+  /**
+   * The three quarantine sentences, and why they have to be three.
+   *
+   * The store is LEFT ALONE in every case — a plan we cannot read must not
+   * silently become defaults — so the only thing the user gets is the sentence,
+   * and it is the sentence that tells them what to do.
+   *
+   *   a newer schema        their configuration is fine and a downgrade is the
+   *                         whole problem: update the app, touch nothing
+   *   a malformed shape     set the device up again
+   *   anything else         the owner's own "not configured"
+   *
+   * The first used to fall to the third. `runMigrationChain` threw a plain
+   * `Error` for a newer version, `loadPlan` switched on
+   * `name === 'ValidationError'` alone, so the tile told somebody who had
+   * merely installed an older build to set their device up again — which would
+   * have destroyed the configuration that was intact. `loadPlan`'s own comment
+   * promised the distinct text; only the code did not have it.
+   */
+  test('a plan from a NEWER app version says to update the app', async () => {
+    const { registry, owner, lifecycle } = harness();
+    owner.store.set('plan', { enabled: true, value: 'from-the-future' });
+    owner.migrateResult = new MigrationError(
+      'newer',
+      'Plan schema version 9 is newer than this app understands (2). Update Lightkeeper.',
+    );
+
+    await lifecycle.init();
+
+    assert.equal(registry.registers.length, 0, 'nothing may run on a plan we cannot read');
+    assert.equal(owner.available, false);
+    assert.equal(
+      owner.unavailableText, 'state.configurationFromNewerVersion',
+      'a downgrade must not be reported as an unconfigured device',
+    );
+    assert.deepEqual(
+      owner.store.get('plan'), { enabled: true, value: 'from-the-future' },
+      'and the store must be untouched, so a later version can still read it',
+    );
+  });
+
+  test('a MALFORMED plan says to set the device up again', async () => {
+    const { owner, lifecycle } = harness();
+    owner.store.set('plan', { enabled: true, value: 'nonsense' });
+    owner.migrateResult = new MigrationError('malformed', 'Plan schema version is malformed');
+
+    await lifecycle.init();
+
+    assert.equal(owner.unavailableText, 'state.invalidConfiguration');
+  });
+
+  test('and a validator refusal says the same thing', async () => {
+    const { owner, lifecycle } = harness();
+    owner.store.set('plan', { enabled: true, value: 'invalid' });
+    const invalid = new Error('brightness must be present when fromDaylight is set');
+    invalid.name = 'ValidationError';
+    owner.migrateResult = invalid;
+
+    await lifecycle.init();
+
+    assert.equal(owner.unavailableText, 'state.invalidConfiguration');
   });
 });
 

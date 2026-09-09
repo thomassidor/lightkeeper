@@ -26,6 +26,7 @@ import { fireAndForget } from './lib/support/async';
 import { BoundedLog } from './lib/support/bounded-log';
 import type { WriteRecord } from './lib/outputs/light-target-adapter';
 import { messageOf } from './lib/support/homey-errors';
+import { timezoneOf } from './lib/time/local-clock';
 
 /**
  * Lightkeeper.
@@ -262,16 +263,9 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       luminance: this.luminance,
       bridge: this.bridge,
       cards: this.cards,
-      // The SDK's only timezone primitive, and the one every schedule decision
-      // is made against. Read per call rather than cached: a household that
-      // corrects its Homey's timezone must not have to restart the app.
-      timezone: () => {
-        try {
-          return this.homey.clock?.getTimezone();
-        } catch {
-          return undefined;
-        }
-      },
+      // See `timezoneOf`: read per call, never cached, and `undefined` rather
+      // than a guess when the Homey cannot say.
+      timezone: () => timezoneOf(this.homey.clock),
       log: (...args) => this.log(...args),
     });
 
@@ -284,13 +278,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       // evaluator is shared with the Daylight lights rather than rebuilt.
       daylight: this.daylight,
       luminance: this.luminance,
-      timezone: () => {
-        try {
-          return this.homey.clock?.getTimezone();
-        } catch {
-          return undefined;
-        }
-      },
+      timezone: () => timezoneOf(this.homey.clock),
       // The SDK's disposal-safe aliases: cleaned up with the Homey instance, so a
       // reloaded app cannot leave a timer behind writing to somebody's lights.
       // One interval for every circadian device — see the manager for why a curve
@@ -393,8 +381,12 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
   }
 
   private evidenceContext() {
+    // Through `timezoneOf` like everything else: an unguarded `getTimezone()`
+    // has been seen to throw, and this one is called from `onInit` — so a
+    // Homey that had not resolved its own location would have failed app start
+    // for the sake of one diagnostic field.
     return { appVersion: this.homey.manifest.version, nodeVersion: process.version,
-      timezone: this.homey.clock.getTimezone(), uptimeSeconds: process.uptime() };
+      timezone: timezoneOf(this.homey.clock), uptimeSeconds: process.uptime() };
   }
 
   async startEvidence() {

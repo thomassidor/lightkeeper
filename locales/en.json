@@ -272,6 +272,7 @@
     "noDaylightSource": "Lightkeeper cannot tell how light it is: no light sensor is reporting, and this Homey has not told it where it is. Add a light sensor in Repair, or set your Homey's location.",
     "persistFailed": "Lightkeeper could not save what it learned about its Flows. Open repair to try again.",
     "invalidConfiguration": "This device's stored configuration is not one Lightkeeper can read. Repair it to set it up again.",
+    "configurationFromNewerVersion": "This device was set up by a newer version of Lightkeeper. Update the app; its settings are safe and will be read again.",
     "sourceUnavailable": "Homey reports that this remote is unavailable.",
     "flowCleanup": "An older Flow could not be removed. Lightkeeper will retry; duplicate actions may occur until cleanup succeeds."
   },
