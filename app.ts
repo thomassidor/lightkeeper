@@ -1,5 +1,7 @@
 'use strict';
 
+import { EvidenceRecorder } from './lib/support/evidence-recorder';
+import { EvidenceSampler } from './lib/support/evidence-sampler';
 import type { LightkeeperApp } from './lib/app-contract';
 import Homey from 'homey';
 
@@ -33,6 +35,11 @@ import { messageOf } from './lib/support/homey-errors';
  * source-specific parsing live in lib/.
  */
 const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
+
+  evidence!: EvidenceRecorder;
+  private evidenceSampler!: EvidenceSampler;
+  private evidenceTimer: NodeJS.Timeout | null = null;
+  private evidenceTicks = 0;
 
   credentials!: CredentialService;
   api!: HomeyApiService;
@@ -146,6 +153,14 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
   }
 
   override async onInit() {
+    this.evidence = new EvidenceRecorder({
+      directory: '/userdata/lightkeeper-evidence',
+      settings: { get: key => this.homey.settings.get(key),
+        set: (key, value) => this.homey.settings.set(key, value),
+        unset: key => this.homey.settings.unset(key) },
+    });
+    this.evidenceSampler = new EvidenceSampler(this.evidence.record);
+    await this.evidence.init(this.evidenceContext());
     this.credentials = new CredentialService({
       settings: {
         get: key => this.homey.settings.get(key),
@@ -174,7 +189,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     this.cards = new FlowCardCatalogue(this.api);
     this.discovery = new SourceDiscoveryService(this.api, this.cards);
     this.bridge = new FlowBridgeManager(
-      this.api, this.homey.manifest.id, (...args) => this.log(...args), this.cards,
+      this.api, this.homey.manifest.id, (...args) => this.log(...args), this.cards, this.homey.settings,
     );
     this.health = new HealthMonitor(
       this.catalog,
@@ -183,9 +198,13 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     );
     // One shared sink, so a write from any runtime lands in one time-ordered
     // log. Wired here because this is the only place that can see all three.
-    const onWriteResult = (entry: WriteRecord) => this.recentWrites.add(entry);
+    const onWriteResult = (entry: WriteRecord) => {
+      this.recentWrites.add(entry);
+      this.evidence.record('write_result', entry);
+    };
 
     this.luminance = new LuminanceSource({
+      onEvidence: this.evidence.record,
       api: this.api,
       catalog: this.catalog,
       log: (...args) => this.log(...args),
@@ -257,6 +276,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     });
 
     this.curves = new CircadianRuntimeManager({
+      onEvidence: this.evidence.record,
       api: this.api,
       onWriteResult,
       catalog: this.catalog,
@@ -281,6 +301,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     });
 
     this.daylights = new DaylightRuntimeManager({
+      onEvidence: this.evidence.record,
       api: this.api,
       onWriteResult,
       catalog: this.catalog,
@@ -318,6 +339,11 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     // unreachable Homey must not delay app start.
     fireAndForget(this.revalidateCredential(), (...args) => this.log(...args), 'Stored-key revalidation');
 
+    this.sampleEvidence();
+    this.evidenceTimer = this.homey.setInterval(() => {
+      if (++this.evidenceTicks % 4 === 0) this.sampleEvidence();
+      fireAndForget(this.evidence.flush(), (...args) => this.log(...args), 'Evidence flush');
+    }, 15_000);
     this.log('Lightkeeper initialised');
   }
 
@@ -353,6 +379,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       });
 
       this.recentEvents.add({ at: Date.now(), ...record });
+      this.evidence.record('bridge_event', record);
 
       if (!accepted) {
         // A flow left behind by a deleted controller, an emptied argument, or an
@@ -365,7 +392,39 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     });
   }
 
+  private evidenceContext() {
+    return { appVersion: this.homey.manifest.version, nodeVersion: process.version,
+      timezone: this.homey.clock.getTimezone(), uptimeSeconds: process.uptime() };
+  }
+
+  async startEvidence() {
+    const status = await this.evidence.start(this.evidenceContext());
+    this.evidenceSampler = new EvidenceSampler(this.evidence.record);
+    this.sampleEvidence();
+    await this.evidence.flush();
+    return { ...status, ...this.evidence.status() };
+  }
+
+  private sampleEvidence(): void {
+    if (this.evidence.status().state !== 'recording') return;
+    try {
+      this.evidenceSampler.sample([
+        ...this.controllers.all().map(runtime => ({ kind: 'controller', runtime, configuration: runtime.currentProfile })),
+        ...this.schedules.all().map(runtime => ({ kind: 'schedule', runtime, configuration: runtime.currentPlan })),
+        ...this.curves.all().map(runtime => ({ kind: 'curve', runtime, configuration: runtime.currentPlan })),
+        ...this.daylights.all().map(runtime => ({ kind: 'daylight', runtime, configuration: runtime.currentPlan })),
+      ]);
+      this.evidence.record('health_sample', { ...this.evidenceContext(),
+        memory: process.memoryUsage(), sensors: this.luminance.watched(),
+        credential: this.credentials.getStatus(), recorder: this.evidence.status() });
+    } catch (error) {
+      this.evidence.record('sampling_error', { message: messageOf(error) });
+    }
+  }
+
   override async onUninit() {
+    if (this.evidenceTimer !== null) this.homey.clearInterval(this.evidenceTimer);
+    this.evidenceTimer = null;
     // Never leave a light mid-ramp, a timer running or a listener attached.
     // The SDK's setTimeout is disposal-safe, but a pending fan-out would still
     // reconcile against registries that are being torn down.
@@ -384,6 +443,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     // Whatever the catalogue is still holding from the last read. Small by
     // design (platform §15), but there is no reason for it to outlive the app.
     this.cards?.clear();
+    await this.evidence?.close();
   }
 
 };

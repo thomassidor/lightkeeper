@@ -1,3 +1,4 @@
+import type { EvidenceSink } from '../support/evidence-sink';
 import { withDefaults, type Timers } from '../support/timers';
 import { fireAndForget } from '../support/async';
 import { NO_CACHE } from '../flow-card-catalogue';
@@ -54,6 +55,7 @@ export interface WatchedSensor {
 }
 
 export interface LuminanceDeps {
+  onEvidence?: EvidenceSink;
   api: HomeyApiService;
   catalog: DeviceCatalog;
   now?: () => number;
@@ -69,9 +71,27 @@ export class LuminanceSource {
   private readonly claims = new Map<string, Set<string>>();
   private readonly timers: Timers;
   private stopped = false;
+  private readonly offReplacement: Unsubscribe | undefined;
 
   constructor(private readonly deps: LuminanceDeps) {
     this.timers = withDefaults(deps.timers);
+    this.offReplacement = deps.api.onReadReplacement?.(() => {
+      fireAndForget(this.rebind(), deps.log, 'Rebinding luminance subscriptions');
+    });
+  }
+
+  private async rebind(): Promise<void> {
+    for (const id of [...this.sensors.keys()]) {
+      await this.lock.run(id, async () => {
+        const watched = this.sensors.get(id);
+        if (!watched || this.stopped) return;
+        if (watched.retry !== null) this.timers.clearTimeout(watched.retry);
+        watched.retry = null;
+        await watched.off?.();
+        watched.off = null;
+        await this.reconcile(id);
+      });
+    }
   }
 
   private now(): number {
@@ -159,7 +179,12 @@ export class LuminanceSource {
       await this.lock.run(id, async () => {
         const watched = this.sensors.get(id);
         if (!watched) return;
+        const available = watched.available;
         await this.refreshMetadata(id, watched);
+        if (available !== watched.available) {
+          await watched.off?.();
+          watched.off = null;
+        }
         await this.reconcile(id);
       });
     }
@@ -168,6 +193,7 @@ export class LuminanceSource {
   /** Drop every subscription. The app-level backstop, called from onUninit. */
   async destroy(): Promise<void> {
     this.stopped = true;
+    await this.offReplacement?.();
     this.claims.clear();
     for (const id of [...this.sensors.keys()]) {
       await this.lock.run(id, () => this.reconcile(id));
@@ -258,6 +284,7 @@ export class LuminanceSource {
 
     watched.lux = lux;
     watched.at = this.now();
+    this.deps.onEvidence?.('sensor_reading', { deviceId, lux, at: watched.at });
   }
 
   private async refreshMetadata(deviceId: string, watched: Watched): Promise<void> {

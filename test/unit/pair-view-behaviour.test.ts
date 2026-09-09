@@ -983,6 +983,19 @@ describe('the daylight screen shows the room before it asks about it', () => {
       translate: (key, tokens) => `${key}:${Object.values(tokens ?? {}).join(',')}`,
     });
 
+  test('an increasing sensor response explains feedback and updates while dragging', async () => {
+    const view = open({ ...GET, response: { ...GET.response, dark: 0.25, bright: 0.7 } });
+    await view.settle();
+    const notice = view.root.descendants().find(n => n.getAttribute('role') === 'status')!;
+    assert.equal(notice.hidden, false);
+    assert.ok(notice.textContent.includes('daylight.feedbackRisk'));
+    view.byId('dl-bright')!.value = '20';
+    view.fire(view.byId('dl-bright')!, 'input');
+    assert.equal(notice.hidden, true);
+    assert.equal(view.emitted.filter(c => c.event === 'setDaylight').length, 0,
+      'showing the notice must not change the saved response');
+  });
+
   test('standalone draws the Save footer', async () => {
     const view = open();
     await view.settle();

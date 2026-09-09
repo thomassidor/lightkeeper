@@ -186,6 +186,8 @@ export class CredentialService {
     return typeof raw === 'string' && raw.length > 0 ? raw : null;
   }
 
+  get revision(): number { return this.generation; }
+
   getStatus(): CredentialStatus {
     return { ...this.status };
   }
@@ -254,6 +256,7 @@ export class CredentialService {
       return failedStatus('malformed', this.token !== null);
     }
 
+    const generation = ++this.generation;
     let client: unknown;
     try {
       client = await this.options.createWriteClient(await this.options.getLocalAddress(), token);
@@ -265,11 +268,11 @@ export class CredentialService {
       return failedStatus(failure, this.token !== null);
     }
 
+    if (generation !== this.generation) return this.getStatus();
     this.options.settings.set(SETTINGS_KEY, token);
     this.client = client;
     // Any handshake still in flight belongs to the previous key.
     this.connecting = null;
-    this.generation += 1;
     return this.succeed();
   }
 
@@ -305,11 +308,12 @@ export class CredentialService {
 
     // Cleared on failure as well as success: caching a rejected promise would
     // poison every later write until the app restarts.
+    const generation = this.generation;
     const attempt = (async () => {
       const client = await this.options.createWriteClient(await this.options.getLocalAddress(), token);
       // A key cleared or replaced while this handshake was in flight must not be
       // resurrected by it.
-      if (this.token !== token) throw new Error('The API key changed while connecting.');
+      if (this.superseded(generation, token)) throw new Error('The API key changed while connecting.');
       this.client = client;
       return client;
     })().finally(() => {
@@ -325,9 +329,9 @@ export class CredentialService {
    * Report a failure seen during a real write. Drops the cached client so the
    * next attempt rebuilds it — a session can come back after a re-mint.
    */
-  reportFailure(error: unknown): CredentialFailure {
+  reportFailure(error: unknown, revision = this.generation): CredentialFailure {
     const failure = classifyCredentialError(error);
-    if (failure !== 'unknown') {
+    if (revision === this.generation && failure !== 'unknown') {
       this.client = null;
       this.connecting = null;
       this.fail(failure);
@@ -335,8 +339,8 @@ export class CredentialService {
     return failure;
   }
 
-  reportSuccess(): void {
-    if (this.status.valid) return;
+  reportSuccess(revision = this.generation): void {
+    if (revision !== this.generation || !this.token || this.status.valid) return;
     this.succeed();
   }
 

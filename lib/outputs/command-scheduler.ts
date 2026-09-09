@@ -123,7 +123,7 @@ interface DeviceQueue {
   activeFlush: Promise<void> | null;
 }
 
-const DEFAULT_MAX_QUEUED_DEVICES = 64;
+const DEFAULT_MAX_QUEUED_DEVICES = 256;
 
 /**
  * The order writes to one device go out in.

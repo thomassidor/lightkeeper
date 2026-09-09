@@ -165,9 +165,14 @@ describe('POST /devices/:id/preview (T21, T27, T28)', () => {
     const result = await api.previewDevice({ homey: h, params: { id: CURVE_ID } });
 
     assert.deepEqual(result, { writes: 2, skipped: 1 });
-    assert.deepEqual(recorded.applied, [{ id: CURVE_ID, reason: 'preview', force: true }]);
+    assert.deepEqual(recorded.applied,
+      [{ id: CURVE_ID, reason: 'preview', force: true, waitForResults: true }]);
     // Forced, because the caller asked for a visible change and is owed one even
     // where the lamps already sit close to the curve.
+    // `waitForResults` — an explicit option, not a sniff at the reason string —
+    // is what makes `writes` a count of lamps that ACCEPTED the write. The
+    // drain is still asserted because a plan producing no writes has nothing
+    // to wait on and must still leave the queue clean.
     assert.equal(recorded.drained, 1,
       'drained, so `writes` is what was attempted rather than what was queued');
   });
@@ -190,7 +195,8 @@ describe('POST /devices/:id/preview (T21, T27, T28)', () => {
     const result = await api.previewDevice({ homey: h, params: { id: DAYLIGHT_ID } });
 
     assert.deepEqual(result, { writes: 2, skipped: 1 });
-    assert.deepEqual(recorded.applied, [{ id: DAYLIGHT_ID, reason: 'preview', force: true }]);
+    assert.deepEqual(recorded.applied,
+      [{ id: DAYLIGHT_ID, reason: 'preview', force: true, waitForResults: true }]);
     assert.equal(recorded.drained, 1);
   });
 
@@ -199,7 +205,8 @@ describe('POST /devices/:id/preview (T21, T27, T28)', () => {
     const { homey: h, recorded } = homey({ curves: [CURVE_ID], daylight: [DAYLIGHT_ID] });
 
     await api.previewDevice({ homey: h, params: { id: CURVE_ID } });
-    assert.deepEqual(recorded.applied, [{ id: CURVE_ID, reason: 'preview', force: true }]);
+    assert.deepEqual(recorded.applied,
+      [{ id: CURVE_ID, reason: 'preview', force: true, waitForResults: true }]);
   });
 
   test('a missing id is refused before anything is looked up', async () => {

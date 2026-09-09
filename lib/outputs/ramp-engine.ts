@@ -37,6 +37,7 @@ export interface ActiveRamp {
   direction: RampDirection;
   startedAt: number;
   ticks: number;
+  targetIds?: string[];
 }
 
 /**
@@ -92,10 +93,11 @@ export class RampEngine {
    * Begin ramping. Starting a ramp on a control that is already ramping
    * restarts it rather than stacking two.
    */
-  start(controlId: string, kind: ActiveRamp['kind'], direction: RampDirection): void {
+  start(controlId: string, kind: ActiveRamp['kind'], direction: RampDirection, targetIds?: string[]): void {
     this.stop(controlId, 'superseded');
 
-    const ramp: ActiveRamp = { controlId, kind, direction, startedAt: this.now(), ticks: 0 };
+    const ramp: ActiveRamp = { controlId, kind, direction, startedAt: this.now(), ticks: 0,
+      ...(targetIds ? { targetIds: [...targetIds] } : {}) };
     const deltaPerTick = (this.ratePerSecond * TICK_MS) / 1000 * direction;
 
     const handle = this.setTimer(() => {

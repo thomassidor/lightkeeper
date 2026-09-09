@@ -1,3 +1,4 @@
+import type { EvidenceSink } from '../support/evidence-sink';
 import type { LuminanceSource } from '../daylight/luminance-source';
 import { startRuntime, previewOwner } from '../runtime/runtime-resources';
 import type { HomeyApiService } from '../homey-api-service';
@@ -32,6 +33,7 @@ import { messageOf } from '../support/homey-errors';
 export interface CircadianManagerDeps {
   /** @see WriteRecord — one app-wide log of every write by ANY runtime. */
   onWriteResult?: (entry: WriteRecord) => void;
+  onEvidence?: EvidenceSink;
   api: HomeyApiService;
   catalog: DeviceCatalog;
   /** The Homey's IANA timezone. */
@@ -112,6 +114,7 @@ export class CircadianRuntimeManager {
       api: this.deps.api,
       catalog: this.deps.catalog,
       ...(this.deps.onWriteResult ? { onWriteResult: this.deps.onWriteResult } : {}),
+      ...(this.deps.onEvidence ? { onEvidence: this.deps.onEvidence } : {}),
       timezone: this.deps.timezone,
       ...(this.deps.daylight ? { daylight: this.deps.daylight } : {}),
       ...(this.deps.luminance ? { luminance: this.deps.luminance } : {}),

@@ -185,7 +185,10 @@ export class ControllerRuntimeManager {
     // Never allow a generated flow to control a controller other than the one
     // encoded in its managed binding — the lookup above is that check.
     const isMapped = runtime.currentProfile.mappings.some(m => m.inputKey === eventKey);
-    if (!isMapped) {
+    const isStopDependency = (input.action === 'release' || input.action === 'rotate_stop')
+      && catalogue.some(held => held.controlId === input.controlId && held.action === 'long_press'
+        && runtime.currentProfile.mappings.some(m => m.inputKey === held.key));
+    if (!isMapped && !isStopDependency) {
       return {
         accepted: false,
         reason: `event "${eventKey}" is not mapped to any function`,

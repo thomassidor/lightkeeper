@@ -347,36 +347,18 @@ function __lkBootTg(Homey) {
       };
   }
 
+  var selectionRevision = 0;
   function refresh() {
-    if (mode === 'devices' && selected.size === 0) {
-      document.getElementById('tg-count').textContent = Homey.__('targets.selected', { count: 0 });
-      setSummary({ onoff: 0, dim: 0, light_temperature: 0, total: 0 });
-      // Keep the session's target spec in step even when empty, so moving
-      // forward with nothing selected fails loudly on the next screen.
-      emit('selectTargets', spec()).catch(function () { });
-      return;
-    }
-
+    var revision = ++selectionRevision;
+    document.getElementById('tg-count').textContent = Homey.__('targets.selected', { count: 0 });
+    setSummary({ onoff: 0, dim: 0, light_temperature: 0, total: 0 });
     emit('selectTargets', spec()).then(function (result) {
+      if (revision !== selectionRevision) return;
       clearFailure();
       document.getElementById('tg-count').textContent = Homey.__('targets.selected', { count: result.count });
       setSummary(result.support);
     }).catch(function () {
-      /**
-       * Say so, rather than leaving the screen disagreeing with the session.
-       *
-       * This had no catch at all. On any rejection — a stale device id, a repair
-       * whose stored zone has been deleted, a transient catalogue read, the
-       * emit() timeout — the tiles and the count went on showing one thing while
-       * the pair session's own target spec held another, silently. Nothing
-       * downstream re-sends or re-checks it, so Next and then Save could create
-       * a device aimed at lights the user never chose.
-       *
-       * (Not naming that field with a dot here on purpose: locales.test.ts
-       * scans the source for `<group>.<key>` literals, and `state` is a locale
-       * group — see the same note in lib/validation/plans.ts.)
-       */
-      fail(Homey.__('targets.loadFailed'));
+      if (revision === selectionRevision) fail(Homey.__('targets.loadFailed'));
     });
   }
 

@@ -33,7 +33,7 @@ export interface TargetSnapshot {
   fingerprint: string;
 }
 
-const WATCHED_CAPABILITIES = ['onoff', 'dim', 'light_temperature'] as const;
+const WATCHED_CAPABILITIES = ['onoff', 'dim', 'light_temperature', 'light_mode', 'light_hue', 'light_saturation'] as const;
 
 export async function resolveSnapshot(
   resolver: TargetResolver,

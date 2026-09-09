@@ -1,3 +1,5 @@
+import type { EvidenceRecorder, EvidenceStatus } from './support/evidence-recorder';
+import { DIAGNOSTIC_SEMANTICS } from './runtime/control-diagnostics';
 import type { CredentialService, CredentialStatus } from './credential-service';
 import type { IntakeRecord } from './bridge/bridge-event-intake';
 import type { HomeyApiService } from './homey-api-service';
@@ -32,6 +34,8 @@ import type { TimeCardDiscovery } from './schedules/time-card-discovery';
  * should be asking for something to be added.
  */
 export interface LightkeeperApp {
+  readonly evidence: EvidenceRecorder;
+  startEvidence(): Promise<EvidenceStatus>;
   readonly credentials: CredentialService;
   readonly api: HomeyApiService;
   readonly catalog: DeviceCatalog;
@@ -183,6 +187,9 @@ export type DaylightSummary =
   };
 
 export interface DiagnosticsResponse {
+  evidence: EvidenceStatus | null;
+  semantics: typeof DIAGNOSTIC_SEMANTICS;
+  eventHistory: { capacity: number; retained: number; dropped: number };
   generatedAt: number;
   app: { id: string; version: string };
   credential: CredentialStatus;

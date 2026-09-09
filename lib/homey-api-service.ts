@@ -1,3 +1,4 @@
+import { WriteCoordinator } from './outputs/write-coordinator';
 import { CredentialService, sanitizedWriteError } from './credential-service';
 import { isTransportFailure, messageOf } from './support/homey-errors';
 
@@ -65,6 +66,15 @@ async function connectManagers(
 export type Unsubscribe = () => Promise<void> | void;
 
 export class HomeyApiService {
+  readonly writes = new WriteCoordinator();
+  private generation = 0;
+  private stopped = false;
+  private readonly readListeners = new Set<() => void>();
+
+  onReadReplacement(listener: () => void): Unsubscribe {
+    this.readListeners.add(listener);
+    return () => { this.readListeners.delete(listener); };
+  }
   private readApi: any = null;
   private connecting: Promise<any> | null = null;
   private readonly subscriptions = new Set<Unsubscribe>();
@@ -76,6 +86,7 @@ export class HomeyApiService {
 
   /** The app-token client. Everything except flow writes. */
   async read(): Promise<any> {
+    if (this.stopped) throw new Error('Homey API service is stopped.');
     if (this.readApi) return this.readApi;
     if (this.connecting) return this.connecting;
 
@@ -84,6 +95,7 @@ export class HomeyApiService {
     // transient failure at boot — a Homey still starting up — then poisons
     // every later read() with the same rejection, and nothing recovers short of
     // restarting the app. Every read path in the app funnels through here.
+    const generation = this.generation;
     const attempt = (async () => {
       const api = await this.createAppApi();
       // A manager that will not connect is degraded, not fatal — say so and
@@ -91,7 +103,16 @@ export class HomeyApiService {
       await connectManagers(api, ['devices', 'zones', 'flow', 'flowtoken'], (name, error) => {
         this.homey?.app?.error?.(`Could not connect manager "${name}":`, messageOf(error));
       });
+      if (generation !== this.generation || this.stopped) {
+        api.destroy?.();
+        throw new Error('Homey read client was superseded.');
+      }
       this.readApi = api;
+      if (generation > 0) {
+        for (const listener of this.readListeners) {
+          try { listener(); } catch { /* Each subscriber owns its recovery errors. */ }
+        }
+      }
       return api;
     })().finally(() => {
       // Only retract our own attempt: a later call may already have replaced it.
@@ -127,7 +148,10 @@ export class HomeyApiService {
   reportReadFailure(error: unknown): boolean {
     if (!isTransportFailure(error)) return false;
     if (!this.readApi && !this.connecting) return false;
+    const previous = this.readApi;
+    this.generation += 1;
     this.readApi = null;
+    try { previous?.destroy?.(); } catch { /* The connection has already failed. */ }
     this.connecting = null;
     this.homey?.app?.log?.('Dropped the read client after a transport failure; it will be rebuilt');
     return true;
@@ -156,13 +180,14 @@ export class HomeyApiService {
    * text raw and leaving the credential status untouched.
    */
   async withWriteClient<T>(operation: (api: any) => Promise<T>): Promise<T> {
+    const revision = this.credentials.revision;
     try {
       const api = await this.write();
       const result = await operation(api);
-      this.credentials.reportSuccess();
+      this.credentials.reportSuccess(revision);
       return result;
     } catch (error) {
-      this.credentials.reportFailure(error);
+      this.credentials.reportFailure(error, revision);
       throw sanitizedWriteError(error);
     }
   }
@@ -177,12 +202,16 @@ export class HomeyApiService {
   }
 
   async destroy(): Promise<void> {
+    this.stopped = true;
+    this.generation += 1;
     for (const unsubscribe of [...this.subscriptions]) {
       try {
         await unsubscribe();
       } catch { /* teardown is best effort */ }
     }
     this.subscriptions.clear();
+    this.readListeners.clear();
+    try { this.readApi?.destroy?.(); } catch { /* Best effort. */ }
     this.readApi = null;
     this.connecting = null;
   }

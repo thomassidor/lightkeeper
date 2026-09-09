@@ -79,7 +79,11 @@ function harness() {
       getFlowCardActions: async () => actions,
       getFlows: async () => {
         if (gate) await gate;
-        return live;
+        // A SNAPSHOT, because that is what a real response is. Returning the
+        // live object let a caller that read before another's create still see
+        // that create, which silently turned the un-serialised counter-example
+        // below into a pass.
+        return { ...live };
       },
       getFlowFolders: async () => {
         if (gate) await gate;
@@ -191,6 +195,74 @@ describe('overlapping reconciles for one device', () => {
       Object.keys(h.live).length, 2,
       'both read an empty store and both created — this is the bug reconcile() closes',
     );
+  });
+
+  /**
+   * The other half of the same story, and NOT a concurrency guard.
+   *
+   * A create can land on the Homey and never be acknowledged to us — the
+   * socket drops between `createFlow` returning on the wire and the reference
+   * reaching the device store. The Flow is then live, ours by its own action
+   * arguments, and referenced by nothing: invisible to the orphan sweep,
+   * because its controller id is a device that is very much alive. Every later
+   * pass would create a second one beside it, for ever.
+   *
+   * So a pass adopts an exact unreferenced template of its own before it
+   * creates. That is a repair, and it must not be mistaken for the
+   * serialisation the counter-example above shows we still need: adoption
+   * cannot help two passes that both read an empty Homey.
+   *
+   * Both cases below go through a SECOND manager over the same Homey, because
+   * the first manager's in-memory journal would otherwise hand the reference
+   * straight back and neither test would reach the adoption scan at all. A
+   * lost ack that the app then restarted through is the case that needs it.
+   */
+  test('an unreferenced Flow of our own is adopted, not duplicated', async () => {
+    const h = harness();
+    const first = await h.bridge.sync(request({
+      mapped: [scheduleInput('sched:0:on', '22:00')],
+      existing: [],
+    }));
+    assert.equal(first.created, 1);
+    const strandedId = first.references[0].flowId;
+
+    const restarted = new FlowBridgeManager(h.api, APP_ID, () => undefined);
+    const second = await restarted.sync(request({
+      mapped: [scheduleInput('sched:0:on', '22:00')],
+      existing: [],
+    }));
+
+    assert.equal(
+      Object.keys(h.live).length, 1,
+      'the stranded Flow was adopted rather than duplicated beside itself',
+    );
+    assert.equal(second.references[0].flowId, strandedId, 'and it is the same Flow');
+  });
+
+  test('a user-edited stranded Flow is NOT adopted', async () => {
+    // Adoption is only ever of an EXACT template. A Flow that has been changed
+    // in the Flow editor is somebody's work, and taking it over would silently
+    // put our reconciliation back in charge of it — and then replace it on the
+    // next binding change.
+    const h = harness();
+    const first = await h.bridge.sync(request({
+      mapped: [scheduleInput('sched:0:on', '22:00')],
+      existing: [],
+    }));
+    const strandedId = first.references[0].flowId;
+    h.live[strandedId].actions = [
+      ...h.live[strandedId].actions,
+      { id: 'homey:manager:notifications:create_notification', args: { text: 'mine now' } },
+    ];
+
+    const restarted = new FlowBridgeManager(h.api, APP_ID, () => undefined);
+    const second = await restarted.sync(request({
+      mapped: [scheduleInput('sched:0:on', '22:00')],
+      existing: [],
+    }));
+
+    assert.equal(Object.keys(h.live).length, 2, 'the edited Flow was left alone');
+    assert.notEqual(second.references[0].flowId, strandedId);
   });
 
   test('a request arriving mid-pass is answered by a pass that reads the NEW state', async () => {

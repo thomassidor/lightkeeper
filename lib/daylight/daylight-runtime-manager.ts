@@ -1,3 +1,4 @@
+import type { EvidenceSink } from '../support/evidence-sink';
 import { startRuntime, previewOwner } from '../runtime/runtime-resources';
 import type { HomeyApiService } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
@@ -36,6 +37,7 @@ import { messageOf } from '../support/homey-errors';
 export interface DaylightManagerDeps {
   /** @see WriteRecord — one app-wide log of every write by ANY runtime. */
   onWriteResult?: (entry: WriteRecord) => void;
+  onEvidence?: EvidenceSink;
   api: HomeyApiService;
   catalog: DeviceCatalog;
   /** Sun position and sensor readings. Shared with the schedule and curve managers. */
@@ -131,6 +133,7 @@ export class DaylightRuntimeManager {
       daylight: this.deps.daylight,
       luminance: this.deps.luminance,
       ...(this.deps.onWriteResult ? { onWriteResult: this.deps.onWriteResult } : {}),
+      ...(this.deps.onEvidence ? { onEvidence: this.deps.onEvidence } : {}),
       log: this.deps.log,
     };
   }

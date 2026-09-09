@@ -101,9 +101,12 @@ function harness(options: { sourcePresent?: boolean } = {}) {
   const states: Array<{ state: ControllerState; detail?: unknown }> = [];
   const syncCalls: unknown[] = [];
 
+  let lightAvailable = true;
+  let userEdited: string[] = [];
+
   const devices = () => [
     ...(sourcePresent ? [device(SOURCE_ID, ['onoff'])] : []),
-    device(LIGHT_ID, ['onoff', 'dim']),
+    { ...device(LIGHT_ID, ['onoff', 'dim']), available: lightAvailable },
   ];
 
   const catalog = {
@@ -131,7 +134,7 @@ function harness(options: { sourcePresent?: boolean } = {}) {
       if (!credentialValid) throw new Error('403 Missing Scopes');
       return {
         references: profile().managedFlows,
-        created: 0, reused: 1, deleted: 0, userEdited: [], staleReplacements: [],
+        created: 0, reused: 1, deleted: 0, userEdited, staleReplacements: [],
         unsupported,
       };
     },
@@ -164,6 +167,12 @@ function harness(options: { sourcePresent?: boolean } = {}) {
     states,
     syncCalls,
     declineControl: (bindingKey: string, reason: string) => { unsupported = [{ bindingKey, reason }]; },
+    /** Somebody changed a generated Flow in the Flow editor. */
+    editFlow: () => { userEdited = ['flow-1']; },
+    restoreFlow: () => { userEdited = []; },
+    /** A lamp switched off at the wall, or one that has gone unreachable. */
+    loseLight: () => { lightAvailable = false; },
+    regainLight: () => { lightAvailable = true; },
     acceptEveryControl: () => { unsupported = []; },
     grantCredential: () => { credentialValid = true; },
     loseCredential: () => { credentialValid = false; },
@@ -350,5 +359,119 @@ describe('a control the compiler declines', () => {
     assert.equal(
       h.states.some(entry => (entry.detail as any)?.key === 'state.unsupportedMapping'), false,
     );
+  });
+});
+
+/**
+ * The two things that can be wrong are composed, not overwritten.
+ *
+ * A controller learns about its health from two independent places, on two
+ * different triggers: reconciliation (a Flow was edited, a control would not
+ * compile, a reference could not be stored) and the lights themselves (how
+ * many resolved, how many are unwritable). Both used to be written straight
+ * to the visible state by whichever ran last, and `start()`'s order is
+ * buildRuntime → reconcileFlows → assessHealth — so the monitor always spoke
+ * last.
+ *
+ * The consequence was silent and bad. A controller told "a Flow was edited,
+ * open repair" had that replaced by "1 of 3 lights unavailable": a different
+ * problem, a less actionable one, and `partial` also flips the device back to
+ * AVAILABLE, so the repair prompt disappears from the tile. One lamp switched
+ * off at the wall was enough to trigger it, and it recurred on every
+ * `refreshTargets()` and every credential change.
+ */
+describe('composing a reconcile verdict with a target verdict', () => {
+  test('an edited Flow outranks a partial target set', async () => {
+    const h = harness();
+    h.grantCredential();
+    h.editFlow();
+    const runtime = await h.register();
+
+    assert.equal(runtime.currentState, 'needs_repair');
+    assert.deepEqual(runtime.currentDetail, { key: 'state.flowEdited' });
+
+    // A lamp goes off at the wall. This is the pass that used to overwrite it.
+    h.loseLight();
+    await runtime.refreshTargets();
+
+    assert.equal(
+      runtime.currentState, 'needs_repair',
+      'a lost lamp replaced the repair prompt with a lamp count',
+    );
+    assert.deepEqual(
+      runtime.currentDetail, { key: 'state.flowEdited' },
+      'and it must still say WHICH problem to act on',
+    );
+
+    await h.manager.destroyAll();
+  });
+
+  test('and a credential failure outranks the edited Flow', async () => {
+    // Repair WRITES Flows (platform §1), so a repair prompt on a dead key
+    // sends the user into a flow that cannot possibly complete.
+    const h = harness();
+    h.editFlow();
+    const runtime = await h.register();
+
+    assert.equal(runtime.currentState, 'needs_credential');
+
+    await h.manager.destroyAll();
+  });
+
+  test('a new key does not clear a repair the same pass found', async () => {
+    const h = harness();
+    h.editFlow();
+    const runtime = await h.register();
+    assert.equal(runtime.currentState, 'needs_credential');
+
+    h.grantCredential();
+    await h.manager.onCredentialChange();
+
+    assert.equal(
+      runtime.currentState, 'needs_repair',
+      'the key came back but the edited Flow did not fix itself',
+    );
+    assert.deepEqual(runtime.currentDetail, { key: 'state.flowEdited' });
+
+    await h.manager.destroyAll();
+  });
+
+  test('a lost lamp IS reported once nothing worse is standing', async () => {
+    // Nothing wrong with the Flows, so the target verdict is the only one
+    // there is and it must reach the user unmodified. One target and it is
+    // gone, which is `needs_repair` rather than `partial`: a controller with
+    // no usable light left is not partly working.
+    const h = harness();
+    h.grantCredential();
+    h.loseLight();
+    const runtime = await h.register();
+
+    assert.equal(runtime.currentState, 'needs_repair');
+    assert.notDeepEqual(
+      runtime.currentDetail, { key: 'state.flowEdited' },
+      'and it says the lamps, because that is what is wrong',
+    );
+
+    await h.manager.destroyAll();
+  });
+
+  test('and a repair verdict clears when the pass that set it stops finding it', async () => {
+    // The other half of ranking: a verdict is assigned EVERY pass, including
+    // to nothing. A boolean gate could stop `ready` being declared but could
+    // not clear the sentence, so a restored Flow left the tile in repair until
+    // the app restarted.
+    const h = harness();
+    h.grantCredential();
+    h.editFlow();
+    const runtime = await h.register();
+    assert.equal(runtime.currentState, 'needs_repair');
+
+    h.restoreFlow();
+    await runtime.reconcileFlows();
+
+    assert.equal(runtime.currentState, 'ready');
+    assert.equal(runtime.currentDetail, undefined);
+
+    await h.manager.destroyAll();
   });
 });

@@ -254,7 +254,30 @@ export interface SweepResult {
   refused?: string;
 }
 
+interface FlowJournal {
+  references: ManagedFlowReference[];
+  cleanup: string[];
+  staged: string[];
+}
+
 export class FlowBridgeManager {
+  private readonly journals = new Map<string, FlowJournal>();
+
+  private journal(owner: string): FlowJournal {
+    const cached = this.journals.get(owner);
+    if (cached) return cached;
+    const saved = this.journalStore?.get(`flowJournal:${owner}`) as FlowJournal | undefined;
+    const journal = saved && Array.isArray(saved.references) && Array.isArray(saved.cleanup)
+      && Array.isArray(saved.staged) ? saved : { references: [], cleanup: [], staged: [] };
+    this.journals.set(owner, journal);
+    return journal;
+  }
+
+  private saveJournal(owner: string, journal: FlowJournal): void {
+    this.journalStore?.set(`flowJournal:${owner}`, JSON.parse(JSON.stringify(journal)));
+    this.journals.set(owner, journal);
+  }
+
   private cardRefs: BridgeCardRefs | null = null;
   private readonly folders: FlowFolderManager;
 
@@ -288,6 +311,7 @@ export class FlowBridgeManager {
     private readonly appId: string,
     private readonly log: (...args: unknown[]) => void,
     cards?: FlowCardCatalogue,
+    private readonly journalStore?: { get(key: string): unknown; set(key: string, value: unknown): void },
   ) {
     this.folders = new FlowFolderManager(api, log, this.folderMutex);
     this.cards = cards ?? new FlowCardCatalogue(api);
@@ -463,8 +487,23 @@ export class FlowBridgeManager {
       }
     }
 
+    const journal = this.journal(request.controllerId);
+    // A previous pass failed before committing its complete replacement set.
+    const unfinished: string[] = [];
+    for (const id of journal.staged) {
+      if (!await this.deleteFlow(id)) unfinished.push(id);
+      else delete liveFlows[id];
+    }
+    journal.staged = unfinished;
+    this.saveJournal(request.controllerId, journal);
+    if (unfinished.length) throw new Error('Could not clean up an interrupted Flow replacement. Retry after Homey recovers.');
+
+    const existingRefs = new Map(request.existing.map(ref => [managedKey(request.controllerId, ref.bindingKey, ref.variantKey), ref]));
+    for (const ref of journal.references) {
+      if (liveFlows[ref.flowId]) existingRefs.set(managedKey(request.controllerId, ref.bindingKey, ref.variantKey), ref);
+    }
     const existingByKey = new Map(
-      request.existing.map(ref => [managedKey(request.controllerId, ref.bindingKey, ref.variantKey), ref]),
+      [...existingRefs.values()].map(ref => [managedKey(request.controllerId, ref.bindingKey, ref.variantKey), ref]),
     );
 
     const abandoned = new Set<string>();
@@ -482,6 +521,8 @@ export class FlowBridgeManager {
      * this pass's to remove.
      */
     const createdThisPass: string[] = [];
+    const cleanup = new Set(journal.cleanup);
+    let committed = false;
 
     try {
       for (const [key, { flow, bindingKey }] of wanted) {
@@ -533,8 +574,16 @@ export class FlowBridgeManager {
         // Missing, or the event surface moved under it — recreate.
         if (existing && !live) this.log(`Managed flow ${existing.flowId} has vanished; recreating`);
 
-        const created = await this.createFlow(flow, folder);
+        // Adopt an exact unreferenced template after an interrupted create/ack.
+        const referenced = new Set([...existingRefs.values()].map(ref => ref.flowId));
+        const orphan = Object.values(liveFlows).find(candidate => !referenced.has(String(candidate.id))
+          && !cleanup.has(String(candidate.id))
+          && ownerDeviceIdOf(candidate, ourCardIds(cards)) === request.controllerId
+          && !hasBeenUserEdited(candidate, flow));
+        const created = orphan ? { id: String(orphan.id) } : await this.createFlow(flow, folder);
         createdThisPass.push(created.id);
+        journal.staged = [...createdThisPass];
+        this.saveJournal(request.controllerId, journal);
         result.created += 1;
         result.references.push({
           flowId: created.id,
@@ -545,33 +594,28 @@ export class FlowBridgeManager {
           createdAt: Date.now(),
         });
 
-        if (supersedes) {
-          /**
-           * The old flow, deleted EXPLICITLY.
-           *
-           * It used to be left live: the abandonment loop below skips any key
-           * that is still wanted, and this key is, so nothing removed it —
-           * while its reference was overwritten by the new one above. A
-           * schedule retimed from 22:00 to 23:00 therefore kept firing at
-           * 22:00 as well, with no screen in the app admitting the old flow
-           * existed.
-           */
-          const superseded: ManagedFlowReference = supersedes;
-          const folderOf = flowInfos.find(f => f.id === superseded.flowId)?.folder;
-          if (await this.deleteFlow(superseded.flowId)) {
-            result.deleted += 1;
-            if (folderOf) abandoned.add(folderOf);
-          } else {
-            // Both are live now. Name both ids: the user has to be able to
-            // find the stale one, and the new one is what tells them which.
-            this.log(
-              `Replaced flow ${superseded.flowId} with ${created.id}, but could not delete the old one — `
-              + 'it is still live and still firing',
-            );
-            result.staleReplacements.push(superseded.flowId);
-          }
+        if (supersedes) cleanup.add(supersedes.flowId);
+      }
+
+      // Commit the complete set before deleting any working predecessor.
+      journal.references = [...result.references];
+      journal.cleanup = [...cleanup];
+      journal.staged = [];
+      this.saveJournal(request.controllerId, journal);
+      committed = true;
+      for (const id of [...cleanup]) {
+        if (await this.deleteFlow(id)) {
+          result.deleted += 1;
+          cleanup.delete(id);
+          const folderOf = flowInfos.find(f => f.id === id)?.folder;
+          if (folderOf) abandoned.add(folderOf);
+        } else {
+          result.staleReplacements.push(id);
+          this.log(`Could not delete superseded flow ${id}; active replacements: ${result.references.map(ref => ref.flowId).join(', ')}`);
         }
       }
+      journal.cleanup = [...cleanup];
+      this.saveJournal(request.controllerId, journal);
 
       // Anything we own that is no longer wanted.
       for (const [key, ref] of existingByKey) {
@@ -626,7 +670,13 @@ export class FlowBridgeManager {
       // Compensate: this pass's creations are unreferenced the moment we
       // rethrow, so remove them. Deletes are idempotent (see deleteFlow), which
       // is what makes a retry after a partial compensation safe too.
-      await this.compensate(createdThisPass);
+      if (!committed) {
+        await this.compensate(createdThisPass);
+        // Keep ids even after compensation: deletion is idempotent, and a
+        // failed compensation must be retried across process restarts.
+        journal.staged = [...createdThisPass];
+        this.saveJournal(request.controllerId, journal);
+      }
       throw error;
     }
 
@@ -635,6 +685,8 @@ export class FlowBridgeManager {
     abandoned.delete(folder ?? '');
     await this.folders.cleanUpEmpty(view, abandoned);
 
+    journal.references = [...result.references];
+    this.saveJournal(request.controllerId, journal);
     return result;
   }
 

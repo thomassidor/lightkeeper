@@ -176,14 +176,19 @@ export function registerTargetHandlers(
     subtitle: host.translate(subtitleKey),
   }));
 
+  let selectionRevision = 0;
   handler('selectTargets', async (spec: unknown) => {
+    const revision = ++selectionRevision;
+    state.target = undefined;
     // The pairing channel is a webview, so this is the same class of boundary
     // as a generated Flow's arguments: shape AND membership are checked before
     // anything is persisted. A well-formed id naming something that is not a
     // light saves a device that resolves to nothing.
     const target = await validateTargetAgainstCatalog(spec, host.app.catalog);
+    const summary = await resolveSummary(host.app.catalog, target);
+    if (revision !== selectionRevision) throw new Error('Target selection changed.');
     state.target = target;
-    return resolveSummary(host.app.catalog, target);
+    return summary;
   });
 }
 
@@ -361,9 +366,11 @@ export function registerCurvePreviewHandlers(
     try {
       // Forced: the user pressed a button and is owed a visible change, even
       // where the lights happen to be close to the curve already.
-      const outcome = await runtime.applyNow('preview', { force: true });
-      // Drained, so the count reported is writes attempted rather than writes
-      // queued behind the burst limit.
+      // `waitForResults` holds the call open until every command has come
+      // back, so what the screen reports is lamps that ACCEPTED the write.
+      // It drains on the way out; the second drain is belt and braces for a
+      // plan that produced no writes at all.
+      const outcome = await runtime.applyNow('preview', { force: true, waitForResults: true });
       await runtime.drain();
       return outcome;
     } finally {

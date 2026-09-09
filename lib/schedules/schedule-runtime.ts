@@ -1,3 +1,4 @@
+import { acceptedTargets } from '../outputs/test-outcome';
 import type { LuminanceSource } from '../daylight/luminance-source';
 import { RuntimeLifetime, cleanupResources, startRuntime, SensorClaim } from '../runtime/runtime-resources';
 import type { HomeyApiService } from '../homey-api-service';
@@ -222,7 +223,7 @@ export class ScheduleRuntime {
     // the parameter property `deps` is assigned.
     this.visible = new VisibleState((state, detail) => deps.onStateChange(state, detail));
     this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log);
-    if (deps.onWriteResult) this.adapter.setWriteSink(deps.onWriteResult);
+    if (deps.onWriteResult) this.adapter.setWriteSink(entry => deps.onWriteResult?.({ ...entry, controllerId: this.controllerId }));
     this.resolver = new TargetResolver(deps.catalog);
     this.sensorClaim = new SensorClaim(deps.luminance, controllerId);
   }
@@ -426,6 +427,7 @@ export class ScheduleRuntime {
 
   /** Targets present, key still able to write — in that order of severity. */
   async assessHealth(): Promise<void> {
+    await this.adapter.retrySubscriptions();
     if (!this.plan.enabled) {
       this.setState('disabled');
       return;
@@ -655,12 +657,16 @@ export class ScheduleRuntime {
       return { writes: 0, skipped: plan.skipped };
     }
 
-    this.scheduler.submit(plan.writes);
+    const batch = this.scheduler.submit(plan.writes);
     this.lastAction = {
       at: this.now(), entryId: entry.id, boundary,
       writes: plan.writes.length, skipped: plan.skipped,
       ...(note ? { note } : {}),
     };
+    if (note === 'test') {
+      await this.scheduler.drain();
+      return { writes: acceptedTargets(await batch.completion), skipped: plan.skipped };
+    }
     return { writes: plan.writes.length, skipped: plan.skipped };
   }
 

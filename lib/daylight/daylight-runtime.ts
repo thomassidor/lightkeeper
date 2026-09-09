@@ -1,3 +1,6 @@
+import { acceptedTargets } from '../outputs/test-outcome';
+import type { EvidenceSink } from '../support/evidence-sink';
+import { ControlHistory, type ControlAction, type OverrideRecord, type TargetDecision } from '../runtime/control-diagnostics';
 import { RuntimeLifetime, cleanupResources, startRuntime, SensorClaim } from '../runtime/runtime-resources';
 import type { HomeyApiService } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
@@ -5,6 +8,7 @@ import { CommandScheduler, type WriteOutcome } from '../outputs/command-schedule
 import { LightTargetAdapter, type WriteRecord } from '../outputs/light-target-adapter';
 import { TargetResolver } from '../outputs/target-resolver';
 import {
+  validCapabilityValue,
   OVERRIDE_SETTLE_MS,
   OVERRIDE_TOLERANCE,
   TargetStateCache,
@@ -55,6 +59,7 @@ import { VisibleState } from '../runtime/visible-state';
 export interface DaylightRuntimeDeps {
   /** @see WriteRecord — one app-wide log of every write by ANY runtime. */
   onWriteResult?: (entry: WriteRecord) => void;
+  onEvidence?: EvidenceSink;
   api: HomeyApiService;
   catalog: DeviceCatalog;
   /** Sun position and sensor readings, already resolved. See daylight-evaluator.ts. */
@@ -67,11 +72,12 @@ export interface DaylightRuntimeDeps {
   onStateChange: (state: ControllerState, detail?: StateDetail) => void;
 }
 
-export interface DaylightAction {
+export interface DaylightAction extends ControlAction {
   at: number;
   reason: string;
   /** Perceptual brightness the response asked for, before slewing. */
   brightness?: number;
+  sensors?: WatchedSensor[];
   level?: number;
   source?: string;
   elevation?: number | null;
@@ -81,7 +87,10 @@ export interface DaylightAction {
   detail?: string;
 }
 
-export interface DaylightDiagnostics {
+export interface DaylightDiagnostics extends ReturnType<ControlHistory<DaylightAction>['snapshot']> {
+  sampledAt: number;
+  writeHistory: ReturnType<LightTargetAdapter['writeHistory']>;
+  feedbackRisk: 'increasing_sensor_response' | null;
   controllerId: string;
   kind: 'daylight';
   stateRevision: number;
@@ -100,6 +109,8 @@ export interface DaylightDiagnostics {
     on: boolean | null;
     canDim: boolean;
     overridden: boolean;
+    override: OverrideRecord | null;
+    reported: ReturnType<TargetStateCache['reportedValues']>;
     /** Perceptual level this lamp is being held at. */
     aim: number | null;
   }>;
@@ -144,7 +155,7 @@ const WATCHED: Capability[] = ['onoff', 'dim'];
 export class DaylightRuntime {
   private readonly lifetime = new RuntimeLifetime();
   private readonly sensorClaim: SensorClaim;
-  private readonly cache = new TargetStateCache();
+  private readonly cache = new TargetStateCache(() => this.now());
   private readonly adapter: LightTargetAdapter;
   private readonly resolver: TargetResolver;
   private readonly timers: Timers;
@@ -154,6 +165,8 @@ export class DaylightRuntime {
   private targetNames: string[] = [];
   private readonly visible: VisibleState;
   private lastAction: DaylightAction | null = null;
+  private readonly history = new ControlHistory<DaylightAction>((type, data) =>
+    this.deps.onEvidence?.(type, { controllerId: this.controllerId, action: data }));
 
   /**
    * Lights somebody has taken control of by hand, and when.
@@ -163,7 +176,7 @@ export class DaylightRuntime {
    * either edge of `onoff` — "switch it off and on again" is the gesture people
    * already have for putting a light back to how it ought to be.
    */
-  private readonly overrides = new Map<string, { at: number; value: number }>();
+  private readonly overrides = new Map<string, OverrideRecord>();
 
   /**
    * Where each lamp is currently AIMED, on the perceptual axis.
@@ -207,8 +220,8 @@ export class DaylightRuntime {
     this.timers = withDefaults({ ...(deps.now !== undefined ? { now: deps.now } : {}) });
     this.resolver = new TargetResolver(deps.catalog);
     this.sensorClaim = new SensorClaim(deps.luminance, controllerId);
-    this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log);
-    if (deps.onWriteResult) this.adapter.setWriteSink(deps.onWriteResult);
+    this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log, { now: () => this.now() });
+    if (deps.onWriteResult) this.adapter.setWriteSink(entry => deps.onWriteResult?.({ ...entry, controllerId: this.controllerId }));
   }
 
   get currentState(): ControllerState { return this.visible.current; }
@@ -295,11 +308,21 @@ export class DaylightRuntime {
     value: unknown,
     external: boolean,
   ): void {
+    if (!validCapabilityValue(capability, value)) {
+      this.history.events.add({ at: this.now(), type: 'report_ignored', deviceId, capability, reason: 'invalid_value' });
+      return;
+    }
+    this.deps.onEvidence?.('target_report', { controllerId: this.controllerId, deviceId, capability, value, external });
     if (!external) return;
+
+    if (capability === 'onoff' && typeof value === 'boolean') {
+      this.history.events.add({ at: this.now(), type: 'power', deviceId, value });
+    }
 
     if (capability === 'onoff') {
       if (value === false) this.scheduler?.cancelTarget(deviceId);
       if (this.overrides.delete(deviceId)) {
+        this.history.events.add({ at: this.now(), type: 'override_cleared', deviceId, reason: 'power_changed' });
         this.deps.log(`${deviceId} was power-cycled; daylight control resumes`);
       }
 
@@ -322,13 +345,21 @@ export class DaylightRuntime {
       return;
     }
 
+    const ignored = capability === 'dim' && this.cache.state(deviceId).actualOn !== true
+      ? 'lamp_off' : this.cache.overrideSuppression(deviceId, capability);
+    if (ignored) {
+      this.history.events.add({ at: this.now(), type: 'report_ignored', deviceId, capability,
+        ...(typeof value === 'number' ? { value } : {}), reason: ignored });
+      return;
+    }
+
     if (capability === 'dim') this.noteOverride(deviceId, value);
   }
 
   /** Somebody changed this light's level by hand. Stand down for it. */
   private noteOverride(deviceId: string, value: unknown): void {
-    const reported = Number(value);
-    if (!Number.isFinite(reported)) return;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) return;
+    const reported = value;
 
     const last = this.committed.get(deviceId);
     if (last) {
@@ -340,16 +371,21 @@ export class DaylightRuntime {
 
     if (!this.overrides.has(deviceId)) {
       this.deps.log(
-        `${deviceId} was dimmed by hand (${reported}); daylight will leave it alone `
+        `${deviceId} was dimmed externally (${reported}); daylight will leave it alone `
         + 'until it is switched off and on again',
       );
     }
-    this.overrides.set(deviceId, { at: this.now(), value: reported });
+    const record: OverrideRecord = { at: this.now(), capability: 'dim', value: reported, expected: last?.device ?? null, source: 'external_report' };
+    this.overrides.set(deviceId, record);
+    this.history.events.add({ ...record, type: 'override', deviceId });
   }
 
   /** Once a minute, from the manager's single shared timer. */
   async tick(): Promise<void> {
     await this.applyNow('tick');
+    // See `assessedInputs`: this is the only thing that can notice a lamp that
+    // has stopped accepting writes, or a daylight source that has come back.
+    await this.reassessIfInputsMoved();
   }
 
   /** Write everything outstanding now rather than when the rate limit allows. */
@@ -362,9 +398,24 @@ export class DaylightRuntime {
     return this.deps.daylight.evaluate(this.plan.response);
   }
 
+  /**
+   * `waitForResults` is what a "try it now" needs and what a tick must never
+   * do: hold the call open until the queue has drained and every command in
+   * the batch has come back, so the count reported is lamps that ACCEPTED the
+   * write rather than commands that were planned.
+   *
+   * It is an explicit option rather than a sniff at `reason` — which is what
+   * it was first written as, `reason === 'preview'`. A reason string is for
+   * the log and for diagnostics; making the control flow depend on its exact
+   * spelling means any caller that logs a different word silently loses the
+   * wait, and any caller that happens to log 'preview' silently gains it.
+   * The second half is not hypothetical: `runtime-lifecycle-safety.test.ts`
+   * drove a power-off through a preview and deadlocked, because the wait was
+   * on and the test held the write's own device handle.
+   */
   async applyNow(
     reason: string,
-    options: { deviceIds?: string[]; force?: boolean } = {},
+    options: { deviceIds?: string[]; force?: boolean; waitForResults?: boolean } = {},
   ): Promise<{ writes: number; skipped: number }> {
     if (!this.plan.enabled) return this.noteNothingToDo(reason, 'the plan is switched off');
 
@@ -384,10 +435,12 @@ export class DaylightRuntime {
     if (candidates.length === 0) return this.noteNothingToDo(reason, 'no lights are selected');
 
     let skipped = 0;
+    const excluded = new Map<string, TargetDecision['status']>();
     const wanted = new Map<string, number>();
 
     for (const deviceId of candidates) {
       if (!options.force && this.overrides.has(deviceId)) {
+        excluded.set(deviceId, 'overridden');
         skipped += 1;
         continue;
       }
@@ -402,6 +455,7 @@ export class DaylightRuntime {
        * always is.
        */
       if (this.cache.state(deviceId).actualOn !== true) {
+        excluded.set(deviceId, 'off');
         skipped += 1;
         continue;
       }
@@ -426,30 +480,44 @@ export class DaylightRuntime {
       return this.noteNothingToDo(reason, 'the runtime is not started, so writes were dropped', skipped);
     }
 
+    const action: DaylightAction = {
+      at: this.now(), reason, writes: writes.length, skipped,
+      brightness: verdict.brightness,
+      level: verdict.level,
+      source: verdict.source,
+      elevation: verdict.elevation,
+      targets: this.history.decisions(candidates, excluded, writes),
+      sensors: this.deps.daylight.sensors().filter(sensor => this.plan.response.sensors.includes(sensor.deviceId)),
+    };
+
+    let awaitedCompletion: Promise<WriteOutcome[]> | undefined;
     if (writes.length > 0) {
-      const { completion } = this.scheduler.submit(writes);
+      const { batchId, completion } = this.scheduler.submit(writes);
+      if (options.waitForResults === true) awaitedCompletion = completion;
+      action.batchId = batchId;
       // Bookkeeping behind the completion, for the reason the circadian runtime
       // learned it: recording a write the scheduler coalesced away — or one that
       // failed — as done tells both gates the lamp is already where it needs to
       // be, and then every later tick agrees and the lamp never moves again.
       fireAndForget(
-        completion.then(outcomes => { if (current()) this.noteOutcomes(outcomes); }),
+        completion.then(outcomes => {
+          action.completedAt = this.now();
+          action.outcomes = outcomes;
+          this.deps.onEvidence?.('control_completion', { controllerId: this.controllerId, batchId: action.batchId, at: action.completedAt, outcomes });
+          if (current()) this.noteOutcomes(outcomes);
+        }),
         this.deps.log,
         'Daylight write bookkeeping',
       );
     }
 
-    this.lastAction = {
-      at: this.now(),
-      reason,
-      brightness: verdict.brightness,
-      level: verdict.level,
-      source: verdict.source,
-      elevation: verdict.elevation,
-      writes: writes.length,
-      skipped,
-    };
+    this.lastAction = action;
+    this.history.actions.add(action);
 
+    if (awaitedCompletion) {
+      await this.scheduler.drain();
+      return { writes: acceptedTargets(await awaitedCompletion), skipped };
+    }
     return { writes: writes.length, skipped };
   }
 
@@ -458,7 +526,10 @@ export class DaylightRuntime {
     detail: string,
     skipped = 0,
   ): { writes: number; skipped: number } {
-    this.lastAction = { at: this.now(), reason, detail, writes: 0, skipped };
+    this.lastAction = { at: this.now(), reason, detail, writes: 0, skipped,
+      targets: this.targetIds.map(deviceId => ({ deviceId, status: 'inactive', commands: 0 })),
+    };
+    this.history.actions.add(this.lastAction);
     return { writes: 0, skipped };
   }
 
@@ -570,7 +641,56 @@ export class DaylightRuntime {
     }
   }
 
+  /**
+   * The health inputs as of the last assessment, so a tick can tell whether
+   * anything a verdict depends on has actually moved.
+   *
+   * `assessHealth()` used to run at start and on a target-set change and
+   * NOWHERE else — `refreshTargets()` returns early on an unchanged
+   * fingerprint, and `tick()` never asked. So the write-failure streak in
+   * `light-target-adapter.ts`, whose whole stated purpose is that a runtime
+   * must not "go on writing to that lamp every minute for ever behind a green
+   * tile", did exactly that: a lamp cut at the wall stays `available: true`
+   * (platform §6), the target fingerprint never moves, and
+   * `unwritableTargets()` was consulted once, at start, when it was empty.
+   *
+   * Re-asking is cheap and is NOT the round trip §12 forbids on a tick:
+   * `assessTargets` reads the in-memory catalogue, and the rest is this
+   * runtime's own state.
+   */
+  private assessedInputs: string | null = null;
+
+  /**
+   * What a verdict is computed FROM. Compared, never shown.
+   *
+   * The daylight SOURCE is in here as well as the unwritable set, because it
+   * is the other half of this device type's own verdict: `state.noDaylight`
+   * stands while nothing can tell how light it is, and it has to clear by
+   * itself when the household finally gives the Homey a location or changes
+   * the sensor's battery. Nothing else would ever ask again.
+   */
+  private healthInputs(): string {
+    const unwritable = [...this.adapter.unwritableTargets()].sort().join(',');
+    return `${this.currentValue().source}|${unwritable}`;
+  }
+
+  /**
+   * Re-assess only when something a verdict depends on has changed.
+   *
+   * Guarded rather than unconditional because `assessHealth()` awaits
+   * `retrySubscriptions()`, and a runtime whose lamps are all fine has no
+   * reason to retry anything once a minute for ever.
+   */
+  private async reassessIfInputsMoved(): Promise<void> {
+    if (this.healthInputs() === this.assessedInputs) return;
+    await this.assessHealth();
+  }
+
   async assessHealth(): Promise<void> {
+    await this.adapter.retrySubscriptions();
+    // Recorded AFTER the retry, so what is remembered is what was assessed:
+    // a retry that fixed a subscription changes the inputs it is compared to.
+    this.assessedInputs = this.healthInputs();
     if (!this.plan.enabled) {
       this.setState('disabled');
       return;
@@ -648,7 +768,9 @@ export class DaylightRuntime {
           cache: this.cache,
         });
         if (!current()) return;
-        this.overrides.delete(deviceId);
+        if (this.overrides.delete(deviceId)) {
+          this.history.events.add({ at: this.now(), type: 'override_cleared', deviceId, reason: 'target_removed' });
+        }
         this.aim.delete(deviceId);
         this.committed.delete(deviceId);
       }
@@ -685,6 +807,9 @@ export class DaylightRuntime {
         () => this.sensorClaim.release(),
       ], this.deps.log);
       this.cache.clear();
+      for (const deviceId of this.overrides.keys()) {
+        this.history.events.add({ at: this.now(), type: 'override_cleared', deviceId, reason: 'runtime_stopped' });
+      }
       this.overrides.clear();
       // Cleared for the reason the circadian runtime's colour record had to be:
       // `updatePlan()` is stop-then-start and `start()`'s own apply is NOT forced,
@@ -715,6 +840,11 @@ export class DaylightRuntime {
   /** Never exposes secrets or unrelated Homey configuration. */
   diagnostics(): DaylightDiagnostics {
     return {
+      sampledAt: this.now(),
+      writeHistory: this.adapter.writeHistory(),
+      feedbackRisk: this.plan.response.sensors.length > 0 && this.plan.response.bright > this.plan.response.dark
+        ? 'increasing_sensor_response' : null,
+      ...this.history.snapshot(),
       controllerId: this.controllerId,
       kind: 'daylight',
       stateRevision: this.visible.revision,
@@ -735,6 +865,8 @@ export class DaylightRuntime {
         on: this.cache.state(id).actualOn ?? null,
         canDim: this.cache.supports(id, 'dim'),
         overridden: this.overrides.has(id),
+        override: this.overrides.get(id) ?? null,
+        reported: this.cache.reportedValues(id),
         aim: this.aim.get(id) ?? null,
       })),
       lastAction: this.lastAction,

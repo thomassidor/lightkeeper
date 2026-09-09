@@ -111,7 +111,7 @@ const withTokens = (key: string, tokens?: Record<string, unknown>) => {
 };
 
 const open = (status: unknown, orphans: unknown = NO_ORPHANS) => runSettingsPage(PAGE, {
-  respond: { 'GET /': status, 'GET /orphans': orphans },
+  respond: { 'GET /': status, 'GET /orphans': orphans, 'GET /evidence': { state: 'idle', records: 0, bytes: 0, dropped: 0 } },
   translate: withTokens,
 });
 
@@ -133,10 +133,10 @@ describe('the settings page on a Homey with nothing set up (the old 1.2)', () =>
     await view.settle();
 
     assert.equal(view.error, null, `the page threw: ${(view.error as Error)?.message}`);
-    // Two reads at boot: the status, and the generated-Flow count beside it.
+    // Status, recording status and the generated-Flow count at boot.
     assert.deepEqual(
       view.calls.map(c => `${c.method} ${c.path}`).sort(),
-      ['GET /', 'GET /orphans'],
+      ['GET /', 'GET /evidence', 'GET /orphans'],
     );
   });
 
@@ -397,4 +397,31 @@ describe('the generated-Flow count, and its refusal (T2, T52)', () => {
     assert.ok(sweep, 'the sweep was never sent');
     assert.deepEqual(sweep.body, { token: 'tok', flowIds: ['f1', 'f2'] });
   });
+});
+
+
+test('recording controls reflect the archive and save a timestamped observation through the API', async () => {
+  const idle = { state: 'idle', records: 0, bytes: 0, dropped: 0 };
+  const recording = { state: 'recording', records: 3, bytes: 1200, dropped: 0, endsAt: Date.now() + 10000 };
+  const view = runSettingsPage(PAGE, { respond: {
+    'GET /': EMPTY, 'GET /orphans': NO_ORPHANS, 'GET /evidence': idle,
+    'POST /evidence/start': recording, 'POST /evidence/note': recording,
+    'POST /evidence/stop': { ...recording, state: 'stopped' },
+  } });
+  await view.settle();
+  assert.equal(view.byId('evidence-start')!.disabled, false);
+  assert.equal(view.byId('evidence-stop')!.disabled, true);
+  view.fire(view.byId('evidence-start')!, 'click');
+  await view.settle();
+  assert.equal(view.byId('evidence-start')!.disabled, true);
+  assert.equal(view.byId('evidence-stop')!.disabled, false);
+  view.byId('evidence-note')!.value = 'The desk lamp flickered.';
+  view.fire(view.byId('evidence-add-note')!, 'click');
+  await view.settle();
+  assert.equal(view.byId('evidence-note')!.value, '');
+  assert.ok(view.calls.some(call => call.path === '/evidence/note'));
+  view.fire(view.byId('evidence-stop')!, 'click');
+  await view.settle();
+  assert.equal(view.byId('evidence-start')!.disabled, true, 'existing evidence must not be overwritten');
+  assert.equal(view.byId('evidence-add-note')!.disabled, true);
 });

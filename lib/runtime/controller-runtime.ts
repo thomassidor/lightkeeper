@@ -1,3 +1,4 @@
+import { acceptedTargets } from '../outputs/test-outcome';
 import { RuntimeLifetime, cleanupResources, startRuntime } from './runtime-resources';
 import type { HomeyApiService } from '../homey-api-service';
 import { classifyReconcileError } from './reconcile-failure';
@@ -26,6 +27,7 @@ import { fireAndForget } from '../support/async';
 import { sameCatalogue, sameManagedFlows } from '../support/same';
 import { messageOf } from '../support/homey-errors';
 import { VisibleState } from './visible-state';
+import { worstVerdict, type Verdict } from './verdict';
 
 /** Which ramp, if any, a resolved intent corresponds to. */
 function rampFor(intent: LightIntent): { kind: 'brightness' | 'temperature'; direction: -1 | 1 } | null {
@@ -182,7 +184,7 @@ export class ControllerRuntime {
     // the parameter property `deps` is assigned.
     this.visible = new VisibleState((state, detail) => deps.onStateChange(state, detail));
     this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log);
-    if (deps.onWriteResult) this.adapter.setWriteSink(deps.onWriteResult);
+    if (deps.onWriteResult) this.adapter.setWriteSink(entry => deps.onWriteResult?.({ ...entry, controllerId: this.controllerId }));
     this.resolver = new TargetResolver(deps.catalog);
   }
 
@@ -215,21 +217,67 @@ export class ControllerRuntime {
   }
 
   /**
-   * Ask the health monitor whether this controller is actually
-   * sound, and adopt its verdict when it is worse than what we already know.
+   * The last verdict from each of the two things that can be wrong, kept apart
+   * so that neither can silently answer for the other.
    *
-   * Never downgrades to 'ready': buildRuntime() has scheduler and subscription
-   * knowledge the monitor does not, so a runtime that failed to start must not
-   * be declared healthy by a check that only looks at the catalogue.
+   * `flowVerdict` is what reconciliation learned: a Flow was edited, a control
+   * would not compile, a reference could not be stored, a superseded Flow is
+   * still firing, the key is dead. `targetVerdict` is what the lights say: how
+   * many of them resolved, and how many are unwritable.
+   *
+   * They used to be written straight to `VisibleState` by whichever check ran
+   * last, and the order was `buildRuntime` → `reconcileFlows` → `assessHealth`.
+   * So a controller that had just been told "a Flow was edited, open repair"
+   * had that replaced by "1 of 3 lights unavailable" — a DIFFERENT problem, a
+   * less actionable one, and one that also flips the device back to available
+   * so the repair prompt disappears. One lamp switched off at the wall was
+   * enough, and it recurred on every `refreshTargets()` and every credential
+   * change. The comment on `start()` said a health problem "wins over the
+   * target-count assessment", which was true; what it did not intend is that
+   * the monitor PRODUCES target-count assessments, so it won over the
+   * reconcile verdict too.
+   */
+  private flowVerdict: Verdict | null = null;
+
+  private targetVerdict: Verdict | null = null;
+
+  /**
+   * Compose the two, worst first, and hand the result to `VisibleState`.
+   *
+   * Ranked rather than last-writer-wins, and ties go to the FLOW verdict
+   * because it is the one that names an action the user can take. `VisibleState`
+   * stays dumb — it adopts what it is handed and decides only whether a user
+   * could see the difference, which is what its own docblock argues for.
+   */
+  private publishVerdict(): void {
+    // An explicitly disabled controller reports `disabled` and nothing else;
+    // it has no Flows to reconcile and no lights to assess.
+    if (!this.profile.enabled) return;
+
+    const worst = worstVerdict(this.flowVerdict, this.targetVerdict);
+    if (worst === null) return;
+    this.setState(worst.state, worst.detail);
+  }
+
+  /**
+   * Ask the health monitor whether this controller is actually sound.
+   *
+   * Never declares 'ready' when the runtime failed to build: `buildRuntime()`
+   * has scheduler and subscription knowledge the monitor does not, so a runtime
+   * with no scheduler must not be called healthy by a check that only looks at
+   * the catalogue. It no longer has to know anything about Flows — an
+   * outstanding `flowVerdict` outranks whatever it finds.
    */
   async assessHealth(): Promise<void> {
+    await this.adapter.retrySubscriptions();
     if (!this.deps.health) return;
 
     try {
       const assessment = await this.deps.health.assess(this.profile, this.adapter.unwritableTargets());
-      if (assessment.state === 'ready') return;
+      if (assessment.state === 'ready' && !this.scheduler) return;
 
-      this.setState(assessment.state, assessment.detail);
+      this.targetVerdict = { state: assessment.state, detail: assessment.detail };
+      this.publishVerdict();
     } catch (error) {
       // A health check that cannot run is not itself a controller fault.
       this.deps.log('Health assessment failed:', messageOf(error));
@@ -248,18 +296,47 @@ export class ControllerRuntime {
    * back — which is indistinguishable, from outside, from the new key being bad.
    */
   async recoverFromCredentialFailure(): Promise<void> {
-    if (this.visible.current !== 'needs_credential') return;
+    const wasCredential = this.visible.current === 'needs_credential'
+      || this.flowVerdict?.state === 'needs_credential'
+      || this.targetVerdict?.state === 'needs_credential';
+    if (!wasCredential) return;
+
+    /**
+     * A remembered `needs_credential` is dropped from BOTH verdicts, and it is
+     * the only state either of them forgets on request.
+     *
+     * It has to be both, because both can produce one: reconciliation's catch
+     * classifies a 401/403 that way, and the health monitor has its own
+     * credential branch ahead of the target arithmetic. It also has to be
+     * dropped rather than merely outranked — it is the most severe state there
+     * is, so a stale one sits over every later verdict for ever. That is
+     * exactly what happened to the monitor's copy: the key came back, the next
+     * reconcile found an edited Flow and said so, and the tile went on
+     * reporting "Lightkeeper needs a new API key" against a key that worked.
+     */
+    if (this.flowVerdict?.state === 'needs_credential') this.flowVerdict = null;
+    if (this.targetVerdict?.state === 'needs_credential') this.targetVerdict = null;
+
+    // Anything ELSE the same reconcile found is a different problem and
+    // survives the new key. Publish so the sentence changes from the credential
+    // one to whatever is actually still wrong.
+    if (this.flowVerdict !== null) {
+      this.publishVerdict();
+      return;
+    }
 
     // No monitor (the ephemeral test rig) — the reconcile that just succeeded is
     // the only evidence available, and it is good enough.
     if (!this.deps.health) {
-      this.setState('ready');
+      this.targetVerdict = { state: 'ready' };
+      this.publishVerdict();
       return;
     }
 
     try {
       const assessment = await this.deps.health.assess(this.profile, this.adapter.unwritableTargets());
-      this.setState(assessment.state, assessment.detail);
+      this.targetVerdict = { state: assessment.state, detail: assessment.detail };
+      this.publishVerdict();
     } catch (error) {
       // Leave the controller where it is rather than guessing it is well.
       this.deps.log('Health re-check after a credential change failed:', messageOf(error));
@@ -390,7 +467,8 @@ export class ControllerRuntime {
        * hold, not once per flush. See RampTick and runIntent.
        */
       (intent, ramp) => fireAndForget(
-        this.runIntent(intent, this.targetIds, { modeAlreadySet: ramp.ticks > 1 }),
+        this.runIntent(intent, (ramp.targetIds ?? []).filter(id => this.targetIds.includes(id)),
+          { modeAlreadySet: ramp.ticks > 1 }),
         this.deps.log, 'A ramp tick',
       ),
       (controlId, reason) => this.deps.log(`Ramp on ${controlId} stopped: ${reason}`),
@@ -422,18 +500,22 @@ export class ControllerRuntime {
     });
 
     if (resolved.devices.length === 0) {
-      this.setState('needs_repair', { key: 'state.noTargets' });
+      this.targetVerdict = { state: 'needs_repair', detail: { key: 'state.noTargets' } };
     } else if (resolved.missing.length > 0) {
-      this.setState('partial', {
-        key: 'state.someTargets',
-        tokens: {
-          count: resolved.missing.length,
-          total: resolved.devices.length + resolved.missing.length,
+      this.targetVerdict = {
+        state: 'partial',
+        detail: {
+          key: 'state.someTargets',
+          tokens: {
+            count: resolved.missing.length,
+            total: resolved.devices.length + resolved.missing.length,
+          },
         },
-      });
+      };
     } else {
-      this.setState('ready');
+      this.targetVerdict = { state: 'ready' };
     }
+    this.publishVerdict();
   }
 
   /**
@@ -454,7 +536,11 @@ export class ControllerRuntime {
     const mappedKeys = new Set(
       this.profile.mappings.map(m => m.inputKey).filter((k): k is string => k !== null),
     );
-    const mapped = catalogue.filter(input => mappedKeys.has(input.key));
+    const heldControls = new Set(catalogue.filter(input => mappedKeys.has(input.key)
+      && input.action === 'long_press').map(input => input.controlId));
+    const mapped = catalogue.filter(input => mappedKeys.has(input.key)
+      || (heldControls.has(input.controlId)
+        && (input.action === 'release' || input.action === 'rotate_stop')));
 
     /**
      * Nothing mapped AND nothing stored: the cold-start case, and the only one
@@ -467,7 +553,12 @@ export class ControllerRuntime {
      * believed in. `sync()` with an empty `mapped` is exactly the right call
      * there: everything stored becomes un-wanted and is deleted.
      */
-    if (mapped.length === 0 && this.profile.managedFlows.length === 0) return;
+    if (mapped.length === 0 && this.profile.managedFlows.length === 0) {
+      this.flowVerdict = null;
+      await this.assessHealth();
+      this.publishVerdict();
+      return;
+    }
 
     try {
       const result = await this.deps.bridge.sync({
@@ -502,8 +593,13 @@ export class ControllerRuntime {
         }
       }
 
+      // Collected rather than published: `publishVerdict()` at the end of the
+      // pass is the one place a verdict reaches the user, and the precedence
+      // WITHIN a reconcile is the order these are assigned in — a reference we
+      // could not store is worse news than a Flow somebody edited.
+      let verdict: Verdict | null = null;
       if (result.userEdited.length > 0) {
-        this.setState('needs_repair', { key: 'state.flowEdited' });
+        verdict = { state: 'needs_repair', detail: { key: 'state.flowEdited' } };
       }
 
       /**
@@ -518,10 +614,13 @@ export class ControllerRuntime {
        */
       if (result.unsupported.length > 0) {
         this.unsupported = result.unsupported;
-        this.setState('needs_repair', {
-          key: 'state.unsupportedMapping',
-          tokens: { controls: result.unsupported.map(u => u.bindingKey).join(', ') },
-        });
+        verdict = {
+          state: 'needs_repair',
+          detail: {
+            key: 'state.unsupportedMapping',
+            tokens: { controls: result.unsupported.map(u => u.bindingKey).join(', ') },
+          },
+        };
       } else {
         this.unsupported = [];
       }
@@ -543,16 +642,30 @@ export class ControllerRuntime {
         );
       }
 
-      // Last, so it wins over the verdicts above: whatever else this pass
+      // Last, so they win over the verdicts above: whatever else this pass
       // learned, a reference we could not store is the problem to report.
-      if (persistFailed) this.setState('needs_repair', { key: 'state.persistFailed' });
+      if (persistFailed) verdict = { state: 'needs_repair', detail: { key: 'state.persistFailed' } };
+      else if (result.staleReplacements.length > 0) {
+        verdict = { state: 'needs_repair', detail: { key: 'state.flowCleanup' } };
+      }
+
+      // Assigned every pass, including to null: a reconcile that finally
+      // manages the delete, or whose Flow the user restored, must be able to
+      // clear the verdict it set last time. This is why it is a verdict and no
+      // longer a boolean — the boolean could gate `ready` but could not say
+      // WHICH of the five things is wrong, so the sentence still had to be
+      // written straight to the visible state by whoever found it.
+      this.flowVerdict = verdict;
+      if (verdict === null) await this.assessHealth();
+      this.publishVerdict();
     } catch (error) {
       // See classifyReconcileError: a dead key is not a broken mapping, and an
       // unclassified platform error keeps its own words.
       const { state, detail } = classifyReconcileError(
         error, this.deps.api.credentials.getStatus(),
       );
-      this.setState(state, detail);
+      this.flowVerdict = { state, detail };
+      this.publishVerdict();
     }
   }
 
@@ -595,7 +708,8 @@ export class ControllerRuntime {
     if (this.ramps && event.action === 'long_press' && this.rampable.has(event.controlId)) {
       const ramp = rampFor(resolved.intent);
       if (ramp) {
-        this.ramps.start(event.controlId, ramp.kind, ramp.direction);
+        this.ramps.start(event.controlId, ramp.kind, ramp.direction,
+          targets.filter(id => this.targetIds.includes(id)));
         return;
       }
     }
@@ -607,7 +721,7 @@ export class ControllerRuntime {
   async runIntent(
     intent: LightIntent,
     targetIds: string[] = this.targetIds,
-    options: { modeAlreadySet?: boolean } = {},
+    options: { modeAlreadySet?: boolean; waitForResults?: boolean } = {},
   ): Promise<{ writes: number; skipped: number }> {
     const plan = planIntent(intent, targetIds, this.cache, this.profile.behavior);
 
@@ -641,8 +755,12 @@ export class ControllerRuntime {
       return { writes: 0, skipped: plan.skipped.length };
     }
 
-    this.scheduler.submit(writes);
+    const batch = this.scheduler.submit(writes);
     this.lastIntent = { intent, at: Date.now(), writes: writes.length, skipped: plan.skipped.length };
+    if (options.waitForResults) {
+      await this.scheduler.drain();
+      return { writes: acceptedTargets(await batch.completion), skipped: plan.skipped.length };
+    }
     return { writes: writes.length, skipped: plan.skipped.length };
   }
 
@@ -650,9 +768,9 @@ export class ControllerRuntime {
   async runIntentNow(
     intent: LightIntent,
     targetIds: string[] = this.targetIds,
-    options: { modeAlreadySet?: boolean } = {},
+    options: { modeAlreadySet?: boolean; waitForResults?: boolean } = {},
   ): Promise<{ writes: number; skipped: number }> {
-    const result = await this.runIntent(intent, targetIds, options);
+    const result = await this.runIntent(intent, targetIds, { ...options, waitForResults: true });
     await this.scheduler?.drain();
     return result;
   }
@@ -669,7 +787,10 @@ export class ControllerRuntime {
       // The fingerprint, not the id list: a light re-paired under the same id
       // with a different dim range, or one that went unavailable and came back,
       // is a change the id list cannot see. See target-snapshot.ts.
-      if (this.snapshot && this.snapshot.fingerprint === next.fingerprint) return;
+      if (this.snapshot && this.snapshot.fingerprint === next.fingerprint) {
+        await this.assessHealth();
+        return;
+      }
 
       const { removed, addedOrChanged } = diffTargets(this.snapshot, next);
       // Revoke membership before awaiting teardown, so concurrent ticks cannot

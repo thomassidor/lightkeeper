@@ -179,6 +179,20 @@
 <p data-i18n="settings.writesExplain"></p>
 <div id="writes" class="card" data-i18n="settings.loading"></div>
 
+<h2 data-i18n="settings.evidenceTitle"></h2>
+<p data-i18n="settings.evidenceHelp"></p>
+<div id="evidence-status" class="card" role="status" data-i18n="settings.loading"></div>
+<div class="row">
+  <button id="evidence-start" data-i18n="settings.evidenceStart" disabled></button>
+  <button id="evidence-stop" data-i18n="settings.evidenceStop" disabled></button>
+  <button id="evidence-refresh" data-i18n="settings.evidenceRefresh"></button>
+</div>
+<label for="evidence-note" data-i18n="settings.evidenceNoteLabel"></label>
+<input id="evidence-note" type="text" maxlength="1000">
+<button id="evidence-add-note" data-i18n="settings.evidenceAddNote" disabled></button>
+<p data-i18n="settings.evidenceExportHelp"></p>
+<code>node scripts/evidence.mjs export</code>
+
 <h2 data-i18n="settings.diagnostics"></h2>
 <div class="row">
   <button id="diag" data-i18n="settings.showDiagnostics"></button>
@@ -733,6 +747,38 @@
         msg.textContent = t('requestFailed');
         button.disabled = false;
       });
+    });
+
+    function showEvidence(data) {
+      var states = { idle: t('evidenceIdle'), recording: t('evidenceRecording'), complete: t('evidenceComplete'),
+        stopped: t('evidenceStopped'), full: t('evidenceFull'), error: t('evidenceError') };
+      document.getElementById('evidence-status').textContent = t('evidenceSummary', {
+        state: states[data.state] || data.state,
+        records: String(data.records), megabytes: (data.bytes / 1048576).toFixed(2), dropped: String(data.dropped),
+        end: data.endsAt ? new Date(data.endsAt).toLocaleString() : '—'
+      }) + (data.error ? ' ' + data.error : '');
+      document.getElementById('evidence-start').disabled = data.state !== 'idle';
+      document.getElementById('evidence-stop').disabled = data.state !== 'recording';
+      document.getElementById('evidence-add-note').disabled = data.state !== 'recording';
+    }
+    function evidenceError() { document.getElementById('evidence-status').textContent = t('requestFailed'); }
+    function refreshEvidence() { return api('GET', '/evidence').then(showEvidence).catch(evidenceError); }
+    refreshEvidence();
+    document.getElementById('evidence-refresh').addEventListener('click', refreshEvidence);
+    document.getElementById('evidence-start').addEventListener('click', function () {
+      document.getElementById('evidence-start').disabled = true;
+      api('POST', '/evidence/start').then(showEvidence).catch(function () { evidenceError(); refreshEvidence(); });
+    });
+    document.getElementById('evidence-stop').addEventListener('click', function () {
+      document.getElementById('evidence-stop').disabled = true;
+      api('POST', '/evidence/stop').then(showEvidence).catch(function () { evidenceError(); refreshEvidence(); });
+    });
+    document.getElementById('evidence-add-note').addEventListener('click', function () {
+      var input = document.getElementById('evidence-note');
+      if (!input.value.trim()) return;
+      api('POST', '/evidence/note', { text: input.value }).then(function (status) {
+        input.value = ''; showEvidence(status);
+      }).catch(evidenceError);
     });
 
     document.getElementById('diag').addEventListener('click', function () {

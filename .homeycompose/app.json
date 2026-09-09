@@ -39,6 +39,12 @@
     "url": "https://github.com/thomassidor/lightkeeper/issues"
   },
   "api": {
+    "noteEvidence": { "method": "POST", "path": "/evidence/note" },
+    "getEvidence": { "method": "GET", "path": "/evidence" },
+    "startEvidence": { "method": "POST", "path": "/evidence/start" },
+    "stopEvidence": { "method": "POST", "path": "/evidence/stop" },
+    "clearEvidence": { "method": "DELETE", "path": "/evidence/:id" },
+    "readEvidence": { "method": "GET", "path": "/evidence/:id/:offset/:end" },
     "getStatus": {
       "method": "GET",
       "path": "/"

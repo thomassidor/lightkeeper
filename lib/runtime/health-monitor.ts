@@ -75,6 +75,8 @@ export class HealthMonitor {
         };
     }
 
+    if (!source.available) return { state: 'needs_repair', detail: { key: 'state.sourceUnavailable' } };
+
     // An integration update can change the event surface under us.
     const discovered = await this.discovery.discover(source);
     if (surfaceMoved(profile, discovered)) {

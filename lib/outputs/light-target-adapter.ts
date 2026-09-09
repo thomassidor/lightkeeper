@@ -41,6 +41,7 @@ export interface TargetFailure {
  * eight declarations point at it.
  */
 export interface WriteRecord {
+  controllerId?: string;
   at: number;
   deviceId: string;
   capability: Capability;
@@ -62,7 +63,26 @@ export class LightTargetAdapter {
   private active = true;
   private readonly targetGenerations = new Map<string, number>();
 
-  resume(): void { this.active = true; }
+  private readonly failedSubscriptions = new Set<string>();
+  private offReplacement: Unsubscribe | undefined;
+  private readonly desiredSubscriptions = new Map<string, {
+    capabilities: Capability[];
+    onChange: ((deviceId: string, capability: Capability, value: unknown, external: boolean) => void) | undefined;
+  }>();
+
+  resume(): void {
+    this.active = true;
+    this.offReplacement ??= this.api.onReadReplacement?.(() => {
+      this.generation += 1;
+      this.handles.clear();
+      for (const [id, spec] of this.desiredSubscriptions) {
+        fireAndForget((async () => {
+          await this.refresh(id);
+          await this.subscribe(id, spec.capabilities, spec.onChange);
+        })(), this.log, 'Rebinding target subscription');
+      }
+    });
+  }
 
   suspend(): void {
     this.active = false;
@@ -130,6 +150,7 @@ export class LightTargetAdapter {
     timers?: Partial<Timers>,
   ) {
     this.timers = withDefaults(timers);
+    this.resume();
   }
 
   /**
@@ -171,6 +192,10 @@ export class LightTargetAdapter {
 
   writes(): readonly WriteRecord[] {
     return this.recentWrites.entries();
+  }
+
+  writeHistory(): ReturnType<BoundedLog<WriteRecord>['retention']> {
+    return this.recentWrites.retention();
   }
 
   /**
@@ -367,14 +392,20 @@ export class LightTargetAdapter {
     const eligible = () => current() && (options.eligible?.() ?? true);
     if (!eligible()) throw new WriteCancelled();
     const startedAt = this.timers.now();
+    let seq: number | undefined;
 
     try {
       const device = await this.deviceHandle(deviceId);
       if (!eligible()) throw new WriteCancelled();
       // Register only once dispatch is eligible, but before calling Homey: a
       // fast integration can echo before setCapabilityValue resolves (§6).
-      const seq = this.cache.noteEcho(deviceId, capability, value);
-      await device.setCapabilityValue({ capabilityId: capability, value });
+      const dispatch = async () => {
+        if (!eligible()) throw new WriteCancelled();
+        seq = this.cache.noteEcho(deviceId, capability, value);
+        await device.setCapabilityValue({ capabilityId: capability, value });
+      };
+      if (this.api.writes) await this.api.writes.run(deviceId, dispatch);
+      else await dispatch();
       if (!eligible()) throw new WriteCancelled();
       // The desired value goes AFTER, and only on success. Committing it up
       // front left the app believing a lamp was at a level it had never
@@ -399,6 +430,8 @@ export class LightTargetAdapter {
       this.handles.delete(deviceId);
       this.recordFailure(deviceId, capability, error);
       throw error;
+    } finally {
+      if (seq !== undefined) this.cache.finishWrite(deviceId, capability, seq);
     }
   }
 
@@ -519,6 +552,15 @@ export class LightTargetAdapter {
    * circadian light cares about both edges of `onoff` and about someone
    * overriding its colour by hand.
    */
+  async retrySubscriptions(): Promise<void> {
+    for (const id of [...this.failedSubscriptions]) {
+      const spec = this.desiredSubscriptions.get(id);
+      if (!spec || !this.active) continue;
+      try { await this.subscribe(id, spec.capabilities, spec.onChange); }
+      catch (error) { this.log('Subscription retry failed:', messageOf(error)); }
+    }
+  }
+
   async subscribe(
     deviceId: string,
     capabilities: Capability[],
@@ -526,9 +568,17 @@ export class LightTargetAdapter {
       deviceId: string, capability: Capability, value: unknown, external: boolean,
     ) => void,
   ): Promise<void> {
+    this.desiredSubscriptions.set(deviceId, { capabilities: [...capabilities], onChange });
     const current = this.current(deviceId);
-    return this.subscriptionLock.run(deviceId, () =>
-      this.subscribeNow(deviceId, capabilities, onChange, current));
+    this.failedSubscriptions.delete(deviceId);
+    try {
+      await this.subscriptionLock.run(deviceId, () =>
+        this.subscribeNow(deviceId, capabilities, onChange, current));
+    } catch (error) {
+      if (current()) this.failedSubscriptions.add(deviceId);
+      this.api.reportReadFailure?.(error);
+      throw error;
+    }
   }
 
   private async subscribeNow(
@@ -569,6 +619,7 @@ export class LightTargetAdapter {
         // entry behind for destroy() to call a second time.
         created.push(this.api.track(() => instance.destroy()));
       } catch (error) {
+        this.failedSubscriptions.add(deviceId);
         this.log(`Could not subscribe to ${capability} on ${deviceId}:`, messageOf(error));
       }
     }
@@ -578,6 +629,8 @@ export class LightTargetAdapter {
 
   /** Drop every capability subscription for one target. */
   async unsubscribe(deviceId: string): Promise<void> {
+    this.desiredSubscriptions.delete(deviceId);
+    this.failedSubscriptions.delete(deviceId);
     this.targetGenerations.set(deviceId, (this.targetGenerations.get(deviceId) ?? 0) + 1);
     this.cancelPending(deviceId);
     this.handles.delete(deviceId);
@@ -610,10 +663,14 @@ export class LightTargetAdapter {
    */
   async unsubscribeAll(): Promise<void> {
     this.suspend();
+    await this.offReplacement?.();
+    this.offReplacement = undefined;
 
     for (const deviceId of [...this.subscriptions.keys()]) {
       await this.unsubscribe(deviceId);
     }
+    this.desiredSubscriptions.clear();
+    this.failedSubscriptions.clear();
     this.handles.clear();
     this.failureStreaks.clear();
     this.targetGenerations.clear();

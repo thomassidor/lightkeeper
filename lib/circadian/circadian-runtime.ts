@@ -1,3 +1,6 @@
+import { acceptedTargets } from '../outputs/test-outcome';
+import type { EvidenceSink } from '../support/evidence-sink';
+import { ControlHistory, type ControlAction, type OverrideRecord, type TargetDecision } from '../runtime/control-diagnostics';
 import type { LuminanceSource } from '../daylight/luminance-source';
 import { RuntimeLifetime, cleanupResources, startRuntime, SensorClaim } from '../runtime/runtime-resources';
 import type { HomeyApiService } from '../homey-api-service';
@@ -7,6 +10,7 @@ import { CommandScheduler, type WriteOutcome } from '../outputs/command-schedule
 import { LightTargetAdapter, type WriteRecord } from '../outputs/light-target-adapter';
 import { TargetResolver } from '../outputs/target-resolver';
 import {
+  validCapabilityValue,
   OVERRIDE_SETTLE_MS,
   OVERRIDE_TOLERANCE,
   TargetStateCache,
@@ -25,7 +29,7 @@ import { withDefaults, type Timers } from '../support/timers';
 // The Homey's own wall clock is not schedule-specific — it lives under
 // lib/schedules/ because that is where it was needed first. Importing it beats
 // a second copy of the Intl handling and its fallback.
-import { describeClock, localNow } from '../time/local-clock';
+import { describeClock, localNow, localNowResolved } from '../time/local-clock';
 import { nextPointAfter, resolvePoints, valueAt, type CurveValue } from './circadian-curve';
 import { formatMinutes, type CircadianPlan, type CircadianPoint } from './circadian-types';
 import { messageOf } from '../support/homey-errors';
@@ -57,6 +61,7 @@ import { VisibleState } from '../runtime/visible-state';
 export interface CircadianRuntimeDeps {
   /** @see WriteRecord — one app-wide log of every write by ANY runtime. */
   onWriteResult?: (entry: WriteRecord) => void;
+  onEvidence?: EvidenceSink;
   api: HomeyApiService;
   catalog: DeviceCatalog;
   /** The Homey's IANA timezone, or undefined to fall back to process-local. */
@@ -92,7 +97,7 @@ export interface CircadianRuntimeDeps {
   luminance?: LuminanceSource;
 }
 
-export interface CircadianAction {
+export interface CircadianAction extends ControlAction {
   at: number;
   reason: string;
   /**
@@ -208,7 +213,9 @@ const PRE_STAGE_DECLINES_BEFORE_SKIP = 3;
  * generates no Flows, so no API key is involved in anything it does (platform
  * §12).
  */
-export interface CircadianDiagnostics {
+export interface CircadianDiagnostics extends ReturnType<ControlHistory<CircadianAction>['snapshot']> {
+  sampledAt: number;
+  writeHistory: ReturnType<LightTargetAdapter['writeHistory']>;
   controllerId: string;
   /**
    * Which DEVICE TYPE this runtime belongs to.
@@ -267,6 +274,8 @@ export interface CircadianDiagnostics {
      * accident.
      */
     overridden: boolean;
+    override: OverrideRecord | null;
+    reported: ReturnType<TargetStateCache['reportedValues']>;
     /**
      * What we last sent this lamp, in DEVICE values, and when.
      *
@@ -312,7 +321,7 @@ export interface CircadianDiagnostics {
 export class CircadianRuntime {
   private readonly lifetime = new RuntimeLifetime();
   private readonly sensorClaim: SensorClaim;
-  private readonly cache = new TargetStateCache();
+  private readonly cache = new TargetStateCache(() => this.now());
   private readonly adapter: LightTargetAdapter;
   private readonly resolver: TargetResolver;
   private scheduler: CommandScheduler | null = null;
@@ -320,6 +329,8 @@ export class CircadianRuntime {
   private targetNames: string[] = [];
   private readonly visible: VisibleState;
   private lastAction: CircadianAction | null = null;
+  private readonly history = new ControlHistory<CircadianAction>((type, data) =>
+    this.deps.onEvidence?.(type, { controllerId: this.controllerId, action: data }));
 
   /**
    * Lights somebody has taken control of by hand, and when.
@@ -329,7 +340,7 @@ export class CircadianRuntime {
    * either edge of `onoff` — "switch it off and on again" is the gesture people
    * already have for putting a light back to how it ought to be.
    */
-  private readonly overrides = new Map<string, { at: number; value: number }>();
+  private readonly overrides = new Map<string, OverrideRecord>();
 
   /** What we last sent each light, in DEVICE values, and when. */
   private readonly lastWritten = new Map<string, { warmth?: number; brightness?: number; at: number }>();
@@ -387,8 +398,8 @@ export class CircadianRuntime {
     // injected clock was ignored. `visible` would fail the same way, silently.
     this.visible = new VisibleState((state, detail) => deps.onStateChange(state, detail));
     this.timers = withDefaults(deps);
-    this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log);
-    if (deps.onWriteResult) this.adapter.setWriteSink(deps.onWriteResult);
+    this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log, { now: () => this.now() });
+    if (deps.onWriteResult) this.adapter.setWriteSink(entry => deps.onWriteResult?.({ ...entry, controllerId: this.controllerId }));
     this.resolver = new TargetResolver(deps.catalog);
     this.sensorClaim = new SensorClaim(deps.luminance, controllerId);
   }
@@ -537,11 +548,21 @@ export class CircadianRuntime {
     value: unknown,
     external: boolean,
   ): void {
+    if (!validCapabilityValue(capability, value)) {
+      this.history.events.add({ at: this.now(), type: 'report_ignored', deviceId, capability, reason: 'invalid_value' });
+      return;
+    }
+    this.deps.onEvidence?.('target_report', { controllerId: this.controllerId, deviceId, capability, value, external });
     if (!external) return;
+
+    if (capability === 'onoff' && typeof value === 'boolean') {
+      this.history.events.add({ at: this.now(), type: 'power', deviceId, value });
+    }
 
     if (capability === 'onoff') {
       if (value === false) this.scheduler?.cancelTarget(deviceId);
       if (this.overrides.delete(deviceId)) {
+        this.history.events.add({ at: this.now(), type: 'override_cleared', deviceId, reason: 'power_changed' });
         this.deps.log(`${deviceId} was power-cycled; circadian control resumes`);
       }
 
@@ -575,6 +596,14 @@ export class CircadianRuntime {
       return;
     }
 
+    const ignored = capability === 'dim' && this.cache.state(deviceId).actualOn !== true
+      ? 'lamp_off' : this.cache.overrideSuppression(deviceId, capability);
+    if (ignored) {
+      this.history.events.add({ at: this.now(), type: 'report_ignored', deviceId, capability,
+        ...(typeof value === 'number' ? { value } : {}), reason: ignored });
+      return;
+    }
+
     if (capability === 'light_temperature') this.noteOverride(deviceId, 'warmth', value);
     if (capability === 'dim' && this.plan.adjustBrightness) this.noteOverride(deviceId, 'brightness', value);
     if (capability === 'light_hue') this.noteColorOverride(deviceId, value);
@@ -592,8 +621,8 @@ export class CircadianRuntime {
    * not subscribe to hue otherwise.
    */
   private noteColorOverride(deviceId: string, value: unknown): void {
-    const reported = Number(value);
-    if (!Number.isFinite(reported)) return;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) return;
+    const reported = value;
 
     const last = this.lastWritten.get(deviceId);
     // The settle window is shared with the temperature path: it is about how
@@ -609,17 +638,19 @@ export class CircadianRuntime {
 
     if (!this.overrides.has(deviceId)) {
       this.deps.log(
-        `${deviceId}'s colour was changed by hand (hue ${reported}); circadian will leave it `
+        `${deviceId}'s colour was changed externally (hue ${reported}); circadian will leave it `
         + 'alone until it is switched off and on again',
       );
     }
-    this.overrides.set(deviceId, { at: this.now(), value: reported });
+    const record: OverrideRecord = { at: this.now(), capability: 'light_hue', value: reported, expected: ours?.hue ?? null, source: 'external_report' };
+    this.overrides.set(deviceId, record);
+    this.history.events.add({ ...record, type: 'override', deviceId });
   }
 
   /** Somebody changed this light's colour or level by hand. Stand down for it. */
   private noteOverride(deviceId: string, field: 'warmth' | 'brightness', value: unknown): void {
-    const reported = Number(value);
-    if (!Number.isFinite(reported)) return;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) return;
+    const reported = value;
 
     const last = this.lastWritten.get(deviceId);
     if (last) {
@@ -632,16 +663,21 @@ export class CircadianRuntime {
 
     if (!this.overrides.has(deviceId)) {
       this.deps.log(
-        `${deviceId} was changed by hand (${field} ${reported}); circadian will leave it alone `
+        `${deviceId} was changed externally (${field} ${reported}); circadian will leave it alone `
         + 'until it is switched off and on again',
       );
     }
-    this.overrides.set(deviceId, { at: this.now(), value: reported });
+    const record: OverrideRecord = { at: this.now(), capability: field === 'warmth' ? 'light_temperature' : 'dim', value: reported, expected: last?.[field] ?? null, source: 'external_report' };
+    this.overrides.set(deviceId, record);
+    this.history.events.add({ ...record, type: 'override', deviceId });
   }
 
   /** Once a minute, from the manager's single shared timer. */
   async tick(): Promise<void> {
     await this.applyNow('tick');
+    // See `assessedInputs`: this is the only thing that can notice a lamp that
+    // has stopped accepting writes.
+    await this.reassessIfInputsMoved();
   }
 
   /**
@@ -660,8 +696,8 @@ export class CircadianRuntime {
   /** Where the curve is right now, in the Homey's own timezone. */
   currentValue(): CurveValue | null {
     if (this.plan.points.length === 0) return null;
-    const clock = localNow(this.deps.timezone(), this.now());
-    return valueAt(this.resolvedPoints(), clock.minutesOfDay);
+    const resolved = localNowResolved(this.deps.timezone(), this.now());
+    return resolved.resolved ? valueAt(this.resolvedPoints(), resolved.clock.minutesOfDay) : null;
   }
 
   /**
@@ -707,9 +743,24 @@ export class CircadianRuntime {
    * override check; it is for the moment a light comes on and for the pairing
    * screen's preview, where the user has explicitly asked for a change they can see.
    */
+  /**
+   * `waitForResults` is what a "try it now" needs and what a tick must never
+   * do: hold the call open until the queue has drained and every command in
+   * the batch has come back, so the count reported is lamps that ACCEPTED the
+   * write rather than commands that were planned.
+   *
+   * It is an explicit option rather than a sniff at `reason` — which is what
+   * it was first written as, `reason === 'preview'`. A reason string is for
+   * the log and for diagnostics; making the control flow depend on its exact
+   * spelling means any caller that logs a different word silently loses the
+   * wait, and any caller that happens to log 'preview' silently gains it.
+   * The second half is not hypothetical: `runtime-lifecycle-safety.test.ts`
+   * drove a power-off through a preview and deadlocked, because the wait was
+   * on and the test held the write's own device handle.
+   */
   async applyNow(
     reason: string,
-    options: { deviceIds?: string[]; force?: boolean } = {},
+    options: { deviceIds?: string[]; force?: boolean; waitForResults?: boolean } = {},
   ): Promise<{ writes: number; skipped: number }> {
     if (!this.plan.enabled) return this.noteNothingToDo(reason, 'the plan is switched off');
     if (this.plan.points.length === 0) return this.noteNothingToDo(reason, 'the curve has no points');
@@ -721,11 +772,13 @@ export class CircadianRuntime {
     if (candidates.length === 0) return this.noteNothingToDo(reason, 'no lights are selected');
 
     let skipped = 0;
+    const excluded = new Map<string, TargetDecision['status']>();
     const eligible: string[] = [];
     const lit: string[] = [];
 
     for (const deviceId of candidates) {
       if (!options.force && this.overrides.has(deviceId)) {
+        excluded.set(deviceId, 'overridden');
         skipped += 1;
         continue;
       }
@@ -736,6 +789,7 @@ export class CircadianRuntime {
       // A light that is off is only worth writing to when the user has opted into
       // pre-staging, and even then only its colour — see the brightness leg below.
       if (!isOn && !this.plan.preStage) {
+        excluded.set(deviceId, 'off');
         skipped += 1;
         continue;
       }
@@ -753,6 +807,7 @@ export class CircadianRuntime {
        * than one a minute all night.
        */
       if (!isOn && this.preStageRefused(deviceId)) {
+        excluded.set(deviceId, 'prestage_declined');
         skipped += 1;
         continue;
       }
@@ -769,6 +824,18 @@ export class CircadianRuntime {
       return this.noteNothingToDo(reason, 'the runtime is not started, so writes were dropped', skipped);
     }
 
+    const action: CircadianAction = {
+      at: this.now(), reason, writes: writes.length, skipped,
+      warmth: value.warmth,
+      ...(value.brightness !== undefined ? { brightness: value.brightness } : {}),
+      // Beside the warmth, never instead of it: the two describe the two legs of
+      // one pass, and which leg a given lamp took is `canColor` on that target.
+      ...(value.color !== undefined ? { color: value.color } : {}),
+      ...(value.colorLabelKeys !== undefined ? { colorLabelKeys: value.colorLabelKeys } : {}),
+      targets: this.history.decisions(candidates, excluded, writes),
+    };
+
+    let awaitedCompletion: Promise<WriteOutcome[]> | undefined;
     if (writes.length > 0) {
       /**
        * Which lights this batch is PRE-STAGING: off now, and being sent a
@@ -807,7 +874,9 @@ export class CircadianRuntime {
         if (preStaged.has(write.deviceId)) write.preStage = true;
       }
 
-      const { completion } = this.scheduler.submit(writes);
+      const { batchId, completion } = this.scheduler.submit(writes);
+      if (options.waitForResults === true) awaitedCompletion = completion;
+      action.batchId = batchId;
 
       /**
        * Bookkeeping moves behind the completion, and so does the probe.
@@ -823,6 +892,9 @@ export class CircadianRuntime {
        * the window could close before the lamp had even been asked.
        */
       fireAndForget(completion.then(outcomes => {
+        action.completedAt = this.now();
+        action.outcomes = outcomes;
+          this.deps.onEvidence?.('control_completion', { controllerId: this.controllerId, batchId: action.batchId, at: action.completedAt, outcomes });
         if (!current()) return;
         this.noteOutcomes(outcomes);
         for (const outcome of outcomes) {
@@ -853,19 +925,13 @@ export class CircadianRuntime {
       }), this.deps.log, 'Circadian write bookkeeping');
     }
 
-    this.lastAction = {
-      at: this.now(),
-      reason,
-      warmth: value.warmth,
-      ...(value.brightness !== undefined ? { brightness: value.brightness } : {}),
-      // Beside the warmth, never instead of it: the two describe the two legs of
-      // one pass, and which leg a given lamp took is `canColor` on that target.
-      ...(value.color !== undefined ? { color: value.color } : {}),
-      ...(value.colorLabelKeys !== undefined ? { colorLabelKeys: value.colorLabelKeys } : {}),
-      writes: writes.length,
-      skipped,
-    };
+    this.lastAction = action;
+    this.history.actions.add(action);
 
+    if (awaitedCompletion) {
+      await this.scheduler.drain();
+      return { writes: acceptedTargets(await awaitedCompletion), skipped };
+    }
     return { writes: writes.length, skipped };
   }
 
@@ -882,7 +948,10 @@ export class CircadianRuntime {
     detail: string,
     skipped = 0,
   ): { writes: number; skipped: number } {
-    this.lastAction = { at: this.now(), reason, detail, writes: 0, skipped };
+    this.lastAction = { at: this.now(), reason, detail, writes: 0, skipped,
+      targets: this.targetIds.map(deviceId => ({ deviceId, status: 'inactive', commands: 0 })),
+    };
+    this.history.actions.add(this.lastAction);
     return { writes: 0, skipped };
   }
 
@@ -1092,7 +1161,15 @@ export class CircadianRuntime {
         // Saturation is written in the same batch, so recording it from the hue
         // outcome would be recording a value that has not landed yet. The pair
         // is recorded from the PLAN instead — see noteColorWritten.
-        this.noteColorWritten(outcome.deviceId);
+        const saturation = outcomes.find(candidate => candidate.deviceId === outcome.deviceId
+          && candidate.capability === 'light_saturation');
+        if (saturation?.status === 'succeeded') {
+          this.lastColorWritten.set(outcome.deviceId, {
+            hue: outcome.value as number, saturation: saturation.value as number,
+          });
+        } else {
+          this.lastColorWritten.delete(outcome.deviceId);
+        }
         /**
          * And the mirror of the voiding above: a colour write takes the lamp OUT
          * of temperature mode, so whatever temperature we last recorded is no
@@ -1149,12 +1226,6 @@ export class CircadianRuntime {
     };
   }
 
-  private noteColorWritten(deviceId: string): void {
-    const planned = this.pendingColor.get(deviceId);
-    if (!planned) return;
-    this.lastColorWritten.set(deviceId, planned);
-    this.pendingColor.delete(deviceId);
-  }
 
   /**
    * The mirror of the adapter's `verifyCameOn`: did a colour write to an off lamp
@@ -1366,13 +1437,58 @@ export class CircadianRuntime {
   }
 
   /**
+   * The health inputs as of the last assessment, so a tick can tell whether
+   * anything a verdict depends on has actually moved.
+   *
+   * `assessHealth()` used to run at start and on a target-set change and
+   * NOWHERE else — `refreshTargets()` returns early on an unchanged
+   * fingerprint, and `tick()` never asked. So the write-failure streak in
+   * `light-target-adapter.ts`, whose whole stated purpose is that a runtime
+   * must not "go on writing to that lamp every minute for ever behind a green
+   * tile", did exactly that: a lamp cut at the wall stays `available: true`
+   * (platform §6), the target fingerprint never moves, and
+   * `unwritableTargets()` was consulted once, at start, when it was empty.
+   *
+   * Re-asking is cheap and is NOT the round trip §12 forbids on a tick:
+   * `assessTargets` reads the in-memory catalogue, and the rest is this
+   * runtime's own state.
+   */
+  private assessedInputs: string | null = null;
+
+  /** What a verdict is computed FROM. Compared, never shown. */
+  private healthInputs(): string {
+    return [...this.adapter.unwritableTargets()].sort().join(',');
+  }
+
+  /**
+   * Re-assess only when something a verdict depends on has changed.
+   *
+   * Guarded rather than unconditional because `assessHealth()` awaits
+   * `retrySubscriptions()`, and a runtime whose lamps are all fine has no
+   * reason to retry anything once a minute for ever.
+   */
+  private async reassessIfInputsMoved(): Promise<void> {
+    if (this.healthInputs() === this.assessedInputs) return;
+    await this.assessHealth();
+  }
+
+  /**
    * Targets present, and at least one of them able to change colour — in that
    * order of severity. There is no credential leg: this device type writes no
    * Flows, so a dead API key cannot affect it.
    */
   async assessHealth(): Promise<void> {
+    await this.adapter.retrySubscriptions();
+    // Recorded AFTER the retry, so what is remembered is what was assessed:
+    // a retry that fixed a subscription changes the inputs it is compared to.
+    this.assessedInputs = this.healthInputs();
     if (!this.plan.enabled) {
       this.setState('disabled');
+      return;
+    }
+
+    if (!localNowResolved(this.deps.timezone(), this.now()).resolved) {
+      this.setState('needs_repair', { key: 'state.noTimezone' });
       return;
     }
 
@@ -1445,7 +1561,9 @@ export class CircadianRuntime {
           cache: this.cache,
         });
         if (!current()) return;
-        this.overrides.delete(deviceId);
+        if (this.overrides.delete(deviceId)) {
+          this.history.events.add({ at: this.now(), type: 'override_cleared', deviceId, reason: 'target_removed' });
+        }
         this.lastWritten.delete(deviceId);
         // Same reason as in stop(): a light that leaves and later rejoins the plan
         // must not be gated against what we wrote to it while it was ours.
@@ -1490,6 +1608,9 @@ export class CircadianRuntime {
         () => this.sensorClaim.release(),
       ], this.deps.log);
       this.cache.clear();
+      for (const deviceId of this.overrides.keys()) {
+        this.history.events.add({ at: this.now(), type: 'override_cleared', deviceId, reason: 'runtime_stopped' });
+      }
       this.overrides.clear();
       this.lastWritten.clear();
       // The colour side of the same bookkeeping, and it used to be left standing
@@ -1530,6 +1651,9 @@ export class CircadianRuntime {
     const next = nextPointAfter(this.plan.points, clock.minutesOfDay);
 
     return {
+      sampledAt: this.now(),
+      writeHistory: this.adapter.writeHistory(),
+      ...this.history.snapshot(),
       controllerId: this.controllerId,
       kind: this.deps.kind ?? 'curve',
       // How many times the VISIBLE state has moved. A device stuck on a
@@ -1572,6 +1696,8 @@ export class CircadianRuntime {
         // colour/temperature split itself tests — see planWrites.
         canColor: this.cache.supports(id, 'light_hue'),
         overridden: this.overrides.has(id),
+        override: this.overrides.get(id) ?? null,
+        reported: this.cache.reportedValues(id),
         lastWritten: this.lastWrittenFor(id),
         ...(this.preStageDeclines.has(id)
           ? { preStageDeclined: this.preStageDeclines.get(id)! }

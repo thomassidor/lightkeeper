@@ -87,6 +87,15 @@ function harness(options: {
   verdict?: Partial<DaylightVerdict>;
   reading?: { lux: number; deviceIds: string[] } | null;
 } = {}) {
+  /**
+   * Which lamps refuse every write, settable after start.
+   *
+   * A lamp cut at the wall is the case this exists for: on a real Homey it
+   * stays `available: true` (platform §6) and only the write failures say
+   * anything is wrong. Settable rather than a constructor option because the
+   * finding is about a lamp that goes wrong AFTER a healthy start.
+   */
+  const refusing = new Set<string>();
   const devices = options.devices ?? [light('l1'), light('l2')];
   const writes: Array<{ deviceId: string; capability: string; value: unknown }> = [];
   const states: Array<{ state: string; detail?: unknown }> = [];
@@ -120,6 +129,7 @@ function harness(options: {
     return {
       ...device,
       async setCapabilityValue({ capabilityId, value }: { capabilityId: string; value: unknown }) {
+        if (refusing.has(id)) throw new Error(`${id} did not respond`);
         writes.push({ deviceId: id, capability: capabilityId, value });
         // The Homey reports back what it was told, which is what makes the echo
         // dedupe and the override tolerance worth testing at all.
@@ -160,6 +170,9 @@ function harness(options: {
   return {
     runtime, writes, states, logs, retained, released, devices,
     setVerdict(next: Partial<DaylightVerdict>) { verdict = { ...verdict, ...next }; },
+    /** A lamp switched off at the wall: still `available`, accepts nothing. */
+    refuseWrites(id: string) { refusing.add(id); },
+    acceptWrites(id: string) { refusing.delete(id); },
     advance(ms: number) { now += ms; },
     /** Fire a capability change the way Homey's own event dispatch would. */
     report(id: string, capability: string, value: unknown) {
@@ -444,6 +457,36 @@ describe('DaylightRuntime - the slew limit', () => {
     assert.ok(Math.abs(landed - 0.42) < 0.03, `stalled at ${landed} instead of reaching 0.42`);
   });
 
+  test('a lamp reporting a null level is not darkened on the first tick', async () => {
+    // The trap CLAUDE.md records for lux, one axis over: `Number(null)` is 0,
+    // and 0 is pitch dark. `liveValuesOf()` used to cast a snapshot's `dim`
+    // straight to `number | undefined`, so a `null` — an integration that has
+    // not reported yet, or one whose sensor battery went flat — arrived typed
+    // as a reading. `aimFor` tests `=== undefined` to mean "the lamp never told
+    // us", `null` is not undefined, so the aim seeded from a perceptual ZERO
+    // and the first tick wrote `dim 0.01` to a lamp that was already lit before
+    // fading it back up at 0.05 a tick.
+    const unreported = light('l1', ['onoff', 'dim']);
+    unreported.capabilitiesObj.dim.value = null;
+    const h = harness({ devices: [unreported], verdict: { brightness: 0.6 } });
+
+    await h.runtime.start();
+    await tick(h);
+
+    const first = h.dimWrites()[0];
+    assert.ok(first !== undefined, 'the lamp was never written to at all');
+    // Unknown means unknown: with nothing to slew FROM, the aim is the target,
+    // which is what `aimFor` already does for a genuinely absent level.
+    assert.ok(
+      Math.abs(toPerceptual(first.value as number) - 0.6) < 0.02,
+      `first write was ${first.value} (perceptual ${toPerceptual(first.value as number)}), not the target`,
+    );
+    // The failure this pins: nothing near the floor, ever.
+    for (const write of h.dimWrites()) {
+      assert.ok((write.value as number) > 0.02, `wrote ${write.value} to a lit lamp`);
+    }
+  });
+
   test('and it converges from the bottom of the axis, where quantisation bites', async () => {
     // decimals: 1 is the cruel case - dim moves in tenths, so a 0.05 perceptual
     // step near the floor is invisible to the lamp entirely.
@@ -650,6 +693,108 @@ describe('DaylightRuntime - health', () => {
   });
 });
 
+/**
+ * A lamp that has stopped accepting writes reaches the TILE.
+ *
+ * `light-target-adapter.ts` says the failure streak exists so that a runtime
+ * does not "go on writing to that lamp every minute for ever behind a green
+ * tile" — and it did exactly that, because `assessHealth()` ran at start and
+ * on a target-set change and nowhere else. A lamp cut at the wall stays
+ * `available: true` (platform §6), so the target fingerprint never moves,
+ * `refreshTargets()` returns early, and `unwritableTargets()` was consulted
+ * once: at start, when it was empty.
+ */
+describe('DaylightRuntime - a lamp that stops responding', () => {
+  test('a write-failure streak moves the state off ready', async () => {
+    const h = harness();
+    await h.runtime.start();
+    assert.equal(h.runtime.currentState, 'ready');
+
+    // Cut at the wall. Nothing about the catalogue changes; only writes fail.
+    h.refuseWrites('l1');
+
+    // Three failures and five minutes are what the adapter calls unwritable.
+    for (let i = 0; i < 4; i += 1) {
+      h.setVerdict({ brightness: 0.2 + i * 0.15 });
+      h.advance(2 * 60_000);
+      await tick(h);
+    }
+
+    assert.notEqual(
+      h.runtime.currentState, 'ready',
+      'the lamp took four failed writes and the tile stayed green',
+    );
+    assert.equal(h.runtime.currentState, 'partial', 'one of two lamps is gone');
+  });
+
+  test('and it goes back to ready when the lamp comes back', async () => {
+    const h = harness();
+    await h.runtime.start();
+    h.refuseWrites('l1');
+    for (let i = 0; i < 4; i += 1) {
+      h.setVerdict({ brightness: 0.2 + i * 0.15 });
+      h.advance(2 * 60_000);
+      await tick(h);
+    }
+    assert.equal(h.runtime.currentState, 'partial');
+
+    h.acceptWrites('l1');
+    h.setVerdict({ brightness: 0.5 });
+    h.advance(2 * 60_000);
+    await tick(h);
+
+    // Still partial, and correctly so: a write's outcome is recorded BEHIND
+    // the batch's completion promise (see `noteOutcomes`), which resolves
+    // after `tick()` has already re-assessed. So the streak clears a moment
+    // after the verdict is computed and the recovery shows on the NEXT pass.
+    // A minute's lag on good news, and the alternative — holding every tick
+    // open until its writes come back — is what `waitForResults` exists to
+    // keep out of the tick path.
+    assert.equal(h.runtime.currentState, 'partial');
+
+    h.setVerdict({ brightness: 0.55 });
+    h.advance(2 * 60_000);
+    await tick(h);
+
+    assert.equal(h.runtime.currentState, 'ready', 'a recovered lamp must clear the verdict');
+  });
+
+  test('the "no daylight source" verdict clears by itself when a source appears', async () => {
+    // The other half of this device type's own verdict, and the one nothing
+    // else would ever re-ask. A Homey that was never told where it is, or a
+    // sensor with a flat battery, is `source: 'none'` — and the fix happens
+    // OUTSIDE the app: the household sets the location, or changes a battery.
+    // No target changes when they do, so before this the device sat in repair
+    // until the app was restarted.
+    const h = harness({ verdict: { source: 'none' } });
+    await h.runtime.start();
+    assert.equal(h.runtime.currentState, 'needs_repair');
+    assert.deepEqual(h.runtime.currentDetail?.key, 'state.noDaylightSource');
+
+    h.setVerdict({ source: 'sky' });
+    h.advance(60_000);
+    await tick(h);
+
+    assert.equal(h.runtime.currentState, 'ready');
+  });
+
+  test('a healthy runtime does not re-assess on every tick', async () => {
+    // The guard, and why it is there: `assessHealth()` awaits
+    // `retrySubscriptions()`, so an unconditional re-assess would retry every
+    // subscription once a minute for as long as the app runs.
+    const h = harness();
+    await h.runtime.start();
+    const at = h.runtime.diagnostics().stateRevision;
+
+    for (let i = 0; i < 3; i += 1) {
+      h.advance(60_000);
+      await tick(h);
+    }
+
+    assert.equal(h.runtime.diagnostics().stateRevision, at, 'the state churned on a quiet room');
+  });
+});
+
 describe('DaylightRuntime - targets coming and going', () => {
   test('a light that leaves the plan gets ZERO writes when switched on', async () => {
     // The acceptance bar. It keeps its capability subscription otherwise, and
@@ -751,5 +896,70 @@ describe('DaylightRuntime - the shared sensor service', () => {
     const other = harness({ plan: plan({ sensors: ['s-elsewhere'] }) });
     await other.runtime.start();
     assert.deepEqual(other.runtime.diagnostics().sensors, []);
+  });
+});
+
+
+describe('diagnostics and power restoration regressions', () => {
+  test('all six targets have decisions, including the unchanged lamp', async () => {
+    const h = harness({ devices: Array.from({ length: 6 }, (_, i) => light('l' + i, undefined, { dim: 0.03 })), verdict: { brightness: 0.2 } });
+    await h.runtime.start();
+    await sharedSettle(12);
+    h.advance(10_000);
+    for (let i = 0; i < 5; i++) h.report('l' + i, 'dim', 0.8);
+    await h.runtime.tick();
+    const d = h.runtime.diagnostics();
+    assert.equal(d.lastAction?.writes, 0);
+    assert.equal(d.lastAction?.skipped, 5);
+    assert.deepEqual(d.lastAction?.targets?.map(t => t.status), [
+      'overridden', 'overridden', 'overridden', 'overridden', 'overridden', 'unchanged',
+    ]);
+    assert.equal(d.targets[0].override?.value, 0.8);
+    assert.equal(d.targets[0].override?.expected, 0.03);
+    assert.equal(d.targets[0].override?.capability, 'dim');
+    assert.equal(d.recentControlEvents.filter(e => e.type === 'override').length, 5);
+    await h.runtime.stop();
+  });
+
+  test('power-on restoration does not pause control before the first write lands', async () => {
+    const h = harness({ devices: [light('l1', undefined, { onoff: false })] });
+    await h.runtime.start();
+    h.advance(10_000);
+    h.report('l1', 'dim', 0.1);
+    assert.equal(h.runtime.diagnostics().targets[0].overridden, false);
+    h.report('l1', 'onoff', true);
+    h.report('l1', 'dim', 0.9);
+    assert.equal(h.runtime.diagnostics().targets[0].overridden, false);
+    await sharedSettle(12);
+    h.advance(10_000);
+    h.report('l1', 'dim', 0.7);
+    assert.equal(h.runtime.diagnostics().targets[0].overridden, true);
+    h.report('l1', 'onoff', false);
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].override, null);
+    assert.ok(d.recentControlEvents.some(e => e.type === 'override_cleared' && e.reason === 'power_changed'));
+    await h.runtime.stop();
+  });
+
+  test('history links sensor input and command results to their original action', async () => {
+    const h = harness({ plan: plan({ sensors: ['s1'], dark: 0.25, bright: 0.7 }) });
+    await h.runtime.start();
+    await sharedSettle(12);
+    const first = h.runtime.diagnostics().recentActions[0];
+    assert.ok(first.batchId);
+    assert.ok(first.completedAt);
+    assert.ok(first.outcomes?.every(o => o.status === 'succeeded'));
+    assert.equal(first.sensors?.[0].lux, 42);
+    h.advance(60_000);
+    h.setVerdict({ brightness: 0.9 });
+    await h.runtime.tick();
+    await sharedSettle(12);
+    const d = h.runtime.diagnostics();
+    assert.equal(d.feedbackRisk, 'increasing_sensor_response');
+    assert.equal(d.recentActions[1].brightness, 0.5);
+    assert.equal(d.recentActions[0].brightness, 0.9);
+    assert.notEqual(d.recentActions[0].batchId, first.batchId);
+    assert.equal(d.sampledAt, d.lastAction?.at);
+    await h.runtime.stop();
   });
 });

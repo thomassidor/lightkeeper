@@ -88,6 +88,8 @@ function harness(options: {
   daylight?: { evaluate: () => { brightness: number; source: string } };
 } = {}) {
   const devices = options.devices ?? [light('l1'), light('l2')];
+  /** Lamps refusing every write, settable after start. See setCapabilityValue. */
+  const refusing = new Set<string>();
   const writes: Array<{ deviceId: string; capability: string; value: unknown }> = [];
   /** Every write ATTEMPTED, refused or not. See setCapabilityValue below. */
   const attempts: Array<{ deviceId: string; capability: string; value: unknown }> = [];
@@ -108,6 +110,10 @@ function harness(options: {
         // invisible in `writes` by construction, which is exactly what a test
         // counting how often we retry a refusing lamp has to see.
         attempts.push({ deviceId: id, capability: capabilityId, value });
+        // A lamp cut at the wall: still `available` (platform §6), accepts
+        // nothing. Switchable AFTER start, because the finding this exists for
+        // is a lamp that goes wrong on a runtime that started healthy.
+        if (refusing.has(id)) throw new Error(`${id} did not respond`);
         if (options.refuseWrite?.capability === capabilityId
           && (options.refuseWrite.when?.(device) ?? true)) {
           throw new Error(options.refuseWrite.message);
@@ -193,6 +199,8 @@ function harness(options: {
       for (const timer of pending) timer.fn();
     },
     advance(ms: number) { now += ms; },
+    refuseWrites(id: string) { refusing.add(id); },
+    acceptWrites(id: string) { refusing.delete(id); },
     at(ms: number) { now = ms; },
     /**
      * Writes now go out behind the scheduler's completion promise (Phase 2),
@@ -870,6 +878,57 @@ describe('health', () => {
     assert.equal((h.states.at(-1)?.detail as any)?.key, 'state.noWarmthTargets');
   });
 
+  /**
+   * A lamp that has stopped accepting writes reaches the TILE.
+   *
+   * `light-target-adapter.ts` says the failure streak exists so that a runtime
+   * does not "go on writing to that lamp every minute for ever behind a green
+   * tile" — and it did exactly that, because `assessHealth()` ran at start and
+   * on a target-set change and nowhere else. A lamp cut at the wall stays
+   * `available: true` (platform §6), so the target fingerprint never moves and
+   * `unwritableTargets()` was consulted once: at start, when it was empty.
+   */
+  test('a write-failure streak moves the state off ready', async () => {
+    const h = harness({ now: MORNING });
+    await h.runtime.start();
+    await settle();
+    assert.equal(h.runtime.currentState, 'ready');
+
+    h.refuseWrites('l1');
+    // Three failures and five minutes are what the adapter calls unwritable;
+    // the two-hour steps are so the curve has genuinely moved each time and a
+    // write is actually planned. `applied()` is what dispatches them.
+    for (let i = 0; i < 4; i += 1) {
+      h.advance(2 * 60 * 60_000);
+      await h.runtime.tick();
+      await applied(h);
+    }
+
+    assert.notEqual(
+      h.runtime.currentState, 'ready',
+      'the lamp took four failed writes and the tile stayed green',
+    );
+    assert.equal(h.runtime.currentState, 'partial', 'one of two lamps is gone');
+  });
+
+  test('and a healthy runtime does not churn its state once a minute', async () => {
+    // The guard: `assessHealth()` awaits `retrySubscriptions()`, so an
+    // unconditional re-assess would retry every subscription every minute for
+    // as long as the app runs.
+    const h = harness({ now: MORNING });
+    await h.runtime.start();
+    await settle();
+    const at = h.runtime.diagnostics().stateRevision;
+
+    for (let i = 0; i < 3; i += 1) {
+      h.advance(60_000);
+      await h.runtime.tick();
+      await settle();
+    }
+
+    assert.equal(h.runtime.diagnostics().stateRevision, at, 'the state churned on a quiet room');
+  });
+
   test('there is never a credential verdict, because no key is involved', async () => {
     const h = harness();
     await h.runtime.start();
@@ -1324,4 +1383,25 @@ describe('a curve point whose brightness follows the daylight', () => {
     // should have followed the room" needs both numbers to tell apart.
     assert.deepEqual(points.map(p => p.brightness), [0.5, 0.5]);
   });
+});
+
+
+test('circadian power restoration cannot create an override before its write completes', async () => {
+  const h = harness({ devices: [light('l1', undefined, { onoff: false })] });
+  await h.runtime.start();
+  h.advance(10_000);
+  h.report('l1', 'onoff', true);
+  h.report('l1', 'light_temperature', 0.8);
+  assert.equal(h.runtime.diagnostics().targets[0].overridden, false);
+  assert.ok(h.runtime.diagnostics().recentControlEvents.some(e => e.reason === 'power_settling'));
+  await applied(h);
+  h.advance(10_000);
+  for (const value of [null, '', '0.9', NaN, -1]) h.report('l1', 'light_temperature', value);
+  assert.equal(h.runtime.diagnostics().targets[0].overridden, false);
+  h.report('l1', 'light_temperature', 0.5);
+  assert.equal(h.runtime.diagnostics().targets[0].override?.capability, 'light_temperature');
+  const action = h.runtime.diagnostics().recentActions.find(a => a.batchId);
+  assert.ok(action?.completedAt);
+  assert.ok(action.outcomes?.length);
+  await h.runtime.stop();
 });

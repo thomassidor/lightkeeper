@@ -51,6 +51,8 @@ export class TargetResolver {
       devices.push(...await this.catalog.lightsInZone(spec.zoneId, spec.includeSubzones));
     }
 
+    if (devices.length > 256) throw new Error('A Lightkeeper device supports at most 256 lights. Choose a smaller room or individual lights.');
+
     const summary = { onoff: 0, dim: 0, light_temperature: 0, total: devices.length };
     for (const device of devices) {
       for (const capability of ['onoff', 'dim', 'light_temperature'] as const) {

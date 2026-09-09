@@ -1,3 +1,4 @@
+import { DIAGNOSTIC_SEMANTICS } from './lib/runtime/control-diagnostics';
 /**
  * App Web API consumed by settings/index.html. Route names must match the
  * "api" block in .homeycompose/app.json.
@@ -330,10 +331,36 @@ module.exports = {
    * key material. It DOES carry device and zone names by design — a controller
    * quietly pointed at the wrong room looks identical to a broken one.
    */
+  async getEvidence({ homey }: any) {
+    const recorder = appOf(homey).evidence;
+    await recorder.flush();
+    return recorder.status();
+  },
+
+  async noteEvidence({ homey, body }: any) {
+    const recorder = appOf(homey).evidence;
+    const status = recorder.status();
+    if (status.state !== 'recording' || Date.now() >= (status.endsAt ?? 0)) throw new Error('No active recording.');
+    if (typeof body?.text !== 'string' || !body.text.trim() || body.text.length > 1000) throw new Error('Enter an observation of at most 1000 characters.');
+    recorder.record('observation', { text: body.text.trim() });
+    await recorder.flush();
+    return recorder.status();
+  },
+
+  async startEvidence({ homey }: any) { return appOf(homey).startEvidence(); },
+  async stopEvidence({ homey }: any) { return appOf(homey).evidence.stop(); },
+  async clearEvidence({ homey, params }: any) { return appOf(homey).evidence.clear(String(params.id)); },
+  async readEvidence({ homey, params }: any) {
+    return appOf(homey).evidence.read(String(params.id), Number(params.offset), Number(params.end));
+  },
+
   async getDiagnostics({ homey }: any): Promise<DiagnosticsResponse> {
     const app = appOf(homey);
     return {
       generatedAt: Date.now(),
+      evidence: app.evidence?.status() ?? null,
+      semantics: DIAGNOSTIC_SEMANTICS,
+      eventHistory: app.recentEvents.retention(),
       app: { id: homey.manifest.id, version: homey.manifest.version },
       credential: app.credentials.getStatus(),
       // Most recent first — the fastest way to tell a Flow that never fired
@@ -409,7 +436,7 @@ module.exports = {
       throw new Error(`no circadian, Curve or Daylight light with id "${id}" is running`);
     }
 
-    const outcome = await runtime.applyNow('preview', { force: true });
+    const outcome = await runtime.applyNow('preview', { force: true, waitForResults: true });
     await runtime.drain();
     return outcome;
   },

@@ -10,6 +10,7 @@ function daylightCard() {
      * reads as nothing at all, and the screen would ship showing a raw key.
      */
     var KEYS = {
+      feedbackRisk: 'daylight.feedbackRisk',
       nowSky: 'daylight.nowSky',
       nowSkyValue: 'daylight.nowSkyValue',
       nowSkyUnknown: 'daylight.nowSkyUnknown',
@@ -241,6 +242,17 @@ function daylightCard() {
       });
     }
 
+    var feedbackNotice = node('p', 'dl-help');
+    feedbackNotice.setAttribute('role', 'status');
+    el.bright.closest('.dl-field').appendChild(feedbackNotice);
+
+    function renderFeedback() {
+      var increasing = (model.response.sensors || []).length > 0
+        && Number(el.bright.value) > Number(el.dark.value);
+      feedbackNotice.hidden = !increasing;
+      feedbackNotice.textContent = increasing ? t('feedbackRisk') : '';
+    }
+
     function renderControls() {
       el.darkLux.value = String(model.response.darkLux);
       el.brightLux.value = String(model.response.brightLux);
@@ -249,6 +261,7 @@ function daylightCard() {
       el.darkValue.textContent = t('percent', { value: String(percentOf(model.response.dark)) });
       el.brightValue.textContent = t('percent', { value: String(percentOf(model.response.bright)) });
       el.previewCard.hidden = !model.standalone;
+      renderFeedback();
     }
 
     function render() {
@@ -322,9 +335,11 @@ function daylightCard() {
     });
 
     el.dark.addEventListener('input', function () {
+      renderFeedback();
       el.darkValue.textContent = t('percent', { value: String(el.dark.value) });
     });
     el.bright.addEventListener('input', function () {
+      renderFeedback();
       el.brightValue.textContent = t('percent', { value: String(el.bright.value) });
     });
 

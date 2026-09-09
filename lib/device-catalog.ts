@@ -93,7 +93,6 @@ export class DeviceCatalog {
 
   /** Zone and device changes invalidate the cache (zone re-resolution). */
   async watch(onChange: () => void): Promise<void> {
-    const client = await this.api.read();
     const invalidate = () => {
       this.generation += 1;
       this.devices = null;
@@ -105,18 +104,32 @@ export class DeviceCatalog {
       onChange();
     };
 
-    for (const [manager, events] of [
-      [client.devices, ['device.create', 'device.delete', 'device.update']],
-      [client.zones, ['zone.create', 'zone.delete', 'zone.update']],
-    ] as const) {
-      for (const event of events) {
-        if (typeof manager?.on !== 'function') continue;
-        manager.on(event, invalidate);
-        this.api.track(() => {
-          if (typeof manager.off === 'function') manager.off(event, invalidate);
-        });
+    let detach: Array<() => void> = [];
+    const bind = async () => {
+      const client = await this.api.read();
+      for (const off of detach) off();
+      detach = [];
+      for (const [manager, events] of [
+        [client.devices, ['device.create', 'device.delete', 'device.update']],
+        [client.zones, ['zone.create', 'zone.delete', 'zone.update']],
+      ] as const) {
+        for (const event of events) {
+          if (typeof manager?.on !== 'function') continue;
+          manager.on(event, invalidate);
+          detach.push(() => manager.off?.(event, invalidate));
+        }
       }
-    }
+    };
+    await bind();
+    const offReplacement = this.api.onReadReplacement?.(() => {
+      invalidate();
+      void bind().catch(() => { /* Next recovery retries binding. */ });
+    });
+    this.api.track(async () => {
+      await offReplacement?.();
+      for (const off of detach) off();
+      detach = [];
+    });
   }
 
   async allDevices(): Promise<CatalogDevice[]> {
@@ -183,7 +196,8 @@ export class DeviceCatalog {
    */
   async lightsInZone(zoneId: string, includeSubzones: boolean): Promise<CatalogDevice[]> {
     const inZone = await this.devicesInZone(zoneId, includeSubzones);
-    return inZone.filter(d => d.capabilities.includes('onoff') && !this.isOwnDevice(d));
+    return inZone.filter(d => DeviceCatalog.isLightClass(d)
+      && d.capabilities.includes('onoff') && !this.isOwnDevice(d));
   }
 
   /**

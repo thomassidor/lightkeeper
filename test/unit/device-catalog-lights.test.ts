@@ -90,7 +90,7 @@ describe('what counts as a light', () => {
     const ids = await targetDeviceIds(catalogue(), {
       kind: 'zone', zoneId: 'living', includeSubzones: false,
     });
-    assert.deepEqual([...ids].sort(), ['bulb', 'lampPlug', 'plug']);
+    assert.deepEqual([...ids].sort(), ['bulb', 'lampPlug']);
   });
 
   test('a plan saved before the fix stops driving them too', async () => {
