@@ -107,3 +107,64 @@ describe('app.json is generated from .homeycompose/', () => {
     }
   });
 });
+
+/**
+ * Every route the manifest declares is a function `api.ts` actually exports.
+ *
+ * The manifest's `api` block is a NAME MAP: Homey routes `GET /evidence` to
+ * whatever `module.exports.getEvidence` happens to be, and a name that matches
+ * nothing produces no build error, no validate error and no test failure —
+ * only a 404 at the moment somebody presses a button in the settings page.
+ * The reverse is just as quiet: an exported handler with no manifest entry is
+ * unreachable and looks, from the code, exactly like a working feature.
+ *
+ * Nothing checked this until the recorder added six routes at once, which is
+ * six chances to typo a name that only a Homey would ever tell you about.
+ *
+ * Read as SOURCE rather than imported: `api.ts` imports the app contract and
+ * the whole `lib/` tree behind it, and this file is about names.
+ */
+describe('the app API surface', () => {
+  const source = readFileSync(join(ROOT, 'api.ts'), 'utf8');
+
+  /** `  async name(` or `  name(` at the top level of `module.exports = {`. */
+  const exported = new Set(
+    [...source.matchAll(/^ {2}(?:async )?([a-zA-Z][a-zA-Z0-9_]*)\s*\(/gm)].map(m => m[1]!),
+  );
+
+  const routes = () => {
+    const composed = readJson('.homeycompose', 'app.json') as { api?: Record<string, unknown> };
+    return Object.keys(composed.api ?? {});
+  };
+
+  test('the api block is not empty, or this whole test is vacuous', () => {
+    assert.ok(routes().length > 10, `only ${routes().length} routes found`);
+    assert.ok(exported.size > 10, `only ${exported.size} handlers parsed out of api.ts`);
+  });
+
+  test('every declared route names a handler api.ts exports', () => {
+    const missing = routes().filter(name => !exported.has(name));
+    assert.deepEqual(
+      missing, [],
+      'declared in .homeycompose/app.json\'s "api" block but not exported by api.ts — '
+      + 'these are a 404 at the moment a user presses the button',
+    );
+  });
+
+  test('and app.json carries the same block, since it is generated', () => {
+    const generated = (manifest.api ?? {}) as Record<string, unknown>;
+    const composed = (readJson('.homeycompose', 'app.json').api ?? {}) as Record<string, unknown>;
+    assert.deepEqual(generated, composed, 'run `npm run validate` and commit app.json');
+  });
+
+  test('every route declares a method and a path', () => {
+    const composed = (readJson('.homeycompose', 'app.json').api ?? {}) as Record<string, any>;
+    for (const [name, route] of Object.entries(composed)) {
+      assert.ok(
+        ['GET', 'POST', 'PUT', 'DELETE'].includes(String(route?.method)),
+        `route "${name}" has method "${route?.method}"`,
+      );
+      assert.ok(String(route?.path ?? '').startsWith('/'), `route "${name}" has path "${route?.path}"`);
+    }
+  });
+});

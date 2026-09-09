@@ -153,6 +153,16 @@ export class EvidenceRecorder {
     return this.flushing;
   }
 
+  /**
+   * Write whatever is buffered, and save the manifest only when it MOVED.
+   *
+   * The idle path used to save unconditionally on every pass. The flush timer
+   * is 15 seconds, so a recording week in a quiet house cost about 40,000
+   * `homey.settings.set` calls that wrote the same object back — and the loop
+   * exists to survive a week, so the no-op case is the common one. Every
+   * branch that changes `bytes`, `records`, `state` or `dropped` saves for
+   * itself; there is nothing left for a trailing save to catch.
+   */
   private async flushLocked(): Promise<void> {
     const m = this.manifest;
     if (!m || m.state === 'error') return;
@@ -183,7 +193,6 @@ export class EvidenceRecorder {
         this.save();
       }
       if (m.state === 'recording' && this.now() >= m.endsAt) { m.state = 'complete'; this.save(); }
-      else if (m.state === 'recording') this.save();
     } catch (error) { this.fail(error); }
   }
 
@@ -208,6 +217,19 @@ export class EvidenceRecorder {
 
   async close(): Promise<void> {
     this.record('app_shutdown', {});
+    /**
+     * The in-flight flush FIRST, then a flush of our own.
+     *
+     * `flush()` coalesces: while one pass is running it hands back that same
+     * promise rather than starting a second. So a shutdown that landed during
+     * the 15-second timer's flush was told "already flushing", awaited a pass
+     * that had taken its snapshot before `app_shutdown` was buffered, and
+     * returned having written everything except the record it was called for.
+     * `app_shutdown` is half of the pair T99 checks — it is what proves a
+     * restart resumed the same run rather than starting a new one — so losing
+     * it costs the evidence its boot boundary.
+     */
+    await this.flushing?.catch(() => { /* its own failure is already in the manifest */ });
     await this.flush(); // Keep the active deadline so a restart resumes this run.
   }
 

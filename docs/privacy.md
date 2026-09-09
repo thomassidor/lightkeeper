@@ -1,7 +1,7 @@
 # Lightkeeper privacy notice
 
-Lightkeeper runs entirely on your own Homey Pro. Nothing it reads, stores or
-generates is transmitted anywhere.
+Lightkeeper runs on your own Homey Pro. It sends no data to a vendor or cloud backend.
+Diagnostic exports leave Homey only when you request them.
 
 ## What it reads
 
@@ -22,7 +22,14 @@ Curve light's points — including which palette colour a point carries, if any:
 lights, and the warmth you chose at each time of day. Each is stored with that
 virtual device, so removing the device removes it.
 
-**In the app's settings:** the Personal API Key you provide, and nothing else.
+**In the app's settings:** the Personal API Key you provide. If you start a home-test
+recording, its metadata and encryption key are also stored here.
+
+**In app userdata, only after you start a home-test recording:** an encrypted, bounded
+archive of control decisions, sensor and light reports, write results, periodic health
+snapshots and observations you enter. It can include device and room names. Recording stops
+after seven days or at 64 MiB. You can export and clear it through the authenticated app API;
+it is not sent to a server. See [week-long-testing.md](week-long-testing.md).
 
 The API key is used only to create, update and delete the Flows Lightkeeper
 manages. It is never logged, never returned through the app's own API, and never
@@ -31,11 +38,11 @@ because an error object can carry the token that caused it.
 
 ## What it does not do
 
-No telemetry, opt-in or otherwise. No analytics, no advertising, no vendor cloud
+No remote telemetry. No advertising, no vendor cloud
 backend, no external data processor. Device inventories, events, configuration and
 diagnostics are never transmitted by the app. A diagnostics report is produced
-only when you ask for it, and is shared only if you choose to attach it to a
-report yourself.
+only when you ask for it. A home-test recording collects locally only after you explicitly
+start it. Either is shared only if you choose to attach the exported file to a report yourself.
 
 ## How long it keeps things
 
@@ -44,6 +51,9 @@ and — for a controller or a schedule — the Flows demonstrably created for it
 a circadian light and a Curve light create none. Removing the API key in
 settings deletes the key. Uninstalling the app removes its settings, the stored
 key included.
+
+A home-test archive remains on Homey after recording stops, until you explicitly clear it
+or uninstall the app. Stopping a recording does not erase its evidence.
 
 ## Reporting a problem
 
