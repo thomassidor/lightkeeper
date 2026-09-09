@@ -1,4 +1,5 @@
 import Homey from 'homey';
+import { validateSensorsAgainstCatalog } from '../../lib/validation/pairing-dto';
 
 import {
   resolveSummary, targetLights,
@@ -177,6 +178,14 @@ module.exports = class DaylightDriver extends Homey.Driver {
       for (const field of result.corrected) {
         this.log(`Corrected ${field} to its default: the screen sent something unusable`);
       }
+      // MEMBERSHIP, not just shape: a pair session is a Web API surface and can
+      // be scripted (platform §14), and a stale card sends ids that have since
+      // been deleted. A lamp id accepted as a sensor is subscribed to, never
+      // reports a lux value, and the device runs on the sky for ever while the
+      // settings page lists a sensor that will never have a reading.
+      result.response.sensors = await validateSensorsAgainstCatalog(
+        result.response.sensors, this.app.catalog,
+      );
       state.response = result.response;
 
       // The sensors have to be retained before `now` can mean anything: a

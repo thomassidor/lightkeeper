@@ -249,6 +249,57 @@ describe('apply is transactional', () => {
     assert.equal(registry.get('lk-test-1'), undefined, 'nothing half-built is reachable');
   });
 
+  /**
+   * A plan the next restart would quarantine is refused NOW.
+   *
+   * The only validator in the device layer used to be the one `migrate()` runs
+   * at load. The pairing screens gate their own input; `api.ts`'s routes did
+   * not — so a body with, say, `fromDaylight: true` on a plan carrying no
+   * daylight response was accepted, the runtime started (falling back to the
+   * stored brightness), and at the NEXT APP RESTART the same plan was refused
+   * and the device went unavailable saying "set this device up again". A save
+   * that looks like it worked and breaks the device days later, with nothing to
+   * connect the two.
+   */
+  test('a plan the validator rejects is refused before anything runs', async () => {
+    const { registry, owner, lifecycle } = harness();
+    await lifecycle.apply({ enabled: true, value: 'good' });
+
+    owner.migrateResult = Object.assign(new Error('brightness must be present'), {
+      name: 'ValidationError',
+    });
+
+    await assert.rejects(
+      lifecycle.apply({ enabled: true, value: 'bad' }),
+      /brightness must be present/,
+    );
+
+    // `registers.length` is not the measure here: `apply()`'s catch rolls back
+    // by registering the PREVIOUS plan again, so it legitimately goes up. What
+    // must never have been registered is the bad plan itself.
+    assert.equal(
+      registry.registers.some(plan => (plan as any).value === 'bad'), false,
+      'a plan that cannot be validated was registered anyway',
+    );
+    assert.equal(
+      (owner.store.get('plan') as any)?.value, 'good',
+      'and it must not have reached the store',
+    );
+  });
+
+  test('and the previous plan is still the one running afterwards', async () => {
+    // `apply()`'s catch is a full rollback, so a refusal leaves the working
+    // configuration in place rather than half-installed.
+    const { registry, owner, lifecycle } = harness();
+    await lifecycle.apply({ enabled: true, value: 'good' });
+
+    owner.migrateResult = Object.assign(new Error('nope'), { name: 'ValidationError' });
+    await assert.rejects(lifecycle.apply({ enabled: true, value: 'bad' }), /nope/);
+
+    assert.equal(owner.available, true, 'a refused save must not take the device down');
+    assert.ok(registry.get('lk-test-1'), 'the previous runtime must still be registered');
+  });
+
   test('a failed FIRST save says the device is unconfigured', async () => {
     const { registry, owner, lifecycle } = harness();
     registry.failNext = new Error('nope');

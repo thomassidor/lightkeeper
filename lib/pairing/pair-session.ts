@@ -3,6 +3,7 @@ import { timezoneOf as readTimezone } from '../time/local-clock';
 
 import { listTargetsPayload, resolveSummary } from './target-picker';
 import { listSensorsPayload } from './sensor-picker';
+import { validateSensorsAgainstCatalog } from '../validation/pairing-dto';
 import { deriveSuffixedName } from './derive-name';
 import { mintDeviceId } from '../bridge/flow-bridge-manager';
 import { flowWriteProbe } from '../credential-service';
@@ -238,6 +239,14 @@ export function registerDaylightCardHandlers(
     for (const field of result.corrected) {
       host.log(`Corrected daylight ${field} to its default: the screen sent something unusable`);
     }
+    // MEMBERSHIP, not just shape: a pair session is a Web API surface and can
+    // be scripted (platform §14), and a stale card sends ids that have since
+    // been deleted. A lamp id accepted as a sensor is subscribed to, never
+    // reports a lux value, and the device runs on the sky for ever while the
+    // settings page lists a sensor that will never have a reading.
+    result.response.sensors = await validateSensorsAgainstCatalog(
+      result.response.sensors, host.app.catalog,
+    );
     state.daylight = result.response;
 
     // Retained before `now` can mean anything: a sensor nobody is subscribed

@@ -4,6 +4,7 @@ import type { DeviceCatalog } from '../device-catalog';
 import type { TargetSpec } from '../outputs/light-intent';
 import type { LightFunction } from '../mapping/mapping-types';
 import { FUNCTION_CAPABILITY } from '../mapping/mapping-types';
+import { LUMINANCE_CAPABILITY } from '../daylight/daylight-types';
 
 /**
  * What a pairing view is allowed to have sent.
@@ -66,6 +67,64 @@ export async function validateTargetAgainstCatalog(
   }
 
   return { kind: 'devices', deviceIds: deduped };
+}
+
+/**
+ * The sensor ids a daylight response names, checked for MEMBERSHIP — the twin
+ * `validateTargetAgainstCatalog` above has always had and this file's own
+ * header says is the point.
+ *
+ * Shape alone was all that was checked, and a pairing screen is not the only
+ * thing that reaches these handlers: a pair session IS a Web API surface and
+ * can be scripted (platform §14), and a stale card left open across a device
+ * deletion sends ids that no longer exist. Neither is malicious and neither
+ * throws — the failure is quiet, which is the problem. A lamp id accepted as a
+ * sensor is subscribed to, never reports `measure_luminance`, and the device
+ * runs on the sky for ever while the settings page lists a sensor that will
+ * never have a reading.
+ *
+ * A sensor that is merely UNAVAILABLE passes: a flat battery is a thing the
+ * diagnostics should show, not a reason to refuse the configuration. What is
+ * refused is a device that is not on this Homey, or one that cannot report
+ * light at all.
+ *
+ * The empty list is valid and means "use the sun" — that is the whole point of
+ * `source: 'sky'`, so it is not a failure.
+ *
+ * DEDUPLICATION is deliberately NOT here. `sanitiseResponse()` already drops a
+ * repeated sensor and reports `sensors` as corrected, which is the better place
+ * for it — a duplicate is a screen bug rather than a claim about this Homey, so
+ * it can be fixed instead of failing the whole save, and a second copy here
+ * would only be a second place for the two to disagree. It does matter: the lux
+ * service is ref-counted per owner, so a sensor named twice would be retained
+ * twice and released once.
+ *
+ * `response.sensors` rather than `daylight.sensors` as the field path, because
+ * `daylight` is a top-level group in `en.json` and `locales.test.ts` reads any
+ * `'<group>.<rest>'` literal in source as a referenced locale key.
+ */
+export async function validateSensorsAgainstCatalog(
+  sensorIds: readonly string[],
+  catalog: DeviceCatalog,
+): Promise<string[]> {
+  if (sensorIds.length === 0) return [];
+
+  const devices = await catalog.allDevices();
+  const usable = new Set(
+    devices
+      .filter(device => device.capabilities.includes(LUMINANCE_CAPABILITY))
+      .map(device => device.id),
+  );
+
+  const unknown = sensorIds.filter(id => !usable.has(id));
+  if (unknown.length > 0) {
+    fail(
+      'response.sensors',
+      `names ${unknown.length} device(s) that cannot report how light it is`,
+    );
+  }
+
+  return [...sensorIds];
 }
 
 export interface MappingRuleDto {

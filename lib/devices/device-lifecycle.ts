@@ -341,6 +341,32 @@ export class DeviceLifecycle<
    * Transactional: the candidate plan reaches the store only once the runtime is
    * running, and a failure puts the previous plan and its runtime back.
    */
+  /**
+   * The plan about to be registered, put through the SAME validator the load
+   * path ends in — or refused before anything runs or is stored.
+   *
+   * The only validator in the device layer used to be the one `migrate()` runs
+   * at load, so an application accepted whatever a caller handed it. The
+   * pairing screens gate their own input, but `api.ts`'s routes did not: a body
+   * with `fromDaylight: true` on a device whose plan carries no `daylight`
+   * response was accepted, the runtime started (falling back to the stored
+   * brightness), and then at the NEXT APP RESTART `validateSchedulePlan`
+   * refused the same plan and the device went unavailable saying "set this
+   * device up again". A save that looks like it worked and breaks the device
+   * days later, at a moment with no connection to the action that caused it.
+   *
+   * `migrate()` rather than a new `validate` member on `DeviceOwner`, because a
+   * current-version plan runs zero migration steps and drops straight into that
+   * chain's validator — so every device type is covered by the validator it
+   * already declares, and there is no second place for the two to disagree.
+   *
+   * It throws, and that is right: `apply()`'s catch is a full rollback, so a
+   * refused plan leaves the previous one running rather than half-installed.
+   */
+  private validated(plan: TPlan): TPlan {
+    return this.owner.migrate(plan).plan;
+  }
+
   async apply(incoming: TPlan): Promise<void> {
     return this.operations.run(OPS, async () => {
       this.applying = true;
@@ -353,7 +379,7 @@ export class DeviceLifecycle<
       let runtime: TRuntime;
       let merged: TPlan;
       try {
-        merged = await this.owner.prepareApply(previous, incoming);
+        merged = this.validated(await this.owner.prepareApply(previous, incoming));
         runtime = await this.registerPlan(merged);
         // The candidate is committed only once start has completed. This write
         // is part of the transaction too: a failed save must not keep running.

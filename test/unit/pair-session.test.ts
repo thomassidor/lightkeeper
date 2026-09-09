@@ -337,6 +337,80 @@ describe('the shared daylight card handlers', () => {
     assert.deepEqual(state.daylight?.sensors, ['lux-1']);
   });
 
+  /**
+   * A sensor id is checked for MEMBERSHIP, not only for shape.
+   *
+   * `listSensors` offers only devices with `measure_luminance`, so a working
+   * screen cannot send anything else — but a pair session IS a Web API surface
+   * and can be scripted (platform §14), and a card left open across a device
+   * deletion sends ids that no longer exist. Neither is malicious and neither
+   * throws: a lamp id accepted as a sensor is subscribed to, never reports a
+   * lux value, and the device runs on the sky for ever while the settings page
+   * lists a sensor that will never have a reading. Quiet is the problem.
+   */
+  test('a lamp id sent as a sensor is refused', async () => {
+    const { host, recorded, handler, call } = rig();
+    const state: SharedSessionState = {};
+
+    registerDaylightCardHandlers(host, handler, state, 'pair-abc');
+    await assert.rejects(
+      call('setDaylight', {
+        response: { sensors: ['lamp-1'], darkLux: 10, brightLux: 500, dark: 0.9, bright: 0.2 },
+      }),
+      /cannot report how light it is/,
+    );
+
+    assert.deepEqual(recorded.retained, [], 'a lamp must never be subscribed to as a sensor');
+    assert.equal(state.daylight, undefined, 'and it must not reach the session state');
+  });
+
+  test('a sensor that is not on this Homey at all is refused', async () => {
+    const { host, recorded, handler, call } = rig();
+    const state: SharedSessionState = {};
+
+    registerDaylightCardHandlers(host, handler, state, 'pair-abc');
+    await assert.rejects(
+      call('setDaylight', {
+        response: { sensors: ['deleted-1'], darkLux: 10, brightLux: 500, dark: 0.9, bright: 0.2 },
+      }),
+      /cannot report how light it is/,
+    );
+
+    assert.deepEqual(recorded.retained, []);
+  });
+
+  test('the same sensor twice is DROPPED rather than refused', async () => {
+    // Dedupe belongs to `sanitiseResponse`, not to the membership check: a
+    // duplicate is a screen bug rather than a claim about this Homey, so it is
+    // corrected instead of failing the whole save. It matters — the lux service
+    // is ref-counted per owner, so a sensor named twice would be retained twice
+    // and released once, leaving a subscription alive after the session ends.
+    const { host, recorded, handler, call } = rig();
+    const state: SharedSessionState = {};
+
+    registerDaylightCardHandlers(host, handler, state, 'pair-abc');
+    const result = await call('setDaylight', {
+      response: { sensors: ['lux-1', 'lux-1'], darkLux: 10, brightLux: 500, dark: 0.9, bright: 0.2 },
+    }) as { response: { sensors: string[] }; corrected: string[] };
+
+    assert.deepEqual(result.response.sensors, ['lux-1']);
+    assert.ok(result.corrected.includes('sensors'), 'the correction must be reported');
+    assert.deepEqual(recorded.retained, [{ sensors: ['lux-1'], owner: 'pair-abc' }]);
+  });
+
+  test('and NO sensors is valid, because that means use the sun', async () => {
+    const { host, handler, call } = rig();
+    const state: SharedSessionState = {};
+
+    registerDaylightCardHandlers(host, handler, state, 'pair-abc');
+    const result = await call('setDaylight', {
+      response: { sensors: [], darkLux: 10, brightLux: 500, dark: 0.9, bright: 0.2 },
+    }) as { response: { sensors: string[] } };
+
+    assert.deepEqual(result.response.sensors, []);
+    assert.deepEqual(state.daylight?.sensors, []);
+  });
+
   test('a response the screen could not have sent is corrected, and said so', async () => {
     const { host, recorded, handler, call } = rig();
     const state: SharedSessionState = {};
