@@ -229,6 +229,12 @@ function sanitiseEnd(
 
 function sanitiseLux(raw: unknown): number | null {
   if (raw === null || raw === undefined || raw === '') return null;
+  // Type-checked BEFORE the coercion, like `asLux` beside it. `Number(false)`
+  // is 0 and finite, so a boolean sailed through and was clamped to MIN_LUX and
+  // then accepted as a threshold somebody had chosen — the `Number(null)` trap
+  // one type over. Only a hand-edited store or a screen bug reaches it, which
+  // is an argument for the guard and not against it.
+  if (typeof raw !== 'number' && typeof raw !== 'string') return null;
   const value = Number(raw);
   if (!Number.isFinite(value)) return null;
   return Math.min(MAX_LUX, Math.max(MIN_LUX, value));

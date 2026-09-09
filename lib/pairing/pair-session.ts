@@ -339,7 +339,12 @@ export function registerSaveHandler<TPlan>(
       device: {
         // Homey lets the user rename a device afterwards, which is the natural
         // place for it — so the last screen asks for nothing.
-        name: name || await deriveSuffixedName(host.app.catalog, state.target, {
+        //
+        // `.trim()` before the `||`: a whitespace-only name is truthy, so it
+        // was accepted verbatim and produced a device whose tile appears to
+        // have no name at all. The derivation below is the answer to "the user
+        // gave us nothing", and a name of spaces IS nothing.
+        name: name?.trim() || await deriveSuffixedName(host.app.catalog, state.target, {
           fallback: options.naming.fallback,
           suffix: options.naming.suffix,
           zoneFallback: 'Zone',

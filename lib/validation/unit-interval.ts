@@ -14,6 +14,11 @@
  */
 export function sanitiseUnitInterval(raw: unknown): number | null {
   if (raw === null || raw === undefined || raw === '') return null;
+  // Type-checked before the coercion: `Number(false)` is 0 and finite, so a
+  // boolean became a warmth of 0 — the COOLEST end of the axis, which is a
+  // real value somebody might have chosen and is therefore indistinguishable
+  // from a deliberate one. The same trap as `Number(null)` on a lux reading.
+  if (typeof raw !== 'number' && typeof raw !== 'string') return null;
   const value = Number(raw);
   if (!Number.isFinite(value)) return null;
   return Math.min(1, Math.max(0, value));

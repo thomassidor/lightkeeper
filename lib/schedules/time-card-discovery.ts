@@ -64,7 +64,12 @@ export function discoverTimeCard(triggers: unknown[]): TimeCardDiscovery {
     // for something this load-bearing.
     if (!id.startsWith('homey:manager:')) continue;
 
-    const args = (raw?.args ?? []) as any[];
+    // `Array.isArray`, not `?? []`: an object or a string reaches `.map` and
+    // THROWS, and this function is memoised un-retracted on failure — so one
+    // malformed card on one firmware would take every schedule on the Homey to
+    // needs_repair for the life of the app run. `undefined` and `null` were
+    // already handled; nothing else was.
+    const args = Array.isArray(raw?.args) ? raw.args as any[] : [];
     const summary = args.map(a => `${String(a?.name ?? '?')}:${String(a?.type ?? '?')}`).join(', ') || 'none';
     const timeArg = args.find(a => String(a?.type ?? '') === 'time')
       ?? args.find(a => String(a?.name ?? '') === 'time');

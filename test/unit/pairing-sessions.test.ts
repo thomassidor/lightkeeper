@@ -85,6 +85,49 @@ describe('the name a new device gets', () => {
     assert.equal(name, 'Kitchen schedule');
   });
 
+  /**
+   * An empty or whitespace-only name is nothing, and falls back like nothing.
+   *
+   * Homey does not stop a user naming a lamp `" "` or leaving a zone name
+   * blank, and `??` only catches `null` and `undefined` — so an empty string
+   * sailed through and the device was called `" schedule"`. A tile that appears
+   * to have no name at all, in a list where every other one does.
+   */
+  test('a lamp with no name falls back rather than producing " schedule"', async () => {
+    const nameless = LIGHT('l9', '', 'Living room');
+    const name = await deriveSuffixedName(catalog([nameless]), devicesTarget(['l9']), PARTS);
+
+    assert.equal(name, 'Zone schedule');
+    assert.ok(!name.startsWith(' '), `leading space in ${JSON.stringify(name)}`);
+  });
+
+  test('and a whitespace-only lamp name is the same as none', async () => {
+    const blank = LIGHT('l9', '   ', 'Living room');
+    const name = await deriveSuffixedName(catalog([blank]), devicesTarget(['l9']), PARTS);
+
+    assert.equal(name, 'Zone schedule');
+  });
+
+  test('a blank ZONE name on the lamps falls through to the count', async () => {
+    // Two lamps whose shared "room" is blank is not a room they share: the
+    // count is the honest answer, and `"  schedule"` is not.
+    const a = LIGHT('l7', 'One', '   ');
+    const b = LIGHT('l8', 'Two', '');
+    const name = await deriveSuffixedName(catalog([a, b]), devicesTarget(['l7', 'l8']), PARTS);
+
+    assert.equal(name, '2 lights schedule');
+  });
+
+  test('a blank zone target name falls back too', async () => {
+    const name = await deriveSuffixedName(
+      catalog([CEILING], [{ id: 'z1', name: '  ' }]),
+      { kind: 'zone', zoneId: 'z1', includeSubzones: false },
+      PARTS,
+    );
+
+    assert.equal(name, 'Zone schedule');
+  });
+
   test('a zone that cannot be read still produces a usable name', async () => {
     // A device called "undefined schedule" is worse than a generic one.
     const name = await deriveSuffixedName(

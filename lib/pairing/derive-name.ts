@@ -35,6 +35,22 @@ export interface NameParts {
  *
  * Shared by the schedule, circadian and Curve drivers.
  */
+/**
+ * A name, TRIMMED, or the fallback if there is nothing left of it.
+ *
+ * Homey does not stop a user naming a lamp `" "` or leaving a zone name empty,
+ * and an empty one produced `" schedule"` — a device whose tile appears to have
+ * no name at all, in a list where every other one does. The fallbacks below
+ * exist for exactly this and were simply never reached: `??` catches `null` and
+ * `undefined`, and an empty string is neither.
+ *
+ * Module-level because both derivations below need it, and they had the same
+ * gap in the same three places each.
+ */
+function named(value: string | undefined, fallback: string): string {
+  return (value ?? '').trim() || fallback;
+}
+
 export async function deriveSuffixedName(
   catalog: DeviceCatalog,
   target: TargetSpec | undefined,
@@ -45,15 +61,15 @@ export async function deriveSuffixedName(
   if (target.kind === 'zone') {
     const zones = await catalog.allZones();
     const zone = zones.find(candidate => candidate.id === target.zoneId);
-    return `${zone?.name ?? parts.zoneFallback} ${parts.suffix}`;
+    return `${named(zone?.name, parts.zoneFallback)} ${parts.suffix}`;
   }
 
   const lights = await targetLights(catalog, target);
   if (lights.length === 0) return parts.fallback;
-  if (lights.length === 1) return `${lights[0]!.name} ${parts.suffix}`;
+  if (lights.length === 1) return `${named(lights[0]!.name, parts.zoneFallback)} ${parts.suffix}`;
 
   // Where every light shares a room, the room reads better than a list.
-  const zoneNames = new Set(lights.map(light => light.zoneName).filter(Boolean));
+  const zoneNames = new Set(lights.map(light => (light.zoneName ?? '').trim()).filter(Boolean));
   if (zoneNames.size === 1) return `${[...zoneNames][0]} ${parts.suffix}`;
 
   return `${lights.length} lights ${parts.suffix}`;
@@ -77,18 +93,20 @@ export async function deriveControllerName(
   if (target.kind === 'zone') {
     const zones = await catalog.allZones();
     const zone = zones.find(candidate => candidate.id === target.zoneId);
-    return `${source} → ${zone?.name ?? zoneFallback}`;
+    return `${source} → ${named(zone?.name, zoneFallback)}`;
   }
 
   const lights = await targetLights(catalog, target);
   if (lights.length === 0) return source;
-  if (lights.length === 1) return `${source} → ${lights[0]!.name}`;
+  if (lights.length === 1) return `${source} → ${named(lights[0]!.name, zoneFallback)}`;
 
-  const zoneNames = new Set(lights.map(light => light.zoneName).filter(Boolean));
+  const zoneNames = new Set(lights.map(light => (light.zoneName ?? '').trim()).filter(Boolean));
   if (zoneNames.size === 1) return `${source} → ${[...zoneNames][0]}`;
 
   // Two is short enough to name both, and "2 lights" would be strictly less
   // informative than the two names it replaces.
-  if (lights.length === 2) return `${source} → ${lights[0]!.name} + ${lights[1]!.name}`;
+  if (lights.length === 2) {
+    return `${source} → ${named(lights[0]!.name, zoneFallback)} + ${named(lights[1]!.name, zoneFallback)}`;
+  }
   return `${source} → ${lights.length} lights`;
 }

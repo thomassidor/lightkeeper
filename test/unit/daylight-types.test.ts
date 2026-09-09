@@ -7,6 +7,7 @@ import {
   sanitiseResponse, usableLocation,
 } from '../../lib/daylight/daylight-types';
 import { MINIMUM_BRIGHTNESS } from '../../lib/outputs/light-intent';
+import { sanitiseUnitInterval } from '../../lib/validation/unit-interval';
 import {
   CURRENT_DAYLIGHT_SCHEMA_VERSION, migrateDaylightPlan,
 } from '../../lib/daylight/daylight-migrations';
@@ -127,6 +128,33 @@ describe('sanitiseResponse - the lux span', () => {
     assert.ok(corrected.includes('brightLux'));
   });
 
+  /**
+   * A boolean is not a lux reading, and `Number(false)` is 0.
+   *
+   * The same trap CLAUDE.md records one type over: 0 is finite, so `false`
+   * sailed through the `isFinite` guard, was clamped to MIN_LUX, and was then
+   * accepted as a threshold somebody had chosen — with nothing reported as
+   * corrected, so no screen and no log said anything. `asLux` beside it
+   * type-checks first; this did not.
+   */
+  test('a boolean, an object or an array is not a lux value', () => {
+    for (const junk of [false, true, {}, [], [100]]) {
+      const { response, corrected } = sanitiseResponse({ ...VALID, darkLux: junk });
+      assert.equal(
+        response.darkLux, DEFAULT_RESPONSE.darkLux,
+        `accepted ${JSON.stringify(junk)} as a lux threshold`,
+      );
+      assert.ok(corrected.includes('darkLux'), `did not report ${JSON.stringify(junk)}`);
+    }
+  });
+
+  test('a numeric STRING is still accepted, because a webview sends strings', () => {
+    // The reason the guard is a type check and not `typeof raw === 'number'`.
+    const { response, corrected } = sanitiseResponse({ ...VALID, darkLux: '250' });
+    assert.equal(response.darkLux, 250);
+    assert.ok(!corrected.includes('darkLux'));
+  });
+
   test('clamping cannot produce an inverted span it then keeps', () => {
     // Both ends land on MIN_LUX after clamping, so the span check has to run
     // AFTER the clamp rather than before it.
@@ -166,6 +194,45 @@ describe('sanitiseResponse - the two ends', () => {
     const { response, corrected } = sanitiseResponse(undefined);
     assert.deepEqual(response, DEFAULT_RESPONSE);
     assert.deepEqual(corrected.sort(), ['bright', 'brightLux', 'dark', 'darkLux']);
+  });
+});
+
+/**
+ * The same guard on the warmth axis, where 0 is a REAL value.
+ *
+ * `sanitiseUnitInterval` shares the shape of the lux sanitiser and shared its
+ * gap: `Number(false)` is 0, and on this axis 0 is the coolest end — a value
+ * somebody might genuinely have chosen, so a junk input became indistinguishable
+ * from a deliberate one rather than being reported as corrected.
+ */
+describe('sanitiseUnitInterval', () => {
+  test('a boolean is not a warmth', () => {
+    for (const junk of [false, true, {}, []]) {
+      assert.equal(
+        sanitiseUnitInterval(junk), null,
+        `accepted ${JSON.stringify(junk)} as a warmth`,
+      );
+    }
+  });
+
+  test('nothing at all is still nothing', () => {
+    for (const empty of [null, undefined, '']) {
+      assert.equal(sanitiseUnitInterval(empty), null);
+    }
+  });
+
+  test('a number and a numeric string both work, and both clamp', () => {
+    assert.equal(sanitiseUnitInterval(0.4), 0.4);
+    assert.equal(sanitiseUnitInterval('0.4'), 0.4);
+    assert.equal(sanitiseUnitInterval(-3), 0);
+    assert.equal(sanitiseUnitInterval(9), 1);
+  });
+
+  test('and zero is kept, because on this axis it means something', () => {
+    // The coolest end of the temperature axis. What "0" MEANS is deliberately
+    // not decided here — see the docblock — so it must arrive intact.
+    assert.equal(sanitiseUnitInterval(0), 0);
+    assert.equal(sanitiseUnitInterval('0'), 0);
   });
 });
 

@@ -296,6 +296,46 @@ describe('finding Homey\'s time trigger card', () => {
     });
   });
 
+  /**
+   * One malformed card does not take the whole discovery down with it.
+   *
+   * `args` was read as `(raw?.args ?? []) as any[]`, which handles `undefined`
+   * and `null` and nothing else — an object or a string reaches `.map` and
+   * THROWS. That matters more than it looks: `timeCard()` memoises this and
+   * used to keep the rejected promise, so one odd card on one firmware would
+   * have taken every schedule on the Homey to needs_repair for the life of the
+   * app run, with the real time card sitting in the same list.
+   */
+  test('a card with a non-array args does not break the search', () => {
+    const withJunk = [
+      { id: 'homey:manager:cron:broken', uri: 'u9', args: {} },
+      { id: 'homey:manager:cron:also_broken', uri: 'u10', args: 'time' },
+      { id: 'homey:manager:cron:no_args', uri: 'u11' },
+      { id: 'homey:manager:cron:null_args', uri: 'u12', args: null },
+      ...cards,
+    ];
+
+    const { card } = discoverTimeCard(withJunk as any);
+
+    assert.deepEqual(card, {
+      id: 'homey:manager:cron:time_exactly',
+      uri: 'homey:flowcardtrigger:homey:manager:cron:time_exactly',
+      argument: 'time',
+    });
+  });
+
+  test('and a list of nothing but malformed cards simply finds nothing', () => {
+    // Refusing is the right answer here — there IS no time card — and it has to
+    // be a refusal rather than a throw, so the schedule reports "no time
+    // trigger card on this Homey" instead of an unhandled rejection.
+    const { card } = discoverTimeCard([
+      { id: 'homey:manager:cron:broken', uri: 'u9', args: {} },
+      { id: 'homey:manager:cron:worse', uri: 'u10', args: 42 },
+    ] as any);
+
+    assert.equal(card, null);
+  });
+
   test('the day-filtered sibling is declined, and that is deliberate', () => {
     // `time_exactly_day` carries the weekday itself, which sounds like exactly
     // what a schedule wants. It is not taken: the day set would then live in the
