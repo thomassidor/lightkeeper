@@ -50,17 +50,29 @@ export interface LiveValues {
  * capability at all — an absent value must stay absent rather than becoming 0,
  * which is why nothing here coerces (CLAUDE.md: `Number(null)` is 0, and 0 lux
  * is pitch dark; the same trap, one axis over).
+ *
+ * Every field goes through `validCapabilityValue()` — the SAME guard
+ * `applyExternalChange()` applies to a live report — so an unusable value is
+ * absent here too. A bare `as number | undefined` does not coerce, but it does
+ * mistype: a `null` from an integration that has not reported yet, or one whose
+ * sensor battery is flat, arrived typed as `number` and was then read as a real
+ * reading. A Daylight light's `aimFor` tests `=== undefined`, so `null` counted
+ * as present, `toPerceptual(null)` clamped to 0, and the first tick wrote
+ * `dim 0.01` to a LIT lamp before fading it back up. The docblock above always
+ * claimed this; now the code does it.
  */
 export function liveValuesOf(device: {
   capabilitiesObj?: Record<string, { value?: unknown } | undefined>;
 }): LiveValues {
   const obj = device.capabilitiesObj;
+  const usable = <T>(capability: Capability, value: unknown): T | undefined =>
+    validCapabilityValue(capability, value) ? (value as T) : undefined;
   return {
-    onoff: obj?.onoff?.value as boolean | undefined,
-    dim: obj?.dim?.value as number | undefined,
-    light_temperature: obj?.light_temperature?.value as number | undefined,
-    light_hue: obj?.light_hue?.value as number | undefined,
-    light_saturation: obj?.light_saturation?.value as number | undefined,
+    onoff: usable<boolean>('onoff', obj?.onoff?.value),
+    dim: usable<number>('dim', obj?.dim?.value),
+    light_temperature: usable<number>('light_temperature', obj?.light_temperature?.value),
+    light_hue: usable<number>('light_hue', obj?.light_hue?.value),
+    light_saturation: usable<number>('light_saturation', obj?.light_saturation?.value),
   };
 }
 
@@ -138,6 +150,12 @@ const ECHO_DEDUPE_MS = 1500;
 export const OVERRIDE_TOLERANCE = 0.03;
 export const OVERRIDE_SETTLE_MS = 3000;
 
+export function validCapabilityValue(capability: Capability, value: unknown): boolean {
+  if (capability === 'onoff') return typeof value === 'boolean';
+  if (capability === 'light_mode') return value === 'color' || value === 'temperature';
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
 export class TargetStateCache {
   private readonly states = new Map<string, TargetRuntimeState>();
   private readonly capabilities = new Map<string, TargetCapabilities>();
@@ -149,8 +167,14 @@ export class TargetStateCache {
    * overlap, and the loser must not commit.
    */
   private readonly writeSeq = new Map<string, number>();
+  // Do not reuse a token after forget()/clear(): a late completion from the
+  // old target lifetime must not finish a newly dispatched write to that id.
+  private nextWriteSeq = 0;
   /** Per device: when `onoff` last moved, from any cause. See lastOnOffChangeAt. */
   private readonly onOffObservedAt = new Map<string, number>();
+  private readonly powerTransitionAt = new Map<string, number>();
+  private readonly dispatchedAt = new Map<string, number>();
+  private readonly pendingWrites = new Map<string, number>();
 
   constructor(private readonly now: () => number = () => Date.now()) {}
 
@@ -180,6 +204,16 @@ export class TargetStateCache {
     return state;
   }
 
+  /** Last observed values, not optimistic desired state or a fresh device read. */
+  reportedValues(deviceId: string): LiveValues {
+    const state = this.state(deviceId);
+    return {
+      onoff: state.actualOn, dim: state.actualDim,
+      light_temperature: state.actualTemperature,
+      light_hue: state.actualHue, light_saturation: state.actualSaturation,
+    };
+  }
+
   /** Seed from live device values at startup — never from persisted queues. */
   initialise(deviceId: string, actual: LiveValues): void {
     const state = this.state(deviceId);
@@ -204,6 +238,9 @@ export class TargetStateCache {
     capability: Capability,
     value: unknown,
   ): boolean {
+    // Bad reports must not poison actual/desired state, or null becomes an
+    // apparent off/zero followed by a false manual override on the next report.
+    if (!validCapabilityValue(capability, value)) return false;
     const at = this.now();
     const echoKey = `${deviceId}:${capability}`;
     const recent = this.recentEchoes.get(echoKey);
@@ -216,10 +253,11 @@ export class TargetStateCache {
     const state = this.state(deviceId);
     switch (capability) {
       case 'onoff':
+        if (state.actualOn !== value) this.powerTransitionAt.set(deviceId, at);
         state.actualOn = value as boolean;
-        // Recorded even for a duplicate echo: the question this answers is
-        // "has this lamp's power been touched since our write", and an echo
-        // of our own onoff write is still evidence of when.
+        // The implied-on probe must honour every power report, including an
+        // off report repeating the cached value. Override settling, however,
+        // follows transitions so repeated reports cannot extend it forever.
         this.onOffObservedAt.set(deviceId, at);
         break;
       case 'dim':
@@ -279,10 +317,19 @@ export class TargetStateCache {
    */
   noteEcho(deviceId: string, capability: Capability, value: unknown): number {
     const key = `${deviceId}:${capability}`;
+    this.dispatchedAt.set(key, this.now());
     this.recentEchoes.set(key, { value, at: this.now() });
-    const seq = (this.writeSeq.get(key) ?? 0) + 1;
+    const seq = ++this.nextWriteSeq;
     this.writeSeq.set(key, seq);
+    this.pendingWrites.set(key, seq);
     return seq;
+  }
+
+  finishWrite(deviceId: string, capability: Capability, seq: number): void {
+    const key = `${deviceId}:${capability}`;
+    if (this.pendingWrites.get(key) !== seq) return;
+    this.pendingWrites.delete(key);
+    this.dispatchedAt.set(key, this.now());
   }
 
   /**
@@ -305,6 +352,7 @@ export class TargetStateCache {
     seq?: number,
   ): void {
     if (seq !== undefined) {
+      this.finishWrite(deviceId, capability, seq);
       const current = this.writeSeq.get(`${deviceId}:${capability}`) ?? 0;
       if (seq !== current) return;
     }
@@ -343,16 +391,34 @@ export class TargetStateCache {
     return this.onOffObservedAt.get(deviceId);
   }
 
+  /** Startup restoration and in-flight writes precede successful bookkeeping.
+   * Their intermediate reports are not evidence of an external override. */
+  overrideSuppression(deviceId: string, capability: Capability): string | null {
+    if (this.pendingWrites.has(`${deviceId}:${capability}`)) return 'write_pending';
+    const powerAt = this.powerTransitionAt.get(deviceId);
+    if (powerAt !== undefined && this.now() - powerAt < OVERRIDE_SETTLE_MS) return 'power_settling';
+    const writeAt = this.dispatchedAt.get(`${deviceId}:${capability}`);
+    if (writeAt !== undefined && this.now() - writeAt < OVERRIDE_SETTLE_MS) return 'write_settling';
+    return null;
+  }
+
   /** Forget everything about one device. Used when it stops being a target. */
   forget(deviceId: string): void {
     this.states.delete(deviceId);
     this.capabilities.delete(deviceId);
     this.onOffObservedAt.delete(deviceId);
+    this.powerTransitionAt.delete(deviceId);
     for (const key of [...this.recentEchoes.keys()]) {
       if (key.startsWith(`${deviceId}:`)) this.recentEchoes.delete(key);
     }
     for (const key of [...this.writeSeq.keys()]) {
       if (key.startsWith(`${deviceId}:`)) this.writeSeq.delete(key);
+    }
+    for (const key of this.dispatchedAt.keys()) {
+      if (key.startsWith(`${deviceId}:`)) this.dispatchedAt.delete(key);
+    }
+    for (const key of this.pendingWrites.keys()) {
+      if (key.startsWith(`${deviceId}:`)) this.pendingWrites.delete(key);
     }
   }
 
@@ -378,6 +444,9 @@ export class TargetStateCache {
     this.recentEchoes.clear();
     this.writeSeq.clear();
     this.onOffObservedAt.clear();
+    this.powerTransitionAt.clear();
+    this.dispatchedAt.clear();
+    this.pendingWrites.clear();
   }
 }
 

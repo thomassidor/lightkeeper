@@ -8,6 +8,7 @@ import { DEFAULT_BEHAVIOR } from '../../lib/mapping/mapping-types';
 import {
   diffTargets, resolveSnapshot, releaseTarget,
 } from '../../lib/outputs/target-snapshot';
+import { liveValuesOf } from '../../lib/outputs/target-state-cache';
 import { TargetResolver } from '../../lib/outputs/target-resolver';
 import type { DeviceCatalog } from '../../lib/device-catalog';
 
@@ -317,5 +318,75 @@ describe('the target fingerprint sees what an id list cannot', () => {
   test('the first diff of a fresh runtime removes nothing', async () => {
     const first = await snapshotOf([light('a')]);
     assert.deepEqual(diffTargets(null, first).removed, []);
+  });
+});
+
+/**
+ * A fourth promise, and the same trap CLAUDE.md records for lux one axis over:
+ * `Number(null)` is 0, and 0 is pitch dark.
+ *
+ * `liveValuesOf()` is the ONE reader of a device snapshot's five light axes,
+ * and it used to cast: `obj?.dim?.value as number | undefined`. That does not
+ * coerce, but it mistypes, and every consumer downstream tests `=== undefined`
+ * to mean "the lamp never told us". So a `null` — an integration that has not
+ * reported yet, or one whose sensor battery went flat — counted as a real
+ * reading of zero, and a Daylight light wrote `dim 0.01` to a lit lamp.
+ */
+describe('an unusable snapshot value is absent, not zero', () => {
+  const snapshot = (values: Record<string, unknown>) => liveValuesOf({
+    capabilitiesObj: Object.fromEntries(
+      Object.entries(values).map(([capability, value]) => [capability, { value }]),
+    ),
+  });
+
+  test('null on any axis reads as absent rather than as zero', () => {
+    const values = snapshot({
+      onoff: null, dim: null, light_temperature: null,
+      light_hue: null, light_saturation: null,
+    });
+
+    assert.deepEqual(values, {
+      onoff: undefined, dim: undefined, light_temperature: undefined,
+      light_hue: undefined, light_saturation: undefined,
+    });
+    // The distinction the whole finding turns on: absent, not a falsy number.
+    assert.equal(values.dim, undefined);
+    assert.notEqual(values.dim, 0);
+  });
+
+  test('every other junk shape is absent too', () => {
+    for (const junk of [undefined, NaN, Infinity, -Infinity, '0.5', '', false, {}, [], -0.1, 1.5]) {
+      const values = snapshot({ dim: junk, light_temperature: junk, light_hue: junk });
+      assert.equal(values.dim, undefined, `dim accepted ${String(junk)}`);
+      assert.equal(values.light_temperature, undefined, `temperature accepted ${String(junk)}`);
+      assert.equal(values.light_hue, undefined, `hue accepted ${String(junk)}`);
+    }
+  });
+
+  test('onoff takes a boolean and nothing that merely looks like one', () => {
+    assert.equal(snapshot({ onoff: true }).onoff, true);
+    assert.equal(snapshot({ onoff: false }).onoff, false);
+    for (const junk of [1, 0, 'true', 'false', null]) {
+      assert.equal(snapshot({ onoff: junk }).onoff, undefined, `onoff accepted ${String(junk)}`);
+    }
+  });
+
+  test('a genuine reading still passes, including both ends of the axis', () => {
+    const values = snapshot({
+      onoff: true, dim: 0, light_temperature: 1,
+      light_hue: 0.5, light_saturation: 0.25,
+    });
+
+    assert.deepEqual(values, {
+      onoff: true, dim: 0, light_temperature: 1,
+      light_hue: 0.5, light_saturation: 0.25,
+    });
+  });
+
+  test('a missing capabilitiesObj is five absences, not five zeroes', () => {
+    assert.deepEqual(liveValuesOf({}), {
+      onoff: undefined, dim: undefined, light_temperature: undefined,
+      light_hue: undefined, light_saturation: undefined,
+    });
   });
 });

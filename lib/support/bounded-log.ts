@@ -9,12 +9,17 @@
  */
 export class BoundedLog<T> {
   private readonly items: T[] = [];
+  private dropped = 0;
 
-  constructor(private readonly cap: number) {}
+  constructor(private readonly cap: number, private readonly onAdd?: (entry: T) => void) {}
 
   add(entry: T): void {
+    this.onAdd?.(entry);
     this.items.unshift(entry);
-    if (this.items.length > this.cap) this.items.pop();
+    if (this.items.length > this.cap) {
+      this.items.pop();
+      this.dropped += 1;
+    }
   }
 
   /** Newest first, always. */
@@ -26,7 +31,12 @@ export class BoundedLog<T> {
     return this.items.length;
   }
 
+  retention(): { capacity: number; retained: number; dropped: number } {
+    return { capacity: this.cap, retained: this.size, dropped: this.dropped };
+  }
+
   clear(): void {
     this.items.length = 0;
+    this.dropped = 0;
   }
 }
