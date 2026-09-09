@@ -7,9 +7,10 @@ import { messageOf } from '../support/homey-errors';
 /**
  * Everything a Lightkeeper virtual device does that is not the SDK.
  *
- * The three device types are genuinely different products — a controller
- * listens to a remote, a schedule fires at a time, a circadian light follows a
- * curve — but their DEVICE layer was three copies of one file: load-and-migrate,
+ * The five device types are genuinely different products — a controller listens
+ * to a remote, a schedule fires at a time, a circadian light and a Curve light
+ * follow a curve, a Daylight light follows the room — but their DEVICE layer was
+ * a copy of one file per type: load-and-migrate,
  * register, translate a state detail, persist, tear down. The copies had already
  * drifted (the controller persisted its profile before registering, the other
  * two after; only two of the three carried the paused-while-unavailable fix),

@@ -6,7 +6,7 @@ import type { TargetSpec } from './light-intent';
 /**
  * "Have this device's targets changed?", answered honestly.
  *
- * All three runtimes asked it as `JSON.stringify(ids) === JSON.stringify(old)`,
+ * Every runtime asked it as `JSON.stringify(ids) === JSON.stringify(old)`,
  * which is true in three cases where the answer should be no:
  *
  *  - a light RE-PAIRED under the same id, coming back with a different dim

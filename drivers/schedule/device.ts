@@ -6,7 +6,7 @@ import type { ScheduleRuntime } from '../../lib/schedules/schedule-runtime';
 /**
  * One virtual device per light schedule.
  *
- * Everything it shares with the other two device types lives in
+ * Everything it shares with the other four device types lives in
  * `LightkeeperDevice`. Two things differ from a controller, both deliberate:
  *
  *  - **Paused is not unavailable.** The controller marks a disabled controller

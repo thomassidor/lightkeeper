@@ -6,9 +6,10 @@ import { join } from 'node:path';
 /**
  * Pair views are injected into ONE document (see any view's script header), so
  * every CSS rule has to be scoped to the view's own root id and Homey will not
- * follow a reference between them. The consequence is a 129-line base block, an
+ * follow a reference between them. The consequence is a base CSS block, an
  * `emit()`, and — on four views — a whole daylight card, present once per view
- * file.
+ * file. (No line counts here: three places once carried three stale ones.
+ * `wc -l views/shared/*` is the answer, and it stays right.)
  *
  * **Those blocks are now GENERATED**, spliced from `views/shared/` by
  * `npm run sync:views`, so `npm run sync:views:check` is what catches a view

@@ -186,6 +186,11 @@
   <button id="evidence-start" data-i18n="settings.evidenceStart" disabled></button>
   <button id="evidence-stop" data-i18n="settings.evidenceStop" disabled></button>
   <button id="evidence-refresh" data-i18n="settings.evidenceRefresh"></button>
+  <!-- Enabled for every state that is NOT idle or recording. Without it an
+       archive that ended in `error` or `full` could only be reset from the
+       command line, which leaves the one button a household can reach saying
+       "Start" and refusing to work. -->
+  <button id="evidence-clear" data-i18n="settings.evidenceClear" disabled></button>
 </div>
 <label for="evidence-note" data-i18n="settings.evidenceNoteLabel"></label>
 <input id="evidence-note" type="text" maxlength="1000">
@@ -760,7 +765,14 @@
       document.getElementById('evidence-start').disabled = data.state !== 'idle';
       document.getElementById('evidence-stop').disabled = data.state !== 'recording';
       document.getElementById('evidence-add-note').disabled = data.state !== 'recording';
+      // An archive can only be discarded once it has stopped being written to.
+      // `idle` has nothing to clear; `recording` must be stopped first, or the
+      // week's evidence goes with one mis-click.
+      lastEvidenceId = data.id || null;
+      document.getElementById('evidence-clear').disabled =
+        !lastEvidenceId || data.state === 'idle' || data.state === 'recording';
     }
+    var lastEvidenceId = null;
     function evidenceError() { document.getElementById('evidence-status').textContent = t('requestFailed'); }
     function refreshEvidence() { return api('GET', '/evidence').then(showEvidence).catch(evidenceError); }
     refreshEvidence();
@@ -772,6 +784,13 @@
     document.getElementById('evidence-stop').addEventListener('click', function () {
       document.getElementById('evidence-stop').disabled = true;
       api('POST', '/evidence/stop').then(showEvidence).catch(function () { evidenceError(); refreshEvidence(); });
+    });
+    document.getElementById('evidence-clear').addEventListener('click', function () {
+      if (!lastEvidenceId) return;
+      var button = document.getElementById('evidence-clear');
+      button.disabled = true;
+      api('DELETE', '/evidence/' + encodeURIComponent(lastEvidenceId))
+        .then(showEvidence).catch(function () { evidenceError(); refreshEvidence(); });
     });
     document.getElementById('evidence-add-note').addEventListener('click', function () {
       var input = document.getElementById('evidence-note');

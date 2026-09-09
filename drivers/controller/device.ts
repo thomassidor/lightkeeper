@@ -9,7 +9,7 @@ import type { ControllerRuntime } from '../../lib/runtime/controller-runtime';
  * relationship: source reference, targets, mappings, managed flow references,
  * runtime status and diagnostics.
  *
- * Everything this shares with the other two device types — load-and-migrate,
+ * Everything this shares with the other four device types — load-and-migrate,
  * transactional apply, translated state text, teardown — lives in
  * `LightkeeperDevice`. What is left below is what makes a controller a
  * controller: `disabled` means unavailable (nothing on the tile does anything,

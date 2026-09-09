@@ -75,11 +75,63 @@ The script cannot do these. Report each by its number.
 
 ## 4. This release
 
-**0.6.1 — sensor ownership, runtime cleanup, cancellation and configuration recovery.**
+**0.7.0 — the week-long evidence recorder, health verdicts that compose, and the launch-review
+hardening.**
 
 These checks are **not yet run on hardware**. Unit and integration tests cover injected failures
 and controlled races; the checks below establish how the real Homey and its integrations behave.
 T81–T90 were the 0.6.0 release checks and are retired. Their recorded outcomes remain below.
+T91–T97 were written for 0.6.1, which never shipped separately, so they are still owed and carry
+forward here.
+
+**T98–T101 are the recorder's smoke test, and it is the one thing in this list that cannot be
+skipped.** Everything the recorder promises rests on two assumptions no unit test can reach: that
+`/userdata` and `homey.settings` BOTH survive a plain `homey app install`, and that the archive is
+not readable without the key. If either is wrong, a household runs for a week and has nothing, or
+has something it should not.
+
+- [ ] **T98** `npx homey app install`, then `node scripts/verify-hardware.mjs memory` for a
+      baseline reading. Press **Start seven-day recording** in app settings. After sixty seconds
+      `node scripts/evidence.mjs status` reports `recording`, at least three records, `bytes`
+      above zero and a `lastFlushAt`. The settings page does not poll, so press **Refresh
+      recording status** rather than waiting for the number to move on its own.
+- [ ] **T99** Restart the app — or reinstall the SAME build, which is the case that matters.
+      `status` reports the same `id` and the same `endsAt`, with a grown record count. Then
+      `export` and confirm the archive contains `app_shutdown` followed by `app_boot`, carrying
+      two different `bootId`s under one `runId`, with `recoveredTailBytes: 0`. This is the only
+      proof that `/userdata` AND settings both survive a plain install, which the whole feature
+      assumes. **A `--clean` install is expected to lose the run; do not use one here.**
+- [ ] **T100** `node scripts/evidence.mjs note "smoke"`, then `export` using the SECOND Personal
+      API Key while recording continues (two keys, one session each — platform §2). `analyze`
+      reports one observation. `grep -c` the export for the first eight hex characters of the app
+      key returns 0. Fetch
+      `http://<homey>/app/<id>/userdata/lightkeeper-evidence/<id>.enc` unauthenticated and confirm
+      what comes back is ciphertext, not JSON.
+- [ ] **T101** `verify-hardware.mjs memory` again after ten minutes of recording: the delta must
+      be under 3 MB. Then `stop`, `clear <id>`, and `status` reports `idle`. Do the same from the
+      settings page's **Discard archive** button and confirm **Start** becomes available again.
+- [ ] **T102** Cut one lamp of a three-lamp circadian or Daylight light at the wall and leave it.
+      Within a few minutes the tile must stop saying everything is well and report the lamp.
+      Switch it back on: the tile returns to normal within two ticks. This is the failure streak
+      finally reaching the device, and the wall switch is the only way to produce it — a lamp cut
+      at the wall stays `available: true` (platform §6), so nothing else changes.
+- [ ] **T103** With a controller whose Flows are healthy, edit one generated Flow in the Flow
+      editor so it reads as user-edited, then switch one of its lamps off at the wall. The tile
+      must say "open repair" and KEEP saying it — not swap to a lamp count, and not become
+      available again. Then remove the API key: the tile must change to the credential message.
+      Paste a working key back: the repair prompt must return, not `ready`.
+- [ ] **T104** In a room containing a dimmable bulb, a lamp on a smart plug, an ordinary switched
+      socket and a non-light appliance that happens to have `onoff`, run the light picker. It must
+      offer the first two and not the last two. **This reverses an earlier deliberate decision
+      that `onoff` was the whole rule, so confirm the new behaviour is what is wanted before
+      relying on it.**
+- [ ] **T105** Map a single control to Hold → Brighter and nothing else. Press and hold, then
+      release. The ramp must start on the hold and STOP on the release — not run to the ten-second
+      hard stop. Then give that mapping a per-light target and repeat: only that lamp may move.
+- [ ] **T106** With a circadian light and a Daylight light both running, kill the Homey's socket
+      (pull its network briefly, or restart the router). Once it is back, toggle a lamp at the
+      wall and change a lux sensor's reading. Both must reach the app without restarting it, and
+      `getDiagnostics` must not show two clients' worth of subscriptions.
 
 - [ ] **T91** Configure a schedule, a circadian light and a Curve light with a lux sensor,
       without a standalone Daylight light using it. Close pairing completely, change the sensor's

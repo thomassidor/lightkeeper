@@ -6,7 +6,7 @@ import type { CircadianRuntime } from '../../lib/circadian/circadian-runtime';
 /**
  * One virtual device per curve light.
  *
- * Everything it shares with the other two device types lives in
+ * Everything it shares with the other four device types lives in
  * `LightkeeperDevice`. Three things differ, all for the same underlying reason —
  * this device type generates no Flows (platform §12):
  *

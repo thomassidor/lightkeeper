@@ -4,9 +4,10 @@
  *
  * Two copies happen here, for two different platform reasons.
  *
- * **Shared BLOCKS, inside a view.** Every pair view carries the same ~129-line
- * CSS base and the same `emit()`; four of them carry the same ~470-line daylight
- * card. All views of a pairing session share ONE document, so every rule is
+ * **Shared BLOCKS, inside a view.** Every pair view carries the same CSS base
+ * and the same `emit()`; four of them carry the same daylight card. (Sizes are
+ * `wc -l views/shared/*` rather than quoted here — the quoted ones went stale
+ * in three separate files.) All views of a pairing session share ONE document, so every rule is
  * scoped to the view's own root id and there is no module loader to reach for —
  * which is why these were authored by hand in all thirteen views, with
  * `test/unit/pair-view-styles.test.ts` asserting they stayed identical. They are

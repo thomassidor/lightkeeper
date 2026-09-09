@@ -69,7 +69,7 @@
  *   path is still live.
  * - Anything needing eyes on a screen. Those are covered off-hardware instead:
  *   the pairing screens' own rules by `test/unit/pair-view-behaviour.test.ts`,
- *   the settings page by `test/unit/settings-page.test.ts`, the four device
+ *   the settings page by `test/unit/settings-page.test.ts`, the five device
  *   pictures by `test/unit/assets.test.ts`, and how it all LOOKS by
  *   `npm run render:views`.
  * - Re-deriving what the curve SHOULD be at this moment. That would re-implement
@@ -127,7 +127,7 @@ const APP_ID = 'com.thomassidor.lightkeeper';
 /** The three bridge action cards. A Flow calling one of these is ours. */
 const BRIDGE_CARDS = ['bridge_event', 'bridge_numeric_event', 'bridge_token_event'];
 
-/** The two drivers that own Flows, and the two that must never own one (platform §12). */
+/** The two drivers that own Flows, and the THREE that must never own one (platform §12). */
 const FLOW_OWNING_DRIVERS = ['controller', 'schedule'];
 const FLOWLESS_DRIVERS = ['circadian', 'curve', 'daylight'];
 
@@ -339,7 +339,7 @@ function readConfig() {
     /**
      * Which room the test lamps come from.
      *
-     * A pass builds four devices and then switches their lamps on and off,
+     * A pass builds five devices and then switches their lamps on and off,
      * writes colours to them and power-cycles one. Doing that to whichever
      * lights happen to sort first across a whole house is antisocial: on this
      * Homey it reached a bedroom and a child's room. Naming one room keeps the
@@ -3906,7 +3906,7 @@ const FULL = [
 
 /** Lines no script can reach, printed at the end so a report is complete. */
 const STILL_MANUAL = [
-  'T3  Add device → Lightkeeper lists four types, with four different pictures',
+  'T3  Add device → Lightkeeper lists five types, with five different pictures',
   'T9  press the mapped button — the lights respond',
   'T10 hold the ramp button — it ramps, and STOPS when you let go, inside 10s',
   'T11 turn the dial — the lights move by a sensible amount, not straight to full',

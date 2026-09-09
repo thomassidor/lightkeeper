@@ -13,7 +13,7 @@ import type { WriteRecord } from '../outputs/light-target-adapter';
 import { messageOf } from '../support/homey-errors';
 
 /**
- * Registry of live Daylight runtimes — the fifth of these, and the third that
+ * Registry of live Daylight runtimes — the fourth of these, and the third that
  * owns a clock rather than delegating to the Flow engine.
  *
  * **Its own manager rather than a widening of `CircadianRuntimeManager`**, and

@@ -5,9 +5,17 @@ session is not suitable for an unattended week. The recorder starts only when yo
 installing or opening settings does not start it.
 
 In Homey → Lightkeeper → app settings, choose **Start seven-day recording**. Check that
-the state says **Recording** and the saved-record count increases after a minute. You
-can then close the page and turn off your computer. Homey collects the evidence itself.
-The deadline survives app restarts and is not extended by installing a new build.
+the state says **Recording**; wait a minute, press **Refresh recording status** and check
+that the saved-record count has gone up. The page does not poll — it shows the status as
+of the last time you asked for it — so a count that has not moved on a page you have left
+open means nothing until you press Refresh. You can then close the page and turn off your
+computer. Homey collects the evidence itself. The deadline survives app restarts and is
+not extended by installing a new build.
+
+If a run ends in **Storage full** or **Error**, **Discard archive** on the same page
+deletes it and returns the state to **Idle** so a new run can be started. That button is
+deliberately disabled while a run is recording: stopping comes first, or a week's evidence
+goes with one mis-click.
 
 When you notice something odd, enter it under **What did you notice?** and choose
 **Save observation**. Include the room, the visible behavior and what you did immediately

@@ -39,6 +39,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The SHIPPED tree only, and only high or critical.
+      #
+      # `--omit=dev` because devDependencies never reach a Homey: the pinned
+      # `homey` CLI brings a large tool tree of its own (17 findings, 5 high,
+      # through sharp and libvips) that a Homey never sees, and failing CI on
+      # those would train everyone to ignore this step.
+      #
+      # `--audit-level=high` tolerates the four accepted moderates CLAUDE.md
+      # records — one chain, parseuri → engine.io-client → socket.io-client,
+      # reached only through homey-api, with no upstream fix to take and a
+      # downgrade of homey-api as npm's only suggestion. CLAUDE.md says
+      # "re-check at each dependency bump"; nothing did, so a new HIGH in the
+      # shipped tree would have landed green on a dependabot PR.
+      - name: Audit the shipped dependency tree
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Type-check
         run: npm run typecheck
 

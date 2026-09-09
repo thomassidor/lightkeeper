@@ -281,6 +281,7 @@
     "evidenceStart": "Start seven-day recording",
     "evidenceStop": "Stop recording",
     "evidenceRefresh": "Refresh recording status",
+    "evidenceClear": "Discard archive",
     "evidenceNoteLabel": "What did you notice?",
     "evidenceAddNote": "Save observation",
     "evidenceExportHelp": "Export the full recording from your computer with the command below. The ordinary bug report includes status only. Export and clear the existing recording before starting another test.",

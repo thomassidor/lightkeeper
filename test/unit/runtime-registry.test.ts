@@ -6,7 +6,7 @@ import { FakeTimers } from '../support/fake-timers';
 import { deferred, settle } from '../support/deferred';
 
 /**
- * The Map, the coalescing timer and the teardown that all three runtime managers
+ * The Map, the coalescing timer and the teardown that all four runtime managers
  * used to have a copy of — and that no test imported at all.
  *
  * It was extracted precisely because three copies meant every ordering fix had

@@ -17,6 +17,7 @@ Every document in this repository, and who it is for. None of `docs/` is bundled
 |---|---|
 | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | **Start here.** Setup, the house rules, and what must pass before a PR |
 | [`commands.md`](commands.md) | **Every command in one place** — test, typecheck, sync the views, render them, install on a Homey, run the hardware pass, probe the lights, release. With each one's traps |
+| [`week-long-testing.md`](week-long-testing.md) | Start a persistent seven-day recording, annotate observations, export and analyze the evidence |
 | [`../CLAUDE.md`](../CLAUDE.md) | The architecture, the conventions, the release checklist, and why each dependency is pinned. Written for agents and maintainers alike |
 | [`homey-platform.md`](homey-platform.md) | **Sixteen sections on how Homey actually behaves**, established against real hardware and documented nowhere else. The code cites it as `platform §n` |
 | [`hardware-test-plan.md`](hardware-test-plan.md) | **The standing pass on a real Homey, run before every release.** What to do and how to report it, and nothing else |
@@ -46,6 +47,6 @@ Nothing shipped is hand-edited: `python artwork/export-assets.py` builds every i
 ## Archive
 
 [`history/`](history) is the completed remediation project that produced most of 0.5.0 — a master
-plan, nine phase files, and `DEVIATIONS.md`, which records where the plan and the code disagreed and
-what was done instead. All eight phases are done; it is kept for the reasoning, which two code
+plan, nine phase files (`PHASE-0` through `PHASE-8`), and `DEVIATIONS.md`, which records where the
+plan and the code disagreed and what was done instead. All nine are done; it is kept for the reasoning, which two code
 comments still cite directly. Nothing in it describes work that is still outstanding.

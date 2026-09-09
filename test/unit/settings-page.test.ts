@@ -402,11 +402,12 @@ describe('the generated-Flow count, and its refusal (T2, T52)', () => {
 
 test('recording controls reflect the archive and save a timestamped observation through the API', async () => {
   const idle = { state: 'idle', records: 0, bytes: 0, dropped: 0 };
-  const recording = { state: 'recording', records: 3, bytes: 1200, dropped: 0, endsAt: Date.now() + 10000 };
+  const recording = { state: 'recording', id: 'run-1', records: 3, bytes: 1200, dropped: 0, endsAt: Date.now() + 10000 };
   const view = runSettingsPage(PAGE, { respond: {
     'GET /': EMPTY, 'GET /orphans': NO_ORPHANS, 'GET /evidence': idle,
     'POST /evidence/start': recording, 'POST /evidence/note': recording,
     'POST /evidence/stop': { ...recording, state: 'stopped' },
+    'DELETE /evidence/run-1': idle,
   } });
   await view.settle();
   assert.equal(view.byId('evidence-start')!.disabled, false);
@@ -424,4 +425,42 @@ test('recording controls reflect the archive and save a timestamped observation 
   await view.settle();
   assert.equal(view.byId('evidence-start')!.disabled, true, 'existing evidence must not be overwritten');
   assert.equal(view.byId('evidence-add-note')!.disabled, true);
+
+  /**
+   * And the way out, which is the whole reason the button exists.
+   *
+   * A run that ends in `stopped`, `complete`, `full` or `error` is not `idle`,
+   * so Start stays disabled — deliberately, since an archive must never be
+   * overwritten. Before this, the only thing that could reset it was
+   * `scripts/evidence.mjs clear`, which leaves a household looking at a page
+   * whose one button refuses to work and no explanation on it.
+   */
+  assert.equal(
+    view.byId('evidence-clear')!.disabled, false,
+    'a stopped archive must be discardable from the page',
+  );
+  view.fire(view.byId('evidence-clear')!, 'click');
+  await view.settle();
+
+  assert.ok(
+    view.calls.some(call => call.method === 'DELETE' && call.path === '/evidence/run-1'),
+    'Discard must name the archive it is discarding',
+  );
+  assert.equal(view.byId('evidence-start')!.disabled, false, 'and a new run can then start');
+  assert.equal(
+    view.byId('evidence-clear')!.disabled, true,
+    'with nothing left to discard',
+  );
+});
+
+test('the discard button is disabled while a recording is running', async () => {
+  // Stopping comes first. A week of evidence must not go with one mis-click.
+  const recording = { state: 'recording', id: 'run-1', records: 3, bytes: 1200, dropped: 0, endsAt: Date.now() + 10000 };
+  const view = runSettingsPage(PAGE, { respond: {
+    'GET /': EMPTY, 'GET /orphans': NO_ORPHANS, 'GET /evidence': recording,
+  } });
+  await view.settle();
+
+  assert.equal(view.byId('evidence-clear')!.disabled, true);
+  assert.equal(view.byId('evidence-stop')!.disabled, false, 'stop is the way out of a live run');
 });

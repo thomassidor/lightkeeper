@@ -1043,8 +1043,8 @@ Cannot read properties of null (reading 'get')
 ```
 
 and no runtime registered, while the same driver paired by hand is fine. Established 30 August
-2026 across all three drivers that declare a `capabilitiesOptions` block — schedule, circadian and
-Curve — with the controller, which declares none, unaffected throughout. `capabilities` and `class`
+2026 across the drivers that declare a `capabilitiesOptions` block — schedule, circadian and
+Curve then, and Daylight since — with the controller, which declares none, unaffected throughout. `capabilities` and `class`
 ARE applied from the manifest on this path, which is what makes the omission so hard to see.
 
 Send `capabilities`, `capabilitiesOptions`, `class` and `energy` explicitly; the endpoint accepts

@@ -109,7 +109,7 @@ const DAYLIGHT_SET = {
 
 /**
  * Keyed by view FILE NAME, not by driver: `targets.html` is one screen shared by
- * four drivers, and rendering it four times from four fixtures would be four
+ * five drivers, and rendering it five times from five fixtures would be five
  * chances for them to disagree about the same picture.
  */
 /** @type {Record<string, Record<string, unknown>>} */

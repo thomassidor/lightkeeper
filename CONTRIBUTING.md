@@ -57,7 +57,7 @@ app.ts  api.ts        app entry, and the Web API the settings page calls
 lib/                  everything with no Homey device attached: discovery, inputs,
                       mapping, outputs, the flow bridge, every runtime, schedules,
                       the circadian curve
-drivers/              the four virtual device types and their pairing views
+drivers/              the five virtual device types and their pairing views
 settings/  locales/   the app settings page, and every user-facing string
 test/                 unit tests and fixtures transcribed from real hardware
 docs/                 the platform reference, privacy, review notes, localisation

@@ -49,6 +49,8 @@ npm run sync:views:check       # what sync WOULD copy; writes nothing, exits 1 o
 npm run render:views           # draw every pairing screen to .views/ — needs Chrome, not CI
 npm run render:icons           # draw every icon at the App Store's 24px box. Chrome, not CI
 python artwork/export-assets.py   # re-export every shipped icon, image and the banner
+node scripts/evidence.mjs status        # is a seven-day recording running, and how big?
+node scripts/evidence.mjs export        # pull the archive down and decrypt it locally
 node scripts/verify-hardware.mjs spike       # can the script reach a real Homey at all?
 node scripts/verify-hardware.mjs memory      # PSS against Homey's 30 MB guideline. Read-only
 node scripts/verify-hardware.mjs full --yes  # MOST of the hardware pass — NEEDS a real Homey.
@@ -88,7 +90,11 @@ lib/
                                 target resolver, target-state cache
   bridge/                       binding compiler, flow bridge manager, flow folders
   runtime/                      controller runtime, manager, health monitor, shared target
-                                health, and the visible-state holder all four runtimes compose
+                                health, and the visible-state holder all four runtimes compose.
+                                verdict.ts is the RANKING that composes what reconciliation
+                                learned with what the lights say — worst wins, ties to the one
+                                that names an action; control-diagnostics.ts is the bounded
+                                per-runtime history of control passes and power events
   profiles/                     profile schema, migrations
   schedules/                    types, window maths, local clock, bindings, runtime, manager,
                                 time-card discovery, migrations
@@ -118,6 +124,14 @@ lib/
                                 lamp writes: that is DeviceQueue, inside command-scheduler.ts.
                                 KeyedMutex serialises subscribe/unsubscribe, device-lifecycle
                                 operations and flow folders instead
+    evidence-sink.ts            the ONE seam between anything producing evidence and whatever
+                                consumes it. A file of its own so a runtime depends on a
+                                signature, never on the recorder that implements it today
+    evidence-recorder.ts        opt-in seven-day recording: gzip + AES-256-GCM batches appended
+                                to /userdata, the key in homey.settings, every record stripped
+                                and redacted on the way in. OFF costs one object literal per
+                                event. See docs/week-long-testing.md
+    evidence-sampler.ts         what a periodic health sample is made of
   app-contract.ts               what api.ts and the device layer may use of the app
   homey-api-types.ts            the DEVICE and ZONE shapes homey-api returns, at the one
                                 seam that normalises them. The flow and card seams read `any`
@@ -146,8 +160,10 @@ scripts/verify-hardware.mjs     most of the hardware pass. Talks to a REAL Homey
                                 Personal API Key — needs HOMEY_ADDRESS + HOMEY_API_KEY, and
                                 HOMEY_APP_KEY for `credential`. TWO keys: one session per key
                                 (platform §2). Names everything it builds `[verify] …` and
-                                touches nothing else — a device you paired is never
-                                selected, written to or deleted
+                                never creates, renames or deletes a Lightkeeper device it did
+                                not build. It DOES switch the lamps its own devices point at —
+                                fifteen setCapabilityValue calls, all behind `--yes`, all
+                                restored — so read that as a promise about DEVICES, not lamps
 scripts/probe-lights.mjs        every light on a REAL Homey, pushed until it misbehaves. Reports
                                 findings — each naming the assumption it breaks and its file:line —
                                 so a per-vendor strategy table could be designed from evidence
@@ -161,6 +177,10 @@ scripts/render-views.mjs        every pairing screen to a PNG, plus a contact sh
 scripts/render-icons.mjs        every icon at the size the App Store draws it — 24px of ink in a
                                 40px circle (platform §10). The contact sheet that catches an icon
                                 too fine or too busy to read there
+scripts/evidence.mjs            start | stop | status | export | note | clear | analyze against a
+                                REAL Homey's recorder. Needs a Personal API Key; use the SECOND
+                                one to export while a run continues (platform §2). Reports to
+                                .evidence/ (gitignored)
 scripts/pair-view-fixtures.mjs  the demo data those renders use, one entry per view
 scripts/dump-card-fixtures.mjs  writes test/fixtures/cards/*.json from the hand-transcribed TS
                                 fixtures. Run BY HAND, only when those change; the JSON is the
@@ -183,6 +203,9 @@ docs/                           NOT bundled. `docs/README.md` indexes it
   localisation.md               English-only on purpose; how to add a language back
   hardware-test-plan.md         the standing pass on a real Homey: what to DO, and how to report
   hardware-test-coverage.md     what covers what — the script, the suite, and the retired lines
+  commands.md                   every command in one place, with the trap that goes with each
+  week-long-testing.md          the opt-in seven-day recorder: what it captures, what it does
+                                NOT, and how to read an archive back
   history/                      ARCHIVE: the completed 0.5.0 remediation project
 artwork/                        NOT bundled. Every graphic's source, and its own two docs
   masters/                      every graphic's source
@@ -286,12 +309,14 @@ key with it, and a plain install demonstrably does not: the 2 September retry ca
 
 ## Releasing a version
 
-The version lives in **three** places and a release is only coherent when all of them agree:
+The version lives in **four** places and a release is only coherent when all of them agree —
+`release-metadata.test.ts` fails if any disagrees:
 
 | File | Role |
 |---|---|
 | `.homeycompose/app.json` | the source of truth |
 | `package.json` | must match it |
+| `package-lock.json` | must match it too, in BOTH the top-level `version` and the `""` package entry. `npm install` updates it; a hand-edited `package.json` alone leaves it behind |
 | `app.json` | **generated** — never hand-edit; the CLI rewrites it from `.homeycompose/` on every `validate`, `build` and `install` |
 
 Every user-visible change ships a changelog entry, in **three** places with three different
@@ -470,9 +495,10 @@ container's document rather than getting their own iframe. They must not load `h
 every CSS rule is scoped to the view's root id, and the boot guard lives on the root element rather
 than in a global. Each file's header explains this.
 
-**The shared blocks are GENERATED, and `views/shared/` is where they are authored.** The 129-line
-CSS base and `emit()` appear in all 26 view files; the daylight card — 69 lines of CSS, 60 of markup
-and a 339-line `daylightCard()` — appears in 8. All of it used to be authored by hand in every copy,
+**The shared blocks are GENERATED, and `views/shared/` is where they are authored.** The CSS base
+and `emit()` appear in all 26 view files; the daylight card — its own CSS, its markup and
+`daylightCard()` — appears in 8. (`wc -l views/shared/*` for the sizes: they are quoted nowhere,
+deliberately, because three places once carried three stale numbers.) All of it used to be authored by hand in every copy,
 under an in-file instruction to "edit this block in all files, or in none of them", with
 `test/unit/pair-view-styles.test.ts` asserting they stayed identical. `npm run sync:views` now
 splices them from `views/shared/{base.css,emit.js,daylight-card.css,daylight-card.html,daylight-card.js}`,
