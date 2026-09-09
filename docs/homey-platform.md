@@ -8,8 +8,9 @@ This is how Homey actually behaves, as opposed to how it appears to, and it is d
 else. Every section was established against real hardware: Homey Pro 2023, firmware 13.4.0-13.4.1,
 homey-api 3.19.2.
 
-**The reference Homey has since moved to firmware 13.5.0-rc.4** (observed 2 September 2026). Two
-sections have been re-checked against it. §9: one row of its card table had gone stale, and the card
+**The reference Homey now runs firmware 13.5.0** (observed 9 September 2026; it was on 13.5.0-rc.4
+on 2 September). §17 was established on it outright, and two earlier sections have been re-checked
+against it. §9: one row of its card table had gone stale, and the card
 this app depends on had not. §6: re-measured across 37 lamps by `scripts/probe-lights.mjs` on 3-4
 September 2026, which walked back the mode gate, settled the clamp and put counts on the rest — that
 section now carries dates and sample sizes on each claim, and is the model for what re-deriving one
@@ -1357,3 +1358,105 @@ defaults are one household's evidence, so they are recorded here rather than
 changed on the strength of it — but the shape of the answer is that a global
 `brightLux` cannot be right for both a south-facing kitchen and an interior
 room, and the sensor's own history is available at pairing time.
+
+## 17. The app sandbox: no RSS, and `onUninit` does not finish
+
+Two things an app cannot do inside its own process, both established on **firmware 13.5.0** on
+9 September 2026 while reading back the first evidence archive the recorder ever produced. Neither
+is discoverable from a unit test, because both work everywhere a test runs.
+
+### `process.memoryUsage()` throws
+
+Every call raises:
+
+```
+ENOENT: no such file or directory, uv_resident_set_memory
+```
+
+The sandbox does not expose the `/proc` entry libuv reads for RSS, and Node surfaces that as a plain
+`ENOENT` — not as a permission error, and not as anything whose name suggests memory. `process.uptime()`
+and `process.version` are both fine, so the failure is specific to the resident-set read rather than
+to `process` as a whole.
+
+**The trap is not the throw, it is where the throw lands.** It was called bare inside an object
+literal:
+
+```ts
+this.evidence.record('health_sample', {
+  ...this.evidenceContext(),
+  memory: process.memoryUsage(),   // throws
+  sensors: this.luminance.watched(),
+  credential: this.credentials.getStatus(),
+});
+```
+
+A literal is evaluated in full before the call it is an argument to, so one throwing property took
+the entire sample with it — the timezone, the sensor ages, the credential status, none of which had
+anything to do with memory. The surrounding `catch` then wrote a `sampling_error` in its place, once
+per sample, for the life of the recording: **the first archive contained 8 identical errors and zero
+health samples**, and the analysis reported `maxRssBytes: 0` because there had never been a reading
+to take a maximum of.
+
+Measured before and after the guard, on the same Homey and the same archive:
+
+| Boot | Build | `health_sample` | `sampling_error` |
+|---|---|---|---|
+| `c511a268` | before | 0 | 2 |
+| `8922d700` | before | 0 | 2 |
+| `07737152` | before | 0 | 4 |
+| `637025a9` | after | **1** | **0** |
+
+So: **wrap it, and never put a platform call bare inside a literal you are handing to something
+else.** The app's own footprint is readable from OUTSIDE — `apps.getAppUsage`'s `pss` field, which is
+what `scripts/verify-hardware.mjs memory` reads — so nothing that mattered is lost; it simply cannot
+be read from in here.
+
+### `onUninit`'s asynchronous work does not complete
+
+An `app_shutdown` record written from `onUninit` **never reaches the archive**, across three app
+restarts and one reinstall of the same build. The same archive recorded 444 records, three
+`app_boot`s and one `recording_stopped` in the same period.
+
+The discriminator is that last one. `recording_stopped` is written by the same `record()` and flushed
+by the same `flush()` — gzip, AES-256-GCM, append, `fsync`, save the manifest — and it arrives
+reliably, because it runs inside an API request that the platform waits for. So the buffer, the
+cipher, the write and the manifest save are all sound; what does not happen is `onUninit` getting far
+enough to use them.
+
+Moving the call from the LAST line of `onUninit` to the FIRST — ahead of four `destroyAll()`s and two
+`destroy()`s — changed nothing, which points at `onUninit` not being awaited (or not being invoked at
+all) rather than at running out of grace part-way down.
+
+Two consequences worth carrying:
+
+- **Anything that must survive a restart has to be written on the way UP, not on the way down.** The
+  recorder's boot boundary comes from `app_boot` plus a fresh `bootId` under the same `runId`, both
+  written during `onInit`, and that is what `hardware-test-plan.md`'s T99 checks. A teardown record is
+  a nice-to-have and must never be load-bearing.
+- **It does not follow that `onUninit` is useless.** Its synchronous work — clearing intervals and
+  timeouts — plausibly still runs, and the SDK's own timers are disposal-safe regardless. What cannot
+  be relied on is an `await` inside it reaching its end.
+
+### And `/userdata` is served without authentication
+
+Related, and measured at the same time. The archive file is reachable over plain HTTP on the LAN with
+no credentials at all:
+
+```
+GET http://<homey>/app/com.thomassidor.lightkeeper/userdata/lightkeeper-evidence/<id>.enc
+  -> 200, 53774 bytes
+```
+
+This is the same surface §8 measured when it established that the Homey serves files beside a pair
+view. `GET /userdata/...` without the `/app/<id>` prefix is a 404, and the app's own Web API is a 401,
+so it is specifically the app's `/userdata` tree that is public.
+
+What came back was checked against every sensitive string this Homey actually contains — nine device
+and zone names, the household name, and the leading twelve characters of both Personal API Keys:
+**no plaintext leaked**, all 26 frames were exactly `{iv, tag, data}`, and the ciphertext measured 41%
+printable against ~36% for random bytes.
+
+So the encryption on that file is **load-bearing, not defence in depth**. The key lives in
+`homey.settings`, which does require authentication — but anyone on the network can take the file, and
+whether they can read it depends entirely on the cipher. Any future feature that writes to `/userdata`
+inherits this and must assume its files are public.

@@ -247,6 +247,7 @@ tests carry one — `(platform §6)` means section 6 of that file. Keep writing 
 | [14](docs/homey-platform.md#14-pair-sessions-are-a-web-api-surface-and-pairing-can-be-scripted) | Pair sessions ARE a Web API surface — pairing and repair can be scripted |
 | [15](docs/homey-platform.md#15-homey-api-caches-every-getall-result-forever) | `homey-api` caches every `getAll` result forever — which is where 30 MB of a 48 MB footprint went |
 | [16](docs/homey-platform.md#16-geolocation-and-the-sun-the-sdk-will-not-compute-for-you) | Geolocation, and the sun the SDK will not compute for you — plus why a lux sensor must not go through the light seams |
+| [17](docs/homey-platform.md#17-the-app-sandbox-no-rss-and-onuninit-does-not-finish) | The app sandbox: `process.memoryUsage()` throws, `onUninit`'s `await` never finishes, and `/userdata` is served without authentication |
 
 # Working on this codebase
 

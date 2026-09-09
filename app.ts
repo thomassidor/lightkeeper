@@ -1,7 +1,7 @@
 'use strict';
 
 import { EvidenceRecorder } from './lib/support/evidence-recorder';
-import { EvidenceSampler } from './lib/support/evidence-sampler';
+import { EvidenceSampler, memoryUsage } from './lib/support/evidence-sampler';
 import type { LightkeeperApp } from './lib/app-contract';
 import Homey from 'homey';
 
@@ -421,7 +421,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
         ...this.daylights.all().map(runtime => ({ kind: 'daylight', runtime, configuration: runtime.currentPlan })),
       ]);
       this.evidence.record('health_sample', { ...this.evidenceContext(),
-        memory: process.memoryUsage(), sensors: this.luminance.watched(),
+        memory: memoryUsage(), sensors: this.luminance.watched(),
         credential: this.credentials.getStatus(), recorder: this.evidence.status() });
     } catch (error) {
       this.evidence.record('sampling_error', { message: messageOf(error) });
@@ -431,6 +431,31 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
   override async onUninit() {
     if (this.evidenceTimer !== null) this.homey.clearInterval(this.evidenceTimer);
     this.evidenceTimer = null;
+
+    /**
+     * FIRST, not last — and even so, best-effort.
+     *
+     * This used to be the final line of `onUninit`, behind four `destroyAll()`
+     * calls and two `destroy()`s. Measured on Homey Pro 2023, firmware 13.5.0
+     * (platform §17):
+     * across two app restarts, an archive that recorded 353 records and two
+     * `app_boot`s contained NO `app_shutdown` at all. Whether `onUninit` is
+     * skipped entirely on a restart or simply runs out of grace before an
+     * awaited `fsync` completes, the answer is the same — the further down the
+     * teardown this sits, the less chance it has.
+     *
+     * So it goes to the front, where the only thing ahead of it is clearing its
+     * own timer. Nothing later in this method produces evidence, so nothing is
+     * lost by recording the shutdown before the runtimes are stopped rather
+     * than after.
+     *
+     * It is still NOT relied on. What actually establishes a boot boundary in
+     * the archive is `app_boot` plus a fresh `bootId` under the same `runId`,
+     * written on the way UP where there is no grace window to run out of — and
+     * that is what `docs/hardware-test-plan.md`'s T99 checks.
+     */
+    await this.evidence?.close();
+
     // Never leave a light mid-ramp, a timer running or a listener attached.
     // The SDK's setTimeout is disposal-safe, but a pending fan-out would still
     // reconcile against registries that are being torn down.
@@ -449,7 +474,6 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     // Whatever the catalogue is still holding from the last read. Small by
     // design (platform §15), but there is no reason for it to outlive the app.
     this.cards?.clear();
-    await this.evidence?.close();
   }
 
 };

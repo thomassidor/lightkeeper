@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { EvidenceRecorder } from '../../lib/support/evidence-recorder';
-import { EvidenceSampler } from '../../lib/support/evidence-sampler';
+import { EvidenceSampler, memoryUsage } from '../../lib/support/evidence-sampler';
 import { exportEvidence, analyzeEvidence } from '../../scripts/evidence.mjs';
 
 async function rig(maxBytes?: number) {
@@ -335,4 +335,59 @@ test('analysis separates a within-boot gap from an across-boot one', async () =>
     const sequences = records.map(record => record.sequence);
     assert.deepEqual(sequences, [...sequences].sort((a, b) => a - b));
   } finally { await h.cleanup(); }
+});
+
+/**
+ * The guard around `process.memoryUsage()`, and the reason it exists.
+ *
+ * Found on HARDWARE, not here: on Homey Pro 2023 firmware 13.5.0 every call
+ * raises `ENOENT: no such file or directory, uv_resident_set_memory`, because
+ * the app sandbox does not expose the `/proc` entry libuv reads for RSS
+ * (platform §17). It works everywhere a test runs, which is exactly why no
+ * test found it.
+ *
+ * The trap was not the throw but where it landed. It was called bare inside the
+ * object literal handed to `record()`, and a literal is evaluated in full
+ * before the call it is an argument to — so one throwing property took the
+ * whole health sample with it: the timezone, the sensor ages, the credential
+ * status, none of which have anything to do with memory. The first archive this
+ * feature ever produced held eight identical `sampling_error`s and ZERO health
+ * samples, for a week that would have recorded nothing about health at all.
+ */
+test('a memory reading that throws becomes null rather than losing the sample', () => {
+  const boom = () => {
+    throw Object.assign(new Error('ENOENT: no such file or directory, uv_resident_set_memory'),
+      { code: 'ENOENT' });
+  };
+
+  assert.equal(memoryUsage(boom), null);
+});
+
+test('and a reading that works is passed straight through', () => {
+  const real = memoryUsage();
+  assert.ok(real !== null, 'this platform can read RSS, so the guard must not swallow it');
+  assert.ok((real.rss ?? 0) > 0);
+});
+
+test('the sample survives a throwing memory reading, which is the whole point', () => {
+  // The shape of the bug: everything ELSE in the sample has to arrive. A test
+  // that only checked the return value would have passed against the broken
+  // code too, because the broken code never got as far as returning.
+  const boom = () => { throw new Error('uv_resident_set_memory'); };
+
+  const sample = {
+    appVersion: '0.7.0',
+    timezone: 'Europe/Copenhagen',
+    memory: memoryUsage(boom),
+    credential: { present: true, valid: true },
+    sensors: [{ deviceId: 's1', lux: 42 }],
+  };
+
+  assert.deepEqual(sample, {
+    appVersion: '0.7.0',
+    timezone: 'Europe/Copenhagen',
+    memory: null,
+    credential: { present: true, valid: true },
+    sensors: [{ deviceId: 's1', lux: 42 }],
+  });
 });

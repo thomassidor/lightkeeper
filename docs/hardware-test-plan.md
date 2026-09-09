@@ -90,26 +90,38 @@ skipped.** Everything the recorder promises rests on two assumptions no unit tes
 not readable without the key. If either is wrong, a household runs for a week and has nothing, or
 has something it should not.
 
-- [ ] **T98** `npx homey app install`, then `node scripts/verify-hardware.mjs memory` for a
+- [x] **T98** `npx homey app install`, then `node scripts/verify-hardware.mjs memory` for a
       baseline reading. Press **Start seven-day recording** in app settings. After sixty seconds
       `node scripts/evidence.mjs status` reports `recording`, at least three records, `bytes`
       above zero and a `lastFlushAt`. The settings page does not poll, so press **Refresh
       recording status** rather than waiting for the number to move on its own.
-- [ ] **T99** Restart the app — or reinstall the SAME build, which is the case that matters.
+- [x] **T99** Restart the app — or reinstall the SAME build, which is the case that matters.
       `status` reports the same `id` and the same `endsAt`, with a grown record count. Then
-      `export` and confirm the archive contains `app_shutdown` followed by `app_boot`, carrying
-      two different `bootId`s under one `runId`, with `recoveredTailBytes: 0`. This is the only
-      proof that `/userdata` AND settings both survive a plain install, which the whole feature
-      assumes. **A `--clean` install is expected to lose the run; do not use one here.**
-- [ ] **T100** `node scripts/evidence.mjs note "smoke"`, then `export` using the SECOND Personal
-      API Key while recording continues (two keys, one session each — platform §2). `analyze`
-      reports one observation. `grep -c` the export for the first eight hex characters of the app
-      key returns 0. Fetch
+      `export` and confirm the archive carries **`app_boot` with a fresh `bootId` under the same
+      `runId`**, and `recoveredTailBytes: 0`. This is the only proof that `/userdata` AND settings
+      both survive a plain install, which the whole feature assumes. **A `--clean` install is
+      expected to lose the run; do not use one here.**
+      *Corrected 9 September: this line originally asked for `app_shutdown` followed by `app_boot`.
+      `app_shutdown` never arrives — `onUninit`'s `await` does not finish on this platform
+      (§17) — so the boot record written on the way UP is what proves the survival, and a
+      teardown record must not be load-bearing.*
+- [x] **T100** `node scripts/evidence.mjs note "smoke"`, then `export` while recording continues.
+      `analyze` reports one observation. Search the export for the leading characters of BOTH keys
+      and for every device and zone name you recognise: all must be absent, and there should be no
+      20-plus-character hex run anywhere. Fetch
       `http://<homey>/app/<id>/userdata/lightkeeper-evidence/<id>.enc` unauthenticated and confirm
-      what comes back is ciphertext, not JSON.
-- [ ] **T101** `verify-hardware.mjs memory` again after ten minutes of recording: the delta must
-      be under 3 MB. Then `stop`, `clear <id>`, and `status` reports `idle`. Do the same from the
+      what comes back is the `{iv, tag, data}` envelope and nothing legible.
+      *Corrected 9 September on two counts. The repo's second key is deliberately `homey.flow`-scoped
+      — it exists to test the app's own Flow credential — so it cannot reach the app Web API at all
+      and returns `Missing Scopes`; exporting with a second GENERAL key remains untested. And the
+      file IS served unauthenticated (200, not a 401): §17 has the measurement. That makes the
+      cipher load-bearing rather than defence in depth, which is why the check is now "nothing
+      legible" rather than "it is ciphertext".*
+- [x] **T101** `verify-hardware.mjs memory` again after ten minutes of recording: the delta must
+      be under 3 MB. Then `stop`, `clear <id>`, and `status` reports `idle` — and confirm the `.enc`
+      file is gone from `/userdata` (the unauthenticated URL above should 404). Do the same from the
       settings page's **Discard archive** button and confirm **Start** becomes available again.
+      *The settings-page half is still owed: only the CLI path was exercised.*
 - [ ] **T102** Cut one lamp of a three-lamp circadian or Daylight light at the wall and leave it.
       Within a few minutes the tile must stop saying everything is well and report the lamp.
       Switch it back on: the tile returns to normal within two ticks. This is the failure streak
@@ -120,7 +132,7 @@ has something it should not.
       must say "open repair" and KEEP saying it — not swap to a lamp count, and not become
       available again. Then remove the API key: the tile must change to the credential message.
       Paste a working key back: the repair prompt must return, not `ready`.
-- [ ] **T104** In a room containing a dimmable bulb, a lamp on a smart plug, an ordinary switched
+- [x] **T104** In a room containing a dimmable bulb, a lamp on a smart plug, an ordinary switched
       socket and a non-light appliance that happens to have `onoff`, run the light picker. It must
       offer the first two and not the last two. **This reverses an earlier deliberate decision
       that `onoff` was the whole rule, so confirm the new behaviour is what is wanted before
@@ -157,6 +169,70 @@ has something it should not.
       Confirm failure restores the previous configuration, including after restart. Repeat with
       first setup and failed recovery: no candidate should keep controlling lights. Do not fill
       or damage the Homey's actual storage to induce this failure.
+
+### Last run — 9 September 2026, Homey Pro 2023, firmware 13.5.0, app 0.7.0
+
+`full --yes`: **69 OK, 1 failed, 1 skipped**, plus `restart --yes` (4 OK) and the recorder lines
+T98–T101 by hand. The skip was T34 in a SEPARATE `restart` run, after `full`'s teardown had already
+removed the devices it built; T34 itself passed inside `full`.
+
+**Two defects found, both fixed in this release, and neither reachable from a unit test.**
+
+- **`process.memoryUsage()` throws in the app sandbox** (§17). It was called bare inside the object
+  literal handed to `record()`, and a literal is evaluated in full before the call — so one throwing
+  property took the whole health sample with it and the `catch` wrote a `sampling_error` in its
+  place, once per sample, for the life of the recording. The first archive this feature ever produced
+  contained **eight identical errors and zero health samples**, and the analysis reported
+  `maxRssBytes: 0` because there had never been a reading to take a maximum of. Guarded; the boot
+  after the fix produced a health sample with `memory: null` and every other field intact. This is
+  precisely the class of bug the week-long recorder exists to surface, and it surfaced its own.
+- **`onUninit`'s asynchronous work does not complete** (§17), so `app_shutdown` never reaches the
+  archive. `recording_stopped` — same `record()`, same `flush()`, same `fsync` — arrives reliably,
+  because it runs inside a request the platform waits for; that is the discriminator. Moving the call
+  from the last line of `onUninit` to the first changed nothing. T99 was rewritten around `app_boot`,
+  which is written on the way UP where there is no grace window to run out of.
+
+**T60 failed at 63 MB PSS (+25.1 MB) and is the documented churn, not a leak.** The same line read
+51.1 MB in 0.5.x and 56.3 MB after two passes in 0.6.0. A reinstall and re-measure gave **38.5 MB with
+the recorder running** against **36.6 MB on the fresh install with none** — so the recorder itself
+costs **+1.9 MB**, inside T101's 3 MB budget, and the 25 MB is the high-water mark of many
+pair/teardown cycles in one app lifetime. Read T59 on a freshly installed app, as the 0.5.1 note
+already said.
+
+**T99 passed on the case that matters.** A plain `npx homey app install` of the same build kept the
+run's `id`, `startedAt` and `endsAt` — 604800000 ms to the millisecond — with the record count growing
+across it and `dropped: 0`. So `/userdata` and `homey.settings` both survive a plain install, which no
+unit test could establish and the whole feature assumes. Three boots and one reinstall produced one
+`runId`, four `bootId`s and a strictly monotonic sequence 1–353.
+
+**T100's key hygiene is clean, and its threat model changed.** Zero occurrences of either Personal API
+Key at 8, 16 and 32 characters, zero 20-plus hex runs anywhere in 152 KB of decompressed evidence, and
+**five `<redacted>` markers** — so the redactor fired on real data rather than merely being present.
+Against the raw served file: none of nine device and zone names, nor the household name, appears; all
+26 frames are exactly `{iv, tag, data}`; the ciphertext is 41% printable against ~36% for random.
+But the file **is** served without authentication (§17), so the cipher is load-bearing.
+
+**T104 is answered, and it settles the R1 question the plan asked to confirm.** The class rule excludes
+**18 of 58** `onoff` devices on this Homey, and every exclusion is right: a dishwasher, an air purifier,
+a Synology NAS, a freezer, an air-conditioner, seven plain sockets, and Lightkeeper's own four
+`class=service` devices. The one that settles it is **`Thomas's Tab A9+` — `class: other`, and it has
+`dim`** — a tablet that "onoff is the whole rule" would have offered as a dimmable light, so a curve
+pointed at that room would have been setting a tablet's screen brightness. The reversal is correct.
+
+**Also observed, incidentally.** T21 shows `light_mode` written alongside `light_temperature`, which
+is the per-device mode decision holding on real lamps. The analysis of the pass's own evidence reported
+42 succeeded writes, 12 **cancelled** — the write cancellation from 0.6.1 working — 4 overrides and 0
+malformed records. And `credential: valid=false` in the first health sample after a boot is correct
+rather than alarming: `revalidateCredential()` is fire-and-forget at start, so the opening sample can
+precede it, and the archive showing that is useful.
+
+**Still needs a person.** T3, T9, T10, T11, T54 as ever, plus this release's own physical lines:
+**T102** (cut a lamp at the wall and watch the tile stop saying all is well), **T103** (edit a Flow by
+hand AND switch a lamp off — the verdict-composition case), **T105** (hold a button; the ramp must stop
+on release), **T106** (kill the socket; a lamp toggle must still reach the app). T53 was rendered — all
+13 screens — but the images still want an eye on them; the daylight screen was read and is correct,
+including the feedback notice properly hidden on a decreasing response. T101's settings-page half
+(**Discard archive**) was not exercised, only the CLI path.
 
 ### Last run — 4 September 2026, Homey Pro 2023, firmware 13.5.0-rc.4, app 0.6.0 + the simplification pass
 
