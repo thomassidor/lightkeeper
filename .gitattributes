@@ -9,6 +9,10 @@
 *.py      text eol=lf
 *.md      text eol=lf
 *.html    text eol=lf
+# views/shared/*.{css,js} are spliced BYTE-FOR-BYTE into the LF pair views by
+# npm run sync:views, so a CRLF checkout of a source drifts every view.
+*.css     text eol=lf
+*.js      text eol=lf
 *.yml     text eol=lf
 *.svg     text eol=lf
 *.txt     text eol=lf
