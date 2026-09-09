@@ -12,12 +12,16 @@ const TEMP = { min: 0, max: 1, decimals: 2 };
 function cacheWith(targets: Array<{
   id: string; on?: boolean; dim?: number; temp?: number;
   supportsDim?: boolean; supportsTemp?: boolean;
+  /** `decimals` on this lamp's `dim`. Tenths is the cruel case — see M-8. */
+  dimDecimals?: number;
 }>) {
   const cache = new TargetStateCache();
   for (const t of targets) {
     cache.setCapabilities(t.id, {
       onoff: true,
-      ...(t.supportsDim === false ? {} : { dim: DIM }),
+      ...(t.supportsDim === false
+        ? {}
+        : { dim: t.dimDecimals === undefined ? DIM : { ...DIM, decimals: t.dimDecimals } }),
       ...(t.supportsTemp === false ? {} : { light_temperature: TEMP }),
     });
     cache.initialise(t.id, { onoff: t.on, dim: t.dim, light_temperature: t.temp });
@@ -103,8 +107,99 @@ describe('relative group brightness', () => {
     assert.equal(result.a, result.b, 'synchronised mode sets one absolute value');
   });
 
+  test('a lamp already ON the group target is not nudged past it', () => {
+    /**
+     * `advanceDim` guarantees a lamp MOVES, which is right per lamp and wrong
+     * for a group. A lamp already sitting on the synchronised target reads as
+     * "did not move" and used to be pushed one representable step beyond
+     * everybody else — and every later press repeated it, so the one lamp that
+     * started in the right place was the one that drifted.
+     *
+     * The measured case: A at 0.13, B at 0.00, +0.1 → A 0.14, B 0.13.
+     */
+    const cache = cacheWith([
+      { id: 'a', on: true, dim: 0.13 }, { id: 'b', on: true, dim: 0 },
+    ]);
+    const { writes } = planIntent(
+      { type: 'brightness_delta', delta: 0.1 }, ['a', 'b'], cache,
+      { ...DEFAULT_BEHAVIOR, groupBrightnessMode: 'synchronised' },
+    );
+    const result = dimWrites(writes);
+
+    assert.equal(
+      result.a, result.b,
+      `synchronised mode split the group: a=${result.a}, b=${result.b}`,
+    );
+  });
+
+  test('and the group still moves, which is the guarantee that does apply', () => {
+    // The synchronised target is the group MEAN plus the delta, so a lamp
+    // sitting above the mean legitimately comes DOWN to meet the others. What
+    // has to rise is the group: that is the guarantee, and it is the one the
+    // per-lamp nudge was wrongly enforcing per lamp.
+    const cache = cacheWith([
+      { id: 'a', on: true, dim: 0.13 }, { id: 'b', on: true, dim: 0 },
+    ]);
+    const mean = (0.13 + 0) / 2;
+    const { writes } = planIntent(
+      { type: 'brightness_delta', delta: 0.1 }, ['a', 'b'], cache,
+      { ...DEFAULT_BEHAVIOR, groupBrightnessMode: 'synchronised' },
+    );
+
+    const level = dimWrites(writes).a!;
+    assert.ok(level > mean, `the group did not get brighter: ${level} vs mean ${mean}`);
+  });
+
   test('relative is the default, so composition survives', () => {
     assert.equal(DEFAULT_BEHAVIOR.groupBrightnessMode, 'relative');
+  });
+});
+
+describe('a positive brightness is never written as darkness', () => {
+  /**
+   * The floor under a dim-DOWN, on a lamp whose resolution is tenths.
+   *
+   * `minimumBrightness` defaults to 0.01, which is the `decimals: 2`
+   * representable step wearing a policy name. On a `decimals: 1` lamp `dim`
+   * moves in tenths, so 0.01 quantises to 0.00 — darkness, written by the one
+   * branch whose entire purpose is to refuse to write darkness. Reached with
+   * ordinary numbers: `decimals: 1`, dim 0.1, delta −0.1.
+   */
+  test('the dim-down floor is representable on a lamp with one decimal', () => {
+    const cache = cacheWith([{ id: 'a', on: true, dim: 0.1, dimDecimals: 1 }]);
+    const { writes } = planIntent(
+      { type: 'brightness_delta', delta: -0.1 }, ['a'], cache, DEFAULT_BEHAVIOR,
+    );
+
+    const value = dimWrites(writes).a;
+    assert.notEqual(value, 0, 'wrote darkness where it promised light');
+    assert.ok(value! >= 0.1, `wrote ${value}, which a tenths lamp shows as 0`);
+  });
+
+  test('and it stays at the configured floor on a lamp with two', () => {
+    // Unchanged behaviour where the floor IS representable: this is the case
+    // the constant was chosen for, and it must not have moved.
+    const cache = cacheWith([{ id: 'a', on: true, dim: 0.01 }]);
+    const { writes } = planIntent(
+      { type: 'brightness_delta', delta: -0.1 }, ['a'], cache, DEFAULT_BEHAVIOR,
+    );
+
+    assert.equal(dimWrites(writes).a, DEFAULT_BEHAVIOR.minimumBrightness);
+  });
+
+  test('zero still means zero when that is what was asked for', () => {
+    // `offBelowMinimum` is the configured way to reach darkness, and it must
+    // still switch the lamp off rather than write a floored dim.
+    const cache = cacheWith([{ id: 'a', on: true, dim: 0.01, dimDecimals: 1 }]);
+    const { writes } = planIntent(
+      { type: 'brightness_delta', delta: -0.5 }, ['a'], cache,
+      { ...DEFAULT_BEHAVIOR, offBelowMinimum: true },
+    );
+
+    assert.deepEqual(
+      writes.map(w => ({ capability: w.capability, value: w.value })),
+      [{ capability: 'onoff', value: false }],
+    );
   });
 });
 

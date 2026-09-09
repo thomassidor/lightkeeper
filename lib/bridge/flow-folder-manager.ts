@@ -102,13 +102,27 @@ export class FlowFolderManager {
   ) { }
 
   /**
-   * Read every folder and resolve (creating if needed) the app-level one.
+   * Read every folder and resolve the app-level one, creating it unless told
+   * not to.
    *
    * The root is matched on name AND parent. Without the parent check a device
    * folder a user happened to name "Lightkeeper" would be picked as the root,
    * and every device's flows would nest inside one device's folder.
+   *
+   * **`createRoot: false` is for the DELETE paths, and it is not tidiness.**
+   * `removeAll()` and the orphan sweep call this only to find empty device
+   * folders to clean up — they never place a flow — so creating the root there
+   * had two consequences, both wrong. A user who deleted the `Lightkeeper`
+   * folder and then deleted their last device got an empty root recreated *by
+   * the deletion*. And with a dead API key the same path attempted a folder
+   * WRITE from a delete, which `withWriteClient` classifies app-wide before
+   * this method's own catch can swallow it — so tidying up after a removal
+   * could flip every device to `needs_credential`.
+   *
+   * `cleanUpEmpty` needs the root only as a parent filter, so an absent one
+   * simply means there is nothing of ours to clean up.
    */
-  async load(): Promise<FolderView> {
+  async load(options: { createRoot?: boolean } = {}): Promise<FolderView> {
     // The whole read-then-create is inside the lock, not just the create: a
     // second caller that read "absent" before the first one's create landed
     // would still create a duplicate however well-guarded the write was.
@@ -120,6 +134,12 @@ export class FlowFolderManager {
 
         const existing = records.find(f => f.name === MANAGED_FOLDER_NAME && f.parent === null);
         if (existing) return { root: existing.id, folders };
+
+        // Nothing of ours to clean up, and nothing to create on a caller that
+        // only ever deletes. `NO_FOLDERS` would be wrong: the folder MAP is
+        // real and a sweep may still need it to reach a device folder whose
+        // root has been deleted from under it.
+        if (options.createRoot === false) return { root: undefined, folders };
 
         const created = await this.api.withWriteClient(async write =>
           write.flow.createFlowFolder({ flowfolder: { name: MANAGED_FOLDER_NAME } }));

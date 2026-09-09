@@ -209,8 +209,22 @@ function planBrightnessDelta(
       }
     }
 
+    /**
+     * In SYNCHRONISED mode the group's target is the answer, and `advanceDim`'s
+     * nudge must not be applied to it.
+     *
+     * `advanceDim` guarantees that a lamp MOVES, which is right per lamp and
+     * wrong for a group: a lamp already sitting on the group target reads as
+     * "did not move" and gets nudged one representable step past everybody
+     * else. Measured: A at 0.13 and B at 0.00, +0.1 → A 0.14, B 0.13. Every
+     * later press repeats it, so the one lamp that started in the right place
+     * is the one that drifts. The group's guarantee is that the GROUP moves,
+     * and `synchronisedValue` is already that movement.
+     */
     const raw = synchronisedValue ?? applyPerceptualDelta(current, delta);
-    const next = advanceDim(deviceId, current, raw, delta, cache);
+    const next = synchronisedValue !== null
+      ? clampDim(deviceId, raw, cache)
+      : advanceDim(deviceId, current, raw, delta, cache);
 
     // Where the result would fall below the minimum, turn off rather
     // than clamping, when configured to do so.
@@ -220,7 +234,26 @@ function planBrightnessDelta(
     }
 
     if (next <= 0 && delta < 0) {
-      writes.push({ deviceId, capability: 'dim', value: Math.max(next, behavior.minimumBrightness) });
+      /**
+       * Through `litDim`, because `minimumBrightness` is not a floor on every
+       * lamp.
+       *
+       * Its default is 0.01 — which is the `decimals: 2` representable step
+       * wearing a policy name (see `minimumDimValue` in `mapping-types.ts`).
+       * On a lamp declaring `decimals: 1`, `dim` moves in tenths, so 0.01
+       * quantises to 0.00: by the app's own model that is darkness, written in
+       * the one branch whose entire purpose is to refuse to write darkness.
+       * Reachable with real numbers — `decimals: 1`, dim 0.1, delta −0.1.
+       *
+       * `litDim` is the existing safety net for exactly this and needs no
+       * second copy of the argument: it lifts a rounded-away positive to one
+       * representable step, and leaves a genuine zero alone.
+       */
+      writes.push({
+        deviceId,
+        capability: 'dim',
+        value: litDim(deviceId, Math.max(next, behavior.minimumBrightness), cache),
+      });
       continue;
     }
 

@@ -318,6 +318,47 @@ describe('cleaning up after a deletion', () => {
     assert.deepEqual(h.calls.deletedFolders, []);
   });
 
+  /**
+   * A DELETE never creates a folder, and there are two ways that used to
+   * happen.
+   *
+   * `removeAll()` and the orphan sweep call `load()` only to find empty device
+   * folders to clean up — they never place a flow. So a user who deleted the
+   * `Lightkeeper` folder and then deleted their last device got an empty root
+   * recreated BY the deletion. Worse, with a dead API key the same path
+   * attempted a folder WRITE from a delete, and `withWriteClient` classifies
+   * that failure app-wide before the folder manager's own catch can swallow
+   * it — so tidying up after a removal could flip every device to
+   * `needs_credential`.
+   */
+  test('deleting the last device does not recreate a root the user removed', async () => {
+    const h = harness({
+      // No ROOT: the user deleted the Lightkeeper folder in the Flow editor.
+      folders: [{ id: 'kitchen', name: 'Kitchen dial', parent: null }],
+      flows: [liveFlow('flow-1', 'kitchen')],
+    });
+
+    const deleted = await h.bridge.removeAll([reference('flow-1')]);
+
+    assert.equal(deleted, 1, 'the flow must still be deleted');
+    assert.deepEqual(
+      h.calls.createdFolders, [],
+      'a deletion recreated the folder the user had just removed',
+    );
+  });
+
+  test('and the orphan sweep does not either', async () => {
+    const h = harness({
+      folders: [{ id: 'gone', name: 'Deleted dial', parent: null }],
+      flows: [liveFlow('flow-1', 'gone', 'lk-ctrl-1755500000000-999999')],
+    });
+
+    const result = await h.bridge.sweepOrphans(new Set([CONTROLLER]));
+
+    assert.equal(result.deleted, 1);
+    assert.deepEqual(h.calls.createdFolders, []);
+  });
+
   test('the orphan sweep clears the folders it empties', async () => {
     const h = harness({
       folders: [ROOT, { id: 'gone', name: 'Deleted dial', parent: 'root' }],

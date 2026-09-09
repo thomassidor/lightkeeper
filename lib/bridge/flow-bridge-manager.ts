@@ -728,8 +728,19 @@ export class FlowBridgeManager {
     const cards = await this.bridgeCards();
     const ids = ourCardIds(cards);
 
-    const client = await this.api.read();
-    const flows = Object.values(await client.flow.getFlows(NO_CACHE)) as any[];
+    // Reported like the read in `sync()`, and for the same reason: the orphan
+    // count on the settings page and the sweep itself both come through here,
+    // so a dead socket otherwise fails every count and every sweep for the
+    // rest of the app run with nothing rebuilding the client. The sweep's own
+    // refusals are about what it can SEE; this is about being able to look.
+    let flows: any[];
+    try {
+      const client = await this.api.read();
+      flows = Object.values(await client.flow.getFlows(NO_CACHE)) as any[];
+    } catch (error) {
+      this.api.reportReadFailure(error);
+      throw error;
+    }
 
     const found: ManagedFlowSummary[] = [];
     for (const flow of flows) {
@@ -842,7 +853,13 @@ export class FlowBridgeManager {
       } else failed += 1;
     }
 
-    if (deleted > 0) await this.folders.cleanUpEmpty(await this.folders.load(), emptied);
+    // `createRoot: false`: this is a DELETE path and must never create a
+    // folder — see `load()`. Cleaning up after a removal used to be able to
+    // recreate an empty root the user had deleted, and, on a dead key, to
+    // attempt a folder write that flips every device to needs_credential.
+    if (deleted > 0) {
+      await this.folders.cleanUpEmpty(await this.folders.load({ createRoot: false }), emptied);
+    }
 
     this.log(
       `Orphan sweep: ${deleted} deleted, ${kept} kept, ${failed} failed`
@@ -878,7 +895,13 @@ export class FlowBridgeManager {
       if (await this.deleteFlow(ref.flowId)) deleted += 1;
     }
 
-    if (deleted > 0) await this.folders.cleanUpEmpty(await this.folders.load(), emptied);
+    // `createRoot: false`: this is a DELETE path and must never create a
+    // folder — see `load()`. Cleaning up after a removal used to be able to
+    // recreate an empty root the user had deleted, and, on a dead key, to
+    // attempt a folder write that flips every device to needs_credential.
+    if (deleted > 0) {
+      await this.folders.cleanUpEmpty(await this.folders.load({ createRoot: false }), emptied);
+    }
     return deleted;
   }
 
