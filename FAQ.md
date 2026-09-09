@@ -127,6 +127,12 @@ The placements that behave, in order:
 
 If your lights do keep hunting, unpick the sensor: the sun alone is the reliable answer.
 
+If you set the bright end higher than the dark end, the response runs in the other direction:
+more measured light asks for brighter lamps. A sensor that sees those lamps can then make them
+keep increasing their own brightness. The setup screen flags this combination. Use a sensor
+away from the controlled lamps, or lower the bright end if you want daylight compensation.
+The rate limit slows this feedback; it does not establish how much of the reading is daylight.
+
 ---
 
 ## Everyday use
@@ -366,6 +372,11 @@ No. No telemetry, opt-in or otherwise; no cloud; no analytics. Nothing leaves yo
 
 ### What is in a diagnostics export?
 
+For an unattended home test, use the separate **Week-long home test** section in app settings.
+It records on Homey across restarts; the ordinary bug-report export contains its status,
+not its full archive. [Recording and exporting a week](docs/week-long-testing.md) explains
+the start, observation and export steps, along with retention limits.
+
 Homey settings → Lightkeeper → **Copy for a bug report**. It is generated locally on your Homey and
 goes nowhere unless you paste it somewhere.
 
@@ -374,6 +385,19 @@ because an error object can echo the token back, and anything key-shaped is scru
 a log line. There is a test that asserts this against the serialised output.
 
 It *does* include your device and zone names, so skim it before posting.
+
+For circadian, Curve and Daylight lights, the export retains the latest 60 control passes and
+120 power, override and ignored-report events per runtime. Each pass lists every target's
+decision and, when it submitted commands, their eventual outcomes. Daylight passes include the
+sensor readings used at that time. An override includes when it was detected, which capability
+changed, its reported value and the expected value; “external” can mean another automation as
+well as a person. Power changes that resume control are recorded too.
+
+The export labels perceptual brightness separately from device dim values. `writes` counts
+planned capability commands; an API success is not a physical measurement of the lamp. Current
+snapshots have `sampledAt`, while historical passes retain their own timestamps. Histories are
+bounded, newest first, and lost on app restart; retention metadata shows how many entries were
+dropped. The top-level `recentEvents` contains bridge Flow intake only.
 
 ### How do I remove it?
 
@@ -413,6 +437,6 @@ segment that wraps midnight — and every rule about when a write is worth makin
 tests, and the pairing screen's **Try it now** proves the whole write path against your own lamps
 before you save.
 
-Over 1300 unit tests, type-clean, validated at `publish` level. The test fixtures are transcribed verbatim
+Over 1500 unit tests, type-clean, validated at `publish` level. The test fixtures are transcribed verbatim
 from the four real remotes above, and the expected results are written by hand beside them, so the
 tests prove the code rather than the fixture.

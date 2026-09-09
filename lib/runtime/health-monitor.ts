@@ -30,11 +30,45 @@ export interface ReattachCandidate {
   matchedOn: 'owner+driver+fingerprint';
 }
 
+/**
+ * More than one remote matches, so there is no ONE tap to offer.
+ *
+ * Reported rather than resolved: the app cannot tell two identical STYRBARs
+ * apart — that is what "portable fingerprint" means — and picking one would be
+ * a coin toss that silently rebinds a controller to a remote another
+ * controller is using. Repair already lets the user choose; this is what sends
+ * them there with an accurate sentence instead of a wrong one-tap offer.
+ */
+export interface AmbiguousReattach {
+  candidates: Array<{ deviceId: string; deviceName: string }>;
+}
+
 export class HealthMonitor {
+  /**
+   * `sourcesInUse` is the device id every LIVE controller is currently
+   * listening to, and it is what keeps a one-tap re-attach honest in a
+   * household with two of the same remote.
+   *
+   * The portable fingerprint is device-agnostic by design — it hashes card
+   * SHORT ids, which is exactly "the same card on another device" — so two
+   * STYRBARs or two BILRESAs always tie, and the search below simply returned
+   * whichever `allDevices()` listed first. Nothing excluded a device that is
+   * the live source of ANOTHER controller. BILRESA is precisely the re-add case
+   * platform §7 describes, so a household with two of them could be told
+   * "Bedroom remote looks like this remote, re-added. Re-attach in one tap" —
+   * about remote B, which is still driving controller B. The name is shown, so
+   * an attentive user can decline; the copy promises one tap.
+   *
+   * Optional, defaulting to "nothing is in use": the ephemeral pairing rigs and
+   * the older tests construct a monitor with three arguments, and a monitor
+   * with no view of the registries should behave as it always did rather than
+   * silently claim there are no conflicts.
+   */
   constructor(
     private readonly catalog: DeviceCatalog,
     private readonly discovery: SourceDiscoveryService,
     private readonly credentialValid: () => boolean,
+    private readonly sourcesInUse: () => ReadonlySet<string> = () => new Set(),
   ) {}
 
   /**
@@ -56,8 +90,8 @@ export class HealthMonitor {
       // The source is gone. Before declaring "needs repair", look for
       // the same remote re-added under a new device ID.
       const candidate = await this.findReattachCandidate(profile);
-      return candidate
-        ? {
+      if (candidate) {
+        return {
           state: 'needs_repair',
           detail: {
             key: 'source.reattach',
@@ -65,14 +99,37 @@ export class HealthMonitor {
             text: `"${candidate.deviceName}" looks like this remote, re-added. Re-attach in one tap.`,
           },
           reattach: candidate,
-        }
-        : {
+        };
+      }
+
+      /**
+       * No ONE candidate — which is not the same as no candidates.
+       *
+       * Two identical remotes tie on the portable fingerprint by construction,
+       * so the honest answer is "open repair and pick", not a coin toss. Said
+       * with its own sentence rather than falling through to "no longer
+       * paired", which would be untrue and would send the user looking for a
+       * remote sitting on the shelf in front of them.
+       */
+      const ambiguous = await this.findReattachCandidates(profile);
+      if (ambiguous.candidates.length > 1) {
+        return {
           state: 'needs_repair',
           detail: {
-            key: 'state.sourceGone',
-            text: 'The remote this controller uses is no longer paired.',
+            key: 'source.reattachAmbiguous',
+            tokens: { count: ambiguous.candidates.length },
+            text: `${ambiguous.candidates.length} remotes look like this one. Open repair to choose.`,
           },
         };
+      }
+
+      return {
+        state: 'needs_repair',
+        detail: {
+          key: 'state.sourceGone',
+          text: 'The remote this controller uses is no longer paired.',
+        },
+      };
     }
 
     if (!source.available) return { state: 'needs_repair', detail: { key: 'state.sourceUnavailable' } };
@@ -126,23 +183,57 @@ export class HealthMonitor {
   async findReattachCandidate(profile: ControllerProfile): Promise<ReattachCandidate | undefined> {
     if (!profile.source.eventSurfaceFingerprint) return undefined;
 
+    const inUse = this.sourcesInUse();
     const devices = await this.catalog.allDevices();
     const plausible = devices.filter(device =>
       // A device already used by this controller is not a re-attach candidate.
       device.id !== profile.source.deviceId
+      // Nor is one another LIVE controller is listening to. Re-attaching onto
+      // it would leave two controllers driving from one remote, with the other
+      // one's mappings silently competing for the same gestures.
+      && !inUse.has(device.id)
       && matchesOwnerAndDriver(device, profile));
 
+    const matches: Array<{ deviceId: string; deviceName: string }> = [];
     for (const device of plausible) {
       const discovered = await this.discovery.discover(device);
       if (!surfaceIsPortablyTheSame(profile, discovered)) continue;
-      return {
-        deviceId: device.id,
-        deviceName: device.name,
-        matchedOn: 'owner+driver+fingerprint',
-      };
+      matches.push({ deviceId: device.id, deviceName: device.name });
+      // Two is already enough to know there is no one-tap answer, and every
+      // extra `discover()` is a catalogue read (platform §15).
+      if (matches.length > 1) break;
     }
 
-    return undefined;
+    if (matches.length !== 1) return undefined;
+
+    return { ...matches[0]!, matchedOn: 'owner+driver+fingerprint' };
+  }
+
+  /**
+   * The same search, reported as the ambiguity it is.
+   *
+   * Separate from `findReattachCandidate` so the one-tap path stays a single
+   * yes-or-no question, and so a caller that only wants to know whether to
+   * offer the tap does not pay for the full list.
+   */
+  async findReattachCandidates(profile: ControllerProfile): Promise<AmbiguousReattach> {
+    if (!profile.source.eventSurfaceFingerprint) return { candidates: [] };
+
+    const inUse = this.sourcesInUse();
+    const devices = await this.catalog.allDevices();
+    const candidates: Array<{ deviceId: string; deviceName: string }> = [];
+
+    for (const device of devices) {
+      if (device.id === profile.source.deviceId) continue;
+      if (inUse.has(device.id)) continue;
+      if (!matchesOwnerAndDriver(device, profile)) continue;
+
+      const discovered = await this.discovery.discover(device);
+      if (!surfaceIsPortablyTheSame(profile, discovered)) continue;
+      candidates.push({ deviceId: device.id, deviceName: device.name });
+    }
+
+    return { candidates };
   }
 
   /**

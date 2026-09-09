@@ -58,6 +58,8 @@ function harness(options: {
    */
   fingerprintsV2?: Record<string, string>;
   credentialValid?: boolean;
+  /** Remotes a LIVE controller is already listening to. See `sourcesInUse`. */
+  sourcesInUse?: string[];
 }) {
   const catalog = {
     device: async (id: string) => options.devices.find(d => d.id === id),
@@ -81,7 +83,10 @@ function harness(options: {
     }),
   } as any;
 
-  return new HealthMonitor(catalog, discovery, () => options.credentialValid ?? true);
+  return new HealthMonitor(
+    catalog, discovery, () => options.credentialValid ?? true,
+    () => new Set(options.sourcesInUse ?? []),
+  );
 }
 
 describe('controller health states', () => {
@@ -177,6 +182,88 @@ describe('one-tap re-attach', () => {
     assert.equal(assessment.state, 'needs_repair');
     assert.equal(assessment.reattach?.deviceId, 'new-device');
     assert.equal(assessment.reattach?.matchedOn, 'owner+driver+fingerprint');
+  });
+
+  /**
+   * Two identical remotes tie, and a coin toss is not a one-tap answer.
+   *
+   * The portable fingerprint is device-agnostic BY DESIGN — it hashes card
+   * short ids, which is exactly "the same card on another device" — so two
+   * STYRBARs or two BILRESAs match equally well and the search simply returned
+   * whichever `allDevices()` listed first. BILRESA is the re-add case platform
+   * §7 exists for, so a household with two of them is the realistic setup, and
+   * the copy promises "re-attach in one tap".
+   */
+  test('two identical remotes produce no one-tap offer', async () => {
+    const monitor = harness({
+      devices: [
+        device({ id: 'bilresa-a', name: 'Bedroom remote' }),
+        device({ id: 'bilresa-b', name: 'Study remote' }),
+        light('light-1'),
+      ],
+      fingerprints: { 'bilresa-a': 'fp-abc', 'bilresa-b': 'fp-abc' },
+    });
+
+    const assessment = await monitor.assess(profile());
+
+    assert.equal(assessment.state, 'needs_repair');
+    assert.equal(
+      assessment.reattach, undefined,
+      'offered a one-tap re-attach onto a remote it cannot have identified',
+    );
+    assert.equal(
+      assessment.detail?.key, 'source.reattachAmbiguous',
+      'and it must say WHY, not fall back to "no longer paired"',
+    );
+  });
+
+  test('a remote another live controller is using is not a candidate', async () => {
+    // Re-attaching onto it would leave two controllers driving from one
+    // remote, with the other one's mappings silently competing for the same
+    // gestures — and this is the ONLY thing that can tell the two apart.
+    const monitor = harness({
+      devices: [
+        device({ id: 'bilresa-a', name: 'Bedroom remote' }),
+        device({ id: 'bilresa-b', name: 'Study remote' }),
+        light('light-1'),
+      ],
+      fingerprints: { 'bilresa-a': 'fp-abc', 'bilresa-b': 'fp-abc' },
+      sourcesInUse: ['bilresa-b'],
+    });
+
+    const assessment = await monitor.assess(profile());
+
+    assert.equal(
+      assessment.reattach?.deviceId, 'bilresa-a',
+      'with the other one accounted for, the remaining match IS unambiguous',
+    );
+  });
+
+  test('and a household with one spare remote keeps its one tap', async () => {
+    // The whole point of the feature must survive the fix.
+    const monitor = harness({
+      devices: [
+        device({ id: 'new-device', name: 'BILRESA scroll wheel' }),
+        light('light-1'),
+      ],
+      fingerprints: { 'new-device': 'fp-abc' },
+      sourcesInUse: ['some-other-remote'],
+    });
+
+    assert.equal((await monitor.assess(profile())).reattach?.deviceId, 'new-device');
+  });
+
+  test('every matching remote already in use means no candidate at all', async () => {
+    const monitor = harness({
+      devices: [device({ id: 'bilresa-b', name: 'Study remote' }), light('light-1')],
+      fingerprints: { 'bilresa-b': 'fp-abc' },
+      sourcesInUse: ['bilresa-b'],
+    });
+
+    const assessment = await monitor.assess(profile());
+
+    assert.equal(assessment.reattach, undefined);
+    assert.equal(assessment.detail?.key, 'state.sourceGone');
   });
 
   test('refuses to re-attach when the fingerprint has changed', async () => {

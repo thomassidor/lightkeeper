@@ -1,6 +1,6 @@
 {
   "name": "com.thomassidor.lightkeeper",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Homey Pro app for lights you already own: point a remote, switch or dial at them, put them on a schedule, follow the colour of the day, or set their brightness from how light the room already is \u2014 without writing a single Flow.",
   "license": "MIT",
   "author": {

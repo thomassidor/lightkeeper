@@ -6,6 +6,136 @@ release in a few bullets and one line for each older one; this is where the deta
 Newest first. Pre-1.0, so there are no major bumps for breaking changes: a change that would break
 something says so in its own entry instead.
 
+## 0.7.0
+
+The remediation of a full code review, plus one new opt-in capability. Everything below was
+found by reading the code against what its own comments and CLAUDE.md's safety-property list
+promised; each fix ships the test its docblock had already claimed existed.
+
+**Health verdicts now compose instead of overwriting each other.**
+
+- A controller learns about its health from two independent places, on two different triggers:
+  reconciliation (a Flow was edited, a control would not compile, a reference could not be
+  stored) and the lights themselves. Both were written straight to the visible state by
+  whichever ran last, and `start()`'s order is buildRuntime → reconcileFlows → assessHealth, so
+  the monitor always spoke last. A controller told "a Flow was edited, open repair" had that
+  replaced by "1 of 3 lights unavailable" — a different problem, a less actionable one, and
+  `partial` also flips the device back to AVAILABLE so the repair prompt disappears from the
+  tile. One lamp switched off at the wall was enough, and it recurred on every target refresh
+  and every credential change. There is now one ranked verdict function
+  (`lib/runtime/verdict.ts`): needs_credential > needs_repair > partial > ready, ties to the
+  verdict that names an action. `needs_credential` outranks `needs_repair` because repair WRITES
+  Flows (platform §1), so a repair prompt on a dead key sends the user into a flow that cannot
+  complete.
+- A remembered `needs_credential` is the one state either verdict forgets on request, and it has
+  to be both of them — reconciliation classifies a 401/403 that way and the health monitor has
+  its own credential branch. Found while writing the test: a stale copy is the most severe state
+  there is, so it sat over every later verdict for ever, and the tile went on saying "Lightkeeper
+  needs a new API key" against a key that worked.
+- The two tick-driven runtimes re-assess when their inputs move. `light-target-adapter.ts` says
+  the write-failure streak exists so a runtime does not "go on writing to that lamp every minute
+  for ever behind a green tile" — and it did exactly that, because health was assessed at start
+  and on a target-set change and nowhere else. A lamp cut at the wall stays `available: true`
+  (platform §6), so the fingerprint never moves and the unwritable set was consulted once, when
+  it was empty. A Daylight light also re-asks when its daylight SOURCE changes, which is the only
+  thing that could ever clear "it cannot tell how light it is" after a household finally gives
+  the Homey a location.
+
+**A value that is absent is no longer a value of zero.**
+
+- `Number(null)` is 0 and 0 is pitch dark — the trap CLAUDE.md records for lux, open on all five
+  light axes. A live report of `null` became an apparent zero in actual state, and the NEXT
+  report then read as "changed by hand, to nothing", so the lamp stood down and stopped following
+  its curve until its next power cycle. And `liveValuesOf()` cast a snapshot value straight to
+  `number | undefined`: that does not coerce, but it mistypes, and every consumer downstream tests
+  `=== undefined` to mean "the lamp never told us" — so a Daylight light counted `null` as a real
+  reading, seeded its aim from a perceptual ZERO, and wrote `dim 0.01` to an already-lit lamp
+  before fading it back up at 0.05 a tick. One guard now covers both paths.
+- A lamp's own power-on report is no longer read as a human override. The settle anchor was
+  deleted at the off edge and not re-armed at the on edge, so a bulb power-cycled at the wall that
+  reports its level alongside `onoff:true` could be marked as overridden and skipped on every tick
+  until its next power cycle — defeating the headline promise that a lamp is the right colour
+  however it was switched on.
+- Dimming down on a lamp declaring `decimals: 1` no longer writes a value that lamp shows as off.
+  The floor defaulted to 0.01, which is the `decimals: 2` representable step wearing a policy
+  name; on a tenths lamp it quantises to 0.00 — darkness, written by the one branch whose entire
+  purpose is to refuse to write darkness.
+- Synchronised group brightness no longer nudges a lamp already on the group target one step past
+  it. `advanceDim`'s guarantee that a lamp MOVES is right per lamp and wrong for a group, so the
+  one lamp that started in the right place was the one that drifted, on every press.
+
+**Fixed elsewhere.**
+
+- One-tap re-attach no longer offers whichever identical remote came first. The portable
+  fingerprint is device-agnostic by design, so two STYRBARs or two BILRESAs tie — and nothing
+  excluded a remote another live controller was already listening to. A household with two
+  BILRESAs (the re-add case platform §7 exists for) could be told to re-attach onto the one still
+  driving another controller. Remotes in use are excluded, and a genuine tie now says so and
+  sends the user to repair to choose, instead of promising one tap.
+- A save the app could not have loaded back is refused when it is made. The only validator in the
+  device layer was the one that runs at load, so a route could persist a plan that the NEXT APP
+  RESTART then refused — the device going unavailable saying "set this device up again", days
+  later, with nothing to connect it to the action that caused it.
+- Deleting a device no longer recreates a `Lightkeeper` folder the user had removed, and no longer
+  attempts a folder WRITE from a delete — which, on a dead key, could flip every device to
+  "needs a new API key" while tidying up after a removal.
+- Sensor ids from a pairing screen are checked against the catalogue, not only for shape. A lamp
+  id accepted as a sensor was subscribed to, never reported a lux value, and left the device
+  running on the sky for ever while the settings page listed a sensor with no reading.
+- A "not found" is no longer inferred from a `404` appearing anywhere in an error message. Homey
+  echoes device and flow ids back inside errors, and roughly one UUID in three hundred contains
+  `404` between two non-digits — enough for a 409 or a 500 to be read as "already gone", the
+  reference dropped, and the Flow left firing where the orphan sweep cannot see it.
+- A plan written by a NEWER version of the app now says to update the app, instead of telling
+  somebody whose configuration is perfectly intact to set their device up again.
+- A hand-edited controller profile with an absurd range no longer hangs device startup: the
+  expansion is refused before the array is built, rather than after.
+- A "test it now" probe can no longer write to a lamp after its own runtime has stopped.
+- Reading the whole Flow list for an orphan count now reports a transport failure, so a dead
+  socket does not fail every count and sweep for the rest of the app run.
+- `network` as part of a word is no longer read as a network failure, which used to throw away a
+  working client on an ordinary `TypeError` from our own code.
+
+**Diagnostics.**
+
+- Per-runtime history of the last 60 control passes and 120 power/override events, with each
+  pass's per-target decisions, the sensor inputs behind a daylight pass, and command completion
+  outcomes. Kept independently of the short command log, so six lamps cannot erase an hour of
+  history in five ticks, and truncation is reported rather than silent.
+- Brightness units, snapshot timestamps and API-success semantics are labelled in the export.
+- The feedback risk of a lux sensor in the room it drives is explained on all four daylight
+  configuration screens, without changing any saved response.
+
+**New: an opt-in seven-day recording, for tracking down something intermittent.**
+
+- Off unless started from app settings, stops by itself after seven days, and the deadline
+  survives app restarts and reinstalling the same build. Batches are gzipped and AES-256-GCM
+  encrypted on the Homey's own storage; every record passes a field stripper and the same key
+  redaction the logs use, so an API key cannot reach an archive. Bounded buffers and a 64 MiB
+  limit expose loss rather than silently replacing earlier evidence.
+- Timestamped observations can be attached from the settings page while it runs, and an archive
+  that has stopped can be discarded there. `scripts/evidence.mjs` streams an export to a private
+  `.evidence/` directory and analyses it; see [`docs/week-long-testing.md`](docs/week-long-testing.md).
+- It does not change how often the control loops run. A 60-second maintenance poll that had been
+  written alongside it was removed before release: it re-read the ~11.6 MB trigger-card catalogue
+  about once a minute for as long as the app ran (platform §15), turning an event-driven app into
+  a poller. State-triggered re-assessment does that job instead.
+
+**Repository.**
+
+- CI audits the shipped dependency tree and fails on a new high or critical. CLAUDE.md records
+  four accepted moderates and says to re-check at each bump; nothing did.
+- `*.css` and `*.js` are pinned to LF. `views/shared/` holds four such files and they are spliced
+  byte-for-byte into thirteen LF pair views, so a Windows checkout saw every view as drifted
+  before touching a line.
+- The manifest's `api` block is now checked against `api.ts`'s exports. It is a name map: a name
+  matching nothing gives no build error, no validate error and no test failure — only a 404 when
+  somebody presses the button.
+- Twelve documentation phrases predating the fourth and fifth device types, two stale claims in
+  CLAUDE.md (the version lives in four places, not three; three files carried three different
+  wrong line counts) and one safety claim about the hardware script that was true of devices and
+  read as one about lamps.
+
 ## 0.6.1
 
 Fixed:
@@ -514,5 +644,3 @@ Added:
 First release. Paired remotes, switches, buttons and rotary dials driving on/off, brightness and
 colour temperature across individual lights or zones, with the Flows underneath created and
 maintained automatically. Local connection, Homey Pro 2023 and later.
-
-

@@ -274,17 +274,18 @@ reads, what it stores, and for how long.
 
 ## Changelog
 
-**0.6.1** — the current release. More reliable sensor input, cancellation and saving:
+**0.7.0** — the current release. A code review, remediated, plus one optional new capability:
 
-- Schedules and curve-driven lights keep their selected sensors after setup closes and after restart.
-- Sensor connections recover automatically from temporary failures.
-- Pending brightness changes are cancelled when a lamp is switched off or leaves its selected room.
-- Failed setup releases its resources, and failed saves restore the previous configuration.
+- A tile that keeps saying "open repair" instead of replacing it with a light count and going green.
+- A light reporting nothing is no longer read as a light reporting darkness, on any of the five axes.
+- Two identical remotes are no longer guessed between when offering a one-tap re-attach.
+- Optional: a seven-day encrypted recording, off unless you start it, for chasing something intermittent.
 
 Earlier releases, one line each:
 
 | Version | What changed |
 |---|---|
+| **0.6.1** | Sensors kept across restarts, subscription recovery, cancelled writes, and safer saves |
 | **0.6.0** | Daylight lights, room sun exposure, and daylight brightness inside schedules and curves |
 | **0.5.2** | Four fixes to the colour-following lights, and the dimmest brightness no longer meant off |
 | **0.5.1** | A shorter App Store listing, prose release notes, and icons legible at 24 px |
@@ -311,7 +312,7 @@ If it changes how carefully you want to review the code before trusting it with 
 the code is right here.
 
 It has been verified end to end on a Homey Pro 2023 across four remotes and three transports, with
-Over 1300 unit tests covering the logic — [how well tested is this?](FAQ.md#how-well-tested-is-this) has
+Over 1500 unit tests covering the logic — [how well tested is this?](FAQ.md#how-well-tested-is-this) has
 the detail, including what has *not* run on hardware yet.
 
 ## Contributing

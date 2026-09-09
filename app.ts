@@ -196,6 +196,20 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       this.catalog,
       this.discovery,
       () => this.credentials.getStatus().valid,
+      /**
+       * Every remote a LIVE controller is already listening to.
+       *
+       * Read lazily through a closure rather than passed as a set, because
+       * `this.controllers` does not exist yet at this point and the answer
+       * changes every time a device is added or removed. Wired here for the
+       * same reason the write sink is: this is the only place that can see the
+       * registry and the monitor at once.
+       *
+       * See `sourcesInUse` in `health-monitor.ts` for what it prevents — a
+       * household with two identical remotes being offered a one-tap re-attach
+       * onto the one that is still driving another controller.
+       */
+      () => new Set(this.controllers.all().map(runtime => runtime.currentProfile.source.deviceId)),
     );
     // One shared sink, so a write from any runtime lands in one time-ordered
     // log. Wired here because this is the only place that can see all three.

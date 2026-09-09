@@ -24,6 +24,7 @@
     "found": "Ready to use — __controls__ usable control(s) found.",
     "unusable": "Homey does not expose any button or dial events for this device, so it cannot be used as a controller. Pick another.",
     "reattach": "__name__ looks like the same remote, re-added. Re-attaching keeps every mapping and target exactly as they were.",
+    "reattachAmbiguous": "__count__ remotes look like this one, so Lightkeeper cannot tell which it was. Open repair and choose the right one — your mappings and lights are kept either way.",
     "reattachButton": "Re-attach and keep my mappings",
     "reattaching": "Re-attaching…",
     "reattached": "Re-attached to __name__ with __count__ mapping(s) intact.",
