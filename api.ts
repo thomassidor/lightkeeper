@@ -17,6 +17,7 @@ import type {
   DiagnosticsResponse, LightkeeperApp, StatusResponse,
 } from './lib/app-contract';
 import { messageOf } from './lib/support/homey-errors';
+import { evidenceRoutes } from './lib/support/evidence-feature';
 
 /**
  * `homey.app` is the running app instance, and this is the one place it is
@@ -331,28 +332,16 @@ module.exports = {
    * key material. It DOES carry device and zone names by design — a controller
    * quietly pointed at the wrong room looks identical to a broken one.
    */
-  async getEvidence({ homey }: any) {
-    const recorder = appOf(homey).evidence;
-    await recorder.flush();
-    return recorder.status();
-  },
-
-  async noteEvidence({ homey, body }: any) {
-    const recorder = appOf(homey).evidence;
-    const status = recorder.status();
-    if (status.state !== 'recording' || Date.now() >= (status.endsAt ?? 0)) throw new Error('No active recording.');
-    if (typeof body?.text !== 'string' || !body.text.trim() || body.text.length > 1000) throw new Error('Enter an observation of at most 1000 characters.');
-    recorder.record('observation', { text: body.text.trim() });
-    await recorder.flush();
-    return recorder.status();
-  },
-
-  async startEvidence({ homey }: any) { return appOf(homey).startEvidence(); },
-  async stopEvidence({ homey }: any) { return appOf(homey).evidence.stop(); },
-  async clearEvidence({ homey, params }: any) { return appOf(homey).evidence.clear(String(params.id)); },
-  async readEvidence({ homey, params }: any) {
-    return appOf(homey).evidence.read(String(params.id), Number(params.offset), Number(params.end));
-  },
+  /**
+   * The recorder's six routes, or nothing at all.
+   *
+   * Spread rather than written out because a launch build has no recorder:
+   * `evidenceRoutes()` returns `{}` there, and the six route names simply do
+   * not exist on this object. Defining them here would mean deleting them from
+   * generated JavaScript instead, which is not a thing to do by string surgery.
+   * See `lib/support/evidence-feature.ts`.
+   */
+  ...evidenceRoutes(appOf),
 
   async getDiagnostics({ homey }: any): Promise<DiagnosticsResponse> {
     const app = appOf(homey);

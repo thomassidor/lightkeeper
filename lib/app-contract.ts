@@ -1,4 +1,5 @@
-import type { EvidenceRecorder, EvidenceStatus } from './support/evidence-recorder';
+import type { EvidenceStatus } from './support/evidence-recorder';
+import type { EvidenceFeature } from './support/evidence-feature';
 import { DIAGNOSTIC_SEMANTICS } from './runtime/control-diagnostics';
 import type { CredentialService, CredentialStatus } from './credential-service';
 import type { IntakeRecord } from './bridge/bridge-event-intake';
@@ -34,8 +35,7 @@ import type { TimeCardDiscovery } from './schedules/time-card-discovery';
  * should be asking for something to be added.
  */
 export interface LightkeeperApp {
-  readonly evidence: EvidenceRecorder;
-  startEvidence(): Promise<EvidenceStatus>;
+  readonly evidence: EvidenceFeature;
   readonly credentials: CredentialService;
   readonly api: HomeyApiService;
   readonly catalog: DeviceCatalog;

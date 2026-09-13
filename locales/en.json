@@ -270,6 +270,7 @@
     "noWarmthTargets": "None of this device's lights can change their warmth, so there is nothing for it to do.",
     "noDaylight": "This light has no configuration. Repair it to set it up again.",
     "noDimTargets": "None of this device's lights can change their brightness, so there is nothing for it to do.",
+    "daylightFeedback": "These lamps are brightening the sensor this device reads, so they keep raising their own brightness. Move the sensor away from their light, or lower the brightness at the bright end.",
     "noDaylightSource": "Lightkeeper cannot tell how light it is: no light sensor is reporting, and this Homey has not told it where it is. Add a light sensor in Repair, or set your Homey's location.",
     "persistFailed": "Lightkeeper could not save what it learned about its Flows. Open repair to try again.",
     "invalidConfiguration": "This device's stored configuration is not one Lightkeeper can read. Repair it to set it up again.",

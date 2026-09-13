@@ -150,6 +150,58 @@ const ECHO_DEDUPE_MS = 1500;
 export const OVERRIDE_TOLERANCE = 0.03;
 export const OVERRIDE_SETTLE_MS = 3000;
 
+/**
+ * How long a lamp is left alone after somebody takes it over by hand.
+ *
+ * There used to be no such thing. An override was cleared by either edge of
+ * `onoff`, by the target leaving the plan, or by the runtime stopping, and by
+ * nothing else — "switch it off and on again" was offered as the gesture for
+ * giving a light back. That is a fine gesture and a terrible only one, because
+ * it assumes the thing that raised the override was a person.
+ *
+ * From a 3.83-day recording on the reference Homey: one lamp accepted every
+ * write, acknowledged it, and then reverted to its own fixed `dim 0.41` /
+ * `light_temperature 0.83` ninety seconds later, every single time, whatever it
+ * had been sent. Each revert read as a human, so its circadian device stood
+ * down — for 23.6 h, then 23.1 h, then 15.5 h, 15.2 h, 11.0 h back to back.
+ * ~88 of 93 recorded hours doing nothing at all, with the lamp on the whole
+ * time and the device reporting `ready`.
+ *
+ * Four hours is the balance: long enough that someone who dimmed the lamps for
+ * an evening is not fought over them, short enough that a lamp the app cannot
+ * actually drive costs one evening rather than a week. It bounds the damage
+ * without pretending to tell a stubborn bulb from a person — nothing available
+ * here can do that, which is exactly why the escape hatch has to be time.
+ */
+export const OVERRIDE_EXPIRY_MS = 4 * 60 * 60 * 1000;
+
+/**
+ * Is a reported value within the tolerance of the one we wrote?
+ *
+ * A function rather than three open-coded `Math.abs(a - b) <= OVERRIDE_TOLERANCE`
+ * comparisons, because in binary floating point that expression is not the
+ * tolerance the docblock above describes:
+ *
+ * ```
+ * Math.abs(0.83 - 0.86) === 0.030000000000000027   // > 0.03  -> "overridden"
+ * Math.abs(0.10 - 0.13) === 0.03                   // <= 0.03 -> forgiven
+ * ```
+ *
+ * So a lamp exactly one tolerance away was forgiven or not depending on where
+ * on the 0..1 axis it sat. Seen in a real recording: a bridge reporting
+ * `light_temperature` 0.83 against our 0.86 — three hundredths, precisely the
+ * rounding this constant exists to absorb — was classified as a person reaching
+ * for the vendor app, which under the override rules stands the runtime down.
+ *
+ * `EPSILON` is a slack far below `light_temperature`'s own 0.01 resolution
+ * (platform §6), so it widens nothing a lamp can express; it only stops the
+ * boundary landing on which side of a double's last bit the subtraction fell.
+ */
+const TOLERANCE_EPSILON = 1e-9;
+export function withinOverrideTolerance(delta: number): boolean {
+  return Math.abs(delta) <= OVERRIDE_TOLERANCE + TOLERANCE_EPSILON;
+}
+
 export function validCapabilityValue(capability: Capability, value: unknown): boolean {
   if (capability === 'onoff') return typeof value === 'boolean';
   if (capability === 'light_mode') return value === 'color' || value === 'temperature';

@@ -54,7 +54,7 @@ export async function analyzeEvidence(source) {
   const boots = new Set();
   /** @type {Map<string, number>} */
   const lastHealth = new Map();
-  let maxSampleGapMs = 0, maxWithinBootGapMs = 0, maxRssBytes = 0, overrides = 0, malformed = 0;
+  let maxSampleGapMs = 0, maxWithinBootGapMs = 0, overrides = 0, malformed = 0;
   let lastHealthAt = null;
   let firstAt = Infinity, lastAt = 0;
   let manifest = null;
@@ -84,7 +84,6 @@ export async function analyzeEvidence(source) {
       if (lastHealthAt !== null) maxSampleGapMs = Math.max(maxSampleGapMs, row.recordedAt - lastHealthAt);
       lastHealthAt = row.recordedAt;
       lastHealth.set(row.bootId, row.recordedAt);
-      maxRssBytes = Math.max(maxRssBytes, data.memory?.rss ?? 0);
       for (const sensor of data.sensors ?? []) {
         const item = sensors[sensor.deviceId] ??= { minLux: Infinity, maxLux: 0, samples: 0, maxReadingAgeMs: 0 };
         if (typeof sensor.lux === 'number') { item.minLux = Math.min(item.minLux, sensor.lux); item.maxLux = Math.max(item.maxLux, sensor.lux); item.samples++; }
@@ -93,8 +92,24 @@ export async function analyzeEvidence(source) {
     }
   }
   return { manifest, firstAt: Number.isFinite(firstAt) ? firstAt : null, lastAt: lastAt || null,
-    boots: boots.size, types, writes, outcomes, sensors, overrides, maxSampleGapMs, maxWithinBootGapMs, maxRssBytes, malformed,
-    interpretation: 'Write success is API acceptance. Sensor age alone is not a fault. Inspect the timeline around failures, overrides and gaps.' };
+    boots: boots.size, types, writes, outcomes, sensors, overrides, maxSampleGapMs, maxWithinBootGapMs, malformed,
+    /**
+     * `malformed` is first among equals, and `maxRssBytes` is gone.
+     *
+     * Memory was never obtainable: `process.memoryUsage()` throws in the app
+     * sandbox (platform §17), so every health sample carries `memory: null` and
+     * the field this used to report was permanently 0 — an answer that looked
+     * like a measurement. The footprint is read from OUTSIDE, by
+     * `node scripts/verify-hardware.mjs memory`.
+     *
+     * `malformed` earned the promotion the hard way. A 3.83-day recording came
+     * back with `dropped: 0` and 93 unreadable records, because the redaction
+     * pattern was eating the decimal expansion of small numbers. A non-zero
+     * count here means the archive is incomplete whatever the manifest says.
+     */
+    interpretation: 'Any malformed count means records were lost regardless of what dropped says. '
+      + 'Write success is API acceptance. Sensor age alone is not a fault. '
+      + 'Inspect the timeline around failures, overrides and gaps.' };
 }
 
 async function main() {
@@ -146,8 +161,14 @@ async function main() {
  * error string is exactly where one would surface. Deliberately a copy of the
  * pattern in `lib/support/homey-errors.ts` rather than an import: this file is
  * a standalone `.mjs` run from a developer's machine and imports no app code.
+ *
+ * The `(?<![.\d])` guard is load-bearing and was added after it bit: the
+ * second alternative also matches the decimal expansion of a small number
+ * (`0.000004829384756102938` is 21 characters of `[0-9a-f]`), which corrupted
+ * 93 records of a real recording into unparseable JSON. See the longer note in
+ * `lib/support/homey-errors.ts`.
  */
-const KEY_MATERIAL = /[0-9a-f-]{36}:[0-9a-f-]{36}:[0-9a-f]{20,}|[0-9a-f]{20,}/gi;
+const KEY_MATERIAL = /[0-9a-f-]{36}:[0-9a-f-]{36}:[0-9a-f]{20,}|(?<![.\d])[0-9a-f]{20,}/gi;
 /** @param {unknown} text */
 const redactKeyMaterial = text => String(text).replace(KEY_MATERIAL, '<redacted>');
 

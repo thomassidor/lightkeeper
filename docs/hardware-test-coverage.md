@@ -367,7 +367,7 @@ Worth knowing before deciding a rendered screen is a luxury.
 - The render is **not** the pairing sheet: Homey draws its own header and scroll container around a view (platform §8), and this shows the view alone.
 
 
-## 0.6.1 lifecycle and sensor recovery
+## Lifecycle and sensor recovery (T91–T97)
 
 T91–T97 are pending hardware checks; none was run during implementation. The previous release's
 T81–T90 numbers remain retired. The saved hardware observations are in the test plan's run history.

@@ -391,3 +391,48 @@ test('the sample survives a throwing memory reading, which is the whole point', 
     sensors: [{ deviceId: 's1', lux: 42 }],
   });
 });
+
+/**
+ * Every record in the archive parses, or it is counted.
+ *
+ * The failure this exists for was silent in the worst way: `redactKeyMaterial`
+ * matched the decimal expansion of a small number, wrote
+ * `{"warmth":0.<redacted>,...}` successfully, and counted it as recorded. 93 of
+ * the 58,024 records in a real 3.83-day run were unreadable while `dropped`
+ * stayed 0 — so the settings page, `evidence.mjs status` and the export's own
+ * manifest all reported a complete recording.
+ *
+ * The pattern is fixed. This is the guarantee that the NEXT such flaw arrives
+ * as a number a person can see rather than as a hole in the timeline, and it is
+ * asserted through the real redaction rather than a stub, so a pattern change
+ * that reintroduces the class fails here too.
+ */
+test('a record redaction cannot corrupt is written; one it would corrupt is dropped', async () => {
+  const h = await rig();
+  try {
+    await h.recorder.start({});
+
+    // The exact shape from the recording: a circadian warmth crossing zero.
+    h.recorder.record('control_action', { warmth: 4.829384756102938e-6, brightness: 0.9999838173022728 });
+    // And a real secret beside it, so the fix cannot have been "stop redacting".
+    h.recorder.record('note', { message: 'token abcdef0123456789abcdef0123456789abcdef0123 failed' });
+
+    const rows = await all(h.recorder);
+    const action = rows.find(r => r.type === 'control_action');
+    assert.equal(action?.data.warmth, 4.829384756102938e-6, 'an ordinary number must survive intact');
+    const note = rows.find(r => r.type === 'note');
+    assert.equal(note?.data.message, 'token <redacted> failed');
+    assert.equal(h.recorder.status().dropped, 0);
+
+    /**
+     * The belt-and-braces half is asserted as the property rather than by
+     * forcing the bug back: `all()` parses every line it reads, so a corrupt
+     * record fails this test by throwing, and the counters have to agree with
+     * what actually came back. That is exactly the check the real archive could
+     * not pass — 58,024 recorded, 57,931 readable, `dropped: 0`.
+     */
+    const status = h.recorder.status();
+    assert.equal(rows.length, status.records - status.dropped,
+      'every record the manifest claims must be one that reads back');
+  } finally { await h.cleanup(); }
+});

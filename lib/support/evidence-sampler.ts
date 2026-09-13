@@ -62,7 +62,7 @@ export class EvidenceSampler {
       const diagnostic = runtime.diagnostics() as Record<string, unknown>;
       const sample: Record<string, unknown> = { controllerId: id, kind };
       for (const key of ['name', 'state', 'stateRevision', 'enabled', 'timezone', 'localTime', 'now',
-        'targetIds', 'targetNames', 'targets', 'schedulerReady', 'feedbackRisk', 'sensors',
+        'targetIds', 'targetNames', 'targets', 'schedulerReady', 'feedbackRisk', 'feedbackObservations', 'sensors',
         'lastAction', 'lastIntent', 'preStageDisabled']) {
         if (diagnostic[key] !== undefined) sample[key] = diagnostic[key];
       }

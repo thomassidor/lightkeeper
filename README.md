@@ -225,7 +225,7 @@ These are promises, not implementation details — each one is covered by a name
   own folder. Drag one into a folder of your own and it is left alone from then on.
 - **Lightkeeper never overrides something you have just done.** Dim or recolour a lamp by hand and
   the Lightkeeper device driving that lamp leaves it alone — just that lamp, not the rest. It takes
-  over again the next time the lamp is switched off and on.
+  over again the next time the lamp is switched off and on, or after four hours, whichever is first.
 - **Nothing leaves your Homey.** No telemetry, opt-in or otherwise.
 
 ## Good to know
@@ -274,19 +274,22 @@ reads, what it stores, and for how long.
 
 ## Changelog
 
-**0.7.0** — the current release. A code review, remediated, plus one optional new capability:
+**0.6.0** — the current release. A fifth device type, and then everything that followed it:
 
-- A tile that keeps saying "open repair" instead of replacing it with a light count and going green.
-- A light reporting nothing is no longer read as a light reporting darkness, on any of the five axes.
-- Two identical remotes are no longer guessed between when offering a one-tap re-attach.
-- Optional: a seven-day encrypted recording, off unless you start it, for chasing something intermittent.
+- **Daylight lights**, which set brightness from how much light is already in the room — and a
+  schedule window, circadian end or curve point can follow the daylight too.
+- A code review remediated: tiles that keep saying "open repair", and no axis that reads a missing
+  value as zero.
+- The five defects that a recorded week in a real home found — chief among them a light that
+  quietly reverts to its own settings no longer muting its device for days.
+
+[`docs/evidence-findings.md`](docs/evidence-findings.md) is the full read of that recording. The
+recorder that produced it is a development tool and is not part of the app you install.
 
 Earlier releases, one line each:
 
 | Version | What changed |
 |---|---|
-| **0.6.1** | Sensors kept across restarts, subscription recovery, cancelled writes, and safer saves |
-| **0.6.0** | Daylight lights, room sun exposure, and daylight brightness inside schedules and curves |
 | **0.5.2** | Four fixes to the colour-following lights, and the dimmest brightness no longer meant off |
 | **0.5.1** | A shorter App Store listing, prose release notes, and icons legible at 24 px |
 | **0.5.0** | A Curve light as a fourth device type, a simpler circadian light, and less memory used |

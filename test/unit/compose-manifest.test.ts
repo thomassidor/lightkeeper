@@ -127,10 +127,50 @@ describe('app.json is generated from .homeycompose/', () => {
 describe('the app API surface', () => {
   const source = readFileSync(join(ROOT, 'api.ts'), 'utf8');
 
-  /** `  async name(` or `  name(` at the top level of `module.exports = {`. */
-  const exported = new Set(
-    [...source.matchAll(/^ {2}(?:async )?([a-zA-Z][a-zA-Z0-9_]*)\s*\(/gm)].map(m => m[1]!),
-  );
+  /**
+   * `  async name(` or `  name(` at the top level of `module.exports = {`, plus
+   * anything reached through a spread.
+   *
+   * The recorder's six routes are not written out in `api.ts` at all: they come
+   * from `...evidenceRoutes(appOf)`, so that a launch build can drop them by
+   * returning none rather than by deleting them from generated JavaScript
+   * (`lib/support/evidence-feature.ts`). A source scan that only knew about
+   * literal properties would call all six missing.
+   *
+   * Each spread is followed to the module that defines it and scanned the same
+   * way, which keeps this test honest about the one thing it is for — a route
+   * declared in the manifest with no handler behind it is a 404 at the moment
+   * somebody presses the button.
+   */
+  const handlersIn = (text: string) =>
+    [...text.matchAll(/^ {2,4}(?:async )?([a-zA-Z][a-zA-Z0-9_]*)\s*\(/gm)].map(m => m[1]!);
+
+  /**
+   * Every handler name `module.exports` ends up carrying, spreads followed.
+   *
+   * A function rather than a constant, and called from inside each test, because
+   * an assertion that throws out here fails the SUITE without being counted:
+   * `node --test` reported `fail 0` on a broken file while this was module-level
+   * code. Anything that can throw belongs in a test.
+   *
+   * Following the spreads is the point. The recorder's six routes are not written
+   * out in `api.ts` at all — they arrive as `...evidenceRoutes(appOf)` so that a
+   * launch build can drop them by returning none, rather than by deleting them
+   * from generated JavaScript (`lib/support/evidence-feature.ts`). A scan that
+   * only knew about literal properties would call all six missing.
+   */
+  const handlerNames = () => {
+    const names = new Set(handlersIn(source));
+    for (const [, fn] of source.matchAll(/^ {2}\.\.\.([a-zA-Z][a-zA-Z0-9_]*)\(/gm)) {
+      const line = source.split(/\r?\n/).find(text =>
+        text.startsWith('import ') && text.includes(fn) && text.includes(' from '));
+      assert.ok(line, `api.ts spreads ${fn}() but does not import it`);
+      const from = /from '([^']+)'/.exec(line);
+      assert.ok(from, `cannot read a module path out of: ${line}`);
+      for (const name of handlersIn(readFileSync(join(ROOT, `${from[1]!}.ts`), 'utf8'))) names.add(name);
+    }
+    return names;
+  };
 
   const routes = () => {
     const composed = readJson('.homeycompose', 'app.json') as { api?: Record<string, unknown> };
@@ -139,10 +179,12 @@ describe('the app API surface', () => {
 
   test('the api block is not empty, or this whole test is vacuous', () => {
     assert.ok(routes().length > 10, `only ${routes().length} routes found`);
+    const exported = handlerNames();
     assert.ok(exported.size > 10, `only ${exported.size} handlers parsed out of api.ts`);
   });
 
   test('every declared route names a handler api.ts exports', () => {
+    const exported = handlerNames();
     const missing = routes().filter(name => !exported.has(name));
     assert.deepEqual(
       missing, [],

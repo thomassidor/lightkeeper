@@ -34,6 +34,8 @@ comments in that file say why:
 npm run typecheck
 npm run typecheck:test
 npm run lint
+npm run build                  # tsc, then strip the evidence recorder unless .dev-build exists.
+                               # The Homey CLI calls this itself; you rarely run it directly
 npm run sync:views:check       # BEFORE the tests. CI never runs the writing version
 npm test
 npm run validate               # regenerates app.json as a side effect
@@ -311,12 +313,13 @@ own header and in every report, under `cannotAnswer`.
 ## Releasing
 
 The full checklist is [CLAUDE.md → Releasing a version](../CLAUDE.md#releasing-a-version) — the
-version lives in four files and every user-visible change ships three changelog entries. The
-commands, in order:
+version lives in four files and every user-visible change ships three changelog entries. **The
+version number itself only moves when somebody asks for it**; a changelog entry goes under the
+version that is already there. The commands, in order:
 
 ```bash
-# 1. edit .homeycompose/app.json, package.json, the three changelogs,
-#    and docs/hardware-test-plan.md's "This release" section
+# 1. edit the three changelogs, and docs/hardware-test-plan.md's "This release"
+#    section. .homeycompose/app.json and package.json ONLY if a bump was asked for
 npm run validate                              # regenerates app.json — required, not a check
 npm test                                      # release-metadata + compose-manifest catch the drift
 node scripts/verify-hardware.mjs full --yes   # the pass, on real hardware

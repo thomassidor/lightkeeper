@@ -963,3 +963,127 @@ describe('diagnostics and power restoration regressions', () => {
     await h.runtime.stop();
   });
 });
+
+/**
+ * What a 3.83-day recording on the reference Homey found, and the three rules
+ * that came out of it.
+ *
+ * The first two are the same mistake as the circadian runtime's, and for the
+ * same reason — the override machinery reads a LAMP as a PERSON. The third is
+ * different in kind: the closed loop this whole file is about was not merely
+ * possible in that house, it ran, ninety-five times, and nothing said so
+ * anywhere a person would look.
+ */
+describe('what the week-long recording found', () => {
+  test('an override lapses, so a lamp that reverts our writes cannot mute the device for ever', async () => {
+    const h = harness({ devices: [light('l1', undefined, { dim: 0.03 })], verdict: { brightness: 0.2 } });
+    await h.runtime.start();
+    await sharedSettle(12);
+
+    h.advance(SETTLE_PAST);
+    h.report('l1', 'dim', 0.8);
+    assert.equal(h.runtime.diagnostics().targets[0].overridden, true);
+
+    h.advance(3 * 60 * 60_000);
+    await tick(h);
+    assert.equal(h.runtime.diagnostics().targets[0].overridden, true, 'three hours in, still stood down');
+
+    h.advance(2 * 60 * 60_000);
+    const before = h.dimWrites().length;
+    await tick(h);
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].overridden, false);
+    assert.equal(d.targets[0].override, null);
+    assert.ok(d.recentControlEvents.some(e => e.type === 'override_cleared' && e.reason === 'expired'));
+    assert.ok(h.dimWrites().length > before, 'control resumes on the very same pass');
+    await h.runtime.stop();
+  });
+
+  test('a reported dim of 0 is a lamp going off, whatever onoff has said so far', async () => {
+    const h = harness({ devices: [light('l1')] });
+    await h.runtime.start();
+    await sharedSettle(12);
+
+    /**
+     * The ordering that defeated the `lamp_off` guard: on the reference Homey
+     * this integration reports `dim 0` a median of 29.9 s BEFORE the matching
+     * `onoff: false` (232 pairs, min 29.2 s), so `actualOn` is still true here
+     * and `overrideSuppression` has nothing to say either. 296 of the 327
+     * overrides in that recording were this, and nothing else.
+     */
+    h.advance(SETTLE_PAST);
+    h.report('l1', 'dim', 0);
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].overridden, false, 'switching a lamp off is not overriding us');
+    assert.ok(d.recentControlEvents.some(e => e.type === 'report_ignored' && e.reason === 'dim_zero'));
+    assert.equal(d.recentControlEvents.filter(e => e.type === 'override').length, 0);
+    await h.runtime.stop();
+  });
+
+  test('a loop watched running away marks the device, and a well-placed sensor never does', async () => {
+    // Lamps that start near the bottom, so every pass of the slew raises them:
+    // seeded from a lit lamp the aim would spend its first passes coming DOWN,
+    // and a falling aim is not the thing under test.
+    const h = harness({
+      plan: plan({ sensors: ['s1'], dark: 0.25, bright: 0.9 }),
+      devices: [light('l1', undefined, { dim: 0.01 }), light('l2', undefined, { dim: 0.01 })],
+      verdict: { level: 0.2, brightness: 0.3 },
+    });
+    await h.runtime.start();
+    await sharedSettle(12);
+    assert.equal(h.runtime.diagnostics().feedbackRisk, 'increasing_sensor_response');
+    assert.equal(h.runtime.diagnostics().feedbackObservations, 0);
+
+    /**
+     * The signature, six times over: we raise the lamps, and the reading then
+     * rises. In a room where the sensor cannot see these lamps that is chance
+     * and does not repeat; where it can, it is the mechanism, and it ran 95
+     * times in 3.83 days with the sensor reading a median of 1 lux with its
+     * lamp off and 680 lux with it on.
+     */
+    for (let pass = 1; pass <= 6; pass += 1) {
+      h.advance(60_000);
+      h.setVerdict({ level: 0.2 + pass * 0.1, brightness: 0.9 });
+      await tick(h);
+    }
+
+    const d = h.runtime.diagnostics();
+    assert.ok(d.feedbackObservations >= 5, `observed ${d.feedbackObservations} times`);
+    assert.equal(d.state, 'partial');
+    assert.deepEqual(h.states.at(-1), {
+      state: 'partial',
+      detail: {
+        key: 'state.daylightFeedback',
+        text: 'Its lamps are brightening their own sensor. Move the sensor, or lower the bright end.',
+      },
+    });
+    await h.runtime.stop();
+  });
+
+  test('a reading that does not follow the lamps is never called feedback', async () => {
+    const h = harness({
+      plan: plan({ sensors: ['s1'], dark: 0.25, bright: 0.9 }),
+      devices: [light('l1', undefined, { dim: 0.01 }), light('l2', undefined, { dim: 0.01 })],
+      verdict: { level: 0.2, brightness: 0.3 },
+    });
+    await h.runtime.start();
+    await sharedSettle(12);
+
+    // The lamps climb exactly as above; the room does not notice. A sensor
+    // placed where it can only see the sky behaves like this, and must stay
+    // 'ready' — the configuration is still risky, nothing has been observed.
+    for (let pass = 1; pass <= 8; pass += 1) {
+      h.advance(60_000);
+      h.setVerdict({ brightness: 0.9 });
+      await tick(h);
+    }
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.feedbackRisk, 'increasing_sensor_response', 'the CONFIGURATION is still risky');
+    assert.equal(d.feedbackObservations, 0, 'but nothing was ever watched happening');
+    assert.equal(d.state, 'ready');
+    await h.runtime.stop();
+  });
+});

@@ -162,6 +162,12 @@ export default tseslint.config(
       'lib/pairing/pair-session.ts',
       // A generic FIFO whose resolvers are genuinely of any type.
       'lib/support/keyed-mutex.ts',
+      // The evidence feature and its disabled twin carry `api.ts`'s own route
+      // handlers — see the header of the first for why they live in lib/ at
+      // all — so they inherit exactly the untyped `{ homey, body, params }`
+      // boundary that exempts api.ts itself.
+      'lib/support/evidence-feature.ts',
+      'lib/support/evidence-feature-disabled.ts',
     ],
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',

@@ -64,10 +64,29 @@ node scripts/probe-lights.mjs full --yes --all  # the quirks battery, on YOUR OW
 — every flag each script takes, the hardware pass command by command, and the trap that goes with
 each one.
 
-**`package.json`'s `build` script is not ours to remove.** It looks unused — nothing in this repo
-calls it — but the Homey CLI shells out to `npm run build` itself whenever it detects TypeScript,
-so deleting it fails `validate`, `install` and `run` alike with `Missing script: "build"` reported
-as `× Typescript compilation failed`, which names neither the script nor npm.
+**`package.json`'s `build` script is not ours to remove, and it is no longer just `tsc`.** It looks
+unused — nothing in this repo calls it — but the Homey CLI shells out to `npm run build` itself
+whenever it detects TypeScript, so deleting it fails `validate`, `install` and `run` alike with
+`Missing script: "build"` reported as `× Typescript compilation failed`, which names neither the
+script nor npm.
+
+Being the CLI's only hook is exactly why `scripts/build.mjs` sits behind it now. **The seven-day
+evidence recorder is a development tool and is built OUT of the launch app**: `install`, `run`,
+`validate` and `publish` all call `npm run build` identically, so there is no way to strip on
+publish alone — the default has to be stripped, and the recorder is opted back in.
+
+```bash
+New-Item .dev-build      # or `touch .dev-build`. Gitignored, sticky, announced loudly
+npx homey app install    # -> the recorder is built in
+Remove-Item .dev-build
+npx homey app install    # -> launch shape: no recorder, no routes, no settings section
+```
+
+A launch build replaces the compiled `evidence-feature.js` with its disabled twin, deletes
+`evidence-recorder.js` and `evidence-sampler.js`, strips the settings page's delimited section and
+removes the six routes from the packaged `app.json` — then PROVES it, failing the build if anything
+still names the recorder. `lib/support/evidence-feature.ts` is the one module `app.ts` and `api.ts`
+may name, and its header is where the design is written down.
 
 Run a single test file: `node --import tsx --test test/unit/ramp-engine.test.ts`
 
@@ -127,6 +146,10 @@ lib/
     evidence-sink.ts            the ONE seam between anything producing evidence and whatever
                                 consumes it. A file of its own so a runtime depends on a
                                 signature, never on the recorder that implements it today
+    evidence-feature.ts         THE WHOLE RECORDER, as one module — the only one app.ts or
+                                api.ts may name, routes included. Read its header first
+    evidence-feature-disabled.ts  its twin, and what a LAUNCH build actually ships: same
+                                exports, no recorder. scripts/build.mjs substitutes it
     evidence-recorder.ts        opt-in seven-day recording: gzip + AES-256-GCM batches appended
                                 to /userdata, the key in homey.settings, every record stripped
                                 and redacted on the way in. OFF costs one object literal per
@@ -155,6 +178,10 @@ drivers/schedule/               virtual device, driver, three pairing views
   pair/                         credential.html and targets.html are COPIES of the
                                 controller's; only schedule.html is its own — see platform §8
   repair/                       exact copies of pair/, generated — see platform §8
+scripts/build.mjs               `npm run build`, which the Homey CLI calls for install, run,
+                                validate AND publish alike. Runs tsc, then — unless `.dev-build`
+                                exists — strips the evidence recorder out of .homeybuild and
+                                verifies none of it is left. The switch, and the only hook there is
 scripts/sync-views.mjs          makes every copy named above; nothing runs it for you
 scripts/verify-hardware.mjs     most of the hardware pass. Talks to a REAL Homey over its OWN
                                 Personal API Key — needs HOMEY_ADDRESS + HOMEY_API_KEY, and
@@ -204,6 +231,8 @@ docs/                           NOT bundled. `docs/README.md` indexes it
   hardware-test-plan.md         the standing pass on a real Homey: what to DO, and how to report
   hardware-test-coverage.md     what covers what — the script, the suite, and the retired lines
   commands.md                   every command in one place, with the trap that goes with each
+  evidence-findings.md          WHAT ONE REAL RECORDING FOUND: six defects with the numbers
+                                behind each, and the two things that only looked like defects
   week-long-testing.md          the opt-in seven-day recorder: what it captures, what it does
                                 NOT, and how to read an archive back
   history/                      ARCHIVE: the completed 0.5.0 remediation project
@@ -310,6 +339,16 @@ key with it, and a plain install demonstrably does not: the 2 September retry ca
 
 ## Releasing a version
 
+**Never bump the version unless you were explicitly asked to.** Not as the tidy end of a change, not
+because a fix "feels like a patch", not because this file's checklist below exists. Land the work,
+write the changelog under the version that is already there, and say that a bump is available if
+wanted. Nothing here has been published yet, so a bump buys nobody anything and costs an entry
+somebody later has to merge away: 0.6.1, 0.7.0 and 0.7.1 were all created, documented in three
+changelogs each, and then folded back into 0.6.0 by hand. **"Add a changelog entry" is not "bump the
+version"** — the entry goes under the current version.
+
+When a bump IS asked for, everything below applies.
+
 The version lives in **four** places and a release is only coherent when all of them agree —
 `release-metadata.test.ts` fails if any disagrees:
 
@@ -338,9 +377,9 @@ repo stopped saying.
 
 **The checklist, in one commit:**
 
-1. Bump `.homeycompose/app.json` and `package.json` to the same version. Patch for fixes, minor for
-   new capability; pre-1.0 means no major bumps for breaking changes, so say it in the changelog
-   instead.
+1. Bump `.homeycompose/app.json` and `package.json` to the same version — **only when the bump was
+   asked for**; see above. Patch for fixes, minor for new capability; pre-1.0 means no major bumps
+   for breaking changes, so say it in the changelog instead.
 2. Add a `.homeychangelog.json` entry under that exact version.
 3. Add the full entry to `CHANGELOG.md` as `## <version>`, newest first.
 4. Condense it into `README.md`'s `## Changelog`: the new release in about four bullets, and the
@@ -600,6 +639,22 @@ Load-bearing product guarantees, not implementation details:
   through — which is exactly how a Curve light came to sit on the colour it last held. The colour leg
   has always decided per device; the temperature leg now does too.
 - **Flows that look user-edited are never overwritten.** The controller is marked for repair instead.
+- **An override always ends.** `OVERRIDE_EXPIRY_MS` (4 h) is the second way out, beside the `onoff`
+  edge, and it exists because the `onoff` gesture assumes a PERSON raised the override. A lamp that
+  accepts a write, acks it and reverts to its own values a minute later raises one just as well —
+  measured, and the device it belonged to did nothing for 88 of 93 recorded hours while reporting
+  `ready`. `expireOverrides()` also drops `committed`/`lastWritten` for that lamp: without it the
+  override lapses, the plan is unchanged, the no-op filter drops the write, and the lamp stays where
+  it was put. Both halves ship together or neither does anything.
+- **A reported `dim` of 0 is never an override.** Neither curve-driven nor daylight-driven writes can
+  produce a 0 (`MINIMUM_BRIGHTNESS` plus `litDim()`), so a reported 0 is always the lamp's own. The
+  `actualOn` guard was not enough because an integration can report `dim 0` a median of **29.9 s**
+  before its own `onoff: false` — 296 of 327 overrides in a real week were exactly that, each one a
+  false badge and a junk entry evicting real history from a 120-entry log.
+- **A tolerance is compared with an epsilon, never with a bare `<=`.** `withinOverrideTolerance()`
+  exists because `Math.abs(0.83 - 0.86)` is `0.030000000000000027`: the same three hundredths was
+  forgiven at one end of the axis and prosecuted at the other, which under the rule above meant
+  standing down for good.
 - **Deleting a controller deletes only the Flows demonstrably created by it.** Attribution is the
   controller id carried in the bridge action's arguments.
 - **The orphan sweep refuses to run when no Flow-owning Lightkeeper device is live**, because every
@@ -684,6 +739,14 @@ Load-bearing product guarantees, not implementation details:
   strictly larger than the band — or a target just outside the band is approached in increments that
   never leave it, and the lamp creeps and stalls. The app damps this loop; it does not remove it, and
   the FAQ says so and names the sensor placements that avoid it.
+- **A loop that has been WATCHED running away is said out loud.** `feedbackRisk` is a statement about
+  the configuration and belongs on the pairing screen; it cannot say whether the loop ran. In a
+  recorded week it ran 95 times — sensor reading a median of 1 lux with the lamp off and 680 with it
+  on, response pinned at its own `bright` end in 62.7% of lit samples, loop gain about 3 — and the
+  only place that appeared was a diagnostics field. The runtime now counts the loop's signature (we
+  raised the aim, the reading then rose) and after five observations reports `partial` with
+  `state.daylightFeedback`. Deliberately NOT "pinned at the bright end": a sunny afternoon puts an
+  increasing response there legitimately, and that would be a false alarm on a well-placed sensor.
 - **The slew is measured from the AIM, never from the lamp's reported level.** Slewing from what the
   lamp says looks more honest and stalls: `dim` on a lamp declaring `decimals: 1` moves in tenths, so
   through γ = 2.2 every perceptual aim from 0.10 to about 0.45 quantises to the same 0.1. Those

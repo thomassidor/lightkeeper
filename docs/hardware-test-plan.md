@@ -75,14 +75,48 @@ The script cannot do these. Report each by its number.
 
 ## 4. This release
 
-**0.7.0 — the week-long evidence recorder, health verdicts that compose, and the launch-review
-hardening.**
+**0.6.0, final section — what a week of real evidence found, and the five fixes that came out of
+it.**
 
-These checks are **not yet run on hardware**. Unit and integration tests cover injected failures
-and controlled races; the checks below establish how the real Homey and its integrations behave.
-T81–T90 were the 0.6.0 release checks and are retired. Their recorded outcomes remain below.
-T91–T97 were written for 0.6.1, which never shipped separately, so they are still owed and carry
-forward here.
+Unusually, these lines are not written from first principles: every one of them re-runs a
+behaviour that a 3.83-day recording on this same Homey caught getting it wrong.
+[`evidence-findings.md`](evidence-findings.md) has the numbers. That makes T107–T111 the priority
+of this pass — they are the only proof that the integrations which produced those findings now
+behave.
+
+T98–T106 below were partly run on 9 September and the unticked ones are still owed, as are
+T91–T97. All of them belong to 0.6.0 too: the intermediate version numbers those lines were
+written under were folded away before anything was published. Nothing is renumbered — a test
+number is never reused.
+
+- [ ] **T107** The one that matters most. Find a lamp that does not hold what it is sent — the
+      recording's did, reverting to its own `dim 0.41` / `light_temperature 0.83` about ninety
+      seconds after every write. Point a circadian light at it and leave it on for five hours.
+      Within the first two minutes its tile may show the lamp as overridden; **after four hours
+      control must resume by itself**, the export must carry an `override_cleared` with
+      `reason: 'expired'`, and a write to that lamp must follow on the same pass. If no such lamp
+      is to hand, dim one by hand from the Homey app and leave it: the same four hours apply.
+      Before the fix this device did nothing for 88 of 93 hours while reporting `ready`.
+- [ ] **T108** Switch a lamp belonging to a Daylight light off, from the Homey app or at the wall,
+      and leave the device alone for a minute. The tile must **not** show it as overridden at any
+      point, and the export must carry `report_ignored` with `reason: 'dim_zero'` rather than an
+      `override`. Repeat on each integration you own: the defect was an integration reporting
+      `dim 0` a median of 29.9 s ahead of its own `onoff: false`, so the ordering is the thing
+      under test and it differs per bridge.
+- [ ] **T109** Start a recording and leave a circadian light running across the point where its
+      warmth crosses zero — the far end of the coolest anchor. Export, and confirm the analysis
+      reports **`malformed: 0`**. This is the only end-to-end check on the redaction fix; the
+      recording that found it had 93 unreadable records and `dropped: 0`. While the archive is
+      open, re-confirm T100's redaction search: both keys' leading characters still absent.
+- [ ] **T110** A Daylight light whose sensor sits in the same room as its lamps, configured with
+      the bright end higher than the dark end. Switch its lamps on and watch for ten minutes. The
+      device must move to **partial** with the "brightening their own sensor" message once the
+      climb has been observed five times, and `feedbackObservations` must be non-zero in the
+      export. Then move the sensor where it cannot see those lamps, repair the device, and confirm
+      it stays `ready` — the false-alarm half is as important as the detection.
+- [ ] **T111** `node scripts/evidence.mjs analyze` on any archive must no longer report
+      `maxRssBytes`. Read the footprint with `node scripts/verify-hardware.mjs memory` instead and
+      confirm it is the number the app-profiling dashboard shows, against the 30 MB guideline.
 
 **T98–T101 are the recorder's smoke test, and it is the one thing in this list that cannot be
 skipped.** Everything the recorder promises rests on two assumptions no unit test can reach: that
@@ -172,6 +206,10 @@ has something it should not.
 
 ### Last run — 9 September 2026, Homey Pro 2023, firmware 13.5.0, app 0.7.0
 
+*The build reported `0.7.0`; that work is part of 0.6.0 now. The number is left as the build
+actually reported it, because a run record that does not match the archive it produced is worse
+than one that needs this footnote.*
+
 `full --yes`: **69 OK, 1 failed, 1 skipped**, plus `restart --yes` (4 OK) and the recorder lines
 T98–T101 by hand. The skip was T34 in a SEPARATE `restart` run, after `full`'s teardown had already
 removed the devices it built; T34 itself passed inside `full`.
@@ -221,7 +259,7 @@ pointed at that room would have been setting a tablet's screen brightness. The r
 
 **Also observed, incidentally.** T21 shows `light_mode` written alongside `light_temperature`, which
 is the per-device mode decision holding on real lamps. The analysis of the pass's own evidence reported
-42 succeeded writes, 12 **cancelled** — the write cancellation from 0.6.1 working — 4 overrides and 0
+42 succeeded writes, 12 **cancelled** — the write cancellation working — 4 overrides and 0
 malformed records. And `credential: valid=false` in the first health sample after a boot is correct
 rather than alarming: `revalidateCredential()` is fire-and-forget at start, so the opening sample can
 precede it, and the archive showing that is useful.

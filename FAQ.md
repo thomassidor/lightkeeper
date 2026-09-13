@@ -129,9 +129,15 @@ If your lights do keep hunting, unpick the sensor: the sun alone is the reliable
 
 If you set the bright end higher than the dark end, the response runs in the other direction:
 more measured light asks for brighter lamps. A sensor that sees those lamps can then make them
-keep increasing their own brightness. The setup screen flags this combination. Use a sensor
-away from the controlled lamps, or lower the bright end if you want daylight compensation.
-The rate limit slows this feedback; it does not establish how much of the reading is daylight.
+keep increasing their own brightness until they reach whatever you set the bright end to. The setup
+screen flags the combination, and **the device itself will say so on its tile once it has actually
+watched the lights doing it** — the message names the same two remedies: use a sensor away from the
+controlled lamps, or lower the bright end. The rate limit slows this feedback; it does not establish
+how much of the reading is daylight.
+
+This is worth taking seriously rather than reading past. In a recorded week on a real Homey, a
+kitchen sensor read 1 lux with its lamp off and 680 lux with it on, and the lamp climbed to the
+bright end within four to nine minutes of every switch-on, ninety-five times over.
 
 ---
 
@@ -196,6 +202,12 @@ That is deliberate. Change a light's colour by hand and the device driving it st
 lamp — it will not take it back on the next tick. **Switch the light off and on again** to hand it
 back, because that is the gesture people already have for "put this back how it ought to be". It is
 never remembered across a restart.
+
+It also lapses on its own after **four hours**, which is the shorter answer to a different question:
+some lights quietly go back to their own settings a minute or two after being changed, and
+Lightkeeper cannot tell that apart from you reaching for a dimmer. Left to itself that made one light
+mute its whole device for days at a time. If four hours is too soon for you, switching the light off
+and on again is still the instant way to say either thing.
 
 ---
 

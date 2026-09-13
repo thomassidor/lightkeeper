@@ -134,11 +134,33 @@ export class EvidenceRecorder {
     const m = this.manifest;
     if (!m || m.state !== 'recording' || this.now() >= m.endsAt) return;
     try {
-      const line = redactKeyMaterial(JSON.stringify({
+      const encoded = JSON.stringify({
         schema: 1, runId: m.id, bootId: this.bootId, sequence: ++m.sequence,
         recordedAt: this.now(), type, data,
       }, (key, value: unknown) => /^(apiKey|key|token|secret|authorization|password)$/i.test(key)
-        ? undefined : value)) + '\n';
+        ? undefined : value);
+      const redacted = redactKeyMaterial(encoded);
+      /**
+       * A redaction that CHANGED the line must leave it parseable, or the
+       * record is lost in a way nothing can see.
+       *
+       * `KEY_MATERIAL` used to match the decimal expansion of a small number,
+       * turning `{"warmth":0.000004829384756102938}` into
+       * `{"warmth":0.<redacted>}` — written successfully, counted as recorded,
+       * and unreadable for ever. 93 records of a real week went that way while
+       * `dropped` stayed 0 and the export manifest reported a complete run, so
+       * neither the settings page nor `evidence.mjs status` could have told
+       * anybody. The pattern itself is fixed (`homey-errors.ts`); this is the
+       * guarantee that the NEXT such flaw surfaces as a number in `dropped`
+       * rather than as a silent hole in the timeline.
+       *
+       * Only when redaction actually fired: an untouched line is the output of
+       * `JSON.stringify` and cannot be invalid. That was 94 lines in 58,024.
+       */
+      if (redacted !== encoded) {
+        try { JSON.parse(redacted); } catch { m.dropped++; return; }
+      }
+      const line = redacted + '\n';
       const bytes = Buffer.byteLength(line);
       if (bytes > MAX_RECORD_BYTES || this.pendingBytes + bytes > BUFFER_BYTES) { m.dropped++; return; }
       this.pending.push(line);

@@ -1,8 +1,21 @@
 # Recording a week at home
 
-Install this build persistently with `npx homey app install`. A temporary `homey app run`
-session is not suitable for an unattended week. The recorder starts only when you ask;
-installing or opening settings does not start it.
+**The recorder is not in the launch app.** It is a development tool, so a normal build strips it
+out entirely — no settings section, no Web API routes, no code. To get a build that has it, create
+a `.dev-build` file at the repo root before installing:
+
+```powershell
+New-Item .dev-build          # bash: touch .dev-build
+npx homey app install        # prints a DEV BUILD banner
+```
+
+Delete `.dev-build` and install again to go back. The file is gitignored, and every build says
+which kind it made. `scripts/build.mjs` is the switch and `lib/support/evidence-feature.ts`
+explains the design.
+
+Install persistently with `npx homey app install`. A temporary `homey app run` session is not
+suitable for an unattended week. The recorder starts only when you ask; installing or opening
+settings does not start it.
 
 In Homey → Lightkeeper → app settings, choose **Start seven-day recording**. Check that
 the state says **Recording**; wait a minute, press **Refresh recording status** and check
@@ -31,7 +44,9 @@ before it. This gives the later analysis a timestamp to match against sensor and
   Daylight control passes.
 - Bridge Flow intake, including rejected events, and timestamped observations you enter.
 - Once a minute: cached runtime state, target state, sensor availability/age, app version,
-  timezone, process uptime and memory use. Configurations are captured initially and when
+  timezone and process uptime. Memory is **not** captured: `process.memoryUsage()` throws inside
+  the app sandbox, so every sample carries `memory: null`. Read the footprint from outside with
+  `node scripts/verify-hardware.mjs memory`. Configurations are captured initially and when
   this sampler observes a change. Very short-lived configuration changes between samples
   may not be captured.
 - App startup and graceful shutdown, recording limits, sequence numbers and a unique boot id.
@@ -74,10 +89,15 @@ node scripts/evidence.mjs stop
 ```
 
 The initial summary counts write failures, latency, override events and scheduler outcomes,
-and reports peak RSS, sensor ranges/ages and gaps between health samples (including across
-restarts). It does not diagnose a lamp from a counter alone. Look at the timeline around
-observations and failures, and at repeated overrides, growing memory, missing samples or
-readings that never change. An old sensor reading is not automatically a fault.
+and reports sensor ranges/ages and gaps between health samples (including across restarts).
+It does not diagnose a lamp from a counter alone. Look at the timeline around observations and
+failures, and at repeated overrides, missing samples or readings that never change. An old
+sensor reading is not automatically a fault.
+
+**Read `malformed` first.** It counts records in the archive that will not parse, and it is the
+one number the recorder itself cannot see: a run that reported `dropped: 0` and `error: null`
+still lost 93 of 58,024 records, because redaction was mangling them on the way in. Any non-zero
+`malformed` means the timeline is incomplete whatever the manifest claims.
 
 ## Retention and limits
 
@@ -96,8 +116,8 @@ counted as dropped. Data is compressed, encrypted and flushed every 15 seconds. 
 process/power loss can lose the unflushed tail; flushed data is synced before its committed
 length is saved. Restart recovery discards any uncommitted file tail and records its size.
 No recorder can report events while the app or Homey is down; boot ids and sample gaps expose
-those intervals. Check `dropped`, `state`, `lastFlushAt` and the export's status manifest before
-treating the timeline as complete.
+those intervals. Check `malformed` from the analysis, and `dropped`, `state`, `lastFlushAt` and
+the export's status manifest, before treating the timeline as complete.
 
 Files in Homey's `/userdata` are publicly served, so the recorder encrypts each compressed
 batch with AES-256-GCM. Its random key stays in app settings, and downloads go through the

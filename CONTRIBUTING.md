@@ -135,8 +135,11 @@ header of that file says why, and what it does not do.
 
 ## Releasing
 
-The version lives in four files and every user-visible change ships **three** changelog entries,
-because they have three audiences:
+**Do not bump the version unless you have been asked to.** Land the work and write the changelog
+entry under the version that is already there; a bump is a separate, explicit decision. Nothing has
+been published yet, so an unasked-for bump only creates an entry somebody has to merge away later.
+
+Every user-visible change ships **three** changelog entries, because they have three audiences:
 
 | File | Audience |
 |---|---|

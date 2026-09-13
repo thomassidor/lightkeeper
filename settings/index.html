@@ -179,6 +179,8 @@
 <p data-i18n="settings.writesExplain"></p>
 <div id="writes" class="card" data-i18n="settings.loading"></div>
 
+<!-- ==== dev-only: evidence recorder. scripts/build.mjs strips this block
+     from a launch build; see lib/support/evidence-feature.ts ==== -->
 <h2 data-i18n="settings.evidenceTitle"></h2>
 <p data-i18n="settings.evidenceHelp"></p>
 <div id="evidence-status" class="card" role="status" data-i18n="settings.loading"></div>
@@ -197,6 +199,7 @@
 <button id="evidence-add-note" data-i18n="settings.evidenceAddNote" disabled></button>
 <p data-i18n="settings.evidenceExportHelp"></p>
 <code>node scripts/evidence.mjs export</code>
+<!-- ==== end dev-only: evidence recorder ==== -->
 
 <h2 data-i18n="settings.diagnostics"></h2>
 <div class="row">
@@ -754,6 +757,8 @@
       });
     });
 
+    /* ==== dev-only: evidence recorder. scripts/build.mjs strips this block
+       from a launch build; see lib/support/evidence-feature.ts ==== */
     function showEvidence(data) {
       var states = { idle: t('evidenceIdle'), recording: t('evidenceRecording'), complete: t('evidenceComplete'),
         stopped: t('evidenceStopped'), full: t('evidenceFull'), error: t('evidenceError') };
@@ -799,6 +804,7 @@
         input.value = ''; showEvidence(status);
       }).catch(evidenceError);
     });
+    /* ==== end dev-only: evidence recorder ==== */
 
     document.getElementById('diag').addEventListener('click', function () {
       api('GET', '/diagnostics').then(function (data) {

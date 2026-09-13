@@ -1196,8 +1196,14 @@ function explainFailure(error) {
  * longest unbroken hex run is the 12-character final group — so the secret
  * segment can be matched without eating the device ids that make a failure
  * diagnosable.
+ *
+ * The `(?<![.\d])` guard is load-bearing and was added after it bit: the
+ * second alternative also matches the decimal expansion of a small number
+ * (`0.000004829384756102938` is 21 characters of `[0-9a-f]`), which corrupted
+ * 93 records of a real recording into unparseable JSON. See the longer note in
+ * `lib/support/homey-errors.ts`.
  */
-const KEY_MATERIAL = /[0-9a-f-]{36}:[0-9a-f-]{36}:[0-9a-f]{20,}|[0-9a-f]{20,}/gi;
+const KEY_MATERIAL = /[0-9a-f-]{36}:[0-9a-f-]{36}:[0-9a-f]{20,}|(?<![.\d])[0-9a-f]{20,}/gi;
 
 /** @param {string} text */
 export function redactKeyMaterial(text) {

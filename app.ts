@@ -1,7 +1,6 @@
 'use strict';
 
-import { EvidenceRecorder } from './lib/support/evidence-recorder';
-import { EvidenceSampler, memoryUsage } from './lib/support/evidence-sampler';
+import { EvidenceFeature } from './lib/support/evidence-feature';
 import type { LightkeeperApp } from './lib/app-contract';
 import Homey from 'homey';
 
@@ -37,10 +36,7 @@ import { timezoneOf } from './lib/time/local-clock';
  */
 const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
 
-  evidence!: EvidenceRecorder;
-  private evidenceSampler!: EvidenceSampler;
-  private evidenceTimer: NodeJS.Timeout | null = null;
-  private evidenceTicks = 0;
+  evidence!: EvidenceFeature;
 
   credentials!: CredentialService;
   api!: HomeyApiService;
@@ -154,14 +150,26 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
   }
 
   override async onInit() {
-    this.evidence = new EvidenceRecorder({
-      directory: '/userdata/lightkeeper-evidence',
+    this.evidence = new EvidenceFeature({
       settings: { get: key => this.homey.settings.get(key),
         set: (key, value) => this.homey.settings.set(key, value),
         unset: key => this.homey.settings.unset(key) },
+      context: () => this.evidenceContext(),
+      sample: () => ({
+        runtimes: [
+          ...this.controllers.all().map(runtime => ({ kind: 'controller', runtime, configuration: runtime.currentProfile })),
+          ...this.schedules.all().map(runtime => ({ kind: 'schedule', runtime, configuration: runtime.currentPlan })),
+          ...this.curves.all().map(runtime => ({ kind: 'curve', runtime, configuration: runtime.currentPlan })),
+          ...this.daylights.all().map(runtime => ({ kind: 'daylight', runtime, configuration: runtime.currentPlan })),
+        ],
+        sensors: this.luminance.watched(),
+        credential: this.credentials.getStatus(),
+      }),
+      setInterval: (fn, ms) => this.homey.setInterval(fn, ms),
+      clearInterval: timer => this.homey.clearInterval(timer),
+      log: (...args) => this.log(...args),
     });
-    this.evidenceSampler = new EvidenceSampler(this.evidence.record);
-    await this.evidence.init(this.evidenceContext());
+    await this.evidence.init();
     this.credentials = new CredentialService({
       settings: {
         get: key => this.homey.settings.get(key),
@@ -219,7 +227,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     };
 
     this.luminance = new LuminanceSource({
-      onEvidence: this.evidence.record,
+      onEvidence: this.evidence.sink,
       api: this.api,
       catalog: this.catalog,
       log: (...args) => this.log(...args),
@@ -284,7 +292,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     });
 
     this.curves = new CircadianRuntimeManager({
-      onEvidence: this.evidence.record,
+      onEvidence: this.evidence.sink,
       api: this.api,
       onWriteResult,
       catalog: this.catalog,
@@ -303,7 +311,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     });
 
     this.daylights = new DaylightRuntimeManager({
-      onEvidence: this.evidence.record,
+      onEvidence: this.evidence.sink,
       api: this.api,
       onWriteResult,
       catalog: this.catalog,
@@ -341,11 +349,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     // unreachable Homey must not delay app start.
     fireAndForget(this.revalidateCredential(), (...args) => this.log(...args), 'Stored-key revalidation');
 
-    this.sampleEvidence();
-    this.evidenceTimer = this.homey.setInterval(() => {
-      if (++this.evidenceTicks % 4 === 0) this.sampleEvidence();
-      fireAndForget(this.evidence.flush(), (...args) => this.log(...args), 'Evidence flush');
-    }, 15_000);
+    this.evidence.startTimer();
     this.log('Lightkeeper initialised');
   }
 
@@ -403,34 +407,8 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       timezone: timezoneOf(this.homey.clock), uptimeSeconds: process.uptime() };
   }
 
-  async startEvidence() {
-    const status = await this.evidence.start(this.evidenceContext());
-    this.evidenceSampler = new EvidenceSampler(this.evidence.record);
-    this.sampleEvidence();
-    await this.evidence.flush();
-    return { ...status, ...this.evidence.status() };
-  }
-
-  private sampleEvidence(): void {
-    if (this.evidence.status().state !== 'recording') return;
-    try {
-      this.evidenceSampler.sample([
-        ...this.controllers.all().map(runtime => ({ kind: 'controller', runtime, configuration: runtime.currentProfile })),
-        ...this.schedules.all().map(runtime => ({ kind: 'schedule', runtime, configuration: runtime.currentPlan })),
-        ...this.curves.all().map(runtime => ({ kind: 'curve', runtime, configuration: runtime.currentPlan })),
-        ...this.daylights.all().map(runtime => ({ kind: 'daylight', runtime, configuration: runtime.currentPlan })),
-      ]);
-      this.evidence.record('health_sample', { ...this.evidenceContext(),
-        memory: memoryUsage(), sensors: this.luminance.watched(),
-        credential: this.credentials.getStatus(), recorder: this.evidence.status() });
-    } catch (error) {
-      this.evidence.record('sampling_error', { message: messageOf(error) });
-    }
-  }
-
   override async onUninit() {
-    if (this.evidenceTimer !== null) this.homey.clearInterval(this.evidenceTimer);
-    this.evidenceTimer = null;
+    this.evidence.stopTimer();
 
     /**
      * FIRST, not last — and even so, best-effort.

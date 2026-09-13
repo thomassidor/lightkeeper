@@ -11,8 +11,9 @@ import { LightTargetAdapter, type WriteRecord } from '../outputs/light-target-ad
 import { TargetResolver } from '../outputs/target-resolver';
 import {
   validCapabilityValue,
+  OVERRIDE_EXPIRY_MS,
   OVERRIDE_SETTLE_MS,
-  OVERRIDE_TOLERANCE,
+  withinOverrideTolerance,
   TargetStateCache,
   stepFromDecimals,
 } from '../outputs/target-state-cache';
@@ -338,7 +339,11 @@ export class CircadianRuntime {
    * Per device, never persisted: a restart is a clean slate, which is the right
    * bias for a feature whose whole job is to be correct by default. Cleared by
    * either edge of `onoff` — "switch it off and on again" is the gesture people
-   * already have for putting a light back to how it ought to be.
+   * already have for putting a light back to how it ought to be — and, failing
+   * that, by `expireOverrides()` after `OVERRIDE_EXPIRY_MS`. The second half is
+   * not a nicety: the gesture assumes a person raised the override, and a lamp
+   * that quietly reverts our writes raises one just as well. See the constant
+   * for the four days of evidence that put it there.
    */
   private readonly overrides = new Map<string, OverrideRecord>();
 
@@ -596,8 +601,36 @@ export class CircadianRuntime {
       return;
     }
 
-    const ignored = capability === 'dim' && this.cache.state(deviceId).actualOn !== true
-      ? 'lamp_off' : this.cache.overrideSuppression(deviceId, capability);
+    /**
+     * A `dim` of 0 is a lamp going off, never a person overriding us.
+     *
+     * `lamp_off` alone was not enough, because it reads `actualOn` and that only
+     * moves when the `onoff` report itself lands. Measured over 3.83 days on the
+     * reference Homey: this integration reports `dim 0` a median of 29.9 SECONDS
+     * before the matching `onoff: false` (232 pairs, min 29.2 s). For that whole
+     * window the cache still believes the lamp is on, the power-settling window
+     * has not opened, and the report walks straight into `noteOverride` — 296 of
+     * the 327 overrides in that recording were this and nothing else.
+     *
+     * Each one put a false "overridden" badge on the device for half a minute
+     * and, worse, flooded the 120-entry event log, evicting the real control
+     * history that makes a genuine fault diagnosable. Had one `onoff` report
+     * gone missing it would have been permanent.
+     *
+     * The value test needs no clock and no ordering. Neither runtime can write
+     * 0: `MINIMUM_BRIGHTNESS` is 0.10 perceptual and `litDim()` guarantees a
+     * positive brightness is never written as darkness, so a reported 0 is
+     * always the lamp's own. And a person dragging a dimmer to zero turns the
+     * lamp OFF, which arrives as `onoff` and clears any override anyway — so
+     * reading it as "off" rather than "overridden" loses nothing and is what
+     * actually happened.
+     *
+     * Still recorded as `report_ignored`, under its own reason, so the evidence
+     * shows the report rather than swallowing it.
+     */
+    const ignored = capability === 'dim' && (value === 0 || this.cache.state(deviceId).actualOn !== true)
+      ? (value === 0 ? 'dim_zero' : 'lamp_off')
+      : this.cache.overrideSuppression(deviceId, capability);
     if (ignored) {
       this.history.events.add({ at: this.now(), type: 'report_ignored', deviceId, capability,
         ...(typeof value === 'number' ? { value } : {}), reason: ignored });
@@ -633,18 +666,52 @@ export class CircadianRuntime {
     if (ours) {
       let delta = Math.abs(reported - ours.hue);
       if (delta > 0.5) delta = 1 - delta;
-      if (delta <= OVERRIDE_TOLERANCE) return;
+      if (withinOverrideTolerance(delta)) return;
     }
 
     if (!this.overrides.has(deviceId)) {
       this.deps.log(
         `${deviceId}'s colour was changed externally (hue ${reported}); circadian will leave it `
-        + 'alone until it is switched off and on again',
+        + 'alone until it is switched off and on again, or for four hours',
       );
     }
     const record: OverrideRecord = { at: this.now(), capability: 'light_hue', value: reported, expected: ours?.hue ?? null, source: 'external_report' };
     this.overrides.set(deviceId, record);
     this.history.events.add({ ...record, type: 'override', deviceId });
+  }
+
+  /**
+   * Drop overrides that have outlived `OVERRIDE_EXPIRY_MS`, and say so.
+   *
+   * Lazy rather than timed, deliberately. The 60 s tick already calls this by
+   * way of `applyNow`, so a whole timer would buy nothing but a second thing to
+   * stop on teardown — and reading the clock at the two points that ASK about
+   * overrides keeps the rule testable through the injected `now()` instead of
+   * through real elapsed time.
+   *
+   * `diagnostics()` calls it too, so the settings page and the device tile can
+   * never show a lamp as overridden after control has in fact resumed.
+   *
+   * Forgetting what we last wrote is half the fix rather than tidiness. While
+   * the override stood, somebody (or the lamp itself) moved it, and our record
+   * still describes the value we last landed — so the no-op filter would look
+   * at an unchanged plan, see an unchanged intended value, and write nothing at
+   * all. The override would lapse and the lamp would stay exactly where it was
+   * put, which is the same silence one layer down. Dropped for the same reason
+   * the power-off path drops it: what we sent an hour ago no longer describes
+   * this lamp. The next pass re-seeds from its real level and slews back.
+   */
+  private expireOverrides(): void {
+    const cutoff = this.now() - OVERRIDE_EXPIRY_MS;
+    for (const [deviceId, record] of this.overrides) {
+      if (record.at > cutoff) continue;
+      this.overrides.delete(deviceId);
+      this.lastWritten.delete(deviceId);
+      this.lastColorWritten.delete(deviceId);
+      this.pendingColor.delete(deviceId);
+      this.history.events.add({ at: this.now(), type: 'override_cleared', deviceId, reason: 'expired' });
+      this.deps.log(`${deviceId}'s manual override has lapsed; circadian control resumes`);
+    }
   }
 
   /** Somebody changed this light's colour or level by hand. Stand down for it. */
@@ -658,13 +725,13 @@ export class CircadianRuntime {
       // entitled to apply to it.
       if (this.now() - last.at < OVERRIDE_SETTLE_MS) return;
       const ours = last[field];
-      if (ours !== undefined && Math.abs(reported - ours) <= OVERRIDE_TOLERANCE) return;
+      if (ours !== undefined && withinOverrideTolerance(reported - ours)) return;
     }
 
     if (!this.overrides.has(deviceId)) {
       this.deps.log(
         `${deviceId} was changed externally (${field} ${reported}); circadian will leave it alone `
-        + 'until it is switched off and on again',
+        + 'until it is switched off and on again, or for four hours',
       );
     }
     const record: OverrideRecord = { at: this.now(), capability: field === 'warmth' ? 'light_temperature' : 'dim', value: reported, expected: last?.[field] ?? null, source: 'external_report' };
@@ -770,6 +837,8 @@ export class CircadianRuntime {
 
     const candidates = options.deviceIds ?? this.targetIds;
     if (candidates.length === 0) return this.noteNothingToDo(reason, 'no lights are selected');
+
+    this.expireOverrides();
 
     let skipped = 0;
     const excluded = new Map<string, TargetDecision['status']>();
@@ -1674,6 +1743,9 @@ export class CircadianRuntime {
 
   /** Never exposes secrets or unrelated Homey configuration. */
   diagnostics(): CircadianDiagnostics {
+    // Before anything is read: a lapsed override must not be drawn as a
+    // standing one on the settings page or the device tile.
+    this.expireOverrides();
     const timezone = this.deps.timezone();
     const clock = localNow(timezone, this.now());
     const value = this.plan.points.length > 0 ? this.currentValue() : null;

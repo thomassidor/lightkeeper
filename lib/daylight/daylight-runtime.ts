@@ -9,8 +9,9 @@ import { LightTargetAdapter, type WriteRecord } from '../outputs/light-target-ad
 import { TargetResolver } from '../outputs/target-resolver';
 import {
   validCapabilityValue,
+  OVERRIDE_EXPIRY_MS,
   OVERRIDE_SETTLE_MS,
-  OVERRIDE_TOLERANCE,
+  withinOverrideTolerance,
   TargetStateCache,
 } from '../outputs/target-state-cache';
 import { planIntent, type Capability, type PlannedWrite } from '../outputs/intent-planner';
@@ -91,6 +92,8 @@ export interface DaylightDiagnostics extends ReturnType<ControlHistory<DaylightA
   sampledAt: number;
   writeHistory: ReturnType<LightTargetAdapter['writeHistory']>;
   feedbackRisk: 'increasing_sensor_response' | null;
+  /** How many times that risk has been observed happening. See FEEDBACK_RISE. */
+  feedbackObservations: number;
   controllerId: string;
   kind: 'daylight';
   stateRevision: number;
@@ -148,6 +151,34 @@ export interface DaylightDiagnostics extends ReturnType<ControlHistory<DaylightA
 const DAYLIGHT_DEADBAND = 0.02;
 const MAX_STEP_PER_TICK = 0.05;
 
+/**
+ * When to stop calling the feedback loop a risk and start calling it observed.
+ *
+ * `feedbackRisk` below is a statement about the CONFIGURATION — sensors named,
+ * and a response that asks for more light as the room gets lighter. It is shown
+ * on the pairing screen, where it belongs, and it says "this can run away". It
+ * cannot say whether it did.
+ *
+ * These three say whether it did, and the test is the loop's own signature: we
+ * raised the aim, and the reading then rose. In a room where the sensor cannot
+ * see these lamps that coincidence is chance and will not repeat; where it can,
+ * it is the mechanism. `FEEDBACK_RISE` is well above sensor noise on the
+ * response's own 0..1 input axis, `FEEDBACK_WINDOW_MS` is long enough for a
+ * report-on-change sensor to get around to reporting (many only do so on
+ * change, so the rise need not land on the very next pass), and five
+ * observations is far past coincidence.
+ *
+ * Measured on the reference Homey over 3.83 days: the kitchen device did this
+ * 95 times — sensor reading a median of 1 lux with its lamp off and 680 lux
+ * with it on, response pinned at its own bright end in 62.7% of lit samples.
+ * `DAYLIGHT_DEADBAND` cannot damp that away; loop gain was about 3, so only the
+ * response's `bright` ceiling bounded it. That is worth saying on the tile
+ * rather than only in a diagnostics field nobody reads.
+ */
+const FEEDBACK_RISE = 0.05;
+const FEEDBACK_WINDOW_MS = 10 * 60_000;
+const FEEDBACK_OBSERVATIONS = 5;
+
 
 /** The only two axes this device type has any business with. */
 const WATCHED: Capability[] = ['onoff', 'dim'];
@@ -174,7 +205,11 @@ export class DaylightRuntime {
    * Per device, never persisted: a restart is a clean slate, which is the right
    * bias for a feature whose whole job is to be correct by default. Cleared by
    * either edge of `onoff` — "switch it off and on again" is the gesture people
-   * already have for putting a light back to how it ought to be.
+   * already have for putting a light back to how it ought to be — and, failing
+   * that, by `expireOverrides()` after `OVERRIDE_EXPIRY_MS`. The second half is
+   * not a nicety: the gesture assumes a person raised the override, and a lamp
+   * that quietly reverts our writes raises one just as well. See the constant
+   * for the four days of evidence that put it there.
    */
   private readonly overrides = new Map<string, OverrideRecord>();
 
@@ -208,6 +243,15 @@ export class DaylightRuntime {
    * somebody reaching for a dimmer.
    */
   private readonly committed = new Map<string, { device: number; at: number }>();
+
+  /**
+   * The open half of a raise-then-rise test: what the reading was when we last
+   * raised a lamp, and when. Cleared once the test resolves either way.
+   */
+  private feedbackProbe: { level: number; at: number } | null = null;
+
+  /** How many times that test has come back positive. See FEEDBACK_RISE. */
+  private feedbackObservations = 0;
 
   constructor(
     readonly controllerId: string,
@@ -345,8 +389,36 @@ export class DaylightRuntime {
       return;
     }
 
-    const ignored = capability === 'dim' && this.cache.state(deviceId).actualOn !== true
-      ? 'lamp_off' : this.cache.overrideSuppression(deviceId, capability);
+    /**
+     * A `dim` of 0 is a lamp going off, never a person overriding us.
+     *
+     * `lamp_off` alone was not enough, because it reads `actualOn` and that only
+     * moves when the `onoff` report itself lands. Measured over 3.83 days on the
+     * reference Homey: this integration reports `dim 0` a median of 29.9 SECONDS
+     * before the matching `onoff: false` (232 pairs, min 29.2 s). For that whole
+     * window the cache still believes the lamp is on, the power-settling window
+     * has not opened, and the report walks straight into `noteOverride` — 296 of
+     * the 327 overrides in that recording were this and nothing else.
+     *
+     * Each one put a false "overridden" badge on the device for half a minute
+     * and, worse, flooded the 120-entry event log, evicting the real control
+     * history that makes a genuine fault diagnosable. Had one `onoff` report
+     * gone missing it would have been permanent.
+     *
+     * The value test needs no clock and no ordering. Neither runtime can write
+     * 0: `MINIMUM_BRIGHTNESS` is 0.10 perceptual and `litDim()` guarantees a
+     * positive brightness is never written as darkness, so a reported 0 is
+     * always the lamp's own. And a person dragging a dimmer to zero turns the
+     * lamp OFF, which arrives as `onoff` and clears any override anyway — so
+     * reading it as "off" rather than "overridden" loses nothing and is what
+     * actually happened.
+     *
+     * Still recorded as `report_ignored`, under its own reason, so the evidence
+     * shows the report rather than swallowing it.
+     */
+    const ignored = capability === 'dim' && (value === 0 || this.cache.state(deviceId).actualOn !== true)
+      ? (value === 0 ? 'dim_zero' : 'lamp_off')
+      : this.cache.overrideSuppression(deviceId, capability);
     if (ignored) {
       this.history.events.add({ at: this.now(), type: 'report_ignored', deviceId, capability,
         ...(typeof value === 'number' ? { value } : {}), reason: ignored });
@@ -354,6 +426,39 @@ export class DaylightRuntime {
     }
 
     if (capability === 'dim') this.noteOverride(deviceId, value);
+  }
+
+  /**
+   * Drop overrides that have outlived `OVERRIDE_EXPIRY_MS`, and say so.
+   *
+   * Lazy rather than timed, deliberately. The 60 s tick already calls this by
+   * way of `applyNow`, so a whole timer would buy nothing but a second thing to
+   * stop on teardown — and reading the clock at the two points that ASK about
+   * overrides keeps the rule testable through the injected `now()` instead of
+   * through real elapsed time.
+   *
+   * `diagnostics()` calls it too, so the settings page and the device tile can
+   * never show a lamp as overridden after control has in fact resumed.
+   *
+   * Forgetting what we last wrote is half the fix rather than tidiness. While
+   * the override stood, somebody (or the lamp itself) moved it, and our record
+   * still describes the value we last landed — so the no-op filter would look
+   * at an unchanged plan, see an unchanged intended value, and write nothing at
+   * all. The override would lapse and the lamp would stay exactly where it was
+   * put, which is the same silence one layer down. Dropped for the same reason
+   * the power-off path drops it: what we sent an hour ago no longer describes
+   * this lamp. The next pass re-seeds from its real level and slews back.
+   */
+  private expireOverrides(): void {
+    const cutoff = this.now() - OVERRIDE_EXPIRY_MS;
+    for (const [deviceId, record] of this.overrides) {
+      if (record.at > cutoff) continue;
+      this.overrides.delete(deviceId);
+      this.aim.delete(deviceId);
+      this.committed.delete(deviceId);
+      this.history.events.add({ at: this.now(), type: 'override_cleared', deviceId, reason: 'expired' });
+      this.deps.log(`${deviceId}'s manual override has lapsed; daylight control resumes`);
+    }
   }
 
   /** Somebody changed this light's level by hand. Stand down for it. */
@@ -366,13 +471,13 @@ export class DaylightRuntime {
       // Still settling from our own write, or within the rounding a bridge is
       // entitled to apply to it.
       if (this.now() - last.at < OVERRIDE_SETTLE_MS) return;
-      if (Math.abs(reported - last.device) <= OVERRIDE_TOLERANCE) return;
+      if (withinOverrideTolerance(reported - last.device)) return;
     }
 
     if (!this.overrides.has(deviceId)) {
       this.deps.log(
         `${deviceId} was dimmed externally (${reported}); daylight will leave it alone `
-        + 'until it is switched off and on again',
+        + 'until it is switched off and on again, or for four hours',
       );
     }
     const record: OverrideRecord = { at: this.now(), capability: 'dim', value: reported, expected: last?.device ?? null, source: 'external_report' };
@@ -431,6 +536,8 @@ export class DaylightRuntime {
       return this.noteNothingToDo(reason, 'there is no sun position and no usable sensor');
     }
 
+    this.expireOverrides();
+
     const candidates = options.deviceIds ?? this.targetIds;
     if (candidates.length === 0) return this.noteNothingToDo(reason, 'no lights are selected');
 
@@ -471,7 +578,15 @@ export class DaylightRuntime {
     // Recorded here rather than in noteOutcomes: an aim that only advanced on a
     // successful write would stall on any lamp whose resolution swallows a slew
     // step. See the `aim` field.
-    for (const [deviceId, level] of wanted) this.aim.set(deviceId, level);
+    let raisedAim = false;
+    for (const [deviceId, level] of wanted) {
+      const previous = this.aim.get(deviceId);
+      // A seeded aim is not a raise: `aimFor` starts from the lamp's own level,
+      // so the first pass after a power-on says nothing about which way we moved it.
+      if (previous !== undefined && level > previous) raisedAim = true;
+      this.aim.set(deviceId, level);
+    }
+    this.noteFeedback(verdict, raisedAim);
 
     if (!this.scheduler) {
       // Recorded rather than swallowed: writes counted against a queue that does
@@ -531,6 +646,53 @@ export class DaylightRuntime {
     };
     this.history.actions.add(this.lastAction);
     return { writes: 0, skipped };
+  }
+
+  /**
+   * Is this device CONFIGURED such that its lamps can drive their own sensor?
+   *
+   * Named sensors, and a response that rises with the reading. Shown on the
+   * pairing screen as advice; here it is the precondition for looking for the
+   * loop actually happening.
+   */
+  private feedbackRisk(): 'increasing_sensor_response' | null {
+    return this.plan.response.sensors.length > 0 && this.plan.response.bright > this.plan.response.dark
+      ? 'increasing_sensor_response' : null;
+  }
+
+  /** Observed often enough to be worth telling the household about. */
+  private feedbackObserved(): boolean {
+    return this.feedbackObservations >= FEEDBACK_OBSERVATIONS;
+  }
+
+  /**
+   * One pass of the raise-then-rise test.
+   *
+   * Deliberately NOT "the response is pinned at its bright end": on a sunny
+   * afternoon an increasing response sits there legitimately, and flagging that
+   * would be a false alarm on a correctly placed sensor. What cannot be a
+   * coincidence five times over is the reading going UP shortly after we turned
+   * these lamps up.
+   *
+   * Only while the reading comes from sensors at all — a level computed from
+   * the sun's elevation (platform §16) is not something this app's lamps can
+   * move, so the test is meaningless and the probe is dropped rather than left
+   * open to resolve against unrelated data later.
+   */
+  private noteFeedback(verdict: DaylightVerdict, raisedAim: boolean): void {
+    if (this.feedbackRisk() === null || verdict.source !== 'sensors') {
+      this.feedbackProbe = null;
+      return;
+    }
+    const probe = this.feedbackProbe;
+    if (probe !== null) {
+      if (this.now() - probe.at > FEEDBACK_WINDOW_MS) this.feedbackProbe = null;
+      else if (verdict.level >= probe.level + FEEDBACK_RISE) {
+        this.feedbackObservations += 1;
+        this.feedbackProbe = null;
+      }
+    }
+    if (raisedAim) this.feedbackProbe = { level: verdict.level, at: this.now() };
   }
 
   /**
@@ -671,7 +833,7 @@ export class DaylightRuntime {
    */
   private healthInputs(): string {
     const unwritable = [...this.adapter.unwritableTargets()].sort().join(',');
-    return `${this.currentValue().source}|${unwritable}`;
+    return `${this.currentValue().source}|${unwritable}|${this.feedbackObserved()}`;
   }
 
   /**
@@ -733,6 +895,24 @@ export class DaylightRuntime {
       this.setState('needs_repair', {
         key: 'state.noDaylightSource',
         text: 'It cannot tell how light it is: no light sensor, and no location.',
+      });
+      return;
+    }
+
+    /**
+     * The feedback loop, once it has been WATCHED happening rather than merely
+     * being possible. See FEEDBACK_RISE for what counts as watching.
+     *
+     * Last, and only over a 'ready': a device whose lamps are gone or which
+     * cannot read the daylight at all has a more actionable problem, and this
+     * must never be what a person sees instead of that. It is 'partial' rather
+     * than 'needs_repair' because nothing here is broken — the lamps are being
+     * driven, just to a level they are choosing for themselves.
+     */
+    if (assessment.state === 'ready' && this.feedbackObserved()) {
+      this.setState('partial', {
+        key: 'state.daylightFeedback',
+        text: 'Its lamps are brightening their own sensor. Move the sensor, or lower the bright end.',
       });
       return;
     }
@@ -817,6 +997,8 @@ export class DaylightRuntime {
       // plan's first write.
       this.aim.clear();
       this.committed.clear();
+      this.feedbackProbe = null;
+      this.feedbackObservations = 0;
       this.targetIds = [];
       this.targetNames = [];
       // Or the next refresh diffs the new plan's targets against the old plan's.
@@ -839,11 +1021,14 @@ export class DaylightRuntime {
 
   /** Never exposes secrets or unrelated Homey configuration. */
   diagnostics(): DaylightDiagnostics {
+    // Before the snapshot, never after: a lapsed override must not be drawn as
+    // a standing one on the settings page or the device tile.
+    this.expireOverrides();
     return {
       sampledAt: this.now(),
       writeHistory: this.adapter.writeHistory(),
-      feedbackRisk: this.plan.response.sensors.length > 0 && this.plan.response.bright > this.plan.response.dark
-        ? 'increasing_sensor_response' : null,
+      feedbackRisk: this.feedbackRisk(),
+      feedbackObservations: this.feedbackObservations,
       ...this.history.snapshot(),
       controllerId: this.controllerId,
       kind: 'daylight',

@@ -8,6 +8,10 @@
 /.github
 /CLAUDE.md
 /CONTRIBUTING.md
+# Internal review documents. Found in the packaged app by scripts/build.mjs's
+# own verifier, of all things: 136 KB of them were shipping to households.
+/CODE_REVIEW.md
+/LAUNCH_REVIEW.md
 /views
 
 /.evidence

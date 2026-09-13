@@ -44,3 +44,6 @@ __pycache__/
 
 # Private week-long home-test exports.
 /.evidence/
+
+# Present = build the seven-day evidence recorder in. See scripts/build.mjs.
+.dev-build

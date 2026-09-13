@@ -156,6 +156,41 @@ describe('redactKeyMaterial', () => {
   test('and it never throws on an empty string', () => {
     assert.equal(redactKeyMaterial(''), '');
   });
+
+  /**
+   * The other 20-hex-character run a serialised record contains, and the one
+   * this pattern used to eat: a number.
+   *
+   * `0-9` is a subset of `0-9a-f`, and a double just under 1e-5 prints all of
+   * its significant digits behind a run of leading zeros. A circadian warmth
+   * crossing zero produced exactly that, and 93 of the 58,024 records in the
+   * 9-13 September recording came out as `{"warmth":0.<redacted>,...}` —
+   * unparseable, permanently, and counted as successfully recorded.
+   */
+  test('an ordinary small number is not key material, however many digits it has', () => {
+    const line = '{"warmth":0.000004829384756102938,"brightness":0.9999838173022728}';
+    assert.equal(redactKeyMaterial(line), line);
+    assert.doesNotThrow(() => JSON.parse(redactKeyMaterial(line)));
+  });
+
+  test('every double that prints a 20-digit run survives redaction as valid JSON', () => {
+    /**
+     * The band that bites is roughly [1e-6, 1e-5): at 1e-6 and above JS still
+     * prints decimal rather than exponent form, and the leading zeros in front
+     * of seventeen significant digits push the run past twenty characters.
+     * Below 1e-6 the exponent's `-` breaks the run; above 1e-5 there are not
+     * enough leading zeros.
+     */
+    const values = [
+      1.2345678901234567e-6, 4.829384756102938e-6, 9.87654321098765e-6,
+      1e-6, 3.0000000000000005e-6, 1.2345678901234567e-5,
+    ];
+    for (const value of values) {
+      const line = JSON.stringify({ warmth: value, brightness: 1 });
+      assert.equal(redactKeyMaterial(line), line, `mangled ${value} (${line})`);
+      assert.doesNotThrow(() => JSON.parse(redactKeyMaterial(line)), `${value} stopped parsing`);
+    }
+  });
 });
 
 describe('messageOf and redactedMessage', () => {

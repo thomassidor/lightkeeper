@@ -1,6 +1,8 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { EvidenceFeature } from '../../lib/support/evidence-feature';
+
 const api = require('../../api.ts');
 
 /**
@@ -13,6 +15,13 @@ const api = require('../../api.ts');
  * not — is not discovered until the week is over and the evidence is wrong.
  * `noteEvidence` in particular is the only route that takes free text from a
  * human, and it is the only place in the app that does.
+ *
+ * The rules being tested live in `EvidenceFeature`, not in `api.ts` — the
+ * handlers moved there so a launch build can drop them by returning no routes
+ * at all (`lib/support/evidence-feature.ts`). So a REAL feature is built here
+ * over a fake recorder, and the routes are still called through `api`: the path
+ * under test is the whole of it, handler and rule alike, which is more than
+ * this file used to cover.
  */
 
 interface Recorded { type: string; data: unknown }
@@ -42,18 +51,32 @@ function homey(options: {
       flushes += 1;
       if (options.flushFails) throw new Error(options.flushFails);
     },
+    init: async () => undefined,
+    start: async () => ({ ...status(), started: true }),
     stop: async () => ({ ...status(), state: 'stopped' }),
     clear: async (id: string) => ({ ...status(), state: 'idle', cleared: id }),
     read: async (id: string, offset: number, end: number) => ({ id, offset, end, frames: [] }),
   };
 
+  const feature = new EvidenceFeature(
+    {
+      settings: { get: () => undefined, set: () => undefined, unset: () => undefined },
+      context: () => ({ appVersion: 'test' }),
+      sample: () => ({ runtimes: [], sensors: [], credential: null }),
+      setInterval: () => 0 as unknown as NodeJS.Timeout,
+      clearInterval: () => undefined,
+      log: () => undefined,
+    },
+    () => evidence as never,
+  );
+
   return {
     records,
     flushCount: () => flushes,
+    feature,
     homey: {
       app: {
-        evidence,
-        startEvidence: async () => ({ ...status(), started: true }),
+        evidence: feature,
         log: () => undefined,
         error: () => undefined,
       },
@@ -61,12 +84,19 @@ function homey(options: {
   };
 }
 
+/** Built lazily by `init()`, so every test opens by building it. */
+async function ready(options: Parameters<typeof homey>[0] = {}) {
+  const h = homey(options);
+  await h.feature.init();
+  return h;
+}
+
 describe('GET /evidence', () => {
   test('flushes before reporting, so the count is not one buffer behind', async () => {
     // The document tells the tester to "check that the count increases after a
     // minute". Reporting a status computed before the pending buffer was
     // written would show a stalled count on a recorder that is working.
-    const h = homey();
+    const h = await ready();
     const status = await api.getEvidence({ homey: h.homey });
 
     assert.equal(h.flushCount(), 1);
@@ -79,7 +109,7 @@ describe('POST /evidence/note', () => {
     // Flushed rather than buffered: the note exists to be correlated with what
     // the household saw at that moment, and a crash in the next fifteen
     // seconds would take the note and leave the behaviour.
-    const h = homey();
+    const h = await ready();
     await api.noteEvidence({ homey: h.homey, body: { text: 'kitchen went dark' } });
 
     assert.deepEqual(h.records, [{ type: 'observation', data: { text: 'kitchen went dark' } }]);
@@ -87,14 +117,14 @@ describe('POST /evidence/note', () => {
   });
 
   test('surrounding whitespace is trimmed', async () => {
-    const h = homey();
+    const h = await ready();
     await api.noteEvidence({ homey: h.homey, body: { text: '  hall lamp flickered \n' } });
     assert.deepEqual(h.records[0]?.data, { text: 'hall lamp flickered' });
   });
 
   test('nothing is recorded when no recording is running', async () => {
     for (const state of ['idle', 'stopped', 'complete', 'full', 'error']) {
-      const h = homey({ state });
+      const h = await ready({ state });
       await assert.rejects(
         () => api.noteEvidence({ homey: h.homey, body: { text: 'something' } }),
         /No active recording/,
@@ -107,7 +137,7 @@ describe('POST /evidence/note', () => {
   test('nor after the seven days are up, even if the state still says recording', async () => {
     // The deadline is the promise the privacy notice makes, so it is enforced
     // at the route as well as by the flush that eventually notices it.
-    const h = homey({ endsAt: Date.now() - 1 });
+    const h = await ready({ endsAt: Date.now() - 1 });
     await assert.rejects(
       () => api.noteEvidence({ homey: h.homey, body: { text: 'late' } }),
       /No active recording/,
@@ -120,7 +150,7 @@ describe('POST /evidence/note', () => {
       { text: '' }, { text: '   ' }, { text: '\n\t' },
       {}, undefined, { text: null }, { text: 42 }, { text: ['a'] }, { text: { a: 1 } },
     ]) {
-      const h = homey();
+      const h = await ready();
       await assert.rejects(
         () => api.noteEvidence({ homey: h.homey, body }),
         /at most 1000 characters/,
@@ -131,11 +161,11 @@ describe('POST /evidence/note', () => {
   });
 
   test('a thousand characters is the limit, and it is inclusive', async () => {
-    const ok = homey();
+    const ok = await ready();
     await api.noteEvidence({ homey: ok.homey, body: { text: 'x'.repeat(1000) } });
     assert.equal((ok.records[0]?.data as any).text.length, 1000);
 
-    const over = homey();
+    const over = await ready();
     await assert.rejects(
       () => api.noteEvidence({ homey: over.homey, body: { text: 'x'.repeat(1001) } }),
       /at most 1000 characters/,
@@ -145,21 +175,21 @@ describe('POST /evidence/note', () => {
 });
 
 describe('the start, stop, clear and read routes', () => {
-  test('start goes through the app, because the sample needs the runtimes', async () => {
-    // Not `evidence.start()` directly: a run has to open with one health
-    // sample, and only the app can see all four registries.
-    const h = homey({ state: 'idle' });
+  test('start goes through the feature, because the sample needs the runtimes', async () => {
+    // Not `recorder.start()` directly: a run has to open with one health
+    // sample, and the feature is what holds the host that can produce one.
+    const h = await ready({ state: 'idle' });
     const status = await api.startEvidence({ homey: h.homey });
     assert.equal(status.started, true);
   });
 
   test('stop reports the archive it stopped', async () => {
-    const h = homey();
+    const h = await ready();
     assert.equal((await api.stopEvidence({ homey: h.homey })).state, 'stopped');
   });
 
   test('clear takes the id from the path and coerces it to a string', async () => {
-    const h = homey();
+    const h = await ready();
     const status = await api.clearEvidence({ homey: h.homey, params: { id: 'a-run-id' } });
     assert.equal((status as any).cleared, 'a-run-id');
   });
@@ -167,7 +197,7 @@ describe('the start, stop, clear and read routes', () => {
   test('read passes the byte range through as numbers', async () => {
     // The export streams in ranges, so a string offset would concatenate
     // rather than add and the second chunk would start in the wrong place.
-    const h = homey();
+    const h = await ready();
     const frame = await api.readEvidence({
       homey: h.homey,
       params: { id: 'a-run-id', offset: '2048', end: '4096' },

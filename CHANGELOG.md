@@ -6,7 +6,130 @@ release in a few bullets and one line for each older one; this is where the deta
 Newest first. Pre-1.0, so there are no major bumps for breaking changes: a change that would break
 something says so in its own entry instead.
 
-## 0.7.0
+## 0.6.0
+
+A fifth device type, and the first thing in this app that reads a sensor rather than only writing
+to lights — and then, because none of this had shipped yet, everything that followed it: a full
+code review remediated, a week-long recorder built for development use only, and the five defects
+that recorder's first real week of evidence found.
+
+*Three later development versions were folded into this entry. Nothing had been published, so
+numbering the intermediate states bought nobody anything; the work is in chronological order below,
+and the three sections after the first were previously written as 0.6.1, 0.7.0 and 0.7.1. Builds
+installed on the reference Homey during that period reported those numbers, which is why the
+hardware run records and the evidence archive still name them.*
+
+### Daylight lights, and daylight brightness inside schedules and curves
+
+Added:
+
+- **A Daylight light**: it holds its lights at a brightness that depends on how much light is in the
+  room already. Two settings — how bright the lights should be when the room is dark, and when it is
+  bright — and which of the two is larger is the user's choice rather than a mode, so the same device
+  either takes over as the daylight goes or follows the day. It reads `measure_luminance` sensors the
+  household already owns, averaging several, and where there are none it reads **how high the sun
+  is**, computed from the Homey's own position.
+  With no sensor it also asks **when this room gets the most sun** — morning, the middle of the day,
+  afternoon, or not at all. The sun's height alone is symmetric about noon, so without that answer a
+  room that gets its light at 5pm was treated as though it got it at 7am, and no other setting could
+  say otherwise. It is asked as an observation rather than as a compass direction, because somebody
+  who lives in a room knows when the light comes in, and because it then absorbs what a bearing
+  cannot: an east window with a wall across it gets its sun in the afternoon. "Not at all" is the
+  default and behaves exactly as before, and no answer can ever make a room read brighter than the
+  sky itself. The question does not appear at all once a sensor is chosen — a sensor measures the
+  room, so a model of it would be a guess laid over a measurement.
+  Like the two curve-driven types it generates **no Flows** and needs no API key, it only dims lights
+  that are already on, and it never switches one on or off — brightness is never written to a light
+  that is off, which is measured rather than assumed (platform §12).
+- **A schedule window, a circadian end and a curve point can each follow the daylight**, instead of a
+  brightness typed in once. One response per device, configured on that device's own screen through a
+  card shared byte-for-byte by all four screens that carry it. The brightness that was there stays
+  put as the **fallback** for when nothing can tell how light it is — which is the reason the number
+  sits beside the flag rather than being replaced by it.
+  A schedule reads the daylight once, at its boundary; a curve re-reads it on every tick. That
+  difference is stated on the screen, because the two look identical for the first evening.
+- **`homey:manager:geolocation`**, and it is used for exactly one thing: the sun's position needs the
+  Homey's position. Two synchronous accessors, read at the moment a brightness is computed, and the
+  latitude never leaves the Homey. The arithmetic is the standard NOAA solar-position algorithm in
+  `lib/daylight/solar-elevation.ts` — pure, no dependencies, and asserted against values astronomy
+  fixes independently of any implementation (declination at the poles, `90 −` the latitude gap at
+  noon, hemispheric mirroring at an equinox, an hour per 15° of longitude). SDK v3 has no solar
+  helper and Homey's own sunrise cards fire rather than answer, so this is the whole of the
+  alternative (platform §16).
+- **A sky readout on the settings page**, above the per-device cards: the sun's current elevation and
+  every watched sensor with its reading **and that reading's age**. It is the fastest check that the
+  permission resolved, and the age is the only thing that can reveal a sensor which has stopped —
+  because a reading is deliberately never treated as stale.
+
+Fixed:
+
+- **A light whose lamps were switched off could report itself as broken.** Some Philips Hue bulbs
+  refuse a colour sent to them while they are off — the bridge answers that the lamp is "soft off" —
+  and a circadian or Curve light with pre-staging switched on kept sending it once a minute for as
+  long as the lamps were off. Each refusal counted against the lamp, so the device eventually said
+  its lights were not responding, and on a device whose lamps all behave that way it took itself
+  offline. It happened at no predictable moment and cleared itself the next morning, which is why it
+  had gone unnoticed. A refused pre-stage write is no longer counted against a lamp: from the refusal
+  alone a lamp that is merely off looks exactly like one that is dead, so it says nothing either way.
+  Pre-staging also now stops offering a colour to a lamp that has refused three times running, and
+  tries again the next time that lamp is switched on. Found by the light probe run of 4 September
+  2026, on four of thirteen colour-capable bulbs behind one bridge.
+
+Two decisions worth reading before changing anything here:
+
+- **The daylight loop terminates, and two constants are what make it.** A light sensor in the room
+  whose lamps it drives measures those lamps, so this is a closed loop, and an undamped closed loop
+  hunts — a room that pulses once a minute for as long as the app runs. A deadband makes it settle
+  (inside the band there is no next write to provoke the next reading) and a slew limit makes any
+  residual movement a fade. The app damps that loop and does not remove it; the FAQ says so plainly
+  and names the sensor placements that avoid it altogether.
+- **The slew is measured from what we aim at, never from what the lamp reports.** Slewing from the
+  lamp's own level looks more honest and stalls: on a lamp whose `dim` moves in tenths, every
+  perceptual aim from 0.10 to about 0.45 quantises to the same value, so an aim that only advanced on
+  a successful write would never leave the floor while the room went dark around it.
+
+Known:
+
+- **What a real `measure_luminance` sensor reports is per-integration and not yet established.** The
+  two lux thresholds default to 5 and 500, which is a judgement rather than a measurement, and the
+  pairing screen shows the chosen sensor's live reading so it is set against something real. T82 in
+  the hardware plan is where that evidence comes from.
+- **Sunrise and sunset anchors are still refused for curves and schedules**, and are no longer
+  *blocked*: the permission is declared and the solar arithmetic is here. What is missing is the last
+  step — `resolveAnchor()` wants a minute, and an elevation function gives an angle at an instant —
+  plus a decision about what a day with no sunrise means. Half-working would be a curve that silently
+  sits at one colour (platform §12).
+
+### Lifecycle, sensor ownership and write cancellation
+
+Fixed:
+
+- Schedules, circadian lights and Curve lights retain their selected lux sensors for their
+  runtime lifetime. Closing pairing no longer changes a saved device's brightness source;
+  restarting also acquires the sensors without needing another Daylight device.
+- Failed sensor subscriptions no longer expose a permanently cached seed as a live reading.
+  Recovery retries start after one second and back off to at most once per minute. Releasing
+  the last owner cancels recovery. Successfully subscribed, quiet sensors still do not expire.
+- Automatic brightness commands are cancelled when a lamp is switched off or leaves its target
+  zone, including commands waiting in an active flush. Eligibility is checked again immediately
+  before dispatch. Commands already handed to Homey cannot be recalled.
+- A failed runtime start or preview releases acquired listeners and sensor claims. Startup and
+  target refresh cannot restore resources after teardown, and late completions cannot re-arm
+  implied-on probes or populate the replacement runtime's state.
+- Failure to persist an edited configuration restores the previous stored and running plan.
+  If recovery also fails, the candidate stays stopped and the device reports unavailable.
+  Delayed callbacks from replaced runtimes cannot overwrite the restored plan.
+
+Maintenance:
+
+- Shared startup, teardown and sensor-claim helpers keep ownership rules consistent across the
+  four engines. Preview instances have unique ownership IDs.
+- Added integration and concurrency regressions over real runtimes, scheduling, adapters,
+  sensor ownership and evaluation, with fake Homey boundaries and controlled failures.
+- No stored-plan migration or external API change. Hardware checks T91–T97 are documented in
+  the hardware test plan and have not been run for this change.
+
+### Health verdicts that compose, and an opt-in recorder
 
 The remediation of a full code review, plus one new opt-in capability. Everything below was
 found by reading the code against what its own comments and CLAUDE.md's safety-property list
@@ -106,7 +229,14 @@ promised; each fix ships the test its docblock had already claimed existed.
 - The feedback risk of a lux sensor in the room it drives is explained on all four daylight
   configuration screens, without changing any saved response.
 
-**New: an opt-in seven-day recording, for tracking down something intermittent.**
+**A seven-day recording, for tracking down something intermittent — and NOT in the app you
+install.**
+
+- It is a development tool, and it is built out of a released build entirely: the code, its six
+  Web API routes and its settings section are all removed at build time, and the build fails if
+  any of it is left. `.dev-build` at the repository root puts it back for a local install. The
+  design is in `lib/support/evidence-feature.ts`; the switch is `scripts/build.mjs`. Everything
+  below describes what that development build does.
 
 - Off unless started from app settings, stops by itself after seven days, and the deadline
   survives app restarts and reinstalling the same build. Batches are gzipped and AES-256-GCM
@@ -136,122 +266,94 @@ promised; each fix ships the test its docblock had already claimed existed.
   wrong line counts) and one safety claim about the hardware script that was true of devices and
   read as one about lamps.
 
-## 0.6.1
+### What a week of real evidence found
 
-Fixed:
+Five defects, every one of them found in a single 3.83-day recording from the reference Homey
+rather than by reading the code — 58,024 records, nine live devices, and a manifest that said
+`dropped: 0` and every tile `ready` while one device had done nothing for 88 of the 93 hours.
+[`docs/evidence-findings.md`](docs/evidence-findings.md) is the full read, with the numbers behind
+each of these.
 
-- Schedules, circadian lights and Curve lights retain their selected lux sensors for their
-  runtime lifetime. Closing pairing no longer changes a saved device's brightness source;
-  restarting also acquires the sensors without needing another Daylight device.
-- Failed sensor subscriptions no longer expose a permanently cached seed as a live reading.
-  Recovery retries start after one second and back off to at most once per minute. Releasing
-  the last owner cancels recovery. Successfully subscribed, quiet sensors still do not expire.
-- Automatic brightness commands are cancelled when a lamp is switched off or leaves its target
-  zone, including commands waiting in an active flush. Eligibility is checked again immediately
-  before dispatch. Commands already handed to Homey cannot be recalled.
-- A failed runtime start or preview releases acquired listeners and sensor claims. Startup and
-  target refresh cannot restore resources after teardown, and late completions cannot re-arm
-  implied-on probes or populate the replacement runtime's state.
-- Failure to persist an edited configuration restores the previous stored and running plan.
-  If recovery also fails, the candidate stays stopped and the device reports unavailable.
-  Delayed callbacks from replaced runtimes cannot overwrite the restored plan.
+**An override never expired, and one uncooperative lamp muted a device for days.**
 
-Maintenance:
+- A lamp in the recording accepted every write, acknowledged it, and reverted to its own fixed
+  `dim 0.41` / `light_temperature 0.83` ninety seconds later, every single time, whatever it had
+  been sent. Nothing distinguishes that from a person, so it was read as one — and an override was
+  cleared only by an `onoff` edge, by the target leaving the plan, or by the runtime stopping. The
+  "Studio circadian" device therefore stood down for 23.6 h, then 23.1 h, 15.5 h, 15.2 h and 11.0 h
+  back to back, lamp on throughout, reporting `ready` throughout.
+- `OVERRIDE_EXPIRY_MS` (4 hours, in `lib/outputs/target-state-cache.ts`) is the escape hatch, applied
+  lazily by `expireOverrides()` in both runtimes from `applyNow()` and `diagnostics()` — no new timer,
+  and nothing reads as overridden after control has resumed. Four hours is a balance rather than a
+  discovery: long enough not to fight somebody who dimmed the lamps for an evening, short enough that
+  a lamp the app cannot drive costs one evening instead of a week.
+- Expiry also drops `committed` / `lastWritten` for that lamp, and that is half the fix rather than
+  tidiness. The lamp was moved while the override stood, so an unchanged plan against an unchanged
+  *intended* value would have planned nothing, the no-op filter would have dropped it, and the lamp
+  would have stayed exactly where it was put — the same silence one layer down.
 
-- Shared startup, teardown and sensor-claim helpers keep ownership rules consistent across the
-  four engines. Preview instances have unique ownership IDs.
-- Added integration and concurrency regressions over real runtimes, scheduling, adapters,
-  sensor ownership and evaluation, with fake Homey boundaries and controlled failures.
-- No stored-plan migration or external API change. Hardware checks T91–T97 are documented in
-  the hardware test plan and have not been run for this change.
+**Switching a lamp off was read as overriding us, 296 times.**
 
-## 0.6.0
+- The `lamp_off` guard reads the cache's `actualOn`, which only moves when the `onoff` report lands.
+  Measured across the recording: this integration reports `dim 0` a **median of 29.9 seconds before**
+  the matching `onoff: false` (232 pairs, minimum 29.2 s). In that window the cache still believes the
+  lamp is on and the power-settling window has not opened, so the report went straight to
+  `noteOverride`. 296 of the 327 overrides in the whole archive were this and nothing else — a false
+  badge for thirty seconds each time, and 296 junk entries evicting real history from a 120-entry log.
+- A reported `dim` of 0 is now the lamp going off whatever `onoff` has said yet, logged as
+  `report_ignored` with `reason: 'dim_zero'`. It needs no clock and no ordering: neither runtime can
+  write 0 (`MINIMUM_BRIGHTNESS` is 0.10 perceptual and `litDim()` guarantees a positive brightness is
+  never written as darkness), and a person dragging a dimmer to zero switches the lamp off, which
+  arrives as `onoff` and clears any override anyway.
 
-A fifth device type, and the first thing in this app that reads a sensor rather than only writing to
-lights.
+**Redaction was destroying records, and `dropped` could not see it.**
 
-Added:
+- `KEY_MATERIAL`'s `[0-9a-f]{20,}` alternative also matches the decimal expansion of a small number.
+  A circadian warmth crossing zero produced `4.829384756102938e-6`, which serialises as
+  `0.000004829384756102938` — twenty-one characters — and came out as `{"warmth":0.<redacted>,…}`.
+  **93 of 58,024 records in this archive are unparseable for that reason.** The docblock argued only
+  that twenty hex characters cannot be a UUID; it never considered a number.
+- Invisible, too: the damage happens after `++m.sequence` and the line writes successfully, so
+  `dropped` stayed 0 and the settings page, `evidence.mjs status` and the export manifest all reported
+  a complete recording.
+- Fixed in three places. The pattern requires the run not to follow a decimal point or a digit; the
+  two deliberate copies in `scripts/evidence.mjs` and `scripts/probe-lights.mjs` carry the same change
+  and the reason; and the recorder now re-parses any line redaction actually changed, counting it in
+  `dropped` rather than writing it — so the next such flaw arrives as a number rather than a hole.
+  `analyze` reports `malformed` in its interpretation line, and the recording doc says to read it first.
 
-- **A Daylight light**: it holds its lights at a brightness that depends on how much light is in the
-  room already. Two settings — how bright the lights should be when the room is dark, and when it is
-  bright — and which of the two is larger is the user's choice rather than a mode, so the same device
-  either takes over as the daylight goes or follows the day. It reads `measure_luminance` sensors the
-  household already owns, averaging several, and where there are none it reads **how high the sun
-  is**, computed from the Homey's own position.
-  With no sensor it also asks **when this room gets the most sun** — morning, the middle of the day,
-  afternoon, or not at all. The sun's height alone is symmetric about noon, so without that answer a
-  room that gets its light at 5pm was treated as though it got it at 7am, and no other setting could
-  say otherwise. It is asked as an observation rather than as a compass direction, because somebody
-  who lives in a room knows when the light comes in, and because it then absorbs what a bearing
-  cannot: an east window with a wall across it gets its sun in the afternoon. "Not at all" is the
-  default and behaves exactly as before, and no answer can ever make a room read brighter than the
-  sky itself. The question does not appear at all once a sensor is chosen — a sensor measures the
-  room, so a model of it would be a guess laid over a measurement.
-  Like the two curve-driven types it generates **no Flows** and needs no API key, it only dims lights
-  that are already on, and it never switches one on or off — brightness is never written to a light
-  that is off, which is measured rather than assumed (platform §12).
-- **A schedule window, a circadian end and a curve point can each follow the daylight**, instead of a
-  brightness typed in once. One response per device, configured on that device's own screen through a
-  card shared byte-for-byte by all four screens that carry it. The brightness that was there stays
-  put as the **fallback** for when nothing can tell how light it is — which is the reason the number
-  sits beside the flag rather than being replaced by it.
-  A schedule reads the daylight once, at its boundary; a curve re-reads it on every tick. That
-  difference is stated on the screen, because the two look identical for the first evening.
-- **`homey:manager:geolocation`**, and it is used for exactly one thing: the sun's position needs the
-  Homey's position. Two synchronous accessors, read at the moment a brightness is computed, and the
-  latitude never leaves the Homey. The arithmetic is the standard NOAA solar-position algorithm in
-  `lib/daylight/solar-elevation.ts` — pure, no dependencies, and asserted against values astronomy
-  fixes independently of any implementation (declination at the poles, `90 −` the latitude gap at
-  noon, hemispheric mirroring at an equinox, an hour per 15° of longitude). SDK v3 has no solar
-  helper and Homey's own sunrise cards fire rather than answer, so this is the whole of the
-  alternative (platform §16).
-- **A sky readout on the settings page**, above the per-device cards: the sun's current elevation and
-  every watched sensor with its reading **and that reading's age**. It is the fastest check that the
-  permission resolved, and the age is the only thing that can reveal a sensor which has stopped —
-  because a reading is deliberately never treated as stale.
+**The 0.03 override tolerance failed at exactly 0.03.**
 
-Fixed:
+- `Math.abs(0.83 - 0.86)` is `0.030000000000000027`, so `<= OVERRIDE_TOLERANCE` forgave a bridge three
+  hundredths out at one end of the axis and called it a person at the other. The archive has two
+  `light_temperature 0.83 vs 0.86` overrides: exactly the rounding the constant exists to absorb,
+  which under the bug above meant standing down for good.
+- `withinOverrideTolerance()` now owns the comparison for all three sites — daylight brightness,
+  circadian temperature/brightness, circadian hue — which also collapses a triplication.
 
-- **A light whose lamps were switched off could report itself as broken.** Some Philips Hue bulbs
-  refuse a colour sent to them while they are off — the bridge answers that the lamp is "soft off" —
-  and a circadian or Curve light with pre-staging switched on kept sending it once a minute for as
-  long as the lamps were off. Each refusal counted against the lamp, so the device eventually said
-  its lights were not responding, and on a device whose lamps all behave that way it took itself
-  offline. It happened at no predictable moment and cleared itself the next morning, which is why it
-  had gone unnoticed. A refused pre-stage write is no longer counted against a lamp: from the refusal
-  alone a lamp that is merely off looks exactly like one that is dead, so it says nothing either way.
-  Pre-staging also now stops offering a colour to a lamp that has refused three times running, and
-  tries again the next time that lamp is switched on. Found by the light probe run of 4 September
-  2026, on four of thirteen colour-capable bulbs behind one bridge.
+**A daylight feedback loop that ran 95 times, with nothing to show for it but a diagnostics field.**
 
-Two decisions worth reading before changing anything here:
+- Both daylight devices reported `feedbackRisk: 'increasing_sensor_response'` in 100% of samples. The
+  kitchen sensor read a median of **1 lux with its lamp off and 680 lux with it on** — it was
+  measuring the lamp, not the sky. Every switch-on started a climb: median 5 writes and 225 s to
+  settle, worst case 540 s, the response pinned at its own `bright` end in 62.7% of lit samples, and
+  all 506 of that device's writes were this. Loop gain was about 3, so the deadband could not damp it
+  away; only the response's ceiling bounded it.
+- The pairing screen already warned about the configuration, correctly. The device did not. It now
+  watches for the loop's signature — we raised the aim, and the reading then rose — and after five
+  observations reports `partial` with `state.daylightFeedback`, naming the two remedies. Deliberately
+  not "pinned at the bright end": on a sunny afternoon an increasing response sits there legitimately,
+  and flagging that would be a false alarm on a well-placed sensor. `feedbackObservations` is in
+  diagnostics and in the evidence, so the next recording can be read for it.
 
-- **The daylight loop terminates, and two constants are what make it.** A light sensor in the room
-  whose lamps it drives measures those lamps, so this is a closed loop, and an undamped closed loop
-  hunts — a room that pulses once a minute for as long as the app runs. A deadband makes it settle
-  (inside the band there is no next write to provoke the next reading) and a slew limit makes any
-  residual movement a fade. The app damps that loop and does not remove it; the FAQ says so plainly
-  and names the sensor placements that avoid it altogether.
-- **The slew is measured from what we aim at, never from what the lamp reports.** Slewing from the
-  lamp's own level looks more honest and stalls: on a lamp whose `dim` moves in tenths, every
-  perceptual aim from 0.10 to about 0.45 quantises to the same value, so an aim that only advanced on
-  a successful write would never leave the floor while the room went dark around it.
+**And the memory analysis that was never going to work.**
 
-Known:
-
-- **The Daylight light's icon and store image are placeholders** — a plain circle and a flat violet
-  disc. Both satisfy every automated check and neither is finished work; replacing them is a blocker
-  before publishing, recorded in `artwork/provenance.md`, `artwork/asset-spec.md` and
-  `docs/homey-review-notes.md`.
-- **What a real `measure_luminance` sensor reports is per-integration and not yet established.** The
-  two lux thresholds default to 5 and 500, which is a judgement rather than a measurement, and the
-  pairing screen shows the chosen sensor's live reading so it is set against something real. T82 in
-  the hardware plan is where that evidence comes from.
-- **Sunrise and sunset anchors are still refused for curves and schedules**, and are no longer
-  *blocked*: the permission is declared and the solar arithmetic is here. What is missing is the last
-  step — `resolveAnchor()` wants a minute, and an elevation function gives an angle at an instant —
-  plus a decision about what a day with no sunrise means. Half-working would be a curve that silently
-  sits at one colour (platform §12).
+- `process.memoryUsage()` throws in the app sandbox (platform §17), so every one of the 5,512 health
+  samples carries `memory: null` — correctly, since the guard exists to keep the rest of the sample.
+  But `scripts/evidence.mjs` still reported `maxRssBytes`, permanently 0 in a shape that looked like a
+  measurement, and `docs/week-long-testing.md` promised "memory use", "peak RSS" and advice to watch
+  for "growing memory". All four are gone, pointing instead at
+  `node scripts/verify-hardware.mjs memory`, which reads the footprint from outside where it exists.
 
 ## 0.5.2
 

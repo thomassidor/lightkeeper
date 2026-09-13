@@ -1445,3 +1445,97 @@ test('circadian power restoration cannot create an override before its write com
   assert.ok(action.outcomes?.length);
   await h.runtime.stop();
 });
+
+/**
+ * What a 3.83-day recording on the reference Homey showed this device type
+ * doing, and the three rules that came out of it.
+ *
+ * All three are about the same mistake: reading a LAMP as a PERSON. The
+ * override machinery above is correct and necessary, and every one of its
+ * consequences — stop writing, stay stopped — is wrong when the thing that
+ * raised it was not somebody's hand.
+ */
+describe('what the week-long recording found', () => {
+  test('an override lapses, so a lamp that reverts our writes cannot mute the device for ever', async () => {
+    const h = harness({ now: MORNING });
+    await h.runtime.start();
+    await settle();
+
+    /**
+     * The lamp from the recording: it accepted every write, acknowledged it,
+     * and reverted to its own fixed value ninety seconds later, every time.
+     * That revert is indistinguishable from a person here — which is the point.
+     * Its circadian device stood down for 88 of 93 hours reporting `ready`.
+     */
+    h.advance(10_000);
+    h.report('l1', 'light_temperature', 0.05);
+    h.advance(3 * 60 * 60_000);
+    await h.runtime.tick();
+    await applied(h);
+    assert.equal(h.runtime.diagnostics().targets[0].overridden, true, 'three hours in, still stood down');
+
+    h.advance(2 * 60 * 60_000);
+    const before = h.writes.length;
+    await h.runtime.tick();
+    await applied(h);
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].overridden, false);
+    assert.equal(d.targets[0].override, null);
+    assert.ok(d.recentControlEvents.some(e => e.type === 'override_cleared' && e.reason === 'expired'));
+    assert.ok(h.writes.slice(before).some(w => w.deviceId === 'l1'), 'control resumes on the very same pass');
+    await h.runtime.stop();
+  });
+
+  test('a reported dim of 0 is a lamp going off, whatever onoff has said so far', async () => {
+    const h = harness({ now: MORNING, plan: plan({ adjustBrightness: true }) });
+    await h.runtime.start();
+    await settle();
+
+    // The measured ordering: `dim 0` arrives a median of 29.9 s AHEAD of the
+    // `onoff: false` that explains it, so `actualOn` is still true right here.
+    h.advance(10_000);
+    h.report('l1', 'dim', 0);
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].overridden, false, 'switching a lamp off is not overriding us');
+    assert.ok(d.recentControlEvents.some(e => e.type === 'report_ignored' && e.reason === 'dim_zero'));
+    assert.equal(d.recentControlEvents.filter(e => e.type === 'override').length, 0);
+    await h.runtime.stop();
+  });
+
+  test('a bridge exactly one tolerance away is forgiven wherever it sits on the axis', async () => {
+    const h = harness({ now: MORNING });
+    await h.runtime.start();
+    await settle();
+    const written = temperatures(h.writes)[0].value as number;
+
+    /**
+     * `Math.abs(0.83 - 0.86)` is 0.030000000000000027, so the old
+     * `<= OVERRIDE_TOLERANCE` forgave a bridge three hundredths out at one end
+     * of the axis and called it a person at the other. Seen in the recording as
+     * `light_temperature 0.83` against our 0.86.
+     */
+    h.advance(10_000);
+    // UP rather than down, because only one direction is a boundary case from
+    // this plan's value: 0.25 vs 0.22 subtracts to exactly 0.03, 0.25 vs 0.28
+    // to 0.030000000000000027. The guard below is what keeps that choice
+    // honest if the plan ever changes — a test that quietly stopped exercising
+    // the boundary would assert nothing at all.
+    const reported = Number((written + 0.03).toFixed(2));
+    assert.ok(
+      Math.abs(reported - written) > 0.03,
+      `${reported} vs ${written} is not a floating-point boundary case`,
+    );
+    h.report('l1', 'light_temperature', reported);
+
+    h.advance(3 * 60 * 60_000);
+    const before = h.writes.length;
+    await h.runtime.tick();
+    await applied(h);
+
+    assert.equal(h.runtime.diagnostics().targets[0].overridden, false);
+    assert.equal(h.writes.slice(before).filter(w => w.deviceId === 'l1').length, 1);
+    await h.runtime.stop();
+  });
+});

@@ -129,8 +129,25 @@ export function isTransportFailure(error: unknown): boolean {
  * longest unbroken hex run is the 12-character final group. So the secret
  * segment can be matched on its own without eating device or flow ids out of
  * the very log lines that make a failure diagnosable.
+ *
+ * `(?<![.\d])` is the other half of that argument, and it was missing. A UUID
+ * is not the only 20-hex-character run a serialised record can contain: the
+ * DECIMAL EXPANSION OF A SMALL NUMBER is one too. `0-9` is a subset of
+ * `0-9a-f`, and a double just under 1e-5 prints every one of its significant
+ * digits behind a run of leading zeros — `4.829384756102938e-6` serialises as
+ * `0.000004829384756102938`, which is 21 characters this pattern used to eat.
+ *
+ * Measured, not theorised: a circadian warmth crossing zero produced exactly
+ * that, and 93 of the 58,024 records in the 9-13 September recording came out
+ * as `{"warmth":0.<redacted>,…}` — unparseable, permanently, and invisible to
+ * the recorder's own `dropped` counter because the line was written fine.
+ *
+ * The lookbehind closes it and costs nothing real: a bare integer cannot reach
+ * 20 digits in JS (doubles run out of precision around 16), exponent form
+ * breaks the run on `.` and `-`, and a Personal API Key in a log line is
+ * preceded by a space, a quote, `=` or `/` — never by a digit.
  */
-const KEY_MATERIAL = /[0-9a-f-]{36}:[0-9a-f-]{36}:[0-9a-f]{20,}|[0-9a-f]{20,}/gi;
+const KEY_MATERIAL = /[0-9a-f-]{36}:[0-9a-f-]{36}:[0-9a-f]{20,}|(?<![.\d])[0-9a-f]{20,}/gi;
 
 /**
  * Scrub key material from text that is about to be logged or shown.
