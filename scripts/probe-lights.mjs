@@ -768,6 +768,16 @@ export const FINDINGS = {
       + 'subscription mechanism. If none of them fire from here, the instrumentation is what is '
       + 'broken, and reporting a house of silent lamps would be a fabricated quirk.',
   },
+  PROBE_ONE_WAY_POWER: {
+    severity: 'medium',
+    title: 'the device refuses to be switched off, so it was never switched on',
+    assumption: 'A fact about the RUN. Every step that needs a lit lamp switches it on, and the '
+      + 'restore puts the power back the way it was found — which a device answering '
+      + '"Device is always-on" to an off write cannot do. Measured 13 September 2026: a Synology '
+      + 'NAS reported onoff:false, refused the off write, was switched ON for the echo step, and '
+      + 'then refused the two writes that would have put it back. It is a light to '
+      + 'lib/device-catalog.ts lightCandidates() because it has onoff, so it is in scope here too.',
+  },
   PROBE_SUSPECT_CACHE: {
     severity: 'critical',
     title: 'no read moved for any lamp all run',
@@ -1143,6 +1153,10 @@ function clamp(value, min, max) {
 
 /** @param {unknown} value */
 function round(value) {
+  // `onoff` comes through here too, and `Number(false)` is 0 — which printed
+  // "PUT THIS BACK BY HAND: onoff should be 0.000" at somebody who wanted to be
+  // told the switch was off. A boolean is never a value to three decimals.
+  if (typeof value === 'boolean') return String(value);
   const number = Number(value);
   return Number.isFinite(number) ? number.toFixed(3) : String(value);
 }
@@ -1683,6 +1697,18 @@ function newLight(device, zoneName) {
     unreachable: false,
     /** Has anything been written to this lamp at all? A read-only run says no. */
     wrote: false,
+    /**
+     * Set once an off write is refused, and read by `write()` before it would
+     * switch this device ON. A device that will not switch off cannot be put
+     * back, so it is never lit in the first place.
+     */
+    oneWayPower: false,
+    /**
+     * How many writes this lamp actually TOOK, which is not the same question.
+     * `wrote` includes a write the integration rejected; only a landed write
+     * gives a reading the right to move. See `PROBE_SUSPECT_CACHE` below.
+     */
+    landedWrites: 0,
     /** When anything was last written to this lamp, whatever the capability. */
     lastWriteAt: -Infinity,
     /** Capabilities this run has actually seen move — see `finding()`. */
@@ -1744,6 +1770,27 @@ function observation(light, kind, detail) {
  * @returns {Promise<{ ok: boolean, ms: number, error: string | null, seq: number }>}
  */
 async function write(light, capability, value) {
+  /**
+   * NEVER switch on what cannot be switched off.
+   *
+   * A device that answers an off write with `Device is always-on` has told us,
+   * one write earlier, that the restore at the end cannot put its power back.
+   * Switching it on anyway is a one-way change to somebody's house: on
+   * 13 September 2026 this woke a Synology NAS that had been shut down, and
+   * then failed to put it back twice.
+   *
+   * The guard sits in `write` rather than in the three steps that switch a lamp
+   * on, because it is a property of the DEVICE and a fourth step would
+   * otherwise have to remember it. A lamp that reaches here is simply never lit,
+   * so every later step finds it dark and skips itself — which is the right
+   * outcome for a device the probe cannot undo.
+   */
+  if (capability === 'onoff' && value === true && light.oneWayPower) {
+    const error = 'not sent: this device refused to switch off';
+    const seq = observation(light, 'ack', { capability, value, ok: false, ms: 0, error });
+    return { ok: false, ms: 0, error, seq };
+  }
+
   // Recorded so a read-only run can prove it wrote nothing, and so a restore
   // knows whether there is anything to put back.
   light.wrote = true;
@@ -1769,12 +1816,47 @@ async function write(light, capability, value) {
    * `ECHO_ACK_SLOW "acked in 9017ms"`. Time-to-error is worth keeping — it is
    * the difference between a refusal and a timeout — just not under that name.
    */
-  if (outcome.ok) bucket.ack.push(outcome.ms);
-  else bucket.failed.push(outcome.ms);
+  if (outcome.ok) {
+    bucket.ack.push(outcome.ms);
+    light.landedWrites += 1;
+  } else {
+    bucket.failed.push(outcome.ms);
+  }
 
   noteWriteHealth(light, outcome.ok);
+  if (capability === 'onoff' && value === false && !outcome.ok && refusesToSwitchOff(outcome.error)
+      && !light.oneWayPower) {
+    light.oneWayPower = true;
+    finding(light, 'PROBE_ONE_WAY_POWER', {
+      step: '-', capability: 'onoff',
+      observed: `an off write was refused: ${outcome.error}`,
+      evidence: [seq],
+    });
+  }
 
   return { ...outcome, seq };
+}
+
+/**
+ * Is a refused off write the integration declining, or the device being away?
+ *
+ * The distinction decides whether the probe may switch the device on, so it is
+ * drawn conservatively: anything that is NOT a reachability failure counts as a
+ * refusal. A device that cannot be reached has refused nothing — its own
+ * counter (`UNREACHABLE_AFTER`) stops the battery after three — and it will
+ * reject the on write too, so nothing is lit by mistake either way.
+ *
+ * Measured wording, 13 September 2026: `Device is always-on`, from a Synology
+ * NAS. One sample is not a pattern, which is exactly why this matches by
+ * exclusion rather than by that string.
+ *
+ * @param {string | null | undefined} error
+ */
+export function refusesToSwitchOff(error) {
+  if (!error) return false;
+  const text = String(error).toLowerCase();
+  const unreachable = /could not be reached|not reachable|unreachable|timed ?out|timeout|offline|no response|econn|ehostunreach|etimedout/;
+  return !unreachable.test(text);
 }
 
 /**
@@ -1984,6 +2066,45 @@ async function snapshotLight(api, light) {
 }
 
 /**
+ * The order the writes go out in, and nothing else — lifted out so it can be
+ * tested without a Homey, because every rule in it is a bug somebody already had.
+ * `restoreLight` does the writing and the verifying; this decides the sequence.
+ *
+ * @param {{ values: Record<string, unknown>, mode: string | null }} snapshot
+ * @param {string[]} capabilities what the lamp declares
+ * @returns {Array<{ capability: string, value: boolean | number | string }>}
+ */
+export function restorePlan(snapshot, capabilities) {
+  const wasOn = snapshot.values.onoff === true;
+
+  /** @type {Array<{ capability: string, value: boolean | number | string }>} */
+  const plan = [];
+  if (wasOn) plan.push({ capability: 'onoff', value: true });
+
+  const usedColour = snapshot.mode === 'color';
+  /** @type {string[]} */
+  const colourFirst = ['light_hue', 'light_saturation'];
+  const order = usedColour
+    ? ['light_temperature', 'light_mode', ...colourFirst]
+    : [...colourFirst, 'light_mode', 'light_temperature'];
+
+  for (const capability of [...order, 'dim']) {
+    if (capability === 'light_mode') {
+      if (snapshot.mode !== null && capabilities.includes('light_mode')) {
+        plan.push({ capability, value: snapshot.mode });
+      }
+      continue;
+    }
+    const value = snapshot.values[capability];
+    if (value === null || value === undefined) continue;
+    plan.push({ capability, value: Number(value) });
+  }
+
+  if (!wasOn) plan.push({ capability: 'onoff', value: false });
+  return plan;
+}
+
+/**
  * Put the lamp back, in an order that survives the mode gate, and check.
  *
  * Three rules, each of them a bug this would otherwise have:
@@ -1998,6 +2119,15 @@ async function snapshotLight(api, light) {
  *     visibly and correctly; on a dark one, `onoff: false` goes at the very end,
  *     as the scheduler does with an off write, or every value write on the way
  *     there switches it back on.
+ *   - BRIGHTNESS AFTER COLOUR, ALWAYS. `dim` used to go first, and on a lamp
+ *     found OFF the snapshot's `dim` is 0 — which a Hue treats as "soft off",
+ *     not as a brightness. Every colour and temperature write after it was then
+ *     refused outright (`command (.color.xy) may not have effect`), the lamp was
+ *     switched off holding whatever the ladders last wrote, and the run ended
+ *     telling a person to put two lamps back by hand. Measured on two Hue bulbs,
+ *     13 September 2026; putting the same values back with `dim` last restored
+ *     both exactly. So the power-gating write goes last among the values, where
+ *     it gates nothing.
  *   - TOLERANCE FROM THE LAMP. A lamp with an undeclared floor cannot return to
  *     a snapshot below that floor, and reporting that as a failed restore would
  *     send somebody to a light that is exactly where they left it. So the check
@@ -2018,32 +2148,7 @@ async function restoreLight(api, light) {
    */
   if (!light.wrote) return null;
   const snapshot = light.snapshot;
-  const wasOn = snapshot.values.onoff === true;
-
-  /** @type {Array<{ capability: string, value: boolean | number | string }>} */
-  const plan = [];
-  if (wasOn) plan.push({ capability: 'onoff', value: true });
-
-  const usedColour = snapshot.mode === 'color';
-  /** @type {string[]} */
-  const colourFirst = ['light_hue', 'light_saturation'];
-  const order = usedColour
-    ? ['light_temperature', 'light_mode', ...colourFirst]
-    : [...colourFirst, 'light_mode', 'light_temperature'];
-
-  for (const capability of ['dim', ...order]) {
-    if (capability === 'light_mode') {
-      if (snapshot.mode !== null && (light.handle.capabilities ?? []).includes('light_mode')) {
-        plan.push({ capability, value: snapshot.mode });
-      }
-      continue;
-    }
-    const value = snapshot.values[capability];
-    if (value === null || value === undefined) continue;
-    plan.push({ capability, value: Number(value) });
-  }
-
-  if (!wasOn) plan.push({ capability: 'onoff', value: false });
+  const plan = restorePlan(snapshot, light.handle.capabilities ?? []);
 
   /** @type {Array<{ capability: string, ok: boolean, error: string | null }>} */
   const attempted = [];
@@ -4316,7 +4421,11 @@ function printSummary(lights, raw) {
   console.log(`${passed.length} OK, ${failed.length} failed, ${skipped.length} skipped`);
 
   const demoted = raw.summary.inconclusive ?? 0;
-  const total = allFindings.length + RUN.findings.length - demoted;
+  // `finding()` pushes into `allFindings` AND into the light's own list, and the
+  // run IS a light here — so adding `RUN.findings` counted every run-level
+  // finding twice. It showed as a headline of 4 over a breakdown of 3, on the
+  // one-lamp run that produced a G3 finding; a whole-house run with none hid it.
+  const total = allFindings.length - demoted;
   console.log(`${total} finding(s) across ${raw.summary.probed} lamp(s)`);
   for (const severity of SEVERITIES) {
     const count = raw.summary.bySeverity[severity] ?? 0;
@@ -4727,11 +4836,23 @@ async function main() {
     }
   }
 
-  if (phases.size > 0 && probed.length > 0 && probed.every(l => l.changed.size === 0)) {
+  /**
+   * "Despite writing to all of them" has to mean writes that LANDED.
+   *
+   * The population was every lamp with a snapshot, which includes one that
+   * rejected every write — and a lamp that took no write cannot move a reading,
+   * so it is evidence of nothing. Measured 13 September 2026: a one-lamp run
+   * against a device answering `Device is always-on` published this critical,
+   * whose own text says to believe nothing else in the report. The stale-read
+   * defect it exists to catch shows up as lamps that ACCEPTED writes and still
+   * read back unchanged, so that is the set to count.
+   */
+  const took = probed.filter(l => l.landedWrites > 0);
+  if (phases.size > 0 && took.length > 0 && took.every(l => l.changed.size === 0)) {
     finding(RUN, 'PROBE_SUSPECT_CACHE', {
       step: 'G3',
-      observed: `no read moved on any of ${probed.length} lamp(s) despite writing to all of them`,
-      numbers: { lights: probed.length },
+      observed: `no read moved on any of ${took.length} lamp(s) that accepted a write`,
+      numbers: { lights: took.length },
     });
   }
 

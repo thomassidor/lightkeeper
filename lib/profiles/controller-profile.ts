@@ -8,7 +8,7 @@ import type { TargetSpec } from '../outputs/light-intent';
  * present on all kinds), and `flow_range` stores the card's exact `values`
  * instead of a `[min, max]` pair. See `lib/profiles/migrations.ts`.
  */
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 1;
 
 /** How a controller reports itself: working, degraded, or needing attention. */
 export type ControllerState = 'ready' | 'partial' | 'needs_repair' | 'needs_credential' | 'disabled';

@@ -6,20 +6,32 @@ Diagnostic exports leave Homey only when you request them.
 ## What it reads
 
 Paired device and zone metadata, the events your remotes report, the capability
-state of the lights you point a controller, a schedule, a circadian light or a
-Curve light at,
-your Homey's own timezone, and the Flows it generated itself. All of it through
-Homey's local Web API, all of it needed to do the three things the app does.
+state of the lights you point any Lightkeeper device at, the `measure_luminance`
+reading of the one light sensor a Daylight light is set to follow,
+your Homey's own timezone and location, and the Flows it generated itself. All of it
+through Homey's local Web API, all of it needed to do the four things the app does.
+
+**One historical read, and only while you are setting a Daylight light up:** the last
+seven days of that sensor's own Insights history, so the screen can draw what the room
+actually does and fill in two thresholds you would otherwise have to guess. It is read
+on demand from your Homey's own records, it is used to draw one screen, and nothing
+from it is stored — the two numbers you accept are, and they are numbers you chose.
+
+**Your Homey's location** is read by a circadian light, to work out today's sunrise and
+sunset, and by a Daylight light set to follow the sun rather than a sensor, to work out
+how high the sun is. It is read at the moment a value is computed and it never leaves
+the Homey.
 
 ## What it stores
 
 Two things, in two places on your own Homey.
 
 **With each device you add:** a controller's profile — which remote, which
-lights, which gesture does what; a schedule's plan: which lights, the times, the
-days, and any brightness and warmth you set; or a circadian light's two ends and a
-Curve light's points — including which palette colour a point carries, if any: which
-lights, and the warmth you chose at each time of day. Each is stored with that
+lights, which gesture does what; a schedule's plan — which lights, the blocks, the
+days, and any brightness and warmth you set; a circadian light's three zones and the
+two sunrise and sunset offsets that bound them; a Curve light's points, including
+which palette colour a point carries, if any; or a Daylight light's response — which
+sensor, and the four numbers that describe how it answers. Each is stored with that
 virtual device, so removing the device removes it.
 
 **In the app's settings:** the Personal API Key you provide.

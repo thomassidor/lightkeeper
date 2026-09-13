@@ -461,7 +461,7 @@ describe('safety promises', () => {
      * binding key of an off reference is derivable and distinct from the on one.
      */
     const entry: ScheduleEntry = {
-      id: 'night', onAt: 20 * 60, days: null, end: { kind: 'duration', minutes: 300 },
+      id: 'night', onAt: 20 * 60, end: { kind: 'duration', minutes: 300 },
     };
 
     assert.notEqual(

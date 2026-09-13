@@ -3,7 +3,9 @@
     "en": "Circadian light"
   },
   "class": "service",
-  "capabilities": ["onoff"],
+  "capabilities": [
+    "onoff"
+  ],
   "capabilitiesOptions": {
     "onoff": {
       "title": {
@@ -11,8 +13,12 @@
       }
     }
   },
-  "platforms": ["local"],
-  "connectivity": ["lan"],
+  "platforms": [
+    "local"
+  ],
+  "connectivity": [
+    "lan"
+  ],
   "images": {
     "small": "/drivers/circadian/assets/images/small.png",
     "large": "/drivers/circadian/assets/images/large.png",
@@ -20,22 +26,70 @@
   },
   "pair": [
     {
-      "id": "targets",
-      "navigation": { "next": "ends" }
+      "id": "intro",
+      "navigation": {
+        "next": "lights"
+      }
     },
     {
-      "id": "ends",
-      "navigation": { "prev": "targets" }
+      "id": "lights",
+      "navigation": {
+        "prev": "intro",
+        "next": "day"
+      }
+    },
+    {
+      "id": "day",
+      "navigation": {
+        "prev": "lights",
+        "next": "review"
+      }
+    },
+    {
+      "id": "review",
+      "navigation": {
+        "prev": "day"
+      }
+    },
+    {
+      "id": "tryit",
+      "navigation": {
+        "prev": "day"
+      }
     }
   ],
   "repair": [
     {
-      "id": "targets",
-      "navigation": { "next": "ends" }
+      "id": "intro",
+      "navigation": {
+        "next": "lights"
+      }
     },
     {
-      "id": "ends",
-      "navigation": { "prev": "targets" }
+      "id": "lights",
+      "navigation": {
+        "prev": "intro",
+        "next": "day"
+      }
+    },
+    {
+      "id": "day",
+      "navigation": {
+        "prev": "lights",
+        "next": "review"
+      }
+    },
+    {
+      "id": "review",
+      "navigation": {
+        "prev": "day"
+      }
+    },
+    {
+      "id": "tryit",
+      "navigation": {
+        "prev": "day"
+      }
     }
   ]
 }

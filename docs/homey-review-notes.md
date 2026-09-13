@@ -123,6 +123,13 @@ lights' brightness from how much light is already in the room. Where the househo
 owns a light sensor it reads that; where it does not — which is most households — it
 works out **how high the sun is**, and the sun's position needs the Homey's position.
 
+The **circadian light** uses the same permission for the same reason, and reads it
+back as a time rather than an angle: its morning and evening boundaries are stored as
+offsets from sunrise and sunset, so the day it produces follows the real one through
+the year. `sunTimes()` in the same file is that calculation — the hour-angle solution
+over the same sequence, answering "there is no sunrise today" where a polar day has
+none.
+
 `this.homey.geolocation.getLatitude()` and `getLongitude()` are the only two calls,
 they are read at the moment a brightness is computed, and the latitude and longitude
 **never leave the Homey**: there is no request, no cloud call and no telemetry
@@ -145,6 +152,18 @@ Three things a reviewer may want to check:
   false`, and the app subscribes to it through its own token exactly as it already
   subscribes to a lamp's `onoff`. The sensor is never written to, and deliberately
   cannot be: the capability union the write planner accepts does not contain it.
+- **It also reads that sensor's Insights history, and no permission was added for
+  it.** While somebody is choosing a sensor, the setup screen draws its last seven
+  days so the two lux thresholds can be judged against what the room actually does —
+  a default range that suits a kitchen windowsill is badly wrong for a hallway, which
+  is measured rather than supposed. `insights.getLogEntries` answers the app's own
+  token for a device the app does not own; there is no `homey:manager:insights` in
+  `homey-lib`'s permission list, and `homey:manager:api` (already declared and already
+  the reason this app gets a closer review) is what covers it. The manager is added to
+  the connect list, and a firmware that refuses to connect it loses the week and keeps
+  the app: `readSensorWeek` answers `null` rather than throwing. It is a read of the
+  household's own history, it is used only to fill in two numbers on a screen, and
+  none of it leaves the Homey.
 
 The Daylight light itself follows the same two rules as the colour-following types
 above: it **never switches a light on or off**, only dimming lights that are already

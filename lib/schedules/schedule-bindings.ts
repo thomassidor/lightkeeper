@@ -56,7 +56,11 @@ export function daysLabel(days: IsoWeekday[] | null): string {
   return days.map(day => WEEKDAY_LABELS[day]).join(', ');
 }
 
-export function boundaryLabel(entry: ScheduleEntry, boundary: ScheduleBoundary): string {
+export function boundaryLabel(
+  entry: ScheduleEntry,
+  days: IsoWeekday[] | null,
+  boundary: ScheduleBoundary,
+): string {
   const minute = boundary === 'on' ? entry.onAt : offMinuteOf(entry);
   const verb = boundary === 'on' ? 'On' : 'Off';
 
@@ -74,19 +78,23 @@ export function boundaryLabel(entry: ScheduleEntry, boundary: ScheduleBoundary):
    * created or replaced Flows carry the new wording.
    */
   if (boundary === 'off' && crossesMidnight(entry)) {
-    return `Off at ${formatMinutes(minute)} (starts ${daysLabel(entry.days)})`;
+    return `Off at ${formatMinutes(minute)} (starts ${daysLabel(days)})`;
   }
 
-  return `${verb} at ${formatMinutes(minute)}, ${daysLabel(entry.days)}`;
+  return `${verb} at ${formatMinutes(minute)}, ${daysLabel(days)}`;
 }
 
 /** The two flows one schedule needs, in the shape FlowBridgeManager.sync() takes. */
-export function bindingsFor(entry: ScheduleEntry, card: TimeCardRef): BindableInput[] {
+export function bindingsFor(
+  entry: ScheduleEntry,
+  days: IsoWeekday[] | null,
+  card: TimeCardRef,
+): BindableInput[] {
   return (['on', 'off'] as ScheduleBoundary[]).map(boundary => {
     const minute = boundary === 'on' ? entry.onAt : offMinuteOf(entry);
     return {
       key: eventKeyFor(entry.id, boundary),
-      label: boundaryLabel(entry, boundary),
+      label: boundaryLabel(entry, days, boundary),
       variantKey: `at:${formatMinutes(minute)}`,
       binding: {
         kind: 'flow_fixed' as const,
@@ -98,6 +106,10 @@ export function bindingsFor(entry: ScheduleEntry, card: TimeCardRef): BindableIn
   });
 }
 
-export function bindingsForPlan(entries: ScheduleEntry[], card: TimeCardRef): BindableInput[] {
-  return entries.flatMap(entry => bindingsFor(entry, card));
+export function bindingsForPlan(
+  entries: ScheduleEntry[],
+  days: IsoWeekday[] | null,
+  card: TimeCardRef,
+): BindableInput[] {
+  return entries.flatMap(entry => bindingsFor(entry, days, card));
 }

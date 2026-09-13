@@ -1,0 +1,526 @@
+<style>
+  /* ==== shared base: identical in every pair view ====
+     Scoped to this view's root because all views of a session share ONE
+     document, so unscoped class names bleed between screens (see the script
+     header).
+
+     GENERATED. This block is spliced into every pair view by
+     `npm run sync:views` from views/shared/base.css, where the placeholder
+     ROOT-ID stands in for each view's own root element id. **Edit that file, not
+     this one** — a change here is overwritten on the next sync, and
+     `npm run sync:views:check` fails in CI until the two agree. It used to be
+     authored by hand in all thirteen views, under an instruction to "edit this
+     block in all files, or in none of them".
+
+     It is still copied on disk rather than linked, and that part has not
+     changed: Homey needs a real file per folder and will not follow a reference
+     (platform §8). What HAS changed is the count of places a human edits: one.
+
+     A real stylesheet link may turn out to be possible — the Homey does serve a
+     sibling file next to a pair view, measured on hardware and written up in
+     platform §8, which is more than the old comment here believed. What is still
+     unmeasured is whether an injected view's own external reference loads at all
+     once the pairing container has put the view into its shared document. Until
+     somebody checks that with the Homey app open, splicing is the honest answer.
+
+     NOTE for whoever edits this comment: no HTML tag literals in here. The boot
+     harness finds a view's script by searching for a script tag, so writing one
+     inside this stylesheet made it evaluate the CSS as JavaScript — which fails
+     on the word `export` in the palette note below, forty lines from anything
+     that looked related.
+
+     Colours are tokens so a colour lives in ONE place, not so a second scheme
+     can restate them: there IS no second scheme. Homey renders a pairing view
+     inside its own panel, and that panel is light whatever the phone is set to
+     — so a view that followed the OS scheme went dark inside a white sheet. A
+     colour written as a literal anywhere past this block is a token that is
+     missing. */
+  #rv-root {
+    /* Brand. The violet is the manifest brandColor: the logo's ground — 93% of
+       its pixels — lightened so it reads as violet rather than black in the
+       circle Homey paints behind an icon (platform §10). The lavender is the
+       logo's mark. Both are read out of
+       artwork/masters/logo-bitmap-original.png by `export-assets.py --palette`,
+       so the UI cannot drift from the artwork. The tints and lines are derived:
+       the logo itself has no mid-tones. */
+    --lk-accent: #2a1958;
+    --lk-accent-ink: #ffffff;
+    /* Secondary text ON the accent, where white would compete with the number
+       beside it rather than support it. */
+    --lk-accent-soft: #e2dbf6;
+    --lk-accent-tint: #f3eefc;
+    --lk-accent-wash: #fbf9fe;
+    --lk-accent-line: #d9cbf5;
+    --lk-accent-strong: #3b2279;
+    --lk-ring: rgba(42, 25, 88, .16);
+
+    /* The ink ladder. Every one of these clears WCAG AA (4.5:1) against
+       --lk-surface, because all five are used between 11px and 15px — and the
+       two lightest carry the section titles, the tile meta and the help text.
+       They were 3.1:1 (--lk-muted) and 2.6:1 (--lk-faint): grey on white that
+       is legible on a desk monitor and not on a phone in daylight. What
+       separates the steps now is weight, size and caps as much as tone. */
+    --lk-ink: #16181d;
+    --lk-sub: #5f6672;
+    --lk-body: #4b5563;
+    --lk-muted: #6a7180;
+    --lk-faint: #6f7683;
+
+    /* transparent, not white: the pairing container paints the page behind us,
+       and claiming it would flatten every card against it. */
+    --lk-page: transparent;
+    --lk-surface: #ffffff;
+    --lk-raised: #f7f8fa;
+    --lk-line: #eceef2;
+    --lk-field: #e3e6ec;
+    --lk-hover: #c9d2e0;
+    --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
+
+    /* The pairing primitives' own colours, here for the same reason every
+       other literal is: a shadow written inline is a shadow the next palette
+       change misses. */
+    --lk-knob-shadow: 0 1px 3px rgba(16, 24, 40, .3);
+    --lk-slider-knob-shadow: 0 0 0 2px rgba(22, 24, 29, .6), 0 1px 4px rgba(16, 24, 40, .35);
+    --lk-slider-inset: inset 0 0 0 1px rgba(22, 24, 29, .1);
+    /* The two axes a slider can carry, as whole gradients rather than as a
+       list of stops: a ramp is one decision about what the axis LOOKS like,
+       and splitting it into six tokens would invite five of them to change. */
+    --lk-warm-ramp: linear-gradient(90deg, #e8892c, #efa658, #f4c68a,
+                                    #f2e6d6, #eaf0fb, #dbe8fb);
+    --lk-bright-ramp: linear-gradient(90deg, #221a3d, #43318a, #7a5fc4,
+                                      #b9a6e4, #ece5f9);
+    --lk-handle-shadow: 0 2px 6px rgba(16, 24, 40, .2);
+    --lk-handle-shadow-sel: 0 0 0 4px var(--lk-ring), 0 2px 8px rgba(16, 24, 40, .28);
+    --lk-hairline: rgba(22, 24, 29, .1);
+    --lk-day-mark: rgba(22, 24, 29, .4);
+    --lk-day-tag-bg: rgba(255, 255, 255, .86);
+
+    --lk-ok-bg: #eaf7ef;   --lk-ok-ink: #10633a;
+    --lk-bad-bg: #fdeceb;  --lk-bad-ink: #8f1d18;
+    /* Not an error. The one thing that reads this way is a schedule overlap,
+       which is allowed, resolved deterministically, and worth pointing at. */
+    --lk-warn-bg: #fdf3e7; --lk-warn-ink: #7a4a10;
+    --lk-flat-bg: #f4f5f7; --lk-flat-ink: #5b616e;
+
+    background: var(--lk-page);
+    padding: 18px 16px 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", sans-serif;
+    color: var(--lk-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #rv-root h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+  #rv-root .sub { font-size: 14px; line-height: 1.5; color: var(--lk-sub); margin: 0 0 18px; }
+  #rv-root p { font-size: 14px; line-height: 1.55; color: var(--lk-body); }
+
+  #rv-root .card { background: var(--lk-surface); border: 1px solid var(--lk-line);
+              border-radius: 14px; box-shadow: var(--lk-shadow); padding: 14px;
+              margin-bottom: 10px; }
+
+  #rv-root .section { margin-bottom: 18px; }
+  #rv-root .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase;
+                       letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 8px 2px; }
+
+  /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
+  #rv-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+              border: 1.5px solid var(--lk-line); border-radius: 12px; padding: 13px 14px;
+              margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
+              color: var(--lk-ink);
+              transition: border-color .12s ease, background .12s ease; }
+  #rv-root .tile:hover { border-color: var(--lk-hover); }
+  #rv-root .tile.sel { border-color: var(--lk-accent); background: var(--lk-accent-tint); }
+  #rv-root .tile .name { font-size: 15px; font-weight: 500; line-height: 1.3; }
+  #rv-root .tile .meta { font-size: 12.5px; color: var(--lk-muted); margin-top: 3px; line-height: 1.35; }
+
+  #rv-root input[type=text], #rv-root input[type=password], #rv-root select {
+    width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
+    border: 1.5px solid var(--lk-field); border-radius: 11px; background: var(--lk-surface);
+    color: var(--lk-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
+  /* The chevron's fill stays a literal: #6a7180 is --lk-muted, and a data URI
+     cannot read a custom property. So this is the one place a token's value is
+     written twice, and the two copies have to move together. */
+  #rv-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+               background-repeat: no-repeat; background-position: right 13px center;
+               background-size: 11px; padding-right: 34px; }
+  #rv-root input:focus, #rv-root select:focus { outline: none; border-color: var(--lk-accent);
+                                      box-shadow: 0 0 0 3px var(--lk-ring); }
+
+  #rv-root .btn { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
+             border-radius: 10px; border: 1.5px solid var(--lk-field);
+             background: var(--lk-surface); color: var(--lk-ink); cursor: pointer;
+             min-height: 40px; }
+  #rv-root .btn:hover { border-color: var(--lk-hover); }
+  #rv-root .btn:disabled { opacity: .45; cursor: not-allowed; }
+  #rv-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
+                     border-radius: 12px; border: none; background: var(--lk-accent);
+                     color: var(--lk-accent-ink); cursor: pointer; min-height: 50px;
+                     margin-top: 16px; font-family: inherit; }
+  #rv-root .btn-primary:disabled { opacity: .5; cursor: progress; }
+
+  /* A default ground, so a .msg shown before any state class lands on it is
+     still a message rather than bare text on the page. */
+  #rv-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 11px; font-size: 13.5px;
+             line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+  #rv-root .ok { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
+  #rv-root .bad { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
+  #rv-root .muted { background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+  #rv-root .warn { background: var(--lk-warn-bg); color: var(--lk-warn-ink); }
+  /* A message whose first line is what happened and whose second is what it
+     means. Both belong in one block: split across two, the second reads as
+     unrelated body copy. */
+  #rv-root .msg .lead { font-weight: 600; margin-bottom: 3px; }
+
+  #rv-root ol { font-size: 14px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+           color: var(--lk-body); }
+  #rv-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  @media (max-width: 380px) { #rv-root .grid { grid-template-columns: 1fr; } }
+  #rv-root .empty { font-size: 14px; color: var(--lk-muted); padding: 12px 0; }
+  /* ---- the pairing paradigm --------------------------------------------
+     Every screen the redesign draws is built from these six, so a change to
+     any of them is one edit rather than fifteen. They live in the shared base
+     rather than in each view for exactly the reason the tokens do: a primitive
+     defined twice is a primitive that drifts. */
+
+  /* Step dots. The intro is unnumbered — the steps it promises are the ones
+     that carry a dot — so a view renders as many as its own flow has. */
+  #rv-root .steps { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
+  #rv-root .steps i { width: 22px; height: 4px; border-radius: 999px;
+                   background: var(--lk-field); }
+  #rv-root .steps i.on { background: var(--lk-accent); }
+  #rv-root .steps span { margin-left: 4px; font-size: 12px; color: var(--lk-faint); }
+
+  /* `label · value · chevron`. The one shape everything secondary takes:
+     a row that says what it is, what it is set to, and that it can be opened. */
+  #rv-root .row { display: flex; align-items: center; gap: 11px; width: 100%;
+               padding: 13px 14px; min-height: 44px; box-sizing: border-box;
+               background: none; border: none; font: inherit; color: inherit;
+               text-align: left; cursor: pointer; }
+  #rv-root .row + .row { border-top: 1px solid var(--lk-line); }
+  #rv-root .row .label { flex: 1; font-size: 14.5px; font-weight: 500; }
+  #rv-root .row .value { font-size: 13px; color: var(--lk-muted); text-align: right; }
+  #rv-root .row .chev { flex: none; font-size: 15px; color: var(--lk-muted); }
+  #rv-root .row .sub { font-size: 12.5px; color: var(--lk-muted); margin: 2px 0 0; }
+
+  /* The pill switch behind every "Set … too". */
+  #rv-root .toggle { display: flex; align-items: center; gap: 11px; width: 100%;
+                  padding: 12px 0; min-height: 44px; box-sizing: border-box;
+                  background: none; border: none; font: inherit; color: inherit;
+                  text-align: left; cursor: pointer; }
+  #rv-root .toggle .label { flex: 1; font-size: 14.5px; font-weight: 500; }
+  #rv-root .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
+                         position: relative; background: var(--lk-field);
+                         transition: background .15s ease; }
+  #rv-root .toggle[aria-checked="true"] .track { background: var(--lk-accent); }
+  #rv-root .toggle .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+                        border-radius: 50%; background: var(--lk-surface);
+                        box-shadow: var(--lk-knob-shadow);
+                        transition: left .15s ease; }
+  #rv-root .toggle[aria-checked="true"] .knob { left: 21px; }
+
+  /* The title above a control, with its value on the right of the same line.
+     Sentence case and body-coloured rather than a small-caps section label:
+     "Brightness 80%" is a reading of the control directly below it, not a
+     heading over a group of unrelated things. */
+  #rv-root .control-title { display: flex; align-items: baseline;
+                         justify-content: space-between; gap: 10px;
+                         font-size: 13.5px; font-weight: 600; line-height: 1.2;
+                         color: var(--lk-ink); margin: 0 0 9px; }
+
+  /* A value slider with its two end captions.
+     The TRACK carries the range as a gradient and there is no fill: the whole
+     axis is visible at once, so a warmth slider shows candlelight at one end
+     and daylight at the other rather than asking somebody to imagine it. The
+     knob marks the position on it.
+     `touch-action: none` is not decoration: without it a horizontal drag
+     scrolls the pairing sheet underneath and the control cannot be used on a
+     phone at all. */
+  #rv-root .slider { position: relative; height: 28px; border-radius: 8px;
+                  background: var(--lk-field); margin: 0;
+                  box-shadow: var(--lk-slider-inset);
+                  touch-action: none; cursor: pointer; }
+  /* Candlelight to daylight, left to right — the order the slider reads in,
+     which is the REVERSE of the way a warmth is stored (platform §6). */
+  #rv-root .slider.warm { background: var(--lk-warm-ramp); }
+  #rv-root .slider.bright { background: var(--lk-bright-ramp); }
+  #rv-root .slider .knob { position: absolute; top: -4px; bottom: -4px; width: 6px;
+                        margin-left: -3px; border-radius: 4px;
+                        background: var(--lk-surface);
+                        box-shadow: var(--lk-slider-knob-shadow); }
+  #rv-root .ends { display: flex; justify-content: space-between;
+                font-size: 11px; color: var(--lk-muted); margin: 9px 0 0; }
+
+  /* The swatches a colour is chosen from, four across.
+     Not one row of eight: at 390px that is 34px a swatch, under the touch
+     minimum and too small to judge a colour by. Two rows of four is the same
+     set of eight, legibly, and the sixteen that fold out below continue it. */
+  #rv-root .swatches { display: grid; grid-template-columns: repeat(4, 1fr);
+                    gap: 8px; margin: 10px 0; }
+  #rv-root .swatch { height: 44px; border-radius: 9px; padding: 0;
+                  border: 1px solid var(--lk-hairline); cursor: pointer; }
+  #rv-root .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--lk-surface),
+                                                   0 0 0 4px var(--lk-accent); }
+
+  /* The day strip: a picture of the whole day, drawn once and reused. */
+  #rv-root .day { position: relative; height: 104px; border-radius: 12px;
+               overflow: hidden; touch-action: none; }
+  #rv-root .day .mark { position: absolute; top: 0; bottom: 0; width: 0;
+                     border-left: 1.5px dashed var(--lk-day-mark); }
+  #rv-root .day .tag { position: absolute; top: 6px; transform: translateX(-50%);
+                    background: var(--lk-day-tag-bg); color: var(--lk-body);
+                    font-size: 9.5px; font-weight: 600; letter-spacing: .05em;
+                    text-transform: uppercase; padding: 3px 5px; border-radius: 4px; }
+  #rv-root .day .handle { position: absolute; top: 50%; width: 26px; height: 26px;
+                       margin: -13px 0 0 -13px; border-radius: 50%;
+                       background: var(--lk-surface); box-sizing: border-box;
+                       border: 2.5px solid var(--lk-ring);
+                       box-shadow: var(--lk-handle-shadow); }
+  #rv-root .day .handle.sel { width: 34px; height: 34px; margin: -17px 0 0 -17px;
+                           border: 3px solid var(--lk-accent); z-index: 2;
+                           box-shadow: var(--lk-handle-shadow-sel); }
+  #rv-root .clockline { display: flex; justify-content: space-between;
+                     font-size: 12px; color: var(--lk-muted); margin-top: 6px; }
+
+  /* ==== end shared base ==== */
+
+  /* ---- this view only ---------------------------------------------------- */
+
+  /* A readout the user can act on: every row names the step that owns it, so
+     the chevron goes back rather than merely looking like it might. */
+  #rv-root .rows { background: var(--lk-surface); border: 1px solid var(--lk-line);
+                   border-radius: 14px; box-shadow: var(--lk-shadow);
+                   overflow: hidden; margin-bottom: 14px; }
+
+  /* The one sentence that says what will happen, in the present tense and
+     naming the lights. It is the promise the Add button is about to keep. */
+  #rv-root .promise { font-size: 14px; line-height: 1.55; color: var(--lk-body);
+                      margin: 0 2px 4px; }
+
+  /* An optional picture of what was just configured, above the rows.
+     Two of the five drivers have one worth drawing and three do not: a list of
+     rows IS the review of a remote's buttons, and a picture invented for it
+     would be decoration. `hero` is absent in that case and nothing is drawn. */
+  #rv-root .hero { height: 56px; border-radius: 12px; overflow: hidden;
+                   margin: 0 0 14px; display: flex; align-items: flex-end; gap: 3px;
+                   background: var(--lk-flat-bg); }
+  #rv-root .hero i { flex: 1; border-radius: 3px 3px 0 0; }
+  #rv-root .hero.strip { display: block; }
+
+  /* The reading RIGHT NOW, which is the only thing on a Daylight light's review
+     that a person can check against the room they are standing in. */
+  #rv-root .hero.now { height: auto; display: flex; align-items: flex-end; gap: 10px;
+                       background: var(--lk-accent); color: var(--lk-accent-ink);
+                       border-radius: 14px; padding: 16px 14px; }
+  #rv-root .hero.now .pct { font-size: 32px; font-weight: 700; line-height: 1;
+                            letter-spacing: -.02em; }
+  #rv-root .hero.now .what { font-size: 13px; line-height: 1.4; padding-bottom: 3px;
+                             color: var(--lk-accent-soft); }
+</style>
+
+<div class="wrap" id="rv-root">
+  <div class="steps" id="rv-steps"></div>
+  <h2 data-i18n="review.title"></h2>
+
+  <div id="rv-error" class="msg bad" style="display:none;"></div>
+
+  <div class="hero" id="rv-hero" style="display:none;"></div>
+  <div class="rows" id="rv-rows"></div>
+  <p class="promise" id="rv-promise"></p>
+
+  <button class="btn-primary" id="rv-save" data-i18n="review.add"></button>
+</div>
+
+<script type="text/javascript">
+/**
+ * The last screen: what you are about to get, and the button that makes it real.
+ *
+ * It earns a screen of its own for two reasons. It is the READBACK — every
+ * decision the flow took a default on is visible here, in one place, which is
+ * the only chance a user gets to notice that "2 of 6" was not what they meant.
+ * And it is the exit from a one-way door: after this the device exists.
+ *
+ * Every row is `label · value · chevron`, and the chevron goes BACK to the step
+ * that owns the value rather than opening an editor of its own — so there is one
+ * place each thing is set, and this screen never becomes a second one.
+ *
+ * **One file, five drivers** (platform §8). The rows, the sentence and the step
+ * count all arrive from `getReview`, because what a schedule reviews and what a
+ * controller reviews have nothing in common but their shape.
+ *
+ * Homey asks for the device NAME after this, on its own screen, so pairing never
+ * does — `registerSaveHandler` derives one from the lights when nothing is typed.
+ */
+function __lkBootRv(Homey) {
+  var __root = document.getElementById('rv-root');
+  if (!__root || __root.dataset.llBooted === '1') return;
+  __root.dataset.llBooted = '1';
+
+  function emit(event, data) {
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var finish = function (err, result) {
+        if (settled) return;
+        settled = true;
+        if (err) reject(err instanceof Error ? err : new Error(String(err)));
+        else resolve(result);
+      };
+      var timer = setTimeout(function () { finish(new Error('Homey did not respond in time. Close this screen and try again. (' + event + ')')); }, 20000);
+      var done = function (err, result) { clearTimeout(timer); finish(err, result); };
+      try {
+        var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
+        if (returned && typeof returned.then === 'function') {
+          returned.then(function (r) { done(null, r); }, function (e) { done(e); });
+        }
+      } catch (err) { done(err); }
+    });
+  }
+
+  function node(tag, className, text) {
+    var el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined && text !== null) el.textContent = String(text);
+    return el;
+  }
+
+  function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+
+  var el = {
+    steps: document.getElementById('rv-steps'),
+    error: document.getElementById('rv-error'),
+    rows: document.getElementById('rv-rows'),
+    promise: document.getElementById('rv-promise'),
+    hero: document.getElementById('rv-hero'),
+    save: document.getElementById('rv-save')
+  };
+
+  function show(err) {
+    el.error.textContent = err && err.message ? err.message : String(err);
+    el.error.style.display = '';
+    el.save.disabled = false;
+  }
+
+  function renderSteps(payload) {
+    clear(el.steps);
+    var total = payload.stepCount || 0;
+    if (!total) { el.steps.style.display = 'none'; return; }
+    for (var i = 1; i <= total; i++) {
+      el.steps.appendChild(node('i', i <= payload.stepIndex ? 'on' : null));
+    }
+    el.steps.appendChild(node('span', null,
+      Homey.__('review.step', { index: payload.stepIndex, count: total })));
+  }
+
+  function renderRows(rows) {
+    clear(el.rows);
+    for (var i = 0; i < rows.length; i++) {
+      el.rows.appendChild(renderRow(rows[i]));
+    }
+  }
+
+  function renderRow(row) {
+    // A row with nowhere to go is not a button. Rendering it as one would
+    // promise a screen that does not open.
+    var element = node(row.view ? 'button' : 'div', 'row');
+    if (row.view) element.type = 'button';
+    element.appendChild(node('span', 'label', row.label));
+    element.appendChild(node('span', 'value', row.value));
+    if (row.view) {
+      element.appendChild(node('span', 'chev', '›'));
+      element.addEventListener('click', function () { Homey.showView(row.view); });
+    }
+    return element;
+  }
+
+  /**
+   * Save, create, and leave.
+   *
+   * `save` answers `{ created, device }` when pairing and `{ updated }` when
+   * repairing, and the view decides from that rather than from knowing which
+   * session it is in — the same branch every one of the old last screens took.
+   *
+   * `add_device` is emitted and its failure swallowed: it is how a driver is
+   * told the device landed, and a driver that does not listen for it is not a
+   * reason to strand somebody on a screen whose work is already done.
+   */
+  el.save.addEventListener('click', function () {
+    el.save.disabled = true;
+    el.error.style.display = 'none';
+
+    emit('save', '').then(function (result) {
+      if (result && result.created && result.device) {
+        return Homey.createDevice(result.device).then(function (created) {
+          return emit('add_device', created || result.device).catch(function () { });
+        });
+      }
+      return null;
+    }).then(function () {
+      Homey.done();
+    }).catch(show);
+  });
+
+  /**
+   * Whatever picture the driver asked for, or none.
+   *
+   * Three shapes, because three are all that mean anything here: the day as a
+   * band of colour, a curve as the bars it is made of, and a Daylight light's
+   * reading right now. A driver that sends no `hero` gets no frame at all —
+   * an empty grey box above the rows would read as something that failed to
+   * load.
+   */
+  function renderHero(hero) {
+    clear(el.hero);
+    if (!hero || !hero.kind) { el.hero.style.display = 'none'; return; }
+    el.hero.style.display = '';
+
+    if (hero.kind === 'now') {
+      el.hero.className = 'hero now';
+      el.hero.appendChild(node('span', 'pct', hero.percent));
+      el.hero.appendChild(node('span', 'what', hero.detail || ''));
+      return;
+    }
+
+    if (hero.kind === 'strip') {
+      el.hero.className = 'hero strip';
+      el.hero.style.background = 'linear-gradient(90deg,' + (hero.stops || []).join(',') + ')';
+      return;
+    }
+
+    el.hero.className = 'hero';
+    el.hero.style.background = '';
+    for (var i = 0; i < (hero.bars || []).length; i++) {
+      var bar = node('i');
+      bar.style.background = hero.bars[i].color;
+      bar.style.height = Math.max(6, hero.bars[i].height * 100) + '%';
+      el.hero.appendChild(bar);
+    }
+  }
+
+  emit('getReview').then(function (payload) {
+    renderSteps(payload);
+    renderHero(payload.hero);
+    renderRows(payload.rows || []);
+    el.promise.textContent = payload.promise || '';
+    if (payload.cta) el.save.textContent = payload.cta;
+  }).catch(show);
+}
+
+(function () {
+  var tries = 0;
+  function waitForHomey() {
+    if (window.Homey && typeof window.Homey.emit === 'function') { __lkBootRv(window.Homey); return; }
+    if (++tries > 100) {
+      var root = document.getElementById('rv-root');
+      if (root) {
+        var banner = document.createElement('div');
+        banner.className = 'msg bad';
+        banner.textContent = 'This screen could not reach Homey. Close it and try again.';
+        root.appendChild(banner);
+      }
+      return;
+    }
+    setTimeout(waitForHomey, 50);
+  }
+  window.onHomeyReady = function (ready) { __lkBootRv(ready || window.Homey); };
+  waitForHomey();
+})();
+</script>

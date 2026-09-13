@@ -860,16 +860,16 @@ describe('DaylightRuntime - targets coming and going', () => {
 
 describe('DaylightRuntime - the shared sensor service', () => {
   test('starting retains exactly the plan sensors, under this device id', async () => {
-    const h = harness({ plan: plan({ sensors: ['s1', 's2'] }) });
+    const h = harness({ plan: plan({ sensor: 's1' }) });
     await h.runtime.start();
 
-    assert.deepEqual(h.retained, [{ ids: ['s1', 's2'], owner: 'dayl-1' }]);
+    assert.deepEqual(h.retained, [{ ids: ['s1'], owner: 'dayl-1' }]);
   });
 
   test('stopping releases this device claim and no other', async () => {
     // Ref-counted: a sensor another Lightkeeper device also named keeps its
     // subscription.
-    const h = harness({ plan: plan({ sensors: ['s1'] }) });
+    const h = harness({ plan: plan({ sensor: 's1' }) });
     await h.runtime.start();
     await h.runtime.stop();
 
@@ -879,9 +879,9 @@ describe('DaylightRuntime - the shared sensor service', () => {
   test('a plan change re-retains, so a dropped sensor is released', async () => {
     // retain() is TOTAL for its owner, which is why a runtime can pass its whole
     // list and not work out the difference itself.
-    const h = harness({ plan: plan({ sensors: ['s1'] }) });
+    const h = harness({ plan: plan({ sensor: 's1' }) });
     await h.runtime.start();
-    await h.runtime.updatePlan(plan({ sensors: ['s2'] }));
+    await h.runtime.updatePlan(plan({ sensor: 's2' }));
 
     assert.deepEqual(h.retained.at(-1), { ids: ['s2'], owner: 'dayl-1' });
   });
@@ -889,11 +889,11 @@ describe('DaylightRuntime - the shared sensor service', () => {
   test('diagnostics report only THIS device sensors', async () => {
     // The service is shared, and a report listing another device's sensors is a
     // report that sends the reader to the wrong room.
-    const h = harness({ plan: plan({ sensors: ['s1'] }) });
+    const h = harness({ plan: plan({ sensor: 's1' }) });
     await h.runtime.start();
     assert.deepEqual(h.runtime.diagnostics().sensors.map(s => s.deviceId), ['s1']);
 
-    const other = harness({ plan: plan({ sensors: ['s-elsewhere'] }) });
+    const other = harness({ plan: plan({ sensor: 's-elsewhere' }) });
     await other.runtime.start();
     assert.deepEqual(other.runtime.diagnostics().sensors, []);
   });
@@ -942,7 +942,7 @@ describe('diagnostics and power restoration regressions', () => {
   });
 
   test('history links sensor input and command results to their original action', async () => {
-    const h = harness({ plan: plan({ sensors: ['s1'], dark: 0.25, bright: 0.7 }) });
+    const h = harness({ plan: plan({ sensor: 's1', dark: 0.25, bright: 0.7 }) });
     await h.runtime.start();
     await sharedSettle(12);
     const first = h.runtime.diagnostics().recentActions[0];
@@ -1027,7 +1027,7 @@ describe('what the week-long recording found', () => {
     // seeded from a lit lamp the aim would spend its first passes coming DOWN,
     // and a falling aim is not the thing under test.
     const h = harness({
-      plan: plan({ sensors: ['s1'], dark: 0.25, bright: 0.9 }),
+      plan: plan({ sensor: 's1', dark: 0.25, bright: 0.9 }),
       devices: [light('l1', undefined, { dim: 0.01 }), light('l2', undefined, { dim: 0.01 })],
       verdict: { level: 0.2, brightness: 0.3 },
     });
@@ -1064,7 +1064,7 @@ describe('what the week-long recording found', () => {
 
   test('a reading that does not follow the lamps is never called feedback', async () => {
     const h = harness({
-      plan: plan({ sensors: ['s1'], dark: 0.25, bright: 0.9 }),
+      plan: plan({ sensor: 's1', dark: 0.25, bright: 0.9 }),
       devices: [light('l1', undefined, { dim: 0.01 }), light('l2', undefined, { dim: 0.01 })],
       verdict: { level: 0.2, brightness: 0.3 },
     });

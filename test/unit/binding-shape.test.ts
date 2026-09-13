@@ -241,214 +241,52 @@ describe('exact enumerated values, not endpoints', () => {
   });
 });
 
-describe('the schema 1 to 2 migration', () => {
-  /** A profile as version 1 stored it: `args`, and a range as two endpoints. */
-  const oldProfile = () => ({
-    schemaVersion: 1,
+describe('the controller profile chain, after the reset', () => {
+  /**
+   * Emptied with the other four as part of the pairing rewrite. This one changed
+   * because a mapping rule gained a `preset` — the value a "set brightness"
+   * button needs, which no earlier profile can supply for a rule it does not
+   * have.
+   *
+   * `args` → `fixedArgs` and the range expansion went with the table. Both are
+   * still covered where it matters: `validateBinding` refuses a binding with no
+   * `fixedArgs`, and that refusal is what quarantines an older profile here.
+   */
+  const CURRENT = () => ({
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     enabled: true,
     source: { deviceId: 'remote-1', eventSurfaceFingerprint: 'fp' },
     target: { kind: 'devices', deviceIds: ['l1'] },
-    mappings: [{ id: 'r1', function: 'brightness_up', inputKey: 'wheel|1|clock_wise|rotate_start', target: null }],
-    behavior: { ...DEFAULT_BEHAVIOR },
+    mappings: [{ id: 'r1', function: 'toggle', inputKey: 'k1', target: null }],
+    behavior: DEFAULT_BEHAVIOR,
     managedFlows: [],
-    catalogue: [
-      {
-        key: 'wheel|1|clock_wise|rotate_start',
-        controlId: 'wheel',
-        label: 'Wheel — Turn right',
-        action: 'rotate_start',
-        carriesMagnitude: true,
-        binding: {
-          kind: 'flow_range',
-          cardId: 'homey:device:x:wheel',
-          cardOwnerUri: 'homey:flowcardtrigger:homey:device:x:wheel',
-          argument: 'steps',
-          valueRange: [1, 3],
-        },
-      },
-      {
-        key: 'button_pressed|on|press',
-        controlId: 'on',
-        label: 'On — Press',
-        action: 'press',
-        carriesMagnitude: false,
-        binding: {
-          kind: 'flow_enum',
-          cardId: 'homey:device:x:button_pressed',
-          cardOwnerUri: 'homey:flowcardtrigger:homey:device:x:button_pressed',
-          argument: 'button',
-          value: 'on',
-        },
-      },
-      {
-        key: 'n2_on|press',
-        controlId: 'higher_brightness',
-        label: 'Higher brightness — Press',
-        action: 'press',
-        carriesMagnitude: false,
-        binding: {
-          kind: 'flow_fixed',
-          cardId: 'homey:device:x:n2_on',
-          cardOwnerUri: 'homey:flowcardtrigger:homey:device:x:n2_on',
-          args: { some: 'arg' },
-        },
-      },
-    ],
   });
 
-  /**
-   * A range wider than the ceiling is refused BEFORE the array is built.
-   *
-   * The ceiling is applied downstream by `compileRange`, so the expansion used
-   * to walk the whole span first: a hand-edited or corrupted v1 profile saying
-   * `[0, 1e9]` allocated a billion-element array inside `onInit`. That does not
-   * throw — it hangs the device's startup and takes the memory with it, on a
-   * path with no timeout and no way for the user to see why.
-   *
-   * An empty list is the refusal the docblock already argued for: `compileRange`
-   * rejects one through `InvalidRangeError`, which marks the control unsupported
-   * and NAMES it. Real v1 profiles were twelve values or fewer, so nothing
-   * legitimate is turned away.
-   */
-  test('a range wider than the ceiling expands to nothing, not to a billion values', () => {
-    const absurd = oldProfile();
-    const range = (absurd.catalogue as any[])[0].binding;
-    range.valueRange = [0, 1e9];
-
-    const started = Date.now();
-    const { plan: profile } = migrateProfile(absurd);
-    const elapsed = Date.now() - started;
-
-    const bindings = (profile.catalogue ?? []).map(i => i.binding as any);
-    assert.deepEqual(bindings[0].values, [], 'the span was expanded rather than refused');
-    // Not a benchmark — an order-of-magnitude check. Building the array took
-    // seconds and hundreds of megabytes; refusing it is arithmetic.
-    assert.ok(elapsed < 1000, `migration took ${elapsed}ms`);
-  });
-
-  test('and a range at exactly the ceiling still expands', () => {
-    // Twelve is the ceiling, not the first refusal: BILRESA's own range is what
-    // the ceiling was chosen for, so the boundary has to be inclusive.
-    const wide = oldProfile();
-    (wide.catalogue as any[])[0].binding.valueRange = [1, 12];
-
-    const { plan: profile } = migrateProfile(wide);
-    const values = ((profile.catalogue ?? [])[0]!.binding as any).values;
-
-    assert.equal(values.length, 12);
-    assert.deepEqual(values, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-  });
-
-  test('one past the ceiling is refused', () => {
-    const wide = oldProfile();
-    (wide.catalogue as any[])[0].binding.valueRange = [1, 13];
-
-    const { plan: profile } = migrateProfile(wide);
-    assert.deepEqual(((profile.catalogue ?? [])[0]!.binding as any).values, []);
-  });
-
-  test('it runs, and lands on the current version', () => {
-    const { plan: profile, migrated, fromVersion } = migrateProfile(oldProfile());
-    assert.equal(migrated, true);
-    assert.equal(fromVersion, 1);
-    assert.equal(profile.schemaVersion, CURRENT_SCHEMA_VERSION);
-  });
-
-  test('args becomes fixedArgs, and absent becomes empty', () => {
-    const { plan: profile } = migrateProfile(oldProfile());
-    const bindings = (profile.catalogue ?? []).map(i => i.binding as any);
-
-    assert.deepEqual(bindings[2].fixedArgs, { some: 'arg' });
-    assert.equal('args' in bindings[2], false);
-    assert.deepEqual(bindings[1].fixedArgs, {}, 'an enum had nowhere to store args before');
-    assert.deepEqual(bindings[0].fixedArgs, {});
-  });
-
-  test('a contiguous range becomes the values it always expanded to', () => {
-    const { plan: profile } = migrateProfile(oldProfile());
-    const range = (profile.catalogue ?? [])[0].binding as any;
-    assert.deepEqual(range.values, [1, 2, 3]);
-    assert.equal('valueRange' in range, false);
-  });
-
-  test('so the compiled variant keys are unchanged, and no Flows churn', () => {
-    const { plan: profile } = migrateProfile(oldProfile());
-    const flows = compileBinding({
-      controllerId: 'lk-ctrl-1',
-      bindingKey: 'wheel|1|clock_wise|rotate_start',
-      binding: (profile.catalogue ?? [])[0].binding,
-      cards: CARDS,
-      label: 'Wheel — Turn right',
-      sourceName: 'Wheel',
-    });
-    assert.deepEqual(flows.map(f => f.variantKey), ['range:1', 'range:2', 'range:3']);
-  });
-
-  test('non-range kinds compile identically after migration', () => {
-    const { plan: profile } = migrateProfile(oldProfile());
-    const compileAt = (index: number, key: string) => compileBinding({
-      controllerId: 'lk-ctrl-1',
-      bindingKey: key,
-      binding: (profile.catalogue ?? [])[index].binding,
-      cards: CARDS,
-      label: 'x',
-      sourceName: 'y',
-    });
-
-    const [enumFlow] = compileAt(1, 'button_pressed|on|press');
-    assert.equal(enumFlow.variantKey, 'enum:on');
-    assert.deepEqual(enumFlow.trigger.args, { button: 'on' });
-
-    const [fixedFlow] = compileAt(2, 'n2_on|press');
-    assert.equal(fixedFlow.variantKey, 'fixed');
-    assert.deepEqual(fixedFlow.trigger.args, { some: 'arg' });
-  });
-
-  test('a nonsense stored range migrates to a refusal, not a guess', () => {
-    const broken = oldProfile();
-    (broken.catalogue[0].binding as any).valueRange = ['a', 'b'];
-    const { plan: profile } = migrateProfile(broken);
-    assert.deepEqual((profile.catalogue ?? [])[0].binding as any, {
-      kind: 'flow_range',
-      cardId: 'homey:device:x:wheel',
-      cardOwnerUri: 'homey:flowcardtrigger:homey:device:x:wheel',
-      argument: 'steps',
-      fixedArgs: {},
-      values: [],
-    });
-  });
-
-  test('a profile already at the new shape is left alone', () => {
-    const current = { ...oldProfile(), schemaVersion: CURRENT_SCHEMA_VERSION };
-    (current.catalogue[0].binding as any) = {
-      kind: 'flow_range',
-      cardId: 'c',
-      cardOwnerUri: 'u',
-      fixedArgs: { button: '1' },
-      argument: 'steps',
-      values: [1, 3],
-    };
-    // The other two entries are still in the OLD shape, which the chain no
-    // longer runs over — so bring them forward too, or the validator at the end
-    // rejects them (correctly).
-    (current.catalogue[1].binding as any).fixedArgs = {};
-    delete (current.catalogue[1].binding as any).args;
-    (current.catalogue[2].binding as any).fixedArgs =
-      (current.catalogue[2].binding as any).args;
-    delete (current.catalogue[2].binding as any).args;
-
-    const { plan: profile, migrated } = migrateProfile(current);
+  test('a current profile passes through untouched', () => {
+    const stored = CURRENT();
+    const { plan, migrated, steps } = migrateProfile(stored);
     assert.equal(migrated, false);
-    assert.deepEqual((profile.catalogue ?? [])[0].binding as any, {
-      kind: 'flow_range', cardId: 'c', cardOwnerUri: 'u',
-      fixedArgs: { button: '1' }, argument: 'steps', values: [1, 3],
-    });
+    assert.deepEqual(steps, []);
+    assert.deepEqual(plan, stored as never);
   });
 
-  test('a profile from a future version is refused rather than corrupted', () => {
-    assert.throws(
-      () => migrateProfile({ ...oldProfile(), schemaVersion: CURRENT_SCHEMA_VERSION + 1 }),
-      /newer than this app understands/,
-    );
+  test('a profile from before the reset is quarantined, not guessed at', () => {
+    assert.throws(() => migrateProfile({ ...CURRENT(), schemaVersion: undefined }));
+    assert.throws(() => migrateProfile({ ...CURRENT(), schemaVersion: 0 }));
+  });
+
+  test('a profile from a NEWER build is refused rather than downgraded', () => {
+    assert.throws(() => migrateProfile({
+      ...CURRENT(), schemaVersion: CURRENT_SCHEMA_VERSION + 1,
+    }));
+  });
+
+  test('the chain still ends in its validator', () => {
+    // A `brightness_set` with no preset is the rule this chain's reset was
+    // about: a button whose job is "a set brightness", carrying no brightness.
+    assert.throws(() => migrateProfile({
+      ...CURRENT(),
+      mappings: [{ id: 'r1', function: 'brightness_set', inputKey: 'k1', target: null }],
+    }), /cannot run without one/);
   });
 });

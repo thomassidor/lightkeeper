@@ -510,6 +510,11 @@ and it serves siblings in that same folder, with correct MIME types:
 | `drivers/daylight/assets/icon.svg`, `assets/icon.svg` | 200 | `image/svg+xml` |
 | `settings/index.html` | 200 | `text/html` |
 
+(`daylight.html` was the Daylight light's own screen when this was measured; the 0.6.0 pairing
+rewrite replaced it with `sensor.html`, `response.html` and `sensordetail.html`. The paths are left
+as they were probed — a measurement rewritten to match today's file list stops being a record of
+what was run.)
+
 It is a WHITELIST of directories rather than a static server over the whole app: `app.json`,
 `package.json`, `app.js` and `locales/en.json` all return 404, and so does a non-existent file
 inside a served folder. The `<viewId>.assets/` shape is the one the CLI's own `HomeyCompose.js`
@@ -517,9 +522,10 @@ materialises for a templated view — it copies `<template>/assets` to
 `drivers/<id>/pair/<viewId>.assets` and replaces `{{assets}}` in the HTML with that path — so the
 convention is Athom's, not ours.
 
-**Why this matters, and what it does NOT yet settle.** Every pair view carries a ~78-line CSS base,
-an `emit()`, and — on four of them — a ~250-line `daylightCard()`, all hand-copied, because the
-in-code comment said "there is nowhere to put a stylesheet". There is: the file would be served.
+**Why this matters, and what it does NOT yet settle.** Every pair view carries a CSS base and an
+`emit()`, and two of them carry the week grid's CSS and `weekGrid()`, all copied — originally by
+hand, now by `npm run sync:views` — because the in-code comment said "there is nowhere to put a
+stylesheet". There is: the file would be served.
 What is still unmeasured is whether a `<script src>` or `<link rel="stylesheet">` inside a view
 actually LOADS once the pairing container has injected that view into its shared document, and if
 so whether it runs before the view's own inline boot code.
@@ -534,13 +540,19 @@ Expected is not measured. **The test is one minute with the Homey app open:** ad
 driver, open the Daylight light's pairing screen, and read the app log — a pair view runs in the
 CLIENT, so `console.log` never reaches the Homey and the reply has to come back through `emit()`.
 
-**The same applies between drivers.** The API-key screen and the light picker are one screen each,
-used by both the controller and the schedule driver, and Homey will not follow a reference: each
-driver needs its own real file. So `drivers/schedule/pair/credential.html` and `targets.html` are
-copies too, made by the same script and compared by the same test. The credential view stays
-driver-agnostic because the **driver** tells it which view comes next (`nextView` on the
-`getCredentialStatus` reply) — a view that hardcoded `showView('source')` would silently strand the
-schedule flow, since `source` is not one of its screens.
+**The same applies between drivers.** Four screens are authored once and used by several drivers —
+the intro, the light picker, the review and the API-key screen — and Homey will not follow a
+reference: each driver needs its own real file. So `drivers/schedule/pair/intro.html`,
+`lights.html`, `review.html` and `credential.html` are copies of the controller's, made by the same
+script and compared by the same test.
+
+All four stay driver-agnostic the same way: the **driver** supplies the content and the destination
+in the reply, never the view. `getIntro` returns the title, the blurb, which hero to draw and the
+list of decisions; `getReview` returns the rows and which view each jumps back to; `listTargets`
+returns the step index, the step count and `nextView`; and `getCredentialStatus` returns `nextView`
+too — `'remote'` for the controller, `'lights'` for the schedule. A view that hardcoded
+`showView('remote')` would silently strand the schedule flow, since `remote` is not one of its
+screens.
 
 `test/unit/pair-view-styles.test.ts` discovers views from disk across every driver for the same
 reason: while it hardcoded `drivers/controller/pair`, a second driver's screens could break the
@@ -801,28 +813,40 @@ warm again at night — and they are ONE engine:
 
 | Device type | Stores | Asks for |
 |---|---|---|
-| **Circadian light** (`drivers/circadian/`) | two ends of the day | what warmest and coolest look like |
+| **Circadian light** (`drivers/circadian/`) | three zones of the day | what morning, midday and evening look like |
 | **Curve light** (`drivers/curve/`) | a list of points | every point, every time, and a colour per point |
 
 Neither is a schedule with more rows. A schedule fires AT a time; a curve has a value at EVERY
 minute, and that difference decides everything below.
 
-**The split, and why the shape is not a setting.** A five-point editor is a lot of screen for "warm
-at night, cool in the day", which is what most people want — so the circadian light asks two
-questions and supplies the shape itself (`SIMPLE_SHAPE` in `lib/circadian/simple-curve.ts`: warmest
-at 06:00, coolest at 11:00 and 15:00, warmest again at 21:00). Four points, not two, so each end is
-HELD: two points would have the curve only ever AT one of them for an instant, cooling all night on
-its way to midday. The segment from 21:00 round to 06:00 is warmest at both ends, so the whole night
-is flat — which cyclic interpolation makes true with no special case.
+**The split, and why the shape is not a point list.** A five-point editor is a lot of screen for
+"warm at night, cool in the day", which is what most people want — so the circadian light asks about
+three ZONES and supplies the shape itself. `zonePoints()` in `lib/circadian/simple-curve.ts` derives
+six points from them: each zone held flat, with a `ZONE_RAMP` (50 min) ramp either side of each
+boundary. Held, not two points, because two would have the curve only ever AT a value for an
+instant, cooling all night on its way to midday.
 
-The shape is a CONSTANT, derived on every register rather than stored. Two consequences, both
-deliberate: an installed device picks up an improved shape, and the moment the times become editable
-this device type is the Curve light with fewer fields. Somebody who wants their own times has one.
+**There are THREE boundaries, and the third is midnight.** Morning ends after sunrise and evening
+begins before sunset, which leaves morning and evening as independent temperatures either side of
+midnight — so midnight is a step change unless it is ramped like the other two. Cyclic
+interpolation makes the third ramp the same rule applied a third time rather than a special case.
+
+**Two of the three are anchored to the SUN, and that is the reason `sunTimes()` exists.** A boundary
+stored as "sunrise + 30m" survives the year; one stored as 06:51 is true for a day. The offsets are
+stepped in quarter-hours and capped at `MAX_OFFSET` (150 min), and `resolveBoundaries()` clamps at
+RESOLVE time rather than at storage: north of about 60° a short winter day can bring a stored pair
+of offsets into collision with no edit having taken place, and a clamp applied to the stored value
+would quietly rewrite what somebody chose. Where there is no sun to anchor to — a polar day, or a
+Homey that has never been told where it is — `FALLBACK_SUNRISE` and `FALLBACK_SUNSET` (06:00 and
+21:00) stand in, and the pairing screen says so rather than drawing marks it cannot place.
+
+The shape is still DERIVED on every register rather than stored, so an installed device picks up an
+improved shape; the zones and the two offsets are what is stored.
 
 **One registry serves both.** `app.curves` — a single `CircadianRuntimeManager` — because they are
 the same runtime, and sharing it is what keeps "ONE `setInterval` for every circadian device on the
 Homey" true across two device types rather than two timers over two maps. The circadian device's own
-`registry()` is a small adapter that expands its two ends into points on the way in and folds
+`registry()` is a small adapter that expands its three zones into points on the way in and folds
 `enabled` and `preStage` back on the way out; `kind` in each runtime's diagnostics is what tells the
 two apart on a settings page and in a bug report.
 
@@ -861,7 +885,7 @@ by hand went unnoticed and the next tick took it back.
   Flows to approximate a smooth curve would be worse in every direction, including putting these
   device types back behind an API key.
 - **Which is the real prize: no Flows means no Personal API Key.** Pairing is the light picker and
-  then the curve (or the two ends); there is no credential screen, `assessHealth()` has no credential
+  then the curve (or the day); there is no credential screen, `assessHealth()` has no credential
   leg, `app.ts` does not notify either on a credential change, and `liveDeviceIds()` in `api.ts`
   deliberately excludes BOTH — neither kind of id can appear in a Flow's bridge arguments, so
   counting them would only inflate the sweep's "live" count and stop its "nothing is running"
@@ -934,17 +958,17 @@ by hand went unnoticed and the next tick took it back.
 - **There is no migration BETWEEN the two device types**, and there cannot be: Homey has no way to
   change a device's driver. An existing circadian light becomes the simple one; a curve is a new
   device. Adding one is cheap — no API key, no Flows — which is what makes that acceptable.
-- **The anchor is a discriminated union from day one.** `{ kind: 'clock' }` is all that ships;
-  `{ kind: 'sun' }` is declared, refused by `sanitiseCurve()` and thrown on by `resolveAnchor()`, so
-  anchoring to real sunrise and sunset later is a new variant rather than a reshape of every stored
-  plan. **What it needed has since arrived, and the anchor is still refused.**
-  `homey:manager:geolocation` is now declared and `solarElevation()` in
-  `lib/daylight/solar-elevation.ts` is the solar maths (§16), so this is no longer blocked — it is
-  unbuilt. What is missing is the last step of the sum: `resolveAnchor()` wants the sunrise MINUTE,
-  and an elevation function gives an angle at an instant, so somebody has to solve it for the horizon
-  crossing and decide what that means on a day with no sunrise at all. Until then `sanitiseCurve()`
-  and `validateAnchor()` go on refusing it, because a half-working sun anchor is a curve that
-  silently sits at one colour.
+- **The anchor is a discriminated union from day one, and the second variant is now live.**
+  `{ kind: 'clock' }` was all that shipped; `{ kind: 'sun' }` was declared, refused by
+  `sanitiseCurve()` and thrown on by `resolveAnchor()`, so anchoring to real sunrise and sunset was
+  a new variant rather than a reshape of every stored plan. The last step of the sum arrived with
+  `sunTimes()` in `lib/daylight/solar-elevation.ts` — the hour-angle solution over the same NOAA
+  sequence, returning `null` where no crossing exists — so all three refusals were lifted together.
+  Together is the point: a sun anchor accepted by the sanitiser and thrown on by the resolver is a
+  curve that silently sits at one colour, which is why the variant was refused in three places
+  rather than one until every one of them could answer. `SUNRISE_ALTITUDE` is −0.833°, not 0 — the
+  sun's own radius plus atmospheric refraction, which is what "sunrise" means to everybody who is
+  not doing spherical trigonometry.
 
 ---
 
@@ -1214,10 +1238,39 @@ places were fixed on exactly that reasoning:
   change the thing it is reporting on**, and this one raised the floor by 12 MB to tell you a
   card id.
 
+### The floor moves with the house, and that was measured
+
+**Re-measured 13 September 2026 on the same Homey, now on firmware 13.5.0 with 32 apps and 123
+devices: a freshly installed app with four Lightkeeper devices sits at 68 MB, not 44.** Nine devices
+boot at 79 MB and settle near 98 once a controller and a schedule have reconciled.
+
+The obvious suspect was this app, and it was A/B'd rather than assumed. The 9 September build
+(`09e120a`) and the 13 September build were installed one after the other on that Homey, against the
+same four devices, each measured after a restart: **67.5 MB and 68.2 MB**. Identical within noise —
+so the doubling since the **36.6 MB** the same line recorded on 9 September is not in the app's code.
+
+Three things were ruled out on the way and are worth not re-deriving:
+
+| checked | measured |
+|---|---|
+| a steady leak | none: no per-tick growth at all, at either size. Both rise in STEPS over the first hour and then hold — nine devices 79 → 90 → 91.5 → 97 → 98 MB, four devices 68 → 75 — each step followed by minutes of a number that does not move at all. Measured at the settled level, four devices went **75.1 → 76.1 MB across fifteen idle minutes**, in two steps of half a megabyte. The steps shrink; whether they stop, over days, was not measured |
+| retention coming back | three consecutive catalogue-reading passes moved it 90.0 → 90.2 MB |
+| the diagnostics report paying for itself | ten `/diagnostics` calls cost nothing; ten `/` calls cost 0.6 MB |
+
+What environmental thing moved was **not** identified. The card catalogues are every installed app's
+cards, and the honest statement is that this house's grew — 1832 trigger cards and 1174 action cards
+on 13 September, 1.3 MB and 0.8 MB of JSON respectively. Note that those payloads are far smaller
+than the 11.6 MB above, which was measured against a payload carrying every translation; the floor a
+parse leaves behind is not the payload's size.
+
+The consequence for the pass: T59's ceiling is **100 MB**, and it is not a budget — see the constant's
+own docblock in `scripts/verify-hardware.mjs`. **Compare a reading only with another reading from the
+same house**, and reinstall before believing a high one.
+
 ### Where it stops, and what would move it
 
-**The app sits at ~44 MB once anything has read the trigger catalogue, against Homey's 30 MB
-guideline, and stopping there was a decision rather than an oversight.** `SourceDiscoveryService.discover()` genuinely needs every trigger card — the Web API
+**The app is substantially over Homey's 30 MB guideline, and stopping there was a decision rather
+than an oversight.** `SourceDiscoveryService.discover()` genuinely needs every trigger card — the Web API
 offers no server-side filter, and device-scoped cards are matched on card id (§4) — and it runs at
 every boot for every controller. One such read sets the floor.
 
@@ -1231,7 +1284,7 @@ Written down so the next person does not re-derive it. If the footprint has to c
 that is the lever, and it is the only one left: there is nothing else of this size to stop holding.
 
 `scripts/verify-hardware.mjs` encodes the outcome rather than the guideline — T59 reports the 30 MB
-guideline and FAILS only past a 50 MB ceiling, because a line that failed on every run is a line
+guideline and FAILS only past a 100 MB ceiling, because a line that failed on every run is a line
 nobody reads.
 
 Know what that line cannot do. It is a smoke check for a second bulk read appearing, and **not** a
@@ -1358,6 +1411,51 @@ defaults are one household's evidence, so they are recorded here rather than
 changed on the strength of it — but the shape of the answer is that a global
 `brightLux` cannot be right for both a south-facing kitchen and an interior
 room, and the sensor's own history is available at pairing time.
+
+### Insights answers the APP's own token, and a sensor's own week is the fix for 5/500
+
+**Established on hardware, 13 September 2026** — Homey Pro 2023, firmware 13.5.0-rc.4,
+homey-api 3.19.2.
+
+The section above ends by saying the sensor's own history is available at pairing time. It is, and
+from inside the app: `insights.getLogEntries({ id, resolution })` succeeds on the **app-token**
+client, for a device the app does not own. That is not obvious from §1 — the app token is refused
+for flow WRITES — but it is consistent with it, because every read succeeds and this is a read.
+
+Three things worth not re-deriving:
+
+- **There is no permission to add.** `homey-lib/assets/app/permissions.json` lists thirteen
+  permissions and `homey:manager:insights` is not among them; `homey:manager:api` is the only API
+  permission that exists, and Lightkeeper already declares it. So reading Insights widens the
+  App Store review surface by exactly nothing.
+- **The manager must be connected first.** `insights` is not in the default connect list; it is
+  added to `READ_MANAGERS` in `lib/homey-api-service.ts`. `connectManagers` treats a manager that
+  will not connect as degraded rather than fatal, and `readSensorWeek` answers `null` rather than
+  throwing, so a firmware that refuses this loses the week and keeps the app.
+- **The log id is `homey:device:<deviceId>:measure_luminance`**, and `resolution: 'last7Days'`
+  returns buckets fine enough to average into two-hour cells — 82 of 84 cells were covered for all
+  four sensors below, the two gaps being the rest of the current day.
+
+**What the four sensors in the reference house actually want.** Read through the app, 13 September
+2026, as `darkLux → brightLux` derived from each sensor's own week:
+
+| Sensor | night | middle of the day | derived span | the shipped default |
+|---|---|---|---|---|
+| Hue motion, Utility room | 1 lx | 31 lx | **2 → 20** | 5 → 500 |
+| Hue motion, Activity room | 1 lx | 41 lx | **2 → 50** | 5 → 500 |
+| Motion sensor, Kitchen | 1 lx | 271 lx | **2 → 200** | 5 → 500 |
+| Motion sensor, Studio | 1 lx | 454 lx | **2 → 500** | 5 → 500 |
+
+Only one of the four wants anything like 500, and it is the only one the default would have served.
+A response spanning 5 → 500 in the Utility room sits near its dark end all day and holds the lamps
+near full — the failure §16 predicted from a 24-hour sample, now measured across a week on four
+sensors at once. **This is the argument for pre-filling both thresholds from the sensor rather than
+from a constant**, and it is why the pairing screen draws the week rather than asserting the numbers.
+
+One incidental correction to the table in the previous subsection: the Utility room and Studio
+sensors were recorded there as FROZEN, last reporting 52.6 and 58.9 days earlier. Both report
+normally now, so that reading was of two sensors that have since been replaced or re-paired — the
+frozen-sensor rule it motivated is unaffected, but the specific sensors are no longer examples of it.
 
 ## 17. The app sandbox: no RSS, and `onUninit` does not finish
 

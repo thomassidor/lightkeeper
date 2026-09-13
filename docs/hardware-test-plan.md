@@ -70,13 +70,65 @@ The script cannot do these. Report each by its number.
 - [ ] **T9** Press the mapped button. The lights respond.
 - [ ] **T10** Hold the ramp button. It ramps, and **stops when you let go** — and never runs longer than about 10 seconds.
 - [ ] **T11** Turn the dial. The lights move by a sensible amount — **not** straight to full.
-- [ ] **T53** Run `npm run render:views` and open `.views/index.html`. Every pairing screen, on one page. Anything that looks wrong, say which screen. *30 Aug 2026: 11 screens rendered; the two new ones (`curve/curve.html`, `circadian/ends.html`) were read and are correct. The other nine still want a human eye.*
+- [ ] **T53** Run `npm run render:views` and open `.views/index.html`. Every pairing screen, on one page. Anything that looks wrong, say which screen. *13 Sep 2026: all 15 authored screens rendered and compared against the design canvases in `docs/design/`. They still want a human eye on a phone, which is what T112 is.*
 - [ ] **T54** Anything you noticed while pairing by hand in step 1 that looked or read wrong.
 
 ## 4. This release
 
-**0.6.0, final section — what a week of real evidence found, and the five fixes that came out of
-it.**
+**0.6.0, last section of all — every pairing screen redrawn, and four engines reshaped under them.**
+
+Nothing in this block can be checked by the script, and that is the point: `verify-hardware.mjs`
+drives pair sessions over the Web API (platform §14), so it proves the HANDLERS answer. It cannot
+see a screen. Every line here needs a phone.
+
+- [ ] **T112** Pair one of each of the five device types by hand, end to end, on the phone. Each
+      one opens with an intro naming what it will ask, then numbered steps, then a review. Every
+      row on the review that carries a chevron jumps back to the step that owns it, and coming
+      back forward keeps what you had already chosen. Report any screen whose wording or layout
+      reads wrong — this is the only pass in which a person sees them at the size they ship at.
+- [ ] **T113** The credential screen's two behaviours, in order. With **no** key stored, add a
+      light controller: the key screen appears after the intro and before step 1, and refuses to
+      go on until a key is accepted. Then add a **second** controller: it must pass straight
+      through with no visible flash of the form. This is the whole argument for moving the screen
+      to the front, and the flash is the one thing that would undo it.
+- [ ] **T114** The circadian day strip, which is the only drag target in the app. A horizontal
+      drag on it must move the boundary and **not** scroll the pairing sheet underneath. If the
+      sheet moves, the fix is `touch-action: none` on the strip. Check the sunrise and sunset
+      marks against the Homey's own sunrise and sunset for today — they must agree to the minute.
+      Then step a boundary to each of its ends: it must stop rather than crossing the other zone.
+- [ ] **T115** A circadian light with **no** location set on the Homey (Homey settings →
+      Location, cleared). The day screen must say it is falling back to fixed times rather than
+      drawing marks it cannot place, and the device must still run. Put the location back
+      afterwards.
+- [ ] **T116** The sensor week, on real Insights data. Add a Daylight light and open a sensor's
+      detail screen: the grid must show seven rows with a visible night and day, a scale carrying
+      the sensor's own low and high, and a verdict sentence with numbers in it. Do it for a sensor
+      you know to be **frozen** as well — it must say so and name the date it stopped. If the grid
+      is empty for a sensor that plainly has history, the Insights manager did not connect; the app
+      log says so and the screen falls back to the defaults rather than failing.
+- [ ] **T117** Press-to-find, on a real remote. Open the controller's listen screen and press a
+      button within the thirty seconds: it must hear it and move on. Then open it again and press
+      **nothing** — it must give up on its own, say so, and leave "pick from the list instead"
+      reachable throughout. Last, try it with a card-only remote (platform §4): it will hear
+      nothing, which is correct, and the list escape is the whole reason it is there.
+- [ ] **T118** Two overlapping schedule blocks over the same lights. The screen must draw the
+      overlap and say the later block wins, and must **not** refuse the second block or block
+      Next. Then leave the device running across both boundaries and confirm the lamps do what the
+      screen promised.
+- [ ] **T119** The two new controller jobs, on real lamps: **a set brightness** and **step through
+      warm and cool**. Assign each to a button, use Test on the job screen, then press the real
+      button. The brightness job must land on the value you chose, and the temperature job must
+      advance one step per press rather than jumping to an end.
+- [ ] **T120** "Select all" in a room, on the light picker. Tick every light in one room and
+      nothing elsewhere: the review must say the device follows the ROOM. Save it, then add a lamp
+      to that room in Homey and confirm the device picks it up with no repair. Untick one light
+      instead and the review must say it follows named lights.
+- [ ] **T121** The clean slate. Any Lightkeeper device paired before this build must come up
+      **unavailable with a message**, not silently broken and not quietly reset — there are no
+      migrations in this release on purpose. Delete and re-add it, and confirm the new one works.
+
+**0.6.0, the section before that — what a week of real evidence found, and the five fixes that came
+out of it.**
 
 Unusually, these lines are not written from first principles: every one of them re-runs a
 behaviour that a 3.83-day recording on this same Homey caught getting it wrong.
@@ -203,6 +255,102 @@ has something it should not.
       Confirm failure restores the previous configuration, including after restart. Repeat with
       first setup and failed recovery: no candidate should keep controlling lights. Do not fill
       or damage the Homey's actual storage to induce this failure.
+
+### Last run — 13 September 2026 (evening), firmware 13.5.0, app 0.6.0 + the pairing rewrite
+
+Run **twice**, in **Studio** and then in **Garage**, because the pass takes its test lamps from one
+room and the two rooms have different integrations behind them. Both runs: **72 OK, 1 failed,
+0 skipped.**
+
+**The one failure is the clean slate, and it is the designed behaviour** — T121, confirmed on
+hardware. 0.6.0 resets all five migration chains rather than extending them, so the four devices
+this Homey already had come up unavailable with *"This device was set up by a newer version of
+Lightkeeper"*. `runMigrationChain` refuses a plan whose `schemaVersion` is newer than it can read
+and `DeviceLifecycle` quarantines on that, which is exactly what a stored plan from before the
+rewrite should do. They need deleting and re-adding by hand; nothing else recovers them, and
+nothing about them is broken in a way a fix would help.
+
+**The pass found two real defects, and neither was reachable any other way.**
+
+- **`catalog.devices()` and `catalog.getDevice()` are not methods.** They are `allDevices()` and
+  `device()`. Six call sites across three drivers, all added by the pairing rewrite, all invisible
+  to `tsc`, to the suite and to `validate` — because every driver's `private get app()` was typed
+  `any`, so `this.app.catalog.anything()` compiled. On hardware they threw the moment a real
+  screen asked: the daylight light's sensor picker could not list a single sensor. Fixed, and the
+  accessor is now typed `LightkeeperApp` — `lib/app-contract.ts` was written for exactly this and
+  the drivers had never used it. Typing it immediately caught a second one: `applyReattach` passed
+  a possibly-`undefined` device into `discover()`, which would have re-attached a controller to an
+  empty event surface and left it with no mappings.
+- **Two warmth sliders ran backwards** — found in the render comparison rather than here, but it is
+  the same class: the job editor and the schedule block placed the knob at the raw `warmth`, where
+  1 is the warmest end (platform §6), on a track that runs candlelight-left to daylight-right.
+
+**Three lines in the script itself were stale**, which is what a pass that drives pair sessions over
+the Web API is for (platform §14): `getEnds`/`setEnds` became `getDay`/`setDay`, `getDaylight`
+became `getResponse` with `sensor` rather than `sensors`, and **T15 asserted the opposite of the
+new behaviour** — it required the later of an overlapping pair to be dropped, and 0.6.0 deliberately
+keeps both and reports the clash. A bare array also does not survive `emitPairingEvent` intact (it
+arrives as an object with numeric keys), so the schedule builder now sends `{ entries, days }`, the
+shape the screen sends. `POST /schedules/:id/entries` gained `days` and `overlaps` to match.
+
+**T60: 84.2 MB in Studio, 82.5 MB in Garage**, against the 100 MB ceiling and Homey's 30 MB
+guideline. In range of the 80.8 / 90.1 MB readings from this same house earlier the same day —
+compare a reading only with one from the same house.
+
+Still owed, and all of them need a person on a phone: T3, T9–T11, T54, and the new
+T112–T121 in [This release](#4-this-release).
+
+### Last run — 13 September 2026, Homey Pro 2023, firmware 13.5.0, app 0.6.0
+
+`full --yes`: **72 OK, 2 failed, 0 skipped**, plus a whole-house `probe-lights.mjs` run. Both
+failures were T59 and T60, and both are the memory reading — **every functional line passed**,
+including the two the rejoin checks exist for (a lamp taken over by hand and given back on a power
+cycle, on both a circadian and a Curve light), the credential removal and recovery, and a teardown
+that left the four devices of this Homey's own untouched.
+
+**T59/T60: the footprint doubled, and it is not this app's code.** 71.8 MB at the start of the pass
+and 90.1 MB at the end, against a 50 MB ceiling — where the same line read 36.6 MB on a fresh install
+four days earlier. So it was A/B'd rather than explained: the 9 September build (`09e120a`) and the
+13 September build were installed one after the other, against the same four devices, each measured
+after a restart. **67.5 MB and 68.2 MB.** Identical within noise. A steady leak was ruled out (no per-tick
+growth at either size: both rise in steps over the first hour and then hold — four devices settled
+at 75.1 MB and moved 1.0 MB across fifteen idle minutes), retention coming back was ruled out (three catalogue-reading passes moved it
+0.2 MB), and `/diagnostics` was ruled out (ten calls cost nothing). What in the house moved was **not**
+identified. The ceiling is now 100 MB and the line says what it can and cannot know; platform §15 has
+the tables. **The app remains substantially over Homey's 30 MB guideline — that is unchanged, known,
+and the lever for it is still incremental parsing.**
+
+**The light probe ran over the whole house — 55 lamps across 9 integrations — and found nothing the
+app gets wrong.** 20 lamps confirm `impliesOn` (a `dim` write turns an off lamp on), 8 pre-stage
+successfully, and **no lamp in 55 gated a value behind `light_mode`** — consistent with the 1-in-36
+rate that argued for writing the mode unconditionally. Every finding maps to an assumption already
+documented and holding.
+
+**It found three defects in the probe itself, all fixed here.**
+
+- **A restore that could not put two Hue bulbs back.** `dim` was written first, and on a lamp found
+  OFF the snapshot's `dim` is 0 — which a Hue treats as soft off, so every colour and temperature
+  write after it was refused (`command (.color.xy) may not have effect`) and the run ended telling a
+  person to set two lamps by hand. `dim` now goes last among the values. Replaying the same values in
+  that order restored both bulbs exactly, which is the fix's own proof; `restorePlan()` is lifted out
+  and unit-tested.
+- **It woke a Synology NAS it had already been told it could not switch off.** The device answered the
+  probe's off write with `Device is always-on`, was switched ON for the echo step, and then refused
+  both writes that would have put it back. A device that refuses to be switched off is now never
+  switched on — guarded in `write()`, where a fourth step cannot forget it — and says so as
+  `PROBE_ONE_WAY_POWER`. **The NAS is still on; the Homey integration cannot switch it off, so that
+  is a person's call rather than a script's.**
+- **Two reporting faults.** A one-lamp run against a device that refused every write published
+  `PROBE_SUSPECT_CACHE` at critical — whose own text says to believe nothing else in the report —
+  because its population counted lamps that had taken no write. And the headline count double-counted
+  run-level findings, showing 4 over a breakdown of 3.
+
+**T53 was rendered — all 13 screens, at each screen's own height.** The daylight card and the curve
+screen were read and are correct. The other eleven still want an eye.
+
+**Still needs a person.** T3, T9, T10, T11, T54 as ever, and this release's physical lines T102, T103,
+T105, T106 — plus T107–T111, which are the recorder-backed ones and were not run: the recorder is
+built out of a launch build, and what is installed on this Homey is a launch build.
 
 ### Last run — 9 September 2026, Homey Pro 2023, firmware 13.5.0, app 0.7.0
 

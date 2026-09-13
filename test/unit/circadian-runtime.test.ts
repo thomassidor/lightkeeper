@@ -1317,113 +1317,14 @@ describe('the diagnostics can describe a Curve light', () => {
   });
 });
 
-describe('a curve point whose brightness follows the daylight', () => {
-  const RESPONSE = {
-    sensors: ['s1'], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25,
-    sunPeak: 'none' as const,
-  };
-
-  const evaluator = (brightness: number, source = 'sensors') => ({
-    evaluate: () => ({ brightness, source }),
-  });
-
-  /** Both points follow the daylight, so the whole curve does. */
-  const following = (over: Partial<CircadianPlan> = {}) => plan({
-    points: [
-      { id: 'day', anchor: { kind: 'clock', at: 12 * 60 }, warmth: 0.2, brightness: 0.5, fromDaylight: true },
-      { id: 'night', anchor: { kind: 'clock', at: 23 * 60 }, warmth: 1, brightness: 0.5, fromDaylight: true },
-    ],
-    adjustBrightness: true,
-    daylight: RESPONSE,
-    ...over,
-  });
-
-  test('the curve reads the daylight, not the stored number', async () => {
-    const h = harness({ plan: following(), daylight: evaluator(0.8) });
-    await h.runtime.start();
-    await h.runtime.drain();
-
-    // Both points at the same daylight brightness, so every minute of the day
-    // is that brightness however the interpolation lands.
-    assert.equal(h.runtime.currentValue()!.brightness, 0.8);
-  });
-
-  test('and it FOLLOWS: a later tick reads it again', async () => {
-    /**
-     * The difference from a schedule window, which samples once at its boundary.
-     * A curve has a value at every minute and a tick to re-ask on, so this
-     * really does track the room — and that is the reason both device types
-     * exist rather than one.
-     */
-    let brightness = 0.9;
-    const h = harness({
-      plan: following(),
-      daylight: { evaluate: () => ({ brightness, source: 'sensors' }) },
-    });
-    await h.runtime.start();
-    await h.runtime.drain();
-    assert.equal(h.runtime.currentValue()!.brightness, 0.9);
-
-    // A cloud passes.
-    brightness = 0.3;
-    assert.equal(h.runtime.currentValue()!.brightness, 0.3);
-  });
-
-  test('a point that does NOT follow keeps its own number, in the same curve', async () => {
-    // A mixed curve is the interesting case: the segment between a fixed point
-    // and a daylight one has to be an ordinary blend, which is exactly what
-    // resolving to numbers before valueAt() buys.
-    const h = harness({
-      plan: following({
-        points: [
-          { id: 'day', anchor: { kind: 'clock', at: 12 * 60 }, warmth: 0.2, brightness: 0.4 },
-          { id: 'night', anchor: { kind: 'clock', at: 23 * 60 }, warmth: 1, brightness: 0.5, fromDaylight: true },
-        ],
-      }),
-      daylight: evaluator(0.9),
-      // 22:15 Copenhagen: an hour before the night point, deep in the segment.
-      now: EVENING,
-    });
-    await h.runtime.start();
-
-    const brightness = h.runtime.currentValue()!.brightness!;
-    assert.ok(brightness > 0.4 && brightness < 0.9, `expected a blend, got ${brightness}`);
-  });
-
-  test('falls back to the stored numbers when nothing can tell how light it is', async () => {
-    const h = harness({ plan: following(), daylight: evaluator(0.8, 'none') });
-    await h.runtime.start();
-
-    assert.equal(h.runtime.currentValue()!.brightness, 0.5);
-  });
-
-  test('falls back with a response but no evaluator wired', async () => {
-    const h = harness({ plan: following() });
-    await h.runtime.start();
-
-    assert.equal(h.runtime.currentValue()!.brightness, 0.5);
-  });
-
-  test('a curve with no daylight response pays nothing for the feature', async () => {
-    // The plan's own array is returned untouched — not even an allocation — so a
-    // curve that does not use this is exactly as it was.
-    const h = harness({ plan: plan(), daylight: evaluator(0.8) });
-    await h.runtime.start();
-
-    assert.equal(h.runtime.currentValue()!.brightness, undefined);
-  });
-
-  test('the report names which points follow the daylight', async () => {
-    const h = harness({ plan: following(), daylight: evaluator(0.8) });
-    await h.runtime.start();
-
-    const points = h.runtime.diagnostics().points;
-    assert.deepEqual(points.map(p => p.fromDaylight), [true, true]);
-    // The stored fallback is reported beside it, because "it used 50% when it
-    // should have followed the room" needs both numbers to tell apart.
-    assert.deepEqual(points.map(p => p.brightness), [0.5, 0.5]);
-  });
-});
+/**
+ * "A curve point whose brightness follows the daylight" used to be a block here.
+ *
+ * `fromDaylight` is gone from a curve point, along with the inline `daylight`
+ * response on the plan: brightness from the room is what a Daylight light is
+ * for, and offering it on four device types meant four screens carrying the same
+ * 250-line card. `daylight-runtime.test.ts` is where following the room lives.
+ */
 
 
 test('circadian power restoration cannot create an override before its write completes', async () => {

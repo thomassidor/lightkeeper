@@ -1,0 +1,60 @@
+/* ==== shared week grid: identical wherever it appears ====
+   GENERATED. Spliced by `npm run sync:views` from views/shared/week-grid.css,
+   where ROOT-ID stands in for each view's own root element id. **Edit that
+   file, not this one.**
+
+   A sensor's own last week, as 7 rows of 12 two-hour cells. It appears on the
+   response screen, under the two lux numbers it is the evidence for, and on
+   the detail screen a sensor row pushes. Both draw the same picture, so both
+   splice the same block. */
+#ROOT .week { background: var(--lk-surface); border: 1px solid var(--lk-line);
+              border-radius: 14px; box-shadow: var(--lk-shadow);
+              padding: 14px; margin-bottom: 14px; }
+/* Name over span, with a rule under both: the header is a caption on the
+   picture below it rather than a row of two unrelated readings. */
+#ROOT .week-head { padding-bottom: 12px; margin-bottom: 14px;
+                   border-bottom: 1px solid var(--lk-line); }
+#ROOT .week-head .name { font-size: 15px; font-weight: 600; }
+#ROOT .week-head .span { display: block; font-size: 12.5px; color: var(--lk-muted);
+                         margin-top: 2px; }
+
+#ROOT .week-row { display: flex; align-items: center; gap: 3px; margin-bottom: 3px; }
+/* `week-day`, not `day`. The shared base already styles `.day` as the day STRIP
+   — 104px tall with its own overflow — and a label that borrowed the name
+   inherited all of it: the first render put every weekday in a 104px block and
+   pushed its own row off to the side. Scoping protects one view from another;
+   inside a view, only the name does. */
+#ROOT .week-row .week-day { flex: none; width: 26px; font-size: 10px; color: var(--lk-faint); }
+#ROOT .week-row i { flex: 1; height: 11px; border-radius: 2px; }
+
+/* A cell with no reading is HATCHED, never dark. A gap has to read as "no
+   reading" rather than as "pitch dark" — the sensor that stopped on Saturday
+   lunchtime is the case this exists for, and drawing it black would argue for
+   a dark threshold the room never actually met. */
+#ROOT .week-row i.gap {
+  background: repeating-linear-gradient(45deg,
+    var(--lk-line) 0, var(--lk-line) 2px,
+    var(--lk-surface) 2px, var(--lk-surface) 4px);
+}
+
+#ROOT .week-hours { display: flex; justify-content: space-between;
+                    font-size: 11px; color: var(--lk-muted);
+                    margin: 6px 0 0 29px; }
+
+/* The live reading, ticked on the same scale the cells are drawn on, so the
+   two lux numbers below are never abstract. */
+#ROOT .week-scale { display: flex; align-items: center; gap: 8px;
+                    margin-top: 12px; font-size: 11.5px; color: var(--lk-muted); }
+#ROOT .week-scale .bar { flex: 1; position: relative; height: 8px; border-radius: 999px;
+                         background: linear-gradient(90deg,
+                           var(--lk-accent) 0%, var(--lk-accent-line) 100%); }
+#ROOT .week-scale .tick { position: absolute; top: -5px; bottom: -5px; width: 2px;
+                          margin-left: -1px; background: var(--lk-ink); }
+#ROOT .week-scale .tickLabel { position: absolute; top: -20px; transform: translateX(-50%);
+                               font-size: 11px; font-weight: 600; color: var(--lk-ink);
+                               white-space: nowrap; }
+
+#ROOT .week-verdict { font-size: 13px; line-height: 1.5; color: var(--lk-body);
+                      margin-top: 14px; }
+#ROOT .week-verdict b { color: var(--lk-ink); }
+/* ==== end shared week grid ==== */

@@ -1,9 +1,13 @@
 import { validateTarget } from './plans';
-import { requireArray, requireOneOf, requireRecord, requireString, fail } from './guards';
+import {
+  requireArray, requireOneOf, requireRecord, requireString, requireUnitInterval, fail,
+} from './guards';
 import type { DeviceCatalog } from '../device-catalog';
 import type { TargetSpec } from '../outputs/light-intent';
 import type { LightFunction } from '../mapping/mapping-types';
-import { FUNCTION_CAPABILITY } from '../mapping/mapping-types';
+import {
+  FUNCTION_CAPABILITY, FUNCTION_NEEDS_PRESET, type MappingPreset,
+} from '../mapping/mapping-types';
 import { LUMINANCE_CAPABILITY } from '../daylight/daylight-types';
 
 /**
@@ -99,9 +103,13 @@ export async function validateTargetAgainstCatalog(
  * service is ref-counted per owner, so a sensor named twice would be retained
  * twice and released once.
  *
- * `response.sensors` rather than `daylight.sensors` as the field path, because
- * `daylight` is a top-level group in `en.json` and `locales.test.ts` reads any
- * `'<group>.<rest>'` literal in source as a referenced locale key.
+ * `daylightResponse.sensor` rather than `daylight.sensors` or `response.sensor`
+ * as the field path, and the reason is worth keeping: `locales.test.ts` reads
+ * any `'<group>.<rest>'` literal in source as a referenced locale key, and BOTH
+ * `daylight` and `response` are top-level groups in `en.json`. The first
+ * collision was dodged by picking `response`; the pairing rewrite then made
+ * `response` a group too, which is exactly the kind of drift the note exists to
+ * survive. `daylightResponse` is not a group and reads as the field it names.
  */
 export async function validateSensorsAgainstCatalog(
   sensorIds: readonly string[],
@@ -119,7 +127,7 @@ export async function validateSensorsAgainstCatalog(
   const unknown = sensorIds.filter(id => !usable.has(id));
   if (unknown.length > 0) {
     fail(
-      'response.sensors',
+      'daylightResponse.sensor',
       `names ${unknown.length} device(s) that cannot report how light it is`,
     );
   }
@@ -133,6 +141,8 @@ export interface MappingRuleDto {
   inputKey: string | null;
   /** '__all__' inherits the controller's own targets; anything else is a device id. */
   groupKey: string;
+  /** Required by `brightness_set`, refused by every other function. */
+  preset?: MappingPreset;
 }
 
 /**
@@ -156,6 +166,16 @@ export interface MappingRuleDto {
  * Dropping and reporting is what `dedupeByInputKey`, `sanitiseEntries` and
  * `sanitiseCurve` all already do with their own payloads.
  */
+function readPreset(raw: unknown, path: string): MappingPreset {
+  const preset = requireRecord(raw, path);
+  return {
+    brightness: requireUnitInterval(preset.brightness, `${path}.brightness`),
+    ...(preset.temperature !== undefined
+      ? { temperature: requireUnitInterval(preset.temperature, `${path}.temperature`) }
+      : {}),
+  };
+}
+
 export function validateMappingRules(
   raw: unknown,
   selected: ReadonlySet<string>,
@@ -208,7 +228,34 @@ export function validateMappingRules(
     const func = requireOneOf(rule.function, `${path}.function`, offered);
     if (!(func in FUNCTION_CAPABILITY)) fail(`${path}.function`, 'is not a light function');
 
-    rules.push({ id, function: func, inputKey, groupKey });
+    /**
+     * The value a function needs, where its name is not enough — and BOTH
+     * halves of the rule are enforced.
+     *
+     * A `brightness_set` with no preset is dropped rather than thrown, because
+     * it is a row the screen can legitimately be mid-way through: the user has
+     * picked the job and not yet chosen the brightness. A preset on any other
+     * function is dropped too, because it is a value nothing will ever read and
+     * keeping it would leave a stored rule nobody can explain.
+     */
+    const needsPreset = FUNCTION_NEEDS_PRESET[func];
+    const preset = rule.preset === undefined || rule.preset === null
+      ? undefined
+      : readPreset(rule.preset, `${path}.preset`);
+
+    if (needsPreset && preset === undefined) {
+      dropped.push({ index: i, reason: 'has no brightness to set' });
+      return;
+    }
+    if (!needsPreset && preset !== undefined) {
+      dropped.push({ index: i, reason: `"${func}" does not take a brightness` });
+      return;
+    }
+
+    rules.push({
+      id, function: func, inputKey, groupKey,
+      ...(preset !== undefined ? { preset } : {}),
+    });
   });
 
   return { rules, dropped };

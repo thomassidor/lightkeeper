@@ -3,7 +3,9 @@
     "en": "Light schedule"
   },
   "class": "service",
-  "capabilities": ["onoff"],
+  "capabilities": [
+    "onoff"
+  ],
   "capabilitiesOptions": {
     "onoff": {
       "title": {
@@ -11,8 +13,12 @@
       }
     }
   },
-  "platforms": ["local"],
-  "connectivity": ["lan"],
+  "platforms": [
+    "local"
+  ],
+  "connectivity": [
+    "lan"
+  ],
   "images": {
     "small": "/drivers/schedule/assets/images/small.png",
     "large": "/drivers/schedule/assets/images/large.png",
@@ -20,30 +26,70 @@
   },
   "pair": [
     {
+      "id": "intro",
+      "navigation": {
+        "next": "credential"
+      }
+    },
+    {
       "id": "credential",
-      "navigation": { "next": "targets" }
+      "navigation": {
+        "next": "lights"
+      }
     },
     {
-      "id": "targets",
-      "navigation": { "next": "schedule" }
+      "id": "lights",
+      "navigation": {
+        "prev": "credential",
+        "next": "blocks"
+      }
     },
     {
-      "id": "schedule",
-      "navigation": { "prev": "targets" }
+      "id": "blocks",
+      "navigation": {
+        "prev": "lights",
+        "next": "review"
+      }
+    },
+    {
+      "id": "review",
+      "navigation": {
+        "prev": "blocks"
+      }
     }
   ],
   "repair": [
     {
+      "id": "intro",
+      "navigation": {
+        "next": "credential"
+      }
+    },
+    {
       "id": "credential",
-      "navigation": { "next": "targets" }
+      "navigation": {
+        "next": "lights"
+      }
     },
     {
-      "id": "targets",
-      "navigation": { "next": "schedule" }
+      "id": "lights",
+      "navigation": {
+        "prev": "credential",
+        "next": "blocks"
+      }
     },
     {
-      "id": "schedule",
-      "navigation": { "prev": "targets" }
+      "id": "blocks",
+      "navigation": {
+        "prev": "lights",
+        "next": "review"
+      }
+    },
+    {
+      "id": "review",
+      "navigation": {
+        "prev": "blocks"
+      }
     }
   ]
 }

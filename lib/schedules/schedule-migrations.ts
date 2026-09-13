@@ -1,8 +1,6 @@
 import type { SchedulePlan } from './schedule-types';
-import { withFlooredBrightness } from '../outputs/light-intent';
 import { runMigrationChain, type MigrationResult, type MigrationStep } from '../support/migrations';
 import { validateSchedulePlan } from '../validation/plans';
-import { isRecord } from '../validation/guards';
 /**
  * A schedule plan's own migration chain, separate from the controller profile's.
  *
@@ -16,66 +14,26 @@ import { isRecord } from '../validation/guards';
  * The three chains stay separate; the RUNNER does not. It lives in
  * `lib/support/migrations.ts`, and it is what now ends every chain in a
  * validator rather than a cast.
+ *
+ * **The table is empty, and that is a deliberate reset rather than an omission.**
+ * The pairing rewrite changed this stored shape in ways no honest step could
+ * carry an old plan across. Nothing had shipped, so the installed base was one
+ * Homey and its owner chose the clean slate over a migration inventing values
+ * nobody had chosen.
+ *
+ * A device carrying an older plan needs no step here — that case is already
+ * built: `runMigrationChain` refuses a `schemaVersion` higher than it knows and
+ * `DeviceLifecycle` quarantines the device with its store untouched, so it comes
+ * up unavailable with a reason rather than running on a plan nobody can vouch
+ * for. Delete it and add it again.
  */
 
-export const CURRENT_SCHEDULE_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEDULE_SCHEMA_VERSION = 1;
 
 export type ScheduleMigration = MigrationStep;
 
-/** Keyed by the version being migrated FROM. */
-const SCHEDULE_MIGRATIONS: Record<number, ScheduleMigration> = {
-  // 0 → 1: plans written before schemaVersion existed. None shipped, but the
-  // step exists so version 0 is never a special case in the loop below.
-  0: plan => ({
-    ...plan,
-    schemaVersion: 1,
-    enabled: plan.enabled ?? true,
-    entries: plan.entries ?? [],
-    managedFlows: plan.managedFlows ?? [],
-  }),
-
-  /**
-   * 1 → 2: every window's brightness comes up to the floor.
-   *
-   * A brightness below the floor is one the lamp could not show.
-   *
-   * The sliders used to start at 5%, and 5% is inside the band that quantises to
-   * `dim` 0.00 — off, on most lamps (see MINIMUM_BRIGHTNESS). So the dimmest
-   * setting they offered was the one that meant darkness, and a stored plan can
-   * be carrying it.
-   *
-   * Lifting it here rather than only flooring it at write time is what keeps the
-   * screens honest: a stored 5% loaded into a slider that now starts at 10%
-   * DISPLAYS 10% while the plan still says 5%, so the card would show one number
-   * and save another. `litDim` in the intent planner still floors the write, for
-   * a plan that reaches the engine another way.
-   */
-  1: plan => ({
-    ...plan,
-    schemaVersion: 2,
-    // Guarded rather than assumed: a step runs before the chain's validator, so
-    // `entries` may be anything at all.
-    entries: Array.isArray(plan.entries) ? plan.entries.map(withFlooredBrightness) : plan.entries,
-  }),
-  /**
-   * 2 → 3: the daylight response learns when its room gets the sun.
-   *
-   * `sunPeak` answers "when does this room get the most sun", and `'none'` means
-   * "do not model it" — the elevation ramp alone, which is exactly what every
-   * plan written before this field did. So the step is a no-op in behaviour and
-   * exists only so the schema version keeps describing one shape.
-   *
-   * Guarded on the response being THERE: `daylight` is optional on this plan,
-   * and a plan without one has nothing to add a field to.
-   */
-  2: plan => ({
-    ...plan,
-    schemaVersion: 3,
-    ...(isRecord(plan.daylight)
-      ? { daylight: { sunPeak: 'none', ...plan.daylight } }
-      : {}),
-  }),
-};
+/** Keyed by the version being migrated FROM. Empty: see the header. */
+const SCHEDULE_MIGRATIONS: Record<number, ScheduleMigration> = {};
 
 export function migrateSchedulePlan(raw: unknown): MigrationResult<SchedulePlan> {
   return runMigrationChain(raw, {

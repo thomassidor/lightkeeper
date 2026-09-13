@@ -1095,27 +1095,41 @@ const MEMORY_GUIDELINE_MB = 30;
 /**
  * The accepted ceiling, and the number that actually fails this line.
  *
- * Measured 30 August 2026 on Homey Pro 2023, the same app minutes apart:
- * **31.9 MB** before it had read a flow card catalogue, **43.9 MB** immediately
- * after one, and 45.2 MB at the end of a `full` pass. One ~11.6 MB catalogue
- * read costs ~12 MB of floor and V8 never gives those pages back (platform
- * §15), so ~44 MB is the state of any Homey running a controller, a schedule,
- * or that has paired anything. Going lower would mean parsing that response
- * incrementally instead of through `homey-api`; it was costed and declined.
- *
- * 50 rather than 46, because the reading moves with how many apps are installed
- * on the Homey — it is every app's cards being parsed, and this is one house.
- *
- * BE HONEST ABOUT WHAT THIS LINE CAN AND CANNOT CATCH. It is a smoke check for
- * something going badly wrong — a second catalogue read reintroduced, a new
- * bulk fetch — and nothing finer. It CANNOT catch retention coming back:
- * holding a parsed catalogue and merely having parsed one cost the same RSS,
- * because the pages are the same pages and neither is returned. The sharp
+ * IT IS NOT A BUDGET AND IT IS NOT A REGRESSION TEST. It is a smoke check for
+ * something going badly wrong — a second catalogue read reintroduced, a new bulk
+ * fetch — and nothing finer. It CANNOT catch retention coming back: holding a
+ * parsed catalogue and merely having parsed one cost the same RSS, because the
+ * pages are the same pages and neither is returned (platform §15). The sharp
  * signal for that is the app's own `heapUsed` after a read (a few MB when it
- * lets go, ~17 MB higher when it does not), which the app does not expose.
- * If this ever needs to be a real regression test, that is what to add.
+ * lets go, ~17 MB higher when it does not), which the app does not expose. If
+ * this ever needs to be a real regression test, that is what to add.
+ *
+ * The number is where it is because THE FLOOR MOVES WITH THE HOUSE, not with
+ * this app's code — established by A/B on hardware, 13 September 2026. Two
+ * builds four days apart, installed one after the other on the same Homey
+ * (firmware 13.5.0, 32 apps, 123 devices) against the same four Lightkeeper
+ * devices, measured after a restart each time:
+ *
+ * | build | devices | PSS |
+ * |---|---|---|
+ * | 9 September (09e120a) | 4 | 67.5 MB |
+ * | 13 September (HEAD)   | 4 | 68.2 MB |
+ * | 13 September (HEAD)   | 9 | 79 MB at boot, ~98 MB once a controller and a schedule had reconciled |
+ *
+ * Identical within noise — so the doubling since the **36.6 MB** this same line
+ * recorded on 9 September (see the run record in `docs/hardware-test-plan.md`)
+ * is not in the app. What environmental thing moved was NOT identified: the
+ * card catalogues are every installed app's cards, and this house's grew. Three
+ * things were ruled out and are worth not re-deriving — it is flat over 25
+ * minutes rather than climbing, repeated catalogue reads cost ~0.2 MB across
+ * three passes, and `/diagnostics` costs nothing.
+ *
+ * So 100 rather than 50: above a nine-device house with headroom, because a
+ * line that fails on every run is one nobody reads. A user's Homey varies the
+ * same way this one did. Homey's own 30 MB guideline is reported on every run
+ * regardless, and the app is deliberately and substantially over it.
  */
-const MEMORY_CEILING_MB = 50;
+const MEMORY_CEILING_MB = 100;
 
 /**
  * Three-way, because "over Homey's guideline" and "worse than we accepted" are
@@ -1127,14 +1141,22 @@ const MEMORY_CEILING_MB = 50;
  */
 function verdictFor(megabytes, detail) {
   if (megabytes > MEMORY_CEILING_MB) {
+    // Deliberately NOT a diagnosis. This line used to say "something is reading
+    // more than the one trigger catalogue the app accepts", and on
+    // 13 September 2026 that was wrong: two builds four days apart measured the
+    // same, so nothing in the app had changed. A reading is a reading.
     return ['FAILED', `${detail} — past the ${MEMORY_CEILING_MB} MB ceiling. `
-      + 'Something is reading more than the one trigger catalogue the app accepts; '
-      + 'see platform §15.'];
+      + 'Reinstall and read it again before believing it — this is the high-water mark of one '
+      + 'app lifetime, not a floor. If a fresh install reads the same, compare the previous '
+      + 'build the same way before looking for the cause in this one (platform §15).'];
   }
   if (megabytes > MEMORY_GUIDELINE_MB) {
-    return ['INFO', `${detail} — over Homey's ${MEMORY_GUIDELINE_MB} MB guideline and inside the `
-      + `${MEMORY_CEILING_MB} MB we accepted. Expected: the remaining cost is the high-water mark `
-      + 'of one catalogue parse, not anything held (platform §15).'];
+    // No explanation offered, because the honest one is a range. A catalogue
+    // parse is ~12 MB of it and nothing is retained (platform §15); the rest
+    // moves with the house, and 13 September's A/B could not say what in it.
+    return ['INFO', `${detail} — over Homey's ${MEMORY_GUIDELINE_MB} MB guideline, inside the `
+      + `${MEMORY_CEILING_MB} MB ceiling. The app is deliberately over the guideline; how far `
+      + 'depends on the Homey, so compare a reading with one from the same house.'];
   }
   return ['OK', `${detail} — inside Homey's ${MEMORY_GUIDELINE_MB} MB guideline`];
 }
@@ -2237,28 +2259,42 @@ async function commandSchedule(api) {
   }));
 
   try {
-    // T15 first, while nothing has been changed: two windows that overlap, of
-    // which the later must be dropped and NAMED.
+    /**
+     * T15 first, while nothing has been changed: two blocks that overlap.
+     *
+     * **Both must be KEPT, and the clash reported.** This line used to assert
+     * the opposite — that the later of an overlapping pair was dropped and
+     * named — and 0.6.0 reversed it deliberately. The runtime has always
+     * resolved an overlap the same way, with the later block winning while the
+     * two coincide; the sanitiser dropping one was the only thing preventing
+     * that from ever being reached, and deleting a row somebody had just drawn
+     * was the worse surprise. So the screen outlines the region and says what
+     * will happen, and this proves the stored plan agrees with the screen.
+     */
     /** @type {any} */
     const overlap = await app.post(`/schedules/${id}/entries`, {
       entries: [
-        { id: 'vh1', onAt: 20 * 60, days: null, end: { kind: 'duration', minutes: 120 } },
-        { id: 'vh2', onAt: 21 * 60, days: null, end: { kind: 'duration', minutes: 30 } },
+        { id: 'vh1', onAt: 20 * 60, end: { kind: 'duration', minutes: 120 } },
+        { id: 'vh2', onAt: 21 * 60, end: { kind: 'duration', minutes: 30 } },
       ],
+      days: null,
     }).catch((/** @type {any} */ error) => ({ error: messageOf(error) }));
 
     const dropped = /** @type {any[]} */ (overlap?.dropped ?? []);
-    const overlapDropped = dropped.filter(d => String(d?.reason ?? '').startsWith('overlaps'));
-    report('T15', overlap?.count === 1 && overlapDropped.length === 1 ? 'OK' : 'FAILED',
+    const clashes = /** @type {any[]} */ (overlap?.overlaps ?? []);
+    report('T15', overlap?.count === 2 && dropped.length === 0 && clashes.length === 1
+      ? 'OK' : 'FAILED',
       overlap?.error
         ? `the entries route refused the pair outright: ${overlap.error}`
-        : `${overlap?.count} window(s) kept, ${dropped.length} dropped `
-          + `(${dropped.map(d => d.reason).join('; ') || 'none'})`);
+        : `${overlap?.count} block(s) kept, ${dropped.length} dropped `
+          + `(${dropped.map(d => d.reason).join('; ') || 'none'}), `
+          + `${clashes.length} overlap(s) reported`);
 
     // T13: one window, saved and read back.
     /** @type {any} */
     const saved = await app.post(`/schedules/${id}/entries`, {
-      entries: [{ id: 'vh1', onAt: 20 * 60, days: null, end: { kind: 'duration', minutes: 120 } }],
+      entries: [{ id: 'vh1', onAt: 20 * 60, end: { kind: 'duration', minutes: 120 } }],
+      days: null,
     });
     /** @type {any} */
     const afterSave = await app.get('/diagnostics');
@@ -3443,14 +3479,26 @@ async function buildSchedule(session, open, lights) {
   await session.emit(open, 'selectTargets', targetOfLight(lights.schedule));
   await session.emit(open, 'getSchedule');
 
-  // A window well away from now, so building the pass does not switch anybody's
-  // lights on. `schedule` fires its boundaries deliberately, later.
+  /**
+   * A block well away from now, so building the pass does not switch anybody's
+   * lights on. `schedule` fires its boundaries deliberately, later.
+   *
+   * Sent as `{ entries, days }` — the shape the blocks screen sends — rather
+   * than as a bare array. The handler still accepts an array for the sake of
+   * anything older, but an array does not survive `emitPairingEvent` intact:
+   * it arrives as an object with numeric keys, which sanitises to nothing and
+   * reads as "0 accepted, 0 dropped". The days also moved onto the schedule in
+   * 0.6.0 and belong beside the rows, not inside one.
+   */
   /** @type {any} */
-  const saved = await session.emit(open, 'setSchedules', [
-    { id: 'vh1', onAt: 20 * 60, days: null, end: { kind: 'duration', minutes: 120 } },
-  ]);
+  const saved = await session.emit(open, 'setSchedules', {
+    entries: [{ id: 'vh1', onAt: 20 * 60, end: { kind: 'duration', minutes: 120 } }],
+    days: null,
+  });
   report('T13', saved?.count === 1 ? 'OK' : 'FAILED',
-    `${saved?.count} window accepted, ${saved?.dropped?.length ?? 0} dropped`);
+    `${saved?.count} block accepted, ${saved?.dropped?.length ?? 0} dropped, `
+    + `days=${saved?.days === null ? 'every day' : JSON.stringify(saved?.days)}, `
+    + `${saved?.overlaps?.length ?? 0} overlap(s)`);
 
   return dtoFrom(await session.emit(open, 'save', ''));
 }
@@ -3465,14 +3513,25 @@ async function buildCircadian(session, open, lights) {
 
   await session.emit(open, 'selectTargets', targetOfLight(lights.circadian));
 
+  /**
+   * Three zones now, not two ends, and the boundaries between them come from
+   * the SUN — which makes this line the second place the geolocation permission
+   * is checked on real hardware, and the only one that checks it through the
+   * circadian driver (platform §16).
+   */
   /** @type {any} */
-  const ends = await session.emit(open, 'getEnds');
-  report('T20', ends?.warmest && ends?.coolest ? 'OK' : 'FAILED',
-    `both ends offered, over a shape of ${ends?.shape?.length ?? 0} point(s)`);
+  const day = await session.emit(open, 'getDay');
+  const zones = day?.zones;
+  report('T20', zones?.morning && zones?.midday && zones?.evening ? 'OK' : 'FAILED',
+    `three zones offered, boundaries at ${day?.boundaries?.morningEnd} and `
+    + `${day?.boundaries?.eveningStart}, `
+    + (day?.boundaries?.fromSun
+      ? `anchored to today's sun (sunrise ${day?.sun?.sunriseMinute}, `
+        + `sunset ${day?.sun?.sunsetMinute})`
+      : 'on the FIXED-HOURS fallback — this Homey has no usable location'));
 
-  await session.emit(open, 'setEnds', {
-    warmest: ends?.warmest, coolest: ends?.coolest,
-    adjustBrightness: false, preStage: false,
+  await session.emit(open, 'setDay', {
+    ...zones, adjustBrightness: false, preStage: false,
   });
 
   return dtoFrom(await session.emit(open, 'save', ''));
@@ -3524,10 +3583,16 @@ async function buildDaylight(session, open, lights) {
 
   await session.emit(open, 'selectTargets', targetOfLight(lights.daylight));
 
+  /**
+   * The sensor screen first, then the response screen — the order the flow now
+   * goes in, and the only place the sky reading is offered.
+   */
+  const sensorList = /** @type {any} */ (await session.emit(open, 'listSensors'));
+  const sky = sensorList?.sky;
+
   /** @type {any} */
-  const card = await session.emit(open, 'getDaylight');
+  const card = await session.emit(open, 'getResponse');
   const response = card?.response;
-  const sky = card?.sky;
 
   /**
    * The two facts this line exists for, and the FIRST is the one no unit test
@@ -3543,7 +3608,6 @@ async function buildDaylight(session, open, lights) {
       : 'no sun elevation — the geolocation permission did not resolve, or this '
         + 'Homey has no location set');
 
-  const sensorList = /** @type {any} */ (await session.emit(open, 'listSensors'));
   const rooms = /** @type {any[]} */ (sensorList?.rooms ?? []);
   const offered = rooms.reduce((total, room) => total + (room.sensors?.length ?? 0), 0);
   note(`light sensors offered: ${offered}`
@@ -3559,9 +3623,9 @@ async function buildDaylight(session, open, lights) {
    * works on every Homey.
    */
   const saved = /** @type {any} */ (await session.emit(open, 'setDaylight', {
-    response: { ...response, sensors: [] },
+    response: { ...response, sensor: null },
   }));
-  report('T77', saved?.response?.brightLux > saved?.response?.darkLux ? 'OK' : 'FAILED',
+  report('T79', saved?.response?.brightLux > saved?.response?.darkLux ? 'OK' : 'FAILED',
     `response accepted: dark at ${saved?.response?.darkLux} lx, bright at `
     + `${saved?.response?.brightLux} lx, ends ${Math.round((saved?.response?.dark ?? 0) * 100)}% `
     + `and ${Math.round((saved?.response?.bright ?? 0) * 100)}%`
@@ -3639,7 +3703,7 @@ async function commandRepair(api) {
     controller: [
       { event: 'getCredentialStatus', seeded: (r) => r?.present === true },
       { event: 'listTargets', seeded: (r) => r?.current != null },
-      { event: 'getMapping', seeded: (r) => (r?.rules?.length ?? 0) > 0 },
+      { event: 'getButtons', seeded: (r) => Object.keys(r?.jobs ?? {}).length > 0 },
     ],
     schedule: [
       { event: 'getCredentialStatus', seeded: (r) => r?.present === true },
@@ -3648,7 +3712,7 @@ async function commandRepair(api) {
     ],
     circadian: [
       { event: 'listTargets', seeded: (r) => r?.current != null },
-      { event: 'getEnds', seeded: (r) => r?.warmest != null && r?.coolest != null },
+      { event: 'getDay', seeded: (r) => r?.zones?.morning != null && r?.zones?.evening != null },
     ],
     curve: [
       { event: 'listTargets', seeded: (r) => r?.current != null },
@@ -3660,7 +3724,7 @@ async function commandRepair(api) {
       // light it is. `source: 'none'` on a repair read is the shape a Homey with
       // no location and no sensor produces, and it is worth seeing here rather
       // than only in the device's own health verdict.
-      { event: 'getDaylight', seeded: (r) => r?.response?.brightLux > r?.response?.darkLux },
+      { event: 'getResponse', seeded: (r) => r?.response?.brightLux > r?.response?.darkLux },
       { event: 'listSensors', seeded: (r) => Array.isArray(r?.rooms) },
     ],
   };

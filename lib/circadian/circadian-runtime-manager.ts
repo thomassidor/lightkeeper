@@ -1,9 +1,7 @@
 import type { EvidenceSink } from '../support/evidence-sink';
-import type { LuminanceSource } from '../daylight/luminance-source';
 import { startRuntime, previewOwner } from '../runtime/runtime-resources';
 import type { HomeyApiService } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
-import type { DaylightEvaluator } from '../daylight/daylight-evaluator';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
 import { CircadianRuntime, type CircadianRuntimeDeps } from './circadian-runtime';
 import type { CircadianPlan } from './circadian-types';
@@ -39,12 +37,13 @@ export interface CircadianManagerDeps {
   /** The Homey's IANA timezone. */
   timezone: () => string | undefined;
   /**
-   * Sun position and sensor readings, for a point whose brightness follows the
-   * daylight. Optional so the ephemeral rigs and the tests can build a manager
-   * without one.
+   * Where the Homey is, for the boundaries a circadian light anchors to the sun.
+   *
+   * Optional so the ephemeral rigs and the tests can build a manager without
+   * one; a Curve light owns its points outright and never asks, and a circadian
+   * light with no position falls back to fixed hours.
    */
-  daylight?: DaylightEvaluator;
-  luminance?: LuminanceSource;
+  location?: () => unknown;
   /** `homey.setInterval` in the app; a stub in the tests, which drive tickAll(). */
   setInterval?: (fn: () => void, ms: number) => unknown;
   clearInterval?: (handle: unknown) => void;
@@ -116,8 +115,7 @@ export class CircadianRuntimeManager {
       ...(this.deps.onWriteResult ? { onWriteResult: this.deps.onWriteResult } : {}),
       ...(this.deps.onEvidence ? { onEvidence: this.deps.onEvidence } : {}),
       timezone: this.deps.timezone,
-      ...(this.deps.daylight ? { daylight: this.deps.daylight } : {}),
-      ...(this.deps.luminance ? { luminance: this.deps.luminance } : {}),
+      ...(this.deps.location ? { location: this.deps.location } : {}),
       log: this.deps.log,
     };
   }

@@ -1,0 +1,565 @@
+<style>
+  /* ==== shared base: identical in every pair view ====
+     Scoped to this view's root because all views of a session share ONE
+     document, so unscoped class names bleed between screens (see the script
+     header).
+
+     GENERATED. This block is spliced into every pair view by
+     `npm run sync:views` from views/shared/base.css, where the placeholder
+     ROOT-ID stands in for each view's own root element id. **Edit that file, not
+     this one** — a change here is overwritten on the next sync, and
+     `npm run sync:views:check` fails in CI until the two agree. It used to be
+     authored by hand in all thirteen views, under an instruction to "edit this
+     block in all files, or in none of them".
+
+     It is still copied on disk rather than linked, and that part has not
+     changed: Homey needs a real file per folder and will not follow a reference
+     (platform §8). What HAS changed is the count of places a human edits: one.
+
+     A real stylesheet link may turn out to be possible — the Homey does serve a
+     sibling file next to a pair view, measured on hardware and written up in
+     platform §8, which is more than the old comment here believed. What is still
+     unmeasured is whether an injected view's own external reference loads at all
+     once the pairing container has put the view into its shared document. Until
+     somebody checks that with the Homey app open, splicing is the honest answer.
+
+     NOTE for whoever edits this comment: no HTML tag literals in here. The boot
+     harness finds a view's script by searching for a script tag, so writing one
+     inside this stylesheet made it evaluate the CSS as JavaScript — which fails
+     on the word `export` in the palette note below, forty lines from anything
+     that looked related.
+
+     Colours are tokens so a colour lives in ONE place, not so a second scheme
+     can restate them: there IS no second scheme. Homey renders a pairing view
+     inside its own panel, and that panel is light whatever the phone is set to
+     — so a view that followed the OS scheme went dark inside a white sheet. A
+     colour written as a literal anywhere past this block is a token that is
+     missing. */
+  #ti-root {
+    /* Brand. The violet is the manifest brandColor: the logo's ground — 93% of
+       its pixels — lightened so it reads as violet rather than black in the
+       circle Homey paints behind an icon (platform §10). The lavender is the
+       logo's mark. Both are read out of
+       artwork/masters/logo-bitmap-original.png by `export-assets.py --palette`,
+       so the UI cannot drift from the artwork. The tints and lines are derived:
+       the logo itself has no mid-tones. */
+    --lk-accent: #2a1958;
+    --lk-accent-ink: #ffffff;
+    /* Secondary text ON the accent, where white would compete with the number
+       beside it rather than support it. */
+    --lk-accent-soft: #e2dbf6;
+    --lk-accent-tint: #f3eefc;
+    --lk-accent-wash: #fbf9fe;
+    --lk-accent-line: #d9cbf5;
+    --lk-accent-strong: #3b2279;
+    --lk-ring: rgba(42, 25, 88, .16);
+
+    /* The ink ladder. Every one of these clears WCAG AA (4.5:1) against
+       --lk-surface, because all five are used between 11px and 15px — and the
+       two lightest carry the section titles, the tile meta and the help text.
+       They were 3.1:1 (--lk-muted) and 2.6:1 (--lk-faint): grey on white that
+       is legible on a desk monitor and not on a phone in daylight. What
+       separates the steps now is weight, size and caps as much as tone. */
+    --lk-ink: #16181d;
+    --lk-sub: #5f6672;
+    --lk-body: #4b5563;
+    --lk-muted: #6a7180;
+    --lk-faint: #6f7683;
+
+    /* transparent, not white: the pairing container paints the page behind us,
+       and claiming it would flatten every card against it. */
+    --lk-page: transparent;
+    --lk-surface: #ffffff;
+    --lk-raised: #f7f8fa;
+    --lk-line: #eceef2;
+    --lk-field: #e3e6ec;
+    --lk-hover: #c9d2e0;
+    --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
+
+    /* The pairing primitives' own colours, here for the same reason every
+       other literal is: a shadow written inline is a shadow the next palette
+       change misses. */
+    --lk-knob-shadow: 0 1px 3px rgba(16, 24, 40, .3);
+    --lk-slider-knob-shadow: 0 0 0 2px rgba(22, 24, 29, .6), 0 1px 4px rgba(16, 24, 40, .35);
+    --lk-slider-inset: inset 0 0 0 1px rgba(22, 24, 29, .1);
+    /* The two axes a slider can carry, as whole gradients rather than as a
+       list of stops: a ramp is one decision about what the axis LOOKS like,
+       and splitting it into six tokens would invite five of them to change. */
+    --lk-warm-ramp: linear-gradient(90deg, #e8892c, #efa658, #f4c68a,
+                                    #f2e6d6, #eaf0fb, #dbe8fb);
+    --lk-bright-ramp: linear-gradient(90deg, #221a3d, #43318a, #7a5fc4,
+                                      #b9a6e4, #ece5f9);
+    --lk-handle-shadow: 0 2px 6px rgba(16, 24, 40, .2);
+    --lk-handle-shadow-sel: 0 0 0 4px var(--lk-ring), 0 2px 8px rgba(16, 24, 40, .28);
+    --lk-hairline: rgba(22, 24, 29, .1);
+    --lk-day-mark: rgba(22, 24, 29, .4);
+    --lk-day-tag-bg: rgba(255, 255, 255, .86);
+
+    --lk-ok-bg: #eaf7ef;   --lk-ok-ink: #10633a;
+    --lk-bad-bg: #fdeceb;  --lk-bad-ink: #8f1d18;
+    /* Not an error. The one thing that reads this way is a schedule overlap,
+       which is allowed, resolved deterministically, and worth pointing at. */
+    --lk-warn-bg: #fdf3e7; --lk-warn-ink: #7a4a10;
+    --lk-flat-bg: #f4f5f7; --lk-flat-ink: #5b616e;
+
+    background: var(--lk-page);
+    padding: 18px 16px 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", sans-serif;
+    color: var(--lk-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #ti-root h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+  #ti-root .sub { font-size: 14px; line-height: 1.5; color: var(--lk-sub); margin: 0 0 18px; }
+  #ti-root p { font-size: 14px; line-height: 1.55; color: var(--lk-body); }
+
+  #ti-root .card { background: var(--lk-surface); border: 1px solid var(--lk-line);
+              border-radius: 14px; box-shadow: var(--lk-shadow); padding: 14px;
+              margin-bottom: 10px; }
+
+  #ti-root .section { margin-bottom: 18px; }
+  #ti-root .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase;
+                       letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 8px 2px; }
+
+  /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
+  #ti-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+              border: 1.5px solid var(--lk-line); border-radius: 12px; padding: 13px 14px;
+              margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
+              color: var(--lk-ink);
+              transition: border-color .12s ease, background .12s ease; }
+  #ti-root .tile:hover { border-color: var(--lk-hover); }
+  #ti-root .tile.sel { border-color: var(--lk-accent); background: var(--lk-accent-tint); }
+  #ti-root .tile .name { font-size: 15px; font-weight: 500; line-height: 1.3; }
+  #ti-root .tile .meta { font-size: 12.5px; color: var(--lk-muted); margin-top: 3px; line-height: 1.35; }
+
+  #ti-root input[type=text], #ti-root input[type=password], #ti-root select {
+    width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
+    border: 1.5px solid var(--lk-field); border-radius: 11px; background: var(--lk-surface);
+    color: var(--lk-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
+  /* The chevron's fill stays a literal: #6a7180 is --lk-muted, and a data URI
+     cannot read a custom property. So this is the one place a token's value is
+     written twice, and the two copies have to move together. */
+  #ti-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+               background-repeat: no-repeat; background-position: right 13px center;
+               background-size: 11px; padding-right: 34px; }
+  #ti-root input:focus, #ti-root select:focus { outline: none; border-color: var(--lk-accent);
+                                      box-shadow: 0 0 0 3px var(--lk-ring); }
+
+  #ti-root .btn { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
+             border-radius: 10px; border: 1.5px solid var(--lk-field);
+             background: var(--lk-surface); color: var(--lk-ink); cursor: pointer;
+             min-height: 40px; }
+  #ti-root .btn:hover { border-color: var(--lk-hover); }
+  #ti-root .btn:disabled { opacity: .45; cursor: not-allowed; }
+  #ti-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
+                     border-radius: 12px; border: none; background: var(--lk-accent);
+                     color: var(--lk-accent-ink); cursor: pointer; min-height: 50px;
+                     margin-top: 16px; font-family: inherit; }
+  #ti-root .btn-primary:disabled { opacity: .5; cursor: progress; }
+
+  /* A default ground, so a .msg shown before any state class lands on it is
+     still a message rather than bare text on the page. */
+  #ti-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 11px; font-size: 13.5px;
+             line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+  #ti-root .ok { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
+  #ti-root .bad { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
+  #ti-root .muted { background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+  #ti-root .warn { background: var(--lk-warn-bg); color: var(--lk-warn-ink); }
+  /* A message whose first line is what happened and whose second is what it
+     means. Both belong in one block: split across two, the second reads as
+     unrelated body copy. */
+  #ti-root .msg .lead { font-weight: 600; margin-bottom: 3px; }
+
+  #ti-root ol { font-size: 14px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+           color: var(--lk-body); }
+  #ti-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  @media (max-width: 380px) { #ti-root .grid { grid-template-columns: 1fr; } }
+  #ti-root .empty { font-size: 14px; color: var(--lk-muted); padding: 12px 0; }
+  /* ---- the pairing paradigm --------------------------------------------
+     Every screen the redesign draws is built from these six, so a change to
+     any of them is one edit rather than fifteen. They live in the shared base
+     rather than in each view for exactly the reason the tokens do: a primitive
+     defined twice is a primitive that drifts. */
+
+  /* Step dots. The intro is unnumbered — the steps it promises are the ones
+     that carry a dot — so a view renders as many as its own flow has. */
+  #ti-root .steps { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
+  #ti-root .steps i { width: 22px; height: 4px; border-radius: 999px;
+                   background: var(--lk-field); }
+  #ti-root .steps i.on { background: var(--lk-accent); }
+  #ti-root .steps span { margin-left: 4px; font-size: 12px; color: var(--lk-faint); }
+
+  /* `label · value · chevron`. The one shape everything secondary takes:
+     a row that says what it is, what it is set to, and that it can be opened. */
+  #ti-root .row { display: flex; align-items: center; gap: 11px; width: 100%;
+               padding: 13px 14px; min-height: 44px; box-sizing: border-box;
+               background: none; border: none; font: inherit; color: inherit;
+               text-align: left; cursor: pointer; }
+  #ti-root .row + .row { border-top: 1px solid var(--lk-line); }
+  #ti-root .row .label { flex: 1; font-size: 14.5px; font-weight: 500; }
+  #ti-root .row .value { font-size: 13px; color: var(--lk-muted); text-align: right; }
+  #ti-root .row .chev { flex: none; font-size: 15px; color: var(--lk-muted); }
+  #ti-root .row .sub { font-size: 12.5px; color: var(--lk-muted); margin: 2px 0 0; }
+
+  /* The pill switch behind every "Set … too". */
+  #ti-root .toggle { display: flex; align-items: center; gap: 11px; width: 100%;
+                  padding: 12px 0; min-height: 44px; box-sizing: border-box;
+                  background: none; border: none; font: inherit; color: inherit;
+                  text-align: left; cursor: pointer; }
+  #ti-root .toggle .label { flex: 1; font-size: 14.5px; font-weight: 500; }
+  #ti-root .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
+                         position: relative; background: var(--lk-field);
+                         transition: background .15s ease; }
+  #ti-root .toggle[aria-checked="true"] .track { background: var(--lk-accent); }
+  #ti-root .toggle .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+                        border-radius: 50%; background: var(--lk-surface);
+                        box-shadow: var(--lk-knob-shadow);
+                        transition: left .15s ease; }
+  #ti-root .toggle[aria-checked="true"] .knob { left: 21px; }
+
+  /* The title above a control, with its value on the right of the same line.
+     Sentence case and body-coloured rather than a small-caps section label:
+     "Brightness 80%" is a reading of the control directly below it, not a
+     heading over a group of unrelated things. */
+  #ti-root .control-title { display: flex; align-items: baseline;
+                         justify-content: space-between; gap: 10px;
+                         font-size: 13.5px; font-weight: 600; line-height: 1.2;
+                         color: var(--lk-ink); margin: 0 0 9px; }
+
+  /* A value slider with its two end captions.
+     The TRACK carries the range as a gradient and there is no fill: the whole
+     axis is visible at once, so a warmth slider shows candlelight at one end
+     and daylight at the other rather than asking somebody to imagine it. The
+     knob marks the position on it.
+     `touch-action: none` is not decoration: without it a horizontal drag
+     scrolls the pairing sheet underneath and the control cannot be used on a
+     phone at all. */
+  #ti-root .slider { position: relative; height: 28px; border-radius: 8px;
+                  background: var(--lk-field); margin: 0;
+                  box-shadow: var(--lk-slider-inset);
+                  touch-action: none; cursor: pointer; }
+  /* Candlelight to daylight, left to right — the order the slider reads in,
+     which is the REVERSE of the way a warmth is stored (platform §6). */
+  #ti-root .slider.warm { background: var(--lk-warm-ramp); }
+  #ti-root .slider.bright { background: var(--lk-bright-ramp); }
+  #ti-root .slider .knob { position: absolute; top: -4px; bottom: -4px; width: 6px;
+                        margin-left: -3px; border-radius: 4px;
+                        background: var(--lk-surface);
+                        box-shadow: var(--lk-slider-knob-shadow); }
+  #ti-root .ends { display: flex; justify-content: space-between;
+                font-size: 11px; color: var(--lk-muted); margin: 9px 0 0; }
+
+  /* The swatches a colour is chosen from, four across.
+     Not one row of eight: at 390px that is 34px a swatch, under the touch
+     minimum and too small to judge a colour by. Two rows of four is the same
+     set of eight, legibly, and the sixteen that fold out below continue it. */
+  #ti-root .swatches { display: grid; grid-template-columns: repeat(4, 1fr);
+                    gap: 8px; margin: 10px 0; }
+  #ti-root .swatch { height: 44px; border-radius: 9px; padding: 0;
+                  border: 1px solid var(--lk-hairline); cursor: pointer; }
+  #ti-root .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--lk-surface),
+                                                   0 0 0 4px var(--lk-accent); }
+
+  /* The day strip: a picture of the whole day, drawn once and reused. */
+  #ti-root .day { position: relative; height: 104px; border-radius: 12px;
+               overflow: hidden; touch-action: none; }
+  #ti-root .day .mark { position: absolute; top: 0; bottom: 0; width: 0;
+                     border-left: 1.5px dashed var(--lk-day-mark); }
+  #ti-root .day .tag { position: absolute; top: 6px; transform: translateX(-50%);
+                    background: var(--lk-day-tag-bg); color: var(--lk-body);
+                    font-size: 9.5px; font-weight: 600; letter-spacing: .05em;
+                    text-transform: uppercase; padding: 3px 5px; border-radius: 4px; }
+  #ti-root .day .handle { position: absolute; top: 50%; width: 26px; height: 26px;
+                       margin: -13px 0 0 -13px; border-radius: 50%;
+                       background: var(--lk-surface); box-sizing: border-box;
+                       border: 2.5px solid var(--lk-ring);
+                       box-shadow: var(--lk-handle-shadow); }
+  #ti-root .day .handle.sel { width: 34px; height: 34px; margin: -17px 0 0 -17px;
+                           border: 3px solid var(--lk-accent); z-index: 2;
+                           box-shadow: var(--lk-handle-shadow-sel); }
+  #ti-root .clockline { display: flex; justify-content: space-between;
+                     font-size: 12px; color: var(--lk-muted); margin-top: 6px; }
+
+  /* ==== end shared base ==== */
+
+  /* ---- this view only ---------------------------------------------------- */
+
+  #ti-root .at { display: flex; align-items: baseline; justify-content: space-between;
+                 gap: 10px; margin-bottom: 10px; }
+  #ti-root .at .time { font-size: 30px; font-weight: 700; letter-spacing: -.02em; }
+  #ti-root .at .what { font-size: 13px; color: var(--lk-muted); }
+
+  #ti-root .lamps { background: var(--lk-surface); border: 1px solid var(--lk-line);
+                    border-radius: 14px; box-shadow: var(--lk-shadow);
+                    overflow: hidden; margin: 14px 0; }
+</style>
+
+<div class="wrap" id="ti-root">
+  <h2 data-i18n="tryit.title"></h2>
+
+  <div class="at">
+    <span class="time" id="ti-time"></span>
+    <span class="what" id="ti-what"></span>
+  </div>
+
+  <div class="day" id="ti-strip">
+    <div class="mark" id="ti-mark"></div>
+    <!-- A handle, because the strip is DRAGGED: a dashed line reads as a
+         reading, and a reading is not something a finger reaches for. -->
+    <div class="handle sel" id="ti-handle"></div>
+  </div>
+  <div class="clockline">
+    <span data-i18n="tryit.midnight"></span>
+    <span data-i18n="tryit.noon"></span>
+    <span data-i18n="tryit.midnight"></span>
+  </div>
+
+  <p class="sub" data-i18n="tryit.help"></p>
+
+  <div class="lamps" id="ti-lamps"></div>
+
+  <div id="ti-msg" class="msg" style="display:none;"></div>
+
+  <button class="btn-primary" id="ti-show"></button>
+  <button class="btn" id="ti-restore" style="width:100%;margin-top:10px;display:none;"
+          data-i18n="tryit.putBack"></button>
+</div>
+
+<script type="text/javascript">
+/**
+ * See any time of day, on the real lamps.
+ *
+ * Scrubbing beats a one-shot preview, and that is the whole reason this is a
+ * screen rather than a button: the point of a circadian light is what it does at
+ * a time you are not standing there for, so being able to look at dusk at 10:04
+ * in the morning is the only way to judge it before saving.
+ *
+ * **"Put them back" is what makes trying it safe.** Every lamp's state is taken
+ * before the first write and restored on the way out, so the gesture is never
+ * destructive — which is why it is the button on this screen and Save is not.
+ *
+ * A lamp that is OFF stays off and says so in its own row, rather than the
+ * screen carrying a warning about it: the caveat delivered as state.
+ */
+function __lkBootTi(Homey) {
+  var __root = document.getElementById('ti-root');
+  if (!__root || __root.dataset.llBooted === '1') return;
+  __root.dataset.llBooted = '1';
+
+  function emit(event, data) {
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var finish = function (err, result) {
+        if (settled) return;
+        settled = true;
+        if (err) reject(err instanceof Error ? err : new Error(String(err)));
+        else resolve(result);
+      };
+      var timer = setTimeout(function () { finish(new Error('Homey did not respond in time. Close this screen and try again. (' + event + ')')); }, 20000);
+      var done = function (err, result) { clearTimeout(timer); finish(err, result); };
+      try {
+        var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
+        if (returned && typeof returned.then === 'function') {
+          returned.then(function (r) { done(null, r); }, function (e) { done(e); });
+        }
+      } catch (err) { done(err); }
+    });
+  }
+
+  function node(tag, className, text) {
+    var el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined && text !== null) el.textContent = String(text);
+    return el;
+  }
+
+  function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+  function pad(value) { return (value < 10 ? '0' : '') + value; }
+  function clock(minutes) { return pad(Math.floor(minutes / 60)) + ':' + pad(minutes % 60); }
+
+  var el = {
+    time: document.getElementById('ti-time'),
+    what: document.getElementById('ti-what'),
+    strip: document.getElementById('ti-strip'),
+    mark: document.getElementById('ti-mark'),
+    handle: document.getElementById('ti-handle'),
+    lamps: document.getElementById('ti-lamps'),
+    msg: document.getElementById('ti-msg'),
+    show: document.getElementById('ti-show'),
+    restore: document.getElementById('ti-restore')
+  };
+
+  var state = { minute: 0, points: [], touched: false };
+
+  var STOPS = [
+    [0, [219, 232, 251]], [0.2, [234, 240, 251]], [0.4, [242, 230, 214]],
+    [0.6, [244, 198, 138]], [0.8, [239, 166, 88]], [1, [232, 137, 44]]
+  ];
+
+  function warmthColour(value) {
+    var v = Math.max(0, Math.min(1, value));
+    var a = STOPS[0];
+    var b = STOPS[STOPS.length - 1];
+    for (var i = 0; i < STOPS.length - 1; i++) {
+      if (v >= STOPS[i][0] && v <= STOPS[i + 1][0]) { a = STOPS[i]; b = STOPS[i + 1]; break; }
+    }
+    var f = (v - a[0]) / ((b[0] - a[0]) || 1);
+    return 'rgb(' + [0, 1, 2].map(function (c) {
+      return Math.round(a[1][c] + (b[1][c] - a[1][c]) * f);
+    }).join(',') + ')';
+  }
+
+  /**
+   * The warmth at a minute, read off the RESOLVED points the driver sent.
+   *
+   * The same cyclic interpolation the engine does, over the same six points —
+   * so what this screen draws and what the device will do are the same curve
+   * rather than two that agree today.
+   */
+  function warmthAt(minute) {
+    var points = state.points;
+    if (points.length === 0) return 0.5;
+    var before = points[points.length - 1];
+    var after = points[0];
+    for (var i = 0; i < points.length; i++) {
+      if (points[i].minute <= minute) before = points[i];
+    }
+    for (var j = 0; j < points.length; j++) {
+      if (points[j].minute > minute) { after = points[j]; break; }
+    }
+    var span = ((after.minute - before.minute) + 1440) % 1440 || 1440;
+    var elapsed = ((minute - before.minute) + 1440) % 1440;
+    var fraction = Math.min(1, elapsed / span);
+    // A raised cosine, so segments meet with zero gradient — the same easing
+    // `lib/support/interpolate.ts` applies.
+    var eased = 0.5 - 0.5 * Math.cos(Math.PI * fraction);
+    return before.warmth + (after.warmth - before.warmth) * eased;
+  }
+
+  function warmthWord(value) {
+    // HIGH is warm: `warmth` is homey-lib's axis, where 1 is the WARMEST end
+    // (platform §6). The first render of this screen had it the other way and
+    // showed "Warm" beside a blue swatch.
+    if (value >= 0.82) return Homey.__('warmth.deepAmber');
+    if (value >= 0.62) return Homey.__('warmth.warm');
+    if (value >= 0.44) return Homey.__('warmth.softWarm');
+    if (value >= 0.24) return Homey.__('warmth.softWhite');
+    return Homey.__('warmth.coolWhite');
+  }
+
+  function drawStrip() {
+    var stops = [];
+    for (var i = 0; i <= 48; i++) {
+      var minute = (i / 48) * 1440;
+      stops.push(warmthColour(warmthAt(minute)) + ' ' + ((i / 48) * 100).toFixed(2) + '%');
+    }
+    el.strip.style.background = 'linear-gradient(90deg,' + stops.join(',') + ')';
+    el.mark.style.left = (state.minute / 1440) * 100 + '%';
+    el.handle.style.left = (state.minute / 1440) * 100 + '%';
+  }
+
+  function render() {
+    el.time.textContent = clock(state.minute);
+    el.what.textContent = warmthWord(warmthAt(state.minute));
+    el.show.textContent = Homey.__('tryit.showAt', { time: clock(state.minute) });
+    el.restore.style.display = state.touched ? '' : 'none';
+    drawStrip();
+  }
+
+  var dragging = false;
+  function fractionOf(event) {
+    var rect = el.strip.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+  }
+
+  el.strip.addEventListener('pointerdown', function (event) {
+    dragging = true;
+    if (el.strip.setPointerCapture) el.strip.setPointerCapture(event.pointerId);
+    state.minute = Math.round(fractionOf(event) * 1440 / 5) * 5 % 1440;
+    render();
+  });
+  el.strip.addEventListener('pointermove', function (event) {
+    if (!dragging) return;
+    state.minute = Math.round(fractionOf(event) * 1440 / 5) * 5 % 1440;
+    render();
+  });
+  function endDrag() { dragging = false; }
+  el.strip.addEventListener('pointerup', endDrag);
+  el.strip.addEventListener('pointercancel', endDrag);
+
+  function renderLamps(outcome) {
+    clear(el.lamps);
+    var lamps = (outcome && outcome.targets) || [];
+    for (var i = 0; i < lamps.length; i++) {
+      var lamp = lamps[i];
+      var row = node('div', 'row');
+      row.appendChild(node('span', 'label', lamp.name));
+      row.appendChild(node('span', 'value',
+        lamp.written ? Homey.__('tryit.set') : Homey.__('tryit.leftAlone')));
+      el.lamps.appendChild(row);
+    }
+  }
+
+  el.show.addEventListener('click', function () {
+    el.show.disabled = true;
+    el.msg.style.display = 'none';
+    emit('previewAt', { minute: state.minute }).then(function (outcome) {
+      state.touched = true;
+      renderLamps(outcome);
+      render();
+      el.show.disabled = false;
+    }).catch(function (err) {
+      el.show.disabled = false;
+      el.msg.className = 'msg bad';
+      el.msg.textContent = err && err.message ? err.message : String(err);
+      el.msg.style.display = '';
+    });
+  });
+
+  el.restore.addEventListener('click', function () {
+    el.restore.disabled = true;
+    emit('restorePreview').then(function () {
+      state.touched = false;
+      clear(el.lamps);
+      render();
+      el.restore.disabled = false;
+    }).catch(function (err) {
+      el.restore.disabled = false;
+      el.msg.className = 'msg bad';
+      el.msg.textContent = err && err.message ? err.message : String(err);
+      el.msg.style.display = '';
+    });
+  });
+
+  emit('getPreview').then(function (payload) {
+    state.points = payload.points || [];
+    state.minute = payload.nowMinute || 0;
+    render();
+  }).catch(function (err) {
+    el.msg.className = 'msg bad';
+    el.msg.textContent = err && err.message ? err.message : String(err);
+    el.msg.style.display = '';
+  });
+}
+
+(function () {
+  var tries = 0;
+  function waitForHomey() {
+    if (window.Homey && typeof window.Homey.emit === 'function') { __lkBootTi(window.Homey); return; }
+    if (++tries > 100) {
+      var root = document.getElementById('ti-root');
+      if (root) {
+        var banner = document.createElement('div');
+        banner.className = 'msg bad';
+        banner.textContent = 'This screen could not reach Homey. Close it and try again.';
+        root.appendChild(banner);
+      }
+      return;
+    }
+    setTimeout(waitForHomey, 50);
+  }
+  window.onHomeyReady = function (ready) { __lkBootTi(ready || window.Homey); };
+  waitForHomey();
+})();
+</script>

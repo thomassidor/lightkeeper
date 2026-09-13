@@ -29,8 +29,9 @@ import { DEFAULT_RESPONSE, SUN_PEAKS, type DaylightResponse } from '../../lib/da
 
 /** Lamps up as the daylight goes: the compensating case, and the default. */
 const COMPENSATE: DaylightResponse = {
-  sensors: ['sensor-a'], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25,
-  sunPeak: 'none',
+  sensor: 'sensor-a', darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25,
+  darkElevation: DARK_ELEVATION, brightElevation: BRIGHT_ELEVATION,
+  sunPeak: 'flat',
 };
 /** The same response with its ends swapped: the room follows the day instead. */
 const FOLLOW: DaylightResponse = { ...COMPENSATE, dark: 0.25, bright: 0.9 };
@@ -103,28 +104,28 @@ describe('levelFromLux', () => {
 
 describe('levelFromElevation', () => {
   test('civil twilight is the bottom of the ramp and stays there all night', () => {
-    assert.equal(levelFromElevation(DARK_ELEVATION), 0);
-    assert.equal(levelFromElevation(-30), 0);
-    assert.equal(levelFromElevation(-90), 0);
+    assert.equal(levelFromElevation(COMPENSATE, DARK_ELEVATION), 0);
+    assert.equal(levelFromElevation(COMPENSATE, -30), 0);
+    assert.equal(levelFromElevation(COMPENSATE, -90), 0);
   });
 
   test('a high sun is the top of it', () => {
-    assert.equal(levelFromElevation(BRIGHT_ELEVATION), 1);
-    assert.equal(levelFromElevation(75), 1);
+    assert.equal(levelFromElevation(COMPENSATE, BRIGHT_ELEVATION), 1);
+    assert.equal(levelFromElevation(COMPENSATE, 75), 1);
   });
 
   test('the horizon sits low on the ramp, which is the point of the dark end', () => {
     // The sun ON the horizon is not a lit room. Anchoring the dark end at 0
     // degrees instead of -6 would have the lamps already dropping while the sky
     // still needs them.
-    const horizon = levelFromElevation(0);
+    const horizon = levelFromElevation(COMPENSATE, 0);
     assert.ok(horizon > 0 && horizon < 0.1, `expected the horizon low on the ramp, got ${horizon}`);
   });
 
   test('it is monotonic and bounded from below the horizon to overhead', () => {
     let previous = -1;
     for (let degrees = -90; degrees <= 90; degrees += 0.5) {
-      const level = levelFromElevation(degrees);
+      const level = levelFromElevation(COMPENSATE, degrees);
       assert.ok(level >= previous, `level fell at ${degrees} degrees`);
       assert.ok(level >= 0 && level <= 1, `level out of range at ${degrees} degrees`);
       previous = level;
@@ -132,7 +133,7 @@ describe('levelFromElevation', () => {
   });
 
   test('a non-finite elevation is no light rather than a NaN', () => {
-    assert.equal(levelFromElevation(Number.NaN), 0);
+    assert.equal(levelFromElevation(COMPENSATE, Number.NaN), 0);
   });
 });
 
@@ -190,7 +191,7 @@ describe('resolveLevel - which input is believed', () => {
   test('the sky answers when there is no sensor at all', () => {
     // The many households that own no lux sensor. This is what makes the device
     // work for them rather than reporting itself broken.
-    const resolved = resolveLevel({ ...COMPENSATE, sensors: [] }, {
+    const resolved = resolveLevel({ ...COMPENSATE, sensor: null }, {
       elevation: BRIGHT_ELEVATION, reading: null,
     });
     assert.equal(resolved.source, 'sky');
@@ -244,7 +245,8 @@ describe('resolveLevel - which input is believed', () => {
  */
 describe('which way the room faces', () => {
   const ROOM: DaylightResponse = {
-    sensors: [], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25, sunPeak: 'none',
+    sensor: null, darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25,
+    darkElevation: DARK_ELEVATION, brightElevation: BRIGHT_ELEVATION, sunPeak: 'flat',
   };
 
   /** Sun due east, due south, due west — the bearings, not times. */
@@ -252,17 +254,22 @@ describe('which way the room faces', () => {
   const SOUTH = 180;
   const WEST = 270;
 
-  test('none returns the bare elevation ramp, to the bit', () => {
-    // The promise that makes this shippable: a device that never answered the
-    // question is unchanged, not approximately unchanged.
+  test('"hardly any" is the diffuse share, flat, whichever way the sun is', () => {
+    // The fourth answer is not "model nothing" — that was the old `'none'`,
+    // which returned the bare ramp. A room with no direct beam still brightens
+    // and darkens with the day, just less, so its curve stays shallow rather
+    // than going away. Flat in azimuth is what makes it a shallow curve and not
+    // a differently-shaped one.
     for (const elevation of [-10, -6, 0, 12, 25, 60]) {
-      for (const azimuth of [EAST, SOUTH, WEST, 0, 359]) {
-        const { level } = resolveLevel(ROOM, {
-          elevation, reading: null, azimuth, latitude: 55.7,
-        });
-        assert.equal(level, levelFromElevation(elevation),
-          `elevation ${elevation}, azimuth ${azimuth}`);
-      }
+      const levels = [EAST, SOUTH, WEST, 0, 359].map(azimuth => resolveLevel(ROOM, {
+        elevation, reading: null, azimuth, latitude: 55.7,
+      }).level);
+
+      assert.equal(new Set(levels).size, 1, `elevation ${elevation} moved with the azimuth`);
+      assert.ok(
+        Math.abs(levels[0]! - levelFromElevation(ROOM, elevation) * 0.35) < 1e-9,
+        `elevation ${elevation} is not the diffuse share of the bare ramp`,
+      );
     }
   });
 
@@ -315,13 +322,13 @@ describe('which way the room faces', () => {
     // Sunrise is in the east everywhere, so these do not flip.
     assert.equal(windowAzimuthFor('morning', -33.9), 90);
     assert.equal(windowAzimuthFor('afternoon', -33.9), 270);
-    assert.equal(windowAzimuthFor('none', 55.7), null);
+    assert.equal(windowAzimuthFor('flat', 55.7), null);
   });
 
   test('a SENSOR overrides the model entirely', () => {
     // A sensor measures this room. Modelling a room already measured would be
     // applying a guess on top of a reading.
-    const facing: DaylightResponse = { ...ROOM, sensors: ['s1'], sunPeak: 'afternoon' };
+    const facing: DaylightResponse = { ...ROOM, sensor: 's1', sunPeak: 'afternoon' };
     const withSensor = resolveLevel(facing, {
       elevation: 20,
       reading: { lux: 500, deviceIds: ['s1'] },

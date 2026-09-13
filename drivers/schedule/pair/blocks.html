@@ -1,0 +1,897 @@
+<style>
+  /* ==== shared base: identical in every pair view ====
+     Scoped to this view's root because all views of a session share ONE
+     document, so unscoped class names bleed between screens (see the script
+     header).
+
+     GENERATED. This block is spliced into every pair view by
+     `npm run sync:views` from views/shared/base.css, where the placeholder
+     ROOT-ID stands in for each view's own root element id. **Edit that file, not
+     this one** — a change here is overwritten on the next sync, and
+     `npm run sync:views:check` fails in CI until the two agree. It used to be
+     authored by hand in all thirteen views, under an instruction to "edit this
+     block in all files, or in none of them".
+
+     It is still copied on disk rather than linked, and that part has not
+     changed: Homey needs a real file per folder and will not follow a reference
+     (platform §8). What HAS changed is the count of places a human edits: one.
+
+     A real stylesheet link may turn out to be possible — the Homey does serve a
+     sibling file next to a pair view, measured on hardware and written up in
+     platform §8, which is more than the old comment here believed. What is still
+     unmeasured is whether an injected view's own external reference loads at all
+     once the pairing container has put the view into its shared document. Until
+     somebody checks that with the Homey app open, splicing is the honest answer.
+
+     NOTE for whoever edits this comment: no HTML tag literals in here. The boot
+     harness finds a view's script by searching for a script tag, so writing one
+     inside this stylesheet made it evaluate the CSS as JavaScript — which fails
+     on the word `export` in the palette note below, forty lines from anything
+     that looked related.
+
+     Colours are tokens so a colour lives in ONE place, not so a second scheme
+     can restate them: there IS no second scheme. Homey renders a pairing view
+     inside its own panel, and that panel is light whatever the phone is set to
+     — so a view that followed the OS scheme went dark inside a white sheet. A
+     colour written as a literal anywhere past this block is a token that is
+     missing. */
+  #bl-root {
+    /* Brand. The violet is the manifest brandColor: the logo's ground — 93% of
+       its pixels — lightened so it reads as violet rather than black in the
+       circle Homey paints behind an icon (platform §10). The lavender is the
+       logo's mark. Both are read out of
+       artwork/masters/logo-bitmap-original.png by `export-assets.py --palette`,
+       so the UI cannot drift from the artwork. The tints and lines are derived:
+       the logo itself has no mid-tones. */
+    --lk-accent: #2a1958;
+    --lk-accent-ink: #ffffff;
+    /* Secondary text ON the accent, where white would compete with the number
+       beside it rather than support it. */
+    --lk-accent-soft: #e2dbf6;
+    --lk-accent-tint: #f3eefc;
+    --lk-accent-wash: #fbf9fe;
+    --lk-accent-line: #d9cbf5;
+    --lk-accent-strong: #3b2279;
+    --lk-ring: rgba(42, 25, 88, .16);
+
+    /* The ink ladder. Every one of these clears WCAG AA (4.5:1) against
+       --lk-surface, because all five are used between 11px and 15px — and the
+       two lightest carry the section titles, the tile meta and the help text.
+       They were 3.1:1 (--lk-muted) and 2.6:1 (--lk-faint): grey on white that
+       is legible on a desk monitor and not on a phone in daylight. What
+       separates the steps now is weight, size and caps as much as tone. */
+    --lk-ink: #16181d;
+    --lk-sub: #5f6672;
+    --lk-body: #4b5563;
+    --lk-muted: #6a7180;
+    --lk-faint: #6f7683;
+
+    /* transparent, not white: the pairing container paints the page behind us,
+       and claiming it would flatten every card against it. */
+    --lk-page: transparent;
+    --lk-surface: #ffffff;
+    --lk-raised: #f7f8fa;
+    --lk-line: #eceef2;
+    --lk-field: #e3e6ec;
+    --lk-hover: #c9d2e0;
+    --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
+
+    /* The pairing primitives' own colours, here for the same reason every
+       other literal is: a shadow written inline is a shadow the next palette
+       change misses. */
+    --lk-knob-shadow: 0 1px 3px rgba(16, 24, 40, .3);
+    --lk-slider-knob-shadow: 0 0 0 2px rgba(22, 24, 29, .6), 0 1px 4px rgba(16, 24, 40, .35);
+    --lk-slider-inset: inset 0 0 0 1px rgba(22, 24, 29, .1);
+    /* The two axes a slider can carry, as whole gradients rather than as a
+       list of stops: a ramp is one decision about what the axis LOOKS like,
+       and splitting it into six tokens would invite five of them to change. */
+    --lk-warm-ramp: linear-gradient(90deg, #e8892c, #efa658, #f4c68a,
+                                    #f2e6d6, #eaf0fb, #dbe8fb);
+    --lk-bright-ramp: linear-gradient(90deg, #221a3d, #43318a, #7a5fc4,
+                                      #b9a6e4, #ece5f9);
+    --lk-handle-shadow: 0 2px 6px rgba(16, 24, 40, .2);
+    --lk-handle-shadow-sel: 0 0 0 4px var(--lk-ring), 0 2px 8px rgba(16, 24, 40, .28);
+    --lk-hairline: rgba(22, 24, 29, .1);
+    --lk-day-mark: rgba(22, 24, 29, .4);
+    --lk-day-tag-bg: rgba(255, 255, 255, .86);
+
+    --lk-ok-bg: #eaf7ef;   --lk-ok-ink: #10633a;
+    --lk-bad-bg: #fdeceb;  --lk-bad-ink: #8f1d18;
+    /* Not an error. The one thing that reads this way is a schedule overlap,
+       which is allowed, resolved deterministically, and worth pointing at. */
+    --lk-warn-bg: #fdf3e7; --lk-warn-ink: #7a4a10;
+    --lk-flat-bg: #f4f5f7; --lk-flat-ink: #5b616e;
+
+    background: var(--lk-page);
+    padding: 18px 16px 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", sans-serif;
+    color: var(--lk-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #bl-root h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+  #bl-root .sub { font-size: 14px; line-height: 1.5; color: var(--lk-sub); margin: 0 0 18px; }
+  #bl-root p { font-size: 14px; line-height: 1.55; color: var(--lk-body); }
+
+  #bl-root .card { background: var(--lk-surface); border: 1px solid var(--lk-line);
+              border-radius: 14px; box-shadow: var(--lk-shadow); padding: 14px;
+              margin-bottom: 10px; }
+
+  #bl-root .section { margin-bottom: 18px; }
+  #bl-root .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase;
+                       letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 8px 2px; }
+
+  /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
+  #bl-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+              border: 1.5px solid var(--lk-line); border-radius: 12px; padding: 13px 14px;
+              margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
+              color: var(--lk-ink);
+              transition: border-color .12s ease, background .12s ease; }
+  #bl-root .tile:hover { border-color: var(--lk-hover); }
+  #bl-root .tile.sel { border-color: var(--lk-accent); background: var(--lk-accent-tint); }
+  #bl-root .tile .name { font-size: 15px; font-weight: 500; line-height: 1.3; }
+  #bl-root .tile .meta { font-size: 12.5px; color: var(--lk-muted); margin-top: 3px; line-height: 1.35; }
+
+  #bl-root input[type=text], #bl-root input[type=password], #bl-root select {
+    width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
+    border: 1.5px solid var(--lk-field); border-radius: 11px; background: var(--lk-surface);
+    color: var(--lk-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
+  /* The chevron's fill stays a literal: #6a7180 is --lk-muted, and a data URI
+     cannot read a custom property. So this is the one place a token's value is
+     written twice, and the two copies have to move together. */
+  #bl-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+               background-repeat: no-repeat; background-position: right 13px center;
+               background-size: 11px; padding-right: 34px; }
+  #bl-root input:focus, #bl-root select:focus { outline: none; border-color: var(--lk-accent);
+                                      box-shadow: 0 0 0 3px var(--lk-ring); }
+
+  #bl-root .btn { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
+             border-radius: 10px; border: 1.5px solid var(--lk-field);
+             background: var(--lk-surface); color: var(--lk-ink); cursor: pointer;
+             min-height: 40px; }
+  #bl-root .btn:hover { border-color: var(--lk-hover); }
+  #bl-root .btn:disabled { opacity: .45; cursor: not-allowed; }
+  #bl-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
+                     border-radius: 12px; border: none; background: var(--lk-accent);
+                     color: var(--lk-accent-ink); cursor: pointer; min-height: 50px;
+                     margin-top: 16px; font-family: inherit; }
+  #bl-root .btn-primary:disabled { opacity: .5; cursor: progress; }
+
+  /* A default ground, so a .msg shown before any state class lands on it is
+     still a message rather than bare text on the page. */
+  #bl-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 11px; font-size: 13.5px;
+             line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+  #bl-root .ok { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
+  #bl-root .bad { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
+  #bl-root .muted { background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+  #bl-root .warn { background: var(--lk-warn-bg); color: var(--lk-warn-ink); }
+  /* A message whose first line is what happened and whose second is what it
+     means. Both belong in one block: split across two, the second reads as
+     unrelated body copy. */
+  #bl-root .msg .lead { font-weight: 600; margin-bottom: 3px; }
+
+  #bl-root ol { font-size: 14px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+           color: var(--lk-body); }
+  #bl-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  @media (max-width: 380px) { #bl-root .grid { grid-template-columns: 1fr; } }
+  #bl-root .empty { font-size: 14px; color: var(--lk-muted); padding: 12px 0; }
+  /* ---- the pairing paradigm --------------------------------------------
+     Every screen the redesign draws is built from these six, so a change to
+     any of them is one edit rather than fifteen. They live in the shared base
+     rather than in each view for exactly the reason the tokens do: a primitive
+     defined twice is a primitive that drifts. */
+
+  /* Step dots. The intro is unnumbered — the steps it promises are the ones
+     that carry a dot — so a view renders as many as its own flow has. */
+  #bl-root .steps { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
+  #bl-root .steps i { width: 22px; height: 4px; border-radius: 999px;
+                   background: var(--lk-field); }
+  #bl-root .steps i.on { background: var(--lk-accent); }
+  #bl-root .steps span { margin-left: 4px; font-size: 12px; color: var(--lk-faint); }
+
+  /* `label · value · chevron`. The one shape everything secondary takes:
+     a row that says what it is, what it is set to, and that it can be opened. */
+  #bl-root .row { display: flex; align-items: center; gap: 11px; width: 100%;
+               padding: 13px 14px; min-height: 44px; box-sizing: border-box;
+               background: none; border: none; font: inherit; color: inherit;
+               text-align: left; cursor: pointer; }
+  #bl-root .row + .row { border-top: 1px solid var(--lk-line); }
+  #bl-root .row .label { flex: 1; font-size: 14.5px; font-weight: 500; }
+  #bl-root .row .value { font-size: 13px; color: var(--lk-muted); text-align: right; }
+  #bl-root .row .chev { flex: none; font-size: 15px; color: var(--lk-muted); }
+  #bl-root .row .sub { font-size: 12.5px; color: var(--lk-muted); margin: 2px 0 0; }
+
+  /* The pill switch behind every "Set … too". */
+  #bl-root .toggle { display: flex; align-items: center; gap: 11px; width: 100%;
+                  padding: 12px 0; min-height: 44px; box-sizing: border-box;
+                  background: none; border: none; font: inherit; color: inherit;
+                  text-align: left; cursor: pointer; }
+  #bl-root .toggle .label { flex: 1; font-size: 14.5px; font-weight: 500; }
+  #bl-root .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
+                         position: relative; background: var(--lk-field);
+                         transition: background .15s ease; }
+  #bl-root .toggle[aria-checked="true"] .track { background: var(--lk-accent); }
+  #bl-root .toggle .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+                        border-radius: 50%; background: var(--lk-surface);
+                        box-shadow: var(--lk-knob-shadow);
+                        transition: left .15s ease; }
+  #bl-root .toggle[aria-checked="true"] .knob { left: 21px; }
+
+  /* The title above a control, with its value on the right of the same line.
+     Sentence case and body-coloured rather than a small-caps section label:
+     "Brightness 80%" is a reading of the control directly below it, not a
+     heading over a group of unrelated things. */
+  #bl-root .control-title { display: flex; align-items: baseline;
+                         justify-content: space-between; gap: 10px;
+                         font-size: 13.5px; font-weight: 600; line-height: 1.2;
+                         color: var(--lk-ink); margin: 0 0 9px; }
+
+  /* A value slider with its two end captions.
+     The TRACK carries the range as a gradient and there is no fill: the whole
+     axis is visible at once, so a warmth slider shows candlelight at one end
+     and daylight at the other rather than asking somebody to imagine it. The
+     knob marks the position on it.
+     `touch-action: none` is not decoration: without it a horizontal drag
+     scrolls the pairing sheet underneath and the control cannot be used on a
+     phone at all. */
+  #bl-root .slider { position: relative; height: 28px; border-radius: 8px;
+                  background: var(--lk-field); margin: 0;
+                  box-shadow: var(--lk-slider-inset);
+                  touch-action: none; cursor: pointer; }
+  /* Candlelight to daylight, left to right — the order the slider reads in,
+     which is the REVERSE of the way a warmth is stored (platform §6). */
+  #bl-root .slider.warm { background: var(--lk-warm-ramp); }
+  #bl-root .slider.bright { background: var(--lk-bright-ramp); }
+  #bl-root .slider .knob { position: absolute; top: -4px; bottom: -4px; width: 6px;
+                        margin-left: -3px; border-radius: 4px;
+                        background: var(--lk-surface);
+                        box-shadow: var(--lk-slider-knob-shadow); }
+  #bl-root .ends { display: flex; justify-content: space-between;
+                font-size: 11px; color: var(--lk-muted); margin: 9px 0 0; }
+
+  /* The swatches a colour is chosen from, four across.
+     Not one row of eight: at 390px that is 34px a swatch, under the touch
+     minimum and too small to judge a colour by. Two rows of four is the same
+     set of eight, legibly, and the sixteen that fold out below continue it. */
+  #bl-root .swatches { display: grid; grid-template-columns: repeat(4, 1fr);
+                    gap: 8px; margin: 10px 0; }
+  #bl-root .swatch { height: 44px; border-radius: 9px; padding: 0;
+                  border: 1px solid var(--lk-hairline); cursor: pointer; }
+  #bl-root .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--lk-surface),
+                                                   0 0 0 4px var(--lk-accent); }
+
+  /* The day strip: a picture of the whole day, drawn once and reused. */
+  #bl-root .day { position: relative; height: 104px; border-radius: 12px;
+               overflow: hidden; touch-action: none; }
+  #bl-root .day .mark { position: absolute; top: 0; bottom: 0; width: 0;
+                     border-left: 1.5px dashed var(--lk-day-mark); }
+  #bl-root .day .tag { position: absolute; top: 6px; transform: translateX(-50%);
+                    background: var(--lk-day-tag-bg); color: var(--lk-body);
+                    font-size: 9.5px; font-weight: 600; letter-spacing: .05em;
+                    text-transform: uppercase; padding: 3px 5px; border-radius: 4px; }
+  #bl-root .day .handle { position: absolute; top: 50%; width: 26px; height: 26px;
+                       margin: -13px 0 0 -13px; border-radius: 50%;
+                       background: var(--lk-surface); box-sizing: border-box;
+                       border: 2.5px solid var(--lk-ring);
+                       box-shadow: var(--lk-handle-shadow); }
+  #bl-root .day .handle.sel { width: 34px; height: 34px; margin: -17px 0 0 -17px;
+                           border: 3px solid var(--lk-accent); z-index: 2;
+                           box-shadow: var(--lk-handle-shadow-sel); }
+  #bl-root .clockline { display: flex; justify-content: space-between;
+                     font-size: 12px; color: var(--lk-muted); margin-top: 6px; }
+
+  /* ==== end shared base ==== */
+
+  /* ---- this view only ---------------------------------------------------- */
+
+  /* A picture of the day, and NOTHING on it is draggable. The block being
+     edited is filled in dark and the others are left light; the times are set
+     in the card below, where the values are legible. Dragging a two-minute
+     target on a 390px strip was the old screen's worst control. */
+  #bl-root .timeline { position: relative; height: 56px; border-radius: 12px;
+                       background: var(--lk-flat-bg); overflow: hidden; margin-bottom: 6px; }
+  #bl-root .timeline .blk { position: absolute; top: 12px; bottom: 12px;
+                            border-radius: 6px; background: var(--lk-accent-line); }
+  #bl-root .timeline .blk.sel { background: var(--lk-accent); }
+  /* Overlap is DRAWN rather than described: the outlined region is the conflict. */
+  #bl-root .timeline .clash { position: absolute; top: 6px; bottom: 6px; box-sizing: border-box;
+                              border-radius: 8px; border: 2px dashed var(--lk-bad-ink); }
+
+  /* `chip`, not `day`: the shared base already styles `.day` as the day STRIP,
+     104px tall, and a chip that borrowed the name inherited the height. The
+     same collision hit the week grid's row labels — scoping protects one view
+     from another, and inside a view only the name does. */
+  #bl-root .days { display: flex; gap: 6px; margin: 0; }
+  #bl-root .chip { flex: 1; height: 38px; border-radius: 9px; padding: 0;
+                   border: 1.5px solid var(--lk-field); background: var(--lk-surface);
+                   font: 600 13px/1 inherit; color: var(--lk-ink); cursor: pointer; }
+  #bl-root .chip[aria-pressed="true"] { border-color: var(--lk-accent);
+                                        background: var(--lk-accent); color: var(--lk-accent-ink); }
+
+  #bl-root .block { background: var(--lk-surface); border: 1px solid var(--lk-line);
+                    border-radius: 14px; box-shadow: var(--lk-shadow);
+                    padding: 14px; margin-bottom: 14px; }
+  #bl-root .block-title { font-size: 16px; font-weight: 700; margin-bottom: 12px; }
+  #bl-root .when { display: flex; align-items: baseline; justify-content: space-between;
+                   font-size: 13.5px; font-weight: 600; line-height: 1.2;
+                   color: var(--lk-ink); margin: 14px 0 9px; }
+  #bl-root .clocks { display: flex; gap: 10px; }
+  #bl-root .unit { flex: 1; background: var(--lk-flat-bg); border-radius: 10px; padding: 8px; }
+  #bl-root .unit .cap { font-size: 10px; font-weight: 600; text-transform: uppercase;
+                        letter-spacing: .06em; color: var(--lk-faint);
+                        text-align: center; margin-bottom: 4px; }
+  #bl-root .unit .set { display: flex; align-items: center; gap: 6px; }
+  #bl-root .unit .set span { flex: 1; text-align: center; font-size: 17px; font-weight: 700; }
+  #bl-root .unit button { width: 34px; height: 34px; flex: none; border-radius: 8px;
+                          border: 1.5px solid var(--lk-field); background: var(--lk-surface);
+                          font: 600 18px/1 inherit; color: var(--lk-ink); cursor: pointer; }
+  #bl-root .length { font-size: 12.5px; color: var(--lk-muted); margin-top: 10px; }
+
+  #bl-root .remove { font-size: 13px; font-weight: 600; color: var(--lk-bad-ink);
+                     background: none; border: none; padding: 12px 0 0;
+                     font-family: inherit; cursor: pointer; min-height: 44px; }
+
+  #bl-root .others .text { flex: 1; }
+  #bl-root .others { background: var(--lk-surface); border: 1px solid var(--lk-line);
+                     border-radius: 14px; box-shadow: var(--lk-shadow);
+                     overflow: hidden; margin-bottom: 14px; }
+  #bl-root .add { width: 100%; min-height: 44px; border-radius: 12px; margin-bottom: 16px;
+                  border: 1.5px dashed var(--lk-field); background: none;
+                  font: 600 14px/1 inherit; color: var(--lk-accent-strong); cursor: pointer; }
+</style>
+
+<div class="wrap" id="bl-root">
+  <div class="steps" id="bl-steps"></div>
+  <h2 data-i18n="blocks.title"></h2>
+
+  <div id="bl-error" class="msg bad" style="display:none;"></div>
+
+  <div class="timeline" id="bl-timeline"></div>
+  <div class="clockline">
+    <span data-i18n="blocks.midnight"></span>
+    <span data-i18n="blocks.noon"></span>
+    <span data-i18n="blocks.midnight"></span>
+  </div>
+
+  <div id="bl-overlap" class="msg warn" style="display:none;"></div>
+
+  <!--
+    The days belong to the SCHEDULE, not to each block: one row above the list.
+    Per-block days were the old screen's way and produced twelve pickers on one
+    screen, each independently wrong.
+  -->
+  <div class="card">
+    <div class="control-title" data-i18n="blocks.onTheseDays"></div>
+    <div class="days" id="bl-days"></div>
+  </div>
+
+  <div class="block" id="bl-editor">
+    <div class="block-title" id="bl-blockTitle"></div>
+
+    <div class="when" data-i18n="blocks.comesOn"></div>
+    <div class="clocks">
+      <div class="unit">
+        <div class="cap" data-i18n="blocks.hour"></div>
+        <div class="set">
+          <button type="button" id="bl-onHourDown">&minus;</button>
+          <span id="bl-onHour"></span>
+          <button type="button" id="bl-onHourUp">+</button>
+        </div>
+      </div>
+      <div class="unit">
+        <div class="cap" data-i18n="blocks.minute"></div>
+        <div class="set">
+          <button type="button" id="bl-onMinDown">&minus;</button>
+          <span id="bl-onMin"></span>
+          <button type="button" id="bl-onMinUp">+</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="when" data-i18n="blocks.goesOff"></div>
+    <div class="clocks">
+      <div class="unit">
+        <div class="cap" data-i18n="blocks.hour"></div>
+        <div class="set">
+          <button type="button" id="bl-offHourDown">&minus;</button>
+          <span id="bl-offHour"></span>
+          <button type="button" id="bl-offHourUp">+</button>
+        </div>
+      </div>
+      <div class="unit">
+        <div class="cap" data-i18n="blocks.minute"></div>
+        <div class="set">
+          <button type="button" id="bl-offMinDown">&minus;</button>
+          <span id="bl-offMin"></span>
+          <button type="button" id="bl-offMinUp">+</button>
+        </div>
+      </div>
+    </div>
+    <div class="length" id="bl-length"></div>
+
+    <button class="toggle" id="bl-brightToggle" type="button" aria-checked="false">
+      <span class="label" data-i18n="blocks.alsoBrightness"></span>
+      <span class="track"><span class="knob"></span></span>
+    </button>
+    <div id="bl-brightBlock" style="display:none;">
+      <div class="when"><span data-i18n="blocks.brightness"></span> <span id="bl-brightPct"></span></div>
+      <div class="slider bright" id="bl-bright">
+        <div class="knob" id="bl-brightKnob"></div>
+      </div>
+      <div class="ends">
+        <span data-i18n="blocks.off"></span>
+        <span data-i18n="blocks.full"></span>
+      </div>
+    </div>
+
+    <button class="toggle" id="bl-warmToggle" type="button" aria-checked="false">
+      <span class="label" data-i18n="blocks.alsoWarmth"></span>
+      <span class="track"><span class="knob"></span></span>
+    </button>
+    <div id="bl-warmBlock" style="display:none;">
+      <div class="when" data-i18n="blocks.warmth"></div>
+      <div class="slider warm" id="bl-warm">
+        <div class="knob" id="bl-warmKnob"></div>
+      </div>
+      <div class="ends">
+        <span data-i18n="blocks.candlelight"></span>
+        <span data-i18n="blocks.daylight"></span>
+      </div>
+    </div>
+
+    <button class="remove" id="bl-remove" data-i18n="blocks.remove"></button>
+  </div>
+
+  <div class="others" id="bl-others"></div>
+  <button class="add" id="bl-add" data-i18n="blocks.add"></button>
+
+  <button class="btn-primary" id="bl-next" data-i18n="blocks.next"></button>
+</div>
+
+<script type="text/javascript">
+/**
+ * When the lights are on: blocks on a day, named by their own hours.
+ *
+ * **Blocks are called by their times.** "19:15 → 23:30" rather than "Evening",
+ * because any name the app invented would be wrong for somebody — and the two
+ * times are the thing being set, so they are also the thing to read back.
+ *
+ * **Nothing on the timeline is draggable.** It is a picture of the day with the
+ * block being edited filled in dark; the times are set in the card, where the
+ * values are legible and a quarter-hour is a button rather than four pixels.
+ *
+ * **An overlap is allowed, drawn, and explained.** Two blocks over the same
+ * lights do fight, and the runtime has a deterministic answer — the later one
+ * wins while they overlap, so the lights stay on through both. The app used to
+ * refuse to save such a pair, which meant silently dropping a row somebody had
+ * just drawn. Now the region is outlined and the banner says what will happen.
+ * Next is never blocked.
+ */
+function __lkBootBl(Homey) {
+  var __root = document.getElementById('bl-root');
+  if (!__root || __root.dataset.llBooted === '1') return;
+  __root.dataset.llBooted = '1';
+
+  function emit(event, data) {
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var finish = function (err, result) {
+        if (settled) return;
+        settled = true;
+        if (err) reject(err instanceof Error ? err : new Error(String(err)));
+        else resolve(result);
+      };
+      var timer = setTimeout(function () { finish(new Error('Homey did not respond in time. Close this screen and try again. (' + event + ')')); }, 20000);
+      var done = function (err, result) { clearTimeout(timer); finish(err, result); };
+      try {
+        var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
+        if (returned && typeof returned.then === 'function') {
+          returned.then(function (r) { done(null, r); }, function (e) { done(e); });
+        }
+      } catch (err) { done(err); }
+    });
+  }
+
+  function node(tag, className, text) {
+    var el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined && text !== null) el.textContent = String(text);
+    return el;
+  }
+
+  function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+  function pad(value) { return (value < 10 ? '0' : '') + value; }
+  function clock(minutes) { return pad(Math.floor(minutes / 60)) + ':' + pad(minutes % 60); }
+
+  var el = {
+    steps: document.getElementById('bl-steps'),
+    error: document.getElementById('bl-error'),
+    timeline: document.getElementById('bl-timeline'),
+    overlap: document.getElementById('bl-overlap'),
+    days: document.getElementById('bl-days'),
+    editor: document.getElementById('bl-editor'),
+    blockTitle: document.getElementById('bl-blockTitle'),
+    length: document.getElementById('bl-length'),
+    brightToggle: document.getElementById('bl-brightToggle'),
+    brightBlock: document.getElementById('bl-brightBlock'),
+    brightPct: document.getElementById('bl-brightPct'),
+    bright: document.getElementById('bl-bright'),
+    brightKnob: document.getElementById('bl-brightKnob'),
+    warmToggle: document.getElementById('bl-warmToggle'),
+    warmBlock: document.getElementById('bl-warmBlock'),
+    warm: document.getElementById('bl-warm'),
+    warmKnob: document.getElementById('bl-warmKnob'),
+    remove: document.getElementById('bl-remove'),
+    others: document.getElementById('bl-others'),
+    add: document.getElementById('bl-add'),
+    next: document.getElementById('bl-next')
+  };
+
+  var DAY_KEYS = ['blocks.mon', 'blocks.tue', 'blocks.wed', 'blocks.thu',
+    'blocks.fri', 'blocks.sat', 'blocks.sun'];
+
+  var state = {
+    entries: [],
+    days: null,
+    selected: 0,
+    maxEntries: 12,
+    overlaps: [],
+    support: {}
+  };
+
+  function fail(err) {
+    el.error.textContent = err && err.message ? err.message : String(err);
+    el.error.style.display = '';
+  }
+
+  function current() { return state.entries[state.selected] || null; }
+
+  function offMinutes(entry) {
+    return entry.end.kind === 'time'
+      ? entry.end.at
+      : (entry.onAt + entry.end.minutes) % 1440;
+  }
+
+  function lengthOf(entry) {
+    var span = (offMinutes(entry) - entry.onAt + 1440) % 1440;
+    return span === 0 ? 1440 : span;
+  }
+
+  function renderSteps() {
+    clear(el.steps);
+    for (var i = 1; i <= 3; i++) el.steps.appendChild(node('i', i <= 2 ? 'on' : null));
+    el.steps.appendChild(node('span', null, Homey.__('blocks.step', { index: 2, count: 3 })));
+  }
+
+  function renderTimeline() {
+    clear(el.timeline);
+    for (var i = 0; i < state.entries.length; i++) {
+      var entry = state.entries[i];
+      var start = entry.onAt;
+      var length = lengthOf(entry);
+      // A block that crosses midnight is drawn as the two pieces it actually
+      // occupies, because one bar running off the right-hand edge shows a day
+      // the schedule does not have.
+      addBar(start, Math.min(length, 1440 - start), i === state.selected);
+      if (start + length > 1440) addBar(0, start + length - 1440, i === state.selected);
+    }
+    for (var j = 0; j < state.overlaps.length; j++) {
+      addClash(state.overlaps[j]);
+    }
+  }
+
+  function addBar(start, length, selected) {
+    var bar = node('div', 'blk' + (selected ? ' sel' : ''));
+    bar.style.left = (start / 1440) * 100 + '%';
+    bar.style.width = (length / 1440) * 100 + '%';
+    el.timeline.appendChild(bar);
+  }
+
+  function addClash(pair) {
+    var a = byId(pair.a);
+    var b = byId(pair.b);
+    if (!a || !b) return;
+    var from = Math.max(a.onAt, b.onAt);
+    var to = Math.min(a.onAt + lengthOf(a), b.onAt + lengthOf(b));
+    if (to <= from) return;
+    var mark = node('div', 'clash');
+    mark.style.left = (from / 1440) * 100 + '%';
+    mark.style.width = ((to - from) / 1440) * 100 + '%';
+    el.timeline.appendChild(mark);
+  }
+
+  function byId(id) {
+    for (var i = 0; i < state.entries.length; i++) {
+      if (state.entries[i].id === id) return state.entries[i];
+    }
+    return null;
+  }
+
+  function renderDays() {
+    clear(el.days);
+    for (var i = 0; i < 7; i++) {
+      el.days.appendChild(dayChip(i + 1));
+    }
+  }
+
+  function dayChip(iso) {
+    var chip = node('button', 'chip', Homey.__(DAY_KEYS[iso - 1]));
+    chip.type = 'button';
+    var on = state.days === null || state.days.indexOf(iso) !== -1;
+    chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+    chip.addEventListener('click', function () {
+      var days = state.days === null ? [1, 2, 3, 4, 5, 6, 7] : state.days.slice();
+      var at = days.indexOf(iso);
+      if (at === -1) days.push(iso);
+      else days.splice(at, 1);
+      days.sort();
+      // Every day IS the null case: one representation of one meaning, so
+      // nothing downstream has to compare a set of seven against a null.
+      state.days = days.length === 7 ? null : days;
+      // Unticking the last day would be a schedule that can never fire, which
+      // reads as configured and does nothing. Every day is the safe reading.
+      if (days.length === 0) state.days = null;
+      push();
+    });
+    return chip;
+  }
+
+  function renderEditor() {
+    var entry = current();
+    el.editor.style.display = entry ? '' : 'none';
+    el.remove.style.display = state.entries.length > 1 ? '' : 'none';
+    if (!entry) return;
+
+    el.blockTitle.textContent = clock(entry.onAt) + ' → ' + clock(offMinutes(entry));
+
+    setUnit('on', entry.onAt);
+    setUnit('off', offMinutes(entry));
+
+    var minutes = lengthOf(entry);
+    var hours = Math.floor(minutes / 60);
+    el.length.textContent = Homey.__('blocks.length', {
+      hours: hours, minutes: minutes % 60
+    }) + (entry.onAt + minutes > 1440 ? ' · ' + Homey.__('blocks.crossesMidnight') : '');
+
+    var hasBrightness = entry.brightness !== undefined;
+    el.brightToggle.setAttribute('aria-checked', hasBrightness ? 'true' : 'false');
+    el.brightBlock.style.display = hasBrightness ? '' : 'none';
+    if (hasBrightness) {
+      el.brightPct.textContent = Math.round(entry.brightness * 100) + '%';
+      setSlider(el.brightKnob, entry.brightness);
+    }
+
+    var hasWarmth = entry.temperature !== undefined;
+    el.warmToggle.setAttribute('aria-checked', hasWarmth ? 'true' : 'false');
+    el.warmBlock.style.display = hasWarmth ? '' : 'none';
+    if (hasWarmth) setSlider(el.warmKnob, warmthToSlider(entry.temperature));
+  }
+
+  function setUnit(which, minutes) {
+    document.getElementById('bl-' + which + 'Hour').textContent = pad(Math.floor(minutes / 60));
+    document.getElementById('bl-' + which + 'Min').textContent = pad(minutes % 60);
+  }
+
+  function setSlider(knob, value) {
+    // The track carries the range; the knob is the only thing that moves.
+    knob.style.left = (Math.max(0, Math.min(1, value)) * 100) + '%';
+  }
+
+  function renderOthers() {
+    clear(el.others);
+    for (var i = 0; i < state.entries.length; i++) {
+      if (i === state.selected) continue;
+      el.others.appendChild(otherRow(state.entries[i], i));
+    }
+  }
+
+  function otherRow(entry, index) {
+    var row = node('button', 'row');
+    row.type = 'button';
+
+    var text = node('div', 'text');
+    text.appendChild(node('div', null, clock(entry.onAt) + ' → ' + clock(offMinutes(entry))));
+
+    var bits = [];
+    if (entry.brightness !== undefined) bits.push(Math.round(entry.brightness * 100) + '%');
+    if (entry.temperature !== undefined) bits.push(Homey.__('blocks.withWarmth'));
+    if (entry.onAt + lengthOf(entry) > 1440) bits.push(Homey.__('blocks.crossesMidnight'));
+    text.appendChild(node('div', 'sub', bits.join(' · ')));
+    row.appendChild(text);
+    row.appendChild(node('span', 'chev', '›'));
+
+    row.addEventListener('click', function () {
+      state.selected = index;
+      render();
+    });
+    return row;
+  }
+
+  function renderOverlap() {
+    if (state.overlaps.length === 0) { el.overlap.style.display = 'none'; return; }
+    var pair = state.overlaps[0];
+    var a = byId(pair.a);
+    var b = byId(pair.b);
+    if (!a || !b) { el.overlap.style.display = 'none'; return; }
+    var from = Math.max(a.onAt, b.onAt);
+    var to = Math.min(a.onAt + lengthOf(a), b.onAt + lengthOf(b));
+    clear(el.overlap);
+    el.overlap.appendChild(node('div', 'lead', Homey.__('blocks.overlap', {
+      from: clock(from % 1440), until: clock(to % 1440)
+    })));
+    el.overlap.appendChild(node('div', null, Homey.__('blocks.overlapMeans')));
+    el.overlap.style.display = '';
+  }
+
+  function render() {
+    renderTimeline();
+    renderDays();
+    renderEditor();
+    renderOthers();
+    renderOverlap();
+    el.add.style.display = state.entries.length < state.maxEntries ? '' : 'none';
+    el.next.disabled = state.entries.length === 0;
+  }
+
+  function step(which, field, delta) {
+    var entry = current();
+    if (!entry) return;
+    if (which === 'on') {
+      entry.onAt = wrap(entry.onAt + delta * (field === 'hour' ? 60 : 5));
+    } else {
+      // Always an absolute off-time from this screen. `{ kind: 'duration' }`
+      // stays in the model — a stored plan may carry one — but nothing here
+      // produces one, because "for 90 minutes" and "until 23:30" render
+      // identically and only one of them is what somebody typed.
+      var off = wrap(offMinutes(entry) + delta * (field === 'hour' ? 60 : 5));
+      entry.end = { kind: 'time', at: off };
+    }
+    render();
+    push();
+  }
+
+  function wrap(minutes) { return ((minutes % 1440) + 1440) % 1440; }
+
+  [['on', 'hour', 1], ['on', 'hour', -1], ['on', 'min', 1], ['on', 'min', -1],
+    ['off', 'hour', 1], ['off', 'hour', -1], ['off', 'min', 1], ['off', 'min', -1]]
+    .forEach(function (spec) {
+      var id = 'bl-' + spec[0] + (spec[1] === 'hour' ? 'Hour' : 'Min') + (spec[2] > 0 ? 'Up' : 'Down');
+      document.getElementById(id).addEventListener('click', function () {
+        step(spec[0], spec[1], spec[2]);
+      });
+    });
+
+  el.brightToggle.addEventListener('click', function () {
+    var entry = current();
+    if (!entry) return;
+    entry.brightness = entry.brightness === undefined ? 0.6 : undefined;
+    render();
+    push();
+  });
+
+  el.warmToggle.addEventListener('click', function () {
+    var entry = current();
+    if (!entry) return;
+    entry.temperature = entry.temperature === undefined ? 0.8 : undefined;
+    render();
+    push();
+  });
+
+  function draggable(element, apply) {
+    var dragging = false;
+    function fractionOf(event) {
+      var rect = element.getBoundingClientRect();
+      return Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    }
+    element.addEventListener('pointerdown', function (event) {
+      dragging = true;
+      if (element.setPointerCapture) element.setPointerCapture(event.pointerId);
+      apply(fractionOf(event));
+      render();
+    });
+    element.addEventListener('pointermove', function (event) {
+      if (!dragging) return;
+      apply(fractionOf(event));
+      render();
+    });
+    function end() { if (dragging) { dragging = false; push(); } }
+    element.addEventListener('pointerup', end);
+    element.addEventListener('pointercancel', end);
+  }
+
+  draggable(el.bright, function (fraction) {
+    var entry = current();
+    if (entry) entry.brightness = fraction;
+  });
+
+  /**
+   * The warmth slider runs CANDLELIGHT on the left to DAYLIGHT on the right,
+   * and `warmth` runs the other way: 1 is the warmest end (platform §6).
+   *
+   * So the control inverts, in exactly these two functions and nowhere else —
+   * the same seam the circadian day screen uses, and for the same reason.
+   * Inverting anywhere further in is how "Warmest" came to write 0.
+   */
+  function warmthToSlider(warmth) { return 1 - warmth; }
+  function sliderToWarmth(fraction) { return 1 - fraction; }
+
+  draggable(el.warm, function (fraction) {
+    var entry = current();
+    if (entry) entry.temperature = sliderToWarmth(fraction);
+  });
+
+  el.remove.addEventListener('click', function () {
+    state.entries.splice(state.selected, 1);
+    state.selected = Math.max(0, state.selected - 1);
+    render();
+    push();
+  });
+
+  el.add.addEventListener('click', function () {
+    // A new block starts in the evening rather than at midnight: it is the one
+    // the next person to add a block almost always wants, and it lands
+    // somewhere visible on the timeline rather than on its left edge.
+    state.entries.push({
+      id: 'b' + Date.now().toString(36),
+      onAt: 19 * 60,
+      end: { kind: 'time', at: 23 * 60 }
+    });
+    state.selected = state.entries.length - 1;
+    render();
+    push();
+  });
+
+  el.next.addEventListener('click', function () { Homey.showView('review'); });
+
+  function push() {
+    emit('setSchedules', { entries: state.entries, days: state.days })
+      .then(function (reply) {
+        state.overlaps = reply.overlaps || [];
+        state.days = reply.days;
+        render();
+      })
+      .catch(fail);
+  }
+
+  renderSteps();
+
+  emit('getSchedule').then(function (payload) {
+    state.entries = payload.entries || [];
+    state.days = payload.days === undefined ? null : payload.days;
+    state.maxEntries = payload.maxEntries || 12;
+    state.overlaps = payload.overlaps || [];
+    state.support = payload.support || {};
+
+    if (state.entries.length === 0) {
+      state.entries.push({
+        id: 'b' + Date.now().toString(36),
+        onAt: 19 * 60,
+        end: { kind: 'time', at: 23 * 60 }
+      });
+      push();
+    }
+    render();
+  }).catch(fail);
+}
+
+(function () {
+  var tries = 0;
+  function waitForHomey() {
+    if (window.Homey && typeof window.Homey.emit === 'function') { __lkBootBl(window.Homey); return; }
+    if (++tries > 100) {
+      var root = document.getElementById('bl-root');
+      if (root) {
+        var banner = document.createElement('div');
+        banner.className = 'msg bad';
+        banner.textContent = 'This screen could not reach Homey. Close it and try again.';
+        root.appendChild(banner);
+      }
+      return;
+    }
+    setTimeout(waitForHomey, 50);
+  }
+  window.onHomeyReady = function (ready) { __lkBootBl(ready || window.Homey); };
+  waitForHomey();
+})();
+</script>

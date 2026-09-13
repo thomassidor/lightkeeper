@@ -48,10 +48,12 @@ export async function listTargetsPayload(
   const selected = current?.kind === 'devices' ? new Set(current.deviceIds) : new Set<string>();
 
   // Grouped by room: a house with 39 lights is unusable as a flat grid.
-  const byZone = new Map<string, { zoneName: string; lights: unknown[] }>();
+  const byZone = new Map<string, { zoneId: string; zoneName: string; lights: unknown[] }>();
   for (const device of lights as any[]) {
     const key = device.zone ?? 'unknown';
-    if (!byZone.has(key)) byZone.set(key, { zoneName: device.zoneName || 'Unassigned', lights: [] });
+    if (!byZone.has(key)) {
+      byZone.set(key, { zoneId: key, zoneName: device.zoneName || 'Unassigned', lights: [] });
+    }
     byZone.get(key)!.lights.push({
       id: device.id,
       name: device.name,
@@ -69,10 +71,22 @@ export async function listTargetsPayload(
     rooms: [...byZone.values()]
       .sort((a, b) => a.zoneName.localeCompare(b.zoneName))
       .map(room => ({
+        /**
+         * The room's own zone id, so "Select all" can store a ZONE target.
+         *
+         * Ticking every light in one room stores `{ kind: 'zone' }` rather than
+         * the device ids, which is what makes a lamp added to that room later
+         * get picked up on its own. Unticking one converts it back to a device
+         * list — the review screen states which of the two the device ended up
+         * with, because the difference is invisible otherwise.
+         */
+        zoneId: room.zoneId,
         zoneName: room.zoneName,
         lights: sortLights(room.lights as any[]),
       })),
     zones: zones.map((zone: any) => ({ id: zone.id, name: zone.name })),
+    /** Every candidate, for the search box's own "Search 54 lights" placeholder. */
+    total: (lights as any[]).length,
     current: current ?? null,
   };
 }

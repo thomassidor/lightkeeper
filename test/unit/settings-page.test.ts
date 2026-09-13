@@ -82,7 +82,7 @@ const POPULATED = {
     name: 'Kitchen daylight',
     enabled: true,
     now: { level: 0.4, brightness: 0.62, source: 'sensors', elevation: 18 },
-    response: { sensors: ['s1'], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 },
+    response: { sensor: 's1', darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 },
     targetNames: ['Hall lamp'],
     overridden: 0,
     sensors: [{ deviceId: 's1', name: 'Hall motion', lux: 240, at: 1_756_000_000_000, available: true }],

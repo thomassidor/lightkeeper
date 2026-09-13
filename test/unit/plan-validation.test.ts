@@ -28,7 +28,7 @@ import { DEFAULT_RESPONSE } from '../../lib/daylight/daylight-types';
  */
 
 const validProfile = () => ({
-  schemaVersion: 2,
+  schemaVersion: 1,
   enabled: true,
   source: { deviceId: 'remote-1', eventSurfaceFingerprint: 'fp' },
   target: { kind: 'devices', deviceIds: ['l1', 'l2'] },
@@ -41,8 +41,9 @@ const validSchedule = () => ({
   schemaVersion: 1,
   enabled: true,
   target: { kind: 'zone', zoneId: 'z1', includeSubzones: true },
+  days: null,
   entries: [{
-    id: 's1', onAt: 1320, days: [1, 2, 3, 4, 5], end: { kind: 'duration', minutes: 90 },
+    id: 's1', onAt: 1320, end: { kind: 'duration', minutes: 90 },
     brightness: 0.4, temperature: 0.9,
   }],
   managedFlows: [{
@@ -64,7 +65,7 @@ const validDaylight = () => ({
   schemaVersion: 1,
   enabled: true,
   target: { kind: 'devices', deviceIds: ['l1'] },
-  response: { ...DEFAULT_RESPONSE, sensors: ['sensor-a'] },
+  response: { ...DEFAULT_RESPONSE, sensor: 'sensor-a' },
 });
 
 describe('the happy path passes unchanged', () => {
@@ -84,13 +85,9 @@ describe('the happy path passes unchanged', () => {
     assert.deepEqual(validateDaylightPlan(validDaylight()), validDaylight());
   });
 
-  test('a plan may follow the daylight where it has a response to follow', () => {
-    const following = {
-      ...validSchedule(),
-      daylight: DEFAULT_RESPONSE,
-      entries: [{ ...validSchedule().entries[0], fromDaylight: true }],
-    };
-    assert.deepEqual(validateSchedulePlan(following), following);
+  test('a schedule may name the days it runs on', () => {
+    const weekdays = { ...validSchedule(), days: [1, 2, 3, 4, 5] };
+    assert.deepEqual(validateSchedulePlan(weekdays), weekdays);
   });
 
   test('a daylight response may have its two ends either way round', () => {
@@ -106,11 +103,12 @@ describe('the happy path passes unchanged', () => {
   test('an optional field that is absent stays absent', () => {
     const plan = validateSchedulePlan({
       ...validSchedule(),
-      entries: [{ id: 's1', onAt: 0, days: null, end: { kind: 'time', at: 60 } }],
+      entries: [{ id: 's1', onAt: 0, end: { kind: 'time', at: 60 } }],
     });
     assert.equal('brightness' in plan.entries[0], false);
     assert.equal('temperature' in plan.entries[0], false);
-    assert.equal(plan.entries[0].days, null);
+    // Days belong to the schedule now, and an absent set is every day.
+    assert.equal(plan.days, null);
   });
 });
 
@@ -147,24 +145,36 @@ describe('every rejection names the field', () => {
     }), /ControllerProfile\.catalogue\[0\]\.binding\.fixedArgs/],
     ['a schedule minute outside the day', () => ({
       ...validSchedule(),
-      entries: [{ id: 's1', onAt: 1440, days: null, end: { kind: 'duration', minutes: 10 } }],
+      entries: [{ id: 's1', onAt: 1440, end: { kind: 'duration', minutes: 10 } }],
     }), /SchedulePlan\.entries\[0\]\.onAt is above 1439/],
     ['a weekday that is not a weekday', () => ({
       ...validSchedule(),
-      entries: [{ id: 's1', onAt: 0, days: [0], end: { kind: 'duration', minutes: 10 } }],
-    }), /SchedulePlan\.entries\[0\]\.days\[0\] is below 1/],
+      days: [0],
+    }), /SchedulePlan\.days\[0\] is below 1/],
+    ['a day set that could never fire', () => ({
+      ...validSchedule(),
+      days: [],
+    }), /SchedulePlan\.days is an empty list, so the schedule could never fire/],
     ['a zero-length duration', () => ({
       ...validSchedule(),
-      entries: [{ id: 's1', onAt: 0, days: null, end: { kind: 'duration', minutes: 0 } }],
+      entries: [{ id: 's1', onAt: 0, end: { kind: 'duration', minutes: 0 } }],
     }), /SchedulePlan\.entries\[0\]\.end\.minutes is below 1/],
     ['a warmth above the axis', () => ({
       ...validCircadian(),
       points: [{ id: 'p1', anchor: { kind: 'clock', at: 0 }, warmth: 1.5 }],
     }), /CircadianPlan\.points\[0\]\.warmth is above 1/],
-    ['a sun anchor, which this version cannot resolve', () => ({
+    ['a sun anchor to something that is not the sunrise or the sunset', () => ({
       ...validCircadian(),
-      points: [{ id: 'p1', anchor: { kind: 'sun', event: 'sunrise', offset: 0 }, warmth: 0.5 }],
-    }), /CircadianPlan\.points\[0\]\.anchor\.kind is "sun"/],
+      points: DEFAULT_POINTS.map((point, i) => (i === 0
+        ? { ...point, anchor: { kind: 'sun', event: 'moonrise', offset: 0 } }
+        : point)),
+    }), /CircadianPlan\.points\[0\]\.anchor\.event is not one of sunrise, sunset/],
+    ['a sun offset that has wrapped past a whole day', () => ({
+      ...validCircadian(),
+      points: DEFAULT_POINTS.map((point, i) => (i === 0
+        ? { ...point, anchor: { kind: 'sun', event: 'sunrise', offset: 5000 } }
+        : point)),
+    }), /CircadianPlan\.points\[0\]\.anchor\.offset is above 1440/],
     // Two points, because the curve now has a lower bound too — one point is
     // not a curve, and this case is about the brightness rule.
     ['brightness following a curve that has none', () => ({
@@ -211,39 +221,14 @@ describe('every rejection names the field', () => {
       ...validDaylight(),
       response: { ...DEFAULT_RESPONSE, darkLux: 900, brightLux: 20 },
     }), /DaylightPlan\.response\.brightLux is not above darkLux/],
-    ['a daylight response naming one sensor twice, so it is weighted twice', () => ({
-      ...validDaylight(),
-      response: { ...DEFAULT_RESPONSE, sensors: ['a', 'a'] },
-    }), /DaylightPlan\.response\.sensors names "a" more than once/],
     ['a daylight response missing an end, which is asked for a number every tick', () => ({
       ...validDaylight(),
-      response: { sensors: [], darkLux: 5, brightLux: 500, dark: 0.9 },
+      response: { ...DEFAULT_RESPONSE, bright: undefined },
     }), /DaylightPlan\.response\.bright is not a finite number/],
     ['a daylight response with a lux value no sensor could report', () => ({
       ...validDaylight(),
       response: { ...DEFAULT_RESPONSE, brightLux: 5_000_000 },
     }), /DaylightPlan\.response\.brightLux is above 100000/],
-    ['a window that follows the daylight on a device that has no response', () => ({
-      ...validSchedule(),
-      entries: [{ ...validSchedule().entries[0], fromDaylight: true }],
-    }), /SchedulePlan\.entries follows the daylight, but this device has no daylight response/],
-    ['a window that follows the daylight with no brightness to fall back to', () => ({
-      ...validSchedule(),
-      daylight: DEFAULT_RESPONSE,
-      entries: [{
-        id: 's1', onAt: 1320, days: null, end: { kind: 'time', at: 60 }, fromDaylight: true,
-      }],
-    }), /SchedulePlan\.entries\[0\]\.fromDaylight is set while the window carries no brightness/],
-    ['a curve point that follows the daylight on a device that has no response', () => ({
-      ...validCircadian(),
-      adjustBrightness: false,
-      points: DEFAULT_POINTS.map((p, i) => ({ ...p, brightness: 0.5, ...(i === 0 ? { fromDaylight: true } : {}) })),
-    }), /CircadianPlan\.points follows the daylight, but this device has no daylight response/],
-    ['a curve point that follows the daylight with no brightness', () => ({
-      ...validCircadian(),
-      daylight: DEFAULT_RESPONSE,
-      points: DEFAULT_POINTS.map((p, i) => ({ ...p, ...(i === 0 ? { fromDaylight: true } : {}) })),
-    }), /CircadianPlan\.points\[0\]\.fromDaylight is set while the point carries no brightness/],
   ];
 
   for (const [name, build, expected] of cases) {

@@ -17,6 +17,8 @@ import {
   quantise,
   redactKeyMaterial,
   redactReport,
+  refusesToSwitchOff,
+  restorePlan,
   toDevice,
   toPerceptual,
   UNREACHABLE_AFTER,
@@ -562,5 +564,101 @@ describe('the report describes its own coverage', () => {
       assert.ok(spec.title, `${code} has no title to publish`);
       assert.ok(spec.assumption, `${code} has no assumption to publish`);
     }
+  });
+});
+
+describe('restorePlan', () => {
+  /**
+   * The order that put two lamps back wrong, on 13 September 2026.
+   *
+   * A lamp found OFF snapshots as `dim: 0`, and on a Hue a `dim: 0` write IS a
+   * power-off — the bridge answers every colour write after it with
+   * `command (.color.xy) may not have effect` and the lamp keeps whatever the
+   * ladders last wrote. `dim` therefore goes last among the values, after the
+   * axes it would otherwise gate. Two real bulbs were restored exactly by
+   * replaying the same values in this order.
+   */
+  const OFF_IN_COLOUR = {
+    values: { onoff: false, dim: 0, light_temperature: 0.73, light_hue: 0.13, light_saturation: 0.81 },
+    mode: 'color',
+  };
+  const ALL = ['onoff', 'dim', 'light_temperature', 'light_hue', 'light_saturation', 'light_mode'];
+
+  test('brightness is written after every value it could gate', () => {
+    const plan = restorePlan(OFF_IN_COLOUR, ALL);
+    const at = (capability: string) => plan.findIndex(step => step.capability === capability);
+
+    for (const gated of ['light_temperature', 'light_hue', 'light_saturation', 'light_mode']) {
+      assert.ok(at(gated) < at('dim'),
+        `${gated} must be written before dim, or a dim of 0 refuses it`);
+    }
+  });
+
+  test('a lamp found off is switched off last, after its brightness', () => {
+    const plan = restorePlan(OFF_IN_COLOUR, ALL);
+    assert.equal(plan.at(-1)?.capability, 'onoff');
+    assert.equal(plan.at(-1)?.value, false);
+    assert.equal(plan.at(-2)?.capability, 'dim');
+  });
+
+  test('a lamp found on is switched on first, so the values land lit', () => {
+    const plan = restorePlan({ ...OFF_IN_COLOUR, values: { ...OFF_IN_COLOUR.values, onoff: true, dim: 0.4 } }, ALL);
+    assert.equal(plan[0]?.capability, 'onoff');
+    assert.equal(plan[0]?.value, true);
+    assert.equal(plan.filter(step => step.capability === 'onoff').length, 1);
+  });
+
+  test('the mode the snapshot used is the last of the three written', () => {
+    // Writing a hue puts the lamp in colour mode and a temperature puts it back
+    // (platform §6), so whichever axis the snapshot used has to go last.
+    const colour = restorePlan(OFF_IN_COLOUR, ALL).map(step => step.capability);
+    assert.ok(colour.indexOf('light_temperature') < colour.indexOf('light_mode'));
+    assert.ok(colour.indexOf('light_mode') < colour.indexOf('light_hue'));
+
+    const temperature = restorePlan({ ...OFF_IN_COLOUR, mode: 'temperature' }, ALL)
+      .map(step => step.capability);
+    assert.ok(temperature.indexOf('light_hue') < temperature.indexOf('light_mode'));
+    assert.ok(temperature.indexOf('light_mode') < temperature.indexOf('light_temperature'));
+  });
+
+  test('nothing the lamp does not declare is written', () => {
+    // A plug has onoff and nothing else; a mode write to it is a refusal the
+    // report would then have to explain away.
+    const plan = restorePlan({ values: { onoff: true }, mode: null }, ['onoff']);
+    assert.deepEqual(plan, [{ capability: 'onoff', value: true }]);
+  });
+});
+
+describe('refusesToSwitchOff', () => {
+  /**
+   * The guard that keeps the probe from waking something it cannot put back.
+   *
+   * On 13 September 2026 a Synology NAS reported `onoff: false`, answered the
+   * probe's off write with `Device is always-on`, was switched ON for the echo
+   * step, and then refused both writes that would have switched it back. The
+   * evidence that it could not be undone arrived one write before the damage.
+   */
+  test('an integration declining the operation is a refusal', () => {
+    assert.equal(refusesToSwitchOff('Device is always-on'), true);
+    assert.equal(refusesToSwitchOff('Not supported'), true);
+  });
+
+  test('a device that is simply away has refused nothing', () => {
+    // These belong to the unreachable counter, and marking them as refusals
+    // would stop the probe lighting a lamp that is merely off at the wall.
+    for (const away of [
+      'The device could not be reached. Is it powered on?',
+      'Request timed out',
+      'ETIMEDOUT',
+      'Device is offline',
+    ]) {
+      assert.equal(refusesToSwitchOff(away), false, away);
+    }
+  });
+
+  test('no error is not a refusal', () => {
+    assert.equal(refusesToSwitchOff(null), false);
+    assert.equal(refusesToSwitchOff(undefined), false);
+    assert.equal(refusesToSwitchOff(''), false);
   });
 });

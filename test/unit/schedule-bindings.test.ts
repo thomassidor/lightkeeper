@@ -6,7 +6,7 @@ import {
 } from '../../lib/schedules/schedule-bindings';
 import { discoverTimeCard, timeArgumentValue } from '../../lib/schedules/time-card-discovery';
 import { migrateSchedulePlan, CURRENT_SCHEDULE_SCHEMA_VERSION } from '../../lib/schedules/schedule-migrations';
-import type { ScheduleEntry } from '../../lib/schedules/schedule-types';
+import type { IsoWeekday, ScheduleEntry } from '../../lib/schedules/schedule-types';
 import { FlowBridgeManager, hasBeenUserEdited } from '../../lib/bridge/flow-bridge-manager';
 import { compileBinding } from '../../lib/bridge/flow-binding-compiler';
 import type { HomeyApiService } from '../../lib/homey-api-service';
@@ -33,7 +33,7 @@ const TIME_CARD = {
 };
 
 function entry(over: Partial<ScheduleEntry> = {}): ScheduleEntry {
-  return { id: 'a', onAt: 22 * 60, days: null, end: { kind: 'duration', minutes: 90 }, ...over };
+  return { id: 'a', onAt: 22 * 60, end: { kind: 'duration', minutes: 90 }, ...over };
 }
 
 function cardId(shortId: string) {
@@ -106,27 +106,31 @@ describe('schedule labels', () => {
   });
 
   test('a boundary label names the time it actually fires at', () => {
-    const sameDay = entry({ onAt: 7 * 60, end: { kind: 'duration', minutes: 60 }, days: [5] });
-    assert.equal(boundaryLabel(sameDay, 'on'), 'On at 07:00, Fri');
-    assert.equal(boundaryLabel(sameDay, 'off'), 'Off at 08:00, Fri');
+    // The day set comes from the SCHEDULE now rather than from the window, so
+    // the label takes it as its own argument.
+    const fridays: IsoWeekday[] = [5];
+    const sameDay = entry({ onAt: 7 * 60, end: { kind: 'duration', minutes: 60 } });
+    assert.equal(boundaryLabel(sameDay, fridays, 'on'), 'On at 07:00, Fri');
+    assert.equal(boundaryLabel(sameDay, fridays, 'off'), 'Off at 08:00, Fri');
   });
 
   test('an overnight off label names the day the window STARTED on', () => {
     // Friday 23:00 + 2h fires its off Flow at 01:00 on the SATURDAY. Labelling
     // it "Off at 01:00, Fri" describes a Flow that does not fire on a Friday.
-    const overnight = entry({ onAt: 23 * 60, end: { kind: 'duration', minutes: 120 }, days: [5] });
-    assert.equal(boundaryLabel(overnight, 'on'), 'On at 23:00, Fri');
-    assert.equal(boundaryLabel(overnight, 'off'), 'Off at 01:00 (starts Fri)');
+    const fridays: IsoWeekday[] = [5];
+    const overnight = entry({ onAt: 23 * 60, end: { kind: 'duration', minutes: 120 } });
+    assert.equal(boundaryLabel(overnight, fridays, 'on'), 'On at 23:00, Fri');
+    assert.equal(boundaryLabel(overnight, fridays, 'off'), 'Off at 01:00 (starts Fri)');
 
     // Every day is every day either way; the wording still says which is which.
-    const nightly = entry({ onAt: 23 * 60 + 30, end: { kind: 'duration', minutes: 90 }, days: null });
-    assert.equal(boundaryLabel(nightly, 'off'), 'Off at 01:00 (starts every day)');
+    const nightly = entry({ onAt: 23 * 60 + 30, end: { kind: 'duration', minutes: 90 } });
+    assert.equal(boundaryLabel(nightly, null, 'off'), 'Off at 01:00 (starts every day)');
   });
 });
 
 describe('schedule bindings', () => {
   test('one fixed-argument binding per boundary', () => {
-    const [on, off] = bindingsFor(entry(), TIME_CARD);
+    const [on, off] = bindingsFor(entry(), null, TIME_CARD);
 
     assert.equal(on.key, 'sched:a:on');
     assert.equal(off.key, 'sched:a:off');
@@ -137,17 +141,17 @@ describe('schedule bindings', () => {
   });
 
   test('the variant key carries the time', () => {
-    assert.equal(bindingsFor(entry(), TIME_CARD)[0].variantKey, 'at:22:00');
-    assert.equal(bindingsFor(entry({ onAt: 6 * 60 + 5 }), TIME_CARD)[0].variantKey, 'at:06:05');
+    assert.equal(bindingsFor(entry(), null, TIME_CARD)[0].variantKey, 'at:22:00');
+    assert.equal(bindingsFor(entry({ onAt: 6 * 60 + 5 }), null, TIME_CARD)[0].variantKey, 'at:06:05');
   });
 
   test('a whole plan compiles to two flows per schedule', () => {
-    const bindings = bindingsForPlan([entry(), entry({ id: 'b', onAt: 7 * 60 })], TIME_CARD);
+    const bindings = bindingsForPlan([entry(), entry({ id: 'b', onAt: 7 * 60 })], null, TIME_CARD);
     assert.deepEqual(bindings.map(b => b.key), ['sched:a:on', 'sched:a:off', 'sched:b:on', 'sched:b:off']);
   });
 
   test('the compiler puts the time in the trigger and the key in our action', () => {
-    const [on] = bindingsFor(entry(), TIME_CARD);
+    const [on] = bindingsFor(entry(), null, TIME_CARD);
     const flows = compileBinding({
       controllerId: 'sched-1',
       bindingKey: on.key,
@@ -158,7 +162,7 @@ describe('schedule bindings', () => {
         numeric: { id: cardId('bridge_numeric_event'), uri: 'x' },
         token: { id: cardId('bridge_token_event'), uri: 'y' },
       },
-      label: boundaryLabel(entry(), 'on'),
+      label: boundaryLabel(entry(), null, 'on'),
       sourceName: 'Kitchen schedule',
     });
 
@@ -179,7 +183,7 @@ describe('retiming a schedule', () => {
       sourceName: 'Kitchen schedule',
       deviceName: 'Kitchen schedule',
       fingerprint,
-      mapped: bindingsForPlan([e], TIME_CARD),
+      mapped: bindingsForPlan([e], null, TIME_CARD),
       existing,
     });
   }
@@ -392,65 +396,54 @@ describe('finding Homey\'s time trigger card', () => {
   });
 });
 
-describe('schedule plan migration', () => {
-  test('fills in the defaults a version-less plan predates', () => {
-    const { plan, migrated, fromVersion } = migrateSchedulePlan({
-      target: { kind: 'devices', deviceIds: ['l1'] },
-    });
+describe('schedule plan migration, after the reset', () => {
+  /**
+   * The table is empty on purpose.
+   *
+   * The pairing rewrite moved the day set off each window onto the schedule and
+   * removed `fromDaylight`, and there is no honest step from the old shape to
+   * the new one — a per-window day set cannot say what the schedule's days are
+   * without inventing an answer for a household that used two. Nothing had
+   * shipped, so the installed base was one Homey and its owner chose the clean
+   * slate.
+   *
+   * What the reset RELIES on is all still here, and that is what these assert.
+   */
+  const TARGET = { kind: 'devices', deviceIds: ['l1'] };
+  const CURRENT = {
+    schemaVersion: CURRENT_SCHEDULE_SCHEMA_VERSION,
+    enabled: false,
+    target: TARGET,
+    entries: [{ id: 'a', onAt: 60, end: { kind: 'duration', minutes: 30 } }],
+    days: null,
+    managedFlows: [],
+  };
 
-    assert.equal(migrated, true);
-    assert.equal(fromVersion, 0);
-    assert.equal(plan.schemaVersion, CURRENT_SCHEDULE_SCHEMA_VERSION);
-    assert.equal(plan.enabled, true);
-    assert.deepEqual(plan.entries, []);
-    assert.deepEqual(plan.managedFlows, []);
-  });
-
-  test('a current plan is left alone', () => {
-    const stored = {
-      schemaVersion: CURRENT_SCHEDULE_SCHEMA_VERSION,
-      enabled: false,
-      target: { kind: 'devices', deviceIds: ['l1'] },
-      entries: [{ id: 'a', onAt: 60, days: null, end: { kind: 'duration', minutes: 30 } }],
-      managedFlows: [],
-    };
-    const { plan, migrated } = migrateSchedulePlan(stored);
+  test('a current plan passes through untouched', () => {
+    const { plan, migrated, steps } = migrateSchedulePlan(CURRENT);
     assert.equal(migrated, false);
-    assert.deepEqual(plan, stored as never);
+    assert.deepEqual(steps, []);
+    assert.deepEqual(plan, CURRENT as never);
   });
 
-  test('1 to 2 brings a window brightness up to the floor', () => {
-    /**
-     * 5% quantises to `dim` 0.00 at the lamp — off, on most integrations — and
-     * 5% was the lowest position the brightness slider offered. Lifted here
-     * rather than only floored at write time, so the card cannot display 10%
-     * while the plan still says 5%.
-     */
-    const { plan, migrated } = migrateSchedulePlan({
-      schemaVersion: 1,
-      enabled: true,
-      target: { kind: 'devices', deviceIds: ['l1'] },
-      entries: [
-        { id: 'a', onAt: 60, days: null, end: { kind: 'duration', minutes: 30 }, brightness: 0.05 },
-        { id: 'b', onAt: 120, days: null, end: { kind: 'duration', minutes: 30 }, brightness: 0.6 },
-        { id: 'c', onAt: 180, days: null, end: { kind: 'duration', minutes: 30 } },
-      ],
-      managedFlows: [],
-    });
-
-    assert.equal(migrated, true);
-    assert.equal(plan.entries[0].brightness, 0.1);
-    assert.equal(plan.entries[1].brightness, 0.6, 'nothing above the floor moves');
-    // Absent means "leave brightness alone and only switch on", so there is
-    // nothing to lift.
-    assert.equal(plan.entries[2].brightness, undefined);
+  test('a plan from before the reset is quarantined, not guessed at', () => {
+    // DeviceLifecycle turns this throw into an unavailable device with a reason,
+    // which is the "delete it and add it again" signal. A version-less plan is
+    // the same case: version 0 has no step either.
+    assert.throws(() => migrateSchedulePlan({ ...CURRENT, schemaVersion: undefined }));
+    assert.throws(() => migrateSchedulePlan({ ...CURRENT, schemaVersion: 0 }));
   });
 
-  test('refuses a plan from a newer version rather than corrupting it', () => {
-    assert.throws(
-      () => migrateSchedulePlan({ schemaVersion: CURRENT_SCHEDULE_SCHEMA_VERSION + 1 }),
-      /newer than this app understands/,
-    );
-    assert.throws(() => migrateSchedulePlan(null), /not an object/);
+  test('a plan from a NEWER build is refused rather than downgraded', () => {
+    assert.throws(() => migrateSchedulePlan({
+      ...CURRENT, schemaVersion: CURRENT_SCHEDULE_SCHEMA_VERSION + 1,
+    }));
+  });
+
+  test('the chain still ends in its validator, so a bad plan is quarantined not cast', () => {
+    assert.throws(() => migrateSchedulePlan({
+      ...CURRENT,
+      entries: [{ id: 'a', onAt: 60, end: { kind: 'time', at: 60 } }],
+    }), /same as the on-time/);
   });
 });

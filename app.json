@@ -131,6 +131,10 @@
     "testControllerFunction": {
       "method": "POST",
       "path": "/controllers/:id/test"
+    },
+    "getSensorHistory": {
+      "method": "GET",
+      "path": "/sensors/:id/history"
     }
   },
   "flow": {
@@ -266,29 +270,69 @@
       },
       "pair": [
         {
-          "id": "targets",
+          "id": "intro",
           "navigation": {
-            "next": "ends"
+            "next": "lights"
           }
         },
         {
-          "id": "ends",
+          "id": "lights",
           "navigation": {
-            "prev": "targets"
+            "prev": "intro",
+            "next": "day"
+          }
+        },
+        {
+          "id": "day",
+          "navigation": {
+            "prev": "lights",
+            "next": "review"
+          }
+        },
+        {
+          "id": "review",
+          "navigation": {
+            "prev": "day"
+          }
+        },
+        {
+          "id": "tryit",
+          "navigation": {
+            "prev": "day"
           }
         }
       ],
       "repair": [
         {
-          "id": "targets",
+          "id": "intro",
           "navigation": {
-            "next": "ends"
+            "next": "lights"
           }
         },
         {
-          "id": "ends",
+          "id": "lights",
           "navigation": {
-            "prev": "targets"
+            "prev": "intro",
+            "next": "day"
+          }
+        },
+        {
+          "id": "day",
+          "navigation": {
+            "prev": "lights",
+            "next": "review"
+          }
+        },
+        {
+          "id": "review",
+          "navigation": {
+            "prev": "day"
+          }
+        },
+        {
+          "id": "tryit",
+          "navigation": {
+            "prev": "day"
           }
         }
       ],
@@ -313,55 +357,107 @@
       },
       "pair": [
         {
+          "id": "intro",
+          "navigation": {
+            "next": "credential"
+          }
+        },
+        {
           "id": "credential",
           "navigation": {
-            "next": "source"
+            "next": "remote"
           }
         },
         {
-          "id": "source",
+          "id": "remote",
           "navigation": {
-            "next": "targets"
+            "prev": "credential",
+            "next": "lights"
           }
         },
         {
-          "id": "targets",
+          "id": "lights",
           "navigation": {
-            "prev": "source",
-            "next": "mapping"
+            "prev": "remote",
+            "next": "buttons"
           }
         },
         {
-          "id": "mapping",
+          "id": "buttons",
           "navigation": {
-            "prev": "targets"
+            "prev": "lights",
+            "next": "review"
+          }
+        },
+        {
+          "id": "review",
+          "navigation": {
+            "prev": "buttons"
+          }
+        },
+        {
+          "id": "job",
+          "navigation": {
+            "prev": "buttons"
+          }
+        },
+        {
+          "id": "listen",
+          "navigation": {
+            "prev": "remote"
           }
         }
       ],
       "repair": [
         {
+          "id": "intro",
+          "navigation": {
+            "next": "credential"
+          }
+        },
+        {
           "id": "credential",
           "navigation": {
-            "next": "source"
+            "next": "remote"
           }
         },
         {
-          "id": "source",
+          "id": "remote",
           "navigation": {
-            "next": "targets"
+            "prev": "credential",
+            "next": "lights"
           }
         },
         {
-          "id": "targets",
+          "id": "lights",
           "navigation": {
-            "prev": "source",
-            "next": "mapping"
+            "prev": "remote",
+            "next": "buttons"
           }
         },
         {
-          "id": "mapping",
+          "id": "buttons",
           "navigation": {
-            "prev": "targets"
+            "prev": "lights",
+            "next": "review"
+          }
+        },
+        {
+          "id": "review",
+          "navigation": {
+            "prev": "buttons"
+          }
+        },
+        {
+          "id": "job",
+          "navigation": {
+            "prev": "buttons"
+          }
+        },
+        {
+          "id": "listen",
+          "navigation": {
+            "prev": "remote"
           }
         }
       ],
@@ -395,29 +491,57 @@
       },
       "pair": [
         {
-          "id": "targets",
+          "id": "intro",
           "navigation": {
+            "next": "lights"
+          }
+        },
+        {
+          "id": "lights",
+          "navigation": {
+            "prev": "intro",
             "next": "curve"
           }
         },
         {
           "id": "curve",
           "navigation": {
-            "prev": "targets"
+            "prev": "lights",
+            "next": "review"
+          }
+        },
+        {
+          "id": "review",
+          "navigation": {
+            "prev": "curve"
           }
         }
       ],
       "repair": [
         {
-          "id": "targets",
+          "id": "intro",
           "navigation": {
+            "next": "lights"
+          }
+        },
+        {
+          "id": "lights",
+          "navigation": {
+            "prev": "intro",
             "next": "curve"
           }
         },
         {
           "id": "curve",
           "navigation": {
-            "prev": "targets"
+            "prev": "lights",
+            "next": "review"
+          }
+        },
+        {
+          "id": "review",
+          "navigation": {
+            "prev": "curve"
           }
         }
       ],
@@ -451,29 +575,83 @@
       },
       "pair": [
         {
-          "id": "targets",
+          "id": "intro",
           "navigation": {
-            "next": "daylight"
+            "next": "lights"
           }
         },
         {
-          "id": "daylight",
+          "id": "lights",
           "navigation": {
-            "prev": "targets"
+            "prev": "intro",
+            "next": "sensor"
+          }
+        },
+        {
+          "id": "sensor",
+          "navigation": {
+            "prev": "lights",
+            "next": "response"
+          }
+        },
+        {
+          "id": "response",
+          "navigation": {
+            "prev": "sensor",
+            "next": "review"
+          }
+        },
+        {
+          "id": "review",
+          "navigation": {
+            "prev": "response"
+          }
+        },
+        {
+          "id": "sensordetail",
+          "navigation": {
+            "prev": "sensor"
           }
         }
       ],
       "repair": [
         {
-          "id": "targets",
+          "id": "intro",
           "navigation": {
-            "next": "daylight"
+            "next": "lights"
           }
         },
         {
-          "id": "daylight",
+          "id": "lights",
           "navigation": {
-            "prev": "targets"
+            "prev": "intro",
+            "next": "sensor"
+          }
+        },
+        {
+          "id": "sensor",
+          "navigation": {
+            "prev": "lights",
+            "next": "response"
+          }
+        },
+        {
+          "id": "response",
+          "navigation": {
+            "prev": "sensor",
+            "next": "review"
+          }
+        },
+        {
+          "id": "review",
+          "navigation": {
+            "prev": "response"
+          }
+        },
+        {
+          "id": "sensordetail",
+          "navigation": {
+            "prev": "sensor"
           }
         }
       ],
@@ -507,41 +685,69 @@
       },
       "pair": [
         {
+          "id": "intro",
+          "navigation": {
+            "next": "credential"
+          }
+        },
+        {
           "id": "credential",
           "navigation": {
-            "next": "targets"
+            "next": "lights"
           }
         },
         {
-          "id": "targets",
+          "id": "lights",
           "navigation": {
-            "next": "schedule"
+            "prev": "credential",
+            "next": "blocks"
           }
         },
         {
-          "id": "schedule",
+          "id": "blocks",
           "navigation": {
-            "prev": "targets"
+            "prev": "lights",
+            "next": "review"
+          }
+        },
+        {
+          "id": "review",
+          "navigation": {
+            "prev": "blocks"
           }
         }
       ],
       "repair": [
         {
+          "id": "intro",
+          "navigation": {
+            "next": "credential"
+          }
+        },
+        {
           "id": "credential",
           "navigation": {
-            "next": "targets"
+            "next": "lights"
           }
         },
         {
-          "id": "targets",
+          "id": "lights",
           "navigation": {
-            "next": "schedule"
+            "prev": "credential",
+            "next": "blocks"
           }
         },
         {
-          "id": "schedule",
+          "id": "blocks",
           "navigation": {
-            "prev": "targets"
+            "prev": "lights",
+            "next": "review"
+          }
+        },
+        {
+          "id": "review",
+          "navigation": {
+            "prev": "blocks"
           }
         }
       ],

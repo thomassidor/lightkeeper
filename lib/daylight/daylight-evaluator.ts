@@ -1,3 +1,4 @@
+import { DEFAULT_RESPONSE } from './daylight-types';
 import { solarElevation, solarPosition } from './solar-elevation';
 import {
   brightnessFor, levelFromElevation, resolveLevel, type DaylightSource,
@@ -76,9 +77,7 @@ export class DaylightEvaluator {
       ? null
       : solarPosition(position.latitude, position.longitude, this.now());
 
-    const reading = response.sensors.length > 0
-      ? this.deps.luminance.read(response.sensors)
-      : null;
+    const reading = this.deps.luminance.read(response.sensor);
 
     const { level, source } = resolveLevel(response, {
       elevation: sun?.elevation ?? null,
@@ -110,7 +109,14 @@ export class DaylightEvaluator {
     // house-wide readout, and "what the sky offers" is the honest thing for it
     // to report. Each device's own reading is in its diagnostics.
     const elevation = solarElevation(position.latitude, position.longitude, this.now());
-    return { elevation, level: levelFromElevation(elevation), location: position };
+    // On the DEFAULT ends, not on any device's. This is the house-wide readout —
+    // "what the sky offers" — and the two ends are per device now, so there is no
+    // one device's answer that would be right to report here.
+    return {
+      elevation,
+      level: levelFromElevation(DEFAULT_RESPONSE, elevation),
+      location: position,
+    };
   }
 
   /** Every sensor being watched, whichever device asked for it. */

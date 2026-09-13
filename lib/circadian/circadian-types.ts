@@ -1,8 +1,9 @@
 import { MINUTES_PER_DAY, formatMinutes, parseMinutes } from '../time/wall-clock';
+import { MINIMUM_BRIGHTNESS } from '../outputs/light-intent';
 import { sanitiseUnitInterval } from '../validation/unit-interval';
 import { isPaletteColor } from './palette';
 import type { TargetSpec } from '../outputs/light-intent';
-import type { DaylightResponse } from '../daylight/daylight-types';
+import type { CircadianZones } from './simple-curve';
 
 /**
  * What a circadian light is, as persisted in its virtual device's store.
@@ -62,21 +63,6 @@ export interface CircadianPoint {
    */
   brightness?: number;
   /**
-   * Take this point's brightness from the daylight instead of from the number
-   * above.
-   *
-   * The number STAYS and becomes the fallback — see the same field on a schedule
-   * entry for why that is the load-bearing half of the design.
-   *
-   * Unlike a schedule window, a curve is re-evaluated on every tick, so a point
-   * that follows the daylight really does follow it rather than sampling it once.
-   * What interpolation does either side of such a point is decided in the
-   * runtime: each point's brightness is resolved to a NUMBER before `valueAt`
-   * sees it, so a segment between a fixed point and a daylight one is an
-   * ordinary blend and `circadian-curve.ts` stays pure and unchanged.
-   */
-  fromDaylight?: boolean;
-  /**
    * A palette colour id, INSTEAD of this point's colour temperature.
    *
    * Absent on most points, and absent is the normal case: a curve of colour
@@ -111,10 +97,20 @@ export interface CircadianPlan {
    */
   adjustBrightness: boolean;
   /**
-   * ONE daylight response for the whole device, or none. See the same field on
-   * `SchedulePlan` for why it is inline and why it is per device.
+   * The three zones a CIRCADIAN light stores, when this plan came from one.
+   *
+   * Absent on a Curve light, which owns its points outright. Present on a
+   * circadian light, where it is the SOURCE and `points` above is a snapshot
+   * taken from it: the runtime re-derives the points from these zones on every
+   * tick against the day's real sunrise, because a boundary anchored to the sun
+   * moves by four minutes a day around an equinox and a snapshot taken at
+   * registration would be a season out by spring.
+   *
+   * Both are on the plan so that everything downstream — the pure curve engine,
+   * the validator, the diagnostics, the preview — goes on reading an ordinary
+   * point list and needs to know nothing about zones.
    */
-  daylight?: DaylightResponse;
+  zones?: CircadianZones;
   /**
    * Write the day's warmth to lights that are OFF, so a light is already correct
    * before anyone touches it.
@@ -129,16 +125,25 @@ export interface CircadianPlan {
 }
 
 /**
- * The curve a new device starts with: warm at dawn, cool through the working
- * day, warming through the evening, warmest overnight. The 23:00 → 06:00 segment
- * is the one that wraps midnight, and it is why interpolation is cyclic.
+ * The curve a new device starts with — five points, and deliberately not all
+ * whites.
+ *
+ * The first thing somebody sees on a Curve light has to show what the device
+ * DOES, and a default of five colour temperatures is indistinguishable from a
+ * circadian light with more steps. Amber into cool white into neutral, a coral
+ * evening and a violet night says "this one does colour" without a sentence
+ * saying so.
+ *
+ * The 22:30 → 06:30 segment is the one that wraps midnight, and it is why
+ * interpolation is cyclic. `warmth` is on every point alongside its colour,
+ * because it is what a lamp with no colour capability gets instead.
  */
 export const DEFAULT_POINTS: readonly CircadianPoint[] = [
-  { id: 'p1', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.90 },
-  { id: 'p2', anchor: { kind: 'clock', at: 9 * 60 }, warmth: 0.35 },
-  { id: 'p3', anchor: { kind: 'clock', at: 17 * 60 }, warmth: 0.45 },
-  { id: 'p4', anchor: { kind: 'clock', at: 20 * 60 }, warmth: 0.80 },
-  { id: 'p5', anchor: { kind: 'clock', at: 23 * 60 }, warmth: 1.00 },
+  { id: 'p1', anchor: { kind: 'clock', at: 6 * 60 + 30 }, warmth: 0.90, color: 'amber' },
+  { id: 'p2', anchor: { kind: 'clock', at: 9 * 60 }, warmth: 0.20, color: 'coolwhite' },
+  { id: 'p3', anchor: { kind: 'clock', at: 14 * 60 }, warmth: 0.40, color: 'neutral' },
+  { id: 'p4', anchor: { kind: 'clock', at: 19 * 60 }, warmth: 0.75, color: 'coral' },
+  { id: 'p5', anchor: { kind: 'clock', at: 22 * 60 + 30 }, warmth: 1.00, color: 'violet' },
 ] as const;
 
 export interface SanitisedCurve {
@@ -211,12 +216,11 @@ export function sanitiseCurve(raw: unknown, adjustBrightness = false): Sanitised
       anchor,
       warmth,
       // A brightness of 0 would be "on, at nothing" — treated as unset here, as
-      // it is in a schedule entry.
-      ...(lit ? { brightness } : {}),
-      // Only alongside a brightness, because that brightness is the fallback.
-      // The plan-level half of the rule — that the device has a response at all
-      // — is `validateCircadianPlan`'s: this function only sees the points.
-      ...(lit && source.fromDaylight === true ? { fromDaylight: true } : {}),
+      // it is in a schedule entry. A positive one is floored: 5% quantises to
+      // `dim` 0.00 at the lamp, and a plan that stored 5% would show 5% on every
+      // screen while the lamp went dark. `litDim` is the net under this at write
+      // time; this stops the plan itself carrying a value nothing can show.
+      ...(lit ? { brightness: Math.max(MINIMUM_BRIGHTNESS, brightness!) } : {}),
       ...(color !== undefined ? { color } : {}),
     });
   });
@@ -258,9 +262,21 @@ function sanitiseAnchor(raw: unknown): CircadianAnchor | string {
   const source = raw as Record<string, unknown>;
 
   if (source.kind === 'sun') {
-    // Declared in the type, not yet resolvable: without a latitude and longitude
-    // there is no sunrise to anchor to, and guessing one is worse than refusing.
-    return 'sunrise and sunset anchors are not supported yet';
+    // Resolvable since the circadian light's boundaries started following the
+    // sun: `sunTimes` in lib/daylight/solar-elevation.ts supplies the minute and
+    // the runtime threads it in as an `AnchorContext`. A day with no sunrise at
+    // all — a polar one, or a Homey that has never been told where it is — falls
+    // back to fixed hours rather than refusing, which is decided in
+    // `resolveBoundaries`, not here.
+    if (source.event !== 'sunrise' && source.event !== 'sunset') {
+      return 'a sun anchor must be sunrise or sunset';
+    }
+    const offset = typeof source.offset === 'number' && Number.isFinite(source.offset)
+      ? source.offset
+      : null;
+    if (offset === null) return 'the offset from the sun is not a number of minutes';
+    if (Math.abs(offset) > MINUTES_PER_DAY) return 'the offset from the sun is more than a day';
+    return { kind: 'sun', event: source.event, offset };
   }
 
   const at = parseMinutes(source.at);

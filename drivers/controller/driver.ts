@@ -1,7 +1,13 @@
+import type { LightkeeperApp } from '../../lib/app-contract';
 import { mintDeviceId } from '../../lib/bridge/flow-bridge-manager';
 import Homey from 'homey';
+import { PressListener } from '../../lib/pairing/press-listener';
+import { registerIntroHandler, registerReviewHandler } from '../../lib/pairing/flow-screens';
 
-import { DEFAULT_BEHAVIOR, FUNCTION_CAPABILITY, type LightFunction, type MappingRule } from '../../lib/mapping/mapping-types';
+import {
+  DEFAULT_BEHAVIOR, FUNCTION_CAPABILITY, FUNCTION_NEEDS_PRESET,
+  type LightFunction, type MappingRule,
+} from '../../lib/mapping/mapping-types';
 import {
   CURRENT_SCHEMA_VERSION, dedupeByInputKey, type ControllerProfile,
 } from '../../lib/profiles/controller-profile';
@@ -45,6 +51,14 @@ interface SessionState {
   mappings: MappingRule[];
   /** Set during repair. */
   existingDeviceId?: string;
+  /**
+   * Which gesture the pushed job editor is editing.
+   *
+   * Held here rather than passed through `showView`, because a pair session has
+   * no query string and a reload of `job.html` would otherwise land on nothing.
+   * One source of truth, and the editor cannot open on the wrong row.
+   */
+  editing?: string;
 }
 
 module.exports = class ControllerDriver extends Homey.Driver {
@@ -60,14 +74,26 @@ module.exports = class ControllerDriver extends Homey.Driver {
     return {
       log: (...args: unknown[]) => this.log(...args),
       error: (...args: unknown[]) => this.error(...args),
-      translate: (key: string) => this.homey.__(key),
+      translate: (key: string, tokens?: Record<string, string | number>) =>
+        this.homey.__(key, tokens),
       clock: this.homey.clock,
       app: this.app,
     };
   }
 
-  private get app(): any {
-    return this.homey.app;
+  /**
+   * The app, through the contract rather than as `any`.
+   *
+   * This used to be `: any`, and the hardware pass is what found out what that
+   * cost: `catalog.devices()` and `catalog.getDevice()` do not exist — the
+   * methods are `allDevices()` and `device()` — and six call sites across three
+   * drivers shipped, invisible to `tsc`, the suite and `validate` alike,
+   * throwing the first time a real screen asked for them. `this.homey.app` is
+   * `App` from the SDK's own types, so the double cast is the seam; `LightkeeperApp`
+   * is the surface a driver is allowed to use.
+   */
+  private get app(): LightkeeperApp {
+    return this.homey.app as unknown as LightkeeperApp;
   }
 
   override async onInit() {
@@ -103,16 +129,47 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
     const host = this.pairHost();
     const handler = handlerRegistrar(host, session);
+    /**
+     * One per SESSION, so abandoning the screen cannot leave a subscription on
+     * every remote in the house for as long as the app runs.
+     */
+    const listener = new PressListener({ api: this.app.api, log: (...args) => this.log(...args) });
 
     // ---------------------------------------------------------- credentials
 
-    registerCredentialHandlers(host, handler, 'source');
+    registerCredentialHandlers(host, handler, 'remote');
 
     // The pairing view must emit 'add_device' after createDevice for the
     // device to actually be created — createDevice alone only stages it.
     // Some SDK builds handle this internally; having a handler makes the
     // explicit emit harmless either way.
     handler('add_device', async () => true);
+
+    // ---------------------------------------------------------------- intro
+
+    registerIntroHandler(host, handler, {
+      titleKey: 'intro.controllerTitle',
+      blurbKey: 'intro.controllerBlurb',
+      hero: 'remote',
+      decisions: [
+        { whatKey: 'intro.theRemote', whyKey: 'intro.theRemoteWhy' },
+        { whatKey: 'intro.whichLights', whyKey: 'intro.whichLightsWhy' },
+        { whatKey: 'intro.theButtons', whyKey: 'intro.theButtonsWhy' },
+        { whatKey: 'intro.checkIt', whyKey: 'intro.checkItWhy' },
+      ],
+      /**
+       * The key screen, and it sits HERE rather than at the end.
+       *
+       * The design canvas moves it behind the work, on the grounds that the key
+       * only gates Flow writes at save. That is true and it is the wrong trade:
+       * somebody who reaches a four-step review and then cannot produce a key
+       * loses everything they just set up. It costs a returning user nothing —
+       * the key is per Homey, and `credential.html` skips itself when a valid
+       * one is stored — so every controller after the first goes straight to the
+       * remote picker.
+       */
+      nextView: 'credential',
+    });
 
     // ------------------------------------------------------- one-tap re-attach
 
@@ -139,6 +196,11 @@ module.exports = class ControllerDriver extends Homey.Driver {
       if (!candidate) throw new Error('That remote is no longer available.');
 
       const newSource = await this.app.catalog.device(candidate.deviceId);
+      // The candidate came from a health check that ran a moment ago, and a
+      // device can be removed between the two — in which case re-attaching to
+      // it would discover an empty surface and silently produce a controller
+      // with no mappings.
+      if (!newSource) throw new Error('That remote is no longer available.');
       const discovered = await this.app.discovery.discover(newSource);
 
       // The whole discovery result, not just its inputs: a re-attach must adopt
@@ -197,7 +259,208 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
     // -------------------------------------------------------------- targets
 
-    registerTargetHandlers(host, handler, state, 'targets.subtitleController');
+    registerTargetHandlers(host, handler, state, {
+      subtitleKey: 'targets.subtitleController',
+      // Step TWO, not one: this is the only driver that asks for a remote first,
+      // which is why the shared screen takes its own number rather than knowing.
+      stepIndex: 2,
+      stepCount: 4,
+      nextView: 'buttons',
+    });
+
+    // --------------------------------------------------------------- review
+
+    registerReviewHandler(host, handler, async () => {
+      const summary = await resolveSummary(this.app.catalog, state.target!);
+      const assigned = state.mappings.filter(rule => rule.inputKey !== null).length;
+
+      return {
+        stepIndex: 4,
+        stepCount: 4,
+        rows: [
+          {
+            labelKey: 'review.remote',
+            value: state.sourceName ?? host.translate('review.missingRemote'),
+            view: 'remote',
+          },
+          {
+            labelKey: 'review.lights',
+            value: await this.lightsSummary(state.target!, summary),
+            view: 'lights',
+          },
+          {
+            /**
+             * How many of the remote's gestures have a job, out of how many it
+             * has at all.
+             *
+             * Both numbers, because "4" alone cannot distinguish a remote that
+             * is fully set up from one where half the buttons were never
+             * reached. "Nothing" is a finished state on the buttons screen, so
+             * this row reports rather than warns.
+             */
+            labelKey: 'review.buttonsWithAJob',
+            value: `${assigned} / ${state.catalogue.length}`,
+            view: 'buttons',
+          },
+        ],
+        promiseKey: 'review.promiseController',
+      };
+    });
+
+    // -------------------------------------------------------------- buttons
+
+    /**
+     * One row per thing the remote can do, in the order the buttons sit on it.
+     *
+     * The inverse of the old grid, which offered seven lighting functions each
+     * with a dropdown of the remote's events. The user is holding the remote and
+     * thinking "what should THIS button do", so that asked the question
+     * backwards — and "Not assigned" five times read as unfinished work rather
+     * than as a remote with five buttons and two jobs.
+     *
+     * One rule per gesture is structural here: a gesture IS a row, so it cannot
+     * have two. `dedupeByInputKey` and `setRules` keep the same rule on the
+     * paths this screen is not the only way in through.
+     */
+    handler('getButtons', async () => {
+      if (!state.target) throw new Error('Choose some lights first.');
+
+      const jobs: Record<string, { label: string }> = {};
+      for (const rule of state.mappings) {
+        if (rule.inputKey === null) continue;
+        jobs[rule.inputKey] = { label: this.homey.__(`functions.${rule.function}`) };
+      }
+
+      return {
+        gestures: state.catalogue.map(input => ({
+          key: input.key,
+          // Split so a control with one action does not read "Top — Press" when
+          // "Top" is the whole of what there is to say.
+          buttonLabel: input.label.split(' — ')[0],
+          actionLabel: input.label.split(' — ').slice(1).join(' — '),
+        })),
+        jobs,
+      };
+    });
+
+    /** Which row the pushed editor is about to edit. */
+    handler('editGesture', async (key: unknown) => {
+      const wanted = typeof key === 'string' ? key : '';
+      // Checked against what this remote actually exposes: a pair session is a
+      // scriptable Web API surface (platform §14), and a rule naming an event
+      // the remote does not have is a rule that can never fire.
+      if (!state.catalogue.some(input => input.key === wanted)) {
+        throw new Error('That is not one of this remote\'s buttons.');
+      }
+      state.editing = wanted;
+      return { editing: wanted };
+    });
+
+    handler('getGesture', async () => {
+      if (!state.editing) throw new Error('No button is being edited.');
+      if (!state.target) throw new Error('Choose some lights first.');
+
+      const summary = await resolveSummary(this.app.catalog, state.target);
+      const offered = availableFunctions(summary.support);
+      const input = state.catalogue.find(candidate => candidate.key === state.editing);
+      const rule = state.mappings.find(candidate => candidate.inputKey === state.editing);
+
+      return {
+        title: input?.label ?? '',
+        /**
+         * "Nothing" first, and it is a real choice rather than an absence.
+         *
+         * A button with no job is a finished button; offering it as an option is
+         * what stops an unassigned row reading as work left undone.
+         */
+        jobs: [
+          { id: null, label: this.homey.__('job.nothing'), needsPreset: false },
+          ...offered.map(fn => ({
+            id: fn,
+            label: this.homey.__(`functions.${fn}`),
+            needsPreset: FUNCTION_NEEDS_PRESET[fn],
+          })),
+        ],
+        chosen: rule?.function ?? null,
+        needsPreset: rule ? FUNCTION_NEEDS_PRESET[rule.function] : false,
+        preset: rule?.preset ?? null,
+      };
+    });
+
+    /**
+     * Set, change or clear one gesture's job.
+     *
+     * Replaces the rule for THIS gesture and leaves every other alone, which is
+     * the one place this driver edits a rule rather than replacing the set —
+     * and it is safe because a gesture is a row, so there is exactly one rule to
+     * replace.
+     */
+    handler('setGesture', async (payload: unknown) => {
+      if (!state.editing) throw new Error('No button is being edited.');
+      const asked = payload as { job?: unknown; preset?: unknown } | undefined;
+      const job = typeof asked?.job === 'string' ? asked.job : null;
+
+      const kept = state.mappings.filter(rule => rule.inputKey !== state.editing);
+
+      if (job === null) {
+        state.mappings = kept;
+        return { cleared: true };
+      }
+
+      const { rules, dropped } = validateMappingRules(
+        [{
+          id: `r-${state.editing}`,
+          groupKey: '__all__',
+          function: job,
+          inputKey: state.editing,
+          ...(asked?.preset ? { preset: asked.preset } : {}),
+        }],
+        new Set(await targetDeviceIds(this.app.catalog, state.target!)),
+        availableFunctions((await resolveSummary(this.app.catalog, state.target!)).support),
+        new Set(state.catalogue.map(input => input.key)),
+      );
+
+      if (rules.length === 0) {
+        throw new Error(dropped[0]?.reason ?? 'That job cannot be used here.');
+      }
+
+      state.mappings = [...kept, {
+        id: rules[0]!.id,
+        function: rules[0]!.function,
+        inputKey: rules[0]!.inputKey,
+        target: null,
+        ...(rules[0]!.preset !== undefined ? { preset: rules[0]!.preset } : {}),
+      }];
+      return { set: true };
+    });
+
+    // ------------------------------------------------------- press to find
+
+    /**
+     * Listen for a real press, bounded and escapable.
+     *
+     * A convenience, never the only path: capability-based events are
+     * observable directly, but a card-only remote cannot be heard at all
+     * (platform §4) — so the list stays one tap away on both screens that offer
+     * this, and a silent battery remote is never a dead end.
+     */
+    handler('startListening', async () => {
+      const candidates = await this.app.catalog.allDevices();
+      await listener.start(candidates as any[], heard => {
+        // Two different screens listen, and they want different halves: the
+        // remote picker wants the DEVICE, the buttons screen wants the gesture.
+        // Both are emitted and each screen takes the one it asked about, which
+        // is cheaper than two listeners over the same subscriptions.
+        session.emit('heardSource', { id: heard.deviceId, name: heard.name });
+        session.emit('heard', heard.key);
+      });
+      return { listening: true };
+    });
+
+    handler('stopListening', async () => {
+      await listener.stop();
+      return { listening: false };
+    });
 
     // -------------------------------------------------------------- mapping
 
@@ -378,6 +641,26 @@ module.exports = class ControllerDriver extends Homey.Driver {
    * lets the user rename a device afterwards, which is the natural place for
    * it — asking during setup adds a step most people would skip anyway.
    */
+  /**
+   * What the lights row reads back — and WHICH of the two shapes it stored.
+   *
+   * "Everything in Kitchen" and "4 picked" behave differently the next time
+   * somebody adds a lamp to that room, and this line is the only place that
+   * difference is ever visible.
+   */
+  private async lightsSummary(
+    target: TargetSpec,
+    summary: { count: number },
+  ): Promise<string> {
+    const host = this.pairHost();
+    if (target.kind === 'zone') {
+      const zones = await this.app.catalog.allZones();
+      const zone = zones.find((candidate: { id: string }) => candidate.id === target.zoneId);
+      return host.translate('review.wholeRoom', { room: zone?.name ?? '?' });
+    }
+    return host.translate('review.someLights', { count: summary.count });
+  }
+
   private async deriveName(state: SessionState): Promise<string> {
     return deriveControllerName(this.app.catalog, state.target, state.sourceName ?? 'Remote');
   }

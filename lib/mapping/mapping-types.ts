@@ -4,7 +4,8 @@ import type { TargetSpec } from '../outputs/light-intent';
 export type LightFunction =
   | 'toggle' | 'on' | 'off'
   | 'brightness_up' | 'brightness_down'
-  | 'warmer' | 'colder';
+  | 'warmer' | 'colder'
+  | 'brightness_set' | 'temperature_cycle';
 
 /** Which capability a function needs — drives which rows appear. */
 export const FUNCTION_CAPABILITY: Record<LightFunction, 'onoff' | 'dim' | 'light_temperature'> = {
@@ -15,7 +16,49 @@ export const FUNCTION_CAPABILITY: Record<LightFunction, 'onoff' | 'dim' | 'light
   brightness_down: 'dim',
   warmer: 'light_temperature',
   colder: 'light_temperature',
+  brightness_set: 'dim',
+  temperature_cycle: 'light_temperature',
 };
+
+/**
+ * The functions that carry a stored value, and what that value is.
+ *
+ * `brightness_set` is the one a person actually asks for — "this button makes it
+ * cosy" — and it is the first function in this app that cannot be expressed by
+ * its name alone: it needs the brightness, and optionally the warmth, that the
+ * button should produce. Everything else is relative or a power state, which is
+ * why nothing here needed a value before.
+ *
+ * `temperature_cycle` needs none. It steps through the warmth axis and wraps,
+ * which is the gesture a one-button remote gets instead of a warmer and a cooler
+ * button, and where it starts is wherever the lamp already is.
+ */
+export const FUNCTION_NEEDS_PRESET: Record<LightFunction, boolean> = {
+  toggle: false,
+  on: false,
+  off: false,
+  brightness_up: false,
+  brightness_down: false,
+  warmer: false,
+  colder: false,
+  brightness_set: true,
+  temperature_cycle: false,
+};
+
+/**
+ * The value a function needs, where its name is not enough.
+ *
+ * Named `preset` rather than `args`, and that is worth a line: `fixedArgs` one
+ * layer over means a generated Flow card's ARGUMENTS, which is a different thing
+ * entirely, and a `MappingRule.args` sitting beside a `Binding.fixedArgs` would
+ * be genuinely confusing to read.
+ */
+export interface MappingPreset {
+  /** Perceptual brightness 0–1, on the same axis every other slider in the app uses. */
+  brightness: number;
+  /** Normalised colour temperature 0–1, where 1 is warmest. Absent = leave it alone. */
+  temperature?: number;
+}
 
 export interface MappingRule {
   id: string;
@@ -24,6 +67,16 @@ export interface MappingRule {
   inputKey: string | null;
   /** null = inherit the controller's targets. Set per rule on the mapping screen. */
   target: TargetSpec | null;
+  /**
+   * Required when `function` is `brightness_set`, refused otherwise.
+   *
+   * Both halves are enforced — in `validateMappingRules` on the way in and in
+   * `validateControllerProfile` on the way back out — because a rule that says
+   * "a set brightness" and carries no brightness is the "looks configured, does
+   * nothing" failure this app exists to prevent, and a preset on a `toggle` is a
+   * value nothing will ever read.
+   */
+  preset?: MappingPreset;
 }
 
 /** Locked defaults. */

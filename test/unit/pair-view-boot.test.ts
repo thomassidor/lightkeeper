@@ -48,69 +48,135 @@ const read = (view: string) => {
  * but that the script runs to completion and reaches its first `emit()`.
  */
 const FIRST_CALL: Record<string, { event: string; reply: unknown }> = {
-  'credential.html': {
-    event: 'getCredentialStatus',
-    reply: { present: true, valid: true, nextView: 'source' },
-  },
-  'source.html': {
-    event: 'listSources',
-    reply: { rooms: [], selectedId: null },
-  },
-  'targets.html': {
-    event: 'listTargets',
-    reply: { rooms: [], zones: [], selection: { kind: 'devices', deviceIds: [] } },
-  },
-  'mapping.html': {
-    event: 'getMapping',
-    reply: { functions: [], groups: [], controls: [], rules: [], lights: [] },
-  },
-  'schedule.html': {
-    event: 'getSchedule',
+  // ---- shared by every driver ------------------------------------------
+  'intro.html': {
+    event: 'getIntro',
     reply: {
-      maxEntries: 12, support: { dim: 1, light_temperature: 1 }, lights: [],
-      entries: [], timezone: 'Europe/Copenhagen',
+      title: 'Warm at night, cool at noon',
+      blurb: 'Your lights follow the sun.',
+      hero: 'day',
+      decisions: [{ what: 'Which lights', why: 'Pick them by room' }],
+      nextView: 'lights',
     },
   },
+  'lights.html': {
+    event: 'listTargets',
+    reply: {
+      rooms: [], zones: [], total: 0, current: null,
+      subtitle: 'The lights this follows', stepIndex: 1, stepCount: 3, nextView: 'day',
+    },
+  },
+  'review.html': {
+    event: 'getReview',
+    reply: { stepIndex: 3, stepCount: 3, rows: [], promise: 'It starts now.' },
+  },
+  'credential.html': {
+    event: 'getCredentialStatus',
+    reply: { present: true, valid: true, nextView: 'remote' },
+  },
+
+  // ---- circadian --------------------------------------------------------
+  'day.html': {
+    event: 'getDay',
+    reply: {
+      support: { onoff: 1, dim: 1, light_temperature: 1, total: 1 },
+      lights: [],
+      zones: {
+        morning: { temperature: 0.78, brightness: 0.55 },
+        midday: { temperature: 0.18, brightness: 0.9 },
+        evening: { temperature: 0.86, brightness: 0.45 },
+        morningEnd: 30,
+        eveningStart: -60,
+      },
+      adjustBrightness: false,
+      preStage: false,
+      sun: { sunriseMinute: 390, sunsetMinute: 1180 },
+      boundaries: {
+        morningEndMinute: 420, morningEnd: '07:00',
+        eveningStartMinute: 1120, eveningStart: '18:40',
+        fromSun: true,
+      },
+      nextView: 'review',
+      limits: { maxOffset: 150, offsetStep: 15, fallbackSunrise: 360, fallbackSunset: 1260 },
+      timezone: 'Europe/Copenhagen',
+    },
+  },
+  'tryit.html': {
+    event: 'getPreview',
+    reply: {
+      points: [{ minute: 50, warmth: 0.8 }, { minute: 720, warmth: 0.2 }],
+      nowMinute: 600,
+    },
+  },
+
+  // ---- curve ------------------------------------------------------------
   'curve.html': {
     event: 'getCurve',
     reply: {
-      minPoints: 2, maxPoints: 8, support: { dim: 1, light_temperature: 1 }, lights: [],
-      points: [
-        { id: 'p1', anchor: { kind: 'clock', at: 360 }, warmth: 0.2 },
-        { id: 'p2', anchor: { kind: 'clock', at: 1260 }, warmth: 1 },
-      ],
-      palette: [{ id: 'amber', label: 'Amber', hue: 0.11, saturation: 0.75 }],
-      adjustBrightness: false, preStage: false, timezone: 'Europe/Copenhagen',
+      points: [], palette: [], featuredColors: 8,
+      adjustBrightness: false, preStage: false,
+      minPoints: 2, maxPoints: 8,
     },
   },
-  'daylight.html': {
-    event: 'getDaylight',
+
+  // ---- daylight ---------------------------------------------------------
+  'sensor.html': {
+    event: 'listSensors',
+    reply: { rooms: [], selected: [], sky: null, sunsetAt: '19:48' },
+  },
+  'response.html': {
+    event: 'getResponse',
     reply: {
-      standalone: true,
+      response: {
+        sensor: null, darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25,
+        darkElevation: -6, brightElevation: 25, sunPeak: 'flat',
+      },
+      sensorName: null, nowLux: null, week: null, staleFor: null,
+      atDark: '20:18', atBright: '12:04',
+    },
+  },
+  'sensordetail.html': {
+    event: 'getSensorDetail',
+    reply: { sensorName: 'Hall motion', nowLux: 41, week: null },
+  },
+
+  // ---- schedule ---------------------------------------------------------
+  'blocks.html': {
+    event: 'getSchedule',
+    reply: {
+      maxEntries: 12,
       support: { onoff: 1, dim: 1, light_temperature: 1, total: 1 },
-      lights: [{ id: 'l1', name: 'Lamp', zoneName: 'Hall' }],
-      response: { sensors: [], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 },
-      limits: { minLux: 0.1, maxLux: 100000 },
-      now: { level: 1, brightness: 0.25, source: 'sky', elevation: 42 },
-      sky: { elevation: 42, level: 1, location: { latitude: 55.68, longitude: 12.57 } },
-      sensorReadings: [],
-    },
-  },
-  'ends.html': {
-    event: 'getEnds',
-    reply: {
-      support: { dim: 1, light_temperature: 1 },
-      lights: [{ id: 'l1', name: 'Lamp', zoneName: 'Hall' }],
-      warmest: { temperature: 1, brightness: 0.5 },
-      coolest: { temperature: 0.15, brightness: 0.9 },
-      adjustBrightness: false,
-      preStage: false,
-      shape: [
-        { at: '06:00', end: 'warmest' }, { at: '11:00', end: 'coolest' },
-        { at: '15:00', end: 'coolest' }, { at: '21:00', end: 'warmest' },
-      ],
+      lights: [],
+      entries: [{ id: 'a', onAt: 1140, end: { kind: 'time', at: 1380 } }],
+      days: null,
+      overlaps: [],
       timezone: 'Europe/Copenhagen',
     },
+  },
+
+  // ---- controller -------------------------------------------------------
+  'remote.html': {
+    // `checkReattach` fires first and its failure is swallowed — "this is not a
+    // repair session" is the ordinary answer — so the call that has to succeed
+    // for the screen to render is this one.
+    event: 'listSources',
+    reply: { rooms: [], current: null },
+  },
+  'buttons.html': {
+    event: 'getButtons',
+    reply: { gestures: [], jobs: {} },
+  },
+  'job.html': {
+    event: 'getGesture',
+    reply: {
+      title: 'Left, pressed',
+      jobs: [{ id: null, label: 'Nothing', needsPreset: false }],
+      chosen: null, needsPreset: false, preset: null,
+    },
+  },
+  'listen.html': {
+    event: 'startListening',
+    reply: { listening: true },
   },
 };
 
@@ -155,121 +221,104 @@ describe('every pair view boots', () => {
   }
 });
 
-describe('the two ends screen renders both ends', () => {
+describe('the day screen renders a day', () => {
+  /**
+   * The screen the two-ended one became.
+   *
+   * It is the hardest of the fifteen to boot — a gradient computed from the
+   * zones, two handles placed against today's sunrise and sunset, a card for the
+   * selected zone and rows for the other two — and every one of those depends on
+   * the reply having arrived. The failure this pins is the one the old ends
+   * screen actually shipped: a heading, some controls, and nothing between them.
+   */
   const run = () => {
-    const expected = FIRST_CALL['ends.html']!;
-    return runPairView(read('circadian/ends.html'), {
-      // Every interaction pushes both ends back before doing anything else, so
-      // the save path is stubbed here too.
+    const expected = FIRST_CALL['day.html']!;
+    const zones = (expected.reply as { zones: unknown }).zones;
+    return runPairView(read('circadian/day.html'), {
       respond: {
         [expected.event]: expected.reply,
-        setEnds: { warmest: {}, coolest: {}, adjustBrightness: false, corrected: [] },
+        // Every interaction pushes the whole day back before doing anything
+        // else, so the echo is stubbed here too.
+        setDay: {
+          zones,
+          // The driver echoes what it ACCEPTED, and `sanitiseZones` accepts
+          // `adjustBrightness` once every zone carries a brightness — which the
+          // view ensures before it pushes. A stub that always echoed `false`
+          // would turn the switch straight back off and hide a control the real
+          // driver would have shown.
+          adjustBrightness: true,
+          corrected: [],
+          boundaries: (expected.reply as { boundaries: unknown }).boundaries,
+        },
       },
     });
   };
 
-  test('two cards, one per end, each named and timed', async () => {
-    // The failure this pins: the screen showed its heading, its checkboxes and
-    // its buttons, and nothing between them.
+  test('the strip is painted, and both handles are placed on it', async () => {
     const view = run();
     await view.settle();
 
-    const list = view.byId('end-list');
-    assert.ok(list, 'no #end-list');
-    assert.equal(list.children.length, 2, 'one card per end');
+    const strip = view.byId('dy-strip');
+    assert.ok(strip, 'no #dy-strip');
+    assert.match(
+      String(strip.style.background), /linear-gradient/,
+      'the day strip is the control; an unpainted one is a screen with no day on it',
+    );
 
-    const names = list.descendants()
-      .filter(node => node.className === 'name')
-      .map(node => node.textContent);
-    assert.deepEqual(names, ['circadian.end_warmest', 'circadian.end_coolest']);
-
-    const when = list.descendants().filter(node => node.className === 'when');
-    assert.equal(when.length, 2, 'each end says roughly when it applies');
-    for (const node of when) assert.notEqual(node.textContent, '', 'and says it non-empty');
+    for (const id of ['dy-morningHandle', 'dy-eveningHandle']) {
+      const handle = view.byId(id);
+      assert.ok(handle, `no #${id}`);
+      assert.match(String(handle.style.left), /%$/, `${id} was never placed`);
+    }
   });
 
-  test('a warmth slider per end, and no brightness one until it is asked for', async () => {
-    /**
-     * The screen shipped with a brightness slider per end whenever the lights
-     * could dim, sitting above an unchecked "follow brightness too". The
-     * runtime ignores brightness while that box is off, so both sliders were
-     * controls that looked configured and did nothing.
-     */
+  test('sunrise and sunset are marked, because the offsets are read against them', async () => {
     const view = run();
     await view.settle();
 
-    const ranges = view.byId('end-list')!.descendants().filter(node => node.type === 'range');
-    assert.equal(ranges.length, 2, 'warmth only, once per end');
-    // Warmest at 100, coolest at 15: the stored values, not the defaults.
-    assert.deepEqual(ranges.map(node => node.value), ['100', '15']);
+    for (const id of ['dy-sunriseMark', 'dy-sunsetMark']) {
+      const mark = view.byId(id);
+      assert.ok(mark, `no #${id}`);
+      assert.notEqual(mark.style.display, 'none', `${id} is hidden despite a sun being sent`);
+    }
   });
 
-  test('and checking the box puts them there, without a round trip', async () => {
+  test('one zone is open and the other two are rows', async () => {
     const view = run();
     await view.settle();
 
-    const box = view.byId('end-adjustBrightness')!;
-    box.checked = true;
-    view.fire(box, 'change');
-
-    const ranges = view.byId('end-list')!.descendants().filter(node => node.type === 'range');
-    assert.equal(ranges.length, 4, 'warmth and brightness, twice');
-    assert.deepEqual(ranges.map(node => node.value), ['100', '50', '15', '90']);
+    assert.ok(view.byId('dy-zoneName')?.textContent, 'the open zone has no name');
+    const others = view.byId('dy-others');
+    assert.ok(others, 'no #dy-others');
+    assert.equal(others.children.length, 2, 'the two zones that are not open are rows');
   });
 
-  test('the brightness-following card is revealed only when the lights dim', async () => {
-    const withDim = run();
-    await withDim.settle();
-    // The CARD, not the row inside it: the toggle sits in its own card above the
-    // two ends, so hiding only the row would leave an empty white box.
-    assert.equal(withDim.byId('end-brightnessCard')!.style.display, 'block');
-
-    const expected = FIRST_CALL['ends.html']!;
-    const withoutDim = runPairView(read('circadian/ends.html'), {
-      respond: {
-        [expected.event]: {
-          ...(expected.reply as Record<string, unknown>),
-          support: { dim: 0, light_temperature: 1 },
-        },
-        setEnds: { warmest: {}, coolest: {}, adjustBrightness: false, corrected: [] },
-      },
-    });
-    await withoutDim.settle();
-    assert.equal(withoutDim.byId('end-brightnessCard')!.style.display, 'none');
-
-    // And with the card hidden there is no way to reach the sliders: checking
-    // the box by hand is the closest a test can come to a click on something
-    // the user cannot see, and it must still add nothing.
-    const box = withoutDim.byId('end-adjustBrightness')!;
-    box.checked = true;
-    withoutDim.fire(box, 'change');
-    const ranges = withoutDim.byId('end-list')!.descendants().filter(node => node.type === 'range');
-    assert.equal(ranges.length, 2, 'warmth only — these lights cannot dim');
-  });
-
-  test('the summary names the lights and the clock', async () => {
-    const view = run();
-    await view.settle();
-    assert.notEqual(view.byId('end-summary')!.textContent, '');
-  });
-
-  test('moving a slider sends both ends back', async () => {
+  test('brightness is off by default, and switching it on reveals the slider', async () => {
+    // A circadian light changes colour; touching brightness is a separate
+    // decision, so the control is not there until it is asked for.
     const view = run();
     await view.settle();
 
-    const warmth = view.byId('end-list')!.descendants().find(node => node.type === 'range')!;
-    warmth.value = '40';
-    view.fire(warmth, 'input');
+    const block = view.byId('dy-brightBlock');
+    assert.ok(block, 'no #dy-brightBlock');
+    assert.equal(block.style.display, 'none', 'brightness is opt-in');
 
-    const label = view.byId('end-list')!.querySelector('.value');
-    assert.equal(label?.textContent, 'schedule.warmthNeutral', 'the label follows the slider');
+    view.fire(view.byId('dy-brightToggle')!, 'click');
+    await view.settle();
+    assert.notEqual(block.style.display, 'none', 'switching it on shows the slider');
+  });
 
-    view.fire(warmth, 'change');
+  test('stepping a boundary pushes the whole day back', async () => {
+    const view = run();
     await view.settle();
 
-    const sent = view.emitted.filter(call => call.event === 'setEnds');
-    assert.equal(sent.length, 1);
-    assert.equal((sent[0]!.data as { warmest: { temperature: number } }).warmest.temperature, 0.4);
+    view.fire(view.byId('dy-boundaryUp')!, 'click');
+    await view.settle();
+
+    assert.ok(
+      view.emitted.some(call => call.event === 'setDay'),
+      'the driver applies the clamp, so every step has to go through it',
+    );
   });
 });
 

@@ -1,0 +1,447 @@
+<style>
+  /* ==== shared base: identical in every pair view ====
+     Scoped to this view's root because all views of a session share ONE
+     document, so unscoped class names bleed between screens (see the script
+     header).
+
+     GENERATED. This block is spliced into every pair view by
+     `npm run sync:views` from views/shared/base.css, where the placeholder
+     ROOT-ID stands in for each view's own root element id. **Edit that file, not
+     this one** — a change here is overwritten on the next sync, and
+     `npm run sync:views:check` fails in CI until the two agree. It used to be
+     authored by hand in all thirteen views, under an instruction to "edit this
+     block in all files, or in none of them".
+
+     It is still copied on disk rather than linked, and that part has not
+     changed: Homey needs a real file per folder and will not follow a reference
+     (platform §8). What HAS changed is the count of places a human edits: one.
+
+     A real stylesheet link may turn out to be possible — the Homey does serve a
+     sibling file next to a pair view, measured on hardware and written up in
+     platform §8, which is more than the old comment here believed. What is still
+     unmeasured is whether an injected view's own external reference loads at all
+     once the pairing container has put the view into its shared document. Until
+     somebody checks that with the Homey app open, splicing is the honest answer.
+
+     NOTE for whoever edits this comment: no HTML tag literals in here. The boot
+     harness finds a view's script by searching for a script tag, so writing one
+     inside this stylesheet made it evaluate the CSS as JavaScript — which fails
+     on the word `export` in the palette note below, forty lines from anything
+     that looked related.
+
+     Colours are tokens so a colour lives in ONE place, not so a second scheme
+     can restate them: there IS no second scheme. Homey renders a pairing view
+     inside its own panel, and that panel is light whatever the phone is set to
+     — so a view that followed the OS scheme went dark inside a white sheet. A
+     colour written as a literal anywhere past this block is a token that is
+     missing. */
+  #ls-root {
+    /* Brand. The violet is the manifest brandColor: the logo's ground — 93% of
+       its pixels — lightened so it reads as violet rather than black in the
+       circle Homey paints behind an icon (platform §10). The lavender is the
+       logo's mark. Both are read out of
+       artwork/masters/logo-bitmap-original.png by `export-assets.py --palette`,
+       so the UI cannot drift from the artwork. The tints and lines are derived:
+       the logo itself has no mid-tones. */
+    --lk-accent: #2a1958;
+    --lk-accent-ink: #ffffff;
+    /* Secondary text ON the accent, where white would compete with the number
+       beside it rather than support it. */
+    --lk-accent-soft: #e2dbf6;
+    --lk-accent-tint: #f3eefc;
+    --lk-accent-wash: #fbf9fe;
+    --lk-accent-line: #d9cbf5;
+    --lk-accent-strong: #3b2279;
+    --lk-ring: rgba(42, 25, 88, .16);
+
+    /* The ink ladder. Every one of these clears WCAG AA (4.5:1) against
+       --lk-surface, because all five are used between 11px and 15px — and the
+       two lightest carry the section titles, the tile meta and the help text.
+       They were 3.1:1 (--lk-muted) and 2.6:1 (--lk-faint): grey on white that
+       is legible on a desk monitor and not on a phone in daylight. What
+       separates the steps now is weight, size and caps as much as tone. */
+    --lk-ink: #16181d;
+    --lk-sub: #5f6672;
+    --lk-body: #4b5563;
+    --lk-muted: #6a7180;
+    --lk-faint: #6f7683;
+
+    /* transparent, not white: the pairing container paints the page behind us,
+       and claiming it would flatten every card against it. */
+    --lk-page: transparent;
+    --lk-surface: #ffffff;
+    --lk-raised: #f7f8fa;
+    --lk-line: #eceef2;
+    --lk-field: #e3e6ec;
+    --lk-hover: #c9d2e0;
+    --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
+
+    /* The pairing primitives' own colours, here for the same reason every
+       other literal is: a shadow written inline is a shadow the next palette
+       change misses. */
+    --lk-knob-shadow: 0 1px 3px rgba(16, 24, 40, .3);
+    --lk-slider-knob-shadow: 0 0 0 2px rgba(22, 24, 29, .6), 0 1px 4px rgba(16, 24, 40, .35);
+    --lk-slider-inset: inset 0 0 0 1px rgba(22, 24, 29, .1);
+    /* The two axes a slider can carry, as whole gradients rather than as a
+       list of stops: a ramp is one decision about what the axis LOOKS like,
+       and splitting it into six tokens would invite five of them to change. */
+    --lk-warm-ramp: linear-gradient(90deg, #e8892c, #efa658, #f4c68a,
+                                    #f2e6d6, #eaf0fb, #dbe8fb);
+    --lk-bright-ramp: linear-gradient(90deg, #221a3d, #43318a, #7a5fc4,
+                                      #b9a6e4, #ece5f9);
+    --lk-handle-shadow: 0 2px 6px rgba(16, 24, 40, .2);
+    --lk-handle-shadow-sel: 0 0 0 4px var(--lk-ring), 0 2px 8px rgba(16, 24, 40, .28);
+    --lk-hairline: rgba(22, 24, 29, .1);
+    --lk-day-mark: rgba(22, 24, 29, .4);
+    --lk-day-tag-bg: rgba(255, 255, 255, .86);
+
+    --lk-ok-bg: #eaf7ef;   --lk-ok-ink: #10633a;
+    --lk-bad-bg: #fdeceb;  --lk-bad-ink: #8f1d18;
+    /* Not an error. The one thing that reads this way is a schedule overlap,
+       which is allowed, resolved deterministically, and worth pointing at. */
+    --lk-warn-bg: #fdf3e7; --lk-warn-ink: #7a4a10;
+    --lk-flat-bg: #f4f5f7; --lk-flat-ink: #5b616e;
+
+    background: var(--lk-page);
+    padding: 18px 16px 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", sans-serif;
+    color: var(--lk-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #ls-root h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+  #ls-root .sub { font-size: 14px; line-height: 1.5; color: var(--lk-sub); margin: 0 0 18px; }
+  #ls-root p { font-size: 14px; line-height: 1.55; color: var(--lk-body); }
+
+  #ls-root .card { background: var(--lk-surface); border: 1px solid var(--lk-line);
+              border-radius: 14px; box-shadow: var(--lk-shadow); padding: 14px;
+              margin-bottom: 10px; }
+
+  #ls-root .section { margin-bottom: 18px; }
+  #ls-root .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase;
+                       letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 8px 2px; }
+
+  /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
+  #ls-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+              border: 1.5px solid var(--lk-line); border-radius: 12px; padding: 13px 14px;
+              margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
+              color: var(--lk-ink);
+              transition: border-color .12s ease, background .12s ease; }
+  #ls-root .tile:hover { border-color: var(--lk-hover); }
+  #ls-root .tile.sel { border-color: var(--lk-accent); background: var(--lk-accent-tint); }
+  #ls-root .tile .name { font-size: 15px; font-weight: 500; line-height: 1.3; }
+  #ls-root .tile .meta { font-size: 12.5px; color: var(--lk-muted); margin-top: 3px; line-height: 1.35; }
+
+  #ls-root input[type=text], #ls-root input[type=password], #ls-root select {
+    width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
+    border: 1.5px solid var(--lk-field); border-radius: 11px; background: var(--lk-surface);
+    color: var(--lk-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
+  /* The chevron's fill stays a literal: #6a7180 is --lk-muted, and a data URI
+     cannot read a custom property. So this is the one place a token's value is
+     written twice, and the two copies have to move together. */
+  #ls-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+               background-repeat: no-repeat; background-position: right 13px center;
+               background-size: 11px; padding-right: 34px; }
+  #ls-root input:focus, #ls-root select:focus { outline: none; border-color: var(--lk-accent);
+                                      box-shadow: 0 0 0 3px var(--lk-ring); }
+
+  #ls-root .btn { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
+             border-radius: 10px; border: 1.5px solid var(--lk-field);
+             background: var(--lk-surface); color: var(--lk-ink); cursor: pointer;
+             min-height: 40px; }
+  #ls-root .btn:hover { border-color: var(--lk-hover); }
+  #ls-root .btn:disabled { opacity: .45; cursor: not-allowed; }
+  #ls-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
+                     border-radius: 12px; border: none; background: var(--lk-accent);
+                     color: var(--lk-accent-ink); cursor: pointer; min-height: 50px;
+                     margin-top: 16px; font-family: inherit; }
+  #ls-root .btn-primary:disabled { opacity: .5; cursor: progress; }
+
+  /* A default ground, so a .msg shown before any state class lands on it is
+     still a message rather than bare text on the page. */
+  #ls-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 11px; font-size: 13.5px;
+             line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+  #ls-root .ok { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
+  #ls-root .bad { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
+  #ls-root .muted { background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+  #ls-root .warn { background: var(--lk-warn-bg); color: var(--lk-warn-ink); }
+  /* A message whose first line is what happened and whose second is what it
+     means. Both belong in one block: split across two, the second reads as
+     unrelated body copy. */
+  #ls-root .msg .lead { font-weight: 600; margin-bottom: 3px; }
+
+  #ls-root ol { font-size: 14px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+           color: var(--lk-body); }
+  #ls-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  @media (max-width: 380px) { #ls-root .grid { grid-template-columns: 1fr; } }
+  #ls-root .empty { font-size: 14px; color: var(--lk-muted); padding: 12px 0; }
+  /* ---- the pairing paradigm --------------------------------------------
+     Every screen the redesign draws is built from these six, so a change to
+     any of them is one edit rather than fifteen. They live in the shared base
+     rather than in each view for exactly the reason the tokens do: a primitive
+     defined twice is a primitive that drifts. */
+
+  /* Step dots. The intro is unnumbered — the steps it promises are the ones
+     that carry a dot — so a view renders as many as its own flow has. */
+  #ls-root .steps { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
+  #ls-root .steps i { width: 22px; height: 4px; border-radius: 999px;
+                   background: var(--lk-field); }
+  #ls-root .steps i.on { background: var(--lk-accent); }
+  #ls-root .steps span { margin-left: 4px; font-size: 12px; color: var(--lk-faint); }
+
+  /* `label · value · chevron`. The one shape everything secondary takes:
+     a row that says what it is, what it is set to, and that it can be opened. */
+  #ls-root .row { display: flex; align-items: center; gap: 11px; width: 100%;
+               padding: 13px 14px; min-height: 44px; box-sizing: border-box;
+               background: none; border: none; font: inherit; color: inherit;
+               text-align: left; cursor: pointer; }
+  #ls-root .row + .row { border-top: 1px solid var(--lk-line); }
+  #ls-root .row .label { flex: 1; font-size: 14.5px; font-weight: 500; }
+  #ls-root .row .value { font-size: 13px; color: var(--lk-muted); text-align: right; }
+  #ls-root .row .chev { flex: none; font-size: 15px; color: var(--lk-muted); }
+  #ls-root .row .sub { font-size: 12.5px; color: var(--lk-muted); margin: 2px 0 0; }
+
+  /* The pill switch behind every "Set … too". */
+  #ls-root .toggle { display: flex; align-items: center; gap: 11px; width: 100%;
+                  padding: 12px 0; min-height: 44px; box-sizing: border-box;
+                  background: none; border: none; font: inherit; color: inherit;
+                  text-align: left; cursor: pointer; }
+  #ls-root .toggle .label { flex: 1; font-size: 14.5px; font-weight: 500; }
+  #ls-root .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
+                         position: relative; background: var(--lk-field);
+                         transition: background .15s ease; }
+  #ls-root .toggle[aria-checked="true"] .track { background: var(--lk-accent); }
+  #ls-root .toggle .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+                        border-radius: 50%; background: var(--lk-surface);
+                        box-shadow: var(--lk-knob-shadow);
+                        transition: left .15s ease; }
+  #ls-root .toggle[aria-checked="true"] .knob { left: 21px; }
+
+  /* The title above a control, with its value on the right of the same line.
+     Sentence case and body-coloured rather than a small-caps section label:
+     "Brightness 80%" is a reading of the control directly below it, not a
+     heading over a group of unrelated things. */
+  #ls-root .control-title { display: flex; align-items: baseline;
+                         justify-content: space-between; gap: 10px;
+                         font-size: 13.5px; font-weight: 600; line-height: 1.2;
+                         color: var(--lk-ink); margin: 0 0 9px; }
+
+  /* A value slider with its two end captions.
+     The TRACK carries the range as a gradient and there is no fill: the whole
+     axis is visible at once, so a warmth slider shows candlelight at one end
+     and daylight at the other rather than asking somebody to imagine it. The
+     knob marks the position on it.
+     `touch-action: none` is not decoration: without it a horizontal drag
+     scrolls the pairing sheet underneath and the control cannot be used on a
+     phone at all. */
+  #ls-root .slider { position: relative; height: 28px; border-radius: 8px;
+                  background: var(--lk-field); margin: 0;
+                  box-shadow: var(--lk-slider-inset);
+                  touch-action: none; cursor: pointer; }
+  /* Candlelight to daylight, left to right — the order the slider reads in,
+     which is the REVERSE of the way a warmth is stored (platform §6). */
+  #ls-root .slider.warm { background: var(--lk-warm-ramp); }
+  #ls-root .slider.bright { background: var(--lk-bright-ramp); }
+  #ls-root .slider .knob { position: absolute; top: -4px; bottom: -4px; width: 6px;
+                        margin-left: -3px; border-radius: 4px;
+                        background: var(--lk-surface);
+                        box-shadow: var(--lk-slider-knob-shadow); }
+  #ls-root .ends { display: flex; justify-content: space-between;
+                font-size: 11px; color: var(--lk-muted); margin: 9px 0 0; }
+
+  /* The swatches a colour is chosen from, four across.
+     Not one row of eight: at 390px that is 34px a swatch, under the touch
+     minimum and too small to judge a colour by. Two rows of four is the same
+     set of eight, legibly, and the sixteen that fold out below continue it. */
+  #ls-root .swatches { display: grid; grid-template-columns: repeat(4, 1fr);
+                    gap: 8px; margin: 10px 0; }
+  #ls-root .swatch { height: 44px; border-radius: 9px; padding: 0;
+                  border: 1px solid var(--lk-hairline); cursor: pointer; }
+  #ls-root .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--lk-surface),
+                                                   0 0 0 4px var(--lk-accent); }
+
+  /* The day strip: a picture of the whole day, drawn once and reused. */
+  #ls-root .day { position: relative; height: 104px; border-radius: 12px;
+               overflow: hidden; touch-action: none; }
+  #ls-root .day .mark { position: absolute; top: 0; bottom: 0; width: 0;
+                     border-left: 1.5px dashed var(--lk-day-mark); }
+  #ls-root .day .tag { position: absolute; top: 6px; transform: translateX(-50%);
+                    background: var(--lk-day-tag-bg); color: var(--lk-body);
+                    font-size: 9.5px; font-weight: 600; letter-spacing: .05em;
+                    text-transform: uppercase; padding: 3px 5px; border-radius: 4px; }
+  #ls-root .day .handle { position: absolute; top: 50%; width: 26px; height: 26px;
+                       margin: -13px 0 0 -13px; border-radius: 50%;
+                       background: var(--lk-surface); box-sizing: border-box;
+                       border: 2.5px solid var(--lk-ring);
+                       box-shadow: var(--lk-handle-shadow); }
+  #ls-root .day .handle.sel { width: 34px; height: 34px; margin: -17px 0 0 -17px;
+                           border: 3px solid var(--lk-accent); z-index: 2;
+                           box-shadow: var(--lk-handle-shadow-sel); }
+  #ls-root .clockline { display: flex; justify-content: space-between;
+                     font-size: 12px; color: var(--lk-muted); margin-top: 6px; }
+
+  /* ==== end shared base ==== */
+
+  /* ---- this view only ---------------------------------------------------- */
+
+  #ls-root .waiting { display: flex; flex-direction: column; align-items: center;
+                      gap: 14px; padding: 26px 0 18px; }
+  #ls-root .pulse { display: flex; gap: 8px; }
+  #ls-root .pulse i { width: 10px; height: 10px; border-radius: 50%;
+                      background: var(--lk-accent-line); animation: lsPulse 1.2s infinite; }
+  #ls-root .pulse i:nth-child(2) { animation-delay: .2s; }
+  #ls-root .pulse i:nth-child(3) { animation-delay: .4s; }
+  @keyframes lsPulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+  #ls-root .countdown { font-size: 13px; color: var(--lk-muted); }
+</style>
+
+<div class="wrap" id="ls-root">
+  <h2 data-i18n="listen.title"></h2>
+
+  <div class="waiting">
+    <div class="pulse"><i></i><i></i><i></i></div>
+    <div class="countdown" id="ls-countdown"></div>
+  </div>
+
+  <div id="ls-heard" class="msg" style="display:none;"></div>
+
+  <!--
+    The list is ALWAYS one tap away, and that is not politeness.
+    Capability-based events can be observed directly; a card-only remote cannot
+    be heard at all (platform §4), so a screen that listened and offered nothing
+    else would be a dead end for a whole class of remote — and a silent battery
+    remote looks exactly the same from here.
+  -->
+  <div class="card" style="padding:0;">
+    <button class="row" id="ls-list" type="button">
+      <span class="label" data-i18n="listen.pickFromList"></span>
+      <span class="chev">&rsaquo;</span>
+    </button>
+  </div>
+
+  <button class="btn-primary" id="ls-stop" data-i18n="listen.stop"></button>
+</div>
+
+<script type="text/javascript">
+/**
+ * Press a button, and we find the remote it belongs to.
+ *
+ * Bounded and escapable, both deliberately. It counts down rather than waiting
+ * for ever, it says "heard nothing yet" while it waits rather than looking
+ * frozen, and the list is a row away throughout — because a remote whose battery
+ * died and a remote that only speaks through Flow cards are indistinguishable
+ * from this screen, and neither is a reason to be stuck on it.
+ *
+ * The countdown is cosmetic; the driver owns the real window and stops listening
+ * on its own. A view that had to be trusted to stop would leave a subscription
+ * on somebody's remote for as long as the app ran.
+ */
+function __lkBootLs(Homey) {
+  var __root = document.getElementById('ls-root');
+  if (!__root || __root.dataset.llBooted === '1') return;
+  __root.dataset.llBooted = '1';
+
+  function emit(event, data) {
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var finish = function (err, result) {
+        if (settled) return;
+        settled = true;
+        if (err) reject(err instanceof Error ? err : new Error(String(err)));
+        else resolve(result);
+      };
+      var timer = setTimeout(function () { finish(new Error('Homey did not respond in time. Close this screen and try again. (' + event + ')')); }, 20000);
+      var done = function (err, result) { clearTimeout(timer); finish(err, result); };
+      try {
+        var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
+        if (returned && typeof returned.then === 'function') {
+          returned.then(function (r) { done(null, r); }, function (e) { done(e); });
+        }
+      } catch (err) { done(err); }
+    });
+  }
+
+  var el = {
+    countdown: document.getElementById('ls-countdown'),
+    heard: document.getElementById('ls-heard'),
+    list: document.getElementById('ls-list'),
+    stop: document.getElementById('ls-stop')
+  };
+
+  var SECONDS = 30;
+  var left = SECONDS;
+  var ticker = null;
+
+  function tick() {
+    el.countdown.textContent = Homey.__('listen.countdown', { seconds: left });
+    if (left <= 0) {
+      stop();
+      el.heard.className = 'msg muted';
+      el.heard.textContent = Homey.__('listen.nothing');
+      el.heard.style.display = '';
+      return;
+    }
+    left -= 1;
+  }
+
+  function stop() {
+    if (ticker !== null) { clearInterval(ticker); ticker = null; }
+    emit('stopListening').catch(function () { });
+  }
+
+  /**
+   * A press arrived, and it names a device rather than a gesture.
+   *
+   * This screen picks the REMOTE; which of its buttons was pressed is the next
+   * screen's question. Selecting here and moving on is what makes pressing a
+   * button faster than reading a list, which is the only reason to offer it.
+   */
+  Homey.on('heardSource', function (found) {
+    stop();
+    el.heard.className = 'msg ok';
+    el.heard.textContent = Homey.__('listen.heard', { name: found && found.name ? found.name : '' });
+    el.heard.style.display = '';
+    setTimeout(function () { Homey.showView('remote'); }, 900);
+  });
+
+  el.list.addEventListener('click', function () {
+    stop();
+    Homey.showView('remote');
+  });
+
+  el.stop.addEventListener('click', function () {
+    stop();
+    Homey.showView('remote');
+  });
+
+  emit('startListening').then(function () {
+    tick();
+    ticker = setInterval(tick, 1000);
+  }).catch(function (err) {
+    el.heard.className = 'msg bad';
+    el.heard.textContent = err && err.message ? err.message : String(err);
+    el.heard.style.display = '';
+  });
+}
+
+(function () {
+  var tries = 0;
+  function waitForHomey() {
+    if (window.Homey && typeof window.Homey.emit === 'function') { __lkBootLs(window.Homey); return; }
+    if (++tries > 100) {
+      var root = document.getElementById('ls-root');
+      if (root) {
+        var banner = document.createElement('div');
+        banner.className = 'msg bad';
+        banner.textContent = 'This screen could not reach Homey. Close it and try again.';
+        root.appendChild(banner);
+      }
+      return;
+    }
+    setTimeout(waitForHomey, 50);
+  }
+  window.onHomeyReady = function (ready) { __lkBootLs(ready || window.Homey); };
+  waitForHomey();
+})();
+</script>

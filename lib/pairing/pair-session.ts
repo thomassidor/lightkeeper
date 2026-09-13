@@ -2,15 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { timezoneOf as readTimezone } from '../time/local-clock';
 
 import { listTargetsPayload, resolveSummary } from './target-picker';
-import { listSensorsPayload } from './sensor-picker';
-import { validateSensorsAgainstCatalog } from '../validation/pairing-dto';
 import { deriveSuffixedName } from './derive-name';
 import { mintDeviceId } from '../bridge/flow-bridge-manager';
 import { flowWriteProbe } from '../credential-service';
 import { validateTargetAgainstCatalog } from '../validation/pairing-dto';
-import {
-  DEFAULT_RESPONSE, MAX_LUX, MIN_LUX, sanitiseResponse, type DaylightResponse,
-} from '../daylight/daylight-types';
 import { messageOf } from '../support/homey-errors';
 import type { LightkeeperApp } from '../app-contract';
 import type { TargetSpec } from '../outputs/light-intent';
@@ -50,8 +45,15 @@ import type { TargetSpec } from '../outputs/light-intent';
 export interface PairSessionHost {
   log(...args: unknown[]): void;
   error(...args: unknown[]): void;
-  /** `homey.__`. `lib/` has no access to it, so the host resolves keys. */
-  translate(key: string): string;
+  /**
+   * `homey.__`. `lib/` has no access to it, so the host resolves keys.
+   *
+   * Takes tokens as well as a key, because a readback sentence that names how
+   * many lights it is about — "Lightkeeper sets these two lights whenever they
+   * are on" — cannot be assembled here: a string built in `lib/` could never be
+   * translated, whatever the locale files say.
+   */
+  translate(key: string, tokens?: Record<string, string | number>): string;
   /** `homey.clock`, absent on a rig that has no Homey behind it. */
   clock?: { getTimezone(): string } | undefined;
   app: LightkeeperApp;
@@ -74,7 +76,6 @@ export interface PairSession {
 /** The slice of a driver's session state the shared handlers touch. */
 export interface SharedSessionState {
   target?: TargetSpec | undefined;
-  daylight?: DaylightResponse | undefined;
 }
 
 /** Registers a named handler on the session. What `handler(...)` was. */
@@ -168,15 +169,43 @@ export function timezoneOf(host: PairSessionHost): string | null {
  * lights these are has to come from the driver. Resolved here through the host
  * rather than in `lib/`, which cannot translate.
  */
+export interface LightsScreen {
+  /** The line that says WHICH lights these are, as a locale key. */
+  subtitleKey: string;
+  /**
+   * Which numbered step this driver's flow puts the light picker at, and how
+   * many it has in all.
+   *
+   * Sent rather than hardcoded in the view because `lights.html` is one file
+   * serving five drivers (platform §8), and the controller asks for a remote
+   * first — so the same screen is step 1 in four flows and step 2 in the fifth.
+   */
+  stepIndex: number;
+  stepCount: number;
+  /**
+   * The view that follows. The same parameter, and the same reason, as the
+   * credential screen's `nextView`: a shared file cannot know what comes after
+   * it, and the driver does.
+   */
+  nextView: string;
+}
+
 export function registerTargetHandlers(
   host: PairSessionHost,
   handler: HandlerRegistrar,
   state: SharedSessionState,
-  subtitleKey: string,
+  screen: LightsScreen | string,
 ): void {
+  const options: LightsScreen = typeof screen === 'string'
+    ? { subtitleKey: screen, stepIndex: 0, stepCount: 0, nextView: '' }
+    : screen;
+
   handler('listTargets', async () => ({
     ...await listTargetsPayload(host.app.catalog, state.target),
-    subtitle: host.translate(subtitleKey),
+    subtitle: host.translate(options.subtitleKey),
+    stepIndex: options.stepIndex,
+    stepCount: options.stepCount,
+    nextView: options.nextView,
   }));
 
   let selectionRevision = 0;
@@ -192,74 +221,6 @@ export function registerTargetHandlers(
     if (revision !== selectionRevision) throw new Error('Target selection changed.');
     state.target = target;
     return summary;
-  });
-}
-
-/**
- * The three handlers the shared daylight card calls.
- *
- * Identical on the three drivers that carry the card as a SECTION of their own
- * screen — a schedule, a circadian light and a Curve light — and deliberately
- * separate from each driver's own `get`/`set` pair rather than folded into it.
- * That is what lets one view file serve four screens: the card fetches and
- * pushes its own response and never asks the surrounding screen to thread it
- * through.
- *
- * The Daylight light is NOT a caller. Its screen IS the card, so its
- * `getDaylight` reports `standalone: true`, guards on a chosen target, and
- * retains on the way in — three real differences, which is why it keeps its own.
- */
-export function registerDaylightCardHandlers(
-  host: PairSessionHost,
-  handler: HandlerRegistrar,
-  state: SharedSessionState,
-  sessionOwner: string,
-): void {
-  handler('listSensors', async () => listSensorsPayload(
-    host.app.catalog, state.daylight?.sensors ?? [],
-  ));
-
-  handler('getDaylight', async () => {
-    const response = state.daylight ?? DEFAULT_RESPONSE;
-    return {
-      // FALSE here: this card is a section of this driver's own screen, which
-      // owns the Save and the Test. Only the Daylight light's own screen is
-      // the card, and only there does it draw a footer.
-      standalone: false,
-      response,
-      limits: { minLux: MIN_LUX, maxLux: MAX_LUX },
-      now: host.app.daylight.evaluate(response),
-      sky: host.app.daylight.sky(),
-      sensorReadings: host.app.daylight.sensors(),
-    };
-  });
-
-  handler('setDaylight', async (payload: unknown) => {
-    const result = sanitiseResponse((payload as { response?: unknown })?.response ?? payload);
-    for (const field of result.corrected) {
-      host.log(`Corrected daylight ${field} to its default: the screen sent something unusable`);
-    }
-    // MEMBERSHIP, not just shape: a pair session is a Web API surface and can
-    // be scripted (platform §14), and a stale card sends ids that have since
-    // been deleted. A lamp id accepted as a sensor is subscribed to, never
-    // reports a lux value, and the device runs on the sky for ever while the
-    // settings page lists a sensor that will never have a reading.
-    result.response.sensors = await validateSensorsAgainstCatalog(
-      result.response.sensors, host.app.catalog,
-    );
-    state.daylight = result.response;
-
-    // Retained before `now` can mean anything: a sensor nobody is subscribed
-    // to has no reading, and the card would show the sky for a device that has
-    // just been given a sensor.
-    await host.app.luminance.retain(result.response.sensors, sessionOwner);
-
-    return {
-      response: result.response,
-      corrected: result.corrected,
-      now: host.app.daylight.evaluate(result.response),
-      sensorReadings: host.app.daylight.sensors(),
-    };
   });
 }
 

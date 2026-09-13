@@ -28,7 +28,8 @@ Added:
   bright — and which of the two is larger is the user's choice rather than a mode, so the same device
   either takes over as the daylight goes or follows the day. It reads `measure_luminance` sensors the
   household already owns, averaging several, and where there are none it reads **how high the sun
-  is**, computed from the Homey's own position.
+  is**, computed from the Homey's own position. *(The averaging was dropped later in this same
+  version — see "Every pairing screen redrawn" below. It reads one sensor.)*
   With no sensor it also asks **when this room gets the most sun** — morning, the middle of the day,
   afternoon, or not at all. The sun's height alone is symmetric about noon, so without that answer a
   room that gets its light at 5pm was treated as though it got it at 7am, and no other setting could
@@ -42,7 +43,8 @@ Added:
   that are already on, and it never switches one on or off — brightness is never written to a light
   that is off, which is measured rather than assumed (platform §12).
 - **A schedule window, a circadian end and a curve point can each follow the daylight**, instead of a
-  brightness typed in once. One response per device, configured on that device's own screen through a
+  brightness typed in once. *(Removed later in this same version — see "Every pairing screen
+  redrawn" below. Following the light in the room is what a Daylight light is for.)* One response per device, configured on that device's own screen through a
   card shared byte-for-byte by all four screens that carry it. The brightness that was there stays
   put as the **fallback** for when nothing can tell how light it is — which is the reason the number
   sits beside the flag rather than being replaced by it.
@@ -354,6 +356,181 @@ each of these.
   measurement, and `docs/week-long-testing.md` promised "memory use", "peak RSS" and advice to watch
   for "growing memory". All four are gone, pointing instead at
   `node scripts/verify-hardware.mjs memory`, which reads the footprint from outside where it exists.
+
+### A whole-house probe run, and the three defects it found in itself
+
+Nothing in the app changed here. A full pass on the reference Homey — `verify-hardware.mjs full`,
+then `probe-lights.mjs` over all 55 lamps of 9 integrations — came back with every functional line
+passing, and with three faults in the probe itself. They are worth a changelog entry because two of
+them left somebody's house changed.
+
+- **A restore could not put two Hue bulbs back.** The probe writes a lamp's snapshot back when it is
+  done, and it wrote `dim` first. On a lamp found OFF the snapshot's `dim` is 0 — which a Hue treats
+  as soft off, not as a brightness — so every colour and temperature write after it was refused
+  outright and the run finished by telling a person to set two lamps by hand. `dim` now goes last
+  among the values, where it gates nothing. Replaying the same values in that order restored both
+  bulbs exactly, which is the fix's own proof, and `restorePlan()` is lifted out so the order is
+  tested without a Homey.
+- **It woke a NAS it had already been told it could not switch off.** A Synology DiskStation answered
+  the off write with `Device is always-on`, was switched ON one step later for the echo measurement,
+  and then refused both writes that would have put it back. The evidence that the change could not be
+  undone arrived one write before the damage. A device that refuses to switch off is now never
+  switched on — guarded in the one function every write goes through, so a fourth step cannot forget
+  it — and the run says so as `PROBE_ONE_WAY_POWER`.
+- **Two reporting faults, both of which mislead in the direction of alarm.** A run against a device
+  that refused every write published `PROBE_SUSPECT_CACHE` at critical — a finding whose own text says
+  to believe nothing else in the report — because it counted lamps that had taken no write as evidence
+  that no reading moved. And the headline finding count double-counted run-level findings, printing 4
+  over a breakdown of 3. A boolean in the put-these-back list printed as `0.000`.
+
+**The pass also re-based the memory line.** T59 read 68 MB on a freshly installed app where the same
+line read 36.6 MB four days earlier, so the 9 September build and the 13 September build were
+installed one after the other on that Homey against the same four devices: **67.5 MB and 68.2 MB**.
+The app's code is not the difference, and what in the house is was not identified. The ceiling that
+fails the line is now 100 MB rather than 50, the line no longer diagnoses a cause it cannot know, and
+platform §15 carries the measurements — including the three explanations that were ruled out. The app
+is still well over Homey's 30 MB guideline, which is unchanged and known.
+
+
+### Every pairing screen redrawn, and four engines reshaped to make them honest
+
+The last thing to go into 0.6.0, and the largest. Setting a device up used to put the abstract
+control first: two unlabelled sliders standing for a whole day, a function-first grid of every job
+crossed with every gesture, two lux numbers with nothing to judge them against, and an API-key chore
+before anything of value was visible. Every screen now holds **one control and at most one
+sentence**; everything secondary is a row with a chevron; every caveat has left pairing for the
+review screen or the device's settings. About seventy per cent of the words on those screens are
+gone, and none of them were deleted — they moved.
+
+Each of the five device types is now an unnumbered **intro**, a numbered step per question, and a
+**review** that states what will happen before anything is saved. Every row on the review jumps back
+to the step that owns it. Fifteen screens are authored where there were eight, four of them shared
+by every driver and answered from a payload the driver supplies, so five different flows — three
+steps or four, with or without a key — share one file each rather than five near-copies.
+
+**The API key is asked for near the START, not at the end.** The design put it behind the work, on
+the reasoning that the key only gates Flow writes at save. That is true and it is the wrong trade: a
+user who reaches a four-step review and then cannot produce a key loses everything they just filled
+in. It sits after the intro and before step 1, and it skips itself silently when a valid key is
+already stored — which is every controller and schedule after the first, since the key is per Homey.
+
+Four engines changed shape, because several of those screens could not be drawn honestly otherwise.
+
+- **A circadian light has three zones, not two ends, and its day follows the real sun.** Morning,
+  midday and evening, each with its own warmth and — newly optional — its own brightness. Morning
+  ends at sunrise plus an offset and evening begins at sunset plus one, both stepped in quarter
+  hours, so the day moves through the year instead of sitting at a fixed clock. `sunTimes()` in
+  `lib/daylight/solar-elevation.ts` is the new pure function behind it: the hour-angle solution over
+  the same NOAA sequence the elevation already used, answering `null` where no horizon crossing
+  exists. That last part is what lifted the `{ kind: 'sun' }` anchor, declared since 0.5.0 and
+  refused in three places because a sun anchor accepted by the sanitiser and thrown on by the
+  resolver is a curve silently stuck at one colour. All three refusals went together.
+  The boundaries are clamped when they are RESOLVED rather than when they are stored: north of about
+  60° a short winter day can bring two perfectly reasonable offsets into collision with no edit
+  having happened, and clamping the stored value would quietly rewrite what somebody chose. And
+  because morning and evening are now independent temperatures either side of midnight, midnight is
+  a third ramp rather than a step change.
+- **A Daylight light reads ONE sensor, and shows you its week.** Averaging up to eight sounds more
+  robust and is not: a cupboard sensor and a windowsill sensor average to a number neither ever
+  reported, and the screen could not say whose week the lux range belonged to. The setup screen now
+  draws that sensor's own last seven days from Homey's Insights as a 7 × 12 grid, and fills both
+  thresholds in from it. This is the fix for a default of 5 → 500 lx that suited exactly one of the
+  four sensors in the reference house (platform §16); two of the other three would have sat pinned
+  at one end of their range all day and read as "this feature does nothing". The same picture says
+  two things it would otherwise take a month to notice — a sensor that barely changes all week, and
+  a sensor that has stopped reporting. No new permission was needed: `homey:manager:insights` does
+  not exist, `homey:manager:api` covers it, and the app's own token reads a foreign device's log.
+  The two solar-elevation thresholds became per-device for the same reason the lux ones already
+  were, and `SunPeak`'s `'none'` became `'flat'` — a room with no direct sun still brightens and
+  darkens, so it holds the diffuse share rather than nothing.
+- **Following the daylight from inside a schedule, a circadian end or a curve point is gone.** It
+  put the same sensor picker and lux range on four different screens and gave two device types two
+  different daylight behaviours to explain — a schedule sampling at its boundary, a curve following
+  on every tick — which looked identical for the first evening. A brightness is a number; a
+  brightness that follows the room is a Daylight light. That took `views/shared/daylight-card.*`
+  with it, and with it the largest piece of view-splicing machinery in the repo.
+- **A schedule's days belong to the schedule, and blocks may overlap.** Seven chips once, above the
+  list, instead of seven per block. Overlapping blocks are no longer dropped by the sanitiser: the
+  runtime has always resolved them deterministically — the later one wins while they overlap — so
+  the screen outlines the region and says so, and Next is never blocked. Deleting a row somebody had
+  just drawn was the worse surprise.
+- **The controller's grid is inverted.** One row per thing the remote can do, in the order the
+  buttons sit, each stating its job in a sentence; "Nothing" is a finished state rather than a
+  warning. One rule per gesture is now structural — a row holds one job — as well as enforced in
+  `setRules`. Two new jobs arrive with it, both carrying a value: **a set brightness** and **step
+  through warm and cool**. Press-to-find is its own bounded screen: thirty seconds, a live "heard
+  nothing yet", and "pick from the list instead" always one tap away, because a card-only remote
+  cannot be heard at all (platform §4).
+- **The palette is twenty-four colours**, eight shown with the rest folding out in place, and the
+  default curve is coloured — so the first thing a Curve light shows is that it does colour.
+- **"Select all" in a room stores the ROOM.** Ticking every light in one room and nothing elsewhere
+  stores a zone target rather than a device list, so a lamp added to that room next month is picked
+  up without re-pairing. Unticking one converts it back, and the review screen states which of the
+  two the device ended up with, because the difference is invisible otherwise.
+
+**There are no migrations, and that is deliberate.** Every stored shape here changed, and the one
+Homey running this app starts from a clean slate — so all five migration chains were reset to
+version 1 with empty step tables rather than extended. A device carrying an older plan comes up
+unavailable with a message, which is the signal to delete and re-add it. Nothing has been published,
+so nobody else is carrying one.
+
+**Every screen was then rendered and held against the design canvases**, which
+is the only check that catches a screen that boots and draws wrongly —
+`npm run render:views` draws all 28 to `.views/` and `docs/design/` is what they
+were compared with. Ten differences came out of it, and two were defects rather
+than polish:
+
+- **Two warmth sliders ran backwards.** The job editor and the schedule block
+  placed the knob at the raw `warmth`, where 1 is the WARMEST end (platform §6),
+  on a track that now runs candlelight-left to daylight-right — so the handle sat
+  over the opposite colour to the one it stood for, captioned "Coolest" at the
+  warm end. Nothing had looked wrong while the track was a plain fill, because a
+  fill says nothing about which end is which. Both now invert at the same seam
+  the circadian day screen already used, and all three read the same way round.
+- **The sensor detail screen named its sensor twice**, once as the heading and
+  again inside the card directly under it, which reads as two different sensors.
+
+The other eight are the design's own shapes, applied: sliders carry their axis
+as a gradient with no fill, so the whole range is visible rather than "this much
+of the way along"; a control's title is sentence case with its value on the
+right, not a small-caps section label; swatches are four across rather than
+eight in a row that fell under the touch minimum; the curve chart carries a
+handle per point and an Off-to-Full axis; the week grid is the app's own violet,
+stepped into six shades so the pattern is legible; a schedule overlap is an
+amber notice with its consequence on a second line, and the region it names is
+outlined dashed; the sensor picker's two options are stacked full width with the
+chosen sensor's live reading beside the name; and the remote picker says how
+many separate presses the Homey can hear from each remote, which is the line the
+README has promised since 0.1.0 and the rewrite had dropped.
+
+**And then it was run on a real Homey, twice — Studio and Garage — which found two
+more.** Both were in code the rewrite had added, and neither was reachable from
+a unit test:
+
+- **Three drivers called catalogue methods that do not exist.**
+  `catalog.devices()` and `catalog.getDevice()`; the methods are `allDevices()`
+  and `device()`. Six call sites, all of which compiled, passed the suite and
+  validated at publish level, because every driver's `private get app()` was
+  typed `any` — so `this.app.catalog.anything()` type-checked. On hardware they
+  threw the first time a real screen asked, and the Daylight light's sensor
+  picker could not list a single sensor. The accessor is now typed
+  `LightkeeperApp`, which is what `lib/app-contract.ts` has existed for since
+  0.5.0 and what the drivers had never used; typing it caught a second defect on
+  the spot, a re-attach that passed a possibly-missing device into discovery and
+  would have left a controller with no mappings at all.
+- **The hardware pass itself was pointed at three handlers that no longer
+  exist**, and one of its assertions had been deliberately reversed by this
+  release: it required the later of two overlapping schedule blocks to be
+  dropped. Both are now what the screens do.
+
+Two smaller things fell out of the rewrite and are worth recording. **No view assigns `innerHTML`
+any more** — the two that built card markup as strings now build nodes, which took `escapeHtml()`
+with them and turned "every interpolation is escaped" into the stronger "nothing is interpolated";
+the safety test keeps its allowlist machinery with an empty allowlist. And the **warmth ladder was
+inverted** in three places: higher `light_temperature` is warmer (platform §6), so a midday warmth
+of 0.18 was reading as "Warm" beside a blue swatch. Storage keeps the platform's convention and the
+slider reads Candlelight to Daylight, which is the way round the design draws it.
+
 
 ## 0.5.2
 

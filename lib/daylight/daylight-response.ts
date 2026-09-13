@@ -38,10 +38,10 @@ export type DaylightSource = 'sensors' | 'sky' | 'none';
  * only at the solstice — a ramp whose bright end nobody's sky reaches is a ramp
  * with one end.
  *
- * **Constants, derived on every evaluation rather than stored**, for the same
- * reason SIMPLE_SHAPE is (lib/circadian/simple-curve.ts): an installed device
- * picks up an improved shape, and the day these become editable this feature is
- * itself with two more fields.
+ * **The DEFAULTS the two stored ends start at**, no longer constants the ramp
+ * reads directly. That day arrived: `DaylightResponse.darkElevation` and
+ * `brightElevation` are per device, because one pair of angles cannot be right
+ * for a north-facing room and a south-facing one (platform §16).
  */
 export const DARK_ELEVATION = -6;
 export const BRIGHT_ELEVATION = 25;
@@ -97,8 +97,10 @@ export function levelFromLux(response: DaylightResponse, lux: number): number {
  *    the sky alone suggested — never brighter. The previous model implicitly
  *    treated every room as optimally oriented, so every correction is downward
  *    and no existing device gets a brighter reading than it used to;
- *  - `'none'` returns exactly 1, so a device that never answered the question
- *    is bit-for-bit unchanged.
+ *  - `'flat'` — "hardly any direct sun" — returns the diffuse share FLAT, with
+ *    no directional term at all. That is the honest reading of the answer: a
+ *    room with no direct beam still brightens and darkens with the day, just
+ *    less, so its curve stays shallow rather than going away.
  *
  * It is a model of a room, fitted to nothing, and it will be wrong in detail. It
  * is here because being wrong about WHEN by six hours is worse than being wrong
@@ -120,6 +122,7 @@ export function windowAzimuthFor(peak: SunPeak, latitude: number): number | null
     case 'morning': return 90;
     case 'afternoon': return 270;
     case 'midday': return latitude >= 0 ? 180 : 0;
+    // 'flat' has no window direction — that is what makes it flat.
     default: return null;
   }
 }
@@ -130,7 +133,12 @@ export function orientationFactor(
   sunAzimuth: number,
 ): number {
   const window = windowAzimuthFor(peak, latitude);
-  if (window === null || !Number.isFinite(sunAzimuth)) return 1;
+  // No direction to point at: a room that gets hardly any direct sun takes the
+  // diffuse share and nothing else, which is a shallow curve rather than a flat
+  // one. An unusable azimuth is the other case, and there the honest answer is
+  // to apply no correction at all rather than to invent a shallow one.
+  if (!Number.isFinite(sunAzimuth)) return 1;
+  if (window === null) return DIFFUSE_SHARE;
 
   const delta = radians(((sunAzimuth - window + 540) % 360) - 180);
   return DIFFUSE_SHARE + (1 - DIFFUSE_SHARE) * Math.max(0, Math.cos(delta));
@@ -140,10 +148,23 @@ function radians(degrees: number): number {
   return degrees * (Math.PI / 180);
 }
 
-/** Sun elevation → level, on the two constants above. */
-export function levelFromElevation(degrees: number): number {
+/**
+ * Sun elevation → level, on the response's own two ends.
+ *
+ * The ends used to be the module constants below, on the grounds that an
+ * installed device should pick up an improved shape. They are stored per device
+ * now, for the same reason `brightLux = 500` could not be one number for every
+ * room (platform §16): a north-facing room and a west-facing one do not share a
+ * sun, and the screen can pre-fill both from today's own sun path. The constants
+ * survive as the DEFAULTS those fields start at.
+ */
+export function levelFromElevation(response: DaylightResponse, degrees: number): number {
   if (!Number.isFinite(degrees)) return 0;
-  return ease(clamp01((degrees - DARK_ELEVATION) / (BRIGHT_ELEVATION - DARK_ELEVATION)));
+  const span = response.brightElevation - response.darkElevation;
+  // sanitiseResponse and the validator both guarantee a span; guarded anyway,
+  // because a NaN level reaches a lamp as no write at all.
+  if (!(span > 0)) return 0;
+  return ease(clamp01((degrees - response.darkElevation) / span));
 }
 
 /**
@@ -216,7 +237,7 @@ export function resolveLevel(
     return { level: levelFromLux(response, inputs.reading.lux), source: 'sensors' };
   }
   if (inputs.elevation !== null && Number.isFinite(inputs.elevation)) {
-    const sky = levelFromElevation(inputs.elevation);
+    const sky = levelFromElevation(response, inputs.elevation);
     const oriented = inputs.azimuth !== undefined && inputs.latitude !== undefined
       ? sky * orientationFactor(response.sunPeak, inputs.latitude, inputs.azimuth)
       : sky;

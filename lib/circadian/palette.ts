@@ -38,19 +38,59 @@ export interface PaletteColor {
 }
 
 /**
- * Ordered as they read on a screen — warm to cool, then the two that are
- * neither. Not ordered by hue: the wheel puts red next to magenta, which is not
- * how anyone browses a list of colours for a room.
+ * How many of the palette the screen shows without being asked.
+ *
+ * Eight, and then "Show more colours" folds the other sixteen out IN PLACE,
+ * never onto a second screen. A set is a decision; a continuous picker is a
+ * tuning session, and a set of twenty-four shown all at once is a tuning session
+ * with extra steps. The first eight are the ones the default curve uses plus the
+ * three most ordinary colours, so the common case never opens the fold.
+ */
+export const FEATURED_COLORS = 8;
+
+/**
+ * The palette, with the eight shown by default FIRST.
+ *
+ * Ordering is a screen concern, not a data one — a colour is stored and resolved
+ * by id — so the array is arranged for reading rather than by hue: the featured
+ * eight, then the rest warm to cool. The wheel puts red next to magenta, which is
+ * not how anyone browses a list of colours for a room.
+ *
+ * **The two whites are near-white HUES, not colour temperatures**, and that is
+ * the one thing worth knowing before adding to this list. A point's `color`
+ * replaces its warmth on a lamp that can take a colour, so "cool white" here is a
+ * faintly blue hue at saturation 0.08 rather than a `light_temperature` value.
+ * A lamp with no colour capability is unaffected either way: it gets the point's
+ * `warmth`, which is why `warmth` stays required even on a coloured point.
  */
 export const PALETTE: readonly PaletteColor[] = [
-  { id: 'candle', labelKey: 'palette.candle', hue: 0.08, saturation: 0.55 },
+  // The featured eight.
   { id: 'amber', labelKey: 'palette.amber', hue: 0.11, saturation: 0.75 },
-  { id: 'peach', labelKey: 'palette.peach', hue: 0.04, saturation: 0.45 },
-  { id: 'rose', labelKey: 'palette.rose', hue: 0.96, saturation: 0.50 },
-  { id: 'lavender', labelKey: 'palette.lavender', hue: 0.75, saturation: 0.40 },
+  { id: 'candle', labelKey: 'palette.candle', hue: 0.08, saturation: 0.55 },
+  { id: 'coral', labelKey: 'palette.coral', hue: 0.02, saturation: 0.55 },
+  { id: 'neutral', labelKey: 'palette.neutral', hue: 0.10, saturation: 0.05 },
+  { id: 'coolwhite', labelKey: 'palette.coolwhite', hue: 0.58, saturation: 0.08 },
   { id: 'ocean', labelKey: 'palette.ocean', hue: 0.55, saturation: 0.70 },
   { id: 'forest', labelKey: 'palette.forest', hue: 0.35, saturation: 0.55 },
+  { id: 'violet', labelKey: 'palette.violet', hue: 0.78, saturation: 0.55 },
+
+  // Behind "Show more colours", warm to cool.
   { id: 'ember', labelKey: 'palette.ember', hue: 0.02, saturation: 0.85 },
+  { id: 'crimson', labelKey: 'palette.crimson', hue: 0.99, saturation: 0.75 },
+  { id: 'blush', labelKey: 'palette.blush', hue: 0.98, saturation: 0.35 },
+  { id: 'rose', labelKey: 'palette.rose', hue: 0.96, saturation: 0.50 },
+  { id: 'peach', labelKey: 'palette.peach', hue: 0.04, saturation: 0.45 },
+  { id: 'apricot', labelKey: 'palette.apricot', hue: 0.07, saturation: 0.60 },
+  { id: 'gold', labelKey: 'palette.gold', hue: 0.13, saturation: 0.65 },
+  { id: 'lime', labelKey: 'palette.lime', hue: 0.25, saturation: 0.60 },
+  { id: 'moss', labelKey: 'palette.moss', hue: 0.30, saturation: 0.45 },
+  { id: 'mint', labelKey: 'palette.mint', hue: 0.42, saturation: 0.40 },
+  { id: 'teal', labelKey: 'palette.teal', hue: 0.48, saturation: 0.65 },
+  { id: 'sky', labelKey: 'palette.sky', hue: 0.58, saturation: 0.45 },
+  { id: 'indigo', labelKey: 'palette.indigo', hue: 0.70, saturation: 0.70 },
+  { id: 'lavender', labelKey: 'palette.lavender', hue: 0.75, saturation: 0.40 },
+  { id: 'orchid', labelKey: 'palette.orchid', hue: 0.82, saturation: 0.45 },
+  { id: 'magenta', labelKey: 'palette.magenta', hue: 0.88, saturation: 0.65 },
 ] as const;
 
 const BY_ID = new Map(PALETTE.map(color => [color.id, color]));

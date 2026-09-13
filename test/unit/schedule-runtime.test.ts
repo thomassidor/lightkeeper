@@ -143,7 +143,8 @@ function plan(over: Partial<SchedulePlan> = {}): SchedulePlan {
     schemaVersion: 1,
     enabled: true,
     target: { kind: 'devices', deviceIds: ['l1', 'l2'] },
-    entries: [{ id: 'a', onAt: 22 * 60, days: null, end: { kind: 'duration', minutes: 90 } }],
+    entries: [{ id: 'a', onAt: 22 * 60, end: { kind: 'duration', minutes: 90 } }],
+    days: null,
     managedFlows: [],
     ...over,
   };
@@ -199,7 +200,7 @@ describe('schedule boundaries', () => {
     const h = harness({
       plan: plan({
         entries: [{
-          id: 'a', onAt: 22 * 60, days: null,
+          id: 'a', onAt: 22 * 60,
           end: { kind: 'duration', minutes: 90 },
           brightness: 0.5, temperature: 0.2,
         }],
@@ -230,7 +231,7 @@ describe('schedule boundaries', () => {
       plan: plan({
         target: { kind: 'devices', deviceIds: ['plain', 'dimmer'] },
         entries: [{
-          id: 'a', onAt: 22 * 60, days: null,
+          id: 'a', onAt: 22 * 60,
           end: { kind: 'duration', minutes: 90 }, brightness: 0.5,
         }],
       }),
@@ -249,147 +250,15 @@ describe('schedule boundaries', () => {
   });
 });
 
-describe('a window whose brightness follows the daylight', () => {
-  const RESPONSE = {
-    sensors: ['s1'], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25,
-    sunPeak: 'none' as const,
-  };
-
-  const window = (over: Record<string, unknown> = {}) => ({
-    id: 'a', onAt: 22 * 60, days: null,
-    end: { kind: 'duration', minutes: 90 } as const,
-    brightness: 0.5, fromDaylight: true, ...over,
-  });
-
-  const evaluator = (brightness: number, source = 'sensors') => ({
-    evaluate: () => ({ brightness, source }),
-  });
-
-  test('comes on at what the daylight asks for, not at the stored number', async () => {
-    const h = harness({
-      plan: plan({ entries: [window()], daylight: RESPONSE }),
-      now: TUESDAY_1000,
-      daylight: evaluator(0.8),
-    });
-    await h.runtime.startWithoutFlows();
-    await h.runtime.testEntry('a', 'on');
-    await settle();
-
-    // 0.8 perceptual through gamma, quantised to the capability's two decimals.
-    const dim = h.writes.find(w => w.deviceId === 'l1' && w.capability === 'dim');
-    assert.equal(dim!.value, 0.61);
-  });
-
-  test('falls back to the stored number when nothing can tell how light it is', async () => {
-    /**
-     * The load-bearing half of the whole design, and the reason the fixed value
-     * is kept BESIDE the flag rather than replaced by it. No usable sensor and
-     * no sun position is a real state — a Homey that has never been told where
-     * it is, with a flat battery in its motion sensor — and a window that came
-     * on at nothing would be a worse answer than one that came on at the level
-     * somebody chose last month.
-     */
-    const h = harness({
-      plan: plan({ entries: [window()], daylight: RESPONSE }),
-      now: TUESDAY_1000,
-      daylight: evaluator(0.8, 'none'),
-    });
-    await h.runtime.startWithoutFlows();
-    await h.runtime.testEntry('a', 'on');
-    await settle();
-
-    const dim = h.writes.find(w => w.deviceId === 'l1' && w.capability === 'dim');
-    assert.equal(dim!.value, 0.22, 'expected the stored 0.5 perceptual, not the daylight');
-    assert.ok(h.logs.some(line => line.includes('using the brightness set by hand')));
-  });
-
-  test('falls back with a flag but no response on the plan', async () => {
-    // The validator refuses this combination in a stored plan, so it can only
-    // arrive from a rig — but the runtime must not read `undefined.sensors`.
-    const h = harness({
-      plan: plan({ entries: [window()] }),
-      now: TUESDAY_1000,
-      daylight: evaluator(0.8),
-    });
-    await h.runtime.startWithoutFlows();
-    await h.runtime.testEntry('a', 'on');
-    await settle();
-
-    assert.equal(h.writes.find(w => w.deviceId === 'l1' && w.capability === 'dim')!.value, 0.22);
-  });
-
-  test('falls back with a response but no evaluator wired', async () => {
-    // The ephemeral pairing rigs run without one.
-    const h = harness({
-      plan: plan({ entries: [window()], daylight: RESPONSE }),
-      now: TUESDAY_1000,
-    });
-    await h.runtime.startWithoutFlows();
-    await h.runtime.testEntry('a', 'on');
-    await settle();
-
-    assert.equal(h.writes.find(w => w.deviceId === 'l1' && w.capability === 'dim')!.value, 0.22);
-  });
-
-  test('a window with no brightness at all is untouched by any of this', async () => {
-    // "Leave the brightness alone and only switch on" is still a window's most
-    // common shape, and the daylight must not invent one for it.
-    const h = harness({
-      plan: plan({
-        entries: [window({ brightness: undefined, fromDaylight: undefined })],
-        daylight: RESPONSE,
-      }),
-      now: TUESDAY_1000,
-      daylight: evaluator(0.8),
-    });
-    await h.runtime.startWithoutFlows();
-    await h.runtime.testEntry('a', 'on');
-    await settle();
-
-    assert.deepEqual(h.writes.filter(w => w.capability === 'dim'), []);
-  });
-
-  test('it is sampled at the boundary and does not follow afterwards', async () => {
-    /**
-     * A schedule fires AT a time. Following is what a Daylight light is for, and
-     * this is stated as a limit in the README and the FAQ rather than left to be
-     * discovered — so it is worth pinning that the runtime really does read the
-     * daylight once per boundary rather than holding a subscription to it.
-     */
-    let brightness = 0.8;
-    const h = harness({
-      plan: plan({ entries: [window()], daylight: RESPONSE }),
-      now: TUESDAY_1000,
-      daylight: { evaluate: () => ({ brightness, source: 'sensors' }) },
-    });
-    await h.runtime.startWithoutFlows();
-    await h.runtime.testEntry('a', 'on');
-    await settle();
-    const first = h.writes.filter(w => w.capability === 'dim').length;
-
-    // The room changes. Nothing re-reads it, because nothing asked.
-    brightness = 0.2;
-    await settle();
-
-    assert.equal(h.writes.filter(w => w.capability === 'dim').length, first);
-  });
-
-  test('the report says whether a window followed the daylight', async () => {
-    // "It came on at 90% when I set it to 40%" and "it came on at 40% when it
-    // should have followed the room" are the same complaint from outside and
-    // different bugs inside.
-    const h = harness({
-      plan: plan({ entries: [window()], daylight: RESPONSE }),
-      now: TUESDAY_1000,
-      daylight: evaluator(0.8),
-    });
-    await h.runtime.startWithoutFlows();
-
-    const reported = h.runtime.diagnostics().entries.find(e => e.id === 'a');
-    assert.equal(reported!.fromDaylight, true);
-    assert.equal(reported!.brightness, 0.5, 'and still reports the fallback beside it');
-  });
-});
+/**
+ * "A window whose brightness follows the daylight" used to be a block here.
+ *
+ * `fromDaylight` and the inline `daylight` response are gone from a schedule.
+ * Brightness from the room is what a Daylight light is for, and a schedule fires
+ * AT a time rather than following anything afterwards — so the feature was two
+ * different promises wearing one name. `daylight-runtime.test.ts` is where
+ * following the room is tested now.
+ */
 
 describe('refusing an event', () => {
   test('a key that is not a schedule boundary is refused', async () => {
@@ -421,9 +290,14 @@ describe('refusing an event', () => {
   });
 
   test('a day the schedule does not run on is refused', async () => {
-    // Tuesday, and the schedule runs at weekends only.
+    // Tuesday, and the schedule runs at weekends only. The day set is on the
+    // PLAN now rather than on the window — one row above the list, because
+    // per-window days produced twelve pickers on one screen.
     const h = harness({
-      plan: plan({ entries: [{ id: 'a', onAt: 22 * 60, days: [6, 7], end: { kind: 'duration', minutes: 90 } }] }),
+      plan: plan({
+        entries: [{ id: 'a', onAt: 22 * 60, end: { kind: 'duration', minutes: 90 } }],
+        days: [6, 7],
+      }),
       now: TUESDAY_2215,
     });
     await h.runtime.startWithoutFlows();
@@ -443,7 +317,7 @@ describe('refusing an event', () => {
     const h = harness({
       plan: plan({
         entries: [{
-          id: 'a', onAt: 23 * 60 + 30, days: [5], end: { kind: 'duration', minutes: 120 },
+          id: 'a', onAt: 23 * 60 + 30, end: { kind: 'duration', minutes: 120 },
         }],
       }),
       now: saturday0130,
@@ -525,8 +399,8 @@ describe('refusing an event', () => {
     const h = harness({
       plan: plan({
         entries: [
-          { id: 'early', onAt: 20 * 60, days: null, end: { kind: 'duration', minutes: 120 } },
-          { id: 'late', onAt: 22 * 60, days: null, end: { kind: 'duration', minutes: 60 } },
+          { id: 'early', onAt: 20 * 60, end: { kind: 'duration', minutes: 120 } },
+          { id: 'late', onAt: 22 * 60, end: { kind: 'duration', minutes: 60 } },
         ],
       }),
       now: tuesday2200,
@@ -641,8 +515,11 @@ describe('teardown', () => {
      * a schedule and writes it back would otherwise rewrite every duration as a
      * time.
      */
+    // Days are reported ONCE for the whole schedule now rather than repeated on
+    // every window, which is where they are stored.
+    assert.equal(diagnostics.days, 'every day');
     assert.deepEqual(diagnostics.entries, [{
-      id: 'a', on: '22:00', off: '23:30', days: 'every day', active: true,
+      id: 'a', on: '22:00', off: '23:30', active: true,
       end: { kind: 'duration', minutes: 90 },
     }]);
     assert.ok(!JSON.stringify(diagnostics).includes('token'));
@@ -664,6 +541,7 @@ describe('a schedule emptied of every window', () => {
     const h = harness({
       plan: plan({
         entries: [],
+        days: null,
         managedFlows: [
           { flowId: 'f0', bindingKey: 'sched:a:on', variantKey: 'at:22:00', fingerprint: 'fp', managedVersion: 1, createdAt: 1 },
           { flowId: 'f1', bindingKey: 'sched:a:off', variantKey: 'at:23:30', fingerprint: 'fp', managedVersion: 1, createdAt: 1 },
@@ -703,7 +581,7 @@ describe('a schedule emptied of every window', () => {
  */
 describe('catch-up will not light a room it cannot switch off again', () => {
   const inside = plan({
-    entries: [{ id: 'night', onAt: 20 * 60, days: null, end: { kind: 'duration', minutes: 300 } }],
+    entries: [{ id: 'night', onAt: 20 * 60, end: { kind: 'duration', minutes: 300 } }],
   });
 
   test('a missing OFF reference refuses the catch-up, and says why', async () => {

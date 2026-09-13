@@ -27,11 +27,14 @@ function harness(options: {
   now?: number;
   reading?: { lux: number; deviceIds: string[] } | null;
 } = {}) {
-  const readCalls: string[][] = [];
+  const readCalls: Array<string | null> = [];
   const luminance = {
-    read(deviceIds: string[]) {
-      readCalls.push(deviceIds);
-      return options.reading ?? null;
+    read(deviceId: string | null) {
+      readCalls.push(deviceId);
+      // Faithful to the real one, which answers a null sensor with a null
+      // reading: a device with no sensor must not be handed whatever the SHARED
+      // service happens to be holding for somebody else's room.
+      return deviceId === null ? null : options.reading ?? null;
     },
     watched() {
       return [{ deviceId: 's1', name: 'Hall', lux: 42, at: 1, available: true }];
@@ -53,19 +56,39 @@ const HIGH_SUN = Date.UTC(2026, 5, 21, 10, 0);
 const NIGHT = Date.UTC(2026, 11, 21, 0, 0);
 
 describe('DaylightEvaluator.evaluate', () => {
-  test('a high sun with no sensors reads bright, and says so', () => {
+  test('a high sun with no sensor reads bright, and says so', () => {
+    // `sunPeak: 'midday'` with the sun due south is the undamped case: a room
+    // that gets the sun square-on at noon receives all of it. The DEFAULT peak
+    // is 'flat' — a room that gets hardly any direct sun — and that deliberately
+    // damps the sky to its diffuse share, which the next test covers.
     const { evaluator } = harness({ now: HIGH_SUN });
-    const verdict = evaluator.evaluate({ ...DEFAULT_RESPONSE, sensors: [] });
+    const verdict = evaluator.evaluate({
+      ...DEFAULT_RESPONSE, sensor: null, sunPeak: 'midday',
+    });
 
     assert.equal(verdict.source, 'sky');
-    assert.equal(verdict.level, 1);
-    assert.equal(verdict.brightness, DEFAULT_RESPONSE.bright);
+    assert.ok(verdict.level > 0.9, `a south-facing room at noon is near 1, got ${verdict.level}`);
     assert.ok(verdict.elevation !== null && verdict.elevation > 50);
+  });
+
+  test('and the default "hardly any sun" room reads a shallower version of it', () => {
+    // Not darker in a way that needs explaining: the same ramp at the diffuse
+    // share, because a room with no direct beam still brightens and darkens with
+    // the day.
+    const { evaluator } = harness({ now: HIGH_SUN });
+    const flat = evaluator.evaluate({ ...DEFAULT_RESPONSE, sensor: null });
+    const facing = evaluator.evaluate({
+      ...DEFAULT_RESPONSE, sensor: null, sunPeak: 'midday',
+    });
+
+    assert.equal(flat.source, 'sky');
+    assert.ok(flat.level < facing.level);
+    assert.ok(flat.level > 0.3, `a shallow curve, not a flat one: ${flat.level}`);
   });
 
   test('a winter midnight reads dark', () => {
     const { evaluator } = harness({ now: NIGHT });
-    const verdict = evaluator.evaluate({ ...DEFAULT_RESPONSE, sensors: [] });
+    const verdict = evaluator.evaluate({ ...DEFAULT_RESPONSE, sensor: null });
 
     assert.equal(verdict.source, 'sky');
     assert.equal(verdict.level, 0);
@@ -77,35 +100,35 @@ describe('DaylightEvaluator.evaluate', () => {
     const { evaluator } = harness({
       now: HIGH_SUN, reading: { lux: 5, deviceIds: ['s1'] },
     });
-    const verdict = evaluator.evaluate({ ...DEFAULT_RESPONSE, sensors: ['s1'] });
+    const verdict = evaluator.evaluate({ ...DEFAULT_RESPONSE, sensor: 's1' });
 
     assert.equal(verdict.source, 'sensors');
     assert.equal(verdict.brightness, DEFAULT_RESPONSE.dark);
   });
 
-  test('a device with no sensors never asks the shared service', () => {
-    // It is SHARED. Asking it for a mean over an empty list, or worse over
-    // whatever it happens to be holding, is a room dimmed by a reading from a
-    // different room.
+  test('a device with no sensor asks for nothing, and gets nothing', () => {
+    // The service is SHARED. Asking it for whatever it happens to be holding is
+    // a room dimmed by a reading from a different room — so a `null` sensor is
+    // passed through as a null and answered with one.
     const { evaluator, readCalls } = harness({ reading: { lux: 900, deviceIds: ['someone-elses'] } });
-    const verdict = evaluator.evaluate({ ...DEFAULT_RESPONSE, sensors: [] });
+    const verdict = evaluator.evaluate({ ...DEFAULT_RESPONSE, sensor: null });
 
-    assert.deepEqual(readCalls, []);
+    assert.deepEqual(readCalls, [null]);
     assert.equal(verdict.source, 'sky');
   });
 
-  test('a device with sensors asks for exactly its own', () => {
+  test('a device with a sensor asks for exactly its own', () => {
     const { evaluator, readCalls } = harness({ reading: { lux: 50, deviceIds: ['s1'] } });
-    evaluator.evaluate({ ...DEFAULT_RESPONSE, sensors: ['s1', 's2'] });
+    evaluator.evaluate({ ...DEFAULT_RESPONSE, sensor: 's1' });
 
-    assert.deepEqual(readCalls, [['s1', 's2']]);
+    assert.deepEqual(readCalls, ['s1']);
   });
 
   test('no location and no sensor is I DO NOT KNOW', () => {
     // The verdict that makes a device report needs_repair and every consumer
     // fall back to the brightness a person set by hand.
     const { evaluator } = harness({ location: null });
-    const verdict = evaluator.evaluate({ ...DEFAULT_RESPONSE, sensors: [] });
+    const verdict = evaluator.evaluate({ ...DEFAULT_RESPONSE, sensor: null });
 
     assert.equal(verdict.source, 'none');
     assert.equal(verdict.elevation, null);
@@ -117,7 +140,7 @@ describe('DaylightEvaluator.evaluate', () => {
     // Worth stating: a household with a lux sensor gets the whole feature even
     // if geolocation is refused or unset.
     const { evaluator } = harness({ location: null, reading: { lux: 900, deviceIds: ['s1'] } });
-    const verdict = evaluator.evaluate({ ...DEFAULT_RESPONSE, sensors: ['s1'] });
+    const verdict = evaluator.evaluate({ ...DEFAULT_RESPONSE, sensor: 's1' });
 
     assert.equal(verdict.source, 'sensors');
     assert.equal(verdict.brightness, DEFAULT_RESPONSE.bright);

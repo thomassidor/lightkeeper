@@ -1,11 +1,13 @@
 import { acceptedTargets } from '../outputs/test-outcome';
 import type { EvidenceSink } from '../support/evidence-sink';
 import { ControlHistory, type ControlAction, type OverrideRecord, type TargetDecision } from '../runtime/control-diagnostics';
-import type { LuminanceSource } from '../daylight/luminance-source';
-import { RuntimeLifetime, cleanupResources, startRuntime, SensorClaim } from '../runtime/runtime-resources';
+import { RuntimeLifetime, cleanupResources, startRuntime } from '../runtime/runtime-resources';
 import type { HomeyApiService } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
-import type { DaylightEvaluator } from '../daylight/daylight-evaluator';
+import { sunTimes } from '../daylight/solar-elevation';
+import { usableLocation } from '../daylight/daylight-types';
+import { zonePoints } from './simple-curve';
+import type { AnchorContext } from './circadian-curve';
 import { CommandScheduler, type WriteOutcome } from '../outputs/command-scheduler';
 import { LightTargetAdapter, type WriteRecord } from '../outputs/light-target-adapter';
 import { TargetResolver } from '../outputs/target-resolver';
@@ -88,14 +90,16 @@ export interface CircadianRuntimeDeps {
    */
   kind?: 'circadian' | 'curve';
   /**
-   * Sun position and sensor readings, for a point whose brightness follows the
-   * daylight.
+   * Where the Homey is, for the boundaries a circadian light anchors to the sun.
    *
    * OPTIONAL, so the pairing screen's ephemeral rigs and every existing test
-   * keep working unchanged — and because a plan with no `daylight` never asks.
+   * keep working unchanged — and because a Curve light, which owns its points
+   * outright, never asks. Read per call rather than cached, so a corrected
+   * location needs no restart; `usableLocation` is what refuses a Homey that has
+   * never been told where it is, and the fixed-hours fallback is what happens
+   * then.
    */
-  daylight?: DaylightEvaluator;
-  luminance?: LuminanceSource;
+  location?: () => unknown;
 }
 
 export interface CircadianAction extends ControlAction {
@@ -245,8 +249,6 @@ export interface CircadianDiagnostics extends ReturnType<ControlHistory<Circadia
    */
   points: Array<{
     id: string; at: string; warmth: number; brightness?: number;
-    /** Whether this point's brightness is the stored number or a fallback. */
-    fromDaylight?: boolean;
     color?: string;
   }>;
   /** Where the curve is now, and where it goes next. */
@@ -321,7 +323,6 @@ export interface CircadianDiagnostics extends ReturnType<ControlHistory<Circadia
 
 export class CircadianRuntime {
   private readonly lifetime = new RuntimeLifetime();
-  private readonly sensorClaim: SensorClaim;
   private readonly cache = new TargetStateCache(() => this.now());
   private readonly adapter: LightTargetAdapter;
   private readonly resolver: TargetResolver;
@@ -390,6 +391,10 @@ export class CircadianRuntime {
   private readonly writeGeneration = new Map<string, number>();
 
   /** The target set this runtime is built against. See the controller's. */
+  /** The UTC day `sunCache` was computed for; -1 until the first ask. */
+  private sunDay = -1;
+  private sunCache: AnchorContext = {};
+
   private snapshot: TargetSnapshot | null = null;
 
   constructor(
@@ -406,7 +411,6 @@ export class CircadianRuntime {
     this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log, { now: () => this.now() });
     if (deps.onWriteResult) this.adapter.setWriteSink(entry => deps.onWriteResult?.({ ...entry, controllerId: this.controllerId }));
     this.resolver = new TargetResolver(deps.catalog);
-    this.sensorClaim = new SensorClaim(deps.luminance, controllerId);
   }
 
   get currentState(): ControllerState { return this.visible.current; }
@@ -483,7 +487,6 @@ export class CircadianRuntime {
      * such a light on produces ZERO writes. And after `stop()`/`start()` the
      * field described the PREVIOUS plan's targets.
      */
-    await this.sensorClaim.retain(this.plan.daylight?.sensors ?? []);
     if (!current()) return;
     const resolved = await resolveSnapshot(this.resolver, this.plan.target);
     if (!current()) return;
@@ -768,39 +771,55 @@ export class CircadianRuntime {
   }
 
   /**
-   * The plan's points with every `fromDaylight` brightness turned into a NUMBER.
+   * The plan's points, re-derived from its zones against TODAY's sun.
    *
-   * Resolved here rather than inside the curve, and that is the whole design of
-   * this feature's circadian half. `lib/circadian/circadian-curve.ts` is pure
-   * maths over numbers; teaching it about sensors would put a Homey dependency
-   * into the one file that is the feature's correctness in eighty lines. Doing
-   * it here instead means a segment between a fixed point and a daylight one is
-   * an ordinary blend, and `valueAt` is unchanged.
+   * A Curve light owns its points outright and this returns them untouched, for
+   * nothing — not even an allocation. A circadian light stores three zones and
+   * two sun-anchored boundaries instead, and those have to be resolved against
+   * the sunrise happening today rather than the one that was happening when the
+   * device was registered: sunrise moves four minutes a day around an equinox,
+   * so a snapshot taken in March is an hour out by June.
    *
-   * Called on every tick, and cheap: the evaluator reads a cached sensor value
-   * and does one solar calculation, both in memory.
-   *
-   * The plan's own array is returned untouched in the common case — no response,
-   * or no point that wants one — so a curve that does not use this feature pays
-   * nothing for it, not even an allocation.
+   * Called on every tick, and cheap — `sunContext` memoises the day's solar
+   * arithmetic and `zonePoints` is six object literals.
    */
   private resolvedPoints(): CircadianPoint[] {
-    const response = this.plan.daylight;
-    if (response === undefined) return this.plan.points;
-    if (!this.plan.points.some(point => point.fromDaylight === true)) return this.plan.points;
+    const zones = this.plan.zones;
+    if (zones === undefined) return this.plan.points;
+    return zonePoints(zones, this.sunContext(), this.plan.adjustBrightness);
+  }
 
-    const evaluator = this.deps.daylight;
-    if (evaluator === undefined) return this.plan.points;
+  /**
+   * Today's sunrise and sunset as minutes of the local day, or nothing.
+   *
+   * Memoised on the UTC day, because `resolvedPoints` is reached several times
+   * per tick — the value, the next point, the diagnostics — and the NOAA
+   * sequence has no business running three times a minute for an answer that
+   * changes once a day.
+   *
+   * An empty context is not a failure: `resolveBoundaries` falls back to fixed
+   * hours, which is the right answer for a Homey that has never been told where
+   * it is and for a polar day where there is no sunrise to anchor to.
+   */
+  private sunContext(): AnchorContext {
+    const day = Math.floor(this.now() / 86_400_000);
+    if (this.sunDay === day) return this.sunCache;
 
-    const verdict = evaluator.evaluate(response);
-    // Nothing can tell how light it is, so every point keeps the brightness the
-    // user set. The same fallback a schedule window takes, and the reason the
-    // stored number is kept beside the flag rather than replaced by it.
-    if (verdict.source === 'none') return this.plan.points;
+    this.sunDay = day;
+    this.sunCache = {};
 
-    return this.plan.points.map(point => (point.fromDaylight === true
-      ? { ...point, brightness: verdict.brightness }
-      : point));
+    const location = usableLocation(this.deps.location?.());
+    if (location) {
+      const times = sunTimes(location.latitude, location.longitude, this.now());
+      if (times.sunriseMs !== null && times.sunsetMs !== null) {
+        const timezone = this.deps.timezone();
+        this.sunCache = {
+          sunriseMinute: localNow(timezone, times.sunriseMs).minutesOfDay,
+          sunsetMinute: localNow(timezone, times.sunsetMs).minutesOfDay,
+        };
+      }
+    }
+    return this.sunCache;
   }
 
   /**
@@ -1703,7 +1722,6 @@ export class CircadianRuntime {
       // The adapter's own pending checks outlive this runtime unless released.
       await cleanupResources([
         () => this.adapter.unsubscribeAll(),
-        () => this.sensorClaim.release(),
       ], this.deps.log);
       this.cache.clear();
       for (const deviceId of this.overrides.keys()) {
@@ -1748,8 +1766,13 @@ export class CircadianRuntime {
     this.expireOverrides();
     const timezone = this.deps.timezone();
     const clock = localNow(timezone, this.now());
-    const value = this.plan.points.length > 0 ? this.currentValue() : null;
-    const next = nextPointAfter(this.plan.points, clock.minutesOfDay);
+    // The RESOLVED points, not the stored ones: a circadian light's boundaries
+    // are re-derived from its zones against today's sun, so reporting the stored
+    // snapshot here would show a diagnostics reader times the runtime is not
+    // using — which is the exact confusion diagnostics exist to end.
+    const points = this.resolvedPoints();
+    const value = points.length > 0 ? this.currentValue() : null;
+    const next = nextPointAfter(points, clock.minutesOfDay);
 
     return {
       sampledAt: this.now(),
@@ -1768,18 +1791,11 @@ export class CircadianRuntime {
       // needs, and the only place the resolved timezone is visible at all.
       timezone: timezone ?? 'process-local',
       localTime: describeClock(clock),
-      points: resolvePoints(this.plan.points).map(point => ({
+      points: resolvePoints(points).map(point => ({
         id: point.id,
         at: formatMinutes(point.minute),
         warmth: point.warmth,
         ...(point.brightness !== undefined ? { brightness: point.brightness } : {}),
-        // Read off the STORED point, because `resolvePoints` returns the curve's
-        // own shape and does not carry the flag. Reported beside the stored
-        // brightness rather than instead of it: that number is the fallback, and
-        // "it used 40% when it should have followed the room" and "it followed
-        // the room and the room said 40%" look identical without both.
-        ...(this.plan.points.some(p => p.id === point.id && p.fromDaylight === true)
-          ? { fromDaylight: true } : {}),
         ...(point.color !== undefined ? { color: point.color } : {}),
       })),
       now: value,

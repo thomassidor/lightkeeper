@@ -12,10 +12,13 @@ import { DIAGNOSTIC_SEMANTICS } from './lib/runtime/control-diagnostics';
 
 import { flowWriteProbe } from './lib/credential-service';
 import { FUNCTION_CAPABILITY } from './lib/mapping/mapping-types';
-import { sanitiseEntries } from './lib/schedules/schedule-types';
+import {
+  overlappingPairs, sanitiseEntries, sanitiseScheduleDays,
+} from './lib/schedules/schedule-types';
 import type {
   DiagnosticsResponse, LightkeeperApp, StatusResponse,
 } from './lib/app-contract';
+import { timezoneOf } from './lib/time/local-clock';
 import { messageOf } from './lib/support/homey-errors';
 import { evidenceRoutes } from './lib/support/evidence-feature';
 
@@ -479,6 +482,29 @@ module.exports = {
   },
 
   /**
+   * A light sensor's own last week, as the pairing screen buckets it.
+   *
+   * Reachable outside pairing for the same reason the six routes above it are:
+   * the mechanism is not new, only its reachability, and a hardware pass has to
+   * be able to ask whether Insights answers at all on a given firmware without
+   * opening a pairing sheet. It is also the one route that proves platform §1's
+   * read-scope claim extends to Insights.
+   *
+   * `:id` is the SENSOR's Homey device id, not a Lightkeeper device's `data.id`
+   * — this route is about a foreign device, so `idOf` does not apply. Answers
+   * `{ available: false }` rather than failing when the log cannot be read,
+   * which is the same thing the screen sees.
+   */
+  async getSensorHistory({ homey, params }: any) {
+    const app = appOf(homey);
+    const deviceId = String(params?.id ?? '');
+    if (!deviceId) throw new Error('A sensor device id is required.');
+    const week = await app.luminance.week(deviceId, timezoneOf(homey.clock));
+    if (!week) return { available: false };
+    return { available: true, ...week };
+  },
+
+  /**
    * Fire one schedule boundary now. Body: `{ entryId, boundary: 'on' | 'off' }`.
    *
    * The same path the pairing screen's "Test on" / "Test off" buttons take.
@@ -502,39 +528,54 @@ module.exports = {
   },
 
   /**
-   * Replace a saved schedule's windows. Body: `{ entries }`.
+   * Replace a saved schedule's blocks. Body: `{ entries, days? }`.
    *
    * The one route here that writes a user's stored plan, so it is the one to be
    * careful with — and the care is entirely in refusing to be clever:
    *
-   * - `sanitiseEntries` is the SAME function the pair session calls. Overlaps,
-   *   bad days, duplicate ids and anything over the twelve-window cap are
-   *   dropped and NAMED, by one implementation rather than two that can drift.
+   * - `sanitiseEntries` is the SAME function the pair session calls. Bad days,
+   *   duplicate ids and anything over the twelve-block cap are dropped and
+   *   NAMED, by one implementation rather than two that can drift.
    * - The write goes through `device.applyPlan`, never the store, so
    *   `DeviceLifecycle` runs its transaction: managed Flows carried forward, a
    *   plan that will not start rolled back, the state published.
    *
-   * Returns `{ count, dropped }` — the same shape the pairing screen renders, so
-   * a caller learns which windows were refused rather than only how many stuck.
+   * **An overlap is reported, not dropped.** Two blocks over the same lights
+   * resolve deterministically — the later one wins while they coincide — and
+   * dropping one here would disagree with the blocks screen, which draws the
+   * clash and lets it stand. `overlaps` is how a caller learns about it.
+   *
+   * `days` belongs to the SCHEDULE rather than to a block, and is sent with the
+   * rows for the same reason the screen edits them together: a partial save —
+   * new rows against the old days — is a schedule nobody asked for. Omit it
+   * and the stored days are kept.
+   *
+   * Returns `{ count, dropped, days, overlaps }` — the same shape the pairing
+   * screen renders, so a caller learns what was refused and what will collide
+   * rather than only how many stuck.
    */
   async setScheduleEntries({ homey, params, body }: any) {
     const id = idOf(params);
     const device = deviceOf(homey, 'schedule', id);
     const { entries, dropped } = sanitiseEntries(body?.entries);
 
-    // Refusing an empty result rather than saving it: a schedule with no windows
+    // Refusing an empty result rather than saving it: a schedule with no blocks
     // is a device that looks configured and can never fire, which is the exact
     // failure this app exists to prevent. An all-dropped payload is a mistake,
     // and the `dropped` list says which one.
     if (entries.length === 0) {
       throw new Error(dropped.length > 0
-        ? `every window was dropped: ${dropped.map(d => d.reason).join('; ')}`
-        : 'a schedule needs at least one window');
+        ? `every block was dropped: ${dropped.map(d => d.reason).join('; ')}`
+        : 'a schedule needs at least one block');
     }
 
-    const plan = { ...device.getStoreValue('schedule'), entries };
-    await device.applyPlan(plan);
-    return { count: entries.length, dropped };
+    const stored = device.getStoreValue('schedule');
+    const days = body?.days === undefined
+      ? stored?.days ?? null
+      : sanitiseScheduleDays(body.days);
+
+    await device.applyPlan({ ...stored, entries, days });
+    return { count: entries.length, dropped, days, overlaps: overlappingPairs(entries, days) };
   },
 
   /**

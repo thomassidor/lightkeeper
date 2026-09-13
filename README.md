@@ -77,11 +77,13 @@ pauses all of them at once.
 
 ### Circadian light
 
-Moves your lights through the colours of the day by itself, and asks only two questions: how your
-lights should look at their **warmest** — the low orange light you want in the evening — and at
-their **coolest**, the bright white you want at midday. Lightkeeper supplies everything in between:
-warm overnight, cooling through the morning, coolest in the middle of the day, warming again from
-mid-afternoon.
+Moves your lights through the colours of the day by itself. You describe three parts of the day —
+**morning**, **midday** and **evening** — and how warm the light should be in each, and Lightkeeper
+fades between them. Morning ends a little after sunrise and evening begins a little before sunset,
+both worked out from your Homey's own location, so the day follows the real one through the year
+instead of a fixed clock. You can move either boundary in quarter-hour steps.
+
+Brightness is optional: leave it off and only the colour changes.
 
 *No API key, because it writes no Flows. It adjusts lights that are already on, and never switches
 one on or off itself.*
@@ -95,11 +97,10 @@ one on or off itself.*
 ### Curve light
 
 The detailed version of the circadian light above. Same job — colour through the day — but rather
-than giving two ends and letting Lightkeeper shape the day, you draw the day yourself, as two to
-eight **points**. A point is one moment: a time of day, how warm the light is then, and optionally a
-brightness. At any point you may pick **a colour instead of a warmth** — candle, amber, peach, rose,
-lavender, ocean, forest or ember, and no others. Between two points the lights fade gradually from
-one to the next.
+than describing three parts of the day and letting Lightkeeper shape it, you draw the day yourself,
+as two to eight **points**. A point is one moment: a time of day, how warm the light is then, and
+optionally a brightness. At any point you may pick **a colour instead of a warmth**, from a palette
+of twenty-four. Between two points the lights fade gradually from one to the next.
 
 Every point keeps a warmth even when you give it a colour, and a lamp that cannot show colours uses
 that warmth — so plain white lamps and colour lamps move through the same day together.
@@ -121,9 +122,11 @@ morning comes up and lifting them again as it goes, or the other way round if yo
 room followed the day. You set two things: how bright the lights should be when the room is dark,
 and when it is bright. Which of those two is higher is entirely up to you.
 
-It works out how light it is from **any light sensors you already own** — most motion sensors have
-one — and, where you have none, from **how high the sun is**, which it works out from your Homey's
-own location and needs nothing from you. Pick several sensors and they are averaged.
+It works out how light it is from **a light sensor you already own** — most motion sensors have
+one — or, if you would rather, from **how high the sun is**, which it works out from your Homey's
+own location and needs nothing from you. While you are choosing, it draws that sensor's own last
+week as a grid, so "dark" and "bright" are numbers you can judge against what the room actually
+does rather than guess at.
 
 *No API key, and the same rule again: it only dims lights that are already on, and never switches
 one on or off.*
@@ -131,11 +134,6 @@ one on or off.*
 </td>
 </tr>
 </table>
-
-**And it is not only a device of its own.** A light schedule, a circadian light and a Curve light
-each let you set a brightness — and each will now let you say **follow the daylight** instead, on
-whichever windows, points or ends you choose. The brightness you set stays put as the fallback for
-when nothing can tell how light it is.
 
 All five have a **Test** button while you are setting them up, which drives your actual lights then
 and there, so you know it works before you save anything.
@@ -159,10 +157,10 @@ lights and adjust them directly, which is why neither needs a key.
 - **A Personal API Key**, but only if you are adding a light controller or a light schedule.
   Circadian lights, Curve lights and Daylight lights need none.
   [Why?](FAQ.md#why-does-it-need-a-personal-api-key)
-- **Your Homey's location**, for a Daylight light with no light sensor to read. Homey asks for it
-  during setup, so you almost certainly have one already; the app reads the latitude to work out how
-  high the sun is, and it never leaves the Homey. A Daylight light with a light sensor needs no
-  location at all.
+- **Your Homey's location**, for a circadian light, and for a Daylight light set to follow the sun.
+  Homey asks for it during setup, so you almost certainly have one already; the app reads it to work
+  out sunrise, sunset and how high the sun is, and it never leaves the Homey. Without one, a
+  circadian light falls back to 06:00 and 21:00 and says so while you are setting it up.
 
 ## Getting started
 
@@ -172,8 +170,10 @@ From the Homey App Store. Or, if you have cloned this repository, `npx homey app
 
 ### 2. Give it an API key — if you need one
 
-Only if you are adding a **light controller** or a **light schedule**. Skip it for a circadian
-light or a Curve light: setting one of those up begins straight away with choosing lights.
+Only if you are adding a **light controller** or a **light schedule**, and Lightkeeper asks for it
+near the start of setup rather than at the end, so nothing you have filled in can be lost to it.
+Skip it entirely for a circadian light, a Curve light or a Daylight light. It is one key per Homey,
+so the second controller you add never asks again.
 
 1. Open [my.homey.app](https://my.homey.app) and pick your Homey
 2. Settings → API Keys → New API Key
@@ -194,12 +194,17 @@ fresh key, and nothing you have configured is lost.
 
 **Devices → Add → Lightkeeper**, then pick a type. Each one is a short sequence of screens:
 
-| Device | The screens |
+Each one opens with a short screen saying what the device does and what it is about to ask, then a
+numbered step per question, then a review of everything before anything is saved. Every row on that
+review jumps back to the step it came from.
+
+| Device | The steps |
 |---|---|
-| Light controller | API key → choose a remote (listed by room, each one showing how many separate presses, holds and turns your Homey can actually see from it) → choose lights → say what each of those should do, with **Test** on every row |
-| Light schedule | API key → choose lights → fill in the windows, with **Test on** and **Test off** |
-| Circadian light | Choose lights → set the warmest and coolest ends, with **Try it now** |
-| Curve light | Choose lights → build the curve point by point, with **Try it now** |
+| Light controller | API key → **1** choose a remote (listed by room, or press a button and let Lightkeeper find it) → **2** choose lights → **3** one row per button, each saying what it does → **4** review |
+| Light schedule | API key → **1** choose lights → **2** draw the blocks on a day → **3** review |
+| Circadian light | **1** choose lights → **2** morning, midday and evening → **3** review |
+| Curve light | **1** choose lights → **2** build the curve point by point → **3** review |
+| Daylight light | **1** choose lights → **2** choose a sensor, or the sun → **3** dark and bright → **4** review |
 
 Homey lets you rename a device afterwards, so there is no name field to fill in.
 
@@ -276,10 +281,12 @@ reads, what it stores, and for how long.
 
 **0.6.0** — the current release. A fifth device type, and then everything that followed it:
 
-- **Daylight lights**, which set brightness from how much light is already in the room — and a
-  schedule window, circadian end or curve point can follow the daylight too.
-- A code review remediated: tiles that keep saying "open repair", and no axis that reads a missing
-  value as zero.
+- **Daylight lights**, which set brightness from how much light is already in the room, and draw
+  your sensor's own last week so "dark" and "bright" are numbers you can judge.
+- **Every setup screen redrawn.** One question per screen, a numbered path through each device, and
+  a review of everything before it saves.
+- **Circadian lights follow the real sun**: three parts of the day, with morning and evening
+  anchored to your Homey's own sunrise and sunset instead of a fixed clock.
 - The five defects that a recorded week in a real home found — chief among them a light that
   quietly reverts to its own settings no longer muting its device for days.
 

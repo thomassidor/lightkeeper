@@ -2,7 +2,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  DEFAULT_RESPONSE, MAX_SENSORS, MIN_LUX,
+  DEFAULT_RESPONSE, MAX_ELEVATION, MIN_ELEVATION, MIN_LUX,
   SUN_PEAKS,
   sanitiseResponse, usableLocation,
 } from '../../lib/daylight/daylight-types';
@@ -33,8 +33,9 @@ import {
  */
 
 const VALID = {
-  sensors: ['a', 'b'], darkLux: 8, brightLux: 400, dark: 0.8, bright: 0.3,
-  sunPeak: 'none' as const,
+  sensor: 'a', darkLux: 8, brightLux: 400, dark: 0.8, bright: 0.3,
+  darkElevation: -6, brightElevation: 25,
+  sunPeak: 'flat' as const,
 };
 
 describe('sanitiseResponse - a valid response survives untouched', () => {
@@ -44,9 +45,9 @@ describe('sanitiseResponse - a valid response survives untouched', () => {
     assert.deepEqual(corrected, []);
   });
 
-  test('no sensors at all is valid, because the sun is a complete answer', () => {
-    const { response, corrected } = sanitiseResponse({ ...VALID, sensors: [] });
-    assert.deepEqual(response.sensors, []);
+  test('no sensor at all is valid, because the sun is a complete answer', () => {
+    const { response, corrected } = sanitiseResponse({ ...VALID, sensor: null });
+    assert.equal(response.sensor, null);
     assert.deepEqual(corrected, []);
   });
 
@@ -56,45 +57,58 @@ describe('sanitiseResponse - a valid response survives untouched', () => {
   });
 });
 
-describe('sanitiseResponse - the sensor list', () => {
-  test('a non-list is replaced and reported', () => {
-    const { response, corrected } = sanitiseResponse({ ...VALID, sensors: 'sensor-a' });
-    assert.deepEqual(response.sensors, []);
-    assert.ok(corrected.includes('sensors'));
+describe('sanitiseResponse - the one sensor', () => {
+  test('an absent sensor is the sun, and is not a correction', () => {
+    for (const nothing of [undefined, null]) {
+      const { response, corrected } = sanitiseResponse({ ...VALID, sensor: nothing });
+      assert.equal(response.sensor, null);
+      assert.deepEqual(corrected, [], `on ${String(nothing)}`);
+    }
   });
 
-  test('an absent list is not a correction, only an empty one', () => {
-    const { response, corrected } = sanitiseResponse({ ...VALID, sensors: undefined });
-    assert.deepEqual(response.sensors, []);
+  test('anything that is not a usable id is the sun, and IS reported', () => {
+    // A leftover array is the interesting member: a store written by the shape
+    // that held a list of sensors reads as one of these, and reading it as a
+    // sensor id would subscribe to something that can never report.
+    for (const junk of [7, '', '   ', ['a'], {}, true]) {
+      const { response, corrected } = sanitiseResponse({ ...VALID, sensor: junk });
+      assert.equal(response.sensor, null, `on ${JSON.stringify(junk)}`);
+      assert.ok(corrected.includes('sensor'), `on ${JSON.stringify(junk)}`);
+    }
+  });
+
+  test('an id is trimmed, because a webview sends what a user pasted', () => {
+    const { response, corrected } = sanitiseResponse({ ...VALID, sensor: '  a  ' });
+    assert.equal(response.sensor, 'a');
     assert.deepEqual(corrected, []);
   });
+});
 
-  test('blanks and non-strings are dropped and reported', () => {
-    const { response, corrected } = sanitiseResponse({
-      ...VALID, sensors: ['a', '', '  ', 7, null, 'b'],
+describe('sanitiseResponse - the sun span', () => {
+  test('an unreadable end falls back to the default and is reported', () => {
+    const { response, corrected } = sanitiseResponse({ ...VALID, darkElevation: 'dusk' });
+    assert.equal(response.darkElevation, DEFAULT_RESPONSE.darkElevation);
+    assert.ok(corrected.includes('darkElevation'));
+  });
+
+  test('elevations are clamped to angles a sun actually reaches', () => {
+    const { response } = sanitiseResponse({
+      ...VALID, darkElevation: -90, brightElevation: 400,
     });
-    assert.deepEqual(response.sensors, ['a', 'b']);
-    assert.ok(corrected.includes('sensors'));
+    assert.equal(response.darkElevation, MIN_ELEVATION);
+    assert.equal(response.brightElevation, MAX_ELEVATION);
   });
 
-  test('ids are trimmed, because a webview sends what a user pasted', () => {
-    const { response } = sanitiseResponse({ ...VALID, sensors: ['  a  '] });
-    assert.deepEqual(response.sensors, ['a']);
-  });
-
-  test('a sensor named twice is kept once', () => {
-    // Twice in the list is twice in the mean, which is a weighting nobody asked
-    // for and that no screen would show.
-    const { response, corrected } = sanitiseResponse({ ...VALID, sensors: ['a', 'a', 'b'] });
-    assert.deepEqual(response.sensors, ['a', 'b']);
-    assert.ok(corrected.includes('sensors'));
-  });
-
-  test('the list is capped, and the cap is reported rather than silent', () => {
-    const many = Array.from({ length: MAX_SENSORS + 4 }, (_, i) => `s${i}`);
-    const { response, corrected } = sanitiseResponse({ ...VALID, sensors: many });
-    assert.equal(response.sensors.length, MAX_SENSORS);
-    assert.ok(corrected.includes('sensors'));
+  test('an inverted span resets BOTH ends, as the lux pair does', () => {
+    // A ramp with no span reaches `levelFromElevation` as a division by zero and
+    // a lamp as no write at all. Keeping the good half of a bad pair would leave
+    // a response that still has no span.
+    const { response, corrected } = sanitiseResponse({
+      ...VALID, darkElevation: 30, brightElevation: 10,
+    });
+    assert.equal(response.darkElevation, DEFAULT_RESPONSE.darkElevation);
+    assert.equal(response.brightElevation, DEFAULT_RESPONSE.brightElevation);
+    assert.ok(corrected.includes('brightElevation'));
   });
 });
 
@@ -193,7 +207,10 @@ describe('sanitiseResponse - the two ends', () => {
   test('a completely empty payload yields the defaults, all reported', () => {
     const { response, corrected } = sanitiseResponse(undefined);
     assert.deepEqual(response, DEFAULT_RESPONSE);
-    assert.deepEqual(corrected.sort(), ['bright', 'brightLux', 'dark', 'darkLux']);
+    assert.deepEqual(
+      corrected.sort(),
+      ['bright', 'brightElevation', 'brightLux', 'dark', 'darkElevation', 'darkLux'],
+    );
   });
 });
 
@@ -300,66 +317,45 @@ describe('usableLocation', () => {
   });
 });
 
-describe('the daylight migration chain', () => {
+describe('the daylight migration chain, after the reset', () => {
   const TARGET = { kind: 'devices', deviceIds: ['l1'] };
+  const CURRENT = {
+    schemaVersion: CURRENT_DAYLIGHT_SCHEMA_VERSION,
+    enabled: false,
+    target: TARGET,
+    response: {
+      sensor: 's1', darkLux: 8, brightLux: 400, dark: 0.8, bright: 0.3,
+      darkElevation: -6, brightElevation: 25, sunPeak: 'flat',
+    },
+  };
 
-  test('a plan with no schemaVersion is brought forward with safe defaults', () => {
-    const { plan, migrated, fromVersion } = migrateDaylightPlan({ target: TARGET });
-
-    assert.equal(migrated, true);
-    assert.equal(fromVersion, 0);
-    assert.equal(plan.schemaVersion, CURRENT_DAYLIGHT_SCHEMA_VERSION);
-    assert.equal(plan.enabled, true);
-    assert.deepEqual(plan.response, DEFAULT_RESPONSE);
-  });
-
-  test('a PARTIAL response keeps the half that survived', () => {
-    // The case this step exists for. Spreading DEFAULT_RESPONSE over the whole
-    // thing would be shorter and would throw away the fields a partial write
-    // did land, which is the one thing a migration must not do.
-    const { plan } = migrateDaylightPlan({
-      target: TARGET,
-      response: { sensors: ['s1'], dark: 0.7 },
-    });
-
-    assert.deepEqual(plan.response.sensors, ['s1']);
-    assert.equal(plan.response.dark, 0.7);
-    assert.equal(plan.response.brightLux, DEFAULT_RESPONSE.brightLux);
-  });
-
-  test('a response that is not an object is replaced rather than crashing', () => {
-    // A step runs BEFORE the chain's validator, so the stored shape has not been
-    // checked yet and may be anything at all.
-    for (const rubbish of [null, 'response', 42, [], true]) {
-      const { plan } = migrateDaylightPlan({ target: TARGET, response: rubbish });
-      assert.deepEqual(plan.response, DEFAULT_RESPONSE, `failed on ${JSON.stringify(rubbish)}`);
-    }
-  });
-
-  test('a plan already at the current version is not migrated', () => {
-    const stored = {
-      schemaVersion: CURRENT_DAYLIGHT_SCHEMA_VERSION,
-      enabled: false,
-      target: TARGET,
-      response: {
-        sensors: ['s1'], darkLux: 8, brightLux: 400, dark: 0.8, bright: 0.3,
-        sunPeak: 'none',
-      },
-    };
-    const { plan, migrated } = migrateDaylightPlan(stored);
-
+  test('a plan at the current version passes through unmigrated', () => {
+    const { plan, migrated, steps } = migrateDaylightPlan(CURRENT);
     assert.equal(migrated, false);
-    assert.deepEqual(plan, stored);
+    assert.deepEqual(steps, []);
+    assert.deepEqual(plan, CURRENT);
+  });
+
+  test('a plan from BEFORE the reset is quarantined, not guessed at', () => {
+    // The table is empty on purpose — the pairing rewrite changed this shape in
+    // ways no honest step could carry across, and the one Homey running the app
+    // was given a clean slate. What matters is that such a plan is REFUSED:
+    // DeviceLifecycle turns this throw into an unavailable device with a reason,
+    // which is the "delete it and add it again" signal.
+    for (const version of [undefined, 0, 1 - 1, CURRENT_DAYLIGHT_SCHEMA_VERSION - 1]) {
+      if (version === CURRENT_DAYLIGHT_SCHEMA_VERSION) continue;
+      assert.throws(
+        () => migrateDaylightPlan({ ...CURRENT, schemaVersion: version }),
+        `version ${String(version)} should be refused`,
+      );
+    }
   });
 
   test('a plan from a NEWER build is refused rather than downgraded', () => {
     // Guessing at a shape a later version invented is how a device comes back
     // from a downgrade holding a plan that half works.
     assert.throws(() => migrateDaylightPlan({
-      schemaVersion: CURRENT_DAYLIGHT_SCHEMA_VERSION + 1,
-      enabled: true,
-      target: TARGET,
-      response: DEFAULT_RESPONSE,
+      ...CURRENT, schemaVersion: CURRENT_DAYLIGHT_SCHEMA_VERSION + 1,
     }));
   });
 
@@ -368,10 +364,8 @@ describe('the daylight migration chain', () => {
     // them ends in a cast: DeviceLifecycle turns this throw into
     // state.invalidConfiguration rather than letting the runtime read it.
     assert.throws(() => migrateDaylightPlan({
-      schemaVersion: CURRENT_DAYLIGHT_SCHEMA_VERSION,
-      enabled: true,
-      target: TARGET,
-      response: { sensors: [], darkLux: 500, brightLux: 5, dark: 0.9, bright: 0.25 },
+      ...CURRENT,
+      response: { ...CURRENT.response, darkLux: 500, brightLux: 5 },
     }), /brightLux is not above darkLux/);
   });
 });
@@ -385,11 +379,12 @@ describe('the daylight migration chain', () => {
  * noon. So no combination of them can say "bright at 17:00, dim at 07:00".
  */
 describe('the sun-peak answer', () => {
-  test('an absent answer means model nothing, and is not reported as corrected', () => {
-    // The default for every device that never answered, and for anybody who
-    // skips the question.
+  test('an absent answer is the shallow one, and is not reported as corrected', () => {
+    // The default for anybody who skips the question. Not "model nothing": a
+    // room that gets hardly any direct sun still brightens and darkens with the
+    // day, so its curve stays shallow rather than going away.
     const { response, corrected } = sanitiseResponse({ ...VALID, sunPeak: undefined });
-    assert.equal(response.sunPeak, 'none');
+    assert.equal(response.sunPeak, 'flat');
     assert.deepEqual(corrected, []);
   });
 
@@ -401,11 +396,14 @@ describe('the sun-peak answer', () => {
     }
   });
 
-  test('a fifth answer is corrected to none and SAID so', () => {
-    // A screen cannot send a fifth, so a fifth means a hand-edited store.
-    for (const junk of ['evening', '', 'MIDDAY', 0, null, {}, []]) {
+  test('a fifth answer is corrected to the shallow one and SAID so', () => {
+    // A screen cannot send a fifth, so a fifth means a hand-edited store. Note
+    // 'none' is in this list: it was the fourth answer before the rewrite, so a
+    // store written by that shape lands here and must be corrected rather than
+    // quietly accepted as a value this build no longer has.
+    for (const junk of ['evening', '', 'MIDDAY', 'none', 0, null, {}, []]) {
       const { response, corrected } = sanitiseResponse({ ...VALID, sunPeak: junk });
-      assert.equal(response.sunPeak, 'none', `on ${JSON.stringify(junk)}`);
+      assert.equal(response.sunPeak, 'flat', `on ${JSON.stringify(junk)}`);
       assert.ok(corrected.includes('sunPeak'), `on ${JSON.stringify(junk)}`);
     }
   });

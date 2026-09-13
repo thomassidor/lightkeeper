@@ -74,14 +74,14 @@ function house() {
   const schedules = new ScheduleRuntimeManager({ ...deps, bridge });
   schedules.timeCard = async () => ({ card: null, candidates: [] });
   const target = { kind: 'zone' as const, zoneId: 'room', includeSubzones: false };
-  const response = { ...DEFAULT_RESPONSE, sensors: ['sensor'] };
+  const response = { ...DEFAULT_RESPONSE, sensor: 'sensor' };
   const curve: CircadianPlan = { schemaVersion: 1, enabled: true, target,
-    daylight: response, adjustBrightness: true, preStage: false,
+    adjustBrightness: true, preStage: false,
     points: [0, 720].map(at => ({ id: String(at), anchor: { kind: 'clock', at },
-      warmth: 0.5, brightness: 0.8, fromDaylight: true })) };
-  const schedule: SchedulePlan = { schemaVersion: 1, enabled: true, target, daylight: response,
-    managedFlows: [], entries: [{ id: 'window', onAt: 0, days: null,
-      end: { kind: 'duration', minutes: 60 }, brightness: 0.8, fromDaylight: true }] };
+      warmth: 0.5, brightness: 0.8 })) };
+  const schedule: SchedulePlan = { schemaVersion: 1, enabled: true, target, days: null,
+    managedFlows: [], entries: [{ id: 'window', onAt: 0,
+      end: { kind: 'duration', minutes: 60 }, brightness: 0.8 }] };
   return { curves, daylights, schedules, curve, schedule, luminance, daylight, timers, writes,
     daylightPlan: { schemaVersion: 1, enabled: true, target, response },
     remove: () => { present = false; },
@@ -101,24 +101,38 @@ function house() {
 }
 
 describe('runtime resource ownership across component boundaries', () => {
-  test('saved curves and schedules keep sensors after pairing disconnect and restart', async () => {
+  test('a saved Daylight light keeps its sensor after a pairing disconnect and a restart', async () => {
+    // The claim is ref-counted and TOTAL per owner, so the question this asks is
+    // whether a live device's claim survives the pairing session that made it
+    // letting go. It has to: releasing a session's claim must never take a saved
+    // device's subscription with it.
+    //
+    // Only a Daylight light holds one now. A circadian light and a schedule used
+    // to, through the `fromDaylight` flag on a point or a window — the pairing
+    // rewrite removed that, so neither touches the sensor service at all, and
+    // that absence is asserted here rather than assumed.
     const h = house();
     try {
       await h.luminance.retain(['sensor'], 'pair');
-      let curve = await h.curves.register('curve', h.curve, () => {});
-      let schedule = await h.schedules.register('schedule', h.schedule, () => {});
+      let daylight = await h.daylights.register('daylight', h.daylightPlan, () => {});
       await h.luminance.release('pair');
-      assert.equal(curve.currentValue()?.brightness, 0.25);
+      assert.equal(h.luminance.read('sensor')?.lux, 500, 'the device has its own claim');
+
+      // Neither of the other two asks for anything, so unregistering them cannot
+      // disturb it.
+      const curve = await h.curves.register('curve', h.curve, () => {});
+      const schedule = await h.schedules.register('schedule', h.schedule, () => {});
       await h.curves.unregister('curve');
-      assert.equal(h.luminance.read(['sensor'])?.lux, 500, 'schedule has its own claim');
-      await schedule.testEntry('window', 'on');
-      assert.ok(h.writes.some(w => w.capabilityId === 'dim' && w.value === 0.05));
       await h.schedules.unregister('schedule');
-      assert.equal(h.luminance.read(['sensor']), null);
-      curve = await h.curves.register('curve', h.curve, () => {});
-      schedule = await h.schedules.register('schedule', h.schedule, () => {});
-      assert.equal(curve.currentValue()?.brightness, 0.25);
-      assert.equal(schedule.currentPlan.daylight?.sensors[0], 'sensor');
+      assert.equal(h.luminance.read('sensor')?.lux, 500);
+      assert.ok(curve && schedule);
+
+      await h.daylights.unregister('daylight');
+      assert.equal(h.luminance.read('sensor'), null, 'the last claim releases it');
+
+      daylight = await h.daylights.register('daylight', h.daylightPlan, () => {});
+      assert.equal(h.luminance.read('sensor')?.lux, 500, 'and registering takes it again');
+      assert.equal(daylight.currentPlan.response.sensor, 'sensor');
     } finally { await h.stop(); }
   });
 
@@ -129,7 +143,7 @@ describe('runtime resource ownership across component boundaries', () => {
     try {
       assert.equal(new Set(previews.map(p => p.controllerId)).size, 4);
       for (const preview of previews.slice(0, -1)) await preview.stop();
-      assert.equal(h.luminance.read(['sensor'])?.lux, 500);
+      assert.equal(h.luminance.read('sensor')?.lux, 500);
     } finally {
       for (const preview of previews) await preview.stop();
       await h.stop();

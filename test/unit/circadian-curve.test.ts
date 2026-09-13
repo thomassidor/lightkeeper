@@ -135,17 +135,18 @@ describe('valueAt', () => {
 
 describe('nextPointAfter', () => {
   test('names the next point of the day', () => {
+    // The default curve runs 06:30, 09:00, 14:00, 19:00, 22:30.
     const next = nextPointAfter(DEFAULT_POINTS, 10 * 60);
-    assert.equal(next?.minute, 17 * 60);
-    assert.equal(next?.inMinutes, 7 * 60);
+    assert.equal(next?.minute, 14 * 60);
+    assert.equal(next?.inMinutes, 4 * 60);
   });
 
   test('wraps to tomorrow once the last point has passed', () => {
-    // 23:30 with a last point at 23:00: the next one is 06:00, which is 390
-    // minutes away and never a negative number.
-    const next = nextPointAfter(DEFAULT_POINTS, 23 * 60 + 30);
-    assert.equal(next?.minute, 6 * 60);
-    assert.equal(next?.inMinutes, 390);
+    // 23:00 with a last point at 22:30: the next one is 06:30 tomorrow, which is
+    // 450 minutes away and never a negative number.
+    const next = nextPointAfter(DEFAULT_POINTS, 23 * 60);
+    assert.equal(next?.minute, 6 * 60 + 30);
+    assert.equal(next?.inMinutes, 450);
   });
 
   test('an empty curve has no next point', () => {

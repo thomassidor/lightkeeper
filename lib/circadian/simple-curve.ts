@@ -1,50 +1,96 @@
 import { MINUTES_PER_DAY } from '../time/wall-clock';
+import { MINIMUM_BRIGHTNESS } from '../outputs/light-intent';
 import { sanitiseUnitInterval } from '../validation/unit-interval';
+import type { AnchorContext } from './circadian-curve';
 import type { CircadianPlan, CircadianPoint } from './circadian-types';
 import type { TargetSpec } from '../outputs/light-intent';
-import type { DaylightResponse } from '../daylight/daylight-types';
 
 /**
- * A circadian light with no curve to draw: two ends of the day, and a shape.
+ * A circadian light with no curve to draw: three parts of the day, and two
+ * boundaries that follow the sun.
  *
  * The curve controller (`drivers/curve/`) is the same engine with the curve
- * exposed — every point, every time, and a colour per point. It is the right tool
- * for somebody who wants a specific evening, and the wrong first experience for
- * everybody else: a five-point editor is a lot of screen for "warm at night, cool
- * in the day", which is what the feature is actually for.
+ * exposed — every point, every time, and a colour per point. It is the right
+ * tool for somebody who wants a specific evening, and the wrong first
+ * experience for everybody else.
  *
- * So this device type asks two questions — what does warmest look like, what does
- * coolest look like — and supplies the SHAPE itself. Same runtime, same write
- * gate, same override handling; the only difference is where the points come from.
+ * **Why three zones and not two ends.** This device used to ask for a warmest
+ * and a coolest and supply a fixed four-point shape at 06:00, 11:00, 15:00 and
+ * 21:00. Two things were wrong with that, and the second is the one that
+ * mattered. A fixed 21:00 is wrong twice a year — it is an hour after sunset in
+ * December and two hours before it in June, so the "evening" the user set
+ * arrives at the wrong time for most of the year. And "warmest" was a single
+ * value the day passed through TWICE, once before the morning and once after the
+ * evening, which no single control could honestly represent: a screen drawing one
+ * handle for it was lying by omission.
  *
- * The shape is not configurable, and that is the decision. Once the times are
- * adjustable this is the curve controller with fewer fields, and the two device
- * types stop being different products. Somebody who wants their own times has one
- * already.
+ * So the boundaries anchor to real sunrise and sunset with an offset the user
+ * can step, and the morning and the evening get their own temperatures. The cost
+ * is one more decision at setup and a fallback for the days a sunrise does not
+ * exist, both of which are paid below.
  */
 
-export interface CircadianEnd {
-  /** Normalised colour temperature 0–1, where 1 is the WARMEST end (§6). */
+/**
+ * How long each boundary takes to cross, in minutes either side of it.
+ *
+ * Fifty minutes, so a zone change is something you notice having happened
+ * rather than something you watch happen. It is also what keeps each zone FLAT:
+ * two points at one temperature with a ramp between them is the only way to hold
+ * a value on an interpolating curve, which is the same trick the old four-point
+ * shape used.
+ */
+export const ZONE_RAMP = 50;
+
+/**
+ * How far a boundary may be pushed off its sunrise or sunset, in minutes.
+ *
+ * Two and a half hours either way, stepped by a quarter of an hour on screen.
+ * Wider than anybody sensible needs and narrow enough that the two boundaries
+ * cannot trade places on an ordinary day — and `zonePoints` clamps the resolved
+ * minutes anyway, for the days that are not ordinary.
+ */
+export const MAX_OFFSET = 150;
+export const OFFSET_STEP = 15;
+
+/**
+ * Where the boundaries sit when the sun cannot be computed.
+ *
+ * Two cases reach this and both are real: a Homey that has never been told where
+ * it is (`usableLocation` refuses `0,0`, and rightly), and a latitude inside a
+ * polar day or night where there is no sunrise to anchor to for weeks. Neither
+ * is a reason to stop running — a circadian light on fixed hours is still a
+ * circadian light, and these two are the hours the previous version of this
+ * device used for its whole life.
+ */
+export const FALLBACK_SUNRISE = 6 * 60;
+export const FALLBACK_SUNSET = 21 * 60;
+
+/** One part of the day: what the lights look like while it lasts. */
+export interface CircadianZone {
+  /** Normalised colour temperature 0–1, where 1 is the WARMEST end (platform §6). */
   temperature: number;
   /**
-   * Perceptual brightness 0–1. Both ends carry one or neither does — the curve
-   * engine interpolates brightness only where both bracketing points have it, and
-   * half a brightness curve would have to invent the other half.
+   * Perceptual brightness 0–1. Every zone carries one or none of them does — the
+   * curve engine interpolates brightness only where both bracketing points have
+   * it, and two thirds of a brightness curve would have to invent the rest.
    */
   brightness?: number;
-  /**
-   * Take this end's brightness from the daylight instead of from the number
-   * above.
-   *
-   * Per END rather than for the whole device, because the two ends of the day are
-   * genuinely different questions — "as bright as the room needs at night" and
-   * "as bright as the room needs at noon" — and somebody may well want one of
-   * them answered by a sensor and the other by hand.
-   *
-   * The number STAYS and becomes the fallback. See the same field on a schedule
-   * entry for why that is the load-bearing half of the design.
-   */
-  fromDaylight?: boolean;
+}
+
+export type ZoneKey = 'morning' | 'midday' | 'evening';
+
+/** The three zones and the two boundaries between them. */
+export interface CircadianZones {
+  /** Midnight until the morning boundary. */
+  morning: CircadianZone;
+  /** Between the two boundaries — the middle of the day. */
+  midday: CircadianZone;
+  /** From the evening boundary until midnight. */
+  evening: CircadianZone;
+  /** Minutes either side of today's sunrise. Negative is before it. */
+  morningEnd: number;
+  /** Minutes either side of today's sunset. */
+  eveningStart: number;
 }
 
 export interface SimpleCircadianPlan {
@@ -52,97 +98,161 @@ export interface SimpleCircadianPlan {
   /** The device's onoff capability: false = paused, nothing is written. */
   enabled: boolean;
   target: TargetSpec;
-  /** What the lights look like at the warm end of the day — evening and night. */
-  warmest: CircadianEnd;
-  /** And at the cool end — the middle of the day. */
-  coolest: CircadianEnd;
-  /** Follow the brightness as well as the temperature. See CircadianEnd. */
+  zones: CircadianZones;
+  /** Follow the brightness as well as the temperature. See `CircadianZone`. */
   adjustBrightness: boolean;
-  /**
-   * ONE daylight response for the whole device, or none. See the same field on
-   * `SchedulePlan` for why it is inline and why it is per device.
-   */
-  daylight?: DaylightResponse;
-  /** Write to lights that are OFF. Opt-in and self-disabling; see §12. */
+  /** Write to lights that are OFF. Opt-in and self-disabling; see platform §12. */
   preStage: boolean;
 }
 
-/**
- * The shape, in wall-clock minutes.
- *
- * Four points, not two, and the reason is the whole of what makes this feel right
- * rather than merely correct. Two points — coolest at midday, warmest at midnight
- * — give a curve that is only ever AT one of them for an instant and spends the
- * night on its way somewhere: it would start cooling at 23:00 and be halfway to
- * daylight by 04:00.
- *
- * Two points per end instead, so each end is HELD:
- *
- *   06:00 warmest ──┐ (the night's hold ends)
- *   11:00 coolest   │ cooling through the morning
- *   15:00 coolest   │ (held through the middle of the day)
- *   21:00 warmest ──┘ warming through the evening
- *
- * and the segment from 21:00 round to 06:00 is warmest at both ends, so the whole
- * night is flat. Cyclic interpolation is what makes that last sentence true
- * without a special case — see `circadian-curve.ts`.
- */
-export const SIMPLE_SHAPE: readonly { id: string; minute: number; end: 'warmest' | 'coolest' }[] = [
-  { id: 'dawn', minute: 6 * 60, end: 'warmest' },
-  { id: 'morning', minute: 11 * 60, end: 'coolest' },
-  { id: 'afternoon', minute: 15 * 60, end: 'coolest' },
-  { id: 'evening', minute: 21 * 60, end: 'warmest' },
-] as const;
+/** What a new device starts with: a warm morning and evening, a cool working day. */
+export const DEFAULT_ZONES: CircadianZones = {
+  morning: { temperature: 0.78, brightness: 0.55 },
+  midday: { temperature: 0.18, brightness: 0.9 },
+  evening: { temperature: 0.86, brightness: 0.45 },
+  morningEnd: 30,
+  eveningStart: -60,
+};
 
-/** What a new device starts with: a full warm night, a cool working day. */
 export const DEFAULT_SIMPLE_PLAN: Omit<SimpleCircadianPlan, 'target' | 'schemaVersion'> = {
   enabled: true,
-  warmest: { temperature: 1, brightness: 0.6 },
-  coolest: { temperature: 0.15, brightness: 0.9 },
+  zones: DEFAULT_ZONES,
   adjustBrightness: false,
   preStage: false,
 };
 
-/**
- * The two ends and the shape, as the curve engine's points.
- *
- * Derived on every load and every save rather than stored: the shape is a
- * constant in this file, and persisting a copy of it would mean an installed
- * device keeping a shape a later version had improved. What is stored is the two
- * answers only the user can give.
- *
- * `brightness` is carried onto every point or onto none, which is the engine's
- * own rule (`adjustBrightness` is refused unless every point has one).
- */
-export function expandSimplePlan(plan: SimpleCircadianPlan): CircadianPlan {
-  const withBrightness = plan.adjustBrightness
-    && plan.warmest.brightness !== undefined
-    && plan.coolest.brightness !== undefined;
+/** The two boundaries as minutes of the local day, in an order the curve can use. */
+export interface ResolvedBoundaries {
+  morningEndMinute: number;
+  eveningStartMinute: number;
+  /** False when the sun was not available and the fixed hours were used instead. */
+  fromSun: boolean;
+}
 
-  const points: CircadianPoint[] = SIMPLE_SHAPE.map(({ id, minute, end }) => {
-    const source = plan[end];
+/**
+ * Where today's boundaries actually fall, clamped so the day stays in order.
+ *
+ * **The clamp is not belt and braces; it is the whole reason this is a function
+ * rather than two additions.** An offset is stored once and resolved against a
+ * sunrise that moves all year, so a pair that is sensible in June can invert in
+ * December: north of about 60° the shortest day is under six hours, and a
+ * morning pushed late plus an evening pulled early crosses over. A crossed pair
+ * does not fail — `resolvePoints` sorts by minute, so it silently produces a day
+ * that runs midday, morning, evening, midday, which is far worse than failing.
+ *
+ * So the morning boundary is held clear of the evening one, and both are held
+ * clear of midnight, exactly as the design canvas's own `bounds()` does.
+ */
+export function resolveBoundaries(
+  zones: CircadianZones,
+  context: AnchorContext = {},
+): ResolvedBoundaries {
+  const fromSun = context.sunriseMinute !== undefined && context.sunsetMinute !== undefined;
+  const sunrise = context.sunriseMinute ?? FALLBACK_SUNRISE;
+  const sunset = context.sunsetMinute ?? FALLBACK_SUNSET;
+
+  // Each zone needs room for its own ramp plus half of each neighbour's, or two
+  // boundaries land on top of one another and the middle zone never holds.
+  const slack = 3 * ZONE_RAMP;
+
+  const morningEndMinute = clamp(sunrise + zones.morningEnd, slack, MINUTES_PER_DAY - 2 * slack);
+  const eveningStartMinute = clamp(
+    sunset + zones.eveningStart,
+    morningEndMinute + slack,
+    MINUTES_PER_DAY - slack,
+  );
+
+  return { morningEndMinute, eveningStartMinute, fromSun };
+}
+
+function clamp(value: number, low: number, high: number): number {
+  return Math.max(low, Math.min(high, value));
+}
+
+/**
+ * The three zones as the curve engine's six points.
+ *
+ * Six, because holding three values flat needs two points each, and the ramps
+ * between them are where the day actually changes:
+ *
+ * ```
+ *   00:00+R  morning ─┐ (the night's ramp into the morning ends)
+ *   A−R      morning ─┘ held all morning
+ *   A+R      midday  ─┐ cooling across the morning boundary
+ *   B−R      midday  ─┘ held through the middle of the day
+ *   B+R      evening ─┐ warming across the evening boundary
+ *   24:00−R  evening ─┘ held all evening
+ * ```
+ *
+ * The pair around MIDNIGHT is the one the design canvas does not draw, and it is
+ * deliberate. The canvas reads the morning temperature from midnight and the
+ * evening temperature up to midnight, which was a step change the moment those
+ * two stopped being the same value — the lights would jump at 00:00 every night.
+ * The engine's interpolation is cyclic, so a ramp across midnight is the same
+ * rule applied a third time rather than a special case.
+ *
+ * Clock anchors rather than sun anchors, because the boundaries have already
+ * been clamped against each other by `resolveBoundaries` and a sun anchor would
+ * throw that away — see the note on `CircadianPlan.zones` for how this stays
+ * fresh as the sun moves through the year.
+ */
+export function zonePoints(
+  zones: CircadianZones,
+  context: AnchorContext = {},
+  adjustBrightness = false,
+): CircadianPoint[] {
+  const { morningEndMinute, eveningStartMinute } = resolveBoundaries(zones, context);
+
+  const withBrightness = adjustBrightness
+    && zones.morning.brightness !== undefined
+    && zones.midday.brightness !== undefined
+    && zones.evening.brightness !== undefined;
+
+  const point = (id: string, minute: number, key: ZoneKey): CircadianPoint => {
+    const zone = zones[key];
     return {
       id,
-      anchor: { kind: 'clock', at: minute % MINUTES_PER_DAY },
-      warmth: source.temperature,
-      ...(withBrightness ? { brightness: source.brightness! } : {}),
-      // Carried onto every point derived from that end, so the runtime sees the
-      // flag wherever the shape put it. Only alongside a brightness, for the
-      // same reason the field itself is only meaningful with one.
-      ...(withBrightness && source.fromDaylight === true ? { fromDaylight: true } : {}),
+      anchor: { kind: 'clock', at: wrap(minute) },
+      warmth: zone.temperature,
+      ...(withBrightness ? { brightness: zone.brightness! } : {}),
     };
-  });
+  };
 
+  return [
+    point('night-end', ZONE_RAMP, 'morning'),
+    point('morning-hold', morningEndMinute - ZONE_RAMP, 'morning'),
+    point('midday-start', morningEndMinute + ZONE_RAMP, 'midday'),
+    point('midday-hold', eveningStartMinute - ZONE_RAMP, 'midday'),
+    point('evening-start', eveningStartMinute + ZONE_RAMP, 'evening'),
+    point('night-start', MINUTES_PER_DAY - ZONE_RAMP, 'evening'),
+  ];
+}
+
+function wrap(minute: number): number {
+  return ((minute % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+}
+
+/**
+ * The zones as the plan the runtime evaluates.
+ *
+ * `points` here is a SNAPSHOT taken against the fallback hours, and `zones` is
+ * the source it came from. Both are on the plan on purpose: everything downstream
+ * of the runtime — the pure curve engine, the validator, the diagnostics, the
+ * preview — reads an ordinary point list and needs to go on doing so, while the
+ * runtime re-derives that list from `zones` on every tick against the day's real
+ * sunrise. Without the re-derivation the boundaries would be frozen at whatever
+ * the sun was doing when the device was last registered, and sunrise moves by
+ * four minutes a day around an equinox.
+ */
+export function expandSimplePlan(plan: SimpleCircadianPlan): CircadianPlan {
+  const points = zonePoints(plan.zones, {}, plan.adjustBrightness);
   return {
     schemaVersion: plan.schemaVersion,
     enabled: plan.enabled,
     target: plan.target,
     points,
-    adjustBrightness: withBrightness,
-    // Carried through, because the expanded plan is what the runtime evaluates
-    // and a response left behind here would leave every `fromDaylight` above
-    // pointing at nothing.
-    ...(plan.daylight !== undefined ? { daylight: plan.daylight } : {}),
+    zones: plan.zones,
+    adjustBrightness: points.every(p => p.brightness !== undefined),
     preStage: plan.preStage,
   };
 }
@@ -155,18 +265,14 @@ export function expandSimplePlan(plan: SimpleCircadianPlan): CircadianPlan {
  * off after observing a lamp come on from a colour write (platform §12), and
  * that verdict has to survive a restart or the same lamp is switched on again
  * tomorrow night; `enabled` moves when somebody uses the pause switch.
- * Everything else in the expanded plan is derived from `SIMPLE_SHAPE`, so reading
- * it back would be reading back a constant.
+ * Everything else in the expanded plan is derived from the zones, so reading it
+ * back would be reading back a derivation.
  *
  * It lives HERE, beside the expansion it inverts, rather than in
  * `drivers/circadian/device.ts` where it was: that file extends `Homey.Device`
  * and so cannot be imported by a test at all (platform §13), which is exactly why
  * a bug in the fold-back — persisting the pre-edit plan on every repair — shipped
  * without anything failing.
- *
- * `onto` is the plan the fold is FOR. It used to be read from the device store
- * inside the driver, and `DeviceLifecycle.apply()` persists after registering, so
- * on a repair the store still held the plan the user had just replaced.
  */
 export function foldBackSimplePlan(
   onto: SimpleCircadianPlan,
@@ -178,23 +284,22 @@ export function foldBackSimplePlan(
 /**
  * Everything a screen sends is untrusted, the same way a schedule's rows are.
  *
- * Nothing is DROPPED here, because there is nothing droppable: two ends are not a
- * list, and a device with one end is not a degraded device, it is a device with no
- * curve at all. So a missing or unusable value falls back to the default for that
- * end — and the caller is told which, so the screen can say so rather than
- * silently showing something else.
+ * Nothing is DROPPED here, because there is nothing droppable: three zones are
+ * not a list, and a device with two of them is not a degraded device, it is a
+ * device with no curve at all. So a missing or unusable value falls back to the
+ * default for that zone — and the caller is told which, so the screen can say so
+ * rather than silently showing something else.
  */
-export function sanitiseSimplePlan(raw: unknown): {
-  warmest: CircadianEnd;
-  coolest: CircadianEnd;
+export function sanitiseZones(raw: unknown): {
+  zones: CircadianZones;
   adjustBrightness: boolean;
   corrected: string[];
 } {
   const source = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const corrected: string[] = [];
 
-  const end = (key: 'warmest' | 'coolest'): CircadianEnd => {
-    const fallback = DEFAULT_SIMPLE_PLAN[key];
+  const zone = (key: ZoneKey): CircadianZone => {
+    const fallback = DEFAULT_ZONES[key];
     const given = (source[key] && typeof source[key] === 'object'
       ? source[key]
       : {}) as Record<string, unknown>;
@@ -207,58 +312,59 @@ export function sanitiseSimplePlan(raw: unknown): {
 
     // A brightness of 0 is "on, at nothing" — unset, as it is in a schedule row.
     const brightness = sanitiseUnitInterval(given.brightness);
+      // Floored rather than stored as sent. A positive brightness is never
+      // written as darkness, and the bottom of the axis is where that bites: 5%
+      // is `dim` 0.0014, which `decimals: 2` rounds to 0.00 — off, on most
+      // integrations. `litDim` is the net under this at write time, but a plan
+      // that STORES 5% would show 5% on every screen while the lamp went dark.
+      // This used to be a migration step's job, and the migrations are gone.
     return {
       temperature,
-      ...(brightness !== null && brightness > 0
-        ? { brightness }
-        : { brightness: fallback.brightness! }),
-      // An end always ends up with a brightness above, so there is no "only
-      // alongside one" check to make here — unlike a curve point or a schedule
-      // window, where a brightness is genuinely optional.
-      ...(given.fromDaylight === true ? { fromDaylight: true } : {}),
+      brightness: brightness !== null && brightness > 0
+        ? Math.max(MINIMUM_BRIGHTNESS, brightness)
+        : fallback.brightness!,
     };
   };
 
-  const warmest = end('warmest');
-  const coolest = end('coolest');
+  const morning = zone('morning');
+  const midday = zone('midday');
+  const evening = zone('evening');
 
   return {
-    warmest,
-    coolest,
+    zones: {
+      morning,
+      midday,
+      evening,
+      morningEnd: offset(source.morningEnd, DEFAULT_ZONES.morningEnd, 'morningEnd', corrected),
+      eveningStart: offset(
+        source.eveningStart, DEFAULT_ZONES.eveningStart, 'eveningStart', corrected,
+      ),
+    },
     // All-or-nothing, checked here rather than trusted from the screen — the same
     // rule the curve's own sanitiser applies across every point.
     adjustBrightness: source.adjustBrightness === true
-      && warmest.brightness !== undefined && coolest.brightness !== undefined,
+      && morning.brightness !== undefined
+      && midday.brightness !== undefined
+      && evening.brightness !== undefined,
     corrected,
   };
 }
 
 /**
- * Derive the two ends from an existing point-based plan.
+ * One boundary offset: a whole number of quarter hours, inside the range.
  *
- * The migration path for a circadian device saved when this driver WAS the curve
- * editor. The warmest and coolest points are the honest answer — they are the two
- * values the user actually chose, and the ones the shape above is built to hold.
- * Whatever they set between them is lost, and it has to be: this device type has
- * nowhere to put it. The changelog says so, and `drivers/curve/` is where that
- * curve can be rebuilt if they want it back.
+ * Snapped to the step rather than merely clamped, because the screen steps in
+ * quarter hours and a stored 37 could only have come from a hand-edited store or
+ * a scripted pair session (platform §14) — and "sunset −37m" on a screen whose
+ * every control moves in fifteens reads as a bug in the screen.
  */
-export function endsFromPoints(points: readonly CircadianPoint[]): {
-  warmest: CircadianEnd;
-  coolest: CircadianEnd;
-} {
-  if (points.length === 0) {
-    return { warmest: DEFAULT_SIMPLE_PLAN.warmest, coolest: DEFAULT_SIMPLE_PLAN.coolest };
+function offset(raw: unknown, fallback: number, field: string, corrected: string[]): number {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+    if (raw !== undefined) corrected.push(field);
+    return fallback;
   }
-
-  const sorted = [...points].sort((a, b) => a.warmth - b.warmth);
-  const coolestPoint = sorted[0]!;
-  const warmestPoint = sorted[sorted.length - 1]!;
-
-  const from = (point: CircadianPoint): CircadianEnd => ({
-    temperature: point.warmth,
-    ...(point.brightness !== undefined ? { brightness: point.brightness } : {}),
-  });
-
-  return { warmest: from(warmestPoint), coolest: from(coolestPoint) };
+  const stepped = Math.round(raw / OFFSET_STEP) * OFFSET_STEP;
+  const clamped = clamp(stepped, -MAX_OFFSET, MAX_OFFSET);
+  if (clamped !== raw) corrected.push(field);
+  return clamped;
 }

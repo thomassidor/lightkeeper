@@ -13,11 +13,27 @@
   "description": {
     "en": "Easy control for the lights you already have."
   },
-  "category": ["tools", "lights"],
+  "category": [
+    "tools",
+    "lights"
+  ],
   "tags": {
-    "en": ["remote control", "smart lights", "schedule", "timer", "time of day", "circadian",
-      "adaptive lighting", "colour temperature", "dimmer", "rotary dial", "button", "flow",
-      "zigbee", "matter"]
+    "en": [
+      "remote control",
+      "smart lights",
+      "schedule",
+      "timer",
+      "time of day",
+      "circadian",
+      "adaptive lighting",
+      "colour temperature",
+      "dimmer",
+      "rotary dial",
+      "button",
+      "flow",
+      "zigbee",
+      "matter"
+    ]
   },
   "brandColor": "#2A1958",
   "permissions": [
@@ -39,12 +55,30 @@
     "url": "https://github.com/thomassidor/lightkeeper/issues"
   },
   "api": {
-    "noteEvidence": { "method": "POST", "path": "/evidence/note" },
-    "getEvidence": { "method": "GET", "path": "/evidence" },
-    "startEvidence": { "method": "POST", "path": "/evidence/start" },
-    "stopEvidence": { "method": "POST", "path": "/evidence/stop" },
-    "clearEvidence": { "method": "DELETE", "path": "/evidence/:id" },
-    "readEvidence": { "method": "GET", "path": "/evidence/:id/:offset/:end" },
+    "noteEvidence": {
+      "method": "POST",
+      "path": "/evidence/note"
+    },
+    "getEvidence": {
+      "method": "GET",
+      "path": "/evidence"
+    },
+    "startEvidence": {
+      "method": "POST",
+      "path": "/evidence/start"
+    },
+    "stopEvidence": {
+      "method": "POST",
+      "path": "/evidence/stop"
+    },
+    "clearEvidence": {
+      "method": "DELETE",
+      "path": "/evidence/:id"
+    },
+    "readEvidence": {
+      "method": "GET",
+      "path": "/evidence/:id/:offset/:end"
+    },
     "getStatus": {
       "method": "GET",
       "path": "/"
@@ -96,6 +130,10 @@
     "testControllerFunction": {
       "method": "POST",
       "path": "/controllers/:id/test"
+    },
+    "getSensorHistory": {
+      "method": "GET",
+      "path": "/sensors/:id/history"
     }
   }
 }

@@ -73,10 +73,17 @@ reports SKIPPED with the keys it saw rather than guessing. T60 re-reads it at th
 because the catalogues are read lazily: an app nothing has asked anything of yet looks thin
 whatever it does with the answer.
 
-**It fails on a ceiling, not on the guideline.** The app sits around 44 MB once anything has read
-the trigger catalogue — one read costs ~12 MB of floor and V8 never returns those pages — against a
-30 MB guideline it is deliberately over. So T59 prints the guideline and fails past 50 MB, because a
-line that failed on every run is one nobody reads.
+**It fails on a ceiling, not on the guideline.** One catalogue read costs ~12 MB of floor and V8
+never returns those pages, and the app is deliberately over the 30 MB guideline. So T59 prints the
+guideline and fails past **100 MB**, because a line that failed on every run is one nobody reads.
+
+**The ceiling was 50 until 13 September 2026, and what moved it is worth knowing.** The same line
+read 36.6 MB on a fresh install on 9 September and 68 MB on 13 September — so the 9 September build
+and the 13 September build were installed one after the other on that Homey against the same four
+devices, and measured 67.5 MB and 68.2 MB. The app's code is not the difference; the house is, and
+which part of it was not identified ([platform §15](homey-platform.md#15-homey-api-caches-every-getall-result-forever)
+has the table, and the three things that were ruled out). **A reading is comparable only with
+another reading from the same house**, which is the real limit on this line.
 
 Be clear about its reach: it is a smoke check for a second bulk read appearing, **not** a regression
 test for retention. Holding a parsed catalogue and merely having parsed one cost the same RSS, so
@@ -104,16 +111,18 @@ These were hardware steps. They are tests now, and they fail. Where a line survi
 
 | Test | What it took over |
 |---|---|
-| `pair-view-behaviour.test.ts` | T15, and the old 2.2, 2.3, 2.6, 4.3, 5.2, 5.3, 5.6 — what each screen refuses and what it draws |
+| `pair-view-behaviour.test.ts` | T15, and the old 2.2, 2.3, 2.6, 4.3, 5.2, 5.3, 5.6 — what each screen refuses and what it draws. **Rewritten for 0.6.0**: the screens it covered are mostly gone, and several of the behaviours it asserted were deliberately reversed — a schedule now REPORTS an overlap rather than refusing it, and one rule per gesture is structural rather than checked. What survives is re-pointed: the key screen, the light picker, and one block each for the day, curve, blocks, sensor, response, review and buttons screens |
 | `settings-page.test.ts` | the old 1.2 and 8.1 — five empty sections rather than five blanks, and five full ones. Plus the sky readout, which is the fastest check that geolocation resolved |
 | `pair-view-boot.test.ts` | every view runs and asks the driver for its data |
 | `repair-views.test.ts` | the `unknown_error_getting_file` that made Repair a dead end |
 | `pairing-sessions.test.ts` | the one-light collapse, the default names, the remote picker |
-| `pair-session.test.ts` | the pairing MECHANICS all five drivers share — the handler wrapper logging AND re-throwing, the sensor retain/release ref-count, save-and-name per device type, `nextView` per driver, the credential probe creating a folder and deleting it again, the curve preview's force-and-drain. **None of it was reachable before**: platform §13 means a file containing `extends Homey.Driver` cannot be imported by a test, so the daylight card's three handlers were guaranteed identical across four drivers by a comment. T87-T89 remain for what the SDK decides on the other side of the seam — whether Homey still routes each handler, still accepts the `createDevice` shape, and still finds a repair's device |
+| `pair-session.test.ts` | the pairing MECHANICS all five drivers share — the handler wrapper logging AND re-throwing, the sensor retain/release ref-count, save-and-name per device type, `nextView` per driver, the credential probe creating a folder and deleting it again, the curve preview's force-and-drain. **None of it was reachable before**: platform §13 means a file containing `extends Homey.Driver` cannot be imported by a test, so the pairing mechanics five drivers share were guaranteed identical by a comment. T87-T89 remain for what the SDK decides on the other side of the seam — whether Homey still routes each handler, still accepts the `createDevice` shape, and still finds a repair's device |
 | `assets.test.ts` | T3's measurable half: five pictures, five distinct, correct sizes |
 | `schedule-window.test.ts`, `schedule-bindings.test.ts` | midnight-crossing windows and their labels |
 | `curve-colour.test.ts`, `circadian-curve.test.ts` | the shade between two coloured points |
 | `solar-elevation.test.ts` | where the sun is, against values astronomy fixes independently of any implementation — declination at the poles, `90 −` the latitude gap at noon, hemispheric mirroring at an equinox, an hour per 15° of longitude |
+| `sensor-history.test.ts` | the week grid's arithmetic — seven days of buckets from a raw Insights series, the four verdicts and the order they are decided in, and the two roundings. The dark end rounds UP and the bright end down, because snapping the dark threshold down deletes the margin it exists to carry |
+| `press-listener.test.ts` | that press-to-find STOPS — on the first press, on the timeout, and on the screen closing — because a leaked listener holds a subscription on somebody's battery-powered remote for as long as the app runs |
 | `daylight-runtime.test.ts` | that the daylight loop TERMINATES, and the slew limit's shape. Neither is watchable in less than ten minutes on hardware, which is why T83 and T84 still exist for the parts a real sensor decides |
 | `luminance-source.test.ts` | one subscription per sensor however many devices name it, and what makes a reading unusable |
 | `api-trying.test.ts` | the seven "try it now" routes the script drives |

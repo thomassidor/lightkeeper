@@ -6,7 +6,10 @@ import {
 import { MINUTES_PER_DAY } from '../time/wall-clock';
 import { isPaletteColor } from '../circadian/palette';
 import type { TargetSpec } from '../outputs/light-intent';
-import type { ControllerBehavior, LightFunction, MappingRule } from '../mapping/mapping-types';
+import {
+  FUNCTION_NEEDS_PRESET,
+  type ControllerBehavior, type LightFunction, type MappingRule,
+} from '../mapping/mapping-types';
 import type { ControllerProfile, ManagedFlowReference } from '../profiles/controller-profile';
 import {
   ENTRY_ID_SHAPE,
@@ -16,9 +19,12 @@ import {
   MIN_POINTS,
   type CircadianPlan, type CircadianPoint, type CircadianAnchor,
 } from '../circadian/circadian-types';
-import type { CircadianEnd, SimpleCircadianPlan } from '../circadian/simple-curve';
 import {
-  MAX_SENSORS, MAX_LUX, MIN_LUX,
+  MAX_OFFSET,
+  type CircadianZone, type CircadianZones, type SimpleCircadianPlan,
+} from '../circadian/simple-curve';
+import {
+  MAX_ELEVATION, MAX_LUX, MIN_ELEVATION, MIN_LUX,
   isSunPeak,
   type DaylightPlan, type DaylightResponse,
   type SunPeak,
@@ -81,8 +87,19 @@ const MAX_MANAGED_FLOWS = 256;
 const MAX_CATALOGUE = 512;
 const MAX_TARGET_DEVICES = 256;
 
+/**
+ * Every light function, as the stored-plan validator's allow-list.
+ *
+ * Written out rather than derived from `FUNCTION_CAPABILITY`'s keys so that
+ * adding a function is a deliberate two-line change here as well: this list is
+ * what decides whether a profile written by a NEWER build is quarantined, and
+ * deriving it would silently accept a function this build cannot plan.
+ */
 const LIGHT_FUNCTIONS: readonly LightFunction[] = [
-  'toggle', 'on', 'off', 'brightness_up', 'brightness_down', 'warmer', 'colder',
+  'toggle', 'on', 'off',
+  'brightness_up', 'brightness_down',
+  'warmer', 'colder',
+  'brightness_set', 'temperature_cycle',
 ];
 
 const INPUT_ACTIONS: readonly InputAction[] = [
@@ -232,13 +249,49 @@ function validateCatalogueEntry(raw: unknown, path: string): SelectableInput {
 
 function validateMappingRule(raw: unknown, path: string): MappingRule {
   const rule = requireRecord(raw, path);
+  const func = requireOneOf(rule.function, `${path}.function`, LIGHT_FUNCTIONS);
+
+  /**
+   * The preset half of the rule, REFUSED rather than dropped.
+   *
+   * The screen's own validator drops a half-finished row, because a row somebody
+   * is still filling in is a normal state there. This reads a STORED plan, where
+   * the same shape means a partial write, a hand edit or a downgrade — and a
+   * button whose job is "a set brightness" and which carries no brightness is
+   * exactly the "looks configured, does nothing" failure quarantining exists
+   * for.
+   */
+  const preset = rule.preset === undefined || rule.preset === null
+    ? undefined
+    : {
+      brightness: requireUnitInterval(
+        requireRecord(rule.preset, `${path}.preset`).brightness, `${path}.preset.brightness`,
+      ),
+      ...(requireRecord(rule.preset, `${path}.preset`).temperature !== undefined
+        ? {
+          temperature: requireUnitInterval(
+            requireRecord(rule.preset, `${path}.preset`).temperature,
+            `${path}.preset.temperature`,
+          ),
+        }
+        : {}),
+    };
+
+  if (FUNCTION_NEEDS_PRESET[func] && preset === undefined) {
+    fail(`${path}.preset`, `is missing, and "${func}" cannot run without one`);
+  }
+  if (!FUNCTION_NEEDS_PRESET[func] && preset !== undefined) {
+    fail(`${path}.preset`, `is set, but "${func}" never reads one`);
+  }
+
   return {
     id: requireString(rule.id, `${path}.id`),
-    function: requireOneOf(rule.function, `${path}.function`, LIGHT_FUNCTIONS),
+    function: func,
     inputKey: rule.inputKey === null ? null : requireString(rule.inputKey, `${path}.inputKey`),
     target: rule.target === null || rule.target === undefined
       ? null
       : validateTarget(rule.target, `${path}.target`),
+    ...(preset !== undefined ? { preset } : {}),
   };
 }
 
@@ -331,17 +384,26 @@ function validateScheduleEnd(raw: unknown, path: string): ScheduleEnd {
   };
 }
 
+/**
+ * Which days a schedule runs on: a list of ISO weekdays, or null for every day.
+ *
+ * On the PLAN since the pairing rewrite, not on each window — see the field's own
+ * note on `SchedulePlan`. An empty list is refused rather than read as "never":
+ * a schedule that can never fire looks configured and does nothing, which is the
+ * failure this whole module exists to quarantine.
+ */
+function validateWeekdays(raw: unknown, path: string): IsoWeekday[] | null {
+  if (raw === null || raw === undefined) return null;
+  const list = requireArray(raw, path, 7);
+  const days = list.map((day, i) => requireNumber(day, `${path}[${i}]`, {
+    min: 1, max: 7, integer: true,
+  }) as IsoWeekday);
+  if (days.length === 0) fail(path, 'is an empty list, so the schedule could never fire');
+  return days;
+}
+
 function validateScheduleEntry(raw: unknown, path: string): ScheduleEntry {
   const entry = requireRecord(raw, path);
-
-  let days: IsoWeekday[] | null = null;
-  if (entry.days !== null && entry.days !== undefined) {
-    const list = requireArray(entry.days, `${path}.days`, 7);
-    days = list.map((day, i) => requireNumber(day, `${path}.days[${i}]`, {
-      min: 1, max: 7, integer: true,
-    }) as IsoWeekday);
-    if (days.length === 0) fail(`${path}.days`, 'is an empty list');
-  }
 
   /**
    * The id has a SHAPE, and it is load-bearing rather than cosmetic.
@@ -383,9 +445,10 @@ function validateScheduleEntry(raw: unknown, path: string): ScheduleEntry {
   return {
     id,
     onAt,
-    days,
     end,
-    ...brightnessWithDaylight(entry, path, 'window'),
+    ...(entry.brightness !== undefined
+      ? { brightness: requireUnitInterval(entry.brightness, `${path}.brightness`) }
+      : {}),
     ...(entry.temperature !== undefined
       ? { temperature: requireUnitInterval(entry.temperature, `${path}.temperature`) } : {}),
   };
@@ -399,12 +462,10 @@ export function validateSchedulePlan(raw: unknown): SchedulePlan {
       .map((entry, i) => validateScheduleEntry(entry, `${ROOT.schedule}.entries[${i}]`)),
     `${ROOT.schedule}.entries`,
   );
-  const daylight = optionalDaylight(plan, ROOT.schedule, entries, `${ROOT.schedule}.entries`);
-
   return {
     ...planRoot(plan, ROOT.schedule),
     entries,
-    ...(daylight !== undefined ? { daylight } : {}),
+    days: validateWeekdays(plan.days, `${ROOT.schedule}.days`),
     managedFlows: validateManagedFlows(plan.managedFlows, `${ROOT.schedule}.managedFlows`),
   };
 }
@@ -434,14 +495,24 @@ function validateAnchor(raw: unknown, path: string): CircadianAnchor {
 
   if (kind === 'sun') {
     /**
-     * Declared in the type from day one so anchoring to real sunrise and sunset
-     * lands later as a new variant rather than a reshape of every stored plan —
-     * and refused here for the same reason `sanitiseCurve` refuses it and
-     * `resolveAnchor` throws on it: it needs `homey:manager:geolocation`, which
-     * this app does not declare, and solar maths the SDK does not provide
-     * (platform §9 and §12). A plan carrying one is a plan from a future build.
+     * Resolvable since the circadian light's boundaries started following the
+     * sun. `sunTimes` in lib/daylight/solar-elevation.ts supplies the minute and
+     * the runtime threads it in; a day with no sunrise at all — polar, or a
+     * Homey that has never been told where it is — falls back to fixed hours in
+     * `resolveBoundaries` rather than failing here, because a circadian light on
+     * fixed hours is still a circadian light.
+     *
+     * The offset is bounded at a day because beyond that it is not an offset
+     * from anything: it has wrapped, and the point it names is not the one whose
+     * name is on it.
      */
-    fail(`${path}.kind`, 'is "sun", which this version cannot resolve');
+    return {
+      kind: 'sun',
+      event: requireOneOf(anchor.event, `${path}.event`, ['sunrise', 'sunset'] as const),
+      offset: requireNumber(anchor.offset, `${path}.offset`, {
+        min: -MINUTES_PER_DAY, max: MINUTES_PER_DAY, integer: true,
+      }),
+    };
   }
 
   return {
@@ -473,7 +544,9 @@ function validateCircadianPoint(raw: unknown, path: string): CircadianPoint {
     id: requireString(point.id, `${path}.id`),
     anchor: validateAnchor(point.anchor, `${path}.anchor`),
     warmth: requireUnitInterval(point.warmth, `${path}.warmth`),
-    ...brightnessWithDaylight(point, path, 'point'),
+    ...(point.brightness !== undefined
+      ? { brightness: requireUnitInterval(point.brightness, `${path}.brightness`) }
+      : {}),
     ...(color !== undefined ? { color } : {}),
   };
 }
@@ -510,13 +583,18 @@ export function validateCircadianPlan(raw: unknown): CircadianPlan {
     fail(`${ROOT.circadian}.adjustBrightness`, 'is set while a point carries no brightness');
   }
 
-  const daylight = optionalDaylight(plan, ROOT.circadian, points, `${ROOT.circadian}.points`);
+  // The zones a circadian light stores, when this plan came from one. Validated
+  // through the same function the simple plan uses, because they are the same
+  // three zones and a second copy of the rules is a second thing to get wrong.
+  const zones = plan.zones === undefined
+    ? undefined
+    : validateZones(plan.zones, `${ROOT.circadian}.zones`);
 
   return {
     ...planRoot(plan, ROOT.circadian),
     points,
     adjustBrightness,
-    ...(daylight !== undefined ? { daylight } : {}),
+    ...(zones !== undefined ? { zones } : {}),
     // Opt-in, so anything other than a real `true` is a no. Matching the 0 → 1
     // migration, which reads `preStage === true` for the same reason.
     preStage: plan.preStage === true,
@@ -525,44 +603,71 @@ export function validateCircadianPlan(raw: unknown): CircadianPlan {
 
 // ---------------------------------------------------- simple circadian plan
 
-function validateEnd(raw: unknown, path: string): CircadianEnd {
-  const end = requireRecord(raw, path);
+function validateZone(raw: unknown, path: string): CircadianZone {
+  const zone = requireRecord(raw, path);
   return {
-    temperature: requireUnitInterval(end.temperature, `${path}.temperature`),
-    ...brightnessWithDaylight(end, path, 'end'),
+    temperature: requireUnitInterval(zone.temperature, `${path}.temperature`),
+    ...(zone.brightness !== undefined
+      ? { brightness: requireUnitInterval(zone.brightness, `${path}.brightness`) }
+      : {}),
   };
 }
 
 /**
- * The two-ended plan a circadian light stores.
+ * The three zones and the two sun-anchored boundaries between them.
  *
- * The SHAPE is not validated because it is not stored: `expandSimplePlan` derives
- * the four points from a constant every time (see `simple-curve.ts` for why). What
- * is here is the two answers only the user can give.
+ * Shared by both circadian shapes: a circadian light stores these as its whole
+ * plan, and the expanded plan the runtime holds carries the same object so the
+ * points can be re-derived against today's sun. One function, so the two cannot
+ * come to disagree about what a zone is.
+ *
+ * The offsets are bounded at `MAX_OFFSET` rather than at a day. Beyond that they
+ * are not adjustments to a sunrise any more, and `resolveBoundaries` would clamp
+ * them anyway — refusing here means a store that got there out of band is
+ * quarantined with a named path rather than silently behaving as if it said
+ * something else.
+ */
+function validateZones(raw: unknown, path: string): CircadianZones {
+  const zones = requireRecord(raw, path);
+  const offset = (value: unknown, field: string) => requireNumber(value, `${path}.${field}`, {
+    min: -MAX_OFFSET, max: MAX_OFFSET, integer: true,
+  });
+
+  return {
+    morning: validateZone(zones.morning, `${path}.morning`),
+    midday: validateZone(zones.midday, `${path}.midday`),
+    evening: validateZone(zones.evening, `${path}.evening`),
+    morningEnd: offset(zones.morningEnd, 'morningEnd'),
+    eveningStart: offset(zones.eveningStart, 'eveningStart'),
+  };
+}
+
+/**
+ * The three-zone plan a circadian light stores.
+ *
+ * The SHAPE is not validated because it is not stored: `zonePoints` derives the
+ * six points from the zones and the day's sun every tick (see `simple-curve.ts`
+ * for why). What is here is the answers only the user can give.
  */
 export function validateSimpleCircadianPlan(raw: unknown): SimpleCircadianPlan {
   const plan = requireRecord(raw, ROOT.simple);
-  const warmest = validateEnd(plan.warmest, `${ROOT.simple}.warmest`);
-  const coolest = validateEnd(plan.coolest, `${ROOT.simple}.coolest`);
+  const zones = validateZones(plan.zones, `${ROOT.simple}.zones`);
   const adjustBrightness = requireBoolean(plan.adjustBrightness, `${ROOT.simple}.adjustBrightness`);
 
-  // Both ends or neither, which is the curve engine's own rule: it interpolates
-  // brightness only where both bracketing points carry one, and half a brightness
-  // curve would have to invent the other half.
-  if (adjustBrightness && (warmest.brightness === undefined || coolest.brightness === undefined)) {
-    fail(`${ROOT.simple}.adjustBrightness`, 'is set while an end carries no brightness');
+  // Every zone or none, which is the curve engine's own rule: it interpolates
+  // brightness only where both bracketing points carry one, and two thirds of a
+  // brightness curve would have to invent the rest.
+  if (adjustBrightness
+    && (zones.morning.brightness === undefined
+      || zones.midday.brightness === undefined
+      || zones.evening.brightness === undefined)) {
+    fail(`${ROOT.simple}.adjustBrightness`, 'is set while a zone carries no brightness');
   }
-
-  const daylight = optionalDaylight(
-    plan, ROOT.simple, [warmest, coolest], `${ROOT.simple}.warmest`,
-  );
 
   return {
     ...planRoot(plan, ROOT.simple),
-    warmest,
-    coolest,
+    zones,
     adjustBrightness,
-    ...(daylight !== undefined ? { daylight } : {}),
     // Opt-in, so anything other than a real `true` is a no.
     preStage: plan.preStage === true,
   };
@@ -596,96 +701,13 @@ function planRoot(plan: Record<string, unknown>, root: string): {
 }
 
 /**
- * The ROW-level half of the `fromDaylight` rule: a brightness, and the flag
- * that may stand in front of it.
- *
- * `fromDaylight` is refused without a `brightness` because that brightness is
- * the FALLBACK — four paths lead back to it and all four are real: no flag, no
- * response on the plan, no evaluator wired, or an evaluator that cannot tell how
- * light it is. A window that came on at nothing would be worse than one that
- * came on at the level somebody chose last month. Refused rather than dropped:
- * see `requireDaylightAvailable` for why the stored-plan path is stricter than
- * the screen's.
- *
- * `noun` is a parameter rather than a fixed word because the failure message is
- * what somebody reads to find the row to repair, and `plan-validation.test.ts`
- * asserts it. This lived as the same eight lines in `validateEntry`,
- * `validatePoint` and `validateEnd`, differing only in that word — three copies
- * of the one rule CLAUDE.md requires "in every sanitiser and every validator",
- * in the module whose own comment warns that copies are "chances for them to
- * disagree".
- *
- * Key order is `brightness` then `fromDaylight`, matching what the three call
- * sites produced before, because the result is spread into a stored plan.
- */
-function brightnessWithDaylight(
-  row: Record<string, unknown>,
-  path: string,
-  noun: string,
-): { brightness?: number; fromDaylight?: true } {
-  const brightness = row.brightness !== undefined
-    ? requireUnitInterval(row.brightness, `${path}.brightness`)
-    : undefined;
-
-  if (row.fromDaylight !== true) {
-    return brightness !== undefined ? { brightness } : {};
-  }
-  if (brightness === undefined) {
-    fail(`${path}.fromDaylight`, `is set while the ${noun} carries no brightness to fall back to`);
-  }
-  return { brightness, fromDaylight: true };
-}
-
-// -------------------------------------------------------------- daylight
-
-/**
- * The OPTIONAL daylight response the three curve-and-schedule plans may carry,
- * plus the plan-level half of the `fromDaylight` rule that goes with it.
- *
- * The two are one function on purpose. A row that says it follows the daylight,
- * on a device with no daylight response, is a row that looks configured and does
- * nothing — the precise failure this app exists to prevent, and the one the
- * mapping engine's "one rule per gesture" guard exists for in its own corner.
- * The sanitisers cannot check it: each of them sees only the list, never the plan
- * around it. Validating the response and asserting its availability were two
- * calls that every carrier had to remember to make in pairs, so a fourth plan
- * type could have done the first and not the second and nothing would have said
- * so. Now there is no way to have one without the other.
- *
- * REFUSED rather than repaired, unlike the sanitisers' policy on the same field.
- * A stored plan in this state did not come from a screen — it came from a
- * partial write, a hand-edited store or a downgrade — and quarantining it with a
- * named path is what tells somebody which device to repair.
- *
- * `rowsPath` is separate from `root` because the two name different things: the
- * response is refused at `<root>.daylight`, but an unsatisfiable row is refused
- * at the LIST that holds it, which is what somebody needs in order to find it.
- * A Daylight light is not a caller — its response is required, at its own root.
- */
-function optionalDaylight(
-  plan: Record<string, unknown>,
-  root: string,
-  rows: Array<{ fromDaylight?: boolean }>,
-  rowsPath: string,
-): DaylightResponse | undefined {
-  const daylight = plan.daylight === undefined
-    ? undefined
-    : validateDaylightResponse(plan.daylight, `${root}.daylight`);
-
-  if (daylight === undefined && rows.some(row => row.fromDaylight === true)) {
-    fail(rowsPath, 'follows the daylight, but this device has no daylight response');
-  }
-  return daylight;
-}
-
-/**
  * One of the four answers to "when does this room get the most sun".
  *
  * A fifth value cannot come from a screen, so a fifth means the store was
  * written by something else.
  */
 function requireSunPeak(value: unknown, path: string): SunPeak {
-  if (!isSunPeak(value)) fail(path, 'is not one of none, morning, midday or afternoon');
+  if (!isSunPeak(value)) fail(path, 'is not one of morning, midday, afternoon or flat');
   return value;
 }
 
@@ -700,16 +722,11 @@ function requireSunPeak(value: unknown, path: string): SunPeak {
 function validateDaylightResponse(raw: unknown, path: string): DaylightResponse {
   const response = requireRecord(raw, path);
 
-  const sensors = requireArray(response.sensors, `${path}.sensors`, MAX_SENSORS)
-    .map((id, i) => requireString(id, `${path}.sensors[${i}]`));
-
-  // A sensor named twice would be weighted twice in the mean — a weighting
-  // nobody asked for, and invisible on the screen that set it.
-  const seen = new Set<string>();
-  for (const id of sensors) {
-    if (seen.has(id)) fail(`${path}.sensors`, `names "${id}" more than once`);
-    seen.add(id);
-  }
+  // One sensor or none. `null` is not a degraded state — it is the sun, which
+  // is the complete answer most households get.
+  const sensor = response.sensor === null || response.sensor === undefined
+    ? null
+    : requireString(response.sensor, `${path}.sensor`);
 
   const darkLux = requireNumber(response.darkLux, `${path}.darkLux`, { min: MIN_LUX, max: MAX_LUX });
   const brightLux = requireNumber(response.brightLux, `${path}.brightLux`, {
@@ -723,8 +740,20 @@ function validateDaylightResponse(raw: unknown, path: string): DaylightResponse 
     fail(`${path}.brightLux`, 'is not above darkLux, so the response has no span');
   }
 
+  const darkElevation = requireNumber(response.darkElevation, `${path}.darkElevation`, {
+    min: MIN_ELEVATION, max: MAX_ELEVATION,
+  });
+  const brightElevation = requireNumber(response.brightElevation, `${path}.brightElevation`, {
+    min: MIN_ELEVATION, max: MAX_ELEVATION,
+  });
+  // The same refusal the lux pair gets, for the same reason: no span is a
+  // division by zero that reaches a lamp as no write at all.
+  if (!(brightElevation > darkElevation)) {
+    fail(`${path}.brightElevation`, 'is not above darkElevation, so the response has no span');
+  }
+
   return {
-    sensors,
+    sensor,
     darkLux,
     brightLux,
     // Both ends are REQUIRED, unlike every other stored brightness in this app.
@@ -733,15 +762,14 @@ function validateDaylightResponse(raw: unknown, path: string): DaylightResponse 
     // rather than one that does less.
     dark: requireUnitInterval(response.dark, `${path}.dark`),
     bright: requireUnitInterval(response.bright, `${path}.bright`),
+    darkElevation,
+    brightElevation,
     // REFUSED rather than defaulted, unlike the sanitiser's policy on the same
     // field. The sanitiser reads a screen and repairs what it sends; this reads a
     // STORED plan, where an unknown value means a partial write, a hand edit or
     // a downgrade — and quarantining it with a named path is what tells somebody
-    // which device to repair. `undefined` is the exception: a plan written before
-    // this field existed is old, not corrupt, and the migration is what fills it.
-    sunPeak: response.sunPeak === undefined
-      ? 'none'
-      : requireSunPeak(response.sunPeak, `${path}.sunPeak`),
+    // which device to repair.
+    sunPeak: requireSunPeak(response.sunPeak, `${path}.sunPeak`),
   };
 }
 

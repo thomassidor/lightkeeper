@@ -8,7 +8,8 @@ import {
   migrateCircadianPlan, CURRENT_CIRCADIAN_SCHEMA_VERSION,
 } from '../../lib/circadian/circadian-migrations';
 import {
-  DEFAULT_SIMPLE_PLAN, SIMPLE_SHAPE, expandSimplePlan, foldBackSimplePlan, sanitiseSimplePlan,
+  DEFAULT_ZONES, MAX_OFFSET, ZONE_RAMP,
+  expandSimplePlan, foldBackSimplePlan, resolveBoundaries, sanitiseZones, zonePoints,
 } from '../../lib/circadian/simple-curve';
 import { valueAt } from '../../lib/circadian/circadian-curve';
 
@@ -56,16 +57,33 @@ describe('sanitiseCurve', () => {
     ]);
   });
 
-  test('refuses a sun anchor until sunrise and sunset can be resolved', () => {
-    // Declared in the type so it lands as a variant later; refused here so it
-    // can never half-work in the meantime.
+  test('accepts a sun anchor, now that one can be resolved', () => {
+    // Declared in the type from the start so it would land as a variant rather
+    // than a reshape. It landed: `sunTimes` supplies the minute and the runtime
+    // threads it in as an AnchorContext.
     const result = sanitiseCurve([
-      { anchor: { kind: 'sun', event: 'sunset', offset: 0 }, warmth: 1 },
+      { anchor: { kind: 'sun', event: 'sunset', offset: -30 }, warmth: 1 },
+      clock(360, 0.2),
+      clock(1080, 1),
+    ]);
+    assert.equal(result.points.length, 3);
+    assert.deepEqual(result.dropped, []);
+    assert.deepEqual(
+      result.points.find(point => point.anchor.kind === 'sun')?.anchor,
+      { kind: 'sun', event: 'sunset', offset: -30 },
+    );
+  });
+
+  test('a sun anchor still has to be a sun anchor', () => {
+    const result = sanitiseCurve([
+      { anchor: { kind: 'sun', event: 'moonrise', offset: 0 }, warmth: 1 },
+      { anchor: { kind: 'sun', event: 'sunset', offset: 'soon' }, warmth: 1 },
       clock(360, 0.2),
       clock(1080, 1),
     ]);
     assert.equal(result.points.length, 2);
-    assert.match(result.dropped[0].reason, /not supported yet/);
+    assert.match(result.dropped[0].reason, /sunrise or sunset/);
+    assert.match(result.dropped[1].reason, /not a number of minutes/);
   });
 
   test('drops a second point at the same minute', () => {
@@ -130,347 +148,271 @@ describe('sanitiseCurve', () => {
 });
 
 /**
- * The circadian light's own chain, which at version 2 STOPPED storing points.
+ * The circadian light stores three zones and two sun-anchored boundaries.
  *
- * A circadian light is now two ends of the day with the shape supplied; the
- * point-based editor is its own device type (`drivers/curve/`), with its own store
- * and its own chain. So every test here is about the reshape, and the point-based
- * chain is tested through `migrateCurvePlan`.
+ * It used to store two ends of the day and take a fixed four-point shape at
+ * 06:00, 11:00, 15:00 and 21:00. Two things were wrong with that. A fixed 21:00
+ * is an hour after sunset in December and two hours before it in June, so the
+ * "evening" somebody set arrives at the wrong time for most of the year. And
+ * "warmest" was one value the day passed through TWICE — once before the morning
+ * and once after the evening — which no single control could honestly draw.
  */
-describe('sanitiseCurve and the daylight flag', () => {
-  test('it survives alongside a brightness', () => {
-    const { points } = sanitiseCurve([
-      { id: 'p1', at: '06:00', warmth: 0.9, brightness: 0.5, fromDaylight: true },
-      { id: 'p2', at: '21:00', warmth: 1, brightness: 0.6 },
-    ], true);
+describe('the three zones', () => {
+  const CONTEXT = { sunriseMinute: 6 * 60 + 30, sunsetMinute: 20 * 60 };
 
-    assert.equal(points[0]!.fromDaylight, true);
-    assert.equal(points[1]!.fromDaylight, undefined);
+  test('a boundary follows the sun, plus the offset stored against it', () => {
+    const { morningEndMinute, eveningStartMinute, fromSun } = resolveBoundaries(
+      { ...DEFAULT_ZONES, morningEnd: 30, eveningStart: -60 }, CONTEXT,
+    );
+    assert.equal(morningEndMinute, 7 * 60, 'sunrise 06:30 plus half an hour');
+    assert.equal(eveningStartMinute, 19 * 60, 'sunset 20:00 less an hour');
+    assert.equal(fromSun, true);
   });
 
-  test('and is dropped without one, because that brightness IS the fallback', () => {
-    // Dropped silently rather than dropping the row: the point is still a
-    // perfectly good point that sets no brightness, which is what it will now
-    // do. The plan-level half of the rule - that the device has a response at
-    // all - is the validator's, because this function only sees the points.
-    const { points } = sanitiseCurve([
-      { id: 'p1', at: '06:00', warmth: 0.9, fromDaylight: true },
-      { id: 'p2', at: '21:00', warmth: 1 },
-    ], false);
-
-    assert.equal(points.length, 2);
-    assert.equal(points[0]!.fromDaylight, undefined);
+  test('with no sun at all it falls back to fixed hours, and says so', () => {
+    // Two cases reach this and both are real: a Homey that has never been told
+    // where it is, and a polar day with no sunrise to anchor to for weeks.
+    // Neither is a reason to stop running.
+    const { morningEndMinute, eveningStartMinute, fromSun } = resolveBoundaries(
+      { ...DEFAULT_ZONES, morningEnd: 0, eveningStart: 0 }, {},
+    );
+    assert.equal(morningEndMinute, 6 * 60);
+    assert.equal(eveningStartMinute, 21 * 60);
+    assert.equal(fromSun, false);
   });
 
-  test('a brightness of zero is unset, so the flag goes with it', () => {
-    const { points } = sanitiseCurve([
-      { id: 'p1', at: '06:00', warmth: 0.9, brightness: 0, fromDaylight: true },
-      { id: 'p2', at: '21:00', warmth: 1 },
-    ], false);
-
-    assert.equal(points[0]!.brightness, undefined);
-    assert.equal(points[0]!.fromDaylight, undefined);
+  test('the boundaries cannot trade places on a short winter day', () => {
+    // THE reason this is a function rather than two additions. North of about
+    // 60° the shortest day is under six hours, so a morning pushed late and an
+    // evening pulled early cross over — and a crossed pair does not fail, it
+    // silently produces a day that runs midday, morning, evening, midday.
+    const { morningEndMinute, eveningStartMinute } = resolveBoundaries(
+      { ...DEFAULT_ZONES, morningEnd: MAX_OFFSET, eveningStart: -MAX_OFFSET },
+      { sunriseMinute: 10 * 60, sunsetMinute: 14 * 60 },
+    );
+    assert.ok(
+      eveningStartMinute > morningEndMinute,
+      `evening ${eveningStartMinute} must stay after morning ${morningEndMinute}`,
+    );
+    assert.ok(
+      eveningStartMinute - morningEndMinute > 2 * ZONE_RAMP,
+      'and with room for both ramps, or the middle zone never holds',
+    );
   });
 
-  test('anything other than a real true is a no', () => {
-    for (const value of ['yes', 1, {}, 'true']) {
-      const { points } = sanitiseCurve([
-        { id: 'p1', at: '06:00', warmth: 0.9, brightness: 0.5, fromDaylight: value },
-        { id: 'p2', at: '21:00', warmth: 1, brightness: 0.5 },
-      ], true);
-      assert.equal(points[0]!.fromDaylight, undefined, `failed on ${JSON.stringify(value)}`);
-    }
-  });
-});
+  test('six points: three zones held flat, and three ramps between them', () => {
+    const points = zonePoints(
+      { ...DEFAULT_ZONES, morningEnd: 30, eveningStart: -60 }, CONTEXT,
+    );
+    assert.equal(points.length, 6);
 
-describe('circadian migrations', () => {
-  const TARGET = { kind: 'devices', deviceIds: ['l1'] };
+    const at = (id: string) => points.find(point => point.id === id)!;
+    assert.equal(at('morning-hold').anchor.kind, 'clock');
+    assert.deepEqual(
+      points.map(point => (point.anchor.kind === 'clock' ? point.anchor.at : -1)),
+      [ZONE_RAMP, 7 * 60 - ZONE_RAMP, 7 * 60 + ZONE_RAMP,
+        19 * 60 - ZONE_RAMP, 19 * 60 + ZONE_RAMP, 24 * 60 - ZONE_RAMP],
+    );
 
-  test('a plan with no schemaVersion is brought forward with safe defaults', () => {
-    const { plan, migrated, fromVersion } = migrateCircadianPlan({ target: TARGET });
-
-    assert.equal(migrated, true);
-    assert.equal(fromVersion, 0);
-    assert.equal(plan.schemaVersion, CURRENT_CIRCADIAN_SCHEMA_VERSION);
-    assert.equal(plan.enabled, true);
-    // No points survived, so the ends fall back to the defaults rather than being
-    // derived from nothing.
-    assert.deepEqual(plan.warmest, DEFAULT_SIMPLE_PLAN.warmest);
-    assert.deepEqual(plan.coolest, DEFAULT_SIMPLE_PLAN.coolest);
-    assert.equal(plan.adjustBrightness, false);
-    // Opt-in, so an absent value is a no.
-    assert.equal(plan.preStage, false);
+    // Each zone is held at its own temperature at both of its own points.
+    assert.equal(at('night-end').warmth, DEFAULT_ZONES.morning.temperature);
+    assert.equal(at('morning-hold').warmth, DEFAULT_ZONES.morning.temperature);
+    assert.equal(at('midday-start').warmth, DEFAULT_ZONES.midday.temperature);
+    assert.equal(at('midday-hold').warmth, DEFAULT_ZONES.midday.temperature);
+    assert.equal(at('evening-start').warmth, DEFAULT_ZONES.evening.temperature);
+    assert.equal(at('night-start').warmth, DEFAULT_ZONES.evening.temperature);
   });
 
-  test('pre-staging is never enabled by a migration', () => {
-    const withPreStage = (preStage: unknown) =>
-      migrateCircadianPlan({ target: TARGET, preStage }).plan.preStage;
+  test('the night ramps across midnight rather than stepping at it', () => {
+    // Not in the design canvas, and deliberate: the canvas reads morning from
+    // midnight and evening up to it, which became a step change the moment the
+    // two stopped being the same value. Interpolation is cyclic, so a ramp
+    // across midnight is the same rule applied a third time.
+    const zones = {
+      ...DEFAULT_ZONES,
+      morning: { temperature: 0.2 },
+      evening: { temperature: 0.9 },
+    };
+    const points = zonePoints(zones, CONTEXT);
 
-    assert.equal(withPreStage('yes'), false);
-    assert.equal(withPreStage(true), true);
+    const justBefore = valueAt(points, 24 * 60 - 1).warmth;
+    const justAfter = valueAt(points, 1).warmth;
+    assert.ok(
+      Math.abs(justBefore - justAfter) < 0.05,
+      `midnight must not jump: ${justBefore} then ${justAfter}`,
+    );
+
+    // And both ends are still genuinely held well away from it.
+    assert.equal(valueAt(points, 22 * 60).warmth, 0.9);
+    assert.equal(valueAt(points, 4 * 60).warmth, 0.2);
   });
 
-  test('1 to 2 keeps the warmest and coolest points and drops the rest', () => {
-    // The two values the user actually chose, and the two the new shape holds.
-    // Whatever they set between them is lost, and the changelog says so.
-    const { plan, migrated } = migrateCircadianPlan({
-      schemaVersion: 1,
-      enabled: true,
-      target: TARGET,
-      points: [
-        { id: 'p1', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.9, brightness: 0.5 },
-        { id: 'p2', anchor: { kind: 'clock', at: 12 * 60 }, warmth: 0.2, brightness: 0.9 },
-        { id: 'p3', anchor: { kind: 'clock', at: 18 * 60 }, warmth: 0.6, brightness: 0.7 },
-        { id: 'p4', anchor: { kind: 'clock', at: 23 * 60 }, warmth: 1, brightness: 0.4 },
-      ],
-      adjustBrightness: true,
-      preStage: true,
-    });
+  test('brightness is all-or-nothing across the expansion', () => {
+    const withOne = zonePoints(
+      { ...DEFAULT_ZONES, midday: { temperature: 0.2 } }, CONTEXT, true,
+    );
+    assert.ok(
+      withOne.every(point => point.brightness === undefined),
+      'two thirds of a brightness curve would have to invent the rest',
+    );
 
-    assert.equal(migrated, true);
-    assert.deepEqual(plan.warmest, { temperature: 1, brightness: 0.4 });
-    assert.deepEqual(plan.coolest, { temperature: 0.2, brightness: 0.9 });
-    assert.equal(plan.adjustBrightness, true);
-    // The one verdict this device type persists about ITSELF rather than about
-    // the curve, so it survives the reshape.
-    assert.equal(plan.preStage, true);
+    const withAll = zonePoints(DEFAULT_ZONES, CONTEXT, true);
+    assert.ok(withAll.every(point => point.brightness !== undefined));
+
+    const optedOut = zonePoints(DEFAULT_ZONES, CONTEXT, false);
+    assert.ok(optedOut.every(point => point.brightness === undefined));
   });
 
-  test('2 to 3 brings both ends up to the brightness floor', () => {
-    /**
-     * 5% quantises to `dim` 0.00 at the lamp — off, on most integrations — and
-     * 5% was the lowest position the brightness slider offered.
-     *
-     * Both ends are lifted independently, which cannot break the all-or-nothing
-     * rule: that turns on whether a brightness is PRESENT, and this step adds
-     * none and removes none.
-     */
-    const { plan, migrated } = migrateCircadianPlan({
-      schemaVersion: 2,
-      enabled: true,
-      target: TARGET,
-      warmest: { temperature: 1, brightness: 0.05 },
-      coolest: { temperature: 0.15, brightness: 0.9 },
-      adjustBrightness: true,
-      preStage: false,
-    });
-
-    assert.equal(migrated, true);
-    assert.deepEqual(plan.warmest, { temperature: 1, brightness: 0.1 });
-    assert.deepEqual(plan.coolest, { temperature: 0.15, brightness: 0.9 });
-    assert.equal(plan.adjustBrightness, true, 'both ends still have one');
-  });
-
-  test('and drops brightness-following when the derived ends have none', () => {
-    const { plan } = migrateCircadianPlan({
-      schemaVersion: 1,
-      enabled: true,
-      target: TARGET,
-      points: [
-        { id: 'p1', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.2 },
-        { id: 'p2', anchor: { kind: 'clock', at: 23 * 60 }, warmth: 1 },
-      ],
-      adjustBrightness: true,
-      preStage: false,
-    });
-    assert.equal(plan.adjustBrightness, false);
-  });
-
-  test('an unusable point list migrates to the defaults, not to a crash', () => {
-    // A version-1 plan was never validated — the chain ended in a cast until
-    // Phase 6 — so `points` may be anything at all.
-    for (const points of [null, 'lots', [{}], [{ warmth: 'warm' }], []]) {
-      const { plan } = migrateCircadianPlan({
-        schemaVersion: 1, enabled: true, target: TARGET, points, adjustBrightness: false,
-      });
-      assert.deepEqual(plan.warmest, DEFAULT_SIMPLE_PLAN.warmest, JSON.stringify(points));
-    }
-  });
-
-  test('a current plan is left alone', () => {
-    const { migrated } = migrateCircadianPlan({
-      schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION,
-      enabled: true,
-      target: TARGET,
-      warmest: { temperature: 1, brightness: 0.6 },
-      coolest: { temperature: 0.15, brightness: 0.9 },
-      adjustBrightness: false,
-      preStage: false,
-    });
-    assert.equal(migrated, false);
-  });
-
-  test('a plan from a newer build is refused rather than guessed at', () => {
-    assert.throws(() => migrateCircadianPlan({ schemaVersion: 99 }), /newer than this app understands/);
-  });
-
-  test('the two ends expand into the shape, and the night is flat', () => {
+  test('the shape is derived, never stored', () => {
+    // `expandSimplePlan` snapshots the points against the FALLBACK hours and
+    // keeps the zones beside them; the runtime re-derives from the zones on
+    // every tick against the day's real sunrise. Storing the snapshot alone
+    // would freeze the boundaries at whatever the sun was doing at registration.
     const plan = {
-      schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION,
+      schemaVersion: 1,
       enabled: true,
-      target: TARGET as any,
-      warmest: { temperature: 1, brightness: 0.5 },
-      coolest: { temperature: 0.1, brightness: 0.9 },
-      adjustBrightness: true,
+      target: { kind: 'devices' as const, deviceIds: ['l1'] },
+      zones: DEFAULT_ZONES,
+      adjustBrightness: false,
       preStage: false,
     };
     const expanded = expandSimplePlan(plan);
 
-    assert.equal(expanded.points.length, 4);
-    // 21:00 round to 06:00 is warmest at both ends, which is what makes the whole
-    // night flat without a special case. Two points would have it cooling all
-    // night on its way to midday.
-    assert.equal(valueAt(expanded.points, 0).warmth, 1);
-    assert.equal(valueAt(expanded.points, 3 * 60).warmth, 1);
-    assert.equal(valueAt(expanded.points, 23 * 60).warmth, 1);
-    // And flat through the middle of the day, for the same reason.
-    assert.equal(valueAt(expanded.points, 13 * 60).warmth, 0.1);
-    // Between the two it is neither, and strictly between them.
-    const morning = valueAt(expanded.points, 8 * 60).warmth;
-    assert.ok(morning > 0.1 && morning < 1, `${morning}`);
-  });
-
-  test('brightness is all-or-nothing across the expansion', () => {
-    const base = {
-      schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION,
-      enabled: true,
-      target: TARGET as any,
-      preStage: false,
-    };
-    const withOne = expandSimplePlan({
-      ...base,
-      warmest: { temperature: 1, brightness: 0.5 },
-      coolest: { temperature: 0.1 },
-      adjustBrightness: true,
-    });
-    assert.equal(withOne.adjustBrightness, false);
-    assert.ok(withOne.points.every(point => point.brightness === undefined));
-
-    const withBoth = expandSimplePlan({
-      ...base,
-      warmest: { temperature: 1, brightness: 0.5 },
-      coolest: { temperature: 0.1, brightness: 0.9 },
-      adjustBrightness: true,
-    });
-    assert.equal(withBoth.adjustBrightness, true);
-    assert.ok(withBoth.points.every(point => point.brightness !== undefined));
-  });
-
-  /**
-   * The inverse of the expansion, and the reason it moved here from
-   * `drivers/circadian/device.ts`: that file extends `Homey.Device`, so it cannot
-   * be imported by a test at all (platform §13) — and a bug in exactly this
-   * fold-back shipped because of it. It read the plan out of the device store
-   * rather than taking the plan the fold was for, and `DeviceLifecycle.apply()`
-   * persists AFTER registering, so on a repair the store still held the plan the
-   * user had just replaced.
-   */
-  test('the fold-back keeps the plan it is given and takes only the two runtime fields', () => {
-    const stored = {
-      schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION,
-      enabled: true,
-      target: TARGET as any,
-      warmest: { temperature: 1 },
-      coolest: { temperature: 0.1 },
-      adjustBrightness: false,
-      preStage: true,
-    };
-
-    // What a runtime can change while running: it paused, and pre-staging turned
-    // itself off after a lamp came on from a colour write (platform §12).
-    const folded = foldBackSimplePlan(stored, { enabled: false, preStage: false });
-
-    assert.equal(folded.enabled, false);
-    assert.equal(folded.preStage, false);
-    // And nothing else moved — the ends are the user's answers, and the shape
-    // between them is a constant that is never read back.
-    assert.deepEqual(folded.warmest, stored.warmest);
-    assert.deepEqual(folded.coolest, stored.coolest);
-    assert.equal(folded.adjustBrightness, false);
-    assert.equal(folded.schemaVersion, stored.schemaVersion);
+    assert.deepEqual(expanded.zones, DEFAULT_ZONES);
+    assert.equal(expanded.points.length, 6);
+    assert.equal(
+      (expanded.points[1]!.anchor as { at: number }).at,
+      6 * 60 + DEFAULT_ZONES.morningEnd - ZONE_RAMP,
+      'the snapshot uses the fallback sunrise, plus the stored offset',
+    );
   });
 
   test('the fold-back folds onto the plan given, not onto some earlier one', () => {
-    const base = {
-      schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION,
+    // A repair applies the NEW plan and then persists; folding onto whatever the
+    // store held would write back the plan the user had just replaced.
+    const edited = {
+      schemaVersion: 1,
       enabled: true,
-      target: TARGET as any,
+      target: { kind: 'devices' as const, deviceIds: ['l1'] },
+      zones: { ...DEFAULT_ZONES, morningEnd: 90 },
+      adjustBrightness: true,
+      preStage: true,
+    };
+    const folded = foldBackSimplePlan(edited, { enabled: false, preStage: false });
+
+    assert.equal(folded.zones.morningEnd, 90, 'the edit survives');
+    assert.equal(folded.adjustBrightness, true);
+    assert.equal(folded.enabled, false, 'and the two runtime fields come back');
+    assert.equal(folded.preStage, false);
+  });
+});
+
+describe('sanitiseZones — a screen sending nonsense falls back per FIELD', () => {
+  test('nothing droppable: three zones are not a list', () => {
+    const { zones, corrected } = sanitiseZones({});
+    assert.deepEqual(zones, DEFAULT_ZONES);
+    assert.ok(corrected.includes('morning temperature'));
+    assert.ok(corrected.includes('evening temperature'));
+  });
+
+  test('a good zone survives beside a bad one', () => {
+    const { zones, corrected } = sanitiseZones({
+      morning: { temperature: 0.4, brightness: 0.5 },
+      midday: { temperature: 'cool' },
+      evening: { temperature: 0.95 },
+      morningEnd: 45,
+      eveningStart: -30,
+    });
+
+    assert.equal(zones.morning.temperature, 0.4);
+    assert.equal(zones.midday.temperature, DEFAULT_ZONES.midday.temperature);
+    assert.equal(zones.evening.temperature, 0.95);
+    assert.deepEqual(corrected, ['midday temperature']);
+  });
+
+  test('an offset is snapped to the step and clamped, and says so', () => {
+    // The screen steps in quarter hours, so a stored 37 could only come from a
+    // hand-edited store or a scripted pair session — and "sunset −37m" on a
+    // screen whose every control moves in fifteens reads as a bug in the screen.
+    const { zones, corrected } = sanitiseZones({
+      ...DEFAULT_ZONES, morningEnd: 37, eveningStart: -9000,
+    });
+    assert.equal(zones.morningEnd, 30);
+    assert.equal(zones.eveningStart, -MAX_OFFSET);
+    assert.ok(corrected.includes('morningEnd'));
+    assert.ok(corrected.includes('eveningStart'));
+  });
+
+  test('adjustBrightness is checked here, never trusted from the screen', () => {
+    const { adjustBrightness } = sanitiseZones({ ...DEFAULT_ZONES, adjustBrightness: true });
+    assert.equal(adjustBrightness, true, 'every default zone carries a brightness');
+
+    const off = sanitiseZones({ ...DEFAULT_ZONES, adjustBrightness: 'yes' });
+    assert.equal(off.adjustBrightness, false, 'anything but a real true is a no');
+  });
+});
+
+describe('the circadian chain, after the reset', () => {
+  /**
+   * Emptied with the other four. There is no honest step from two ends of the
+   * day to three zones: two temperatures cannot say what the morning and the
+   * evening should each look like, and inventing the third from the other two
+   * would produce an evening nobody chose — on the device whose whole job is the
+   * colour of somebody's evening.
+   */
+  const CURRENT = {
+    schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION,
+    enabled: true,
+    target: { kind: 'devices', deviceIds: ['l1'] },
+    zones: DEFAULT_ZONES,
+    adjustBrightness: false,
+    preStage: false,
+  };
+
+  test('a current plan passes through untouched', () => {
+    const { plan, migrated, steps } = migrateCircadianPlan(CURRENT);
+    assert.equal(migrated, false);
+    assert.deepEqual(steps, []);
+    assert.deepEqual(plan, CURRENT as never);
+  });
+
+  test('a plan from before the reset is quarantined, not guessed at', () => {
+    // Including a version-less one: version 0 has no step either. DeviceLifecycle
+    // turns the throw into an unavailable device with a reason, which is the
+    // "delete it and add it again" signal.
+    assert.throws(() => migrateCircadianPlan({ ...CURRENT, schemaVersion: undefined }));
+    assert.throws(() => migrateCircadianPlan({ ...CURRENT, schemaVersion: 0 }));
+    assert.throws(() => migrateCircadianPlan({
+      schemaVersion: 4,
+      enabled: true,
+      target: { kind: 'devices', deviceIds: ['l1'] },
+      warmest: { temperature: 1, brightness: 0.6 },
+      coolest: { temperature: 0.15, brightness: 0.9 },
       adjustBrightness: false,
       preStage: false,
-    };
-    const edited = { ...base, warmest: { temperature: 0.9 }, coolest: { temperature: 0.2 } };
-
-    // The runtime is still running the plan it was registered with; the fold is
-    // for the EDITED one. This is the repair that used to be written back as the
-    // plan it replaced.
-    const folded = foldBackSimplePlan(edited, expandSimplePlan(edited));
-
-    assert.equal(folded.warmest.temperature, 0.9);
-    assert.equal(folded.coolest.temperature, 0.2);
+    }));
   });
 
-  test('expansion and fold-back round-trip the two answers the user gave', () => {
-    const plan = {
-      schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION,
-      enabled: true,
-      target: TARGET as any,
-      warmest: { temperature: 0.95, brightness: 0.4 },
-      coolest: { temperature: 0.15, brightness: 0.85 },
-      adjustBrightness: true,
-      preStage: false,
-    };
-
-    assert.deepEqual(foldBackSimplePlan(plan, expandSimplePlan(plan)), plan);
+  test('a plan from a NEWER build is refused rather than downgraded', () => {
+    assert.throws(() => migrateCircadianPlan({
+      ...CURRENT, schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION + 1,
+    }));
   });
 
-  test('the shape is derived, never stored', () => {
-    // So an installed device picks up an improved shape. What is persisted is
-    // only the two answers the user gave.
-    assert.equal(SIMPLE_SHAPE.length, 4);
-    assert.deepEqual(
-      SIMPLE_SHAPE.map(point => point.end),
-      ['warmest', 'coolest', 'coolest', 'warmest'],
-    );
+  test('pre-staging is never enabled by anything but a real true', () => {
+    // Lights coming on by themselves at night is a far worse failure than a
+    // half-second of the wrong white, so this stays opt-in at every seam.
+    for (const notTrue of ['true', 1, {}, undefined]) {
+      const { plan } = migrateCircadianPlan({ ...CURRENT, preStage: notTrue });
+      assert.equal(plan.preStage, false, `on ${JSON.stringify(notTrue)}`);
+    }
   });
 
-  test('a screen sending nonsense falls back per FIELD, and says which', () => {
-    // Falling back rather than dropping, unlike the curve's sanitiser: two ends
-    // are not a list, and a device with one end has no curve at all.
-    const result = sanitiseSimplePlan({
-      warmest: { temperature: 'very' },
-      coolest: { temperature: 0.2, brightness: 0.8 },
-      adjustBrightness: true,
-    });
-    assert.deepEqual(result.warmest, DEFAULT_SIMPLE_PLAN.warmest);
-    assert.deepEqual(result.coolest, { temperature: 0.2, brightness: 0.8 });
-    assert.deepEqual(result.corrected, ['warmest temperature']);
-
-    const empty = sanitiseSimplePlan(null);
-    assert.deepEqual(empty.warmest, DEFAULT_SIMPLE_PLAN.warmest);
-    assert.deepEqual(empty.coolest, DEFAULT_SIMPLE_PLAN.coolest);
-    assert.equal(empty.adjustBrightness, false);
-  });
-
-  test('something that is not a plan at all is refused', () => {
-    assert.throws(() => migrateCircadianPlan(null), /not an object/);
-  });
-
-  test('a plan that survived migration but is not a plan is refused too', () => {
-    // The chain used to end in a cast, so a plan missing its target reached the
-    // runtime and failed at the first resolve — with nothing saying why.
-    assert.throws(
-      () => migrateCircadianPlan({
-        schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION,
-        enabled: true,
-        warmest: { temperature: 1 },
-        coolest: { temperature: 0 },
-        adjustBrightness: false,
-      }),
-      /SimpleCircadianPlan\.target is not an object/,
-    );
-    assert.throws(
-      () => migrateCircadianPlan({ schemaVersion: '1' }),
-      /schema version is malformed/,
-    );
+  test('the chain still ends in its validator', () => {
+    assert.throws(() => migrateCircadianPlan({
+      ...CURRENT,
+      zones: { ...DEFAULT_ZONES, midday: { temperature: 4 } },
+    }));
+    assert.throws(() => migrateCircadianPlan('not a plan'));
   });
 });

@@ -1,26 +1,26 @@
 import Homey from 'homey';
+import {
+  colourSwatch, registerIntroHandler, registerReviewHandler, warmthSwatch,
+} from '../../lib/pairing/flow-screens';
 
 import {
   resolveSummary, targetLights,
 } from '../../lib/pairing/target-picker';
-import {
-  sanitiseResponse, type DaylightResponse,
-} from '../../lib/daylight/daylight-types';
+import type { LightkeeperApp } from '../../lib/app-contract';
+import { valueAt } from '../../lib/circadian/circadian-curve';
 import { CURRENT_CURVE_SCHEMA_VERSION } from '../../lib/circadian/curve-migrations';
 import {
   DEFAULT_POINTS, MAX_POINTS, MIN_POINTS, sanitiseCurve,
   type CircadianPlan, type CircadianPoint,
 } from '../../lib/circadian/circadian-types';
-import { PALETTE } from '../../lib/circadian/palette';
+import { FEATURED_COLORS, PALETTE } from '../../lib/circadian/palette';
+import { formatMinutes } from '../../lib/time/wall-clock';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
 import {
   handlerRegistrar,
-  newSessionOwner,
   registerCurvePreviewHandlers,
-  registerDaylightCardHandlers,
   registerSaveHandler,
   registerTargetHandlers,
-  releaseOnDisconnect,
   timezoneOf,
   type PairSessionHost,
 } from '../../lib/pairing/pair-session';
@@ -45,7 +45,6 @@ import {
  */
 
 interface SessionState {
-  daylight?: DaylightResponse;
   target?: TargetSpec;
   points: CircadianPoint[];
   adjustBrightness: boolean;
@@ -65,14 +64,26 @@ module.exports = class CurveDriver extends Homey.Driver {
     return {
       log: (...args: unknown[]) => this.log(...args),
       error: (...args: unknown[]) => this.error(...args),
-      translate: (key: string) => this.homey.__(key),
+      translate: (key: string, tokens?: Record<string, string | number>) =>
+        this.homey.__(key, tokens),
       clock: this.homey.clock,
       app: this.app,
     };
   }
 
-  private get app(): any {
-    return this.homey.app;
+  /**
+   * The app, through the contract rather than as `any`.
+   *
+   * This used to be `: any`, and the hardware pass is what found out what that
+   * cost: `catalog.devices()` and `catalog.getDevice()` do not exist — the
+   * methods are `allDevices()` and `device()` — and six call sites across three
+   * drivers shipped, invisible to `tsc`, the suite and `validate` alike,
+   * throwing the first time a real screen asked for them. `this.homey.app` is
+   * `App` from the SDK's own types, so the double cast is the seam; `LightkeeperApp`
+   * is the surface a driver is allowed to use.
+   */
+  private get app(): LightkeeperApp {
+    return this.homey.app as unknown as LightkeeperApp;
   }
 
   override async onInit() {
@@ -90,9 +101,6 @@ module.exports = class CurveDriver extends Homey.Driver {
       points: plan?.points?.length ? plan.points : [...DEFAULT_POINTS],
       adjustBrightness: plan?.adjustBrightness ?? false,
       preStage: plan?.preStage ?? false,
-      // Seeded so a repair session opens the card on what the device already
-      // has rather than on the defaults.
-      daylight: plan?.daylight,
     }, device);
   }
 
@@ -103,13 +111,31 @@ module.exports = class CurveDriver extends Homey.Driver {
 
     const host = this.pairHost();
     const handler = handlerRegistrar(host, session);
-    const sessionOwner = newSessionOwner();
 
     handler('add_device', async () => true);
 
+    // ---------------------------------------------------------------- intro
+
+    registerIntroHandler(host, handler, {
+      titleKey: 'intro.curveTitle',
+      blurbKey: 'intro.curveBlurb',
+      hero: 'curve',
+      decisions: [
+        { whatKey: 'intro.whichLights', whyKey: 'intro.whichLightsWhy' },
+        { whatKey: 'intro.theCurve', whyKey: 'intro.theCurveWhy' },
+        { whatKey: 'intro.checkIt', whyKey: 'intro.checkItWhy' },
+      ],
+      nextView: 'lights',
+    });
+
     // -------------------------------------------------------------- targets
 
-    registerTargetHandlers(host, handler, state, 'targets.subtitleCurve');
+    registerTargetHandlers(host, handler, state, {
+      subtitleKey: 'targets.subtitleCurve',
+      stepIndex: 1,
+      stepCount: 3,
+      nextView: 'curve',
+    });
 
     // ---------------------------------------------------------------- curve
 
@@ -141,6 +167,15 @@ module.exports = class CurveDriver extends Homey.Driver {
           hue: color.hue,
           saturation: color.saturation,
         })),
+        /**
+         * How many of that list to show before "Show more colours".
+         *
+         * Sent rather than hardcoded in the view, because the split is a fact
+         * about the palette and this is the palette's only consumer. The rest
+         * fold out IN PLACE and never onto a second screen: a set is a decision,
+         * and a set of twenty-four shown at once is a tuning session.
+         */
+        featuredColors: FEATURED_COLORS,
         adjustBrightness: state.adjustBrightness,
         preStage: state.preStage,
         // Shown on screen, because "warm at 20:00" is meaningless without saying
@@ -176,31 +211,57 @@ module.exports = class CurveDriver extends Homey.Driver {
       };
     });
 
-    registerCurvePreviewHandlers(host, handler, () => this.buildPlan(state));
 
-    // ------------------------------------------------------------- daylight
+    // --------------------------------------------------------------- review
 
-    registerDaylightCardHandlers(host, handler, state, sessionOwner);
+    registerReviewHandler(host, handler, async () => {
+      const summary = await resolveSummary(this.app.catalog, state.target!);
+      const minutes = state.points
+        .map(point => (point.anchor.kind === 'clock' ? point.anchor.at : 0))
+        .sort((a, b) => a - b);
 
-    handler('setDaylight', async (payload: unknown) => {
-      const result = sanitiseResponse((payload as { response?: unknown })?.response ?? payload);
-      for (const field of result.corrected) {
-        this.log(`Corrected daylight ${field} to its default: the screen sent something unusable`);
-      }
-      state.daylight = result.response;
-
-      // Retained before `now` can mean anything: a sensor nobody is subscribed
-      // to has no reading, and the card would show the sky for a device that has
-      // just been given a sensor.
-      await this.app.luminance.retain(result.response.sensors, sessionOwner);
+      /**
+       * One bar an hour: colour for the colour, height for the brightness.
+       *
+       * The same picture the curve screen draws, for the same reason the
+       * circadian review carries its day strip — the two rows below say how
+       * many points and when, and neither says what the day looks like.
+       */
+      const bars = Array.from({ length: 24 }, (_, hour) => {
+        const at = valueAt(state.points, hour * 60);
+        return {
+          // `valueAt` has already resolved the palette id to hue and saturation
+          // — and to the FLAT hold a segment with one coloured end produces, so
+          // the bar shows what the lamps would actually be sent.
+          color: at.color ? colourSwatch(at.color) : warmthSwatch(at.warmth),
+          height: state.adjustBrightness ? (at.brightness ?? 1) : 1,
+        };
+      });
 
       return {
-        response: result.response,
-        corrected: result.corrected,
-        now: this.app.daylight.evaluate(result.response),
-        sensorReadings: this.app.daylight.sensors(),
+        stepIndex: 3,
+        stepCount: 3,
+        hero: { kind: 'bars', bars },
+        rows: [
+          {
+            labelKey: 'review.lights',
+            value: await this.lightsSummary(state.target!, summary),
+            view: 'lights',
+          },
+          {
+            // The count AND the span, because "5" alone does not say whether
+            // they are spread across a day or bunched into an hour.
+            labelKey: 'review.colourChanges',
+            value: `${state.points.length} · ${formatMinutes(minutes[0] ?? 0)}`
+              + `–${formatMinutes(minutes[minutes.length - 1] ?? 0)}`,
+            view: 'curve',
+          },
+        ],
+        promiseKey: 'review.promiseCurve',
+        promiseTokens: { count: summary.count },
       };
     });
+    registerCurvePreviewHandlers(host, handler, () => this.buildPlan(state));
 
     // ----------------------------------------------------------------- save
 
@@ -212,7 +273,28 @@ module.exports = class CurveDriver extends Homey.Driver {
       buildPlan: () => this.buildPlan(state),
     });
 
-    releaseOnDisconnect(host, session, sessionOwner);
+  }
+
+  /**
+   * What the lights row reads back — and WHICH of the two shapes it stored.
+   *
+   * "Everything in Kitchen" and "4 picked" behave differently the next time
+   * somebody adds a lamp to that room, and this line is the only place that
+   * difference is ever visible. `lights.html` deliberately does not show it:
+   * making the picker explain its own storage would be a control nobody asked
+   * for, on the screen least able to afford one.
+   */
+  private async lightsSummary(
+    target: TargetSpec,
+    summary: { count: number },
+  ): Promise<string> {
+    const host = this.pairHost();
+    if (target.kind === 'zone') {
+      const zones = await this.app.catalog.allZones();
+      const zone = zones.find((candidate: { id: string }) => candidate.id === target.zoneId);
+      return host.translate('review.wholeRoom', { room: zone?.name ?? '?' });
+    }
+    return host.translate('review.someLights', { count: summary.count });
   }
 
   private timezone(): string | null {
@@ -231,9 +313,6 @@ module.exports = class CurveDriver extends Homey.Driver {
       target: state.target,
       points: state.points,
       adjustBrightness: state.adjustBrightness,
-      // Absent stays absent: `undefined` is "this device has no response", and
-      // the validator refuses a point that follows the daylight without one.
-      ...(state.daylight !== undefined ? { daylight: state.daylight } : {}),
       preStage: state.preStage,
     };
   }

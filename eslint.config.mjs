@@ -154,6 +154,13 @@ export default tseslint.config(
       'lib/schedules/time-card-discovery.ts',
       'lib/outputs/light-target-adapter.ts',
       'lib/pairing/target-picker.ts',
+      // Press-to-learn: `makeCapabilityInstance` on the same untyped client,
+      // the same seam `luminance-source.ts` holds one capability over.
+      'lib/pairing/press-listener.ts',
+      // The Insights read: one `getLogEntries` call on the same untyped client,
+      // deliberately the ONLY impure line in a file that is otherwise pure
+      // arithmetic over samples.
+      'lib/daylight/sensor-history.ts',
       // The Homey SDK's own untyped device surface.
       'lib/devices/lightkeeper-device.ts',
       'lib/devices/device-lifecycle.ts',

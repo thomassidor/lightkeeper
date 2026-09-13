@@ -1,0 +1,602 @@
+<style>
+  /* ==== shared base: identical in every pair view ====
+     Scoped to this view's root because all views of a session share ONE
+     document, so unscoped class names bleed between screens (see the script
+     header).
+
+     GENERATED. This block is spliced into every pair view by
+     `npm run sync:views` from views/shared/base.css, where the placeholder
+     ROOT-ID stands in for each view's own root element id. **Edit that file, not
+     this one** — a change here is overwritten on the next sync, and
+     `npm run sync:views:check` fails in CI until the two agree. It used to be
+     authored by hand in all thirteen views, under an instruction to "edit this
+     block in all files, or in none of them".
+
+     It is still copied on disk rather than linked, and that part has not
+     changed: Homey needs a real file per folder and will not follow a reference
+     (platform §8). What HAS changed is the count of places a human edits: one.
+
+     A real stylesheet link may turn out to be possible — the Homey does serve a
+     sibling file next to a pair view, measured on hardware and written up in
+     platform §8, which is more than the old comment here believed. What is still
+     unmeasured is whether an injected view's own external reference loads at all
+     once the pairing container has put the view into its shared document. Until
+     somebody checks that with the Homey app open, splicing is the honest answer.
+
+     NOTE for whoever edits this comment: no HTML tag literals in here. The boot
+     harness finds a view's script by searching for a script tag, so writing one
+     inside this stylesheet made it evaluate the CSS as JavaScript — which fails
+     on the word `export` in the palette note below, forty lines from anything
+     that looked related.
+
+     Colours are tokens so a colour lives in ONE place, not so a second scheme
+     can restate them: there IS no second scheme. Homey renders a pairing view
+     inside its own panel, and that panel is light whatever the phone is set to
+     — so a view that followed the OS scheme went dark inside a white sheet. A
+     colour written as a literal anywhere past this block is a token that is
+     missing. */
+  #sn-root {
+    /* Brand. The violet is the manifest brandColor: the logo's ground — 93% of
+       its pixels — lightened so it reads as violet rather than black in the
+       circle Homey paints behind an icon (platform §10). The lavender is the
+       logo's mark. Both are read out of
+       artwork/masters/logo-bitmap-original.png by `export-assets.py --palette`,
+       so the UI cannot drift from the artwork. The tints and lines are derived:
+       the logo itself has no mid-tones. */
+    --lk-accent: #2a1958;
+    --lk-accent-ink: #ffffff;
+    /* Secondary text ON the accent, where white would compete with the number
+       beside it rather than support it. */
+    --lk-accent-soft: #e2dbf6;
+    --lk-accent-tint: #f3eefc;
+    --lk-accent-wash: #fbf9fe;
+    --lk-accent-line: #d9cbf5;
+    --lk-accent-strong: #3b2279;
+    --lk-ring: rgba(42, 25, 88, .16);
+
+    /* The ink ladder. Every one of these clears WCAG AA (4.5:1) against
+       --lk-surface, because all five are used between 11px and 15px — and the
+       two lightest carry the section titles, the tile meta and the help text.
+       They were 3.1:1 (--lk-muted) and 2.6:1 (--lk-faint): grey on white that
+       is legible on a desk monitor and not on a phone in daylight. What
+       separates the steps now is weight, size and caps as much as tone. */
+    --lk-ink: #16181d;
+    --lk-sub: #5f6672;
+    --lk-body: #4b5563;
+    --lk-muted: #6a7180;
+    --lk-faint: #6f7683;
+
+    /* transparent, not white: the pairing container paints the page behind us,
+       and claiming it would flatten every card against it. */
+    --lk-page: transparent;
+    --lk-surface: #ffffff;
+    --lk-raised: #f7f8fa;
+    --lk-line: #eceef2;
+    --lk-field: #e3e6ec;
+    --lk-hover: #c9d2e0;
+    --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
+
+    /* The pairing primitives' own colours, here for the same reason every
+       other literal is: a shadow written inline is a shadow the next palette
+       change misses. */
+    --lk-knob-shadow: 0 1px 3px rgba(16, 24, 40, .3);
+    --lk-slider-knob-shadow: 0 0 0 2px rgba(22, 24, 29, .6), 0 1px 4px rgba(16, 24, 40, .35);
+    --lk-slider-inset: inset 0 0 0 1px rgba(22, 24, 29, .1);
+    /* The two axes a slider can carry, as whole gradients rather than as a
+       list of stops: a ramp is one decision about what the axis LOOKS like,
+       and splitting it into six tokens would invite five of them to change. */
+    --lk-warm-ramp: linear-gradient(90deg, #e8892c, #efa658, #f4c68a,
+                                    #f2e6d6, #eaf0fb, #dbe8fb);
+    --lk-bright-ramp: linear-gradient(90deg, #221a3d, #43318a, #7a5fc4,
+                                      #b9a6e4, #ece5f9);
+    --lk-handle-shadow: 0 2px 6px rgba(16, 24, 40, .2);
+    --lk-handle-shadow-sel: 0 0 0 4px var(--lk-ring), 0 2px 8px rgba(16, 24, 40, .28);
+    --lk-hairline: rgba(22, 24, 29, .1);
+    --lk-day-mark: rgba(22, 24, 29, .4);
+    --lk-day-tag-bg: rgba(255, 255, 255, .86);
+
+    --lk-ok-bg: #eaf7ef;   --lk-ok-ink: #10633a;
+    --lk-bad-bg: #fdeceb;  --lk-bad-ink: #8f1d18;
+    /* Not an error. The one thing that reads this way is a schedule overlap,
+       which is allowed, resolved deterministically, and worth pointing at. */
+    --lk-warn-bg: #fdf3e7; --lk-warn-ink: #7a4a10;
+    --lk-flat-bg: #f4f5f7; --lk-flat-ink: #5b616e;
+
+    background: var(--lk-page);
+    padding: 18px 16px 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", sans-serif;
+    color: var(--lk-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #sn-root h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+  #sn-root .sub { font-size: 14px; line-height: 1.5; color: var(--lk-sub); margin: 0 0 18px; }
+  #sn-root p { font-size: 14px; line-height: 1.55; color: var(--lk-body); }
+
+  #sn-root .card { background: var(--lk-surface); border: 1px solid var(--lk-line);
+              border-radius: 14px; box-shadow: var(--lk-shadow); padding: 14px;
+              margin-bottom: 10px; }
+
+  #sn-root .section { margin-bottom: 18px; }
+  #sn-root .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase;
+                       letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 8px 2px; }
+
+  /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
+  #sn-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+              border: 1.5px solid var(--lk-line); border-radius: 12px; padding: 13px 14px;
+              margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
+              color: var(--lk-ink);
+              transition: border-color .12s ease, background .12s ease; }
+  #sn-root .tile:hover { border-color: var(--lk-hover); }
+  #sn-root .tile.sel { border-color: var(--lk-accent); background: var(--lk-accent-tint); }
+  #sn-root .tile .name { font-size: 15px; font-weight: 500; line-height: 1.3; }
+  #sn-root .tile .meta { font-size: 12.5px; color: var(--lk-muted); margin-top: 3px; line-height: 1.35; }
+
+  #sn-root input[type=text], #sn-root input[type=password], #sn-root select {
+    width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
+    border: 1.5px solid var(--lk-field); border-radius: 11px; background: var(--lk-surface);
+    color: var(--lk-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
+  /* The chevron's fill stays a literal: #6a7180 is --lk-muted, and a data URI
+     cannot read a custom property. So this is the one place a token's value is
+     written twice, and the two copies have to move together. */
+  #sn-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+               background-repeat: no-repeat; background-position: right 13px center;
+               background-size: 11px; padding-right: 34px; }
+  #sn-root input:focus, #sn-root select:focus { outline: none; border-color: var(--lk-accent);
+                                      box-shadow: 0 0 0 3px var(--lk-ring); }
+
+  #sn-root .btn { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
+             border-radius: 10px; border: 1.5px solid var(--lk-field);
+             background: var(--lk-surface); color: var(--lk-ink); cursor: pointer;
+             min-height: 40px; }
+  #sn-root .btn:hover { border-color: var(--lk-hover); }
+  #sn-root .btn:disabled { opacity: .45; cursor: not-allowed; }
+  #sn-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
+                     border-radius: 12px; border: none; background: var(--lk-accent);
+                     color: var(--lk-accent-ink); cursor: pointer; min-height: 50px;
+                     margin-top: 16px; font-family: inherit; }
+  #sn-root .btn-primary:disabled { opacity: .5; cursor: progress; }
+
+  /* A default ground, so a .msg shown before any state class lands on it is
+     still a message rather than bare text on the page. */
+  #sn-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 11px; font-size: 13.5px;
+             line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+  #sn-root .ok { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
+  #sn-root .bad { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
+  #sn-root .muted { background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+  #sn-root .warn { background: var(--lk-warn-bg); color: var(--lk-warn-ink); }
+  /* A message whose first line is what happened and whose second is what it
+     means. Both belong in one block: split across two, the second reads as
+     unrelated body copy. */
+  #sn-root .msg .lead { font-weight: 600; margin-bottom: 3px; }
+
+  #sn-root ol { font-size: 14px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+           color: var(--lk-body); }
+  #sn-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  @media (max-width: 380px) { #sn-root .grid { grid-template-columns: 1fr; } }
+  #sn-root .empty { font-size: 14px; color: var(--lk-muted); padding: 12px 0; }
+  /* ---- the pairing paradigm --------------------------------------------
+     Every screen the redesign draws is built from these six, so a change to
+     any of them is one edit rather than fifteen. They live in the shared base
+     rather than in each view for exactly the reason the tokens do: a primitive
+     defined twice is a primitive that drifts. */
+
+  /* Step dots. The intro is unnumbered — the steps it promises are the ones
+     that carry a dot — so a view renders as many as its own flow has. */
+  #sn-root .steps { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
+  #sn-root .steps i { width: 22px; height: 4px; border-radius: 999px;
+                   background: var(--lk-field); }
+  #sn-root .steps i.on { background: var(--lk-accent); }
+  #sn-root .steps span { margin-left: 4px; font-size: 12px; color: var(--lk-faint); }
+
+  /* `label · value · chevron`. The one shape everything secondary takes:
+     a row that says what it is, what it is set to, and that it can be opened. */
+  #sn-root .row { display: flex; align-items: center; gap: 11px; width: 100%;
+               padding: 13px 14px; min-height: 44px; box-sizing: border-box;
+               background: none; border: none; font: inherit; color: inherit;
+               text-align: left; cursor: pointer; }
+  #sn-root .row + .row { border-top: 1px solid var(--lk-line); }
+  #sn-root .row .label { flex: 1; font-size: 14.5px; font-weight: 500; }
+  #sn-root .row .value { font-size: 13px; color: var(--lk-muted); text-align: right; }
+  #sn-root .row .chev { flex: none; font-size: 15px; color: var(--lk-muted); }
+  #sn-root .row .sub { font-size: 12.5px; color: var(--lk-muted); margin: 2px 0 0; }
+
+  /* The pill switch behind every "Set … too". */
+  #sn-root .toggle { display: flex; align-items: center; gap: 11px; width: 100%;
+                  padding: 12px 0; min-height: 44px; box-sizing: border-box;
+                  background: none; border: none; font: inherit; color: inherit;
+                  text-align: left; cursor: pointer; }
+  #sn-root .toggle .label { flex: 1; font-size: 14.5px; font-weight: 500; }
+  #sn-root .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
+                         position: relative; background: var(--lk-field);
+                         transition: background .15s ease; }
+  #sn-root .toggle[aria-checked="true"] .track { background: var(--lk-accent); }
+  #sn-root .toggle .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+                        border-radius: 50%; background: var(--lk-surface);
+                        box-shadow: var(--lk-knob-shadow);
+                        transition: left .15s ease; }
+  #sn-root .toggle[aria-checked="true"] .knob { left: 21px; }
+
+  /* The title above a control, with its value on the right of the same line.
+     Sentence case and body-coloured rather than a small-caps section label:
+     "Brightness 80%" is a reading of the control directly below it, not a
+     heading over a group of unrelated things. */
+  #sn-root .control-title { display: flex; align-items: baseline;
+                         justify-content: space-between; gap: 10px;
+                         font-size: 13.5px; font-weight: 600; line-height: 1.2;
+                         color: var(--lk-ink); margin: 0 0 9px; }
+
+  /* A value slider with its two end captions.
+     The TRACK carries the range as a gradient and there is no fill: the whole
+     axis is visible at once, so a warmth slider shows candlelight at one end
+     and daylight at the other rather than asking somebody to imagine it. The
+     knob marks the position on it.
+     `touch-action: none` is not decoration: without it a horizontal drag
+     scrolls the pairing sheet underneath and the control cannot be used on a
+     phone at all. */
+  #sn-root .slider { position: relative; height: 28px; border-radius: 8px;
+                  background: var(--lk-field); margin: 0;
+                  box-shadow: var(--lk-slider-inset);
+                  touch-action: none; cursor: pointer; }
+  /* Candlelight to daylight, left to right — the order the slider reads in,
+     which is the REVERSE of the way a warmth is stored (platform §6). */
+  #sn-root .slider.warm { background: var(--lk-warm-ramp); }
+  #sn-root .slider.bright { background: var(--lk-bright-ramp); }
+  #sn-root .slider .knob { position: absolute; top: -4px; bottom: -4px; width: 6px;
+                        margin-left: -3px; border-radius: 4px;
+                        background: var(--lk-surface);
+                        box-shadow: var(--lk-slider-knob-shadow); }
+  #sn-root .ends { display: flex; justify-content: space-between;
+                font-size: 11px; color: var(--lk-muted); margin: 9px 0 0; }
+
+  /* The swatches a colour is chosen from, four across.
+     Not one row of eight: at 390px that is 34px a swatch, under the touch
+     minimum and too small to judge a colour by. Two rows of four is the same
+     set of eight, legibly, and the sixteen that fold out below continue it. */
+  #sn-root .swatches { display: grid; grid-template-columns: repeat(4, 1fr);
+                    gap: 8px; margin: 10px 0; }
+  #sn-root .swatch { height: 44px; border-radius: 9px; padding: 0;
+                  border: 1px solid var(--lk-hairline); cursor: pointer; }
+  #sn-root .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--lk-surface),
+                                                   0 0 0 4px var(--lk-accent); }
+
+  /* The day strip: a picture of the whole day, drawn once and reused. */
+  #sn-root .day { position: relative; height: 104px; border-radius: 12px;
+               overflow: hidden; touch-action: none; }
+  #sn-root .day .mark { position: absolute; top: 0; bottom: 0; width: 0;
+                     border-left: 1.5px dashed var(--lk-day-mark); }
+  #sn-root .day .tag { position: absolute; top: 6px; transform: translateX(-50%);
+                    background: var(--lk-day-tag-bg); color: var(--lk-body);
+                    font-size: 9.5px; font-weight: 600; letter-spacing: .05em;
+                    text-transform: uppercase; padding: 3px 5px; border-radius: 4px; }
+  #sn-root .day .handle { position: absolute; top: 50%; width: 26px; height: 26px;
+                       margin: -13px 0 0 -13px; border-radius: 50%;
+                       background: var(--lk-surface); box-sizing: border-box;
+                       border: 2.5px solid var(--lk-ring);
+                       box-shadow: var(--lk-handle-shadow); }
+  #sn-root .day .handle.sel { width: 34px; height: 34px; margin: -17px 0 0 -17px;
+                           border: 3px solid var(--lk-accent); z-index: 2;
+                           box-shadow: var(--lk-handle-shadow-sel); }
+  #sn-root .clockline { display: flex; justify-content: space-between;
+                     font-size: 12px; color: var(--lk-muted); margin-top: 6px; }
+
+  /* ==== end shared base ==== */
+
+  /* ---- this view only ---------------------------------------------------- */
+
+  /* The real choice is sensors OR the sun, so both are offered as peers at the
+     top. Picking no sensor is not a failure — it is the sun, and the option
+     says so rather than the screen warning about an absence. */
+  #sn-root .choices { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+  #sn-root .choice { display: block; width: 100%; text-align: left; padding: 13px 14px;
+                     border-radius: 12px; box-sizing: border-box;
+                     border: 1.5px solid var(--lk-line); background: var(--lk-surface);
+                     font: inherit; color: inherit; cursor: pointer; min-height: 44px; }
+  #sn-root .choice[aria-pressed="true"] { border-color: var(--lk-accent);
+                                          background: var(--lk-accent-tint); }
+  /* Name on the left, what it reads right now on the right of the same line:
+     the reading is what tells the two options apart, so it sits beside the name
+     rather than under it. */
+  #sn-root .choice .head { display: flex; align-items: baseline; gap: 10px; }
+  #sn-root .choice .what { flex: 1; font-size: 14.5px; font-weight: 600; }
+  #sn-root .choice .now { font-size: 12.5px; color: var(--lk-muted); text-align: right; }
+  #sn-root .choice .why { font-size: 12.5px; color: var(--lk-muted); margin-top: 3px;
+                          line-height: 1.4; }
+
+  /* The room name is a HEADER on the card of sensors, not a label floating above
+     it — the same shape the light picker's rooms take, so two screens that list
+     the household by room list it the same way. */
+  #sn-root .sensors { background: var(--lk-surface); border: 1px solid var(--lk-line);
+                      border-radius: 14px; box-shadow: var(--lk-shadow);
+                      overflow: hidden; margin-bottom: 10px; }
+  #sn-root .sensors .room-title { font-size: 14.5px; font-weight: 500;
+                                  color: var(--lk-ink); background: var(--lk-raised);
+                                  padding: 12px 14px;
+                                  border-bottom: 1px solid var(--lk-line); }
+  #sn-root .sensor .box { flex: none; width: 22px; height: 22px; border-radius: 50%;
+                          border: 1.5px solid var(--lk-field); box-sizing: border-box;
+                          display: flex; align-items: center; justify-content: center;
+                          font-size: 13px; font-weight: 700; color: transparent; }
+  #sn-root .sensor[aria-pressed="true"] .box { background: var(--lk-accent);
+                                               border-color: var(--lk-accent);
+                                               color: var(--lk-accent-ink); }
+  #sn-root .sensor .text { flex: 1; }
+  /* A sensor that is not responding stays VISIBLE and greyed rather than
+     hidden: a dead sensor somebody expects to see is then explained rather
+     than missing. */
+  #sn-root .sensor.dead .text { color: var(--lk-muted); }
+</style>
+
+<div class="wrap" id="sn-root">
+  <div class="steps" id="sn-steps"></div>
+  <h2 data-i18n="sensor.title"></h2>
+
+  <div id="sn-error" class="msg bad" style="display:none;"></div>
+
+  <div class="choices">
+    <button class="choice" id="sn-useSensor" type="button" aria-pressed="false">
+      <span class="head">
+        <span class="what" data-i18n="sensor.aSensor"></span>
+        <span class="now" id="sn-sensorNow"></span>
+      </span>
+      <span class="why" data-i18n="sensor.aSensorWhy"></span>
+    </button>
+    <button class="choice" id="sn-useSun" type="button" aria-pressed="false">
+      <span class="head">
+        <span class="what" data-i18n="sensor.theSun"></span>
+        <span class="now" id="sn-sunNow"></span>
+      </span>
+      <span class="why" data-i18n="sensor.theSunWhy"></span>
+    </button>
+  </div>
+
+  <div id="sn-list"></div>
+  <div class="empty" id="sn-none" style="display:none;" data-i18n="sensor.noneFound"></div>
+
+  <button class="btn-primary" id="sn-next" data-i18n="sensor.next"></button>
+</div>
+
+<script type="text/javascript">
+/**
+ * Where the reading comes from.
+ *
+ * **One sensor, not several.** A radio list grouped by room, because a hall
+ * sensor is a legitimate reading for a room with none of its own. Averaging
+ * several was a power-user answer to a question most homes do not have — a room
+ * has the sensor it has — and it made "which sensor is wrong" unanswerable.
+ *
+ * **The sun is a peer, not a fallback.** Following the sun is a choice made
+ * here, so the next screen says "Following the sun" rather than "no sensor
+ * picked", and a home with no sensors at all lands there and never sees a
+ * warning about it.
+ *
+ * Every row shows its reading and when it last reported. "1400 lx · just now" is
+ * the one that would ruin the device — a sensor pointed at a window measures the
+ * window — and the age is the only thing on screen that can reveal a sensor
+ * which has stopped, since a reading is never treated as stale (platform §16).
+ */
+function __lkBootSn(Homey) {
+  var __root = document.getElementById('sn-root');
+  if (!__root || __root.dataset.llBooted === '1') return;
+  __root.dataset.llBooted = '1';
+
+  function emit(event, data) {
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var finish = function (err, result) {
+        if (settled) return;
+        settled = true;
+        if (err) reject(err instanceof Error ? err : new Error(String(err)));
+        else resolve(result);
+      };
+      var timer = setTimeout(function () { finish(new Error('Homey did not respond in time. Close this screen and try again. (' + event + ')')); }, 20000);
+      var done = function (err, result) { clearTimeout(timer); finish(err, result); };
+      try {
+        var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
+        if (returned && typeof returned.then === 'function') {
+          returned.then(function (r) { done(null, r); }, function (e) { done(e); });
+        }
+      } catch (err) { done(err); }
+    });
+  }
+
+  function node(tag, className, text) {
+    var el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined && text !== null) el.textContent = String(text);
+    return el;
+  }
+
+  function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+
+  var el = {
+    steps: document.getElementById('sn-steps'),
+    error: document.getElementById('sn-error'),
+    useSensor: document.getElementById('sn-useSensor'),
+    sensorNow: document.getElementById('sn-sensorNow'),
+    useSun: document.getElementById('sn-useSun'),
+    sunNow: document.getElementById('sn-sunNow'),
+    list: document.getElementById('sn-list'),
+    none: document.getElementById('sn-none'),
+    next: document.getElementById('sn-next')
+  };
+
+  var state = { rooms: [], chosen: null, sky: null, anySensors: false };
+
+  function fail(err) {
+    el.error.textContent = err && err.message ? err.message : String(err);
+    el.error.style.display = '';
+  }
+
+  function renderSteps() {
+    clear(el.steps);
+    for (var i = 1; i <= 4; i++) el.steps.appendChild(node('i', i <= 2 ? 'on' : null));
+    el.steps.appendChild(node('span', null, Homey.__('sensor.step', { index: 2, count: 4 })));
+  }
+
+  /**
+   * How long ago a reading arrived, in words.
+   *
+   * Load-bearing rather than decorative: a frozen sensor is indistinguishable
+   * from a genuinely constant room by anything except this, and half the sensors
+   * in one measured house were frozen while Homey reported them available
+   * (platform §16).
+   */
+  function ageOf(at) {
+    if (at === null || at === undefined) return Homey.__('sensor.neverReported');
+    var minutes = Math.round((Date.now() - at) / 60000);
+    if (minutes < 2) return Homey.__('sensor.justNow');
+    if (minutes < 60) return Homey.__('sensor.minutesAgo', { minutes: minutes });
+    var hours = Math.round(minutes / 60);
+    if (hours < 48) return Homey.__('sensor.hoursAgo', { hours: hours });
+    return Homey.__('sensor.daysAgo', { days: Math.round(hours / 24) });
+  }
+
+  function render() {
+    var usingSensor = state.chosen !== null;
+    var chosen = chosenSensor();
+
+    // Which sensor, and what it reads — not how many exist. By the time anybody
+    // looks at this line the option has been chosen, and "4 found" then answers
+    // a question nobody is still asking. Re-rendered on every pick, because
+    // picking a different sensor changes it.
+    el.sensorNow.textContent = chosen
+      ? Homey.__('sensor.chosenNow', {
+        name: chosen.name, lux: chosen.lux === null ? '—' : chosen.lux
+      })
+      : (state.anySensors
+        ? Homey.__('sensor.countAvailable', { count: countSensors() })
+        : Homey.__('sensor.noneAvailable'));
+
+    el.useSensor.setAttribute('aria-pressed', usingSensor ? 'true' : 'false');
+    el.useSun.setAttribute('aria-pressed', usingSensor ? 'false' : 'true');
+    el.useSensor.disabled = !state.anySensors;
+    el.list.style.display = usingSensor ? '' : 'none';
+
+    clear(el.list);
+    for (var i = 0; i < state.rooms.length; i++) {
+      var room = state.rooms[i];
+      var card = node('div', 'sensors');
+      card.appendChild(node('div', 'room-title', room.zoneName));
+      for (var j = 0; j < room.sensors.length; j++) {
+        card.appendChild(renderSensor(room.sensors[j]));
+      }
+      el.list.appendChild(card);
+    }
+  }
+
+  function renderSensor(sensor) {
+    var dead = sensor.available === false || sensor.lux === null;
+    var row = node('button', 'row sensor' + (dead ? ' dead' : ''));
+    row.type = 'button';
+    row.setAttribute('aria-pressed', state.chosen === sensor.id ? 'true' : 'false');
+    row.appendChild(node('div', 'box', '✓'));
+
+    var text = node('div', 'text');
+    text.appendChild(node('div', null, sensor.name));
+    text.appendChild(node('div', 'sub', sensor.available === false
+      ? Homey.__('sensor.notResponding')
+      : Homey.__('sensor.reading', { lux: Math.round(sensor.lux || 0) }) + ' · ' + ageOf(sensor.at)));
+    row.appendChild(text);
+    row.appendChild(node('span', 'chev', '›'));
+
+    /**
+     * Tapping a row opens its WEEK before committing to it.
+     *
+     * The whole argument for the sensor choice is what that sensor has actually
+     * been reading, and a lux number on one line cannot carry it. Selecting is
+     * what the detail screen does on the way back, so a tap here is "show me"
+     * rather than "choose".
+     */
+    row.addEventListener('click', function () {
+      emit('inspectSensor', sensor.id).then(function () {
+        Homey.showView('sensordetail');
+      }).catch(fail);
+    });
+    return row;
+  }
+
+  el.useSun.addEventListener('click', function () {
+    state.chosen = null;
+    push();
+  });
+
+  el.useSensor.addEventListener('click', function () {
+    // Picking the first sensor rather than none, because "a light sensor" with
+    // nothing chosen is the same as the sun and the two buttons would then do
+    // the same thing.
+    for (var i = 0; i < state.rooms.length; i++) {
+      if (state.rooms[i].sensors.length > 0) {
+        state.chosen = state.rooms[i].sensors[0].id;
+        break;
+      }
+    }
+    push();
+  });
+
+  el.next.addEventListener('click', function () { Homey.showView('response'); });
+
+  function push() {
+    emit('setSensor', { sensor: state.chosen }).then(function (reply) {
+      state.chosen = reply.sensor;
+      render();
+    }).catch(fail);
+  }
+
+  renderSteps();
+
+  emit('listSensors').then(function (payload) {
+    state.rooms = payload.rooms || [];
+    state.chosen = (payload.selected && payload.selected[0]) || null;
+    state.sky = payload.sky || null;
+    state.anySensors = false;
+    for (var i = 0; i < state.rooms.length; i++) {
+      if (state.rooms[i].sensors.length > 0) state.anySensors = true;
+    }
+
+    el.none.style.display = state.anySensors ? 'none' : '';
+    el.sunNow.textContent = payload.sunsetAt
+      ? Homey.__('sensor.sunsetAt', { time: payload.sunsetAt })
+      : Homey.__('sensor.noPosition');
+
+    render();
+  }).catch(fail);
+
+  /** The sensor currently picked, or null while the sun is the answer. */
+  function chosenSensor() {
+    for (var i = 0; i < state.rooms.length; i++) {
+      for (var j = 0; j < state.rooms[i].sensors.length; j++) {
+        if (state.rooms[i].sensors[j].id === state.chosen) return state.rooms[i].sensors[j];
+      }
+    }
+    return null;
+  }
+
+  function countSensors() {
+    var total = 0;
+    for (var i = 0; i < state.rooms.length; i++) total += state.rooms[i].sensors.length;
+    return total;
+  }
+}
+
+(function () {
+  var tries = 0;
+  function waitForHomey() {
+    if (window.Homey && typeof window.Homey.emit === 'function') { __lkBootSn(window.Homey); return; }
+    if (++tries > 100) {
+      var root = document.getElementById('sn-root');
+      if (root) {
+        var banner = document.createElement('div');
+        banner.className = 'msg bad';
+        banner.textContent = 'This screen could not reach Homey. Close it and try again.';
+        root.appendChild(banner);
+      }
+      return;
+    }
+    setTimeout(waitForHomey, 50);
+  }
+  window.onHomeyReady = function (ready) { __lkBootSn(ready || window.Homey); };
+  waitForHomey();
+})();
+</script>

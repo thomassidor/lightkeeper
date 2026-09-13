@@ -7,6 +7,7 @@ import type { DeviceCatalog } from '../device-catalog';
 import type { SourceDiscoveryService } from '../source-discovery-service';
 import { FlowBridgeManager } from '../bridge/flow-bridge-manager';
 import { MappingEngine, intentForLightFunction } from '../mapping/mapping-engine';
+import type { MappingPreset } from '../mapping/mapping-types';
 import { SupersedeGate, contestedControls, type GatedInput } from '../mapping/supersede-gate';
 import { CommandScheduler } from '../outputs/command-scheduler';
 import { LightTargetAdapter, type WriteRecord } from '../outputs/light-target-adapter';
@@ -50,8 +51,12 @@ function rampFor(intent: LightIntent): { kind: 'brightness' | 'temperature'; dir
  * `test/unit/mapping-and-state.test.ts` asserts the equivalence for every
  * function.
  */
-export function intentForFunction(func: LightFunction, behavior: ControllerBehavior): LightIntent {
-  return intentForLightFunction(func, behavior);
+export function intentForFunction(
+  func: LightFunction,
+  behavior: ControllerBehavior,
+  preset?: MappingPreset,
+): LightIntent {
+  return intentForLightFunction(func, behavior, 1, preset);
 }
 
 /**
@@ -407,7 +412,13 @@ export class ControllerRuntime {
     await Promise.all(targets.map(id => this.adapter.refresh(id)));
     if (!current()) return { writes: 0, skipped: 0, targets: targets.length };
 
-    const intent = intentForFunction(func, this.profile.behavior);
+    // The preset comes off the rule that uses this function, so testing "a set
+    // brightness" proves the value that is actually stored rather than a
+    // default. Without it the Test control and the live path would disagree
+    // about the one function whose name is not enough — in a control whose
+    // entire purpose is to prove they agree.
+    const rule = this.profile.mappings.find(mapping => mapping.function === func);
+    const intent = intentForFunction(func, this.profile.behavior, rule?.preset);
     const result = await this.runIntentNow(intent, targets);
     return { ...result, targets: targets.length };
   }

@@ -28,6 +28,10 @@
 # never reviewed as source, and it holds whatever the fixtures say — which keeps
 # the "nothing that looks like a capture from a real Homey" rule easy to keep.
 /.views/
+# The zipped render output. `.views/` is already ignored; a zip of it is the
+# same thing with a name git does not recognise, and one was found in the tree
+# holding screens that had been deleted three commits earlier.
+/views.zip
 
 # Local Claude Code settings — per-machine, not shared.
 .claude/settings.local.json

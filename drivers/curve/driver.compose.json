@@ -3,7 +3,9 @@
     "en": "Curve light"
   },
   "class": "service",
-  "capabilities": ["onoff"],
+  "capabilities": [
+    "onoff"
+  ],
   "capabilitiesOptions": {
     "onoff": {
       "title": {
@@ -11,8 +13,12 @@
       }
     }
   },
-  "platforms": ["local"],
-  "connectivity": ["lan"],
+  "platforms": [
+    "local"
+  ],
+  "connectivity": [
+    "lan"
+  ],
   "images": {
     "small": "/drivers/curve/assets/images/small.png",
     "large": "/drivers/curve/assets/images/large.png",
@@ -20,22 +26,58 @@
   },
   "pair": [
     {
-      "id": "targets",
-      "navigation": { "next": "curve" }
+      "id": "intro",
+      "navigation": {
+        "next": "lights"
+      }
+    },
+    {
+      "id": "lights",
+      "navigation": {
+        "prev": "intro",
+        "next": "curve"
+      }
     },
     {
       "id": "curve",
-      "navigation": { "prev": "targets" }
+      "navigation": {
+        "prev": "lights",
+        "next": "review"
+      }
+    },
+    {
+      "id": "review",
+      "navigation": {
+        "prev": "curve"
+      }
     }
   ],
   "repair": [
     {
-      "id": "targets",
-      "navigation": { "next": "curve" }
+      "id": "intro",
+      "navigation": {
+        "next": "lights"
+      }
+    },
+    {
+      "id": "lights",
+      "navigation": {
+        "prev": "intro",
+        "next": "curve"
+      }
     },
     {
       "id": "curve",
-      "navigation": { "prev": "targets" }
+      "navigation": {
+        "prev": "lights",
+        "next": "review"
+      }
+    },
+    {
+      "id": "review",
+      "navigation": {
+        "prev": "curve"
+      }
     }
   ]
 }

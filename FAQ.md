@@ -36,8 +36,12 @@ full evidence including the server-side stack trace.
 | Curve light | No | Same engine, same answer |
 | Daylight light | No | Same answer, different job |
 
-Those three watch your lights over the app's own connection and write to them directly, so pairing
-them starts straight at the light picker. They also keep working when a key expires.
+Those three watch your lights over the app's own connection and write to them directly, so setting
+one up never asks for a key at all. They also keep working when a key expires.
+
+For the two that do need one, Lightkeeper asks near the start — after the screen explaining what the
+device does, before the first question it will save. That is deliberate: a key asked for at the end
+is a key that can cost you everything you just filled in.
 
 ### What is the key used for, exactly?
 
@@ -70,10 +74,11 @@ Pro 2023.
 
 The same engine, two ways of asking.
 
-A **circadian light** asks two questions — what your lights should look like at their warmest and at
-their coolest — and supplies the shape of the day itself: warmest at 06:00, coolest across the
-middle of the day, warmest again from 21:00, flat through the night. That shape is deliberately not
-a setting.
+A **circadian light** asks about three parts of the day — morning, midday and evening — and supplies
+the shape itself: each part held steady, fading from one into the next, and round again across
+midnight. Morning ends a little after sunrise and evening starts a little before sunset, both worked
+out from your Homey's own location, so the day moves with the real one through the year. You choose
+those two offsets; the shape between them is deliberately not a setting.
 
 A **Curve light** hands you the whole curve: every point, every time, and a colour from a closed
 palette instead of a warmth at any point.
@@ -87,14 +92,11 @@ or writes any Flows.
 
 A schedule happens **at a time**. A Daylight light happens **all the time**.
 
-Both can set a brightness from how light the room is — a schedule window can be set to follow the
-daylight just as a Daylight light does. The difference is when they look: a window reads it once,
-at the moment it comes on, and then leaves the lights where it put them. A Daylight light keeps
-looking, and keeps adjusting, for as long as the lights are on.
-
-So: a window that follows the daylight is right for "come on at whatever level the room needs at
-seven". A Daylight light is right for "keep this room at a comfortable level all evening as the
-light goes".
+A schedule block comes on at seven at whatever brightness you set, and leaves the lights there. A
+Daylight light keeps looking at how light the room is, and keeps adjusting, for as long as the
+lights are on. If you want "keep this room at a comfortable level all evening as the light goes",
+that is the Daylight light; a schedule cannot do it, and setting one up to try produces a room that
+is right at seven and wrong at nine.
 
 ### Do I need a light sensor for a Daylight light?
 
@@ -103,9 +105,14 @@ Homey asked you for during setup, so you almost certainly have one. That handles
 day perfectly well: dark before dawn, bright at noon, dark again after dusk.
 
 What a sensor adds is everything the sun cannot know: your curtains, which way the room faces, and
-whether today is overcast. If you have one — and most motion sensors do — it is used in preference,
-and the pairing screen shows you what it currently reads so you can set the two lux numbers against
-something real rather than guessing.
+whether today is overcast. If you have one — and most motion sensors do — pick it, and the setup
+screen draws **that sensor's own last week** as a grid of light and dark, with the two lux numbers
+filled in from what it actually recorded. That matters more than it sounds: a sensor in a hallway
+may never pass 30 lx while one on a kitchen windowsill passes 1200, and a single pair of default
+numbers cannot be right for both.
+
+The same screen tells you two things it would otherwise take a month to notice — a sensor that
+barely changes all week, and a sensor that stopped reporting.
 
 ### Can a light sensor be in the same room as the lights it drives?
 
@@ -176,8 +183,9 @@ circadian light within a few minutes. **Use one or the other on a given lamp.**
 
 The same goes for a **Daylight light and anything else that sets brightness** on the same lamp: a
 Daylight light adjusts continuously, so it wins, and whatever the other device set is overwritten
-within a minute. If you want a schedule's window and the daylight on one lamp, do not add a second
-device — set that window to **follow the daylight** instead. That is what the option is for.
+within a minute. A schedule block that switches the lamp ON is fine — the Daylight light takes the
+brightness from there — but a block that also sets a brightness is a block whose brightness lasts
+about a minute.
 
 One pair that does NOT conflict: a Daylight light and a circadian or Curve light on the same lamp,
 where the colour-following device is not also set to change brightness. They are then writing to
@@ -362,13 +370,14 @@ Stated plainly, because a limit you find out about later is worse than one you w
   jumps — but cannot remove it. [Which placements behave](#can-a-light-sensor-be-in-the-same-room-as-the-lights-it-drives).
 - **A Daylight light needs either a light sensor or your Homey's location.** With neither it says so
   and leaves your lights alone rather than guessing.
-- **A schedule window that follows the daylight reads it once, when the window starts**, and does not
-  follow it afterwards. A schedule happens at a time; add a Daylight light for the other thing.
-- **One daylight setup per device.** All the windows, points or ends on one device that follow the
-  daylight share the same sensors and the same two brightness ends. If you need two different
-  responses, add a second device — the same answer the twelve-window cap gives.
-- **Several light sensors are averaged**, not weighted, and not "the brightest wins". The sensors you
-  pick are the weighting: do not pick one whose opinion of the room you do not want.
+- **A schedule block sets a brightness, it does not follow one.** Following the light in the room is
+  what a Daylight light is for, and a schedule and a Daylight light on the same lamp is a supported
+  pair as long as the block does not also set a brightness.
+- **A Daylight light reads one light sensor.** Not several averaged: two sensors in different parts
+  of a room average to a number neither of them reported, and the week you are shown while choosing
+  would then belong to nothing. If you want two rooms handled differently, that is two devices.
+- **Two schedule blocks may overlap, and the later one wins** while they do. The setup screen
+  outlines the overlap and says so rather than refusing to let you draw it.
 - **The dimmest brightness you can set is 10%.** Below that there is nothing left to send a lamp:
   brightness is stored the way it is perceived rather than the way a lamp is addressed, and under
   about 9% the conversion rounds to zero, which most lamps read as off.

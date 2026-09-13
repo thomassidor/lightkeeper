@@ -3,8 +3,6 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { ENTRY_ID_SHAPE } from '../../lib/schedules/schedule-types';
-
 /**
  * The two privileged webviews, and what may reach a HTML parser inside them.
  *
@@ -27,24 +25,20 @@ import { ENTRY_ID_SHAPE } from '../../lib/schedules/schedule-types';
 const ROOT = join(import.meta.dirname, '..', '..');
 
 /**
- * The two form builders that still assign `innerHTML`, and why each is allowed.
+ * Empty, and that is the strongest form this can take.
  *
- * Both build a FORM — selects, range inputs, checkboxes — out of our own locale
- * strings, integers, and an id constrained by `ENTRY_ID_SHAPE`. There is no
- * third-party string anywhere in either: no device name, no zone name, no error
- * text. Converting them means rewriting `timeSelects`, `durationSelects` and
- * `options` too, in two screens that cannot be exercised without hardware, to
- * remove a risk that is provably not present.
+ * Two views used to be here: the schedule screen built a window's card as a
+ * string with `entryHtml` and the curve screen built a point's with
+ * `pointHtml`, so every interpolated value had to go through `escapeHtml`.
+ * The pairing rewrite replaced both with nodes, which took the last
+ * `innerHTML` in the app with them — and `escapeHtml` after it.
  *
- * The entry is by FILE and by the one function in it. A new interpolated
- * `innerHTML` anywhere — including a second one in these files — fails the test.
+ * Leaving the map in place rather than deleting the machinery: the next screen
+ * that reaches for a string template is the one this has to catch, and an
+ * allowlist that exists and is empty says "not this way" more clearly than an
+ * absence does.
  */
-const ALLOWED = new Map<string, string>([
-  ['drivers/schedule/pair/schedule.html', 'entryHtml'],
-  ['drivers/schedule/repair/schedule.html', 'entryHtml'],
-  ['drivers/curve/pair/curve.html', 'pointHtml'],
-  ['drivers/curve/repair/curve.html', 'pointHtml'],
-]);
+const ALLOWED = new Map<string, string>();
 
 /** Every privileged webview on disk: the settings page and every pairing view. */
 function privilegedViews(): string[] {
@@ -91,7 +85,13 @@ describe('no interpolated innerHTML in a privileged webview', () => {
     assert.equal(read('settings/index.html').includes('function escapeHtml'), false);
   });
 
-  test('every other assignment is one of the two allowlisted form builders', () => {
+  test('no pairing view assigns innerHTML at all', () => {
+    /**
+     * The property the redesign made true. Every screen builds nodes, so there
+     * is no concatenated markup anywhere in a privileged webview — which is a
+     * cheaper guarantee to keep than "every interpolation is escaped", and it
+     * cannot be got wrong one interpolation at a time.
+     */
     for (const view of views) {
       const assignments = innerHtmlAssignments(read(view));
       const allowed = ALLOWED.get(view);
@@ -110,40 +110,21 @@ describe('no interpolated innerHTML in a privileged webview', () => {
         `${view} has ${assignments.length} innerHTML assignments; exactly one is `
         + `allowed, the ${allowed} render`,
       );
-      assert.match(
-        assignments[0]!, new RegExp(allowed),
-        `${view}'s single allowed assignment should be the ${allowed} render`,
+    }
+  });
+
+  test('and no view still carries the escaper that made one safe', () => {
+    // `escapeHtml` was load-bearing in exactly the two views above. With the
+    // markup gone it has nothing to guard, and a copy left behind would read as
+    // a view that still builds strings somewhere.
+    for (const view of views) {
+      assert.equal(
+        read(view).includes('function escapeHtml'), false,
+        `${view} still defines escapeHtml — has a view gone back to building markup?`,
       );
     }
   });
 
-  test('the allowlisted builders still escape everything they interpolate', () => {
-    // The allowance rests on two things: the values are ours, and they are
-    // escaped anyway. If either stops being true the allowance is void.
-    for (const view of ALLOWED.keys()) {
-      const source = read(view);
-      assert.ok(
-        source.includes('function escapeHtml'),
-        `${view} is allowed to build markup only while it still escapes`,
-      );
-      assert.ok(
-        source.split('escapeHtml(').length > 10,
-        `${view} has stopped escaping most of what it interpolates`,
-      );
-    }
-  });
-
-  test('and the ids they interpolate cannot escape an attribute', () => {
-    // `data-id="' + escapeHtml(entry.id) + '"` is safe twice over: the id is
-    // server-generated and shape-constrained (Phase 4), and it is escaped. This
-    // asserts the first half, which is the one a future change could break.
-    for (const id of ['s0', 'sa1b2c3d4', 'morning-lights']) {
-      assert.match(id, ENTRY_ID_SHAPE);
-    }
-    for (const hostile of ['"><img src=x>', "' onload='x", 'a b', 'a:b']) {
-      assert.doesNotMatch(hostile, ENTRY_ID_SHAPE);
-    }
-  });
 });
 
 describe('no view reads the API key', () => {

@@ -1,11 +1,9 @@
 import { acceptedTargets } from '../outputs/test-outcome';
-import type { LuminanceSource } from '../daylight/luminance-source';
-import { RuntimeLifetime, cleanupResources, startRuntime, SensorClaim } from '../runtime/runtime-resources';
+import { RuntimeLifetime, cleanupResources, startRuntime } from '../runtime/runtime-resources';
 import type { HomeyApiService } from '../homey-api-service';
 import { classifyReconcileError } from '../runtime/reconcile-failure';
 import type { CredentialStatus } from '../credential-service';
 import type { DeviceCatalog } from '../device-catalog';
-import type { DaylightEvaluator } from '../daylight/daylight-evaluator';
 import type { FlowBridgeManager } from '../bridge/flow-bridge-manager';
 import { CommandScheduler } from '../outputs/command-scheduler';
 import { LightTargetAdapter, type WriteRecord } from '../outputs/light-target-adapter';
@@ -74,17 +72,6 @@ export interface ScheduleRuntimeDeps {
    * never changes, and unpersisted references leak Flows on every restart.
    */
   onPlanChange: (plan: SchedulePlan) => Promise<void>;
-  /**
-   * Sun position and sensor readings, for a window whose brightness follows the
-   * daylight.
-   *
-   * OPTIONAL, so the pairing screen's ephemeral rigs and every existing test
-   * keep working unchanged — and because a schedule with no `daylight` on its
-   * plan never asks. Absent with a window that wants one is the same case as no
-   * usable sensor: the stored brightness stands.
-   */
-  daylight?: DaylightEvaluator;
-  luminance?: LuminanceSource;
 }
 
 export interface ScheduleAction {
@@ -118,21 +105,16 @@ export interface ScheduleDiagnostics {
    */
   timezoneResolved: boolean;
   localTime: string;
+  /** Which days the whole schedule runs on — one set, not one per window. */
+  days: readonly number[] | 'every day';
   entries: Array<{
     id: string;
     on: string;
     off: string;
-    days: readonly number[] | 'every day';
     brightness?: number;
     /**
-     * Whether that brightness is the stored number or a fallback.
-     *
-     * On the report rather than only in the plan, because "it came on at 90%
-     * when I set it to 40%" and "it came on at 40% when it should have followed
-     * the room" are the same complaint from the outside and different bugs
-     * inside.
+     * Absent when the window only switches the lights on.
      */
-    fromDaylight?: boolean;
     temperature?: number;
     active: boolean;
     /**
@@ -184,7 +166,6 @@ export interface ScheduleDiagnostics {
 
 export class ScheduleRuntime {
   private readonly lifetime = new RuntimeLifetime();
-  private readonly sensorClaim: SensorClaim;
   private readonly cache = new TargetStateCache();
   private readonly adapter: LightTargetAdapter;
   private readonly resolver: TargetResolver;
@@ -226,7 +207,6 @@ export class ScheduleRuntime {
     this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log);
     if (deps.onWriteResult) this.adapter.setWriteSink(entry => deps.onWriteResult?.({ ...entry, controllerId: this.controllerId }));
     this.resolver = new TargetResolver(deps.catalog);
-    this.sensorClaim = new SensorClaim(deps.luminance, controllerId);
   }
 
   get currentState(): ControllerState { return this.visible.current; }
@@ -290,7 +270,6 @@ export class ScheduleRuntime {
      * such a light on produces ZERO writes. And after `stop()`/`start()` the
      * field described the PREVIOUS plan's targets.
      */
-    await this.sensorClaim.retain(this.plan.daylight?.sensors ?? []);
     if (!current()) return;
     const resolved = await resolveSnapshot(this.resolver, this.plan.target);
     if (!current()) return;
@@ -351,7 +330,7 @@ export class ScheduleRuntime {
         sourceName: this.deps.displayName(),
         deviceName: this.deps.displayName(),
         fingerprint: `time:${card.id}:${card.argument}`,
-        mapped: bindingsForPlan(this.plan.entries, card),
+        mapped: bindingsForPlan(this.plan.entries, this.plan.days, card),
         existing: this.plan.managedFlows,
       });
 
@@ -489,7 +468,7 @@ export class ScheduleRuntime {
      * is what this did — meant a restart inside two overlapping windows landed on
      * whichever the user happened to have added second.
      */
-    const active = activeEntries(this.plan.entries, clock);
+    const active = activeEntries(this.plan.entries, this.plan.days, clock);
     if (active.length === 0) return;
 
     const [{ entry }, ...superseded] = active;
@@ -592,7 +571,7 @@ export class ScheduleRuntime {
         reason: 'timezone unresolved — Homey clock and app clock may disagree',
       };
     }
-    if (!boundaryDayMatches(entry, parsed.boundary, clock.isoWeekday)) {
+    if (!boundaryDayMatches(entry, this.plan.days, parsed.boundary, clock.isoWeekday)) {
       return {
         accepted: false,
         reason: `${describeClock(clock)} is not one of this schedule's days`,
@@ -612,7 +591,7 @@ export class ScheduleRuntime {
      * `retimed: true` on the refusal is what makes the tile catch up now
      * rather than at that restart: see `handleEvent`.
      */
-    if (!boundaryClockMatches(entry, parsed.boundary, clock)) {
+    if (!boundaryClockMatches(entry, this.plan.days, parsed.boundary, clock)) {
       return {
         accepted: false,
         retimed: true,
@@ -721,7 +700,7 @@ export class ScheduleRuntime {
     if (!resolved) return null;
 
     const others = this.plan.entries.filter(entry => entry.id !== firing.id);
-    return activeEntries(others, clock)[0]?.entry ?? null;
+    return activeEntries(others, this.plan.days, clock)[0]?.entry ?? null;
   }
 
   /**
@@ -774,21 +753,7 @@ export class ScheduleRuntime {
    * at the level somebody chose last month.
    */
   private brightnessFor(entry: ScheduleEntry): number | undefined {
-    if (entry.brightness === undefined) return undefined;
-    if (entry.fromDaylight !== true) return entry.brightness;
-
-    const response = this.plan.daylight;
-    if (response === undefined || this.deps.daylight === undefined) return entry.brightness;
-
-    const verdict = this.deps.daylight.evaluate(response);
-    if (verdict.source === 'none') {
-      this.deps.log(
-        `${entry.id} follows the daylight, but nothing can tell how light it is; `
-        + 'using the brightness set by hand',
-      );
-      return entry.brightness;
-    }
-    return verdict.brightness;
+    return entry.brightness;
   }
 
   private planOff(): { writes: PlannedWrite[]; skipped: number } {
@@ -846,7 +811,6 @@ export class ScheduleRuntime {
       // the schedule was told to stand down.
       await cleanupResources([
         () => this.adapter.unsubscribeAll(),
-        () => this.sensorClaim.release(),
       ], this.deps.log);
       this.cache.clear();
       this.targetIds = [];
@@ -905,15 +869,17 @@ export class ScheduleRuntime {
       // clock it does not trust — so the flag is the first thing to read.
       timezoneResolved: resolved,
       localTime: describeClock(clock),
+      // One day set for the whole schedule now, so it is reported once rather
+      // than repeated on every window.
+      days: this.plan.days ?? 'every day',
       entries: this.plan.entries.map(entry => ({
         id: entry.id,
         on: formatMinutes(entry.onAt),
         off: formatMinutes(offMinuteOf(entry)),
-        days: entry.days ?? 'every day',
+
         ...(entry.brightness !== undefined ? { brightness: entry.brightness } : {}),
-        ...(entry.fromDaylight === true ? { fromDaylight: true } : {}),
         ...(entry.temperature !== undefined ? { temperature: entry.temperature } : {}),
-        active: activeWindowStartDay(entry, clock) !== null,
+        active: activeWindowStartDay(entry, this.plan.days, clock) !== null,
         end: entry.end,
       })),
       targetIds: this.targetIds,

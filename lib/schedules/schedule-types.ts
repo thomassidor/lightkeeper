@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { MINIMUM_BRIGHTNESS } from '../outputs/light-intent';
 
 import type { TargetSpec } from '../outputs/light-intent';
-import type { DaylightResponse } from '../daylight/daylight-types';
 import type { ManagedFlowReference } from '../profiles/controller-profile';
 import { MINUTES_PER_DAY, formatMinutes, parseMinutes } from '../time/wall-clock';
 import { sanitiseUnitInterval } from '../validation/unit-interval';
@@ -52,8 +52,6 @@ export interface ScheduleEntry {
   id: string;
   /** Minutes since local midnight. */
   onAt: number;
-  /** Which days it starts on. null means every day. */
-  days: IsoWeekday[] | null;
   end: ScheduleEnd;
   /**
    * Perceptual brightness 0–1, converted with toDevice() at plan time so "40%"
@@ -61,25 +59,6 @@ export interface ScheduleEntry {
    * Absent = leave brightness alone and only switch on.
    */
   brightness?: number;
-  /**
-   * Take the brightness from the daylight instead of from the number above.
-   *
-   * The number STAYS, and becomes the fallback. That is the load-bearing half of
-   * this design: when there is no usable light sensor and no position to compute
-   * a sun elevation from, the lights get the brightness the user already set
-   * rather than nothing or a guess. No new failure mode, and nothing to explain.
-   *
-   * Only meaningful with a `brightness` present and a `daylight` on the plan —
-   * `sanitiseEntries` drops it without the first, and `validateSchedulePlan`
-   * refuses it without either, because a window that says it follows the
-   * daylight and cannot is the "looks configured, does nothing" failure this app
-   * exists to prevent.
-   *
-   * **A window applies this at its boundary and does not follow it afterwards.**
-   * A schedule fires AT a time; following is what a Daylight light is for. Stated
-   * as a limit in the README and the FAQ rather than hidden.
-   */
-  fromDaylight?: boolean;
   /** Normalised colour temperature 0–1, where 1 is the WARMEST end (platform §6). */
   temperature?: number;
 }
@@ -91,20 +70,20 @@ export interface SchedulePlan {
   target: TargetSpec;
   entries: ScheduleEntry[];
   /**
-   * ONE daylight response for the whole device, or none.
+   * Which days the whole schedule runs on. `null` means every day.
    *
-   * Inline rather than a reference to a Daylight light, because a device that
-   * depends on another device existing is a device that breaks when somebody
-   * deletes the other one. One per device rather than one per window, because
-   * twelve windows would mean twelve sensor pickers on one screen and the same
-   * configuration retyped twelve times — and a user who genuinely needs two
-   * different responses adds a second schedule device, which is the answer the
-   * twelve-window cap already gives.
+   * On the PLAN rather than on each window, and that is a decision the pairing
+   * rewrite made rather than an accident. Days used to be per window, which put
+   * a seven-chip day picker inside every block — twelve of them on a full
+   * schedule, each independently wrong. Nobody was setting them differently, and
+   * the one household that genuinely wants two day patterns has the answer the
+   * twelve-window cap already gives: add a second schedule device.
    *
-   * The same shape a Daylight light stores as its whole plan, validated by the
-   * same function (`lib/daylight/daylight-types.ts`).
+   * A window still BELONGS to the day it started on, which is what makes a
+   * 23:30 → 01:00 block fire its off-boundary on Saturday for a Friday that is
+   * selected — see `boundaryDayMatches`.
    */
-  daylight?: DaylightResponse;
+  days: IsoWeekday[] | null;
   managedFlows: ManagedFlowReference[];
 }
 
@@ -114,6 +93,16 @@ export interface SchedulePlan {
  * half-filled row must not become a schedule that fires at 00:00 every day.
  * Invalid entries are DROPPED and named, never silently repaired into something
  * the user did not ask for.
+ *
+ * **Overlapping windows are no longer one of those things.** They used to be:
+ * the later of a clashing pair was dropped at save, on the grounds that two
+ * windows over the same lights fight. They do fight, and the runtime has always
+ * had a deterministic answer — `activeEntries` sorts latest-started-first, so
+ * the later window wins while they overlap and the lights simply stay on
+ * through both. The sanitiser was the only thing stopping anyone reaching that
+ * answer, and dropping a row somebody had just drawn was a worse surprise than
+ * the overlap. `overlappingPairs` below reports them instead, and the screen
+ * draws the region and says what will happen.
  */
 export function sanitiseEntries(
   raw: unknown,
@@ -132,10 +121,6 @@ export function sanitiseEntries(
     const onAt = parseMinutes(source.onAt);
     if (onAt === null) return drop('the on-time is not a time of day');
 
-    const days = sanitiseDays(source.days);
-    if (days === 'invalid') return drop('days is not a list');
-    if (days !== null && days.length === 0) return drop('no days are selected');
-
     const end = sanitiseEnd(source.end, onAt);
     if (typeof end === 'string') return drop(end);
 
@@ -150,41 +135,57 @@ export function sanitiseEntries(
     const entry: ScheduleEntry = {
       id,
       onAt,
-      days,
       end,
       // A brightness of 0 would be "on, at nothing"; treat it as unset rather
-      // than writing a lamp to zero and calling it lit.
-      ...(lit ? { brightness } : {}),
-      /**
-       * Only alongside a brightness, because that brightness IS the fallback.
-       *
-       * Dropped rather than repaired, and dropped SILENTLY rather than dropping
-       * the whole row: the window is still a perfectly good window that sets no
-       * brightness, which is what it will now do. The plan-level half of the
-       * rule — that the device must actually have a daylight response — cannot
-       * be checked from here, because this function only sees the entries;
-       * `validateSchedulePlan` is where that is refused.
-       */
-      ...(lit && source.fromDaylight === true ? { fromDaylight: true } : {}),
+      // than writing a lamp to zero and calling it lit. A positive one is
+      // floored, because 5% quantises to `dim` 0.00 at the lamp and a window
+      // that stored 5% would read as configured and come on dark.
+      ...(lit ? { brightness: Math.max(MINIMUM_BRIGHTNESS, brightness!) } : {}),
       ...(temperature !== null ? { temperature } : {}),
     };
-
-    /**
-     * Two windows over the same lights fight: the one that ends first switches
-     * them off while the other still believes them on, and no screen in the app
-     * admits to it. Refusing at save is the honest half of the fix — the runtime
-     * handles the pairs that earlier versions already stored.
-     *
-     * The LATER row is the one dropped, because the earlier one is the one the
-     * user can already see working.
-     */
-    const clash = entries.find(existing => entriesOverlap(existing, entry));
-    if (clash) return drop(`overlaps schedule "${clash.id}"`);
 
     entries.push(entry);
   });
 
   return { entries, dropped };
+}
+
+/**
+ * Which days the schedule runs, from whatever the screen sent.
+ *
+ * `null` for every day, which is also what a full seven collapses to — one
+ * representation of "always", so nothing downstream has to compare a set of
+ * seven against a null and get it right.
+ */
+export function sanitiseScheduleDays(raw: unknown): IsoWeekday[] | null {
+  const days = sanitiseDays(raw);
+  // Unusable and empty both mean "no day filter we can trust". Every day is the
+  // safe reading: a schedule that runs too often is visible and fixable, one
+  // that never runs looks broken and tells nobody why.
+  if (days === 'invalid' || (days !== null && days.length === 0)) return null;
+  return days;
+}
+
+/**
+ * Which windows overlap which, for the screen to draw.
+ *
+ * Reported, never enforced — see the note on `sanitiseEntries`. Pairs are
+ * returned in the order they were found so the screen can name the same two
+ * windows the same way twice running.
+ */
+export function overlappingPairs(
+  entries: readonly ScheduleEntry[],
+  days: IsoWeekday[] | null,
+): Array<{ a: string; b: string }> {
+  const pairs: Array<{ a: string; b: string }> = [];
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      if (entriesOverlap(entries[i]!, entries[j]!, days)) {
+        pairs.push({ a: entries[i]!.id, b: entries[j]!.id });
+      }
+    }
+  }
+  return pairs;
 }
 
 /**

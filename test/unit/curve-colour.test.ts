@@ -371,19 +371,23 @@ describe('the curve plan has its own store and its own chain', () => {
     assert.deepEqual(plan, validPlan());
   });
 
-  test('a plan with no version is brought forward', () => {
+  test('a plan from before the reset is quarantined, not guessed at', () => {
+    // The table is empty on purpose — the pairing rewrite changed this store
+    // (the palette grew, the default curve became coloured), and the one Homey
+    // running the app was given a clean slate. A version-less plan is the same
+    // case: version 0 has no step either, so it is refused rather than filled in.
     const { points } = validPlan();
-    const { plan, migrated, fromVersion } = migrateCurvePlan({
+    assert.throws(() => migrateCurvePlan({
       target: { kind: 'devices', deviceIds: ['l1'] },
       points,
-    });
-    assert.equal(migrated, true);
-    assert.equal(fromVersion, 0);
-    assert.equal(plan.schemaVersion, CURRENT_CURVE_SCHEMA_VERSION);
-    assert.deepEqual(plan.points, points);
-    // Opt-in, so an absent value is a no rather than an unknown.
-    assert.equal(plan.preStage, false);
-    assert.equal(plan.enabled, true);
+    }));
+    assert.throws(() => migrateCurvePlan({ ...validPlan(), schemaVersion: 0 }));
+  });
+
+  test('a plan from a NEWER build is refused rather than downgraded', () => {
+    assert.throws(() => migrateCurvePlan({
+      ...validPlan(), schemaVersion: CURRENT_CURVE_SCHEMA_VERSION + 1,
+    }));
   });
 
   /**
@@ -394,9 +398,12 @@ describe('the curve plan has its own store and its own chain', () => {
    * quarantine is the honest answer: a curve with no points reports `ready` and
    * writes nothing, which is the failure this app exists to prevent.
    */
-  test('a versionless plan with no points quarantines rather than running empty', () => {
+  test('a plan with no points quarantines rather than running empty', () => {
+    // A curve with no points reports `ready` and writes nothing, which is the
+    // exact failure this app exists to prevent. The chain ends in its validator
+    // so the device is quarantined instead.
     assert.throws(
-      () => migrateCurvePlan({ target: { kind: 'devices', deviceIds: ['l1'] } }),
+      () => migrateCurvePlan({ ...validPlan(), points: [] }),
       /points has fewer than 2 points/,
     );
   });
@@ -511,44 +518,42 @@ describe('a wide blend fades through pale, not through a hue nobody chose', () =
  * stored 5% loaded into a slider that starts at 10% displays 10% while the plan
  * still says 5%, so the card would show one number and save another.
  */
-describe('a stored brightness comes up to the floor', () => {
-  const storedAt = (brightness: number | undefined) => ({
-    schemaVersion: 1,
-    enabled: true,
-    target: { kind: 'devices', deviceIds: ['l1'] },
-    points: [
-      { id: 'p1', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.2, brightness },
-      { id: 'p2', anchor: { kind: 'clock', at: 21 * 60 }, warmth: 1, brightness: 0.6 },
-    ],
-    adjustBrightness: brightness !== undefined,
-    preStage: false,
-  });
+describe('a brightness comes up to the floor on the way IN', () => {
+  /**
+   * This used to be a migration step's job. With the chains reset it is the
+   * SANITISER's, which is the better seam anyway: it is where a screen's
+   * untrusted input arrives, so a plan can never come to hold a value no lamp
+   * can show.
+   *
+   * Why the floor exists: quantisation happens in device values and `dim`
+   * reports `decimals: 2`, so a perceptual 5% is `dim` 0.0014 and rounds to
+   * 0.00 — off, on most integrations. `litDim` is the safety net at write time;
+   * this stops the plan itself saying 5% on every screen while the lamp is dark.
+   */
+  const at = (brightness: number | undefined) => [
+    { id: 'p1', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.2, brightness },
+    { id: 'p2', anchor: { kind: 'clock', at: 21 * 60 }, warmth: 1, brightness: 0.6 },
+  ];
 
-  test('5% becomes 10%', () => {
-    const { plan, migrated, steps } = migrateCurvePlan(storedAt(0.05));
-
-    assert.equal(migrated, true);
-    assert.ok(steps.includes(1), `the 1 -> 2 step must have run, got ${steps.join(',')}`);
-    assert.equal(plan.points[0].brightness, 0.1);
-    assert.equal(plan.points[1].brightness, 0.6, 'and nothing above the floor moves');
+  test('5% becomes 10%, and nothing above the floor moves', () => {
+    const { points } = sanitiseCurve(at(0.05), true);
+    assert.equal(points[0].brightness, 0.1);
+    assert.equal(points[1].brightness, 0.6);
   });
 
   test('a point with no brightness stays without one', () => {
-    /**
-     * The engine interpolates brightness only where BOTH bracketing points have
-     * it, so inventing one here would turn a temperature-only curve into a
-     * dimming one.
-     */
-    const { plan } = migrateCurvePlan(storedAt(undefined));
-    assert.equal(plan.points[0].brightness, undefined);
+    // The engine interpolates brightness only where BOTH bracketing points have
+    // it, so inventing one here would turn a temperature-only curve into a
+    // dimming one.
+    const { points, adjustBrightness } = sanitiseCurve(at(undefined), true);
+    assert.equal(points[0].brightness, undefined);
+    assert.equal(adjustBrightness, false);
   });
 
-  test('a plan already at the current version is left alone', () => {
-    const raw = { ...storedAt(0.05), schemaVersion: CURRENT_CURVE_SCHEMA_VERSION };
-    const { plan, migrated } = migrateCurvePlan(raw);
-
-    assert.equal(migrated, false);
-    assert.equal(plan.points[0].brightness, 0.05,
-      'the floor is a migration, not a validator — litDim still catches this one at write time');
+  test('zero stays unset rather than being lifted to the floor', () => {
+    // 0 is "leave brightness alone" on a curve point, and lifting it would be
+    // inventing a brightness for a plan that deliberately has none.
+    const { points } = sanitiseCurve(at(0), true);
+    assert.equal(points[0].brightness, undefined);
   });
 });

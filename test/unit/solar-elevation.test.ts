@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { solarElevation, solarPosition } from '../../lib/daylight/solar-elevation';
+import { solarElevation, solarPosition, sunTimes } from '../../lib/daylight/solar-elevation';
 
 /**
  * Sixty lines of trigonometry with no way to eyeball the answer.
@@ -295,5 +295,114 @@ describe('where the sun is, round the compass', () => {
   test('solarElevation agrees with solarPosition, because it delegates', () => {
     const at = Date.UTC(2026, 3, 12, 7, 34, 0);
     assert.equal(solarElevation(55.7, 12.1, at), solarPosition(55.7, 12.1, at).elevation);
+  });
+});
+
+/**
+ * `sunTimes` is a closed-form solution where everything above it is a direct
+ * evaluation, so nothing it returns is checked against a table here either.
+ * What pins it instead:
+ *
+ *  - the elevation at the instant it calls sunrise must BE the sunrise altitude,
+ *    which ties it to `solarPosition` and catches any sign or unit slip;
+ *  - sunrise and sunset must straddle solar noon symmetrically, which pins the
+ *    hour angle;
+ *  - the equinox gives twelve hours of day everywhere, which pins the
+ *    declination;
+ *  - the Arctic in June and December are the two polar cases, and they must come
+ *    back distinguishable rather than merely absent.
+ */
+describe('sunTimes', () => {
+  const COPENHAGEN = { lat: 55.68, lon: 12.57 };
+
+  test('the sun really is at the sunrise altitude at the time it names', () => {
+    // The one assertion that ties the closed form to the direct evaluation. A
+    // degrees/radians slip, or the equation of time applied with the wrong
+    // sign, moves this by minutes and shows up here as degrees.
+    for (const day of [JUNE, DECEMBER, MARCH_EQUINOX]) {
+      const { sunriseMs, sunsetMs } = sunTimes(COPENHAGEN.lat, COPENHAGEN.lon, day);
+      assert.ok(sunriseMs !== null && sunsetMs !== null, 'Copenhagen has a sunrise year round');
+      assertClose(
+        solarElevation(COPENHAGEN.lat, COPENHAGEN.lon, sunriseMs!), -0.833, 0.1,
+        `elevation at its own sunrise, ${new Date(day).toISOString().slice(0, 10)}`,
+      );
+      assertClose(
+        solarElevation(COPENHAGEN.lat, COPENHAGEN.lon, sunsetMs!), -0.833, 0.1,
+        'elevation at its own sunset',
+      );
+    }
+  });
+
+  test('sunrise and sunset straddle solar noon by the same amount', () => {
+    const { sunriseMs, sunsetMs, solarNoonMs } = sunTimes(COPENHAGEN.lat, COPENHAGEN.lon, JUNE);
+    assertClose(solarNoonMs - sunriseMs!, sunsetMs! - solarNoonMs, 1000, 'symmetry about noon');
+  });
+
+  test('solar noon is when the sun is actually highest', () => {
+    const { solarNoonMs } = sunTimes(COPENHAGEN.lat, COPENHAGEN.lon, JUNE);
+    const atNoon = solarElevation(COPENHAGEN.lat, COPENHAGEN.lon, solarNoonMs);
+    for (const offset of [-90, -30, 30, 90]) {
+      assert.ok(
+        solarElevation(COPENHAGEN.lat, COPENHAGEN.lon, solarNoonMs + offset * MINUTE) < atNoon,
+        `${offset} minutes off noon is lower than noon`,
+      );
+    }
+  });
+
+  test('an equinox is twelve hours of daylight at every latitude', () => {
+    // The definition of an equinox, and it holds nowhere else in the year. A
+    // few minutes over twelve hours because sunrise is measured to the first
+    // limb through refraction rather than to the centre on the geometric
+    // horizon — which is exactly the correction SUNRISE_ALTITUDE carries.
+    for (const lat of [0, 35, 55.68, -41]) {
+      const { sunriseMs, sunsetMs } = sunTimes(lat, 0, MARCH_EQUINOX);
+      const hours = (sunsetMs! - sunriseMs!) / HOUR;
+      assertClose(hours, 12.1, 0.2, `daylight at latitude ${lat} on the equinox`);
+    }
+  });
+
+  test('the longer day is the summer one, in whichever hemisphere', () => {
+    const north = sunTimes(COPENHAGEN.lat, COPENHAGEN.lon, JUNE);
+    const northWinter = sunTimes(COPENHAGEN.lat, COPENHAGEN.lon, DECEMBER);
+    assert.ok(
+      (north.sunsetMs! - north.sunriseMs!) > (northWinter.sunsetMs! - northWinter.sunriseMs!),
+      'Copenhagen has a longer June day than a December one',
+    );
+
+    // The same place in the south, mirrored. This is what catches a latitude
+    // sign that got lost somewhere in the hour angle.
+    const south = sunTimes(-COPENHAGEN.lat, COPENHAGEN.lon, JUNE);
+    const southSummer = sunTimes(-COPENHAGEN.lat, COPENHAGEN.lon, DECEMBER);
+    assert.ok(
+      (southSummer.sunsetMs! - southSummer.sunriseMs!) > (south.sunsetMs! - south.sunriseMs!),
+      'the southern hemisphere has a longer December day',
+    );
+  });
+
+  test('a polar day and a polar night are both null, and tell you which', () => {
+    // Tromsø, well inside the Arctic Circle. Both are legitimate answers for
+    // weeks at a time, and a circadian light there needs to know which one it
+    // is looking at — the fallbacks are opposites.
+    const midnightSun = sunTimes(69.65, 18.96, JUNE);
+    assert.equal(midnightSun.sunriseMs, null);
+    assert.equal(midnightSun.sunsetMs, null);
+    assert.equal(midnightSun.alwaysUp, true);
+
+    const polarNight = sunTimes(69.65, 18.96, DECEMBER);
+    assert.equal(polarNight.sunriseMs, null);
+    assert.equal(polarNight.alwaysUp, false);
+
+    // Solar noon exists on both days regardless, which is what makes it safe to
+    // build a fallback on.
+    assert.ok(Number.isFinite(midnightSun.solarNoonMs));
+    assert.ok(Number.isFinite(polarNight.solarNoonMs));
+  });
+
+  test('longitude shifts the whole day by four minutes per degree', () => {
+    // 15 degrees is exactly an hour. Any other factor here means the
+    // 4-minutes-per-degree term has been applied twice or not at all.
+    const here = sunTimes(55.68, 0, JUNE);
+    const east = sunTimes(55.68, 15, JUNE);
+    assertClose((here.sunriseMs! - east.sunriseMs!) / HOUR, 1, 0.02, '15 degrees east is an hour');
   });
 });

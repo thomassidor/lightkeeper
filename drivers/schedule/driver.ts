@@ -1,25 +1,23 @@
 import Homey from 'homey';
+import type { LightkeeperApp } from '../../lib/app-contract';
+import { registerIntroHandler, registerReviewHandler } from '../../lib/pairing/flow-screens';
 
 import {
   resolveSummary, targetLights,
 } from '../../lib/pairing/target-picker';
-import {
-  sanitiseResponse, type DaylightResponse,
-} from '../../lib/daylight/daylight-types';
 import { CURRENT_SCHEDULE_SCHEMA_VERSION } from '../../lib/schedules/schedule-migrations';
+import { daysLabel } from '../../lib/schedules/schedule-bindings';
 import {
-  MAX_ENTRIES, sanitiseEntries,
+  MAX_ENTRIES, overlappingPairs, sanitiseEntries, sanitiseScheduleDays,
+  type IsoWeekday,
   type ScheduleBoundary, type ScheduleEntry, type SchedulePlan,
 } from '../../lib/schedules/schedule-types';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
 import {
   handlerRegistrar,
-  newSessionOwner,
   registerCredentialHandlers,
-  registerDaylightCardHandlers,
   registerSaveHandler,
   registerTargetHandlers,
-  releaseOnDisconnect,
   timezoneOf,
   type PairSessionHost,
 } from '../../lib/pairing/pair-session';
@@ -36,9 +34,9 @@ import {
  */
 
 interface SessionState {
-  daylight?: DaylightResponse;
   target?: TargetSpec;
   entries: ScheduleEntry[];
+  days: IsoWeekday[] | null;
 }
 
 module.exports = class ScheduleDriver extends Homey.Driver {
@@ -54,14 +52,26 @@ module.exports = class ScheduleDriver extends Homey.Driver {
     return {
       log: (...args: unknown[]) => this.log(...args),
       error: (...args: unknown[]) => this.error(...args),
-      translate: (key: string) => this.homey.__(key),
+      translate: (key: string, tokens?: Record<string, string | number>) =>
+        this.homey.__(key, tokens),
       clock: this.homey.clock,
       app: this.app,
     };
   }
 
-  private get app(): any {
-    return this.homey.app;
+  /**
+   * The app, through the contract rather than as `any`.
+   *
+   * This used to be `: any`, and the hardware pass is what found out what that
+   * cost: `catalog.devices()` and `catalog.getDevice()` do not exist — the
+   * methods are `allDevices()` and `device()` — and six call sites across three
+   * drivers shipped, invisible to `tsc`, the suite and `validate` alike,
+   * throwing the first time a real screen asked for them. `this.homey.app` is
+   * `App` from the SDK's own types, so the double cast is the seam; `LightkeeperApp`
+   * is the surface a driver is allowed to use.
+   */
+  private get app(): LightkeeperApp {
+    return this.homey.app as unknown as LightkeeperApp;
   }
 
   override async onInit() {
@@ -79,16 +89,15 @@ module.exports = class ScheduleDriver extends Homey.Driver {
       entries: plan?.entries ?? [],
       // Seeded so a repair session opens the card on what the device already
       // has rather than on the defaults.
-      daylight: plan?.daylight,
+      days: plan?.days ?? null,
     }, device);
   }
 
   private async bindSession(session: any, initial: Partial<SessionState>, device?: any) {
-    const state: SessionState = { entries: [], ...initial };
+    const state: SessionState = { entries: [], days: null, ...initial };
 
     const host = this.pairHost();
     const handler = handlerRegistrar(host, session);
-    const sessionOwner = newSessionOwner();
 
     // ---------------------------------------------------------- credentials
 
@@ -96,9 +105,31 @@ module.exports = class ScheduleDriver extends Homey.Driver {
 
     handler('add_device', async () => true);
 
+    // ---------------------------------------------------------------- intro
+
+    registerIntroHandler(host, handler, {
+      titleKey: 'intro.scheduleTitle',
+      blurbKey: 'intro.scheduleBlurb',
+      hero: 'schedule',
+      decisions: [
+        { whatKey: 'intro.whichLights', whyKey: 'intro.whichLightsWhy' },
+        { whatKey: 'intro.theBlocks', whyKey: 'intro.theBlocksWhy' },
+        { whatKey: 'intro.checkIt', whyKey: 'intro.checkItWhy' },
+      ],
+      // The key screen, when it is needed at all. It skips itself when a valid
+      // key is already stored, so every schedule after the first goes straight
+      // to the lights.
+      nextView: 'credential',
+    });
+
     // -------------------------------------------------------------- targets
 
-    registerTargetHandlers(host, handler, state, 'targets.subtitleSchedule');
+    registerTargetHandlers(host, handler, state, {
+      subtitleKey: 'targets.subtitleSchedule',
+      stepIndex: 1,
+      stepCount: 3,
+      nextView: 'blocks',
+    });
 
     // ------------------------------------------------------------ schedules
 
@@ -116,6 +147,11 @@ module.exports = class ScheduleDriver extends Homey.Driver {
         support: summary.support,
         lights,
         entries: state.entries,
+        days: state.days,
+        // Which windows fight, so the screen can draw the region and say the
+        // later one wins. Reported, never enforced: the runtime has a
+        // deterministic answer and refusing to save was the worse surprise.
+        overlaps: overlappingPairs(state.entries, state.days),
         // Shown on screen, because "on at 22:00" is meaningless without saying
         // whose 22:00 — and a Homey in the wrong timezone is a real support case.
         timezone: this.timezone(),
@@ -131,12 +167,26 @@ module.exports = class ScheduleDriver extends Homey.Driver {
      * than repairing it into a schedule the user never asked for.
      */
     handler('setSchedules', async (raw: unknown) => {
-      const { entries, dropped } = sanitiseEntries(raw);
+      const payload = (raw && typeof raw === 'object' && 'entries' in raw
+        ? raw
+        : { entries: raw }) as { entries?: unknown; days?: unknown };
+
+      const { entries, dropped } = sanitiseEntries(payload.entries);
       for (const drop of dropped) {
         this.log(`Dropped schedule ${drop.index + 1}: ${drop.reason}`);
       }
       state.entries = entries;
-      return { count: entries.length, dropped };
+      // One day set for the whole schedule. Sent with the rows rather than on
+      // its own handler because the two are edited on one screen and a partial
+      // save — new rows against the old days — is a schedule nobody asked for.
+      if (payload.days !== undefined) state.days = sanitiseScheduleDays(payload.days);
+
+      return {
+        count: entries.length,
+        dropped,
+        days: state.days,
+        overlaps: overlappingPairs(entries, state.days),
+      };
     });
 
     /**
@@ -154,31 +204,36 @@ module.exports = class ScheduleDriver extends Homey.Driver {
       }
     });
 
-    // ------------------------------------------------------------- daylight
+    // ----------------------------------------------------------------- save
 
-    registerDaylightCardHandlers(host, handler, state, sessionOwner);
+    // --------------------------------------------------------------- review
 
-    handler('setDaylight', async (payload: unknown) => {
-      const result = sanitiseResponse((payload as { response?: unknown })?.response ?? payload);
-      for (const field of result.corrected) {
-        this.log(`Corrected daylight ${field} to its default: the screen sent something unusable`);
-      }
-      state.daylight = result.response;
-
-      // Retained before `now` can mean anything: a sensor nobody is subscribed
-      // to has no reading, and the card would show the sky for a device that has
-      // just been given a sensor.
-      await this.app.luminance.retain(result.response.sensors, sessionOwner);
-
+    registerReviewHandler(host, handler, async () => {
+      const summary = await resolveSummary(this.app.catalog, state.target!);
       return {
-        response: result.response,
-        corrected: result.corrected,
-        now: this.app.daylight.evaluate(result.response),
-        sensorReadings: this.app.daylight.sensors(),
+        stepIndex: 3,
+        stepCount: 3,
+        rows: [
+          {
+            labelKey: 'review.lights',
+            value: await this.lightsSummary(state.target!, summary),
+            view: 'lights',
+          },
+          {
+            labelKey: 'review.timeBlocks',
+            value: String(state.entries.length),
+            view: 'blocks',
+          },
+          {
+            labelKey: 'review.onTheseDays',
+            value: daysLabel(state.days),
+            view: 'blocks',
+          },
+        ],
+        promiseKey: 'review.promiseSchedule',
+        promiseTokens: { count: summary.count },
       };
     });
-
-    // ----------------------------------------------------------------- save
 
     registerSaveHandler(host, handler, state, {
       device,
@@ -188,7 +243,28 @@ module.exports = class ScheduleDriver extends Homey.Driver {
       buildPlan: () => this.buildPlan(state),
     });
 
-    releaseOnDisconnect(host, session, sessionOwner);
+  }
+
+  /**
+   * What the lights row reads back — and WHICH of the two shapes it stored.
+   *
+   * "Everything in Kitchen" and "4 picked" behave differently the next time
+   * somebody adds a lamp to that room, and this line is the only place that
+   * difference is ever visible. `lights.html` deliberately does not show it:
+   * making the picker explain its own storage would be a control nobody asked
+   * for, on the screen least able to afford one.
+   */
+  private async lightsSummary(
+    target: TargetSpec,
+    summary: { count: number },
+  ): Promise<string> {
+    const host = this.pairHost();
+    if (target.kind === 'zone') {
+      const zones = await this.app.catalog.allZones();
+      const zone = zones.find((candidate: { id: string }) => candidate.id === target.zoneId);
+      return host.translate('review.wholeRoom', { room: zone?.name ?? '?' });
+    }
+    return host.translate('review.someLights', { count: summary.count });
   }
 
   private timezone(): string | null {
@@ -204,9 +280,7 @@ module.exports = class ScheduleDriver extends Homey.Driver {
       enabled: true,
       target: state.target,
       entries: state.entries,
-      // Absent stays absent: `undefined` is "this device has no response", and
-      // the validator refuses a window that follows the daylight without one.
-      ...(state.daylight !== undefined ? { daylight: state.daylight } : {}),
+      days: state.days,
       managedFlows: [],
     };
   }

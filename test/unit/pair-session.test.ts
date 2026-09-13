@@ -6,7 +6,6 @@ import {
   newSessionOwner,
   registerCredentialHandlers,
   registerCurvePreviewHandlers,
-  registerDaylightCardHandlers,
   registerSaveHandler,
   registerTargetHandlers,
   releaseOnDisconnect,
@@ -14,7 +13,6 @@ import {
   type PairSessionHost,
   type SharedSessionState,
 } from '../../lib/pairing/pair-session';
-import { DEFAULT_RESPONSE, MAX_LUX, MIN_LUX } from '../../lib/daylight/daylight-types';
 
 /**
  * The pairing-session mechanics, tested for the first time.
@@ -304,137 +302,16 @@ describe('the light-picker handlers', () => {
   });
 });
 
-describe('the shared daylight card handlers', () => {
-  test('getDaylight reports standalone: false on a driver that owns the screen', async () => {
-    // TRUE only on the Daylight light, whose screen IS the card and which
-    // therefore keeps its own handler. Here the card is a section of somebody
-    // else's screen, and that screen owns the Save and the Test.
-    const { host, handler, call } = rig();
-    const state: SharedSessionState = {};
-
-    registerDaylightCardHandlers(host, handler, state, 'pair-abc');
-    const payload = await call('getDaylight') as {
-      standalone: boolean; limits: { minLux: number; maxLux: number }; response: unknown;
-    };
-
-    assert.equal(payload.standalone, false);
-    assert.deepEqual(payload.limits, { minLux: MIN_LUX, maxLux: MAX_LUX });
-    assert.deepEqual(payload.response, DEFAULT_RESPONSE);
-  });
-
-  test('setDaylight retains the chosen sensors BEFORE reporting a reading', async () => {
-    // Ordering is the point: a sensor nobody is subscribed to has no reading,
-    // so evaluating first would show the sky for a device just given a sensor.
-    const { host, recorded, handler, call } = rig();
-    const state: SharedSessionState = {};
-
-    registerDaylightCardHandlers(host, handler, state, 'pair-abc');
-    await call('setDaylight', {
-      response: { sensors: ['lux-1'], darkLux: 10, brightLux: 500, dark: 0.9, bright: 0.2 },
-    });
-
-    assert.deepEqual(recorded.retained, [{ sensors: ['lux-1'], owner: 'pair-abc' }]);
-    assert.deepEqual(state.daylight?.sensors, ['lux-1']);
-  });
-
-  /**
-   * A sensor id is checked for MEMBERSHIP, not only for shape.
-   *
-   * `listSensors` offers only devices with `measure_luminance`, so a working
-   * screen cannot send anything else — but a pair session IS a Web API surface
-   * and can be scripted (platform §14), and a card left open across a device
-   * deletion sends ids that no longer exist. Neither is malicious and neither
-   * throws: a lamp id accepted as a sensor is subscribed to, never reports a
-   * lux value, and the device runs on the sky for ever while the settings page
-   * lists a sensor that will never have a reading. Quiet is the problem.
-   */
-  test('a lamp id sent as a sensor is refused', async () => {
-    const { host, recorded, handler, call } = rig();
-    const state: SharedSessionState = {};
-
-    registerDaylightCardHandlers(host, handler, state, 'pair-abc');
-    await assert.rejects(
-      call('setDaylight', {
-        response: { sensors: ['lamp-1'], darkLux: 10, brightLux: 500, dark: 0.9, bright: 0.2 },
-      }),
-      /cannot report how light it is/,
-    );
-
-    assert.deepEqual(recorded.retained, [], 'a lamp must never be subscribed to as a sensor');
-    assert.equal(state.daylight, undefined, 'and it must not reach the session state');
-  });
-
-  test('a sensor that is not on this Homey at all is refused', async () => {
-    const { host, recorded, handler, call } = rig();
-    const state: SharedSessionState = {};
-
-    registerDaylightCardHandlers(host, handler, state, 'pair-abc');
-    await assert.rejects(
-      call('setDaylight', {
-        response: { sensors: ['deleted-1'], darkLux: 10, brightLux: 500, dark: 0.9, bright: 0.2 },
-      }),
-      /cannot report how light it is/,
-    );
-
-    assert.deepEqual(recorded.retained, []);
-  });
-
-  test('the same sensor twice is DROPPED rather than refused', async () => {
-    // Dedupe belongs to `sanitiseResponse`, not to the membership check: a
-    // duplicate is a screen bug rather than a claim about this Homey, so it is
-    // corrected instead of failing the whole save. It matters — the lux service
-    // is ref-counted per owner, so a sensor named twice would be retained twice
-    // and released once, leaving a subscription alive after the session ends.
-    const { host, recorded, handler, call } = rig();
-    const state: SharedSessionState = {};
-
-    registerDaylightCardHandlers(host, handler, state, 'pair-abc');
-    const result = await call('setDaylight', {
-      response: { sensors: ['lux-1', 'lux-1'], darkLux: 10, brightLux: 500, dark: 0.9, bright: 0.2 },
-    }) as { response: { sensors: string[] }; corrected: string[] };
-
-    assert.deepEqual(result.response.sensors, ['lux-1']);
-    assert.ok(result.corrected.includes('sensors'), 'the correction must be reported');
-    assert.deepEqual(recorded.retained, [{ sensors: ['lux-1'], owner: 'pair-abc' }]);
-  });
-
-  test('and NO sensors is valid, because that means use the sun', async () => {
-    const { host, handler, call } = rig();
-    const state: SharedSessionState = {};
-
-    registerDaylightCardHandlers(host, handler, state, 'pair-abc');
-    const result = await call('setDaylight', {
-      response: { sensors: [], darkLux: 10, brightLux: 500, dark: 0.9, bright: 0.2 },
-    }) as { response: { sensors: string[] } };
-
-    assert.deepEqual(result.response.sensors, []);
-    assert.deepEqual(state.daylight?.sensors, []);
-  });
-
-  test('a response the screen could not have sent is corrected, and said so', async () => {
-    const { host, recorded, handler, call } = rig();
-    const state: SharedSessionState = {};
-
-    registerDaylightCardHandlers(host, handler, state, 'pair-abc');
-    const result = await call('setDaylight', {
-      response: { sensors: ['lux-1'], darkLux: 'nonsense', brightLux: 500, dark: 0.9, bright: 0.2 },
-    }) as { corrected: string[] };
-
-    assert.ok(result.corrected.length > 0);
-    assert.ok(recorded.logs.some(l => /Corrected daylight/.test(l)));
-  });
-
-  test('listSensors offers the lux sensors and no lamps', async () => {
-    const { host, handler, call } = rig();
-    const state: SharedSessionState = {};
-
-    registerDaylightCardHandlers(host, handler, state, 'pair-abc');
-    const payload = JSON.stringify(await call('listSensors'));
-
-    assert.match(payload, /lux-1/);
-    assert.doesNotMatch(payload, /lamp-1/);
-  });
-});
+/**
+ * `registerDaylightCardHandlers` is gone, and with it this block.
+ *
+ * The shared daylight card was the "follow the daylight" section spliced into a
+ * schedule, a circadian light and a Curve light. The pairing rewrite removed
+ * `fromDaylight` from all three stores — brightness from the room is what a
+ * Daylight light is for — so the card, its three handlers and the four-way
+ * splice went with it. The Daylight light's own screen keeps its handlers, and
+ * they live in its own driver.
+ */
 
 describe('the credential handlers', () => {
   test('nextView is the driver\'s, because the view cannot know', async () => {

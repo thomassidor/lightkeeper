@@ -50,14 +50,20 @@ npm run sync:views:check       # what sync WOULD copy; writes nothing, exits 1 o
 ```
 
 **Edit `views/shared/` for anything that appears in more than one view** — the CSS base, `emit()`,
-or the daylight card — then run `sync:views`. Those blocks are spliced into every pair view, with
-`#ROOT` replaced by each view's own root id, so editing a view directly is overwritten on the next
-sync. `views/shared/` lives outside `drivers/` because the CLI treats every directory in there as a
+or the week grid — then run `sync:views`. Those blocks are spliced into their carriers with `#ROOT`
+replaced by each view's own root id, so editing a view directly is overwritten on the next sync.
+Two conventions in those source files, both learned by breaking them: the delimited CSS carries no
+leading indentation, and a function source starts at `function` with no docblock above it.
+`views/shared/` lives outside `drivers/` because the CLI treats every directory in there as a
 driver, and `.homeyignore` keeps it out of the app archive.
 
+Four whole views are shared too — `intro.html`, `lights.html`, `review.html` and `credential.html`
+— and they are copied from the CONTROLLER into every other driver that declares them. They stay
+driver-agnostic because the driver supplies the content and the next view in its reply, never the
+view.
+
 Edit a view under `drivers/*/pair/`, then run `sync:views` — **nothing runs it for you**, and
-`npm test` fails on drift. Edit the *controller's* copy of a shared view, never the schedule's or a
-light's. Every `repair/` folder is byte copies of its `pair/` because Homey needs a real file in
+`npm test` fails on drift. Edit the *controller's* copy of a shared view, never another driver's. Every `repair/` folder is byte copies of its `pair/` because Homey needs a real file in
 each place and will not follow a reference
 ([platform §8](homey-platform.md#8-repair-views-live-in-their-own-folder-and-validation-cannot-tell-you)).
 
@@ -74,6 +80,11 @@ npm run render:icons                                   # every icon at the App S
 node scripts/render-icons.mjs --open
 node scripts/render-icons.mjs --reference <url-to-a-published-icon.svg>
 ```
+
+`.views/index.html` is grouped by driver and, within a driver, follows the order that driver's own
+`driver.compose.json` puts its `pair` steps in — so the sheet reads as five flows from step 1 rather
+than as thirteen files in whatever order their names sorted. Each card is captured at its screen's
+own height, which is why a long screen is long and a short one is not padded with white.
 
 Both need headless Chrome — the house rasteriser, nothing to install — and write to `.views/`
 (`.views/icons/` for icons), which is gitignored. 24px of ink in a 40px circle is
@@ -262,6 +273,18 @@ and a bulb switched off at the wall look identical. Findings already emitted for
 `inconclusive`, and rejected writes are kept out of the ack latencies (their durations go to
 `latency.<capability>.failed`, which is time-to-error and worth its own number). The first full run
 is why: one unreachable Hue bulb produced both criticals and two of the three highs.
+
+**A device that refuses to be switched off is never switched on.** `PROBE_ONE_WAY_POWER`, and it is
+the only finding here about the RUN rather than about a lamp. A Synology NAS answered the off write
+with `Device is always-on`, was switched on one step later for the echo measurement, and then refused
+both writes that would have put it back — a one-way change to somebody's house, with the evidence
+that it could not be undone arriving one write earlier. The guard lives in the single function every
+write goes through, so a new step cannot forget it.
+
+**The restore writes brightness LAST.** On a lamp found off the snapshot's `dim` is 0, and a Hue
+treats a `dim` of 0 as soft off: written first, it made the bridge refuse every colour and
+temperature write behind it, and two bulbs ended a run in the wrong colour. The axis that can gate
+the others goes after them.
 
 **A stopped run says so, in the report.** `stopped` names the reason and how far it got, each lamp
 carries `probed`, and the per-integration rollup counts probed lamps rather than selected ones. A

@@ -1,9 +1,6 @@
-import { RANGE_EXPANSION_CEILING } from '../inputs/selectable-input';
 import { CURRENT_SCHEMA_VERSION, type ControllerProfile } from './controller-profile';
-import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
 import { runMigrationChain, type MigrationResult, type MigrationStep } from '../support/migrations';
 import { validateControllerProfile } from '../validation/plans';
-import { isRecord } from '../validation/guards';
 
 /**
  * Every profile carries schemaVersion and migrates
@@ -19,6 +16,18 @@ import { isRecord } from '../validation/guards';
  * What the shared runner adds is the validator at the end. A migration chain
  * ending in a cast is a chain ending in a hope: persisted data is JSON in a
  * device store, and the code downstream reads it without asking.
+ *
+ * **The table is empty, and that is a deliberate reset rather than an omission.**
+ * The pairing rewrite changed this stored shape in ways no honest step could
+ * carry an old plan across. Nothing had shipped, so the installed base was one
+ * Homey and its owner chose the clean slate over a migration inventing values
+ * nobody had chosen.
+ *
+ * A device carrying an older plan needs no step here — that case is already
+ * built: `runMigrationChain` refuses a `schemaVersion` higher than it knows and
+ * `DeviceLifecycle` quarantines the device with its store untouched, so it comes
+ * up unavailable with a reason rather than running on a plan nobody can vouch
+ * for. Delete it and add it again.
  */
 
 export type Migration = MigrationStep;
@@ -27,103 +36,8 @@ export type Migration = MigrationStep;
  * Keyed by the version being migrated FROM. Add a new entry, never edit an
  * existing one — an installed base is already carrying the old shape.
  */
-const MIGRATIONS: Record<number, Migration> = {
-  // 0 → 1: profiles written before schemaVersion existed. Fill in the defaults
-  // that later code assumes are present.
-  0: profile => ({
-    ...profile,
-    schemaVersion: 1,
-    enabled: profile.enabled ?? true,
-    behavior: { ...DEFAULT_BEHAVIOR, ...(profile.behavior ?? {}) },
-    managedFlows: profile.managedFlows ?? [],
-    mappings: profile.mappings ?? [],
-  }),
-
-  /**
-   * 1 → 2: the binding shape becomes canonical.
-   *
-   * Two changes, both in `catalogue[].binding`, which is where the persisted
-   * bindings live:
-   *
-   *  - `args` becomes `fixedArgs`, and every kind has it. `flow_range` never had
-   *    anywhere to put a selector or a direction, so its compiled flows set only
-   *    the magnitude and fired on every control of the remote.
-   *  - `flow_range`'s `valueRange: [from, to]` becomes `values: number[]`, the
-   *    card's exact set. A contiguous integer range expands to the same values it
-   *    always did, so the compiled `range:<value>` variant keys are unchanged and
-   *    no installed controller's Flows churn. A sparse set stored by an older
-   *    version was already producing flows for values the card never accepted —
-   *    those legitimately change, and Phase 1's replacement machinery swaps them.
-   *
-   * `values` is derived from the stored endpoints rather than from the live card
-   * on purpose: a migration must be a pure function of what is on disk. The next
-   * discovery pass reads the card and corrects a sparse set; the fingerprint
-   * check is what notices it moved.
-   */
-  1: profile => ({
-    ...profile,
-    schemaVersion: 2,
-    catalogue: Array.isArray(profile.catalogue)
-      ? (profile.catalogue as Array<Record<string, unknown>>).map(migrateCatalogueEntry)
-      : profile.catalogue,
-  }),
-};
-
-function migrateCatalogueEntry(entry: Record<string, unknown>): Record<string, unknown> {
-  const binding = entry?.binding;
-  if (!binding || typeof binding !== 'object') return entry;
-  return { ...entry, binding: migrateBinding(binding as Record<string, unknown>) };
-}
-
-function migrateBinding(binding: Record<string, unknown>): Record<string, unknown> {
-  // `direct_capability` has no trigger arguments at all and is left alone.
-  if (binding.kind === 'direct_capability') return binding;
-
-  const { args, valueRange, ...rest } = binding;
-  const fixedArgs = isRecord(binding.fixedArgs)
-    ? binding.fixedArgs
-    : (isRecord(args) ? args : {});
-
-  const migrated: Record<string, unknown> = { ...rest, fixedArgs };
-
-  if (binding.kind === 'flow_range' && !Array.isArray(binding.values)) {
-    migrated.values = expandStoredRange(valueRange);
-  }
-
-  return migrated;
-}
-
-/**
- * A stored `[from, to]` becomes the integers it always expanded to.
- *
- * A pair that is not two finite numbers becomes an empty list rather than a
- * guess: `compileRange` refuses an empty one through `InvalidRangeError`, which
- * marks the control unsupported and names it — far better than a control that
- * looks configured and compiles to nothing.
- *
- * A pair WIDER than the ceiling gets the same treatment, and for a stronger
- * reason. The ceiling is applied downstream, by `compileRange`, so this loop
- * used to build the whole span first: a hand-edited or corrupted v1 profile
- * saying `[0, 1e9]` allocated a billion-element array inside `onInit`, which
- * does not fail — it hangs the device's startup and takes the memory with it.
- * Real v1 profiles were twelve values or fewer, so nothing legitimate is
- * refused, and refusing loudly is exactly what the paragraph above argues for.
- */
-function expandStoredRange(valueRange: unknown): number[] {
-  if (!Array.isArray(valueRange) || valueRange.length !== 2) return [];
-  const [from, to] = valueRange.map(Number);
-  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return [];
-
-  const first = Math.round(from);
-  const last = Math.round(to);
-  // BEFORE the loop, never after it: the array is the cost, not the check.
-  if (last - first + 1 > RANGE_EXPANSION_CEILING) return [];
-
-  const values: number[] = [];
-  for (let value = first; value <= last; value += 1) values.push(value);
-  return values;
-}
-
+/** Keyed by the version being migrated FROM. Empty: see the header. */
+const MIGRATIONS: Record<number, Migration> = {};
 
 export function migrateProfile(raw: unknown): MigrationResult<ControllerProfile> {
   return runMigrationChain(raw, {

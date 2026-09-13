@@ -18,7 +18,27 @@ export type LightIntent =
    * nobody chose. `light_mode` is written alongside them because a lamp sitting
    * in temperature mode ignores a hue it is given — see planColor().
    */
-  | { type: 'color_absolute'; hue: number; saturation: number };
+  | { type: 'color_absolute'; hue: number; saturation: number }
+  /**
+   * A brightness, and optionally a warmth, in one gesture.
+   *
+   * The intent behind a button whose job is "make it cosy". Compound rather than
+   * two intents, because the mapping engine resolves one gesture to one intent
+   * and the two writes have to reach the queue together — a brightness that
+   * landed and a warmth that did not is a room nobody asked for.
+   */
+  | { type: 'preset_absolute'; brightness: number; temperature?: number }
+  /**
+   * One step along the warmth axis, wrapping at the top.
+   *
+   * The gesture a one-button remote gets instead of a warmer and a cooler
+   * button. It is not a `temperature_delta`: a delta clamps at the ends, so a
+   * button that only ever warms would stop working the first time it reached
+   * the top and never come back. Planned per device against what each lamp is
+   * currently showing, which is why it is an intent rather than a delta the
+   * mapping engine could have produced.
+   */
+  | { type: 'temperature_cycle' };
 
 /** Which capability an intent needs. Drives the partial-support disclosure. */
 export function requiredCapability(intent: LightIntent): 'onoff' | 'dim' | 'light_temperature' | 'light_hue' {
@@ -28,9 +48,14 @@ export function requiredCapability(intent: LightIntent): 'onoff' | 'dim' | 'ligh
       return 'onoff';
     case 'brightness_delta':
     case 'brightness_absolute':
+    // Dim, not light_temperature: the brightness is the half that is always
+    // present, and a lamp that can dim but not change colour should still get
+    // the brightness a preset asks for rather than being skipped entirely.
+    case 'preset_absolute':
       return 'dim';
     case 'temperature_delta':
     case 'temperature_absolute':
+    case 'temperature_cycle':
       return 'light_temperature';
     /**
      * Hue, not saturation and not `light_mode`.
@@ -73,33 +98,6 @@ const GAMMA = 2.2;
  */
 export const MINIMUM_BRIGHTNESS = 0.1;
 
-/**
- * One stored thing that may carry a brightness — a curve point, a schedule
- * window, one end of a circadian day — with that brightness brought up to
- * MINIMUM_BRIGHTNESS.
- *
- * It lives beside the constant so the floor and the act of applying it cannot
- * drift apart, and it is shared by all four migration chains. Those chains stay
- * separate on purpose; a helper they all call is not a chain.
- *
- * Takes `unknown` and hands back `unknown` because a migration step runs BEFORE
- * the chain's validator — the whole point of the chain is that the stored shape
- * has not been checked yet, so anything that is not an object with a positive
- * numeric brightness is passed through untouched for the validator to judge.
- *
- * A brightness of 0 is passed through, not lifted: every plan shape treats it as
- * unset rather than as "on, at nothing", and lifting it would be inventing a
- * brightness for a plan that has none.
- */
-export function withFlooredBrightness(entry: unknown): unknown {
-  if (entry === null || typeof entry !== 'object') return entry;
-
-  const brightness = (entry as { brightness?: unknown }).brightness;
-  if (typeof brightness !== 'number' || brightness <= 0) return entry;
-  if (brightness >= MINIMUM_BRIGHTNESS) return entry;
-
-  return { ...entry, brightness: MINIMUM_BRIGHTNESS };
-}
 
 /** Device value → perceptual position. */
 export function toPerceptual(value: number): number {

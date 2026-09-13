@@ -33,6 +33,22 @@ const HomeyAPI = require('homey-api/lib/HomeyAPI/HomeyAPI');
  * credential verdict, and a second line about a manager would send the reader
  * to the wrong place.
  */
+/**
+ * Which managers the app-token client connects.
+ *
+ * `insights` is the newest and the only one that is not load-bearing: it serves
+ * the week of readings a Daylight light's pairing screen draws behind its two
+ * lux thresholds, which is what stops `brightLux = 500` being asked of an
+ * interior room (platform §16). `connectManagers` treats a manager that will not
+ * connect as degraded rather than fatal, and `readSensorWeek` answers `null`
+ * rather than throwing, so a Homey that refuses this read loses the week and
+ * keeps the app.
+ *
+ * There is no `homey:manager:insights` to declare — `homey:manager:api`, which
+ * the app already holds, is the only API permission that exists (platform §1).
+ */
+const READ_MANAGERS = ['devices', 'zones', 'flow', 'flowtoken', 'insights'];
+
 async function connectManagers(
   api: any,
   names: string[],
@@ -100,7 +116,7 @@ export class HomeyApiService {
       const api = await this.createAppApi();
       // A manager that will not connect is degraded, not fatal — say so and
       // carry on with the ones that did.
-      await connectManagers(api, ['devices', 'zones', 'flow', 'flowtoken'], (name, error) => {
+      await connectManagers(api, READ_MANAGERS, (name, error) => {
         this.homey?.app?.error?.(`Could not connect manager "${name}":`, messageOf(error));
       });
       if (generation !== this.generation || this.stopped) {

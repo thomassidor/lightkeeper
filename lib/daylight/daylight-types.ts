@@ -35,8 +35,15 @@ import type { TargetSpec } from '../outputs/light-intent';
  */
 export const LUMINANCE_CAPABILITY = 'measure_luminance';
 
-/** Eight sensors is more than a room has; the cap is there so a corrupt store cannot loop. */
-export const MAX_SENSORS = 8;
+/**
+ * How far below and above the horizon the two sun ends may sit.
+ *
+ * −18° is astronomical twilight, the darkest the sky gets; +60° is higher than
+ * the sun reaches anywhere a Homey is sold. Wide enough that nobody meets the
+ * edge, narrow enough that a corrupt store cannot produce a ramp with no span.
+ */
+export const MIN_ELEVATION = -18;
+export const MAX_ELEVATION = 60;
 /** Lux is a physical quantity with no upper bound in homey-lib (platform §16), so we pick one. */
 export const MIN_LUX = 0.1;
 export const MAX_LUX = 100_000;
@@ -59,14 +66,20 @@ export const MAX_LUX = 100_000;
  * across it gets its light in the afternoon, and "afternoon" is then the true
  * answer even though the compass says east.
  *
- * `'none'` is the default and means "do not model this at all" — the elevation
- * ramp alone, exactly as before this existed. It is what an installed device
- * migrates to and what anybody who skips the question gets.
+ * `'flat'` is the fourth answer and the default: a room that gets hardly any
+ * direct sun. It is not "do not model this" — a room with no direct sun still
+ * brightens and darkens with the day, just less — so it takes the diffuse share
+ * flat rather than a full cosine, which keeps its curve shallow instead of
+ * making it disappear.
+ *
+ * The question is asked ONLY when no sensor is picked. A sensor measures this
+ * room already and needs no model of it, which is why `resolveLevel` never
+ * consults this on the sensor path.
  */
-export type SunPeak = 'none' | 'morning' | 'midday' | 'afternoon';
+export type SunPeak = 'morning' | 'midday' | 'afternoon' | 'flat';
 
 /** Every value the screen may offer, in the order it offers them. */
-export const SUN_PEAKS: readonly SunPeak[] = ['none', 'morning', 'midday', 'afternoon'];
+export const SUN_PEAKS: readonly SunPeak[] = ['morning', 'midday', 'afternoon', 'flat'];
 
 export function isSunPeak(value: unknown): value is SunPeak {
   return typeof value === 'string' && (SUN_PEAKS as readonly string[]).includes(value);
@@ -74,10 +87,15 @@ export function isSunPeak(value: unknown): value is SunPeak {
 
 export interface DaylightResponse {
   /**
-   * `measure_luminance` devices, by id. Empty means the sun alone, which is a
-   * complete answer — most households own no lux sensor at all.
+   * The `measure_luminance` device to read, or `null` for the sun alone.
+   *
+   * ONE sensor, not a list. It used to be a list averaged into a mean, which was
+   * a power-user answer to a question most homes do not have: a room has the
+   * sensor it has. `null` is not a failure state — it is the sun, which is a
+   * complete answer and the one most households get, since most own no lux
+   * sensor at all.
    */
-  sensors: string[];
+  sensor: string | null;
   /** At and below this many lux it counts as fully dark outside. */
   darkLux: number;
   /** At and above this many lux, fully bright. Must be above `darkLux`. */
@@ -86,6 +104,17 @@ export interface DaylightResponse {
   dark: number;
   /** Perceptual brightness 0–1 when it is fully bright outside. */
   bright: number;
+  /**
+   * The sun elevations the two ends sit at, in degrees, when there is no sensor.
+   *
+   * Stored per device rather than the constants they used to be, for exactly the
+   * reason `brightLux = 500` could not be one number for every room
+   * (platform §16): a north-facing room and a west-facing one do not share a sun.
+   * The screen steps them and labels each with the clock time it happens today,
+   * because "sunset +30m" is a thing somebody can picture and "−3.4°" is not.
+   */
+  darkElevation: number;
+  brightElevation: number;
   /**
    * When this room gets the most sun. See `SunPeak`.
    *
@@ -112,14 +141,20 @@ export interface DaylightPlan {
  * inventory --all` is how they get checked against real sensors.
  */
 export const DEFAULT_RESPONSE: DaylightResponse = {
-  sensors: [],
+  sensor: null,
   darkLux: 5,
   brightLux: 500,
   dark: 0.9,
   bright: 0.25,
-  // Model nothing until asked: an installed device and a skipped question both
-  // land here, and both behave exactly as they did before this field existed.
-  sunPeak: 'none',
+  // Civil twilight, and a middling northern-European summer noon. Defaults
+  // rather than constants now: the screen pre-fills them from today's own sun
+  // path, the same way it pre-fills the two lux numbers from the sensor's week.
+  darkElevation: -6,
+  brightElevation: 25,
+  // The shallow answer, which is the safe one to assume of a room nobody has
+  // told us about: it models a little rather than nothing and rather than a full
+  // south-facing cosine.
+  sunPeak: 'flat',
 };
 
 export interface SanitisedResponse {
@@ -143,26 +178,14 @@ export function sanitiseResponse(raw: unknown): SanitisedResponse {
   const corrected: string[] = [];
   const source = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
 
-  const sensors: string[] = [];
-  const list = Array.isArray(source.sensors) ? source.sensors : [];
-  if (!Array.isArray(source.sensors) && source.sensors !== undefined) corrected.push('sensors');
-  for (const candidate of list) {
-    if (sensors.length >= MAX_SENSORS) {
-      corrected.push('sensors');
-      break;
-    }
-    if (typeof candidate !== 'string' || candidate.trim() === '') {
-      corrected.push('sensors');
-      continue;
-    }
-    const id = candidate.trim();
-    // A sensor named twice would be counted twice in the mean, which is a
-    // weighting nobody asked for.
-    if (sensors.includes(id)) {
-      corrected.push('sensors');
-      continue;
-    }
-    sensors.push(id);
+  // One sensor or none. Anything unusable — a non-string, an empty string, a
+  // leftover array from a store written by an older shape — is "no sensor",
+  // which is the sun, which is a complete answer rather than a failure.
+  let sensor: string | null = null;
+  if (typeof source.sensor === 'string' && source.sensor.trim() !== '') {
+    sensor = source.sensor.trim();
+  } else if (source.sensor !== undefined && source.sensor !== null) {
+    corrected.push('sensor');
   }
 
   let darkLux = sanitiseLux(source.darkLux);
@@ -186,6 +209,24 @@ export function sanitiseResponse(raw: unknown): SanitisedResponse {
   const dark = sanitiseEnd(source.dark, DEFAULT_RESPONSE.dark, 'dark', corrected);
   const bright = sanitiseEnd(source.bright, DEFAULT_RESPONSE.bright, 'bright', corrected);
 
+  let darkElevation = sanitiseElevation(source.darkElevation);
+  let brightElevation = sanitiseElevation(source.brightElevation);
+  if (darkElevation === null) {
+    darkElevation = DEFAULT_RESPONSE.darkElevation;
+    corrected.push('darkElevation');
+  }
+  if (brightElevation === null) {
+    brightElevation = DEFAULT_RESPONSE.brightElevation;
+    corrected.push('brightElevation');
+  }
+  // The same zero-width-span refusal the lux pair gets, and for the same reason:
+  // a ramp with no span is a division by zero dressed up as a preference.
+  if (brightElevation <= darkElevation) {
+    darkElevation = DEFAULT_RESPONSE.darkElevation;
+    brightElevation = DEFAULT_RESPONSE.brightElevation;
+    corrected.push('brightElevation');
+  }
+
   // Anything that is not one of the four is 'none' rather than a rejection: a
   // screen cannot send a fifth, so a fifth means a hand-edited store, and
    // modelling nothing is the safe reading of it.
@@ -195,7 +236,10 @@ export function sanitiseResponse(raw: unknown): SanitisedResponse {
     else corrected.push('sunPeak');
   }
 
-  return { response: { sensors, darkLux, brightLux, dark, bright, sunPeak }, corrected };
+  return {
+    response: { sensor, darkLux, brightLux, dark, bright, darkElevation, brightElevation, sunPeak },
+    corrected,
+  };
 }
 
 /**
@@ -225,6 +269,14 @@ function sanitiseEnd(
     return MINIMUM_BRIGHTNESS;
   }
   return value;
+}
+
+function sanitiseElevation(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === '') return null;
+  if (typeof raw !== 'number' && typeof raw !== 'string') return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return null;
+  return Math.min(MAX_ELEVATION, Math.max(MIN_ELEVATION, value));
 }
 
 function sanitiseLux(raw: unknown): number | null {

@@ -9,11 +9,12 @@ import { DEFAULT_BEHAVIOR, type LightFunction, type MappingRule } from '../../li
 
 /** Every member, so an added one fails this file rather than passing quietly. */
 const LIGHT_FUNCTIONS: readonly LightFunction[] = [
-  'toggle', 'on', 'off', 'brightness_up', 'brightness_down', 'warmer', 'colder',
+  'toggle', 'on', 'off',
+  'brightness_up', 'brightness_down', 'brightness_set',
+  'warmer', 'colder', 'temperature_cycle',
 ];
 import { TargetStateCache } from '../../lib/outputs/target-state-cache';
-import { migrateProfile } from '../../lib/profiles/migrations';
-import { CURRENT_SCHEMA_VERSION, dedupeByInputKey } from '../../lib/profiles/controller-profile';
+import { dedupeByInputKey } from '../../lib/profiles/controller-profile';
 import type { InputEvent } from '../../lib/inputs/input-event';
 
 const rule = (over: Partial<MappingRule>): MappingRule => ({
@@ -107,8 +108,11 @@ describe('available functions', () => {
   test('offers only what the targets support', () => {
     assert.deepEqual(availableFunctions({ onoff: 3, dim: 0, light_temperature: 0 }),
       ['toggle', 'on', 'off']);
-    assert.deepEqual(availableFunctions({ onoff: 3, dim: 3, light_temperature: 2 }),
-      ['toggle', 'on', 'off', 'brightness_up', 'brightness_down', 'warmer', 'colder']);
+    assert.deepEqual(availableFunctions({ onoff: 3, dim: 3, light_temperature: 2 }), [
+      'toggle', 'on', 'off',
+      'brightness_up', 'brightness_down', 'brightness_set',
+      'warmer', 'colder', 'temperature_cycle',
+    ]);
   });
 
   test('partial support still offers the function — hiding makes the app look broken', () => {
@@ -173,62 +177,6 @@ describe('target state cache', () => {
   });
 });
 
-describe('migrations', () => {
-  test('a pre-versioning profile migrates without data loss', () => {
-    const legacy = {
-      enabled: true,
-      source: { deviceId: 'src', eventSurfaceFingerprint: 'fp' },
-      target: { kind: 'devices', deviceIds: ['a', 'b'] },
-      mappings: [{ id: 'r1', function: 'toggle', inputKey: 'k1', target: null }],
-    };
-
-    const { plan: profile, migrated, fromVersion } = migrateProfile(legacy);
-
-    assert.equal(migrated, true);
-    assert.equal(fromVersion, 0);
-    assert.equal(profile.schemaVersion, CURRENT_SCHEMA_VERSION);
-    assert.deepEqual(profile.mappings, legacy.mappings, 'mappings must survive intact');
-    assert.deepEqual(profile.target, legacy.target, 'targets must survive intact');
-    assert.equal(profile.behavior.supersedeMs, 250, 'defaults are filled in');
-  });
-
-  test('a current profile is left alone', () => {
-    // A COMPLETE profile. The chain now ends in a validator rather than a cast,
-    // so a partial one is refused — which is the next test.
-    const current = {
-      schemaVersion: CURRENT_SCHEMA_VERSION,
-      enabled: true,
-      source: { deviceId: 'src', eventSurfaceFingerprint: 'fp' },
-      target: { kind: 'devices', deviceIds: ['a'] },
-      mappings: [],
-      behavior: { ...DEFAULT_BEHAVIOR },
-      managedFlows: [],
-    };
-    const { migrated } = migrateProfile(current);
-
-    assert.equal(migrated, false);
-  });
-
-  test('a profile that survived migration but is not a profile is refused', () => {
-    // It used to reach the runtime and fail at the first target resolve, with
-    // nothing anywhere saying which field was wrong.
-    assert.throws(
-      () => migrateProfile({ schemaVersion: CURRENT_SCHEMA_VERSION, mappings: [] }),
-      /ControllerProfile\.source is not an object/,
-    );
-    assert.throws(
-      () => migrateProfile({ schemaVersion: 1.5 }),
-      /schema version is malformed/,
-    );
-  });
-
-  test('a future profile is refused rather than corrupted', () => {
-    assert.throws(
-      () => migrateProfile({ schemaVersion: CURRENT_SCHEMA_VERSION + 1 }),
-      /newer than this app understands/,
-    );
-  });
-});
 
 /**
  * One rule per gesture.

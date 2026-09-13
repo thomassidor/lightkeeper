@@ -3,7 +3,9 @@
     "en": "Daylight light"
   },
   "class": "service",
-  "capabilities": ["onoff"],
+  "capabilities": [
+    "onoff"
+  ],
   "capabilitiesOptions": {
     "onoff": {
       "title": {
@@ -11,8 +13,12 @@
       }
     }
   },
-  "platforms": ["local"],
-  "connectivity": ["lan"],
+  "platforms": [
+    "local"
+  ],
+  "connectivity": [
+    "lan"
+  ],
   "images": {
     "small": "/drivers/daylight/assets/images/small.png",
     "large": "/drivers/daylight/assets/images/large.png",
@@ -20,22 +26,84 @@
   },
   "pair": [
     {
-      "id": "targets",
-      "navigation": { "next": "daylight" }
+      "id": "intro",
+      "navigation": {
+        "next": "lights"
+      }
     },
     {
-      "id": "daylight",
-      "navigation": { "prev": "targets" }
+      "id": "lights",
+      "navigation": {
+        "prev": "intro",
+        "next": "sensor"
+      }
+    },
+    {
+      "id": "sensor",
+      "navigation": {
+        "prev": "lights",
+        "next": "response"
+      }
+    },
+    {
+      "id": "response",
+      "navigation": {
+        "prev": "sensor",
+        "next": "review"
+      }
+    },
+    {
+      "id": "review",
+      "navigation": {
+        "prev": "response"
+      }
+    },
+    {
+      "id": "sensordetail",
+      "navigation": {
+        "prev": "sensor"
+      }
     }
   ],
   "repair": [
     {
-      "id": "targets",
-      "navigation": { "next": "daylight" }
+      "id": "intro",
+      "navigation": {
+        "next": "lights"
+      }
     },
     {
-      "id": "daylight",
-      "navigation": { "prev": "targets" }
+      "id": "lights",
+      "navigation": {
+        "prev": "intro",
+        "next": "sensor"
+      }
+    },
+    {
+      "id": "sensor",
+      "navigation": {
+        "prev": "lights",
+        "next": "response"
+      }
+    },
+    {
+      "id": "response",
+      "navigation": {
+        "prev": "sensor",
+        "next": "review"
+      }
+    },
+    {
+      "id": "review",
+      "navigation": {
+        "prev": "response"
+      }
+    },
+    {
+      "id": "sensordetail",
+      "navigation": {
+        "prev": "sensor"
+      }
     }
   ]
 }

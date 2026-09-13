@@ -69,14 +69,29 @@ describe('render fixtures', () => {
      * of data for two jobs, with one shared requirement.
      */
     const FIRST_CALL: Record<string, string> = {
+      // Shared by every driver.
+      'intro.html': 'getIntro',
+      'lights.html': 'listTargets',
+      'review.html': 'getReview',
       'credential.html': 'getCredentialStatus',
-      'source.html': 'listSources',
-      'targets.html': 'listTargets',
-      'mapping.html': 'getMapping',
-      'schedule.html': 'getSchedule',
+      // Circadian.
+      'day.html': 'getDay',
+      'tryit.html': 'getPreview',
+      // Curve.
       'curve.html': 'getCurve',
-      'ends.html': 'getEnds',
-      'daylight.html': 'getDaylight',
+      // Daylight.
+      'sensor.html': 'listSensors',
+      'response.html': 'getResponse',
+      'sensordetail.html': 'getSensorDetail',
+      // Schedule.
+      'blocks.html': 'getSchedule',
+      // Controller. `remote.html` asks `checkReattach` first, but its failure is
+      // swallowed — "this is not a repair session" is the ordinary answer — so
+      // the call that has to be answered for the screen to draw is this one.
+      'remote.html': 'listSources',
+      'buttons.html': 'getButtons',
+      'job.html': 'getGesture',
+      'listen.html': 'startListening',
     };
 
     for (const file of files) {
@@ -93,50 +108,68 @@ describe('render fixtures', () => {
     /**
      * The failure this pins is a fixture that technically answers and draws an
      * empty screen — which passes every check above while making the contact
-     * sheet useless. So the screens that render LISTS must have list data.
+     * sheet useless. So the screens that render LISTS must have list data, and
+     * the ones whose whole point is a picture must have something to draw.
      */
     const replies = RENDER_REPLIES as Record<string, any>;
 
+    // The light picker, which four drivers share.
+    assert.ok(replies['lights.html'].listTargets.rooms.length >= 3,
+      'enough rooms that some are folded, because the fold is half the screen');
+    assert.ok(
+      replies['lights.html'].listTargets.rooms[0].lights.some((l: any) => l.isLight === false),
+      'and one candidate that is not a light, or the marker is never drawn',
+    );
+
+    // The circadian day: three zones and two boundaries, or there is no day.
+    const day = replies['day.html'].getDay;
+    assert.ok(day.zones.morning && day.zones.midday && day.zones.evening, 'three zones');
+    assert.ok(day.boundaries.fromSun, 'anchored to a real sun, so the marks are drawn');
+    assert.ok(day.adjustBrightness, 'brightness on, so the slider is drawn as well as the switch');
+
+    // The curve: a shape, and a colour on it.
     assert.ok(replies['curve.html'].getCurve.points.length >= 4,
       'the curve needs enough points to draw a shape');
     assert.ok(
       replies['curve.html'].getCurve.points.some((p: any) => p.color),
       'and at least one coloured point, or the one thing the Curve light adds is not on screen',
     );
-    assert.ok(replies['curve.html'].getCurve.palette.length >= 2, 'more than one colour to choose');
-
-    assert.ok(replies['schedule.html'].getSchedule.entries.length >= 2,
-      'two windows, so the list is a list');
     assert.ok(
-      replies['schedule.html'].getSchedule.entries.some((e: any) => Array.isArray(e.days)),
-      'and one with specific days, so the day chips are drawn',
+      replies['curve.html'].getCurve.palette.length
+        > replies['curve.html'].getCurve.featuredColors,
+      'more colours than are featured, or "Show more colours" has nothing behind it',
     );
 
-    assert.ok(replies['mapping.html'].getMapping.groups.length >= 2,
-      'more than one section, so the collapsed ones are visible');
-    assert.ok(replies['mapping.html'].getMapping.rules.length >= 1,
-      'and at least one rule already assigned');
+    // The schedule: more than one block, a restricted day set, and a conflict.
+    const schedule = replies['blocks.html'].getSchedule;
+    assert.ok(schedule.entries.length >= 2, 'two blocks, so the list is a list');
+    assert.ok(Array.isArray(schedule.days), 'a restricted day set, so the chips differ');
+    assert.ok(schedule.overlaps.length >= 1,
+      'and an overlap, because the outlined conflict is drawn nowhere else');
 
-    assert.ok(replies['targets.html'].listTargets.rooms.length >= 2, 'lights in two rooms');
+    // The daylight screens: sensors in two rooms, a dead one, and a real week.
+    assert.ok(replies['sensor.html'].listSensors.rooms.length >= 2, 'sensors in two rooms');
+    assert.ok(
+      replies['sensor.html'].listSensors.rooms
+        .some((r: any) => r.sensors.some((x: any) => x.available === false)),
+      'and one that is not responding, which is shown greyed rather than hidden',
+    );
+    const week = replies['response.html'].getResponse.week;
+    assert.ok(week.cells.length === 7, 'seven days');
+    assert.ok(
+      week.cells.some((row: any[]) => row.some(cell => cell === null)),
+      'with a gap in it, or the hatched cell — the whole point of the grid — is never drawn',
+    );
 
-    assert.ok(replies['daylight.html'].listSensors.rooms.length >= 2, 'sensors in two rooms');
+    // The controller: rows with jobs and rows without, and the job that carries
+    // a value.
+    assert.ok(replies['buttons.html'].getButtons.gestures.length >= 3, 'several gestures');
     assert.ok(
-      replies['daylight.html'].getDaylight.response.sensors.length >= 2,
-      'two sensors chosen, so the readout is a list rather than one line',
+      replies['buttons.html'].getButtons.gestures
+        .some((g: any) => !(g.key in replies['buttons.html'].getButtons.jobs)),
+      'and one with no job, because "Nothing" is a finished state worth drawing',
     );
-    assert.ok(
-      replies['daylight.html'].getDaylight.sensorReadings.some((r: any) => r.lux === null),
-      'and one that has never reported, or the unknown state is never drawn',
-    );
-    assert.ok(
-      replies['daylight.html'].getDaylight.sky.elevation !== null,
-      'a sun position, or the one line that proves the permission resolved is blank',
-    );
-    assert.ok(replies['source.html'].listSources.rooms.length >= 1, 'a remote to pick');
-
-    // The key screen is the exception, and deliberately: it only draws itself
-    // when there is no working key, so its fixture must NOT have one.
-    assert.equal(replies['credential.html'].getCredentialStatus.valid, false,
-      'a valid key makes the key screen skip itself, and it renders blank');
+    assert.ok(replies['job.html'].getGesture.needsPreset,
+      'the job editor opens on the one job that carries a value, or its controls never draw');
   });
 });

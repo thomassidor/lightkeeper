@@ -45,40 +45,24 @@ function degrees(radians: number): number {
   return radians / DEG;
 }
 
-/**
- * The sun's elevation above the horizon, in DEGREES. Negative below it.
- *
- * Range is −90 … +90. Callers get a number for any input in range; deciding
- * whether there IS a latitude to pass is the caller's job — see `usableLocation`
- * in lib/daylight/daylight-types.ts, which is where a Homey that has never been
- * told where it is gets refused.
- */
-export function solarElevation(latitude: number, longitude: number, atMs: number): number {
-  return solarPosition(latitude, longitude, atMs).elevation;
-}
-
-/** Where the sun is: how high, and which way round. */
-export interface SolarPosition {
-  /** Degrees above the horizon, −90 … +90. Negative below it. */
-  elevation: number;
-  /**
-   * Degrees CLOCKWISE FROM NORTH, 0 … 360. 90 is due east, 180 due south.
-   *
-   * Needed because elevation alone is symmetric about solar noon, so it cannot
-   * tell an east-facing room from a west-facing one — 08:00 and 16:00 look
-   * identical to it. Which way the sun is round is the only thing that can.
-   */
-  azimuth: number;
+/** Where the sun is on its orbit, on a given day. Shared, so it cannot drift. */
+interface OrbitalTerms {
+  /** Degrees north of the celestial equator, ±23.44 over a year. */
+  declination: number;
+  /** Minutes the real sun runs ahead of or behind the clock, up to about ±16. */
+  equationOfTime: number;
 }
 
 /**
- * Elevation AND azimuth, from one pass of the algorithm.
+ * The two terms both public functions need, from one pass of the NOAA sequence.
  *
- * One function rather than two because everything above the last four lines is
- * shared: computing them separately would run the whole NOAA sequence twice and
- * give two places for it to drift.
+ * Extracted rather than duplicated because `sunTimes` needs exactly the same
+ * declination and equation of time that `solarPosition` does, and two copies of
+ * sixty lines of trigonometry is two places for a sign error to live in only
+ * one of them — which would present as sunrise and elevation disagreeing about
+ * where the sun is, on a screen that draws both at once.
  */
-export function solarPosition(latitude: number, longitude: number, atMs: number): SolarPosition {
+function orbitalTerms(atMs: number): OrbitalTerms {
   const century = (atMs / MS_PER_DAY + JULIAN_EPOCH - JULIAN_J2000) / DAYS_PER_CENTURY;
 
   // Geometric mean longitude and mean anomaly of the sun, degrees.
@@ -118,6 +102,46 @@ export function solarPosition(latitude: number, longitude: number, atMs: number)
     - 0.5 * y * y * Math.sin(4 * radians(meanLongitude))
     - 1.25 * eccentricity * eccentricity * Math.sin(2 * radians(meanAnomaly)),
   );
+
+  return { declination, equationOfTime };
+}
+
+/**
+ * The sun's elevation above the horizon, in DEGREES. Negative below it.
+ *
+ * Range is −90 … +90. Callers get a number for any input in range; deciding
+ * whether there IS a latitude to pass is the caller's job — see `usableLocation`
+ * in lib/daylight/daylight-types.ts, which is where a Homey that has never been
+ * told where it is gets refused.
+ */
+export function solarElevation(latitude: number, longitude: number, atMs: number): number {
+  return solarPosition(latitude, longitude, atMs).elevation;
+}
+
+/** Where the sun is: how high, and which way round. */
+export interface SolarPosition {
+  /** Degrees above the horizon, −90 … +90. Negative below it. */
+  elevation: number;
+  /**
+   * Degrees CLOCKWISE FROM NORTH, 0 … 360. 90 is due east, 180 due south.
+   *
+   * Needed because elevation alone is symmetric about solar noon, so it cannot
+   * tell an east-facing room from a west-facing one — 08:00 and 16:00 look
+   * identical to it. Which way the sun is round is the only thing that can.
+   */
+  azimuth: number;
+}
+
+/**
+ * Elevation AND azimuth, from one pass of the algorithm.
+ *
+ * One function rather than two because everything above the last four lines is
+ * shared: computing them separately would run the whole NOAA sequence twice and
+ * give two places for it to drift.
+ */
+export function solarPosition(latitude: number, longitude: number, atMs: number): SolarPosition {
+  const { declination, equationOfTime } = orbitalTerms(atMs);
+
 
   // Minutes past UTC midnight, fractional. Taken off the instant directly rather
   // than through a Date's local accessors, which would put the host's timezone
@@ -159,4 +183,99 @@ export function solarPosition(latitude: number, longitude: number, atMs: number)
   }
 
   return { elevation: 90 - zenith, azimuth: (azimuth + 360) % 360 };
+}
+
+/**
+ * The altitude a sunrise is declared at, in degrees.
+ *
+ * −0.833, not 0, and this is the one place in the file where refraction IS
+ * applied. The header explains why it is left out of `solarElevation`: the
+ * elevation ramp's dark end is civil twilight at −6°, and half a degree against
+ * six is noise. A sunrise TIME is the opposite case. It is a clock time shown to
+ * a person on a screen, next to the one their weather app shows, and the
+ * geometric horizon puts it three to four minutes out — visibly wrong, for no
+ * gain. The figure is the standard one: 34 arcminutes of refraction plus the
+ * sun's own 16-arcminute radius, because sunrise is the first limb, not the
+ * centre.
+ */
+const SUNRISE_ALTITUDE = -0.833;
+
+/** When the sun rises, sets and is highest, for one day at one place. */
+export interface SunTimes {
+  /** When the sun is due south (or north). Defined every day, everywhere. */
+  solarNoonMs: number;
+  /**
+   * When the sun crosses `SUNRISE_ALTITUDE`, or `null` inside a polar day or
+   * night where it never does.
+   *
+   * Null is not an error and must not be treated as one: above the Arctic
+   * Circle it is the correct answer for weeks at a time, and a circadian light
+   * there needs the fixed-clock fallback rather than a refusal to run.
+   */
+  sunriseMs: number | null;
+  sunsetMs: number | null;
+  /**
+   * Which polar case `null` means: the sun never set, or never rose.
+   *
+   * Only meaningful when `sunriseMs` is null, and it is what lets a caller pick
+   * a sensible fallback rather than the same one for both — a Tromsø midsummer
+   * and a Tromsø midwinter want opposite answers.
+   */
+  alwaysUp: boolean;
+}
+
+/**
+ * Sunrise, sunset and solar noon for the UTC day containing `atMs`.
+ *
+ * **Why this is not just a search over `solarElevation`.** Sampling the
+ * elevation minute by minute and looking for a sign change would be 1,440 runs
+ * of the whole NOAA sequence per device per day, and would still need a special
+ * case for the polar day it would never find a crossing in. The hour-angle
+ * solution below is closed-form: one pass for the day's terms, one `acos`, and
+ * the polar case falls out of that `acos` having no solution.
+ *
+ * **The UTC day, deliberately.** A caller asking on the far side of local
+ * midnight from UTC gets the neighbouring day's sunrise. That is a difference of
+ * one day's drift — under four minutes at temperate latitudes, and the boundary
+ * it is wanted for is then stepped by the user in quarter hours. Making it
+ * timezone-aware would put an `Intl` lookup into a file whose whole claim is
+ * that it is pure arithmetic checkable against a published table.
+ */
+export function sunTimes(latitude: number, longitude: number, atMs: number): SunTimes {
+  const dayStartMs = Math.floor(atMs / MS_PER_DAY) * MS_PER_DAY;
+  // The terms are evaluated at this place's own solar noon rather than at UTC
+  // noon: the declination moves by up to 0.4° a day near an equinox, and
+  // evaluating twelve hours out would put sunrise a minute out with it.
+  const { declination, equationOfTime } =
+    orbitalTerms(dayStartMs + MS_PER_DAY / 2 - longitude * 4 * 60_000);
+
+  // 720 is noon in minutes; four minutes per degree of longitude, and the
+  // equation of time is how far the real sun is running from the mean one.
+  const solarNoonMinutes = 720 - 4 * longitude - equationOfTime;
+  const solarNoonMs = dayStartMs + solarNoonMinutes * 60_000;
+
+  const cosHourAngle =
+    (Math.cos(radians(90 - SUNRISE_ALTITUDE))
+      - Math.sin(radians(latitude)) * Math.sin(radians(declination)))
+    / (Math.cos(radians(latitude)) * Math.cos(radians(declination)));
+
+  // No solution means the sun never reaches that altitude, in either direction.
+  // Above 1 the horizon is never reached going up — polar night; below −1 it is
+  // never reached coming down — midnight sun.
+  if (!Number.isFinite(cosHourAngle) || cosHourAngle > 1 || cosHourAngle < -1) {
+    return {
+      solarNoonMs,
+      sunriseMs: null,
+      sunsetMs: null,
+      alwaysUp: cosHourAngle < 0,
+    };
+  }
+
+  const halfDayMinutes = 4 * degrees(Math.acos(cosHourAngle));
+  return {
+    solarNoonMs,
+    sunriseMs: solarNoonMs - halfDayMinutes * 60_000,
+    sunsetMs: solarNoonMs + halfDayMinutes * 60_000,
+    alwaysUp: false,
+  };
 }

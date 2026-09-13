@@ -1,6 +1,8 @@
 import type { InputEvent } from '../inputs/input-event';
 import type { LightIntent, TargetSpec } from '../outputs/light-intent';
-import type { ControllerBehavior, LightFunction, MappingRule } from './mapping-types';
+import type {
+  ControllerBehavior, LightFunction, MappingPreset, MappingRule,
+} from './mapping-types';
 
 /**
  * Resolves normalised events into configured light intents.
@@ -40,6 +42,7 @@ export function intentForLightFunction(
   func: LightFunction,
   behavior: ControllerBehavior,
   magnitude: number = 1,
+  preset?: MappingPreset,
 ): LightIntent {
   const scale = Number.isFinite(magnitude) && Math.abs(magnitude) > 0 ? Math.abs(magnitude) : 1;
   const brightness = behavior.brightnessStep * scale;
@@ -53,6 +56,26 @@ export function intentForLightFunction(
     case 'brightness_down': return { type: 'brightness_delta', delta: -brightness };
     case 'warmer': return { type: 'temperature_delta', delta: temperature };
     case 'colder': return { type: 'temperature_delta', delta: -temperature };
+    case 'temperature_cycle': return { type: 'temperature_cycle' };
+    /**
+     * The one function whose name is not enough, so the one that can arrive
+     * without what it needs.
+     *
+     * A rule with no preset should be impossible — `validateMappingRules`
+     * refuses one on the way in and `validateControllerProfile` refuses one on
+     * the way back out — but this is the live gesture path and failing closed
+     * beats writing a brightness nobody chose. Turning the lights on is the
+     * honest degradation: the button was meant to produce light, and it does,
+     * at whatever the lamps were last set to.
+     */
+    case 'brightness_set':
+      return preset === undefined
+        ? { type: 'power', value: true }
+        : {
+          type: 'preset_absolute',
+          brightness: preset.brightness,
+          ...(preset.temperature !== undefined ? { temperature: preset.temperature } : {}),
+        };
   }
   // No default arm: the switch covers every LightFunction, and an added member
   // must fail to compile here rather than silently resolve to undefined.
@@ -86,7 +109,7 @@ export class MappingEngine {
    */
   private intentFor(rule: MappingRule, event: InputEvent): LightIntent {
     const magnitude = typeof event.magnitude === 'number' ? event.magnitude : 1;
-    return intentForLightFunction(rule.function, this.behavior, magnitude);
+    return intentForLightFunction(rule.function, this.behavior, magnitude, rule.preset);
   }
 }
 
@@ -96,7 +119,7 @@ export function availableFunctions(
 ): LightFunction[] {
   const available: LightFunction[] = [];
   if (support.onoff > 0) available.push('toggle', 'on', 'off');
-  if (support.dim > 0) available.push('brightness_up', 'brightness_down');
-  if (support.light_temperature > 0) available.push('warmer', 'colder');
+  if (support.dim > 0) available.push('brightness_up', 'brightness_down', 'brightness_set');
+  if (support.light_temperature > 0) available.push('warmer', 'colder', 'temperature_cycle');
   return available;
 }

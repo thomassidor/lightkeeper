@@ -106,8 +106,7 @@ function homey(options: {
       preStageDisabled: null,
       // Daylight-only fields, harmless on the others for the same reason as the
       // circadian ones above.
-      response: { sensors: [], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 },
-      sensors: [],
+      response: { sensor: null, darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 },
       recentWrites: (kind === 'controller' ? options.writes?.controller
         : kind === 'schedule' ? options.writes?.schedule
           : options.writes?.circadian) ?? [],

@@ -1,8 +1,6 @@
-import type { LuminanceSource } from '../daylight/luminance-source';
 import { startRuntime, previewOwner } from '../runtime/runtime-resources';
 import type { HomeyApiService } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
-import type { DaylightEvaluator } from '../daylight/daylight-evaluator';
 import { FlowCardCatalogue } from '../flow-card-catalogue';
 import type { FlowBridgeManager } from '../bridge/flow-bridge-manager';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
@@ -40,13 +38,6 @@ export interface ScheduleManagerDeps {
   cards?: FlowCardCatalogue;
   /** The Homey's IANA timezone. */
   timezone: () => string | undefined;
-  /**
-   * Sun position and sensor readings, for a window whose brightness follows the
-   * daylight. Optional so the ephemeral rigs and the tests can build a manager
-   * without one.
-   */
-  daylight?: DaylightEvaluator;
-  luminance?: LuminanceSource;
   log: (...args: unknown[]) => void;
 }
 
@@ -149,8 +140,6 @@ export class ScheduleRuntimeManager {
       timeCard: () => this.timeCard(),
       ...(this.deps.onWriteResult ? { onWriteResult: this.deps.onWriteResult } : {}),
       timezone: this.deps.timezone,
-      ...(this.deps.daylight ? { daylight: this.deps.daylight } : {}),
-      ...(this.deps.luminance ? { luminance: this.deps.luminance } : {}),
       log: this.deps.log,
     };
   }

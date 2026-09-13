@@ -8,7 +8,7 @@ import {
 import { describeClock, fromJsDay, localNow, previousWeekday } from '../../lib/time/local-clock';
 import {
   formatMinutes, parseMinutes, sanitiseEntries, MAX_ENTRIES,
-  type ScheduleEntry,
+  type IsoWeekday, type ScheduleEntry,
 } from '../../lib/schedules/schedule-types';
 
 /**
@@ -26,7 +26,6 @@ function entry(over: Partial<ScheduleEntry> = {}): ScheduleEntry {
   return {
     id: 's1',
     onAt: 22 * 60,
-    days: null,
     end: { kind: 'duration', minutes: 90 },
     ...over,
   };
@@ -81,35 +80,39 @@ describe('schedule windows', () => {
   });
 
   test('a null day set means every day', () => {
+    // The set belongs to the SCHEDULE now rather than to each window, so this
+    // takes the set directly — there is no entry to read it off.
     for (let day = 1; day <= 7; day += 1) {
-      assert.equal(dayMatches(entry({ days: null }), day as 1), true);
+      assert.equal(dayMatches(null, day as 1), true);
     }
-    assert.equal(dayMatches(entry({ days: [1, 2, 3, 4, 5] }), 6), false);
-    assert.equal(dayMatches(entry({ days: [1, 2, 3, 4, 5] }), 5), true);
+    assert.equal(dayMatches([1, 2, 3, 4, 5], 6), false);
+    assert.equal(dayMatches([1, 2, 3, 4, 5], 5), true);
   });
 });
 
 describe('boundary day matching', () => {
-  const weekdaysOnly = entry({ onAt: 23 * 60 + 30, days: [1, 2, 3, 4, 5], end: { kind: 'duration', minutes: 120 } });
+  const WEEKDAYS: IsoWeekday[] = [1, 2, 3, 4, 5];
+  const crossing = entry({ onAt: 23 * 60 + 30, end: { kind: 'duration', minutes: 120 } });
 
   test('an on event is matched against today', () => {
-    assert.equal(boundaryDayMatches(weekdaysOnly, 'on', 5), true);
-    assert.equal(boundaryDayMatches(weekdaysOnly, 'on', 6), false);
+    assert.equal(boundaryDayMatches(crossing, WEEKDAYS, 'on', 5), true);
+    assert.equal(boundaryDayMatches(crossing, WEEKDAYS, 'on', 6), false);
   });
 
   test('the off event of a midnight-crossing window belongs to the previous day', () => {
     // Friday 23:30 → Saturday 01:30. The Saturday off event is Friday's.
-    assert.equal(boundaryDayMatches(weekdaysOnly, 'off', 6), true);
+    assert.equal(boundaryDayMatches(crossing, WEEKDAYS, 'off', 6), true);
     // Sunday's off event would belong to Saturday, which is not selected.
-    assert.equal(boundaryDayMatches(weekdaysOnly, 'off', 7), false);
+    assert.equal(boundaryDayMatches(crossing, WEEKDAYS, 'off', 7), false);
     // Monday's own off event belongs to Sunday, likewise not selected.
-    assert.equal(boundaryDayMatches(weekdaysOnly, 'off', 1), false);
+    assert.equal(boundaryDayMatches(crossing, WEEKDAYS, 'off', 1), false);
   });
 
   test('the off event of a same-day window is matched against today', () => {
-    const morning = entry({ onAt: 7 * 60, days: [6, 7], end: { kind: 'duration', minutes: 60 } });
-    assert.equal(boundaryDayMatches(morning, 'off', 6), true);
-    assert.equal(boundaryDayMatches(morning, 'off', 5), false);
+    const weekend: IsoWeekday[] = [6, 7];
+    const morning = entry({ onAt: 7 * 60, end: { kind: 'duration', minutes: 60 } });
+    assert.equal(boundaryDayMatches(morning, weekend, 'off', 6), true);
+    assert.equal(boundaryDayMatches(morning, weekend, 'off', 5), false);
   });
 });
 
@@ -117,33 +120,36 @@ describe('catch-up window detection', () => {
   const evening = entry({ onAt: 22 * 60, end: { kind: 'duration', minutes: 120 } });
 
   test('inside the window, the start day is today', () => {
-    assert.equal(activeWindowStartDay(evening, { minutesOfDay: 23 * 60, isoWeekday: 3 }), 3);
+    assert.equal(activeWindowStartDay(evening, null, { minutesOfDay: 23 * 60, isoWeekday: 3 }), 3);
   });
 
   test('the on boundary is inclusive and the off boundary is not', () => {
-    assert.equal(isActive(evening, { minutesOfDay: 22 * 60, isoWeekday: 3 }), true);
-    assert.equal(isActive(evening, { minutesOfDay: 24 * 60 - 1, isoWeekday: 3 }), true);
+    assert.equal(isActive(evening, null, { minutesOfDay: 22 * 60, isoWeekday: 3 }), true);
+    assert.equal(isActive(evening, null, { minutesOfDay: 24 * 60 - 1, isoWeekday: 3 }), true);
     // 00:00 is the off minute itself: the window is over.
-    assert.equal(isActive(evening, { minutesOfDay: 0, isoWeekday: 4 }), false);
+    assert.equal(isActive(evening, null, { minutesOfDay: 0, isoWeekday: 4 }), false);
   });
 
   test('before the on time is not inside a same-day window', () => {
-    assert.equal(activeWindowStartDay(evening, { minutesOfDay: 21 * 60 + 59, isoWeekday: 3 }), null);
+    assert.equal(
+      activeWindowStartDay(evening, null, { minutesOfDay: 21 * 60 + 59, isoWeekday: 3 }), null,
+    );
     const morning = entry({ onAt: 7 * 60, end: { kind: 'duration', minutes: 60 } });
-    assert.equal(activeWindowStartDay(morning, { minutesOfDay: 3 * 60, isoWeekday: 3 }), null);
+    assert.equal(activeWindowStartDay(morning, null, { minutesOfDay: 3 * 60, isoWeekday: 3 }), null);
   });
 
   test('past midnight, the start day is yesterday', () => {
     const late = entry({ onAt: 23 * 60, end: { kind: 'duration', minutes: 180 } });
-    assert.equal(activeWindowStartDay(late, { minutesOfDay: 60, isoWeekday: 4 }), 3);
+    assert.equal(activeWindowStartDay(late, null, { minutesOfDay: 60, isoWeekday: 4 }), 3);
   });
 
-  test('a day-restricted window is only active on its own days', () => {
-    const weekend = entry({ onAt: 23 * 60, days: [6], end: { kind: 'duration', minutes: 180 } });
+  test('a day-restricted schedule is only active on its own days', () => {
+    const saturdays: IsoWeekday[] = [6];
+    const late = entry({ onAt: 23 * 60, end: { kind: 'duration', minutes: 180 } });
     // Sunday 01:00 belongs to Saturday's window: active.
-    assert.equal(activeWindowStartDay(weekend, { minutesOfDay: 60, isoWeekday: 7 }), 6);
+    assert.equal(activeWindowStartDay(late, saturdays, { minutesOfDay: 60, isoWeekday: 7 }), 6);
     // Monday 01:00 belongs to Sunday: not selected.
-    assert.equal(activeWindowStartDay(weekend, { minutesOfDay: 60, isoWeekday: 1 }), null);
+    assert.equal(activeWindowStartDay(late, saturdays, { minutesOfDay: 60, isoWeekday: 1 }), null);
   });
 });
 
@@ -189,14 +195,16 @@ describe('the local clock', () => {
 });
 
 describe('sanitising what a screen sends', () => {
-  test('accepts a well-formed entry and collapses a full week to null', () => {
+  test('accepts a well-formed entry, and ignores a day set sent on one', () => {
     const { entries, dropped } = sanitiseEntries([
-      { id: 'a', onAt: '22:00', days: [1, 2, 3, 4, 5, 6, 7], end: { kind: 'duration', minutes: 90 } },
+      { id: 'a', onAt: '22:00', end: { kind: 'duration', minutes: 90 } },
     ]);
     assert.equal(dropped.length, 0);
-    // Every day IS the null case: one representation of one meaning.
-    assert.deepEqual(entries[0].days, null);
     assert.equal(entries[0].onAt, 1320);
+    // Days belong to the SCHEDULE now. A row that still carries a set is a stale
+    // screen or a scripted pair session (platform §14), and the field is simply
+    // not read — dropping the whole row over it would throw away a good window.
+    assert.equal('days' in entries[0], false);
   });
 
   test('drops rather than repairs an entry it cannot read', () => {
@@ -204,16 +212,14 @@ describe('sanitising what a screen sends', () => {
       { id: 'a', onAt: 'nonsense', end: { kind: 'duration', minutes: 30 } },
       { id: 'b', onAt: '07:00', end: { kind: 'duration', minutes: 0 } },
       { id: 'c', onAt: '07:00', end: { kind: 'time', at: '07:00' } },
-      { id: 'd', onAt: '07:00', days: [], end: { kind: 'duration', minutes: 30 } },
       { id: 'e', onAt: '07:00' },
       'not an object',
     ]);
 
     assert.equal(entries.length, 0);
-    assert.deepEqual(dropped.map(d => d.index), [0, 1, 2, 3, 4, 5]);
+    assert.deepEqual(dropped.map(d => d.index), [0, 1, 2, 3, 4]);
     assert.match(dropped[1].reason, /shorter than a minute/);
     assert.match(dropped[2].reason, /same as the on-time/);
-    assert.match(dropped[3].reason, /no days/);
   });
 
   test('refuses a duplicate id, because it would collide in the flow keys', () => {
@@ -254,42 +260,5 @@ describe('sanitising what a screen sends', () => {
     ]);
     assert.equal(entries[0].brightness, 1);
     assert.equal(entries[0].temperature, 0);
-  });
-});
-
-describe('sanitiseEntries and the daylight flag', () => {
-  const window = (over: Record<string, unknown> = {}) => ({
-    id: 'a', onAt: 22 * 60, days: null, end: { kind: 'duration', minutes: 90 }, ...over,
-  });
-
-  test('it survives alongside a brightness', () => {
-    const { entries } = sanitiseEntries([window({ brightness: 0.5, fromDaylight: true })]);
-    assert.equal(entries[0]!.fromDaylight, true);
-  });
-
-  test('and is dropped without one, because that brightness IS the fallback', () => {
-    // Dropped silently rather than dropping the row: the window is still a
-    // perfectly good window that sets no brightness. The plan-level half of the
-    // rule - that the device has a daylight response at all - is the validator's,
-    // because this function only ever sees the entries.
-    const { entries, dropped } = sanitiseEntries([window({ fromDaylight: true })]);
-
-    assert.equal(entries.length, 1);
-    assert.equal(entries[0]!.fromDaylight, undefined);
-    assert.deepEqual(dropped, []);
-  });
-
-  test('a brightness of zero is unset, so the flag goes with it', () => {
-    const { entries } = sanitiseEntries([window({ brightness: 0, fromDaylight: true })]);
-
-    assert.equal(entries[0]!.brightness, undefined);
-    assert.equal(entries[0]!.fromDaylight, undefined);
-  });
-
-  test('anything other than a real true is a no', () => {
-    for (const value of ['yes', 1, {}, 'true']) {
-      const { entries } = sanitiseEntries([window({ brightness: 0.5, fromDaylight: value })]);
-      assert.equal(entries[0]!.fromDaylight, undefined, `failed on ${JSON.stringify(value)}`);
-    }
   });
 });

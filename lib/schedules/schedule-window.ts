@@ -35,8 +35,8 @@ export function crossesMidnight(entry: ScheduleEntry): boolean {
   return entry.onAt + windowLengthMinutes(entry) >= MINUTES_PER_DAY;
 }
 
-export function dayMatches(entry: ScheduleEntry, day: IsoWeekday): boolean {
-  return entry.days === null || entry.days.includes(day);
+export function dayMatches(days: IsoWeekday[] | null, day: IsoWeekday): boolean {
+  return days === null || days.includes(day);
 }
 
 /**
@@ -49,11 +49,12 @@ export function dayMatches(entry: ScheduleEntry, day: IsoWeekday): boolean {
  */
 export function boundaryDayMatches(
   entry: ScheduleEntry,
+  days: IsoWeekday[] | null,
   boundary: ScheduleBoundary,
   today: IsoWeekday,
 ): boolean {
-  if (boundary === 'on') return dayMatches(entry, today);
-  return dayMatches(entry, crossesMidnight(entry) ? previousWeekday(today) : today);
+  if (boundary === 'on') return dayMatches(days, today);
+  return dayMatches(days, crossesMidnight(entry) ? previousWeekday(today) : today);
 }
 
 /**
@@ -67,6 +68,7 @@ export function boundaryDayMatches(
  */
 function activeWindow(
   entry: ScheduleEntry,
+  days: IsoWeekday[] | null,
   now: LocalClock,
 ): { startDay: IsoWeekday; elapsed: number } | null {
   const elapsed = (now.minutesOfDay - entry.onAt + MINUTES_PER_DAY) % MINUTES_PER_DAY;
@@ -74,15 +76,23 @@ function activeWindow(
 
   // Before the on-minute in today's clock means the window began yesterday.
   const startDay = now.minutesOfDay >= entry.onAt ? now.isoWeekday : previousWeekday(now.isoWeekday);
-  return dayMatches(entry, startDay) ? { startDay, elapsed } : null;
+  return dayMatches(days, startDay) ? { startDay, elapsed } : null;
 }
 
-export function activeWindowStartDay(entry: ScheduleEntry, now: LocalClock): IsoWeekday | null {
-  return activeWindow(entry, now)?.startDay ?? null;
+export function activeWindowStartDay(
+  entry: ScheduleEntry,
+  days: IsoWeekday[] | null,
+  now: LocalClock,
+): IsoWeekday | null {
+  return activeWindow(entry, days, now)?.startDay ?? null;
 }
 
-export function isActive(entry: ScheduleEntry, now: LocalClock): boolean {
-  return activeWindow(entry, now) !== null;
+export function isActive(
+  entry: ScheduleEntry,
+  days: IsoWeekday[] | null,
+  now: LocalClock,
+): boolean {
+  return activeWindow(entry, days, now) !== null;
 }
 
 /**
@@ -131,6 +141,7 @@ function minutesUntil(minutesOfDay: number, target: number): number {
  */
 export function boundaryClockMatches(
   entry: ScheduleEntry,
+  days: IsoWeekday[] | null,
   boundary: 'on' | 'off',
   now: LocalClock,
 ): boolean {
@@ -140,16 +151,17 @@ export function boundaryClockMatches(
   // couple of minutes BEFORE the target, never the day either side of it.
   if (minutesUntil(now.minutesOfDay, target) <= BOUNDARY_TOLERANCE_MINUTES) return true;
 
-  return boundary === 'on' ? isActive(entry, now) : !isActive(entry, now);
+  return boundary === 'on' ? isActive(entry, days, now) : !isActive(entry, days, now);
 }
 
 export function activeEntries(
   entries: readonly ScheduleEntry[],
+  days: IsoWeekday[] | null,
   now: LocalClock,
 ): Array<{ entry: ScheduleEntry; startDay: IsoWeekday; elapsed: number }> {
   return entries
     .map(entry => {
-      const window = activeWindow(entry, now);
+      const window = activeWindow(entry, days, now);
       return window ? { entry, ...window } : null;
     })
     .filter((found): found is { entry: ScheduleEntry; startDay: IsoWeekday; elapsed: number } => found !== null)
@@ -179,18 +191,28 @@ function minutesPerWeek(): number {
  * 10 080-minute circle, and any pair of arcs that intersects is an overlap.
  *
  * Why it matters at all: two windows over the same lights fight. The one that
- * ends first switches them off while the other still believes them on, and
- * nothing on any screen admits to it. `sanitiseEntries` refuses to save such a
- * pair; `ScheduleRuntime.apply` handles the ones already saved by earlier
- * versions.
+ * ends first switches them off while the other still believes them on. The app
+ * no longer refuses such a pair — `ScheduleRuntime.apply` has a deterministic
+ * answer, the later window wins while they overlap — so this is what the pairing
+ * screen uses to DRAW the conflict and say so, and what the runtime uses to
+ * reason about the pairs it is given.
+ *
+ * Both windows are measured against the SAME day set now that days belong to the
+ * schedule rather than to each window, which is what collapses the old
+ * double loop over two independent day lists into one over a shared one.
  */
-export function entriesOverlap(a: ScheduleEntry, b: ScheduleEntry): boolean {
+export function entriesOverlap(
+  a: ScheduleEntry,
+  b: ScheduleEntry,
+  days: IsoWeekday[] | null,
+): boolean {
   const lengthA = windowLengthMinutes(a);
   const lengthB = windowLengthMinutes(b);
+  const selected = days ?? ALL_WEEKDAYS;
 
-  for (const dayA of a.days ?? ALL_WEEKDAYS) {
+  for (const dayA of selected) {
     const startA = (dayA - 1) * MINUTES_PER_DAY + a.onAt;
-    for (const dayB of b.days ?? ALL_WEEKDAYS) {
+    for (const dayB of selected) {
       const startB = (dayB - 1) * MINUTES_PER_DAY + b.onAt;
       if (arcsIntersect(startA, lengthA, startB, lengthB)) return true;
     }

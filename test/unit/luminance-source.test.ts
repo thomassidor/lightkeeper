@@ -117,7 +117,7 @@ describe('LuminanceSource - one subscription per sensor', () => {
     assert.deepEqual(h.subscribeCalls, ['s1']);
     // Seeded, because a battery sensor may not report for many minutes and a
     // device that has to wait for that reports needs_repair on every restart.
-    assert.deepEqual(h.source.read(['s1']), { lux: 120, deviceIds: ['s1'] });
+    assert.deepEqual(h.source.read('s1'), { lux: 120, deviceIds: ['s1'] });
   });
 
   test('five devices naming one sensor cost one subscription', async () => {
@@ -134,11 +134,11 @@ describe('LuminanceSource - one subscription per sensor', () => {
 
     await h.source.release('a');
     assert.deepEqual(h.destroyCalls, [], 'still wanted by b');
-    assert.notEqual(h.source.read(['s1']), null);
+    assert.notEqual(h.source.read('s1'), null);
 
     await h.source.release('b');
     assert.deepEqual(h.destroyCalls, ['s1'], 'the last owner released it');
-    assert.equal(h.source.read(['s1']), null);
+    assert.equal(h.source.read('s1'), null);
   });
 
   test('retain is TOTAL for its owner, so a dropped sensor is released', async () => {
@@ -150,7 +150,7 @@ describe('LuminanceSource - one subscription per sensor', () => {
 
     await h.source.retain(['s2'], 'a');
     assert.deepEqual(h.destroyCalls, ['s1']);
-    assert.deepEqual(h.source.read(['s2']), { lux: 200, deviceIds: ['s2'] });
+    assert.deepEqual(h.source.read('s2'), { lux: 200, deviceIds: ['s2'] });
   });
 
   test('one owner dropping a sensor another still holds keeps it', async () => {
@@ -160,7 +160,7 @@ describe('LuminanceSource - one subscription per sensor', () => {
 
     await h.source.retain([], 'a');
     assert.deepEqual(h.destroyCalls, []);
-    assert.notEqual(h.source.read(['s1']), null);
+    assert.notEqual(h.source.read('s1'), null);
   });
 
   test('destroy drops everything, whoever was holding it', async () => {
@@ -195,49 +195,54 @@ describe('LuminanceSource - what a reading is', () => {
     h.advance(60_000);
     h.report('s1', 640);
 
-    assert.deepEqual(h.source.read(['s1']), { lux: 640, deviceIds: ['s1'] });
+    assert.deepEqual(h.source.read('s1'), { lux: 640, deviceIds: ['s1'] });
     assert.equal(h.source.watched()[0].at, h.at());
   });
 
-  test('the mean is over the usable sensors, not all of them', async () => {
+  test('each retained sensor reads on its own', async () => {
+    // One sensor per device since the pairing rewrite - a room has the sensor it
+    // has - so two retained sensors are two independent readings rather than a
+    // mean. Retaining both still costs one subscription each and no arithmetic.
     const h = harness([{ id: 's1', lux: 100 }, { id: 's2', lux: 300 }]);
     await h.source.retain(['s1', 's2'], 'a');
 
-    assert.deepEqual(h.source.read(['s1', 's2']), { lux: 200, deviceIds: ['s1', 's2'] });
+    assert.deepEqual(h.source.read('s1'), { lux: 100, deviceIds: ['s1'] });
+    assert.deepEqual(h.source.read('s2'), { lux: 300, deviceIds: ['s2'] });
   });
 
-  test('a mean rather than the brightest, because the selection IS the weighting', async () => {
-    // Taking the maximum would let one window-facing sensor speak for a whole
-    // flat. Somebody who does not want a sensor's opinion does not select it.
-    const h = harness([{ id: 's1', lux: 10 }, { id: 's2', lux: 1000 }]);
-    await h.source.retain(['s1', 's2'], 'a');
+  test('no sensor at all is NOTHING, and never a zero', async () => {
+    // `null` is the sun; a zero is a pitch-dark room. `resolveLevel` falls back
+    // to the sky on the first and to the dark end on the second, and those are
+    // different rooms.
+    const h = harness([{ id: 's1', lux: 400 }]);
+    await h.source.retain(['s1'], 'a');
 
-    assert.equal(h.source.read(['s1', 's2'])!.lux, 505);
+    assert.equal(h.source.read(null), null);
   });
 
-  test('a sensor that has never reported is left out of the mean, not counted as dark', async () => {
-    // Averaged in as a zero, a sensor with a flat battery drives a whole room to
-    // the wrong end of its response.
-    const h = harness([{ id: 's1', lux: 400 }, { id: 's2', lux: null }]);
-    await h.source.retain(['s1', 's2'], 'a');
+  test('a sensor that has never reported is nothing, not darkness', async () => {
+    // Read as a zero, a sensor with a flat battery drives a whole room to the
+    // wrong end of its response with a number it never sent.
+    const h = harness([{ id: 's2', lux: null }]);
+    await h.source.retain(['s2'], 'a');
 
-    assert.deepEqual(h.source.read(['s1', 's2']), { lux: 400, deviceIds: ['s1'] });
+    assert.equal(h.source.read('s2'), null);
   });
 
-  test('a sensor Homey reports unavailable is left out', async () => {
-    const h = harness([{ id: 's1', lux: 400 }, { id: 's2', available: false, lux: 20 }]);
-    await h.source.retain(['s1', 's2'], 'a');
+  test('a sensor Homey reports unavailable is nothing', async () => {
+    const h = harness([{ id: 's2', available: false, lux: 20 }]);
+    await h.source.retain(['s2'], 'a');
 
-    assert.deepEqual(h.source.read(['s1', 's2']), { lux: 400, deviceIds: ['s1'] });
+    assert.equal(h.source.read('s2'), null);
   });
 
-  test('a device that no longer has the capability is left out too', async () => {
+  test('a device that no longer has the capability is nothing too', async () => {
     // A plan can name a sensor that was replaced by something else at the same
     // id, and offline is no worse than "not that kind of device any more".
-    const h = harness([{ id: 's1', lux: 400 }, { id: 's2', capabilities: ['onoff'], lux: 20 }]);
-    await h.source.retain(['s1', 's2'], 'a');
+    const h = harness([{ id: 's2', capabilities: ['onoff'], lux: 20 }]);
+    await h.source.retain(['s2'], 'a');
 
-    assert.deepEqual(h.source.read(['s1', 's2']), { lux: 400, deviceIds: ['s1'] });
+    assert.equal(h.source.read('s2'), null);
   });
 
   test('no usable sensor at all is NOTHING, not a zero', async () => {
@@ -246,15 +251,15 @@ describe('LuminanceSource - what a reading is', () => {
     const h = harness([{ id: 's1', lux: null }]);
     await h.source.retain(['s1'], 'a');
 
-    assert.equal(h.source.read(['s1']), null);
+    assert.equal(h.source.read('s1'), null);
   });
 
   test('an unretained sensor id contributes nothing', async () => {
     const h = harness([{ id: 's1', lux: 400 }]);
     await h.source.retain(['s1'], 'a');
 
-    assert.deepEqual(h.source.read(['s1', 'never-heard-of-it']), { lux: 400, deviceIds: ['s1'] });
-    assert.equal(h.source.read(['never-heard-of-it']), null);
+    assert.deepEqual(h.source.read('s1'), { lux: 400, deviceIds: ['s1'] });
+    assert.equal(h.source.read('never-heard-of-it'), null);
   });
 
   test('an OLD reading is still a reading', async () => {
@@ -266,7 +271,7 @@ describe('LuminanceSource - what a reading is', () => {
     h.report('s1', 42);
     h.advance(6 * 60 * 60_000);
 
-    assert.deepEqual(h.source.read(['s1']), { lux: 42, deviceIds: ['s1'] });
+    assert.deepEqual(h.source.read('s1'), { lux: 42, deviceIds: ['s1'] });
   });
 
   test('a non-finite or negative report is ignored and the last good one stands', async () => {
@@ -278,7 +283,7 @@ describe('LuminanceSource - what a reading is', () => {
 
     for (const junk of [Number.NaN, Number.POSITIVE_INFINITY, -5, 'bright', null, undefined, {}]) {
       h.report('s1', junk);
-      assert.deepEqual(h.source.read(['s1']), { lux: 250, deviceIds: ['s1'] }, `junk: ${String(junk)}`);
+      assert.deepEqual(h.source.read('s1'), { lux: 250, deviceIds: ['s1'] }, `junk: ${String(junk)}`);
     }
     assert.ok(h.logs.some(line => line.includes('unusable luminance report')));
   });
@@ -288,34 +293,34 @@ describe('LuminanceSource - what a reading is', () => {
     await h.source.retain(['s1'], 'a');
     h.report('s1', 0);
 
-    assert.deepEqual(h.source.read(['s1']), { lux: 0, deviceIds: ['s1'] });
+    assert.deepEqual(h.source.read('s1'), { lux: 0, deviceIds: ['s1'] });
   });
 });
 
 describe('LuminanceSource - the catalog, and failures', () => {
-  test('a sensor going unavailable stops being averaged, on the catalog event', async () => {
+  test('a sensor going unavailable stops reading, on the catalog event', async () => {
     // Availability arrives on the catalog's device events, not over a capability
     // subscription - so without onCatalogChange a sensor whose battery died went
-    // on being averaged with its last reading for as long as the app ran.
-    const h = harness([{ id: 's1', lux: 100 }, { id: 's2', lux: 300 }]);
-    await h.source.retain(['s1', 's2'], 'a');
-    assert.equal(h.source.read(['s1', 's2'])!.lux, 200);
+    // on reporting its last reading for as long as the app ran.
+    const h = harness([{ id: 's2', lux: 300 }]);
+    await h.source.retain(['s2'], 'a');
+    assert.equal(h.source.read('s2')!.lux, 300);
 
     h.setAvailable('s2', false);
     await h.source.onCatalogChange();
 
-    assert.deepEqual(h.source.read(['s1', 's2']), { lux: 100, deviceIds: ['s1'] });
+    assert.equal(h.source.read('s2'), null);
   });
 
-  test('and coming back available is averaged again', async () => {
-    const h = harness([{ id: 's1', lux: 100 }, { id: 's2', available: false, lux: 300 }]);
-    await h.source.retain(['s1', 's2'], 'a');
-    assert.equal(h.source.read(['s1', 's2'])!.lux, 100);
+  test('and coming back available reads again', async () => {
+    const h = harness([{ id: 's2', available: false, lux: 300 }]);
+    await h.source.retain(['s2'], 'a');
+    assert.equal(h.source.read('s2'), null);
 
     h.setAvailable('s2', true);
     await h.source.onCatalogChange();
 
-    assert.equal(h.source.read(['s1', 's2'])!.lux, 200);
+    assert.equal(h.source.read('s2')!.lux, 300);
   });
 
   test('a sensor deleted from the Homey is unavailable, not forgotten', async () => {
@@ -327,7 +332,7 @@ describe('LuminanceSource - the catalog, and failures', () => {
     h.remove('s1');
     await h.source.onCatalogChange();
 
-    assert.equal(h.source.read(['s1']), null);
+    assert.equal(h.source.read('s1'), null);
     assert.equal(h.source.watched().length, 1);
     assert.equal(h.source.watched()[0].available, false);
   });
@@ -342,8 +347,10 @@ describe('LuminanceSource - the catalog, and failures', () => {
     assert.deepEqual(h.subscribeCalls, ['s1']);
     assert.equal(h.source.watched().length, 2);
     assert.ok(h.logs.some(line => line.includes('Could not subscribe to luminance on s2')));
-    // A seed without a listener freezes indefinitely; use the healthy sensor.
-    assert.deepEqual(h.source.read(['s1', 's2'])!.deviceIds, ['s1']);
+    // A seed without a listener freezes indefinitely, so the sensor that could
+    // not be subscribed to reads as nothing rather than as a stuck value.
+    assert.equal(h.source.read('s2'), null);
+    assert.deepEqual(h.source.read('s1')!.deviceIds, ['s1']);
     await h.source.destroy();
   });
 
@@ -401,7 +408,7 @@ describe('sensor subscription recovery', () => {
   test('retries with bounded backoff, recovers a fresh reading, and does not expire quiet sensors', async () => {
     const h = recovering();
     await h.source.retain(['s1'], 'device');
-    assert.equal(h.source.read(['s1']), null);
+    assert.equal(h.source.read('s1'), null);
     for (const delay of [1000, 2000, 4000, 8000, 16000, 32000, 60000, 60000]) {
       const attempts = h.attempts();
       h.timers.advance(delay - 1); await settle(12);
@@ -412,10 +419,10 @@ describe('sensor subscription recovery', () => {
     }
     h.recover();
     h.timers.advance(60000); await settle(12);
-    assert.equal(h.source.read(['s1'])?.lux, 500);
+    assert.equal(h.source.read('s1')?.lux, 500);
     assert.equal(h.timers.pending, 0);
     h.timers.advance(1000 * 60 * 60 * 24 * 90);
-    assert.equal(h.source.read(['s1'])?.lux, 500);
+    assert.equal(h.source.read('s1')?.lux, 500);
     await h.source.release('device');
     assert.equal(h.destroyed(), 1);
   });
@@ -436,7 +443,7 @@ describe('sensor subscription recovery', () => {
     const releasing = h.source.release('a');
     gate.resolve(); await Promise.all([retaining, releasing]);
     assert.equal(h.source.watched().length, 0);
-    assert.equal(h.source.read(['s1']), null);
+    assert.equal(h.source.read('s1'), null);
     assert.equal(h.timers.pending, 0);
   });
 });

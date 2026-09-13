@@ -36,7 +36,7 @@ const CONTROLLER_ID = 'lk-ctrl-1755500000000-100001';
 const DAYLIGHT_ID = 'lk-dayl-1755500000000-400001';
 
 /** One stored window, 20:00 for two hours, every day. */
-const WINDOW = { id: 'a', onAt: 20 * 60, days: null, end: { kind: 'duration', minutes: 120 } };
+const WINDOW = { id: 'a', onAt: 20 * 60, end: { kind: 'duration', minutes: 120 } };
 
 interface Recorded {
   applied: unknown[];
@@ -343,11 +343,17 @@ describe('POST /schedules/:id/entries (T13, T15)', () => {
     assert.equal(plan.entries.length, 1);
   });
 
-  test('an overlapping window is dropped and NAMED, by the pairing sanitiser', async () => {
+  test('an overlapping window is KEPT, because the runtime has an answer for it', async () => {
     /**
-     * T15. The same `sanitiseEntries` the pair session calls, so a window the
-     * pairing screen would refuse cannot get in through this door — and the
-     * reason comes back rather than the count quietly being one lower.
+     * T15. This route goes through the same `sanitiseEntries` the pair session
+     * calls, so what it accepts is exactly what the pairing screen accepts — and
+     * since the pairing rewrite that includes an overlap.
+     *
+     * The rule it used to enforce was "drop the later of a clashing pair". The
+     * runtime always had a deterministic answer instead — `activeEntries` sorts
+     * latest-started-first, so the later window wins while they overlap and the
+     * lights stay on through both — and dropping a row somebody had just drawn
+     * was the worse surprise. The screen draws the clash and says what happens.
      */
     const { homey: h, recorded } = homey({
       schedules: [SCHEDULE_ID], installedSchedules: [SCHEDULE_ID],
@@ -355,24 +361,23 @@ describe('POST /schedules/:id/entries (T13, T15)', () => {
 
     const result = await call(h, [
       WINDOW,
-      { id: 'b', onAt: 21 * 60, days: null, end: { kind: 'duration', minutes: 30 } },
+      { id: 'b', onAt: 21 * 60, end: { kind: 'duration', minutes: 30 } },
     ]);
 
-    assert.equal(result.count, 1, 'the later of an overlapping pair loses');
-    assert.equal(result.dropped.length, 1);
-    assert.match(result.dropped[0].reason, /^overlaps/);
-    assert.equal((recorded.plans[0] as any).entries.length, 1);
+    assert.equal(result.count, 2, 'both windows are kept');
+    assert.deepEqual(result.dropped, []);
+    assert.equal((recorded.plans[0] as any).entries.length, 2);
   });
 
   test('a payload where everything is dropped is refused, not saved empty', async () => {
-    // A schedule with no windows is a device that looks configured and can never
+    // A schedule with no blocks is a device that looks configured and can never
     // fire — the exact failure this app exists to prevent — so it is a throw
     // that names the reasons rather than a save of nothing.
     const { homey: h, recorded } = homey({
       schedules: [SCHEDULE_ID], installedSchedules: [SCHEDULE_ID],
     });
 
-    await assert.rejects(() => call(h, [{ id: 'x', onAt: 99999 }]), /every window was dropped/);
+    await assert.rejects(() => call(h, [{ id: 'x', onAt: 99999 }]), /every block was dropped/);
     assert.deepEqual(recorded.plans, []);
   });
 
@@ -381,7 +386,7 @@ describe('POST /schedules/:id/entries (T13, T15)', () => {
       schedules: [SCHEDULE_ID], installedSchedules: [SCHEDULE_ID],
     });
 
-    await assert.rejects(() => call(h, []), /needs at least one window/);
+    await assert.rejects(() => call(h, []), /needs at least one block/);
     assert.deepEqual(recorded.plans, []);
   });
 
@@ -393,7 +398,7 @@ describe('POST /schedules/:id/entries (T13, T15)', () => {
     });
 
     const many = Array.from({ length: 15 }, (_, i) => ({
-      id: `e${i}`, onAt: i * 90, days: null, end: { kind: 'duration', minutes: 30 },
+      id: `e${i}`, onAt: i * 90, end: { kind: 'duration', minutes: 30 },
     }));
     const result = await call(h, many);
 

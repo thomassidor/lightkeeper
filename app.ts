@@ -234,31 +234,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     });
 
     this.daylight = new DaylightEvaluator({
-      /**
-       * The Homey's own position, and the try/catch is the whole reason this is
-       * a closure rather than a value.
-       *
-       * `getLatitude()` is synchronous and THROWS when the permission is
-       * missing, so the boundary belongs here — `lib/` has no access to
-       * `this.homey` and must not have to know that reading a number can fail
-       * (platform §16). What arrives at the evaluator is a position or nothing,
-       * and nothing is a verdict it knows how to report.
-       *
-       * Read per call rather than cached, for the same reason `timezone` is: a
-       * household that corrects its Homey's location must not have to restart
-       * the app.
-       */
-      location: () => {
-        try {
-          return {
-            latitude: this.homey.geolocation?.getLatitude(),
-            longitude: this.homey.geolocation?.getLongitude(),
-          };
-        } catch (error) {
-          this.log('Could not read the Homey location:', messageOf(error));
-          return null;
-        }
-      },
+      location: () => this.location(),
       luminance: this.luminance,
     });
 
@@ -279,10 +255,6 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       api: this.api,
       onWriteResult,
       catalog: this.catalog,
-      // A window, point or end may take its brightness from the daylight; the
-      // evaluator is shared with the Daylight lights rather than rebuilt.
-      daylight: this.daylight,
-      luminance: this.luminance,
       bridge: this.bridge,
       cards: this.cards,
       // See `timezoneOf`: read per call, never cached, and `undefined` rather
@@ -296,10 +268,9 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       api: this.api,
       onWriteResult,
       catalog: this.catalog,
-      // A window, point or end may take its brightness from the daylight; the
-      // evaluator is shared with the Daylight lights rather than rebuilt.
-      daylight: this.daylight,
-      luminance: this.luminance,
+      // Where the Homey is, for the boundaries a circadian light anchors to the
+      // sun. Read per call so a corrected location needs no restart.
+      location: () => this.location(),
       timezone: () => timezoneOf(this.homey.clock),
       // The SDK's disposal-safe aliases: cleaned up with the Homey instance, so a
       // reloaded app cannot leave a timer behind writing to somebody's lights.
@@ -405,6 +376,34 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     // for the sake of one diagnostic field.
     return { appVersion: this.homey.manifest.version, nodeVersion: process.version,
       timezone: timezoneOf(this.homey.clock), uptimeSeconds: process.uptime() };
+  }
+
+  /**
+   * The Homey's own position, or nothing — and the try/catch is the whole reason
+   * this is a method rather than a value.
+   *
+   * `getLatitude()` is synchronous and THROWS when the permission is missing, so
+   * the boundary belongs here: `lib/` has no access to `this.homey` and must not
+   * have to know that reading a number can fail (platform §16). What arrives at a
+   * consumer is a position or nothing, and nothing is a verdict both of them know
+   * how to report — the evaluator falls back to the sensors, and a circadian
+   * light falls back to fixed hours.
+   *
+   * Read per call rather than cached, for the same reason `timezone` is: a
+   * household that corrects its Homey's location must not have to restart the
+   * app. Two consumers now — the daylight evaluator and the circadian runtimes'
+   * sun-anchored boundaries — which is what turned a closure into this.
+   */
+  private location(): unknown {
+    try {
+      return {
+        latitude: this.homey.geolocation?.getLatitude(),
+        longitude: this.homey.geolocation?.getLongitude(),
+      };
+    } catch (error) {
+      this.log('Could not read the Homey location:', messageOf(error));
+      return null;
+    }
   }
 
   override async onUninit() {

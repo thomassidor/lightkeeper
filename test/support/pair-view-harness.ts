@@ -122,7 +122,20 @@ function makeNode(tagName: string): FakeNode {
     innerHTML: '',
     children: [],
     style: {},
-    dataset: {},
+    /**
+     * A real `dataset` writes THROUGH to the attribute, and several views depend
+     * on it: `buttons.html` sets `row.dataset.key` and then finds the row again
+     * with `querySelector('[data-key=...]')` when a press arrives. A plain
+     * object here stores the value and matches nothing, which passes as a test
+     * that quietly asserts on a row it never found.
+     */
+    dataset: new Proxy({} as Record<string, string>, {
+      set(store, property: string, value: string) {
+        store[property] = String(value);
+        node.attributes[`data-${property.replace(/[A-Z]/g, c => `-${c.toLowerCase()}`)}`] = String(value);
+        return true;
+      },
+    }),
     attributes: {},
     listeners: {},
     parentElement: null,
@@ -411,6 +424,15 @@ export interface ViewRun {
    * that was actually clicked.
    */
   click(node: FakeNode, event?: string): void;
+  /**
+   * Push an event to the view, as the driver does through `Homey.on`.
+   *
+   * The buttons screen highlights the row a real press belongs to and the listen
+   * screen navigates when it hears one — both arrive this way rather than as a
+   * reply to something the view asked for, so there is no `emit` to stand in for
+   * them.
+   */
+  push(event: string, data: unknown): void;
   /** Let the view's promises settle. */
   settle(): Promise<void>;
 }
@@ -438,6 +460,7 @@ export function runPairView(html: string, options: ViewOptions = {}): ViewRun {
   const shown: string[] = [];
   const created: unknown[] = [];
   let finished = false;
+  const listeners: Record<string, Array<(data: unknown) => void>> = {};
 
   const homey = {
     __: options.translate ?? ((key: string) => key),
@@ -449,6 +472,21 @@ export function runPairView(html: string, options: ViewOptions = {}): ViewRun {
       return Object.prototype.hasOwnProperty.call(responses, event)
         ? Promise.resolve(responses[event])
         : Promise.reject(new Error(`no stub for "${event}"`));
+    },
+    /**
+     * The container pushes events to a view with `Homey.on`.
+     *
+     * Two screens listen: the buttons screen highlights the row a real press
+     * belongs to, and the listen screen navigates when it hears one. Both call
+     * this at boot, so a stub that is missing takes the whole view down before
+     * its first `emit` — which is the failure this harness exists to catch and
+     * would have reported as "never emitted anything".
+     *
+     * Handlers are kept so a test can fire one: `push(event, data)` below is how
+     * a press is simulated without a Homey.
+     */
+    on: (event: string, handler: (data: unknown) => void) => {
+      (listeners[event] ??= []).push(handler);
     },
     showView: (view: string) => { shown.push(view); },
     done: () => { finished = true; },
@@ -534,6 +572,10 @@ export function runPairView(html: string, options: ViewOptions = {}): ViewRun {
       for (const listener of node.listeners[event] ?? []) {
         listener({ target: node, ...payload });
       }
+    },
+    /** Simulate the driver pushing an event to the view, as `Homey.on` receives it. */
+    push(event: string, data: unknown) {
+      for (const listener of listeners[event] ?? []) listener(data);
     },
     click(node, event = 'click') {
       // Walk up to whichever ancestor is actually listening, the way the browser

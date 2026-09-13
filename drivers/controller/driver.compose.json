@@ -4,8 +4,12 @@
   },
   "class": "service",
   "capabilities": [],
-  "platforms": ["local"],
-  "connectivity": ["lan"],
+  "platforms": [
+    "local"
+  ],
+  "connectivity": [
+    "lan"
+  ],
   "images": {
     "small": "/drivers/controller/assets/images/small.png",
     "large": "/drivers/controller/assets/images/large.png",
@@ -13,38 +17,108 @@
   },
   "pair": [
     {
+      "id": "intro",
+      "navigation": {
+        "next": "credential"
+      }
+    },
+    {
       "id": "credential",
-      "navigation": { "next": "source" }
+      "navigation": {
+        "next": "remote"
+      }
     },
     {
-      "id": "source",
-      "navigation": { "next": "targets" }
+      "id": "remote",
+      "navigation": {
+        "prev": "credential",
+        "next": "lights"
+      }
     },
     {
-      "id": "targets",
-      "navigation": { "prev": "source", "next": "mapping" }
+      "id": "lights",
+      "navigation": {
+        "prev": "remote",
+        "next": "buttons"
+      }
     },
     {
-      "id": "mapping",
-      "navigation": { "prev": "targets" }
+      "id": "buttons",
+      "navigation": {
+        "prev": "lights",
+        "next": "review"
+      }
+    },
+    {
+      "id": "review",
+      "navigation": {
+        "prev": "buttons"
+      }
+    },
+    {
+      "id": "job",
+      "navigation": {
+        "prev": "buttons"
+      }
+    },
+    {
+      "id": "listen",
+      "navigation": {
+        "prev": "remote"
+      }
     }
   ],
   "repair": [
     {
+      "id": "intro",
+      "navigation": {
+        "next": "credential"
+      }
+    },
+    {
       "id": "credential",
-      "navigation": { "next": "source" }
+      "navigation": {
+        "next": "remote"
+      }
     },
     {
-      "id": "source",
-      "navigation": { "next": "targets" }
+      "id": "remote",
+      "navigation": {
+        "prev": "credential",
+        "next": "lights"
+      }
     },
     {
-      "id": "targets",
-      "navigation": { "prev": "source", "next": "mapping" }
+      "id": "lights",
+      "navigation": {
+        "prev": "remote",
+        "next": "buttons"
+      }
     },
     {
-      "id": "mapping",
-      "navigation": { "prev": "targets" }
+      "id": "buttons",
+      "navigation": {
+        "prev": "lights",
+        "next": "review"
+      }
+    },
+    {
+      "id": "review",
+      "navigation": {
+        "prev": "buttons"
+      }
+    },
+    {
+      "id": "job",
+      "navigation": {
+        "prev": "buttons"
+      }
+    },
+    {
+      "id": "listen",
+      "navigation": {
+        "prev": "remote"
+      }
     }
   ]
 }

@@ -320,7 +320,7 @@ export class DaylightRuntime {
     // Ref-counted and shared: five devices naming one sensor cost one
     // subscription. Total for this owner, so a sensor dropped from the plan is
     // released by the same call that retains the new one.
-    await this.sensorClaim.retain(this.plan.response.sensors);
+    await this.sensorClaim.retain(this.plan.response.sensor === null ? [] : [this.plan.response.sensor]);
     if (!current()) return;
 
     // Once, here. The tick deliberately does NOT refresh: live values arrive
@@ -602,7 +602,7 @@ export class DaylightRuntime {
       source: verdict.source,
       elevation: verdict.elevation,
       targets: this.history.decisions(candidates, excluded, writes),
-      sensors: this.deps.daylight.sensors().filter(sensor => this.plan.response.sensors.includes(sensor.deviceId)),
+      sensors: this.deps.daylight.sensors().filter(sensor => sensor.deviceId === this.plan.response.sensor),
     };
 
     let awaitedCompletion: Promise<WriteOutcome[]> | undefined;
@@ -656,7 +656,7 @@ export class DaylightRuntime {
    * loop actually happening.
    */
   private feedbackRisk(): 'increasing_sensor_response' | null {
-    return this.plan.response.sensors.length > 0 && this.plan.response.bright > this.plan.response.dark
+    return this.plan.response.sensor !== null && this.plan.response.bright > this.plan.response.dark
       ? 'increasing_sensor_response' : null;
   }
 
@@ -1042,7 +1042,7 @@ export class DaylightRuntime {
       // report listing another device's sensors is a report that sends the
       // reader to the wrong room.
       sensors: this.deps.daylight.sensors()
-        .filter(sensor => this.plan.response.sensors.includes(sensor.deviceId)),
+        .filter(sensor => sensor.deviceId === this.plan.response.sensor),
       targetIds: this.targetIds,
       targetNames: this.targetNames,
       targets: this.targetIds.map(id => ({

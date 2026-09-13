@@ -35,7 +35,7 @@
      — so a view that followed the OS scheme went dark inside a white sheet. A
      colour written as a literal anywhere past this block is a token that is
      missing. */
-  #cir-root {
+  #cv-root {
     /* Brand. The violet is the manifest brandColor: the logo's ground — 93% of
        its pixels — lightened so it reads as violet rather than black in the
        circle Homey paints behind an icon (platform §10). The lavender is the
@@ -45,6 +45,9 @@
        the logo itself has no mid-tones. */
     --lk-accent: #2a1958;
     --lk-accent-ink: #ffffff;
+    /* Secondary text ON the accent, where white would compete with the number
+       beside it rather than support it. */
+    --lk-accent-soft: #e2dbf6;
     --lk-accent-tint: #f3eefc;
     --lk-accent-wash: #fbf9fe;
     --lk-accent-line: #d9cbf5;
@@ -73,8 +76,30 @@
     --lk-hover: #c9d2e0;
     --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
 
+    /* The pairing primitives' own colours, here for the same reason every
+       other literal is: a shadow written inline is a shadow the next palette
+       change misses. */
+    --lk-knob-shadow: 0 1px 3px rgba(16, 24, 40, .3);
+    --lk-slider-knob-shadow: 0 0 0 2px rgba(22, 24, 29, .6), 0 1px 4px rgba(16, 24, 40, .35);
+    --lk-slider-inset: inset 0 0 0 1px rgba(22, 24, 29, .1);
+    /* The two axes a slider can carry, as whole gradients rather than as a
+       list of stops: a ramp is one decision about what the axis LOOKS like,
+       and splitting it into six tokens would invite five of them to change. */
+    --lk-warm-ramp: linear-gradient(90deg, #e8892c, #efa658, #f4c68a,
+                                    #f2e6d6, #eaf0fb, #dbe8fb);
+    --lk-bright-ramp: linear-gradient(90deg, #221a3d, #43318a, #7a5fc4,
+                                      #b9a6e4, #ece5f9);
+    --lk-handle-shadow: 0 2px 6px rgba(16, 24, 40, .2);
+    --lk-handle-shadow-sel: 0 0 0 4px var(--lk-ring), 0 2px 8px rgba(16, 24, 40, .28);
+    --lk-hairline: rgba(22, 24, 29, .1);
+    --lk-day-mark: rgba(22, 24, 29, .4);
+    --lk-day-tag-bg: rgba(255, 255, 255, .86);
+
     --lk-ok-bg: #eaf7ef;   --lk-ok-ink: #10633a;
     --lk-bad-bg: #fdeceb;  --lk-bad-ink: #8f1d18;
+    /* Not an error. The one thing that reads this way is a schedule overlap,
+       which is allowed, resolved deterministically, and worth pointing at. */
+    --lk-warn-bg: #fdf3e7; --lk-warn-ink: #7a4a10;
     --lk-flat-bg: #f4f5f7; --lk-flat-ink: #5b616e;
 
     background: var(--lk-page);
@@ -85,453 +110,336 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  #cir-root h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
-  #cir-root .sub { font-size: 14px; line-height: 1.5; color: var(--lk-sub); margin: 0 0 18px; }
-  #cir-root p { font-size: 14px; line-height: 1.55; color: var(--lk-body); }
+  #cv-root h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+  #cv-root .sub { font-size: 14px; line-height: 1.5; color: var(--lk-sub); margin: 0 0 18px; }
+  #cv-root p { font-size: 14px; line-height: 1.55; color: var(--lk-body); }
 
-  #cir-root .card { background: var(--lk-surface); border: 1px solid var(--lk-line);
+  #cv-root .card { background: var(--lk-surface); border: 1px solid var(--lk-line);
               border-radius: 14px; box-shadow: var(--lk-shadow); padding: 14px;
               margin-bottom: 10px; }
 
-  #cir-root .section { margin-bottom: 18px; }
-  #cir-root .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase;
+  #cv-root .section { margin-bottom: 18px; }
+  #cv-root .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase;
                        letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 8px 2px; }
 
   /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
-  #cir-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+  #cv-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
               border: 1.5px solid var(--lk-line); border-radius: 12px; padding: 13px 14px;
               margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
               color: var(--lk-ink);
               transition: border-color .12s ease, background .12s ease; }
-  #cir-root .tile:hover { border-color: var(--lk-hover); }
-  #cir-root .tile.sel { border-color: var(--lk-accent); background: var(--lk-accent-tint); }
-  #cir-root .tile .name { font-size: 15px; font-weight: 500; line-height: 1.3; }
-  #cir-root .tile .meta { font-size: 12.5px; color: var(--lk-muted); margin-top: 3px; line-height: 1.35; }
+  #cv-root .tile:hover { border-color: var(--lk-hover); }
+  #cv-root .tile.sel { border-color: var(--lk-accent); background: var(--lk-accent-tint); }
+  #cv-root .tile .name { font-size: 15px; font-weight: 500; line-height: 1.3; }
+  #cv-root .tile .meta { font-size: 12.5px; color: var(--lk-muted); margin-top: 3px; line-height: 1.35; }
 
-  #cir-root input[type=text], #cir-root input[type=password], #cir-root select {
+  #cv-root input[type=text], #cv-root input[type=password], #cv-root select {
     width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
     border: 1.5px solid var(--lk-field); border-radius: 11px; background: var(--lk-surface);
     color: var(--lk-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
   /* The chevron's fill stays a literal: #6a7180 is --lk-muted, and a data URI
      cannot read a custom property. So this is the one place a token's value is
      written twice, and the two copies have to move together. */
-  #cir-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+  #cv-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
                background-repeat: no-repeat; background-position: right 13px center;
                background-size: 11px; padding-right: 34px; }
-  #cir-root input:focus, #cir-root select:focus { outline: none; border-color: var(--lk-accent);
+  #cv-root input:focus, #cv-root select:focus { outline: none; border-color: var(--lk-accent);
                                       box-shadow: 0 0 0 3px var(--lk-ring); }
 
-  #cir-root .btn { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
+  #cv-root .btn { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
              border-radius: 10px; border: 1.5px solid var(--lk-field);
              background: var(--lk-surface); color: var(--lk-ink); cursor: pointer;
              min-height: 40px; }
-  #cir-root .btn:hover { border-color: var(--lk-hover); }
-  #cir-root .btn:disabled { opacity: .45; cursor: not-allowed; }
-  #cir-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
+  #cv-root .btn:hover { border-color: var(--lk-hover); }
+  #cv-root .btn:disabled { opacity: .45; cursor: not-allowed; }
+  #cv-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
                      border-radius: 12px; border: none; background: var(--lk-accent);
                      color: var(--lk-accent-ink); cursor: pointer; min-height: 50px;
                      margin-top: 16px; font-family: inherit; }
-  #cir-root .btn-primary:disabled { opacity: .5; cursor: progress; }
+  #cv-root .btn-primary:disabled { opacity: .5; cursor: progress; }
 
   /* A default ground, so a .msg shown before any state class lands on it is
      still a message rather than bare text on the page. */
-  #cir-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 11px; font-size: 13.5px;
+  #cv-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 11px; font-size: 13.5px;
              line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
-  #cir-root .ok { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
-  #cir-root .bad { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
-  #cir-root .muted { background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+  #cv-root .ok { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
+  #cv-root .bad { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
+  #cv-root .muted { background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+  #cv-root .warn { background: var(--lk-warn-bg); color: var(--lk-warn-ink); }
+  /* A message whose first line is what happened and whose second is what it
+     means. Both belong in one block: split across two, the second reads as
+     unrelated body copy. */
+  #cv-root .msg .lead { font-weight: 600; margin-bottom: 3px; }
 
-  #cir-root ol { font-size: 14px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+  #cv-root ol { font-size: 14px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
            color: var(--lk-body); }
-  #cir-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
-  @media (max-width: 380px) { #cir-root .grid { grid-template-columns: 1fr; } }
-  #cir-root .empty { font-size: 14px; color: var(--lk-muted); padding: 12px 0; }
+  #cv-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  @media (max-width: 380px) { #cv-root .grid { grid-template-columns: 1fr; } }
+  #cv-root .empty { font-size: 14px; color: var(--lk-muted); padding: 12px 0; }
+  /* ---- the pairing paradigm --------------------------------------------
+     Every screen the redesign draws is built from these six, so a change to
+     any of them is one edit rather than fifteen. They live in the shared base
+     rather than in each view for exactly the reason the tokens do: a primitive
+     defined twice is a primitive that drifts. */
+
+  /* Step dots. The intro is unnumbered — the steps it promises are the ones
+     that carry a dot — so a view renders as many as its own flow has. */
+  #cv-root .steps { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
+  #cv-root .steps i { width: 22px; height: 4px; border-radius: 999px;
+                   background: var(--lk-field); }
+  #cv-root .steps i.on { background: var(--lk-accent); }
+  #cv-root .steps span { margin-left: 4px; font-size: 12px; color: var(--lk-faint); }
+
+  /* `label · value · chevron`. The one shape everything secondary takes:
+     a row that says what it is, what it is set to, and that it can be opened. */
+  #cv-root .row { display: flex; align-items: center; gap: 11px; width: 100%;
+               padding: 13px 14px; min-height: 44px; box-sizing: border-box;
+               background: none; border: none; font: inherit; color: inherit;
+               text-align: left; cursor: pointer; }
+  #cv-root .row + .row { border-top: 1px solid var(--lk-line); }
+  #cv-root .row .label { flex: 1; font-size: 14.5px; font-weight: 500; }
+  #cv-root .row .value { font-size: 13px; color: var(--lk-muted); text-align: right; }
+  #cv-root .row .chev { flex: none; font-size: 15px; color: var(--lk-muted); }
+  #cv-root .row .sub { font-size: 12.5px; color: var(--lk-muted); margin: 2px 0 0; }
+
+  /* The pill switch behind every "Set … too". */
+  #cv-root .toggle { display: flex; align-items: center; gap: 11px; width: 100%;
+                  padding: 12px 0; min-height: 44px; box-sizing: border-box;
+                  background: none; border: none; font: inherit; color: inherit;
+                  text-align: left; cursor: pointer; }
+  #cv-root .toggle .label { flex: 1; font-size: 14.5px; font-weight: 500; }
+  #cv-root .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
+                         position: relative; background: var(--lk-field);
+                         transition: background .15s ease; }
+  #cv-root .toggle[aria-checked="true"] .track { background: var(--lk-accent); }
+  #cv-root .toggle .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+                        border-radius: 50%; background: var(--lk-surface);
+                        box-shadow: var(--lk-knob-shadow);
+                        transition: left .15s ease; }
+  #cv-root .toggle[aria-checked="true"] .knob { left: 21px; }
+
+  /* The title above a control, with its value on the right of the same line.
+     Sentence case and body-coloured rather than a small-caps section label:
+     "Brightness 80%" is a reading of the control directly below it, not a
+     heading over a group of unrelated things. */
+  #cv-root .control-title { display: flex; align-items: baseline;
+                         justify-content: space-between; gap: 10px;
+                         font-size: 13.5px; font-weight: 600; line-height: 1.2;
+                         color: var(--lk-ink); margin: 0 0 9px; }
+
+  /* A value slider with its two end captions.
+     The TRACK carries the range as a gradient and there is no fill: the whole
+     axis is visible at once, so a warmth slider shows candlelight at one end
+     and daylight at the other rather than asking somebody to imagine it. The
+     knob marks the position on it.
+     `touch-action: none` is not decoration: without it a horizontal drag
+     scrolls the pairing sheet underneath and the control cannot be used on a
+     phone at all. */
+  #cv-root .slider { position: relative; height: 28px; border-radius: 8px;
+                  background: var(--lk-field); margin: 0;
+                  box-shadow: var(--lk-slider-inset);
+                  touch-action: none; cursor: pointer; }
+  /* Candlelight to daylight, left to right — the order the slider reads in,
+     which is the REVERSE of the way a warmth is stored (platform §6). */
+  #cv-root .slider.warm { background: var(--lk-warm-ramp); }
+  #cv-root .slider.bright { background: var(--lk-bright-ramp); }
+  #cv-root .slider .knob { position: absolute; top: -4px; bottom: -4px; width: 6px;
+                        margin-left: -3px; border-radius: 4px;
+                        background: var(--lk-surface);
+                        box-shadow: var(--lk-slider-knob-shadow); }
+  #cv-root .ends { display: flex; justify-content: space-between;
+                font-size: 11px; color: var(--lk-muted); margin: 9px 0 0; }
+
+  /* The swatches a colour is chosen from, four across.
+     Not one row of eight: at 390px that is 34px a swatch, under the touch
+     minimum and too small to judge a colour by. Two rows of four is the same
+     set of eight, legibly, and the sixteen that fold out below continue it. */
+  #cv-root .swatches { display: grid; grid-template-columns: repeat(4, 1fr);
+                    gap: 8px; margin: 10px 0; }
+  #cv-root .swatch { height: 44px; border-radius: 9px; padding: 0;
+                  border: 1px solid var(--lk-hairline); cursor: pointer; }
+  #cv-root .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--lk-surface),
+                                                   0 0 0 4px var(--lk-accent); }
+
+  /* The day strip: a picture of the whole day, drawn once and reused. */
+  #cv-root .day { position: relative; height: 104px; border-radius: 12px;
+               overflow: hidden; touch-action: none; }
+  #cv-root .day .mark { position: absolute; top: 0; bottom: 0; width: 0;
+                     border-left: 1.5px dashed var(--lk-day-mark); }
+  #cv-root .day .tag { position: absolute; top: 6px; transform: translateX(-50%);
+                    background: var(--lk-day-tag-bg); color: var(--lk-body);
+                    font-size: 9.5px; font-weight: 600; letter-spacing: .05em;
+                    text-transform: uppercase; padding: 3px 5px; border-radius: 4px; }
+  #cv-root .day .handle { position: absolute; top: 50%; width: 26px; height: 26px;
+                       margin: -13px 0 0 -13px; border-radius: 50%;
+                       background: var(--lk-surface); box-sizing: border-box;
+                       border: 2.5px solid var(--lk-ring);
+                       box-shadow: var(--lk-handle-shadow); }
+  #cv-root .day .handle.sel { width: 34px; height: 34px; margin: -17px 0 0 -17px;
+                           border: 3px solid var(--lk-accent); z-index: 2;
+                           box-shadow: var(--lk-handle-shadow-sel); }
+  #cv-root .clockline { display: flex; justify-content: space-between;
+                     font-size: 12px; color: var(--lk-muted); margin-top: 6px; }
+
   /* ==== end shared base ==== */
 
-  #cir-root .colour {
-    width: 100%;
-    padding: 8px 10px;
-    border: 1px solid var(--lk-field);
-    border-radius: 8px;
-    background: var(--lk-surface);
-    color: var(--lk-ink);
-    font-size: 14px;
-  }
-#cir-root .rowhead { display: flex; align-items: baseline; justify-content: space-between;
-                  margin-bottom: 12px; }
-  #cir-root .rowhead .name { font-size: 15px; font-weight: 600; }
-  #cir-root .link { background: none; border: none; padding: 4px 0; font-family: inherit;
-               font-size: 13px; color: var(--lk-muted); cursor: pointer; }
-  #cir-root .link:hover { color: var(--lk-ink); }
+  /* ---- this view only ---------------------------------------------------- */
 
-  #cir-root .field { margin-bottom: 14px; }
-  #cir-root .field:last-child { margin-bottom: 0; }
-  #cir-root .label { font-size: 12px; font-weight: 600; text-transform: uppercase;
-                letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 6px 2px; }
+  /* The chart: bar HEIGHT is brightness, bar COLOUR is the colour. With
+     brightness switched off — the default — every bar is full height and the
+     chart is purely a day of colour, which is what the device is for. */
+  #cv-root .chart { display: flex; align-items: flex-end; gap: 2px; height: 110px;
+                    border-radius: 12px; background: var(--lk-flat-bg);
+                    position: relative; padding: 0 2px; box-sizing: border-box; }
+  /* A gutter for the Off and Full captions, only when there are captions to
+     put in it: with brightness switched off every bar is full height and the
+     chart is purely a day of colour, so the axis is not there to be labelled. */
+  #cv-root .chart { --gutter: 2px; }
+  #cv-root .chart.axed { padding-left: 34px; --gutter: 34px; }
+  #cv-root .chart i { flex: 1; border-radius: 2px 2px 0 0; }
+  #cv-root .chart .at { position: absolute; top: 0; bottom: 0; width: 0;
+                        border-left: 1.5px dashed var(--lk-day-mark); }
+  /* Every point gets a handle, because the chart is the only place the SHAPE
+     is visible: a list of times says when, and nothing says what the day looks
+     like between them. The selected one is filled so tapping a row and looking
+     up answers "which of these am I editing". */
+  #cv-root .chart .dot { position: absolute; width: 11px; height: 11px;
+                         margin: -6px 0 0 -6px; border-radius: 50%;
+                         background: var(--lk-surface);
+                         border: 2px solid var(--lk-accent); box-sizing: border-box; }
+  #cv-root .chart .dot.sel { background: var(--lk-accent); }
+  /* Off and Full, on the chart itself. Bar height means brightness only once
+     somebody has been told which way up the axis runs. */
+  #cv-root .chart .cap { position: absolute; left: 8px; font-size: 11px;
+                         color: var(--lk-muted); }
+  #cv-root .chart .cap.top { top: 6px; }
+  #cv-root .chart .cap.bottom { bottom: 6px; }
+  #cv-root .axis { display: flex; justify-content: space-between;
+                   font-size: 11.5px; color: var(--lk-muted); margin: 4px 2px 0; }
 
-  /* Hour and minute as two selects rather than <input type="time">: the pairing
-     webview renders the native picker differently on every platform it runs on,
-     and one of those renderings is a 13px field with no touch target. */
-  #cir-root .times { display: flex; align-items: center; gap: 6px; }
-  #cir-root .times select { width: auto; flex: 1 1 0; min-width: 0; }
-  #cir-root .times .sep { font-size: 15px; color: var(--lk-muted); flex: none; }
+  #cv-root .point { background: var(--lk-surface); border: 1px solid var(--lk-line);
+                    border-radius: 14px; box-shadow: var(--lk-shadow);
+                    padding: 14px; margin: 14px 0; }
+  #cv-root .point-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  #cv-root .point-head .sw { flex: none; width: 26px; height: 26px; border-radius: 7px;
+                             border: 1px solid var(--lk-hairline); }
+  #cv-root .point-head .name { flex: 1; font-size: 16px; font-weight: 700; }
+  #cv-root .point-head .which { font-size: 12.5px; color: var(--lk-muted); }
 
-  /* `text-transform: none` is not decoration. The pairing container's own
-     stylesheet styles bare `label`, and text-transform is one of the few
-     properties we never declared — so Homey's `uppercase` won, and the option
-     read "SET THE COLOUR BEFORE THE LIGHTS COME ON" on a real Homey while every
-     local render showed sentence case. The span inside inherits from the label,
-     so stating it here fixes both. */
-  #cir-root .check { display: flex; align-items: center; gap: 10px; min-height: 44px;
-               font-size: 14px; color: var(--lk-body); cursor: pointer;
-               text-transform: none; letter-spacing: normal; }
+  #cv-root .timeset { display: flex; align-items: center; gap: 8px;
+                      background: var(--lk-flat-bg); border-radius: 10px; padding: 6px 8px;
+                      margin-bottom: 12px; min-height: 44px; box-sizing: border-box; }
+  #cv-root .timeset .cap { flex: 1; font-size: 13px; color: var(--lk-body); }
+  #cv-root .timeset .val { font-size: 16px; font-weight: 700; min-width: 66px; text-align: center; }
+  #cv-root .timeset button { width: 34px; height: 34px; flex: none; border-radius: 8px;
+                             border: 1.5px solid var(--lk-field); background: var(--lk-surface);
+                             font: 600 18px/1 inherit; color: var(--lk-ink); cursor: pointer; }
 
-  /* A titled block inside a card: what tells the two live controls apart. Each
-     one now says what it does before you press it, instead of being a bare
-     button whose label had to carry the whole explanation. */
-  #cir-root .blocktitle { font-size: 15px; font-weight: 600; color: var(--lk-ink); }
-  #cir-root .blockhelp { font-size: 12.5px; line-height: 1.5; color: var(--lk-muted);
-                    margin: 4px 0 12px; }
 
-  /* The pre-stage check, nested under the option it checks and hidden until that
-     option is on — the only state in which "does this work on your lights?" is a
-     question worth asking, and what stops it sitting next to the preview button
-     looking like its twin. */
-  #cir-root .probe { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--lk-line); }
-  #cir-root .probe.off { display: none; }
-  #cir-root .check input { width: 22px; height: 22px; margin: 0; flex: none;
-                      accent-color: var(--lk-accent); cursor: pointer; }
+  #cv-root .more { font-size: 13px; font-weight: 600; color: var(--lk-accent-strong);
+                   background: none; border: none; padding: 4px 0 10px;
+                   font-family: inherit; cursor: pointer; min-height: 44px; }
 
-  #cir-root .slider { display: flex; align-items: center; gap: 10px; }
-  #cir-root .slider input[type=range] { flex: 1; min-width: 0; accent-color: var(--lk-accent);
-                                   height: 28px; }
-  #cir-root .slider .value { font-size: 13px; color: var(--lk-sub); flex: none;
-                        min-width: 62px; text-align: right; }
+  #cv-root .others { background: var(--lk-surface); border: 1px solid var(--lk-line);
+                     border-radius: 14px; box-shadow: var(--lk-shadow);
+                     overflow: hidden; margin-bottom: 14px; }
+  #cv-root .others .sw { flex: none; width: 26px; height: 26px; border-radius: 7px;
+                         border: 1px solid var(--lk-hairline); }
+  #cv-root .others .text { flex: 1; }
 
-  #cir-root .acts { display: flex; gap: 7px; }
-  #cir-root .acts .btn { flex: 1; }
-  #cir-root .result { font-size: 13px; color: var(--lk-sub); margin-top: 8px; }
-  #cir-root .help { font-size: 12.5px; line-height: 1.5; color: var(--lk-muted);
-               margin: 2px 0 10px 32px; }
-  /* The same help text inside a field rather than under a checkbox: the 32px
-     indent above clears a checkbox that is not there in a point card. */
-  #cir-root .help.note { margin: 6px 0 0 2px; }
-  #cir-root .help.off { display: none; }
-  /* The brightness card ends on its help text, and the 10px below it would sit
-     inside the card's own padding as a stray gap. */
-  #cir-root .card > .help:last-child { margin-bottom: 0; }
-  #cir-root .add { width: 100%; }
+  #cv-root .add { width: 100%; min-height: 44px; border-radius: 12px; margin-bottom: 16px;
+                  border: 1.5px dashed var(--lk-field); background: none;
+                  font: 600 14px/1 inherit; color: var(--lk-accent-strong); cursor: pointer; }
 
-  /* The curve, drawn rather than described. A list of five times and five
-     warmths is not something anyone can picture, and picturing it is the whole
-     decision the screen is asking for. */
-  #cir-root .chart { position: relative; }
-  #cir-root .chart svg { display: block; width: 100%; height: 96px; overflow: visible; }
-  #cir-root .chart .line { fill: none; stroke: var(--lk-accent); stroke-width: 2;
-                      stroke-linejoin: round; stroke-linecap: round; }
-  /* The dots are the payload now, not punctuation: each one is filled with the
-     colour — or the colour TEMPERATURE — that point sets, which is the axis the
-     chart itself no longer draws. So they are large enough to read a pale
-     2700K white off, and the ring is thinner than it was so the fill dominates
-     rather than the outline. */
-  #cir-root .chart .dot { fill: var(--lk-surface); stroke: var(--lk-accent); stroke-width: 1.5; }
-  #cir-root .chart .now { stroke: var(--lk-muted); stroke-width: 1; stroke-dasharray: 3 3; }
-  /* One guide per point, so a dot can be read off the hour labels below it.
-     Without them the eye has to project a dot down through empty space, which
-     is the whole reason a scatter of dots is harder to read than a line — and
-     it got harder still once height stopped meaning warmth. Faint enough to
-     stay behind both the curve and the dashed "now" line: these are a ruler,
-     not data. */
-  #cir-root .chart .guide { stroke: var(--lk-ring); stroke-width: 1; }
-  #cir-root .chart .axis { display: flex; justify-content: space-between; margin-top: 6px;
-                      font-size: 11px; color: var(--lk-faint); }
-  #cir-root .chart .legend { font-size: 12.5px; color: var(--lk-sub); margin-top: 8px; }
-  #cir-root .chart .key { font-size: 12px; color: var(--lk-muted); margin-top: 3px; }
-  /* ==== shared daylight card: identical in every view that carries it ====
-     The daylight response is ONE configuration per device, and four of the five
-     device types can hold one — a Daylight light, a schedule, a circadian light
-     and a Curve light. So this card lands in four different views, for the same
-     reason the base above does: all views of a session share one document, and
-     Homey will not follow a reference (platform §8).
-
-     GENERATED, like the base: spliced by `npm run sync:views` from
-     views/shared/daylight-card.css. **Edit that file, not this one.** The markup
-     and the `daylightCard()` function come from views/shared/daylight-card.html
-     and views/shared/daylight-card.js the same way, so the whole card is one
-     authored copy in three files rather than four hand-kept ones in eight.
-
-     EVERY class is `dl-`prefixed and defined HERE, even where the host view has
-     something identical of its own. That is deliberate: the card lands in four
-     different stylesheets whose `.help` and `.field` differ in their margins,
-     and one of the four defined none of them at all — so a card that borrowed
-     them rendered unstyled on that screen and slightly wrong on two others.
-     Owning its own furniture is what makes the card the same thing everywhere.
-
-     Every colour is a token from the base. A literal here is a token that is
-     missing. */
-  #cir-root .dl-card { display: block; }
-  #cir-root .dl-card.dl-off { display: none; }
-  #cir-root .dl-sun.dl-off { display: none; }
-
-  /* One column, because the four answers are sentences rather than labels and
-     two of them wrap on a phone at any width worth supporting. */
-  #cir-root .dl-peaks { display: flex; flex-direction: column; gap: 8px; }
-  #cir-root .dl-peak { display: flex; align-items: center; gap: 10px; min-height: 44px;
-                   font-size: 14px; color: var(--lk-body); cursor: pointer;
-                   text-transform: none; letter-spacing: normal; }
-  #cir-root .dl-peak input { width: 22px; height: 22px; margin: 0; flex: none;
-                         accent-color: var(--lk-accent); cursor: pointer; }
-
-  #cir-root .dl-field { margin-bottom: 14px; }
-  #cir-root .dl-field:last-child { margin-bottom: 0; }
-  #cir-root .dl-label { font-size: 12px; font-weight: 600; text-transform: uppercase;
-                  letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 6px 2px; }
-  #cir-root .dl-help { font-size: 12.5px; line-height: 1.5; color: var(--lk-muted);
-                 margin: 2px 0 10px 2px; }
-  #cir-root .dl-blocktitle { font-size: 15px; font-weight: 600; color: var(--lk-ink); }
-  #cir-root .dl-blockhelp { font-size: 12.5px; line-height: 1.5; color: var(--lk-muted);
-                      margin: 4px 0 12px; }
-  #cir-root .dl-slider { display: flex; align-items: center; gap: 10px; }
-  #cir-root .dl-slider input[type=range] { flex: 1; min-width: 0; accent-color: var(--lk-accent);
-                                     height: 28px; }
-  #cir-root .dl-value { font-size: 13px; color: var(--lk-sub); flex: none;
-                  min-width: 62px; text-align: right; }
-  #cir-root .dl-acts { display: flex; gap: 7px; }
-  #cir-root .dl-acts .btn { flex: 1; }
-  #cir-root .dl-result { font-size: 13px; color: var(--lk-sub); margin-top: 8px; }
-
-  /* The live readout, which sits ABOVE the controls it explains: two numbers
-     labelled "dark" and "bright" cannot be chosen without knowing what the room
-     currently reads. */
-  #cir-root .dl-reading { display: flex; align-items: baseline; justify-content: space-between;
-                    gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--lk-line); }
-  #cir-root .dl-reading:last-child { border-bottom: none; padding-bottom: 0; }
-  #cir-root .dl-reading .dl-what { font-size: 13.5px; color: var(--lk-body); }
-  #cir-root .dl-reading .dl-val { font-size: 13.5px; font-weight: 600; color: var(--lk-ink);
-                            flex: none; text-align: right; }
-  /* An unknown reading is deliberately NOT styled as an error: a Homey with no
-     light sensor is the normal case, and the sun answers for it. */
-  #cir-root .dl-reading .dl-val.dl-unknown { font-weight: 500; color: var(--lk-muted); }
-
-  /* The lux range: two numbers side by side, because they are one setting. */
-  #cir-root .dl-lux { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  #cir-root .dl-lux input[type=number] { width: 100%; box-sizing: border-box; padding: 12px 13px;
-                                   font-size: 15px; border: 1.5px solid var(--lk-field);
-                                   border-radius: 11px; background: var(--lk-surface);
-                                   color: var(--lk-ink); font-family: inherit;
-                                   -webkit-appearance: none; appearance: none; }
-  #cir-root .dl-lux input[type=number]:focus { outline: none; border-color: var(--lk-accent);
-                                         box-shadow: 0 0 0 3px var(--lk-ring); }
-
-  /* A sensor row carries its current reading, which is what makes the lux range
-     above choosable rather than a guess. */
-  #cir-root .dl-tile-lux { font-size: 12.5px; color: var(--lk-muted); margin-top: 3px; }
-  /* ==== end shared daylight card ==== */
+  #cv-root .remove { font-size: 13px; font-weight: 600; color: var(--lk-bad-ink);
+                     background: none; border: none; padding: 12px 0 0;
+                     font-family: inherit; cursor: pointer; min-height: 44px; }
 </style>
 
-<div class="wrap" id="cir-root">
+<div class="wrap" id="cv-root">
+  <div class="steps" id="cv-steps"></div>
   <h2 data-i18n="curve.title"></h2>
-  <p class="sub" data-i18n="curve.subtitle"></p>
 
-  <div class="card chart">
-    <svg id="cir-graph" viewBox="0 0 320 96" preserveAspectRatio="none" aria-hidden="true">
-      <g id="cir-guides"></g>
-      <line class="now" id="cir-now" x1="0" y1="0" x2="0" y2="96"></line>
-      <polyline class="line" id="cir-line" points=""></polyline>
-      <g id="cir-dots"></g>
-    </svg>
-    <div class="axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
-    <div class="legend" id="cir-legend"></div>
-    <div class="key" id="cir-key"></div>
+  <div id="cv-error" class="msg bad" style="display:none;"></div>
+
+  <div class="chart" id="cv-chart"></div>
+  <div class="axis">
+    <span data-i18n="curve.midnight"></span>
+    <span data-i18n="curve.noon"></span>
+    <span data-i18n="curve.midnight"></span>
   </div>
 
-  <!-- Above the point list, not below it: switching this on adds a brightness
-       slider to EVERY point, so a toggle underneath them meant scrolling back up
-       through eight cards you had just finished setting. -->
-  <div class="card" id="cir-brightnessCard">
-    <label class="check"><input type="checkbox" id="cir-brightness" />
-      <span data-i18n="circadian.alsoBrightness"></span></label>
-    <div class="help" data-i18n="circadian.alsoBrightnessHelp"></div>
-  </div>
+  <div class="point" id="cv-editor">
+    <div class="point-head">
+      <span class="sw" id="cv-pointSwatch"></span>
+      <span class="name" id="cv-pointName"></span>
+      <span class="which" id="cv-pointWhich"></span>
+    </div>
 
-  <div id="cir-list"></div>
+    <div class="timeset">
+      <span class="cap" data-i18n="curve.at"></span>
+      <button type="button" id="cv-timeDown">&minus;</button>
+      <span class="val" id="cv-time"></span>
+      <button type="button" id="cv-timeUp">+</button>
+    </div>
 
-  <!-- ==== shared daylight card ====
-       Byte-identical markup in every view that carries it, for the reason its
-       CSS block gives. `dl-off` until something references the response, because
-       a screen that already has twelve windows on it should not also carry a
-       sensor picker nobody asked for. -->
-  <div class="section dl-card dl-off" id="dl-card">
-    <div class="section-title" data-i18n="daylight.nowTitle"></div>
-    <div class="card" id="dl-now"></div>
+    <div class="control-title" data-i18n="curve.colour"></div>
+    <div class="swatches" id="cv-featured"></div>
+    <div class="swatches" id="cv-rest" style="display:none;"></div>
+    <!--
+      Sixteen more colours fold out IN PLACE, never onto a second screen. A set
+      is a decision; a continuous picker is a tuning session, and a set of
+      twenty-four shown at once is a tuning session with extra steps.
+    -->
+    <button class="more" id="cv-more" type="button"></button>
 
-    <div class="section-title" data-i18n="daylight.sensorsTitle"></div>
-    <p class="dl-help" data-i18n="daylight.sensorsHelp"></p>
-    <div id="dl-sensors"></div>
-
-    <!-- Only when there is no sensor. A sensor MEASURES this room, so a model
-         of the room would be a guess laid over a reading. `dl-off` is the same
-         hiding mechanism the whole card uses. -->
-    <div class="dl-sun dl-off" id="dl-sun">
-      <div class="section-title" data-i18n="daylight.sunTitle"></div>
-      <div class="card">
-        <p class="dl-help" data-i18n="daylight.sunHelp"></p>
-        <div class="dl-peaks" id="dl-peaks"></div>
+    <button class="toggle" id="cv-brightToggle" type="button" aria-checked="false">
+      <span class="label" data-i18n="curve.alsoBrightness"></span>
+      <span class="track"><span class="knob"></span></span>
+    </button>
+    <div id="cv-brightBlock" style="display:none;">
+      <div class="control-title"><span data-i18n="curve.brightness"></span> <span id="cv-brightPct"></span></div>
+      <div class="slider bright" id="cv-bright">
+        <div class="knob" id="cv-brightKnob"></div>
+      </div>
+      <div class="ends">
+        <span data-i18n="curve.off"></span>
+        <span data-i18n="curve.full"></span>
       </div>
     </div>
 
-    <div class="section-title" data-i18n="daylight.rangeTitle"></div>
-    <div class="card">
-      <p class="dl-help" data-i18n="daylight.rangeHelp"></p>
-      <div class="dl-lux">
-        <div class="dl-field">
-          <div class="dl-label" data-i18n="daylight.luxDark"></div>
-          <input type="number" id="dl-dark-lux" min="0" step="1" inputmode="numeric">
-        </div>
-        <div class="dl-field">
-          <div class="dl-label" data-i18n="daylight.luxBright"></div>
-          <input type="number" id="dl-bright-lux" min="0" step="1" inputmode="numeric">
-        </div>
-      </div>
-    </div>
-
-    <div class="section-title" data-i18n="daylight.endsTitle"></div>
-    <div class="card">
-      <p class="dl-help" data-i18n="daylight.endsHelp"></p>
-      <div class="dl-field">
-        <div class="dl-label" data-i18n="daylight.endDark"></div>
-        <div class="dl-slider">
-          <input type="range" id="dl-dark" min="10" max="100" step="5">
-          <span class="dl-value" id="dl-dark-value"></span>
-        </div>
-      </div>
-      <div class="dl-field">
-        <div class="dl-label" data-i18n="daylight.endBright"></div>
-        <div class="dl-slider">
-          <input type="range" id="dl-bright" min="10" max="100" step="5">
-          <span class="dl-value" id="dl-bright-value"></span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Standalone only: on the other three drivers the surrounding screen owns
-         the footer, and two Test buttons doing different things is worse than
-         either. -->
-    <div class="card" id="dl-preview-card" hidden>
-      <div class="dl-blocktitle" data-i18n="daylight.previewTitle"></div>
-      <div class="dl-blockhelp" data-i18n="daylight.previewHelp"></div>
-      <div class="dl-acts">
-        <button class="btn" id="dl-preview" data-i18n="daylight.preview"></button>
-      </div>
-      <div class="dl-result" id="dl-preview-result"></div>
-    </div>
-  </div>
-  <!-- ==== end shared daylight card ==== -->
-
-  <button class="btn add" id="cir-add">Add another point</button>
-
-  <!-- Two live controls used to sit here as two bare buttons, one under the
-       other, reading "Test it" and "Try it now" — near-synonyms in the same
-       shape, so neither said what it did or how it differed from its neighbour.
-       They are told apart three ways now: each is a titled block rather than a
-       loose button, each carries a sentence saying what it does to which lights,
-       and the pre-stage CHECK is nested inside the option it checks and revealed
-       only while that option is on — which is the only state it means anything
-       in, and which stops the two ever being adjacent by default. -->
-  <div class="card">
-    <label class="check"><input type="checkbox" id="cir-prestage" />
-      <span data-i18n="circadian.preStage"></span></label>
-    <div class="help" data-i18n="circadian.preStageHelp"></div>
-
-    <div class="probe off" id="cir-probe">
-      <div class="blocktitle" data-i18n="circadian.preStageCheckTitle"></div>
-      <div class="blockhelp" data-i18n="circadian.preStageCheckHelp"></div>
-      <div class="acts"><button class="btn" id="cir-testPre" data-i18n="circadian.preStageTest"></button></div>
-      <div class="result" id="cir-preResult"></div>
-    </div>
+    <button class="remove" id="cv-remove" data-i18n="curve.remove"></button>
   </div>
 
-  <div class="card">
-    <div class="blocktitle" data-i18n="circadian.previewTitle"></div>
-    <div class="blockhelp" data-i18n="circadian.previewHelp"></div>
-    <div class="acts"><button class="btn" id="cir-preview" data-i18n="circadian.preview"></button></div>
-    <div class="result" id="cir-previewResult"></div>
-  </div>
+  <div class="others" id="cv-others"></div>
+  <button class="add" id="cv-add" data-i18n="curve.add"></button>
 
-  <div class="msg muted" id="cir-summary"></div>
-  <div class="msg" id="cir-msg" style="display:none;"></div>
-
-  <button id="cir-save" class="btn-primary">Save</button>
+  <button class="btn-primary" id="cv-next" data-i18n="curve.next"></button>
 </div>
 
 <script type="text/javascript">
 /**
- * Pair views are INJECTED INTO the pairing container's document — they do not
- * get their own iframe, and they must not load homey.js themselves (a second
- * copy overwrites window.Homey with a base object that has no emit/showView).
+ * Your colours through the day.
  *
- * The container calls window.onHomeyReady once, at its own page load, long
- * before this view's script exists, so waiting to be called never fires. The
- * container's fully-equipped Homey is already on window by the time this runs,
- * so take it directly — while still accepting onHomeyReady if it does arrive.
+ * **Every point is an absolute clock time.** This device is for "cool at 09:00,
+ * ember at 22:30", which is a routine rather than a sun position — sun-relative
+ * belongs to the circadian light, and giving both device types the same anchors
+ * would make them the same product with different defaults.
  *
- * All views of a session share ONE document. That is why every CSS rule here is
- * scoped to this view's root id, and why the boot guard below lives on the root
- * ELEMENT rather than in a global.
+ * **Colour is a closed set, never a picker.** Eight named colours are shown and
+ * sixteen more fold out in place. Hue 0.08 at saturation 0.62 is a pair of
+ * numbers somebody landed on once and can never reproduce; "Warm amber" is a
+ * decision that survives being read back on a settings page a year later.
+ *
+ * **The card edits the selected point in place.** There is no pushed editor and
+ * no presets: a first curve starts from the default five points, which are
+ * deliberately not all whites, and is changed from here.
  */
-/**
- * The guard lives on the view's root ELEMENT, not in a global. All views
- * share one document, and a global flag survives leaving and re-entering the
- * pairing flow — which silently blocked the second run from ever rendering.
- * A freshly injected root has no marker, so each injection boots exactly once.
- */
-function __lkBootCir(Homey) {
-  var __root = document.getElementById('cir-root');
+function __lkBootCv(Homey) {
+  var __root = document.getElementById('cv-root');
   if (!__root || __root.dataset.llBooted === '1') return;
   __root.dataset.llBooted = '1';
 
-  /**
-   * Reserve room for the scrollbar so expanding a section cannot resize the
-   * content.
-   *
-   * When the view grows past the pane height a scrollbar appears, the usable
-   * width drops by its thickness, and every percentage-width row re-wraps —
-   * text shifts as you expand and collapse. `scrollbar-gutter: stable` keeps
-   * the gutter reserved whether or not the bar is showing.
-   *
-   * The scrolling element belongs to the pairing container, not to us, so find
-   * it by walking up rather than guessing a selector.
-   */
-  (function stabiliseScrollbar() {
-    var scroller = null;
-    for (var el = __root.parentElement; el && el !== document.documentElement; el = el.parentElement) {
-      var overflowY = getComputedStyle(el).overflowY;
-      if (overflowY === 'auto' || overflowY === 'scroll') { scroller = el; break; }
-    }
-    var targets = scroller ? [scroller] : [document.documentElement, document.body];
-    var supported = window.CSS && CSS.supports && CSS.supports('scrollbar-gutter', 'stable');
-
-    targets.forEach(function (el) {
-      if (!el) return;
-      if (supported) el.style.scrollbarGutter = 'stable';
-      // Without gutter support, always showing the track is the stable option.
-      else if (el !== document.body) el.style.overflowY = 'scroll';
-    });
-  })();
-
-  if (typeof Homey.ready === 'function') Homey.ready();
-
-  /**
-   * Homey.emit, as a promise that always settles.
-   *
-   * Both call styles are handled because the pairing bridge has used a callback
-   * and a promise at different times, and the 20 s timeout is what keeps a
-   * dropped callback from leaving the screen spinning with no message forever.
-   *
-   * Identical in every pair view, and it has to be: these files cannot import
-   * anything. It carried the timeout in the mapping view only until
-   * pair-view-styles.test.ts started comparing the copies.
-   */
   function emit(event, data) {
     return new Promise(function (resolve, reject) {
       var settled = false;
@@ -552,30 +460,6 @@ function __lkBootCir(Homey) {
     });
   }
 
-  document.querySelectorAll('[data-i18n]').forEach(function (el) {
-    // Belt and braces: the pairing container translates these itself, but a
-    // build that does not leaves the screen showing key names.
-    var translated = Homey.__(el.getAttribute('data-i18n'));
-    if (translated) el.textContent = translated;
-  });
-
-  var MINUTES_PER_DAY = 1440;
-
-  var model = {
-    points: [], support: { dim: 0, light_temperature: 0 },
-    /** Filled from getCurve; see colourOptions for why the labels arrive ready. */
-    palette: [],
-    minPoints: 2, maxPoints: 8, adjustBrightness: false, preStage: false,
-  };
-  var listEl = document.getElementById('cir-list');
-  var msgEl = document.getElementById('cir-msg');
-
-  function show(cls, text) {
-    msgEl.className = 'msg ' + cls;
-    msgEl.textContent = text;
-    msgEl.style.display = 'block';
-  }
-
   function node(tag, className, text) {
     var el = document.createElement(tag);
     if (className) el.className = className;
@@ -583,1323 +467,460 @@ function __lkBootCir(Homey) {
     return el;
   }
 
-  function clear(el) {
-    while (el.firstChild) el.removeChild(el.firstChild);
-    return el;
-  }
-
-  function escapeHtml(text) {
-    return String(text == null ? '' : text).replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
-  }
-  /**
-   * The daylight card: ONE configuration per device, on four different screens.
-   *
-   * A Daylight light's whole plan IS a daylight response, and a schedule, a
-   * circadian light and a Curve light may each carry one for the rows that
-   * follow it. That is four copies of the same sensor picker, the same lux range,
-   * the same two ends and the same live readout — so it is written once here and
-   * copied byte-for-byte, exactly as the shared CSS base above is, and for the
-   * same reason: all views of a session share ONE document, there is nowhere to
-   * put a module, and Homey will not follow a reference.
-   *
-   * `test/unit/pair-view-styles.test.ts` asserts this function identical across
-   * every view that has it. Edit it in all of them, or in none.
-   *
-   * It takes NO arguments and closes over the four things every view already
-   * has: `Homey`, `emit`, `node` and `clear`. That is what lets the body be
-   * identical while the surrounding screen is not.
-   *
-   * It is self-contained on the wire too: it calls `getDaylight`, `listSensors`
-   * and `setDaylight` itself, and all four drivers answer those three. The host
-   * screen therefore does not have to thread a response through its own reply,
-   * and the card can refresh its own readout without asking the screen first.
-   */
-  /**
-   * The daylight card: ONE configuration per device, on four different screens.
-   *
-   * A Daylight light's whole plan IS a daylight response, and a schedule, a
-   * circadian light and a Curve light may each carry one for the rows that
-   * follow it. That is four copies of the same sensor picker, the same lux range,
-   * the same two ends and the same live readout — so it is written once here and
-   * copied byte-for-byte, exactly as the shared CSS base above is, and for the
-   * same reason: all views of a session share ONE document, there is nowhere to
-   * put a module, and Homey will not follow a reference.
-   *
-   * `test/unit/pair-view-styles.test.ts` asserts this function identical across
-   * every view that has it. Edit it in all of them, or in none.
-   *
-   * It takes NO arguments and closes over the four things every view already
-   * has: `Homey`, `emit`, `node` and `clear`. That is what lets the body be
-   * identical while the surrounding screen is not.
-   *
-   * It is self-contained on the wire too: it calls `getDaylight`, `listSensors`
-   * and `setDaylight` itself, and all four drivers answer those three. The host
-   * screen therefore does not have to thread a response through its own reply,
-   * and the card can refresh its own readout without asking the screen first.
-   */
-  function daylightCard() {
-    /**
-     * Every key this card can render, written out as a LITERAL.
-     *
-     * Not assembled from a prefix. `Homey.__` is given whatever string it is
-     * given, so `'daylight.' + key` works at runtime and is invisible to
-     * test/unit/locales.test.ts — which finds keys by scanning the source for
-     * quoted `group.key` literals, in BOTH directions. A key referenced only by
-     * assembly reads as defined-but-never-rendered; one removed from en.json
-     * reads as nothing at all, and the screen would ship showing a raw key.
-     */
-    var KEYS = {
-      feedbackRisk: 'daylight.feedbackRisk',
-      nowSky: 'daylight.nowSky',
-      nowSkyValue: 'daylight.nowSkyValue',
-      nowSkyUnknown: 'daylight.nowSkyUnknown',
-      nowSensors: 'daylight.nowSensors',
-      nowNoSensors: 'daylight.nowNoSensors',
-      nowResult: 'daylight.nowResult',
-      nowResultValue: 'daylight.nowResultValue',
-      nowUnknown: 'daylight.nowUnknown',
-      sourceSensors: 'daylight.sourceSensors',
-      sourceSky: 'daylight.sourceSky',
-      sensorsNone: 'daylight.sensorsNone',
-      sensorsNoneHelp: 'daylight.sensorsNoneHelp',
-      sensorLux: 'daylight.sensorLux',
-      sensorReading: 'daylight.sensorReading',
-      sensorNoReading: 'daylight.sensorNoReading',
-      sensorUnavailable: 'daylight.sensorUnavailable',
-      ageNow: 'daylight.ageNow',
-      ageMinutes: 'daylight.ageMinutes',
-      ageHours: 'daylight.ageHours',
-      ageDays: 'daylight.ageDays',
-      sunNone: 'daylight.sunNone',
-      sunMorning: 'daylight.sunMorning',
-      sunMidday: 'daylight.sunMidday',
-      sunAfternoon: 'daylight.sunAfternoon',
-      percent: 'daylight.percent',
-      preview: 'daylight.preview',
-      previewing: 'daylight.previewing',
-      previewed: 'daylight.previewed'
-    };
-
-    function t(key, tokens) {
-      return Homey.__(KEYS[key], tokens || {});
-    }
-
-    var el = {
-      card: document.getElementById('dl-card'),
-      now: document.getElementById('dl-now'),
-      sun: document.getElementById('dl-sun'),
-      peaks: document.getElementById('dl-peaks'),
-      sensors: document.getElementById('dl-sensors'),
-      darkLux: document.getElementById('dl-dark-lux'),
-      brightLux: document.getElementById('dl-bright-lux'),
-      dark: document.getElementById('dl-dark'),
-      bright: document.getElementById('dl-bright'),
-      darkValue: document.getElementById('dl-dark-value'),
-      brightValue: document.getElementById('dl-bright-value'),
-      previewCard: document.getElementById('dl-preview-card'),
-      preview: document.getElementById('dl-preview'),
-      previewResult: document.getElementById('dl-preview-result')
-    };
-
-    var model = {
-      standalone: false,
-      response: { sensors: [], darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25 },
-      limits: { minLux: 0.1, maxLux: 100000 },
-      now: null,
-      sky: null,
-      readings: [],
-      rooms: [],
-      loaded: false
-    };
-
-    function percentOf(value) {
-      return Math.round(Number(value) * 100);
-    }
-
-    /**
-     * How long ago a reading arrived, in words.
-     *
-     * A reading is never treated as stale — many Zigbee sensors report only on
-     * change, so a quiet sensor in a stable room is telling the truth — which
-     * leaves its AGE as the only thing on screen that can reveal one that has
-     * simply stopped.
-     */
-    function ageText(at) {
-      if (at === null || at === undefined) return '';
-      var minutes = Math.floor((Date.now() - Number(at)) / 60000);
-      if (!isFinite(minutes) || minutes < 1) return t('ageNow');
-      if (minutes < 60) return t('ageMinutes', { minutes: String(minutes) });
-      if (minutes < 60 * 48) return t('ageHours', { hours: String(Math.floor(minutes / 60)) });
-      // DAYS past two, because hours stop being legible: two sensors in the
-      // first house this was measured in had last reported 53 and 59 days
-      // earlier, and both rendered as "1414 h ago" — true, and unreadable as
-      // the "this sensor is dead" it actually meant. Homey still reports such a
-      // sensor as available and it still returns a finite number, so the age is
-      // the ONLY thing that can reveal it (platform §16).
-      return t('ageDays', { days: String(Math.floor(minutes / 1440)) });
-    }
-
-    function reading(what, value, unknown) {
-      var row = node('div', 'dl-reading');
-      row.appendChild(node('span', 'dl-what', what));
-      row.appendChild(node('span', unknown ? 'dl-val dl-unknown' : 'dl-val', value));
-      return row;
-    }
-
-    function readingFor(deviceId) {
-      for (var i = 0; i < model.readings.length; i++) {
-        if (model.readings[i].deviceId === deviceId) return model.readings[i];
-      }
-      return null;
-    }
-
-    function renderNow() {
-      clear(el.now);
-
-      var sky = model.sky || {};
-      if (sky.elevation === null || sky.elevation === undefined) {
-        el.now.appendChild(reading(t('nowSky'), t('nowSkyUnknown'), true));
-      } else {
-        el.now.appendChild(reading(t('nowSky'), t('nowSkyValue', {
-          degrees: String(Math.round(Number(sky.elevation)))
-        }), false));
-      }
-
-      var chosen = model.response.sensors || [];
-      if (chosen.length === 0) {
-        el.now.appendChild(reading(t('nowSensors'), t('nowNoSensors'), true));
-      } else {
-        for (var i = 0; i < chosen.length; i++) {
-          var found = readingFor(chosen[i]);
-          var name = found && found.name ? found.name : chosen[i];
-          if (!found || !found.available || found.lux === null || found.lux === undefined) {
-            el.now.appendChild(reading(name, t('sensorNoReading'), true));
-          } else {
-            el.now.appendChild(reading(name, t('sensorReading', {
-              lux: String(Math.round(Number(found.lux))), age: ageText(found.at)
-            }), false));
-          }
-        }
-      }
-
-      if (!model.now || model.now.source === 'none') {
-        el.now.appendChild(reading(t('nowResult'), t('nowUnknown'), true));
-        return;
-      }
-      el.now.appendChild(reading(t('nowResult'), t('nowResultValue', {
-        percent: String(percentOf(model.now.brightness)),
-        source: model.now.source === 'sensors' ? t('sourceSensors') : t('sourceSky')
-      }), false));
-    }
-
-    /**
-     * The sensor list, grouped by room, each row carrying its current reading.
-     *
-     * Built as NODES rather than as a markup string, so nothing here needs
-     * escaping — a device name is user-supplied text and this is the safest
-     * shape for it.
-     *
-     * The empty state is not an error. Most households own no light sensor at
-     * all, and the sun answers for them perfectly well, so it says so.
-     */
-    function renderSensors() {
-      clear(el.sensors);
-
-      if (model.rooms.length === 0) {
-        var none = node('div', 'card');
-        none.appendChild(node('div', 'dl-blocktitle', t('sensorsNone')));
-        none.appendChild(node('div', 'dl-blockhelp', t('sensorsNoneHelp')));
-        el.sensors.appendChild(none);
-        return;
-      }
-
-      var chosen = model.response.sensors || [];
-      for (var r = 0; r < model.rooms.length; r++) {
-        var room = model.rooms[r];
-        el.sensors.appendChild(node('div', 'section-title', room.zoneName));
-        for (var s = 0; s < room.sensors.length; s++) {
-          var sensor = room.sensors[s];
-          var tile = node('button', chosen.indexOf(sensor.id) !== -1 ? 'tile sel' : 'tile');
-          tile.type = 'button';
-          tile.dataset.sensor = sensor.id;
-          tile.appendChild(node('div', 'name', sensor.name));
-          if (!sensor.available) {
-            tile.appendChild(node('div', 'dl-tile-lux', t('sensorUnavailable')));
-          } else if (sensor.lux === null || sensor.lux === undefined) {
-            tile.appendChild(node('div', 'dl-tile-lux', t('sensorNoReading')));
-          } else {
-            tile.appendChild(node('div', 'dl-tile-lux', t('sensorLux', {
-              lux: String(Math.round(Number(sensor.lux)))
-            })));
-          }
-          el.sensors.appendChild(tile);
-        }
-      }
-    }
-
-    /**
-     * The four answers, and the reason they are radio buttons.
-     *
-     * A single choice from a closed set, so a select would hide three of four
-     * behind a tap and a segmented control would truncate "Middle of the day" on
-     * a phone. `PEAKS` pairs each stored value with its key; the order is the
-     * order they are offered in, with "no direct sun" first because it is the
-     * default and the commonest true answer for an interior room.
-     */
-    var PEAKS = [
-      { value: 'none', key: 'sunNone' },
-      { value: 'morning', key: 'sunMorning' },
-      { value: 'midday', key: 'sunMidday' },
-      { value: 'afternoon', key: 'sunAfternoon' }
-    ];
-
-    function renderSun() {
-      // Hidden outright when a sensor is chosen: the sensor measures this room,
-      // and asking about it as well would invite somebody to believe the answer
-      // still mattered.
-      var hasSensor = (model.response.sensors || []).length > 0;
-      el.sun.className = hasSensor ? 'dl-sun dl-off' : 'dl-sun';
-      if (hasSensor) return;
-
-      var current = model.response.sunPeak || 'none';
-      clear(el.peaks);
-      PEAKS.forEach(function (peak) {
-        var row = node('label', 'dl-peak');
-        var input = document.createElement('input');
-        input.type = 'radio';
-        input.name = 'dl-peak';
-        input.value = peak.value;
-        input.checked = peak.value === current;
-        input.addEventListener('change', function () {
-          if (!input.checked) return;
-          model.response.sunPeak = peak.value;
-          push();
-        });
-        row.appendChild(input);
-        row.appendChild(node('span', null, t(peak.key)));
-        el.peaks.appendChild(row);
-      });
-    }
-
-    var feedbackNotice = node('p', 'dl-help');
-    feedbackNotice.setAttribute('role', 'status');
-    el.bright.closest('.dl-field').appendChild(feedbackNotice);
-
-    function renderFeedback() {
-      var increasing = (model.response.sensors || []).length > 0
-        && Number(el.bright.value) > Number(el.dark.value);
-      feedbackNotice.hidden = !increasing;
-      feedbackNotice.textContent = increasing ? t('feedbackRisk') : '';
-    }
-
-    function renderControls() {
-      el.darkLux.value = String(model.response.darkLux);
-      el.brightLux.value = String(model.response.brightLux);
-      el.dark.value = String(percentOf(model.response.dark));
-      el.bright.value = String(percentOf(model.response.bright));
-      el.darkValue.textContent = t('percent', { value: String(percentOf(model.response.dark)) });
-      el.brightValue.textContent = t('percent', { value: String(percentOf(model.response.bright)) });
-      el.previewCard.hidden = !model.standalone;
-      renderFeedback();
-    }
-
-    function render() {
-      if (!model.loaded) return;
-      renderNow();
-      renderSensors();
-      renderSun();
-      renderControls();
-    }
-
-    function payload() {
-      return {
-        sensors: (model.response.sensors || []).slice(),
-        darkLux: Number(el.darkLux.value),
-        brightLux: Number(el.brightLux.value),
-        dark: Number(el.dark.value) / 100,
-        bright: Number(el.bright.value) / 100,
-        // From the MODEL, not the DOM: the radios are not rendered at all while
-        // a sensor is chosen, so reading them would send 'none' the moment
-        // somebody picked a sensor and undo an answer they had already given.
-        sunPeak: model.response.sunPeak || 'none'
-      };
-    }
-
-    /**
-     * Push, and take back what the driver made of it.
-     *
-     * The reply is authoritative rather than an acknowledgement:
-     * `sanitiseResponse` corrects per field — an inverted lux range resets both
-     * ends, a brightness under the floor comes up to it — and a card that went
-     * on showing what the user typed would be a card saving something different
-     * from what it says.
-     */
-    function push() {
-      return emit('setDaylight', { response: payload() }).then(function (result) {
-        model.response = result.response;
-        model.now = result.now;
-        model.readings = result.sensorReadings || [];
-        render();
-        return result;
-      });
-    }
-
-    /**
-     * A push whose failure must not be swallowed by the caller's happy path.
-     *
-     * Every fire-and-forget site needs its own catch: an unhandled rejection
-     * inside the pairing container is a screen that silently stops responding.
-     */
-    function pushQuietly() {
-      push().catch(function (err) {
-        el.previewResult.textContent = String(err && err.message ? err.message : err);
-      });
-    }
-
-    el.sensors.addEventListener('click', function (event) {
-      var tile = event.target && event.target.closest ? event.target.closest('.tile') : null;
-      if (!tile || !tile.dataset.sensor) return;
-
-      var id = tile.dataset.sensor;
-      var chosen = (model.response.sensors || []).slice();
-      var at = chosen.indexOf(id);
-      if (at === -1) chosen.push(id);
-      else chosen.splice(at, 1);
-      model.response.sensors = chosen;
-
-      // Rendered before the round trip so the tap feels immediate, and again
-      // from the reply, which is the authority.
-      render();
-      pushQuietly();
-    });
-
-    el.dark.addEventListener('input', function () {
-      renderFeedback();
-      el.darkValue.textContent = t('percent', { value: String(el.dark.value) });
-    });
-    el.bright.addEventListener('input', function () {
-      renderFeedback();
-      el.brightValue.textContent = t('percent', { value: String(el.bright.value) });
-    });
-
-    // `change` rather than `input` for the push: a slider dragged across its
-    // range fires input for every pixel, and each one is a round trip.
-    el.dark.addEventListener('change', pushQuietly);
-    el.bright.addEventListener('change', pushQuietly);
-    el.darkLux.addEventListener('change', pushQuietly);
-    el.brightLux.addEventListener('change', pushQuietly);
-
-    el.preview.addEventListener('click', function () {
-      el.preview.disabled = true;
-      el.preview.textContent = t('previewing');
-      el.previewResult.textContent = '';
-
-      push().then(function () {
-        return emit('previewNow');
-      }).then(function (outcome) {
-        el.previewResult.textContent = t('previewed', {
-          writes: String((outcome && outcome.writes) || 0)
-        });
-      }).catch(function (err) {
-        el.previewResult.textContent = String(err && err.message ? err.message : err);
-      }).then(function () {
-        el.preview.disabled = false;
-        el.preview.textContent = t('preview');
-      });
-    });
-
-    return {
-      /** Fetch everything this card needs. Two calls, because two handlers. */
-      load: function () {
-        return Promise.all([emit('getDaylight'), emit('listSensors')]).then(function (replies) {
-          var data = replies[0] || {};
-          var sensors = replies[1] || {};
-
-          model.standalone = data.standalone === true;
-          if (data.response) model.response = data.response;
-          if (data.limits) model.limits = data.limits;
-          model.now = data.now || null;
-          model.sky = data.sky || null;
-          model.readings = data.sensorReadings || [];
-          model.rooms = sensors.rooms || [];
-          model.loaded = true;
-
-          // Bounded by what the driver will actually accept, so a number the
-          // sanitiser would clamp cannot be typed in the first place.
-          el.darkLux.min = String(model.limits.minLux);
-          el.darkLux.max = String(model.limits.maxLux);
-          el.brightLux.min = String(model.limits.minLux);
-          el.brightLux.max = String(model.limits.maxLux);
-
-          render();
-          return data;
-        });
-      },
-      /** Whether this device's own plan IS the response. */
-      isStandalone: function () {
-        return model.standalone;
-      },
-      /**
-       * Show or hide the card.
-       *
-       * The host screen decides: a Daylight light always shows it, and the other
-       * three show it only once a row actually follows the daylight. A schedule
-       * screen that already carries twelve windows should not also carry a
-       * sensor picker nobody asked for.
-       */
-      setUsed: function (used) {
-        el.card.className = used ? 'section dl-card' : 'section dl-card dl-off';
-      },
-      /** Push the current controls, for a host screen saving its own plan. */
-      push: push
-    };
-  }
-
+  function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
   function pad(value) { return (value < 10 ? '0' : '') + value; }
-  function formatMinutes(minutes) {
-    var wrapped = ((Math.round(minutes) % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
-    return pad(Math.floor(wrapped / 60)) + ':' + pad(wrapped % 60);
+  function clock(minutes) { return pad(Math.floor(minutes / 60)) + ':' + pad(minutes % 60); }
+
+  var el = {
+    steps: document.getElementById('cv-steps'),
+    error: document.getElementById('cv-error'),
+    chart: document.getElementById('cv-chart'),
+    editor: document.getElementById('cv-editor'),
+    pointSwatch: document.getElementById('cv-pointSwatch'),
+    pointName: document.getElementById('cv-pointName'),
+    pointWhich: document.getElementById('cv-pointWhich'),
+    time: document.getElementById('cv-time'),
+    timeUp: document.getElementById('cv-timeUp'),
+    timeDown: document.getElementById('cv-timeDown'),
+    featured: document.getElementById('cv-featured'),
+    rest: document.getElementById('cv-rest'),
+    more: document.getElementById('cv-more'),
+    brightToggle: document.getElementById('cv-brightToggle'),
+    brightBlock: document.getElementById('cv-brightBlock'),
+    brightPct: document.getElementById('cv-brightPct'),
+    bright: document.getElementById('cv-bright'),
+    brightKnob: document.getElementById('cv-brightKnob'),
+    remove: document.getElementById('cv-remove'),
+    others: document.getElementById('cv-others'),
+    add: document.getElementById('cv-add'),
+    next: document.getElementById('cv-next')
+  };
+
+  var state = {
+    points: [],
+    palette: [],
+    featuredCount: 8,
+    adjustBrightness: false,
+    preStage: false,
+    selected: 0,
+    showMore: false,
+    minPoints: 2,
+    maxPoints: 8
+  };
+
+  function fail(err) {
+    el.error.textContent = err && err.message ? err.message : String(err);
+    el.error.style.display = '';
   }
 
-  function minuteOf(point) { return point.anchor.at; }
-  function sorted() {
-    return model.points.slice().sort(function (a, b) { return minuteOf(a) - minuteOf(b); });
+  function minuteOf(point) {
+    return point.anchor && point.anchor.kind === 'clock' ? point.anchor.at : 0;
   }
 
-  /**
-   * The two points a minute falls between, and how far along that segment it is.
-   *
-   * Mirrors lib/circadian/circadian-curve.ts — cyclic, and eased with the same
-   * raised cosine, so the shape on screen is the shape the lights will follow.
-   * A pair view cannot import from lib/, so the two are kept in step by eye and
-   * by the fact that both are short.
-   *
-   * Null on an empty curve; `from === to` on a one-point curve, where every
-   * minute holds that point's value. The pair, and not just the interpolated
-   * number, because a COLOUR cannot be interpolated into a name — see
-   * colourNamesAt().
-   */
-  function segmentAt(minute) {
-    var points = sorted();
-    if (points.length === 0) return null;
-    if (points.length === 1) return { from: points[0], to: points[0], eased: 0 };
-
-    var now = ((Math.round(minute) % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
-    var from = points[points.length - 1];
-    var to = points[0];
-
-    for (var i = 0; i < points.length - 1; i += 1) {
-      if (now >= minuteOf(points[i]) && now < minuteOf(points[i + 1])) {
-        from = points[i];
-        to = points[i + 1];
-        break;
-      }
-    }
-
-    var span = ((minuteOf(to) - minuteOf(from) + MINUTES_PER_DAY) % MINUTES_PER_DAY) || MINUTES_PER_DAY;
-    var elapsed = (now - minuteOf(from) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
-    return {
-      from: from,
-      to: to,
-      eased: 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, elapsed / span)),
-    };
-  }
-
-  function curveAt(minute, read) {
-    var segment = segmentAt(minute);
-    if (!segment) return 0;
-    return read(segment.from) + (read(segment.to) - read(segment.from)) * segment.eased;
-  }
-
-  /**
-   * Two readings of the same curve, because the app interpolates brightness with
-   * the same easing as warmth (`circadian-curve.ts` mixes both with one `eased`)
-   * — so drawing brightness with its own maths would put a line on screen that
-   * the lights do not follow.
-   */
-  function warmthAt(minute) {
-    return curveAt(minute, function (point) { return point.warmth; });
-  }
-
-  function brightnessAt(minute) {
-    return curveAt(minute, brightnessOf);
-  }
-
-  /**
-   * One point's brightness AS THE CHART'S Y-AXIS, defaulted in one place because
-   * the line and the dots have to agree about it.
-   *
-   * Level whenever the curve does not set brightness, and that is the load-
-   * bearing part rather than a shortcut. Switching the toggle off leaves every
-   * point's stored brightness in the plan — so reading it regardless scattered
-   * the dots up and down the chart by a value the app was ignoring, which is a
-   * height that looks meaningful and is not. A row of dots at one level says
-   * what is true: the only thing this curve varies is colour.
-   *
-   * 0.6 for that level, and for a point the toggle has just revealed but not yet
-   * filled in, so nothing jumps as the fill lands.
-   */
-  function brightnessOf(point) {
-    if (!model.adjustBrightness) return 0.6;
-    return point.brightness === undefined ? 0.6 : point.brightness;
-  }
-
-  /**
-   * Named steps rather than a percentage: nobody measures warmth in percent, and
-   * a number here contradicted the handle's position at least half the time.
-   *
-   * HIGHER IS WARMER, the same way round as the schedule screen and for the same
-   * reason — homey-lib's own capability hint says a higher value is a warmer
-   * colour, and assuming otherwise once lit a room cold white at bedtime. The
-   * five labels are the schedule screen's, deliberately: one axis, one set of
-   * words, one thing to translate.
-   */
-  function warmthText(value) {
-    if (value >= 0.9) return Homey.__('schedule.warmthWarmest');
-    if (value >= 0.65) return Homey.__('schedule.warmthWarm');
-    if (value >= 0.35) return Homey.__('schedule.warmthNeutral');
-    if (value >= 0.1) return Homey.__('schedule.warmthCool');
-    return Homey.__('schedule.warmthCoolest');
-  }
-
-  /**
-   * The palette colours this minute is showing, as words, mirroring colorOf() in
-   * lib/circadian/circadian-curve.ts: both ends coloured names BOTH, because the
-   * value between them is neither of them; one end coloured names that one,
-   * because the segment holds it flat; neither leaves the minute on the warmth
-   * axis.
-   *
-   * Empty therefore means "there is no colour here", which is what lets
-   * showsText() fall back to a warmth word.
-   */
-  function colourNamesAt(minute) {
-    var segment = segmentAt(minute);
-    if (!segment) return [];
-    var from = segment.from.color && palette(segment.from.color);
-    var to = segment.to.color && palette(segment.to.color);
-
-    if (from && to) return from.id === to.id ? [from.label] : [from.label, to.label];
-    if (from) return [from.label];
-    if (to) return [to.label];
-    return [];
-  }
-
-  /**
-   * What the lights actually look like at this minute, in one phrase.
-   *
-   * A warmth word only where the curve is ON the warmth axis. On a coloured
-   * segment the warmth is just the fallback for lamps that cannot show a colour,
-   * so "that is Neutral" under a curve whose points are all colours names a
-   * value those lamps are not being sent — and contradicts the point cards
-   * directly below it, which is the quiet disagreement this app exists to avoid.
-   */
-  function showsText(minute) {
-    var names = colourNamesAt(minute);
-    if (names.length > 1) {
-      return Homey.__('circadian.betweenColours', { from: names[0], to: names[1] });
-    }
-    if (names.length === 1) return names[0];
-    return warmthText(warmthAt(minute));
-  }
-
-  function brightnessText(point) {
-    return Homey.__('schedule.percent', { percent: Math.round((point.brightness || 0) * 100) });
-  }
-
-  function nowMinutes() {
-    var date = new Date();
-    return date.getHours() * 60 + date.getMinutes();
-  }
-
-  /** The curve, at one sample every ten minutes. */
-  function palette(id) {
-    for (var i = 0; i < model.palette.length; i += 1) {
-      if (model.palette[i].id === id) return model.palette[i];
+  function colourOf(id) {
+    for (var i = 0; i < state.palette.length; i++) {
+      if (state.palette[i].id === id) return state.palette[i];
     }
     return null;
   }
 
-  /**
-   * A palette colour as CSS, for the chart only.
-   *
-   * Homey's hue is 0-1 and CSS wants degrees; lightness is fixed at 55% because
-   * these dots sit on a light and a dark background and have to be visible on
-   * both. Nothing is written to a lamp from this — it is the swatch, not the
-   * value.
-   */
-  function hsl(colour) {
-    return 'hsl(' + Math.round(colour.hue * 360) + ', '
-      + Math.round(colour.saturation * 100) + '%, 55%)';
+  /** Homey's normalised hue/saturation as something a browser will paint. */
+  function css(colour) {
+    if (!colour) return 'var(--lk-flat-bg)';
+    return 'hsl(' + Math.round(colour.hue * 360) + ',' +
+      Math.round(colour.saturation * 100) + '%,' +
+      // Lightness falls as saturation rises, so a fully saturated hue reads as
+      // a colour rather than as a pastel. A near-white swatch stays near white.
+      Math.round(88 - colour.saturation * 28) + '%)';
+  }
+
+  function sorted() {
+    return state.points.slice().sort(function (a, b) { return minuteOf(a) - minuteOf(b); });
+  }
+
+  function renderSteps() {
+    clear(el.steps);
+    for (var i = 1; i <= 3; i++) el.steps.appendChild(node('i', i <= 2 ? 'on' : null));
+    el.steps.appendChild(node('span', null, Homey.__('curve.step', { index: 2, count: 3 })));
   }
 
   /**
-   * A colour TEMPERATURE as CSS, for the chart only.
+   * The chart: one bar per ten minutes of the day.
    *
-   * The dots carry what each point sets, and most points set a warmth rather
-   * than a colour — so a warmth needs a swatch too, or every uncoloured point
-   * is the same grey dot and the chart says nothing about the axis it stopped
-   * drawing. Three stops through a neutral white, because 1 is the WARMEST end
-   * (platform §6): a candle-ish amber at the top, a daylight blue at the
-   * bottom.
-   *
-   * Mixed in sRGB, NOT in HSL. A hue lerp from a warm white (35°) to a cool
-   * white (215°) travels through green, which is a colour no lamp on this axis
-   * can produce and the one thing a swatch must not invent. Nothing is written
-   * to a lamp from this — it is the swatch, not the value.
+   * Bar colour is the interpolated colour at that minute and bar height is the
+   * interpolated brightness — so with brightness off every bar is full height
+   * and the picture is a day of colour, which is the honest drawing of what the
+   * device will then do.
    */
-  function warmthSwatch(value) {
-    // The ends are pushed further than a real 2700K/6500K white would be. A
-    // faithful neutral IS white, which on a white card reads as a dot nobody
-    // filled in — so the ramp keeps a visible tint everywhere except the exact
-    // middle, and the two extremes stay recognisably candle and daylight.
-    var cool = [140, 186, 255];
-    var neutral = [255, 246, 235];
-    var warm = [255, 152, 48];
-    var clamped = Math.max(0, Math.min(1, value));
-
-    var rgb = clamped < 0.5
-      ? mixRgb(cool, neutral, clamped * 2)
-      : mixRgb(neutral, warm, (clamped - 0.5) * 2);
-    return 'rgb(' + rgb[0] + ', ' + rgb[1] + ', ' + rgb[2] + ')';
+  /**
+   * "1st", "2nd", "3rd", "22nd" — the suffix from the locale, never a literal.
+   *
+   * 11 to 13 are the exception every implementation of this gets wrong once:
+   * they take "th" despite ending in 1, 2 and 3.
+   */
+  function ordinal(n) {
+    var tens = n % 100;
+    var key = 'ordinal.th';
+    if (tens < 11 || tens > 13) {
+      if (n % 10 === 1) key = 'ordinal.st';
+      else if (n % 10 === 2) key = 'ordinal.nd';
+      else if (n % 10 === 3) key = 'ordinal.rd';
+    }
+    return n + Homey.__(key);
   }
 
-  function mixRgb(from, to, fraction) {
-    return [0, 1, 2].map(function (channel) {
-      return Math.round(from[channel] + (to[channel] - from[channel]) * fraction);
+  /** A fraction of the day as a position across the bars, gutter allowed for. */
+  function alongBars(fraction) {
+    return 'calc(var(--gutter) + (100% - var(--gutter)) * ' + fraction.toFixed(4) + ')';
+  }
+
+  function renderChart() {
+    clear(el.chart);
+    var points = sorted();
+    if (points.length === 0) return;
+
+    /**
+     * One bar an hour, which is what the design draws and what a 390px screen
+     * can actually show.
+     *
+     * Ten-minute bars gave 144 of them at under three pixels each, and the 2px
+     * gap ate most of that — the chart read as hatching rather than as a day.
+     * Twenty-four blocks lose the smoothness of the interpolation and keep the
+     * thing the chart is for: what colour the room is at a glance.
+     */
+    for (var minute = 0; minute < 1440; minute += 60) {
+      var bar = node('i');
+      var at = valueAt(points, minute);
+      bar.style.background = css(colourOf(at.color));
+      bar.style.height = state.adjustBrightness
+        ? Math.max(6, at.brightness * 100) + '%'
+        : '100%';
+      el.chart.appendChild(bar);
+    }
+
+    el.chart.className = 'chart' + (state.adjustBrightness ? ' axed' : '');
+    if (state.adjustBrightness) {
+      el.chart.appendChild(node('span', 'cap top', Homey.__('curve.full')));
+      el.chart.appendChild(node('span', 'cap bottom', Homey.__('curve.off')));
+    }
+
+    for (var i = 0; i < state.points.length; i++) {
+      var point = state.points[i];
+      var height = state.adjustBrightness && point.brightness !== undefined
+        ? Math.max(6, point.brightness * 100)
+        : 100;
+      var dot = node('div', 'dot' + (i === state.selected ? ' sel' : ''));
+      // Along the BARS, not along the box: an absolutely positioned percentage
+      // is measured from the border edge, and the captions take a gutter out
+      // of the left of it.
+      dot.style.left = alongBars(minuteOf(point) / 1440);
+      dot.style.bottom = height + '%';
+      el.chart.appendChild(dot);
+    }
+
+    var selectedPoint = state.points[state.selected];
+    if (selectedPoint) {
+      var mark = node('div', 'at');
+      mark.style.left = alongBars(minuteOf(selectedPoint) / 1440);
+      el.chart.appendChild(mark);
+    }
+  }
+
+  /**
+   * The value at a minute, cyclically.
+   *
+   * A colour is held FLAT across a segment rather than blended, which is what
+   * the engine does when only one end of a segment carries one: blending two
+   * palette colours on screen would draw a hue that is no palette entry, and the
+   * chart would then show colours nobody could have chosen.
+   */
+  function valueAt(points, minute) {
+    var before = points[points.length - 1];
+    var after = points[0];
+    for (var i = 0; i < points.length; i++) {
+      if (minuteOf(points[i]) <= minute) before = points[i];
+    }
+    for (var j = 0; j < points.length; j++) {
+      if (minuteOf(points[j]) > minute) { after = points[j]; break; }
+    }
+    var span = ((minuteOf(after) - minuteOf(before)) + 1440) % 1440 || 1440;
+    var elapsed = ((minute - minuteOf(before)) + 1440) % 1440;
+    var fraction = Math.min(1, elapsed / span);
+    var eased = 0.5 - 0.5 * Math.cos(Math.PI * fraction);
+
+    var fromB = before.brightness === undefined ? 1 : before.brightness;
+    var toB = after.brightness === undefined ? 1 : after.brightness;
+    return {
+      color: fraction < 0.5 ? before.color : after.color,
+      brightness: fromB + (toB - fromB) * eased
+    };
+  }
+
+  function renderEditor() {
+    var point = state.points[state.selected];
+    el.editor.style.display = point ? '' : 'none';
+    el.remove.style.display = state.points.length > state.minPoints ? '' : 'none';
+    if (!point) return;
+
+    var colour = colourOf(point.color);
+    el.pointSwatch.style.background = css(colour);
+    el.pointName.textContent = colour ? colour.label : Homey.__('curve.noColour');
+
+    var order = sorted();
+    var index = 0;
+    for (var i = 0; i < order.length; i++) if (order[i] === point) index = i;
+    el.pointWhich.textContent = Homey.__('curve.which', {
+      index: ordinal(index + 1), count: order.length
     });
-  }
 
-  /**
-   * The x-radius that draws a ROUND dot.
-   *
-   * The viewBox is 320 wide and `preserveAspectRatio="none"` stretches it to
-   * whatever the pairing sheet is, so a `<circle>` comes out as an egg on any
-   * sheet that is not 320px — unnoticeable at 3.5px and obvious now the dots
-   * are the thing carrying the colour. Measured per draw rather than assumed,
-   * because nothing here knows how wide Homey's sheet is; 320 when the element
-   * has no layout yet, which is the no-stretch case.
-   */
-  function dotRadiusX(svg, radius) {
-    return radius * (320 / (svg.clientWidth || 320));
-  }
+    el.time.textContent = clock(minuteOf(point));
 
-  /** The plot is 80 units tall with an 8-unit floor, and 1 belongs at the TOP. */
-  function yFor(fraction) {
-    return 88 - fraction * 80;
-  }
+    renderSwatches();
 
-  /**
-   * ONE line, and it is brightness.
-   *
-   * The chart used to draw warmth as a solid line and brightness as a dashed
-   * one, which asked the reader to hold two shapes and a shared y-axis in mind
-   * to answer "what happens at 20:00". Height is brightness now, and the thing
-   * that was the other line is in the DOTS: each one is filled with the colour
-   * that point sets, or with its colour temperature where it sets a warmth. So
-   * both dimensions are still on screen, and neither needs a key to tell it
-   * from the other.
-   *
-   * The chart is 96 units tall and the plot 80 of them, so a dot at 0%
-   * brightness still sits clear of the floor.
-   */
-  function drawChart() {
-    var samples = [];
-    for (var minute = 0; minute <= MINUTES_PER_DAY; minute += 10) {
-      var x = (minute / MINUTES_PER_DAY) * 320;
-      samples.push(x.toFixed(1) + ',' + yFor(brightnessAt(minute % MINUTES_PER_DAY)).toFixed(1));
+    el.brightToggle.setAttribute('aria-checked', state.adjustBrightness ? 'true' : 'false');
+    el.brightBlock.style.display = state.adjustBrightness ? '' : 'none';
+    if (state.adjustBrightness) {
+      var brightness = point.brightness === undefined ? 0.8 : point.brightness;
+      el.brightPct.textContent = Math.round(brightness * 100) + '%';
+      setSlider(el.brightKnob, brightness);
     }
-    // Drawn whether or not the curve dims. It ran level and hidden for a while,
-    // on the argument that a flat brightness line describes something the lights
-    // will never do — but a row of unconnected dots is not a chart of anything
-    // either, and the line is what makes them read as one day in order. Level
-    // says the plain truth about a curve that only sets colour: nothing here
-    // varies in height.
-    document.getElementById('cir-line').setAttribute('points', samples.join(' '));
+  }
 
-    // Built with createElementNS rather than parsed: SVG needs its namespace
-    // explicitly, and the rule this view is held to is simpler with one fewer
-    // exception. Only numbers are interpolated here either way.
-    var group = document.getElementById('cir-dots');
-    while (group.firstChild) group.removeChild(group.firstChild);
-    var guides = document.getElementById('cir-guides');
-    while (guides.firstChild) guides.removeChild(guides.firstChild);
+  function renderSwatches() {
+    clear(el.featured);
+    clear(el.rest);
+    var point = state.points[state.selected];
 
-    var svg = document.getElementById('cir-graph');
-    var radiusX = dotRadiusX(svg, 6);
-    sorted().forEach(function (point) {
-      // An ellipse rather than a circle, and the radii are not equal on purpose
-      // — see dotRadiusX(). Nothing else in this view is drawn small enough for
-      // the stretch to matter.
-      var dot = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
-      var colour = point.color && palette(point.color);
-      dot.setAttribute('class', 'dot');
-      /**
-       * The colour goes on `style`, not on a `fill` attribute.
-       *
-       * `.dot` already carries `fill: var(--lk-surface)` from this view's own
-       * stylesheet, and a CSS declaration beats a presentation attribute — so
-       * `setAttribute('fill', …)` set the attribute, passed every check that
-       * looked at the attribute, and drew a plain surface-coloured dot. Inline
-       * style is what actually wins.
-       */
-      dot.style.fill = colour ? hsl(colour) : warmthSwatch(point.warmth);
-      var x = ((minuteOf(point) / MINUTES_PER_DAY) * 320).toFixed(1);
-      dot.setAttribute('cx', x);
-      dot.setAttribute('cy', yFor(brightnessOf(point)).toFixed(1));
-      dot.setAttribute('rx', radiusX.toFixed(2));
-      dot.setAttribute('ry', '6');
-      group.appendChild(dot);
+    for (var i = 0; i < state.palette.length; i++) {
+      var swatch = swatchFor(state.palette[i], point);
+      if (i < state.featuredCount) el.featured.appendChild(swatch);
+      else el.rest.appendChild(swatch);
+    }
 
-      // The guide runs the full height of the box, like the "now" line, so it
-      // reaches the hour labels sitting just underneath it.
-      var guide = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      guide.setAttribute('class', 'guide');
-      guide.setAttribute('x1', x);
-      guide.setAttribute('x2', x);
-      guide.setAttribute('y1', '0');
-      guide.setAttribute('y2', '96');
-      guides.appendChild(guide);
+    el.rest.style.display = state.showMore ? '' : 'none';
+    el.more.textContent = Homey.__(state.showMore ? 'curve.fewerColours' : 'curve.moreColours');
+    el.more.style.display = state.palette.length > state.featuredCount ? '' : 'none';
+  }
+
+  function swatchFor(colour, point) {
+    var swatch = node('button', 'swatch');
+    swatch.type = 'button';
+    swatch.title = colour.label;
+    swatch.style.background = css(colour);
+    swatch.setAttribute('aria-pressed', point && point.color === colour.id ? 'true' : 'false');
+    swatch.addEventListener('click', function () {
+      if (!point) return;
+      point.color = colour.id;
+      // `warmth` stays alongside the colour, because it is what a lamp with no
+      // colour capability is written instead — and what the neighbouring
+      // temperature segments interpolate towards. Derived from the colour's own
+      // hue so the two never describe different days.
+      point.warmth = warmthFor(colour);
+      render();
+      push();
     });
-
-    // What the height means, and what the dots mean — which is the whole key now
-    // that there is one line. Written here rather than filled from a data-i18n
-    // attribute at boot, because it depends on the brightness toggle.
-    document.getElementById('cir-key').textContent = model.adjustBrightness
-      ? Homey.__('circadian.curveKeyWithBrightness')
-      : Homey.__('circadian.curveKey');
-
-    var nowX = ((nowMinutes() / MINUTES_PER_DAY) * 320).toFixed(1);
-    var nowLine = document.getElementById('cir-now');
-    nowLine.setAttribute('x1', nowX);
-    nowLine.setAttribute('x2', nowX);
-
-    // The line says where the curve is now; with brightness on it has to say
-    // both, or the dashed line has no number anywhere on the screen.
-    document.getElementById('cir-legend').textContent = model.adjustBrightness
-      ? Homey.__('circadian.nowIsWithBrightness', {
-        time: formatMinutes(nowMinutes()),
-        shows: showsText(nowMinutes()),
-        brightness: Math.round(brightnessAt(nowMinutes()) * 100),
-      })
-      : Homey.__('circadian.nowIs', {
-        time: formatMinutes(nowMinutes()),
-        shows: showsText(nowMinutes()),
-      });
-  }
-
-  function options(count, selected, step) {
-    var values = [];
-    for (var value = 0; value < count; value += (step || 1)) values.push(value);
-    // A plan edited elsewhere can hold a minute this step does not land on — 06:37
-    // with a five-minute step. Showing 00 selected while the plan says 37 is the
-    // kind of quiet disagreement this app exists to avoid, so the odd value joins
-    // the list rather than being rounded behind the user's back.
-    if (values.indexOf(selected) === -1 && selected >= 0 && selected < count) {
-      values.push(selected);
-      values.sort(function (a, b) { return a - b; });
-    }
-    return values.map(function (value) {
-      return '<option value="' + value + '"' + (value === selected ? ' selected' : '') + '>'
-        + escapeHtml(pad(value)) + '</option>';
-    }).join('');
+    return swatch;
   }
 
   /**
-   * The palette as <option>s, plus "colour temperature" at the top.
+   * The warmth a colour stands in for, on a lamp that cannot take a colour.
    *
-   * The palette arrives from the driver with its labels already translated:
-   * `lib/` has no access to `Homey.__`, so the colours carry locale keys and the
-   * driver layer resolves them — the same rule as every other user-facing string
-   * produced in `lib/`.
+   * Hue 0 to 0.15 is the warm end of the spectrum and 0.5 to 0.7 the cool end,
+   * so this is that mapping and nothing cleverer. A near-white swatch lands near
+   * the middle, which is what a white should be.
    */
-  function colourOptions(selected) {
-    var html = '<option value=""' + (selected ? '' : ' selected') + '>'
-      + escapeHtml(Homey.__('circadian.colourNone')) + '</option>';
-    return html + model.palette.map(function (colour) {
-      return '<option value="' + escapeHtml(colour.id) + '"'
-        + (colour.id === selected ? ' selected' : '') + '>'
-        + escapeHtml(colour.label) + '</option>';
-    }).join('');
+  function warmthFor(colour) {
+    var hue = colour.hue;
+    var warmish = hue < 0.2 || hue > 0.9;
+    var base = warmish ? 0.9 : 0.25;
+    return base * colour.saturation + 0.5 * (1 - colour.saturation);
   }
 
-  function pointHtml(point, index) {
-    var minutes = minuteOf(point);
-    var html = '<div class="card" data-id="' + escapeHtml(point.id) + '">'
-      + '<div class="rowhead"><div class="name">'
-      + escapeHtml(Homey.__('circadian.point', { number: index + 1, time: formatMinutes(minutes) }))
-      + '</div>'
-      + (model.points.length > model.minPoints
-        ? '<button class="link" data-act="remove">' + escapeHtml(Homey.__('circadian.remove')) + '</button>'
-        : '')
-      + '</div>'
+  function setSlider(knob, value) {
+    // The track carries the range; the knob is the only thing that moves.
+    knob.style.left = (Math.max(0, Math.min(1, value)) * 100) + '%';
+  }
 
-      + '<div class="field"><div class="label">'
-      + escapeHtml(Homey.__('circadian.at')) + '</div>'
-      + '<div class="times">'
-      + '<select data-act="hour">' + options(24, Math.floor(minutes / 60)) + '</select>'
-      + '<span class="sep">:</span>'
-      + '<select data-act="minute">' + options(60, minutes % 60, 5) + '</select>'
-      + '</div></div>'
-
-      + '<div class="field"><div class="label">'
-      + escapeHtml(Homey.__('circadian.colour')) + '</div>'
-      + '<select data-act="colour" class="colour">' + colourOptions(point.color) + '</select>'
-      + '</div>'
-
-      /**
-       * Warmth is shown even on a coloured point, and is not redundant.
-       *
-       * It is what a lamp with no colour capability is written to instead, and
-       * what the neighbouring temperature segments interpolate towards — so the
-       * shape of the curve does not depend on which of the household's lamps can
-       * do colour.
-       *
-       * On a coloured point it is also the one control on this screen whose
-       * label stops being the whole truth: someone who has just chosen "amber"
-       * is looking at a slider that does nothing they can see. So the note
-       * below says what it is still for, next to the slider it is about —
-       * `circadian.colourHelp` used to sit at the top of the page, four points
-       * above the thing it explains.
-       */
-      + '<div class="field"><div class="label">'
-      + escapeHtml(Homey.__('circadian.warmth')) + '</div>'
-      + '<div class="slider">'
-      + '<input type="range" min="0" max="100" step="5" data-act="warmth" value="'
-      + Math.round(point.warmth * 100) + '" />'
-      + '<span class="value" data-role="warmthValue">' + escapeHtml(warmthText(point.warmth))
-      + '</span></div>'
-      /**
-       * Rendered on every point and HIDDEN on the uncoloured ones, rather than
-       * added and removed on demand. Choosing a colour must not re-render the
-       * row — the same reason the sliders update in place further down — and a
-       * class toggle keeps the note's appearance a change of one attribute.
-       */
-      + '<p class="help note' + (point.color ? '' : ' off') + '" data-role="warmthNote">'
-      + escapeHtml(Homey.__('circadian.colourHelp')) + '</p>'
-      + '</div>';
-
-    if (model.adjustBrightness) {
-      html += '<div class="field"><div class="label">'
-        + escapeHtml(Homey.__('circadian.brightness')) + '</div>'
-        + pointDaylightChoice(point)
-        + '<div class="slider">'
-        + '<input type="range" min="10" max="100" step="5" data-act="brightness" value="'
-        + Math.round((point.brightness === undefined ? 0.6 : point.brightness) * 100) + '" />'
-        + '<span class="value" data-role="brightnessValue">' + escapeHtml(brightnessText(point))
-        + '</span></div></div>';
+  function renderOthers() {
+    clear(el.others);
+    var order = sorted();
+    for (var i = 0; i < order.length; i++) {
+      if (order[i] === state.points[state.selected]) continue;
+      el.others.appendChild(otherRow(order[i]));
     }
-
-    return html + '</div>';
   }
 
-  /**
-   * The shared daylight card, as a SECTION of this screen rather than a screen.
-   *
-   * Named `dlCard` rather than `card` because this view already uses `card` for
-   * a point's own row in `pointOf`, and shadowing that would be a bug nobody
-   * would see until the second point failed to update.
-   */
-  var dlCard = daylightCard();
+  function otherRow(point) {
+    var row = node('button', 'row');
+    row.type = 'button';
 
-  /**
-   * "Set a brightness" or "Follow the daylight", for one point, as MARKUP.
-   *
-   * Markup rather than a node because this view builds its rows as strings — see
-   * pointHtml — and every interpolated value goes through escapeHtml for exactly
-   * that reason. The two option values are literals rather than user-supplied,
-   * so only the labels need it.
-   *
-   * The fallback note is rendered on every point and HIDDEN on the fixed ones,
-   * rather than added and removed on demand: choosing a mode must not re-render
-   * the row (see the colour select's own note for why), and a class toggle keeps
-   * it a change of one attribute.
-   */
-  function pointDaylightChoice(point) {
-    var following = point.fromDaylight === true;
-    return '<select data-act="daylight">'
-      + '<option value="fixed"' + (following ? '' : ' selected') + '>'
-      + escapeHtml(Homey.__('daylight.modeFixed')) + '</option>'
-      + '<option value="daylight"' + (following ? ' selected' : '') + '>'
-      + escapeHtml(Homey.__('daylight.modeDaylight')) + '</option>'
-      + '</select>'
-      + '<p class="help note' + (following ? '' : ' off') + '" data-role="fallbackNote">'
-      + escapeHtml(Homey.__('daylight.fallbackHelp')) + '</p>';
-  }
+    var swatch = node('span', 'sw');
+    swatch.style.background = css(colourOf(point.color));
+    row.appendChild(swatch);
 
-  /** Whether any point follows the daylight, which is what shows the card. */
-  function anyFollowsDaylight() {
-    if (!model.adjustBrightness) return false;
-    for (var i = 0; i < model.points.length; i += 1) {
-      if (model.points[i].fromDaylight === true) return true;
+    var colour = colourOf(point.color);
+    var text = node('div', 'text');
+    text.appendChild(node('div', null, clock(minuteOf(point))));
+    text.appendChild(node('div', 'sub', colour ? colour.label : ''));
+    row.appendChild(text);
+
+    if (state.adjustBrightness && point.brightness !== undefined) {
+      row.appendChild(node('span', 'value', Math.round(point.brightness * 100) + '%'));
     }
-    return false;
-  }
+    row.appendChild(node('span', 'chev', '›'));
 
-  function summary() {
-    document.getElementById('cir-summary').textContent = Homey.__('circadian.summary', {
-      count: model.points.length,
-      lights: model.lightCount || 0,
+    row.addEventListener('click', function () {
+      for (var i = 0; i < state.points.length; i++) {
+        if (state.points[i] === point) state.selected = i;
+      }
+      render();
     });
-    document.getElementById('cir-add').disabled = model.points.length >= model.maxPoints;
+    return row;
   }
 
   function render() {
-    listEl.innerHTML = sorted().map(pointHtml).join('');
-    drawChart();
-    summary();
-    // The card is a section of this screen and only earns its space once a
-    // point actually follows the daylight.
-    dlCard.setUsed(anyFollowsDaylight());
+    renderChart();
+    renderEditor();
+    renderOthers();
+    el.add.style.display = state.points.length < state.maxPoints ? '' : 'none';
+    el.next.disabled = state.points.length < state.minPoints;
   }
 
-  /**
-   * The warmth note follows the colour select, in place. See pointHtml: the
-   * note is already in the row, so this is the whole of showing it.
-   */
-  function syncWarmthNote(found) {
-    var note = found.card.querySelector('[data-role="warmthNote"]');
-    if (note) note.classList.toggle('off', !found.point.color);
+  function stepTime(delta) {
+    var point = state.points[state.selected];
+    if (!point) return;
+    var minute = ((minuteOf(point) + delta * 15) % 1440 + 1440) % 1440;
+    // Two points at one minute is a zero-length segment: a division by zero
+    // dressed up as a preference. The sanitiser drops the second; refusing the
+    // step is the kinder half of the same rule.
+    for (var i = 0; i < state.points.length; i++) {
+      if (state.points[i] !== point && minuteOf(state.points[i]) === minute) return;
+    }
+    point.anchor = { kind: 'clock', at: minute };
+    render();
+    push();
   }
 
-  function pointOf(element) {
-    var card = element.closest('.card');
-    if (!card) return null;
-    var id = card.getAttribute('data-id');
-    for (var i = 0; i < model.points.length; i += 1) {
-      if (model.points[i].id === id) return { point: model.points[i], card: card };
-    }
-    return null;
-  }
+  el.timeUp.addEventListener('click', function () { stepTime(1); });
+  el.timeDown.addEventListener('click', function () { stepTime(-1); });
 
-  listEl.addEventListener('click', function (event) {
-    var target = event.target.closest('[data-act]');
-    if (!target || target.getAttribute('data-act') !== 'remove') return;
-    var found = pointOf(target);
-    if (!found) return;
-    // Never below the minimum: a curve of one point is a fixed colour, and it
-    // would look configured while doing nothing anyone asked for.
-    if (model.points.length <= model.minPoints) return;
-    model.points = model.points.filter(function (p) { return p.id !== found.point.id; });
-    render();
+  el.more.addEventListener('click', function () {
+    state.showMore = !state.showMore;
+    renderSwatches();
   });
 
-  listEl.addEventListener('change', function (event) {
-    var target = event.target.closest('[data-act]');
-    if (!target) return;
-    var found = pointOf(target);
-    if (!found) return;
-    var act = target.getAttribute('data-act');
-    var value = Number(target.value);
-
-    if (act === 'hour') found.point.anchor = { kind: 'clock', at: value * 60 + (minuteOf(found.point) % 60) };
-    else if (act === 'minute') found.point.anchor = { kind: 'clock', at: Math.floor(minuteOf(found.point) / 60) * 60 + value };
-    else return;
-
-    // The row's own title carries its time, and moving a point can reorder the
-    // list, so this one is a full re-render rather than an in-place update.
-    render();
-  });
-
-  /**
-   * Sliders update in place; only structure re-renders. Re-rendering the list on
-   * a drag would drop the pointer capture mid-gesture, which reads as a slider
-   * that fights you — so the chart is redrawn and the row is left alone.
-   */
-  /**
-   * `change` as well as `input`.
-   *
-   * A `<select>` fires `change` on every engine and `input` on only some, so a
-   * colour chosen from the dropdown would have been silently ignored on the
-   * others — the class of bug that makes a screen look like it is working.
-   */
-  /**
-   * The daylight choice, in place rather than through a re-render.
-   *
-   * Same reason as the colour select below: re-rendering the list would drop the
-   * dropdown's own focus mid-interaction. The card's visibility does have to be
-   * recomputed, but that is one class on one element rather than the whole list.
-   */
-  listEl.addEventListener('change', function (event) {
-    var target = event.target.closest('[data-act="daylight"]');
-    if (!target) return;
-    var found = pointOf(target);
-    if (!found) return;
-
-    if (target.value === 'daylight') found.point.fromDaylight = true;
-    else delete found.point.fromDaylight;
-
-    var note = found.card.querySelector('[data-role="fallbackNote"]');
-    if (note) note.classList.toggle('off', found.point.fromDaylight !== true);
-    dlCard.setUsed(anyFollowsDaylight());
-    // Its own catch, because nothing chains onto this one: an unhandled
-    // rejection inside the pairing container is a screen that stops responding.
-    push().catch(function (err) { show('bad', err.message || String(err)); });
-  });
-
-  listEl.addEventListener('change', function (event) {
-    var target = event.target.closest('[data-act="colour"]');
-    if (!target) return;
-    var found = pointOf(target);
-    if (!found) return;
-    if (target.value) found.point.color = target.value;
-    else delete found.point.color;
-    syncWarmthNote(found);
-    drawChart();
-  });
-
-  listEl.addEventListener('input', function (event) {
-    var target = event.target.closest('[data-act]');
-    if (!target) return;
-    var found = pointOf(target);
-    if (!found) return;
-    var act = target.getAttribute('data-act');
-
-    if (act === 'colour') {
-      // '' is the "colour temperature" option, which means no colour at all —
-      // deleted rather than stored as an empty string, because the plan's shape
-      // is "absent or a palette id" and the sanitiser refuses anything else.
-      if (target.value) found.point.color = target.value;
-      else delete found.point.color;
-      syncWarmthNote(found);
-      drawChart();
-    } else if (act === 'warmth') {
-      found.point.warmth = Number(target.value) / 100;
-      found.card.querySelector('[data-role="warmthValue"]').textContent = warmthText(found.point.warmth);
-      drawChart();
-    } else if (act === 'brightness') {
-      found.point.brightness = Number(target.value) / 100;
-      found.card.querySelector('[data-role="brightnessValue"]').textContent = brightnessText(found.point);
-      drawChart();
-    }
-  });
-
-  document.getElementById('cir-add').addEventListener('click', function () {
-    if (model.points.length >= model.maxPoints) {
-      return show('bad', Homey.__('circadian.atMost', { max: model.maxPoints }));
-    }
-    // In the largest gap in the day, so a new point lands somewhere useful
-    // rather than on top of an existing one — which the app would drop on save.
-    var points = sorted();
-    var bestAt = 0;
-    var bestGap = -1;
-    for (var i = 0; i < points.length; i += 1) {
-      var next = points[(i + 1) % points.length];
-      var gap = ((minuteOf(next) - minuteOf(points[i]) + MINUTES_PER_DAY) % MINUTES_PER_DAY) || MINUTES_PER_DAY;
-      if (gap > bestGap) {
-        bestGap = gap;
-        bestAt = (minuteOf(points[i]) + Math.round(gap / 2)) % MINUTES_PER_DAY;
-      }
-    }
-    // Onto the five-minute grid the selects offer.
-    bestAt = Math.round(bestAt / 5) * 5 % MINUTES_PER_DAY;
-
-    var added = {
-      id: 'p' + Date.now() + Math.round(Math.random() * 1000),
-      anchor: { kind: 'clock', at: bestAt },
-      warmth: Math.round(warmthAt(bestAt) * 20) / 20,
-    };
-    if (model.adjustBrightness) added.brightness = 0.6;
-    model.points.push(added);
-    render();
-  });
-
-  document.getElementById('cir-brightness').addEventListener('change', function (event) {
-    model.adjustBrightness = event.target.checked;
-    // All or nothing: the app refuses a half-dimmed curve rather than inventing
-    // the missing segments, so switching this on fills the gaps here where the
-    // user can see and change them.
-    if (model.adjustBrightness) {
-      model.points.forEach(function (point) {
-        if (point.brightness === undefined) point.brightness = 0.6;
-      });
+  el.brightToggle.addEventListener('click', function () {
+    state.adjustBrightness = !state.adjustBrightness;
+    // All or nothing: the engine interpolates brightness only where BOTH
+    // bracketing points carry one, so a half-dimmed curve would have to invent
+    // the missing segments.
+    for (var i = 0; i < state.points.length; i++) {
+      state.points[i].brightness = state.adjustBrightness ? (state.points[i].brightness === undefined
+        ? 0.8 : state.points[i].brightness) : undefined;
     }
     render();
+    push();
   });
 
-  /**
-   * The check belongs to the option, so it appears and disappears with it.
-   *
-   * Called from the change handler AND from boot, because a repair session
-   * arrives with the option already on and the block would otherwise stay
-   * hidden behind a class that only a click could clear.
-   */
-  function syncProbe() {
-    document.getElementById('cir-probe').classList.toggle('off', !model.preStage);
-  }
+  (function () {
+    var dragging = false;
+    function fractionOf(event) {
+      var rect = el.bright.getBoundingClientRect();
+      return Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    }
+    el.bright.addEventListener('pointerdown', function (event) {
+      dragging = true;
+      if (el.bright.setPointerCapture) el.bright.setPointerCapture(event.pointerId);
+      apply(fractionOf(event));
+    });
+    el.bright.addEventListener('pointermove', function (event) {
+      if (dragging) apply(fractionOf(event));
+    });
+    function end() { if (dragging) { dragging = false; push(); } }
+    el.bright.addEventListener('pointerup', end);
+    el.bright.addEventListener('pointercancel', end);
 
-  document.getElementById('cir-prestage').addEventListener('change', function (event) {
-    model.preStage = event.target.checked;
-    syncProbe();
+    function apply(fraction) {
+      var point = state.points[state.selected];
+      if (!point) return;
+      point.brightness = fraction;
+      render();
+    }
+  })();
+
+  el.remove.addEventListener('click', function () {
+    state.points.splice(state.selected, 1);
+    state.selected = Math.max(0, state.selected - 1);
+    render();
+    push();
   });
 
-  /** Both live controls push the curve to the driver first: the ephemeral runtime
-   *  is built from what the DRIVER holds, not from what the screen holds. */
+  el.add.addEventListener('click', function () {
+    var taken = {};
+    for (var i = 0; i < state.points.length; i++) taken[minuteOf(state.points[i])] = true;
+    var minute = 12 * 60;
+    while (taken[minute] && minute < 1440) minute += 15;
+
+    state.points.push({
+      id: 'p' + Date.now().toString(36),
+      anchor: { kind: 'clock', at: minute % 1440 },
+      warmth: 0.5,
+      color: state.palette[0] ? state.palette[0].id : undefined,
+      brightness: state.adjustBrightness ? 0.8 : undefined
+    });
+    state.selected = state.points.length - 1;
+    render();
+    push();
+  });
+
+  el.next.addEventListener('click', function () { Homey.showView('review'); });
+
   function push() {
-    return emit('setCurve', {
-      points: model.points,
-      adjustBrightness: model.adjustBrightness,
-      preStage: model.preStage,
-    });
+    emit('setCurve', {
+      points: state.points,
+      adjustBrightness: state.adjustBrightness,
+      preStage: state.preStage
+    }).then(function (reply) {
+      if (reply.dropped && reply.dropped.length > 0) {
+        el.error.textContent = Homey.__('curve.dropped', { reason: reply.dropped[0].reason });
+        el.error.style.display = '';
+      } else {
+        el.error.style.display = 'none';
+      }
+    }).catch(fail);
   }
 
-  document.getElementById('cir-preview').addEventListener('click', function () {
-    var button = document.getElementById('cir-preview');
-    var result = document.getElementById('cir-previewResult');
-    button.disabled = true;
-    result.textContent = Homey.__('circadian.previewing');
+  renderSteps();
 
-    push()
-      .then(function () { return emit('previewNow'); })
-      .then(function (outcome) {
-        result.textContent = Homey.__('circadian.previewed', { writes: outcome.writes });
-      })
-      .catch(function (err) { result.textContent = err.message || String(err); })
-      .then(function () { button.disabled = false; });
-  });
-
-  document.getElementById('cir-testPre').addEventListener('click', function () {
-    var button = document.getElementById('cir-testPre');
-    var result = document.getElementById('cir-preResult');
-    button.disabled = true;
-    result.textContent = Homey.__('circadian.preStageTesting');
-
-    push()
-      .then(function () { return emit('testPreStage'); })
-      .then(function (outcome) {
-        if (!outcome.deviceId) {
-          result.textContent = Homey.__('circadian.preStageNoLight');
-          return;
-        }
-        if (outcome.stayedOff) {
-          result.textContent = Homey.__('circadian.preStageOk', { name: outcome.name || outcome.deviceId });
-          return;
-        }
-        // The honest answer, and the toggle goes back off with it: this
-        // integration switches a lamp on when its colour is written.
-        model.preStage = false;
-        document.getElementById('cir-prestage').checked = false;
-        result.textContent = Homey.__(
-          outcome.restored ? 'circadian.preStageCameOn' : 'circadian.preStageCameOnStuck',
-          { name: outcome.name || outcome.deviceId });
-        // The verdict is the last thing this block has to say, so it stays on
-        // screen for this render and goes with the next change of the option.
-        // Hiding it here would take the sentence explaining what just happened
-        // to the user's lamp away with it.
-      })
-      .catch(function (err) { result.textContent = err.message || String(err); })
-      .then(function () { button.disabled = false; });
-  });
-
-  document.getElementById('cir-save').addEventListener('click', function () {
-    var button = document.getElementById('cir-save');
-    if (model.points.length < model.minPoints) {
-      return show('bad', Homey.__('circadian.needTwo', { min: model.minPoints }));
-    }
-
-    button.disabled = true;
-    show('muted', Homey.__('circadian.saving'));
-
-    push()
-      .then(function (result) {
-        if (result.dropped && result.dropped.length > 0) {
-          // Named rather than silently corrected: the user is looking at the row.
-          throw new Error(Homey.__('circadian.droppedSome', { count: result.dropped.length }));
-        }
-        return emit('save', '');
-      })
-      .then(function (result) {
-        if (!result.created) { Homey.done(); return; }
-        // createDevice alone does NOT add the device — the view must also emit
-        // 'add_device' with the device data.
-        return Homey.createDevice(result.device)
-          .then(function (deviceData) {
-            return emit('add_device', deviceData || result.device)
-              .catch(function () { /* some SDK builds add it for us */ });
-          })
-          .then(function () { Homey.done(); });
-      })
-      .catch(function (err) {
-        button.disabled = false;
-        show('bad', err.message || String(err));
-      });
-  });
-
-  document.getElementById('cir-add').textContent = Homey.__('circadian.add') || 'Add another point';
-  document.getElementById('cir-save').textContent = Homey.__('circadian.save') || 'Save';
-
-  emit('getCurve').then(function (data) {
-    model.support = data.support || model.support;
-    model.minPoints = data.minPoints || model.minPoints;
-    model.maxPoints = data.maxPoints || model.maxPoints;
-    model.lightCount = (data.lights || []).length;
-    model.preStage = data.preStage === true;
-    model.adjustBrightness = data.adjustBrightness === true;
-    model.points = (data.points || []).map(function (point) {
-      return {
-        id: point.id,
-        // Stored as a union so sunrise and sunset can join it later; the screen
-        // only offers, and only understands, a clock time.
-        anchor: { kind: 'clock', at: point.anchor && point.anchor.at !== undefined ? point.anchor.at : 0 },
-        warmth: point.warmth,
-        brightness: point.brightness,
-        // Absent stays absent, as the colour does below: the plan's shape is
-        // "fixed, or following", and `false` would be a third state.
-        ...(point.fromDaylight === true ? { fromDaylight: true } : {}),
-        // Absent stays absent: the plan's shape is "no colour, or a palette id",
-        // and an empty string is neither.
-        ...(point.color ? { color: point.color } : {}),
-      };
-    });
-    model.palette = data.palette || [];
-
-    document.getElementById('cir-prestage').checked = model.preStage;
-    syncProbe();
-    document.getElementById('cir-brightness').checked = model.adjustBrightness;
-    // Nothing selected dims, so offering to follow brightness would be offering
-    // something that cannot happen.
-    if (!model.support.dim) {
-      model.adjustBrightness = false;
-      // The whole card, not just the checkbox: the toggle has its own card above
-      // the point list now, so hiding the row alone left an empty white box with
-      // help text for an option that is not there.
-      document.getElementById('cir-brightnessCard').style.display = 'none';
-    }
-
+  emit('getCurve').then(function (payload) {
+    state.points = payload.points || [];
+    state.palette = payload.palette || [];
+    state.featuredCount = payload.featuredColors || 8;
+    state.adjustBrightness = payload.adjustBrightness;
+    state.preStage = payload.preStage;
+    state.minPoints = payload.minPoints || 2;
+    state.maxPoints = payload.maxPoints || 8;
     render();
-
-    if (data.timezone) {
-      show('muted', Homey.__('circadian.timezone', { zone: data.timezone }));
-    }
-
-    /**
-     * The daylight card loads itself, AFTER the curve is on screen.
-     *
-     * Its own two round trips rather than fields threaded through `getCurve`,
-     * which is what lets the card be byte-identical on four screens. Chained
-     * rather than parallel so the curve never waits on a sensor list, and it
-     * re-renders after: `setUsed` is decided by the points, and the card's own
-     * `load` does not know about them.
-     */
-    return dlCard.load().then(render);
-  }).catch(function (err) {
-    show('bad', err.message || String(err));
-  });
+  }).catch(fail);
 }
 
-window.onHomeyReady = __lkBootCir;
-
-(function waitForHomey(attempt) {
-  if (window.Homey && typeof window.Homey.emit === 'function') return __lkBootCir(window.Homey);
-  if ((attempt || 0) > 100) {
-    // The one literal-colour exception in this file, and the reason the style
-    // test only inspects <style>: this banner has to render when nothing else
-    // in the view has booted, tokens included.
-    document.body.insertAdjacentHTML('afterbegin', '<div style="padding:12px;background:#fdeceb;color:#8f1d18;font-size:13px;">'
-      + 'Lightkeeper could not reach Homey from this screen. Close it and try again.</div>');
-    return;
+(function () {
+  var tries = 0;
+  function waitForHomey() {
+    if (window.Homey && typeof window.Homey.emit === 'function') { __lkBootCv(window.Homey); return; }
+    if (++tries > 100) {
+      var root = document.getElementById('cv-root');
+      if (root) {
+        var banner = document.createElement('div');
+        banner.className = 'msg bad';
+        banner.textContent = 'This screen could not reach Homey. Close it and try again.';
+        root.appendChild(banner);
+      }
+      return;
+    }
+    setTimeout(waitForHomey, 50);
   }
-  setTimeout(function () { waitForHomey((attempt || 0) + 1); }, 50);
-})(0);
+  window.onHomeyReady = function (ready) { __lkBootCv(ready || window.Homey); };
+  waitForHomey();
+})();
 </script>

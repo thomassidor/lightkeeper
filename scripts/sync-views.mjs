@@ -66,7 +66,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DRIVERS = join(ROOT, 'drivers');
 
 /** Views that live in one driver and are copied into the others. */
-export const SHARED_VIEWS = ['credential.html', 'targets.html'];
+export const SHARED_VIEWS = ['credential.html', 'intro.html', 'lights.html', 'review.html'];
 export const SHARED_SOURCE_DRIVER = 'controller';
 
 /**
@@ -106,23 +106,23 @@ const BLOCKS = [
     scoped: true,
   },
   { source: 'emit.js', kind: 'function', name: 'emit', scoped: false },
+  /**
+   * The sensor's-week grid, on the two daylight screens that draw it.
+   *
+   * Optional, because only two views carry it. Same mechanism the daylight card
+   * used before it was removed with `fromDaylight`: a picture that appears on
+   * more than one screen is authored once and spliced, because Homey will not
+   * follow a reference (platform §8).
+   */
   {
-    source: 'daylight-card.css',
+    source: 'week-grid.css',
     kind: 'delimited',
-    start: '/* ==== shared daylight card:',
-    end: '/* ==== end shared daylight card ==== */',
+    start: '/* ==== shared week grid:',
+    end: '/* ==== end shared week grid ==== */',
     scoped: true,
     optional: true,
   },
-  {
-    source: 'daylight-card.html',
-    kind: 'delimited',
-    start: '<!-- ==== shared daylight card',
-    end: 'end shared daylight card ==== -->',
-    scoped: false,
-    optional: true,
-  },
-  { source: 'daylight-card.js', kind: 'function', name: 'daylightCard', scoped: false, optional: true },
+  { source: 'week-grid.js', kind: 'function', name: 'weekGrid', scoped: false, optional: true },
 ];
 
 /**

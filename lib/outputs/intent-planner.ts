@@ -142,7 +142,78 @@ export function planIntent(
         );
       }
       return { writes, skipped };
+
+    case 'preset_absolute':
+      for (const deviceId of supported) {
+        writes.push({
+          deviceId, capability: 'dim', value: litDim(deviceId, intent.brightness, cache),
+        });
+        // The warmth is best-effort ON TOP of the brightness, because the
+        // capability gate above was `dim`: a brightness-only lamp in the same
+        // room gets the brightness rather than being skipped for a warmth it was
+        // never going to take.
+        if (intent.temperature !== undefined && cache.supports(deviceId, 'light_temperature')) {
+          writes.push(
+            ...planTemperature(
+              deviceId, clampTemperature(deviceId, intent.temperature, cache), cache,
+            ),
+          );
+        }
+      }
+      return { writes, skipped };
+
+    case 'temperature_cycle':
+      return planTemperatureCycle(supported, cache, skipped);
   }
+}
+
+/**
+ * How many stops one press of a cycling button moves through.
+ *
+ * Five, because the axis has to be walkable in a handful of presses and still
+ * offer a recognisably different white at each stop. Fewer and the ends are all
+ * there is; more and somebody is pressing a button eight times to get back to
+ * where they started.
+ */
+const CYCLE_STOPS = 5;
+
+/**
+ * The next stop along the warmth axis, per device, wrapping at the top.
+ *
+ * Per device rather than as one group value, for the same reason
+ * `planTemperatureDelta` is: two lamps that are currently at different whites
+ * both move one step, rather than both jumping to whatever the first one's next
+ * stop happened to be.
+ *
+ * A lamp whose current temperature is unreadable starts at the first stop. That
+ * is a real case — a lamp that has never reported — and starting somewhere beats
+ * doing nothing, which on a button press is indistinguishable from a broken
+ * remote.
+ */
+function planTemperatureCycle(
+  deviceIds: string[],
+  cache: TargetStateCache,
+  skipped: SkippedTarget[],
+): IntentPlan {
+  const writes: PlannedWrite[] = [];
+  const step = 1 / (CYCLE_STOPS - 1);
+
+  for (const deviceId of deviceIds) {
+    // An off lamp is skipped for the same reason `planTemperatureDelta` skips
+    // one: whether a `light_temperature` write turns a lamp on is
+    // per-integration and untested, and a cycling button must not light a dark
+    // room (platform §6).
+    if (cache.currentOn(deviceId) === false) {
+      skipped.push({ deviceId, reason: 'off — temperature never turns a light on' });
+      continue;
+    }
+    const current = cache.currentTemperature(deviceId);
+    const index = current === undefined ? -1 : Math.round(current / step);
+    const next = (((index + 1) % CYCLE_STOPS) + CYCLE_STOPS) % CYCLE_STOPS * step;
+    writes.push(...planTemperature(deviceId, clampTemperature(deviceId, next, cache), cache));
+  }
+
+  return { writes, skipped };
 }
 
 /**

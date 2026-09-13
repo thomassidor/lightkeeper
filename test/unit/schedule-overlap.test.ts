@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 
 import { ScheduleRuntime } from '../../lib/schedules/schedule-runtime';
 import {
-  sanitiseEntries, sanitiseEntryId, ENTRY_ID_SHAPE,
-  type SchedulePlan, type ScheduleEntry,
+  overlappingPairs, sanitiseEntries, sanitiseEntryId, sanitiseScheduleDays, ENTRY_ID_SHAPE,
+  type IsoWeekday, type SchedulePlan, type ScheduleEntry,
 } from '../../lib/schedules/schedule-types';
 import { activeEntries, entriesOverlap } from '../../lib/schedules/schedule-window';
 import { eventKeyFor, parseEventKey } from '../../lib/schedules/schedule-bindings';
@@ -20,10 +20,12 @@ import { settle as sharedSettle } from '../support/deferred';
  * Two windows over the same lights fight, and the loser is the room.
  *
  * 17:00–23:00 alongside 20:00–01:00 goes dark at 23:00 while the second window
- * still believes the lights are on — and no screen in the app admits to it. Two
- * layers, both needed: the sanitiser refuses to SAVE such a pair, and the runtime
- * recomputes at the boundary because plans stored by earlier versions already
- * contain them.
+ * still believes the lights are on. The app no longer refuses to SAVE such a
+ * pair — the pairing rewrite made overlap legal, because the runtime always had a
+ * deterministic answer and dropping a row somebody had just drawn was the worse
+ * surprise. What is asserted here is that the answer holds: the later window
+ * wins while they overlap, and `overlappingPairs` reports the clash so the
+ * screen can draw it and say so.
  *
  * The other thing here is catch-up, the one path that switches lights on without
  * a Flow having fired. It is gated on being able to prove there is something that
@@ -31,7 +33,7 @@ import { settle as sharedSettle } from '../support/deferred';
  */
 
 function entry(over: Partial<ScheduleEntry> = {}): ScheduleEntry {
-  return { id: 'a', onAt: 22 * 60, days: null, end: { kind: 'duration', minutes: 90 }, ...over };
+  return { id: 'a', onAt: 22 * 60, end: { kind: 'duration', minutes: 90 }, ...over };
 }
 
 const at = (hhmm: string, minutes: number, over: Partial<ScheduleEntry> = {}): ScheduleEntry => {
@@ -40,77 +42,73 @@ const at = (hhmm: string, minutes: number, over: Partial<ScheduleEntry> = {}): S
 };
 
 describe('entriesOverlap — the weekly circle', () => {
+  // Days belong to the schedule now, not to each window, so both windows are
+  // always measured against the same set — which is what collapsed the old
+  // double loop over two independent day lists into one over a shared one.
+  const overlap = (
+    a: ScheduleEntry, b: ScheduleEntry, days: IsoWeekday[] | null = null,
+  ) => entriesOverlap(a, b, days);
+
   test('the review\'s case: 17:00–23:00 and 20:00–01:00', () => {
-    assert.equal(entriesOverlap(at('17:00', 360), at('20:00', 300, { id: 'b' })), true);
+    assert.equal(overlap(at('17:00', 360), at('20:00', 300, { id: 'b' })), true);
   });
 
   test('touching end to start is not an overlap', () => {
     // The off boundary is exclusive everywhere else in this app; it is here too.
-    assert.equal(entriesOverlap(at('17:00', 180), at('20:00', 60, { id: 'b' })), false);
+    assert.equal(overlap(at('17:00', 180), at('20:00', 60, { id: 'b' })), false);
   });
 
   test('cross-midnight against the next morning', () => {
-    // Fri 23:30 + 2h runs to Sat 01:30; Sat 00:30 + 1h sits inside it.
-    const friNight = at('23:30', 120, { days: [5] });
-    const satEarly = at('00:30', 60, { id: 'b', days: [6] });
-    assert.equal(entriesOverlap(friNight, satEarly), true);
+    // 23:30 + 2h runs to 01:30 the next day; a 00:30 + 1h window sits inside it,
+    // and on a seven-day schedule that is true every night.
+    assert.equal(overlap(at('23:30', 120), at('00:30', 60, { id: 'b' })), true);
   });
 
-  test('cross-midnight against the SAME day is a different question', () => {
-    // Sun 23:30 + 2h wraps to Monday, so it collides with a Monday 00:30 window
-    // even though the two never share a start day.
+  test('a restricted day set still wraps across midnight', () => {
+    // Sun 23:30 + 2h wraps into Monday. With Sunday and Monday both selected the
+    // pair collides; with only Sunday selected there is no Monday window to
+    // collide with.
     assert.equal(
-      entriesOverlap(at('23:30', 120, { days: [7] }), at('00:30', 60, { id: 'b', days: [1] })),
-      true,
-    );
-    // Wrapping across the week boundary is the same arithmetic, not a special case.
-    assert.equal(
-      entriesOverlap(at('23:30', 120, { days: [1] }), at('00:30', 60, { id: 'b', days: [6] })),
-      false,
-    );
-  });
-
-  test('disjoint day sets never overlap, whatever the times', () => {
-    assert.equal(
-      entriesOverlap(at('10:00', 300, { days: [1, 2] }), at('11:00', 60, { id: 'b', days: [4, 5] })),
-      false,
-    );
-  });
-
-  test('"every day" overlaps anything that overlaps it in time', () => {
-    assert.equal(
-      entriesOverlap(at('10:00', 120, { days: null }), at('11:00', 60, { id: 'b', days: [3] })),
+      overlap(at('23:30', 120), at('00:30', 60, { id: 'b' }), [7, 1]),
       true,
     );
     assert.equal(
-      entriesOverlap(at('10:00', 60, { days: null }), at('11:00', 60, { id: 'b', days: [3] })),
+      overlap(at('23:30', 120), at('02:30', 60, { id: 'b' }), [7]),
       false,
     );
+  });
+
+  test('a narrower day set cannot create an overlap that the times do not', () => {
+    assert.equal(overlap(at('10:00', 60), at('11:00', 60, { id: 'b' }), [1, 2]), false);
+    assert.equal(overlap(at('10:00', 120), at('11:00', 60, { id: 'b' }), [1, 2]), true);
   });
 
   test('an entry always overlaps itself', () => {
     const e = at('07:00', 30);
-    assert.equal(entriesOverlap(e, { ...e, id: 'b' }), true);
+    assert.equal(overlap(e, { ...e, id: 'b' }), true);
   });
 });
 
-describe('the sanitiser refuses to save an overlap', () => {
-  const row = (id: string, onAt: string, minutes: number, days?: number[]) => ({
-    id, onAt, end: { kind: 'duration', minutes }, ...(days ? { days } : {}),
+describe('the sanitiser ALLOWS an overlap, and it is reported instead', () => {
+  const row = (id: string, onAt: string, minutes: number) => ({
+    id, onAt, end: { kind: 'duration', minutes },
   });
 
-  test('the later row is dropped, naming the one it clashes with', () => {
+  test('both rows survive, and the clash is named for the screen', () => {
+    // It used to drop the later row. That was the wrong trade: the runtime has a
+    // deterministic answer, so the honest thing is to keep what the user drew
+    // and say what will happen.
     const { entries, dropped } = sanitiseEntries([
       row('evening', '17:00', 360),
       row('night', '20:00', 300),
     ]);
 
-    assert.deepEqual(entries.map(e => e.id), ['evening']);
-    assert.equal(dropped.length, 1);
-    assert.equal(dropped[0].reason, 'overlaps schedule "evening"');
+    assert.deepEqual(entries.map(e => e.id), ['evening', 'night']);
+    assert.deepEqual(dropped, []);
+    assert.deepEqual(overlappingPairs(entries, null), [{ a: 'evening', b: 'night' }]);
   });
 
-  test('non-overlapping rows all survive', () => {
+  test('non-overlapping rows report no pairs', () => {
     const { entries, dropped } = sanitiseEntries([
       row('morning', '07:00', 60),
       row('evening', '17:00', 120),
@@ -118,41 +116,40 @@ describe('the sanitiser refuses to save an overlap', () => {
     ]);
     assert.equal(entries.length, 3);
     assert.equal(dropped.length, 0);
+    assert.deepEqual(overlappingPairs(entries, null), []);
   });
 
-  test('the same times on different days are fine', () => {
+  test('a three-way overlap is reported as each pair', () => {
     const { entries } = sanitiseEntries([
-      row('weekday', '07:00', 60, [1, 2, 3, 4, 5]),
-      row('weekend', '07:00', 60, [6, 7]),
+      row('a', '17:00', 360),
+      row('b', '18:00', 300),
+      row('c', '19:00', 240),
     ]);
-    assert.equal(entries.length, 2);
+    assert.deepEqual(overlappingPairs(entries, null), [
+      { a: 'a', b: 'b' }, { a: 'a', b: 'c' }, { a: 'b', b: 'c' },
+    ]);
   });
 });
 
-describe('days is fail-closed', () => {
-  const withDays = (days: unknown) => sanitiseEntries([
-    { id: 'a', onAt: '07:00', end: { kind: 'duration', minutes: 30 }, days },
-  ]);
-
+describe('the schedule\'s days are fail-open, and that is the safe direction', () => {
   test('only null and undefined mean every day', () => {
-    assert.equal(withDays(null).entries[0].days, null);
-    assert.equal(withDays(undefined).entries[0].days, null);
+    assert.equal(sanitiseScheduleDays(null), null);
+    assert.equal(sanitiseScheduleDays(undefined), null);
   });
 
-  test('anything else non-array drops the entry', () => {
-    // Silently becoming "every day" did MORE than the user asked for: a Mon–Fri
-    // schedule turned into a seven-day one.
-    for (const bad of ['1,2,3', { 1: true }, false, 0, 7]) {
-      const { entries, dropped } = withDays(bad);
-      assert.equal(entries.length, 0, JSON.stringify(bad));
-      assert.equal(dropped[0].reason, 'days is not a list');
+  test('anything unusable is every day rather than no day', () => {
+    // Fail-OPEN, unlike the per-window version this replaced. A schedule that
+    // runs too often is visible and fixable; one that can never fire looks
+    // configured and tells nobody why — which is the failure this app exists to
+    // prevent.
+    for (const bad of ['1,2,3', { 1: true }, false, 0, 7, [], ['x']]) {
+      assert.equal(sanitiseScheduleDays(bad), null, JSON.stringify(bad));
     }
   });
 
   test('an array still filters its own members', () => {
-    assert.deepEqual(withDays([1, 2, 'x', 9, 2]).entries[0].days, [1, 2]);
-    assert.equal(withDays([1, 2, 3, 4, 5, 6, 7]).entries[0].days, null);
-    assert.equal(withDays(['x']).dropped[0].reason, 'no days are selected');
+    assert.deepEqual(sanitiseScheduleDays([1, 2, 'x', 9, 2]), [1, 2]);
+    assert.equal(sanitiseScheduleDays([1, 2, 3, 4, 5, 6, 7]), null);
   });
 });
 
@@ -205,14 +202,14 @@ describe('activeEntries orders by latest started', () => {
 
     for (const order of [[evening, night, late], [late, night, evening], [night, late, evening]]) {
       assert.deepEqual(
-        activeEntries(order, clock).map(a => a.entry.id),
+        activeEntries(order, null, clock).map(a => a.entry.id),
         ['late', 'night', 'evening'],
       );
     }
   });
 
   test('entries whose window does not contain now are absent', () => {
-    assert.deepEqual(activeEntries([at('07:00', 60)], clock), []);
+    assert.deepEqual(activeEntries([at('07:00', 60)], null, clock), []);
   });
 });
 
@@ -329,6 +326,7 @@ function plan(entries: ScheduleEntry[], over: Partial<SchedulePlan> = {}): Sched
     enabled: true,
     target: { kind: 'devices', deviceIds: ['l1', 'l2'] },
     entries,
+    days: null,
     managedFlows: refsFor(entries),
     ...over,
   };
@@ -460,17 +458,23 @@ describe('catch-up applies one window, deterministically', () => {
   });
 
   test('a cross-midnight window on a restricted day catches up on the right day', async () => {
-    // Tuesday 23:00 + 3h. At 01:00 Wednesday the window is Tuesday's.
-    const tuesdayNight = at('23:00', 180, { id: 'tue', days: [2] });
-    const h = harness({ plan: plan([tuesdayNight]), now: WEDNESDAY_0100 });
+    // Tuesday 23:00 + 3h. At 01:00 Wednesday the window is Tuesday's — the day
+    // set lives on the SCHEDULE now, so it is the plan that says Tuesday.
+    const night = at('23:00', 180, { id: 'night' });
+    const h = harness({
+      plan: plan([night], { days: [2] }), now: WEDNESDAY_0100,
+    });
     await h.runtime.startWithoutFlows();
     await h.runtime.catchUp();
     await settle();
     assert.ok(h.writes.some(w => w.capability === 'onoff' && w.value === true));
 
-    // The same clock against a Wednesday-only window is not inside anything.
-    const wednesdayNight = at('23:00', 180, { id: 'wed', days: [3] });
-    const other = harness({ plan: plan([wednesdayNight]), now: WEDNESDAY_0100 });
+    // The same clock against a Wednesday-only schedule is not inside anything:
+    // the window that contains 01:00 started on Tuesday, and Tuesday is not
+    // selected.
+    const other = harness({
+      plan: plan([night], { days: [3] }), now: WEDNESDAY_0100,
+    });
     await other.runtime.startWithoutFlows();
     await other.runtime.catchUp();
     await settle();

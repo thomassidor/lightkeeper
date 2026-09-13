@@ -6,6 +6,7 @@ import { KeyedMutex } from '../support/keyed-mutex';
 import type { HomeyApiService, Unsubscribe } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
 import type { DaylightReading } from './daylight-response';
+import { bucketWeek, readSensorWeek, type SensorWeek } from './sensor-history';
 import { LUMINANCE_CAPABILITY } from './daylight-types';
 import { messageOf } from '../support/homey-errors';
 
@@ -124,12 +125,13 @@ export class LuminanceSource {
   }
 
   /**
-   * The mean over the USABLE sensors, or nothing.
+   * One sensor's current reading, or nothing.
    *
-   * A mean rather than the brightest, and it is a decision: the sensors somebody
-   * picked are the weighting. Somebody who does not want a shaded corner's
-   * opinion of the room does not select it, and taking the maximum instead would
-   * quietly let one window-facing sensor speak for a whole flat.
+   * It used to take a list and return their mean. The pairing rewrite made the
+   * choice a single sensor — a room has the sensor it has, and averaging several
+   * was a power-user answer to a question most homes do not have — so the mean
+   * is gone and with it the question of how to weight one shaded corner against
+   * a window.
    *
    * Usable excludes a sensor that is gone, one Homey reports unavailable, one
    * without a working subscription, and one without a finite reading. It does
@@ -139,20 +141,34 @@ export class LuminanceSource {
    * instead — `watched()` carries every reading's age, and the settings page
    * shows it (platform §16).
    */
-  read(deviceIds: string[]): DaylightReading | null {
-    const used: string[] = [];
-    let total = 0;
+  read(deviceId: string | null): DaylightReading | null {
+    if (deviceId === null) return null;
+    const watched = this.sensors.get(deviceId);
+    if (watched === undefined || !watched.available || watched.off === null) return null;
+    if (watched.lux === null || !Number.isFinite(watched.lux)) return null;
+    return { lux: watched.lux, deviceIds: [deviceId] };
+  }
 
-    for (const deviceId of deviceIds) {
-      const watched = this.sensors.get(deviceId);
-      if (watched === undefined || !watched.available || watched.off === null) continue;
-      if (watched.lux === null || !Number.isFinite(watched.lux)) continue;
-      total += watched.lux;
-      used.push(deviceId);
-    }
-
-    if (used.length === 0) return null;
-    return { lux: total / used.length, deviceIds: used };
+  /**
+   * One sensor's own last week, bucketed for the screen that draws it.
+   *
+   * Here rather than in a pairing module because this class already owns both
+   * halves — the API handle and the notion of what a light sensor is — and a
+   * second place that knew how to address a luminance log would be a second
+   * place to get the id shape wrong.
+   *
+   * `null` on any failure, never a throw: a sensor with no readable history is a
+   * sensor the screen falls back to defaults for, which is what every screen did
+   * before this existed. It takes no claim on the sensor and needs none — a log
+   * is read, not subscribed to.
+   */
+  async week(deviceId: string, timezone: string | undefined): Promise<SensorWeek | null> {
+    if (this.stopped) return null;
+    const api = await this.deps.api.read().catch(() => null);
+    if (!api) return null;
+    const samples = await readSensorWeek(api, deviceId);
+    if (samples === null) return null;
+    return bucketWeek(samples, timezone, this.now());
   }
 
   /** Every sensor being watched, for the settings page and diagnostics. */

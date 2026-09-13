@@ -53,8 +53,8 @@ const END = '/* ==== end shared base ==== */';
  * and has no daylight card. So the test over it asserts identity across the
  * views that have it, and that there is more than one of them.
  */
-const CARD_START = '/* ==== shared daylight card:';
-const CARD_END = '/* ==== end shared daylight card ==== */';
+const CARD_START = '/* ==== shared week grid:';
+const CARD_END = '/* ==== end shared week grid ==== */';
 
 /** Every pair view in the repository, as "<driver>/<file>" -> its root id. */
 const VIEWS: Record<string, string> = Object.fromEntries(
@@ -95,7 +95,7 @@ function baseBlock(view: string): string {
  * view does not carry one.
  *
  * Null rather than a failure, because not carrying it is legitimate: only the
- * device types that store a brightness have a response to configure.
+ * two daylight screens draw a sensor's week.
  */
 function cardBlock(view: string): string | null {
   const text = read(view);
@@ -103,7 +103,7 @@ function cardBlock(view: string): string | null {
   if (from === -1) return null;
 
   const to = text.indexOf(CARD_END);
-  assert.ok(to > from, `${view}: shared daylight card end marker is missing or misplaced`);
+  assert.ok(to > from, `${view}: shared week-grid end marker is missing or misplaced`);
 
   return text.slice(from, to + CARD_END.length)
     .replaceAll(`#${VIEWS[view]}`, '#ROOT');
@@ -152,19 +152,25 @@ describe('pair view styles', () => {
     }
   });
 
-  test('the shared daylight card block is identical wherever it appears', () => {
+  test('the shared week-grid block is identical wherever it appears', () => {
     /**
-     * The same argument as the base block above, one level down. Four screens
-     * carry this card — a Daylight light, a schedule, a circadian light and a
-     * Curve light — because a daylight response is ONE configuration per device
-     * and four device types can hold one. There is nowhere to put a stylesheet,
-     * so the duplication is made safe rather than avoided.
+     * The same argument as the base block above, one level down.
+     *
+     * The daylight CARD used to be the block here — the "follow the daylight"
+     * section spliced into four screens. It went with `fromDaylight`: brightness
+     * from the room is what a Daylight light is for, and offering it on four
+     * device types meant four screens carrying the same 250 lines.
+     *
+     * What is spliced now is the sensor's-week grid, on the two daylight screens
+     * that draw it: the response screen, where it is the evidence for the two lux
+     * numbers, and the detail screen a sensor row pushes. There is still nowhere
+     * to put a stylesheet, so the duplication is made safe rather than avoided.
      */
     const carriers = Object.keys(VIEWS).filter(view => cardBlock(view) !== null);
 
     assert.ok(
       carriers.length > 1,
-      `expected several views to carry the daylight card, found ${carriers.length}: `
+      `expected several views to carry the week grid, found ${carriers.length}: `
       + `${carriers.join(', ')}`,
     );
 
@@ -172,9 +178,42 @@ describe('pair view styles', () => {
     for (const view of carriers.slice(1)) {
       assert.equal(
         cardBlock(view), reference,
-        `${view}'s daylight card CSS has drifted from ${carriers[0]}'s — `
+        `${view}'s week-grid CSS has drifted from ${carriers[0]}'s — `
         + 'the block is duplicated because the views share one document, '
         + 'so a change has to be made in every file that has it',
+      );
+    }
+  });
+
+  test('no view redefines a class the shared base already styles', () => {
+    /**
+     * Scoping protects one VIEW from another. Inside a view, only the name does
+     * — and this bit twice in one afternoon.
+     *
+     * The shared base styles `.day` as the day STRIP: 104px tall, positioned,
+     * with its own overflow. The schedule's weekday chips and the week grid's
+     * row labels both called themselves `.day`, inherited all of it, and
+     * rendered as 104px blocks that pushed their own rows sideways. Both looked
+     * fine in the markup and wrong only in a render.
+     *
+     * So a view may ADD classes freely and may not redefine one the base owns.
+     */
+    const base = baseBlock(Object.keys(VIEWS)[0]!);
+    const owned = new Set(
+      [...base.matchAll(/#ROOT\s+\.([\w-]+)/g)].map(match => match[1]!),
+    );
+
+    for (const [view, root] of Object.entries(VIEWS)) {
+      const style = styleBlock(view);
+      const own = style.slice(style.indexOf('end shared base'));
+      const redefined = [...own.matchAll(new RegExp(`#${root}\s+\.([\w-]+)`, 'g'))]
+        .map(match => match[1]!)
+        .filter(name => owned.has(name));
+
+      assert.deepEqual(
+        [...new Set(redefined)], [],
+        `${view} redefines ${[...new Set(redefined)].join(', ')}, which the shared base owns — `
+        + "pick a name of its own, or the base's rules come with it",
       );
     }
   });
@@ -194,6 +233,26 @@ describe('pair view styles', () => {
         .filter(selector => selector.length > 0 && !selector.startsWith('<'));
 
       for (const selector of rules) {
+        /**
+         * `@keyframes` cannot be scoped, and pretending otherwise would be
+         * wrong rather than strict: the name lives in the document, not under a
+         * selector. So the rule for one is that its NAME carries the view's own
+         * prefix — which is the actual failure mode, two views defining
+         * different animations called `pulse` in one shared document.
+         */
+        if (selector.startsWith('@keyframes')) {
+          const name = selector.slice('@keyframes'.length).trim();
+          const prefix = root.split('-')[0];
+          assert.ok(
+            name.startsWith(prefix),
+            `${view}: @keyframes "${name}" must start with "${prefix}" — `
+            + 'keyframe names are global to the shared document',
+          );
+          continue;
+        }
+        // Percentage stops inside a keyframe block are not selectors either.
+        if (/^\d+%$/.test(selector) || selector === 'from' || selector === 'to') continue;
+
         assert.ok(
           selector.split(',').every(part => part.trim().startsWith(`#${root}`)),
           `${view}: selector "${selector}" is not scoped to #${root}`,
@@ -321,9 +380,24 @@ describe('pair view script helpers', () => {
     assertIdentical('emit');
   });
 
-  test('escapeHtml() is identical in the views that have one', () => {
-    // Only the list screens need it; those that do must agree.
-    assertIdentical('escapeHtml');
+  test('no view builds markup from a string any more', () => {
+    /**
+     * `escapeHtml` used to be load-bearing in exactly two views: the schedule
+     * screen and the curve screen each built a card's markup as a string and
+     * assigned it with `innerHTML`, so every interpolated value had to go
+     * through it.
+     *
+     * Both were rewritten as nodes in the pairing redesign, and with them the
+     * last `innerHTML` in the app. So the guard that matters is no longer
+     * "escapeHtml agrees everywhere" but "there is nothing for it to guard" —
+     * which is a stronger property and a cheaper one to keep.
+     */
+    for (const view of Object.keys(VIEWS)) {
+      assert.equal(
+        read(view).includes('escapeHtml'), false,
+        `${view} still has escapeHtml — has a view gone back to building markup?`,
+      );
+    }
   });
 
   test('node() is identical everywhere it appears', () => {
@@ -338,15 +412,21 @@ describe('pair view script helpers', () => {
     assertIdentical('pad');
   });
 
-  test('formatMinutes() is identical everywhere it appears', () => {
-    assertIdentical('formatMinutes');
+  test('clock() is identical everywhere it appears', () => {
+    // The minute-to-"HH:MM" formatter, on the four screens that show a time.
+    // It was called `formatMinutes` on one of them and `clock` on the other
+    // three, which is exactly the drift this whole file exists to catch — two
+    // names for one function is how two implementations start.
+    assertIdentical('clock');
   });
 
-  test('warmthText() is identical everywhere it appears', () => {
-    // The warmth ladder. Two screens disagreeing about which end is warm is the
-    // one drift here a user would actually see.
-    assertIdentical('warmthText');
+  test('weekGrid() is identical everywhere it appears', () => {
+    // Spliced from views/shared/week-grid.js into the two daylight screens that
+    // draw a sensor's week. It closes over each view's own `node`, which is what
+    // lets the body be byte-identical on two screens with nothing else in common.
+    assertIdentical('weekGrid');
   });
+
 
   /**
    * `brightnessText` is deliberately NOT here, and the difference is the reason.
@@ -359,34 +439,16 @@ describe('pair view script helpers', () => {
    * the thing it guards is genuinely one thing.
    */
 
-  test('setSummary() is identical everywhere it appears', () => {
-    assertIdentical('setSummary');
-  });
 
-  test('daylightCard() is identical everywhere it appears', () => {
-    /**
-     * The whole daylight card, as ONE function, byte-identical on four screens.
-     *
-     * It is the largest thing this file guards, and the most worth guarding: a
-     * daylight response is one configuration per device and four of the five
-     * device types can hold one, so the sensor picker, the lux range, the two
-     * ends and the live readout appear four times. The function takes no
-     * arguments and closes over `Homey`, `emit`, `node` and `clear` — the four
-     * things every carrier already has — which is exactly what lets the body be
-     * identical while the surrounding screen is not.
-     */
-    assertIdentical('daylightCard');
-  });
-
-  test('every view carrying the daylight card has what it closes over', () => {
-    // It uses `node` and `clear` without declaring them. Two of the carriers
-    // build their rows as markup strings and had neither before, so this is the
-    // dependency that would otherwise fail at runtime on one screen only.
+  test('every view carrying the week grid has what it closes over', () => {
+    // `weekGrid` uses `node` and `Homey` without declaring them, which is what
+    // lets its body be byte-identical on two screens with nothing else in
+    // common — and is also the dependency that would otherwise fail at runtime
+    // on one screen only.
     for (const view of Object.keys(VIEWS)) {
-      if (!helper(view, 'daylightCard')) continue;
-      assert.ok(helper(view, 'node'), `${view} carries the daylight card but has no node()`);
-      assert.ok(helper(view, 'clear'), `${view} carries the daylight card but has no clear()`);
-      assert.ok(helper(view, 'emit'), `${view} carries the daylight card but has no emit()`);
+      if (!helper(view, 'weekGrid')) continue;
+      assert.ok(helper(view, 'node'), `${view} carries the week grid but has no node()`);
+      assert.ok(helper(view, 'emit'), `${view} carries the week grid but has no emit()`);
     }
   });
 

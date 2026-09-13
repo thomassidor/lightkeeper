@@ -20,7 +20,7 @@ Every document in this repository, and who it is for. None of `docs/` is bundled
 | [`week-long-testing.md`](week-long-testing.md) | Start a persistent seven-day recording, annotate observations, export and analyze the evidence |
 | [`evidence-findings.md`](evidence-findings.md) | **What a real 3.83-day recording found** — six defects, the numbers behind each, and the two things that only looked like defects |
 | [`../CLAUDE.md`](../CLAUDE.md) | The architecture, the conventions, the release checklist, and why each dependency is pinned. Written for agents and maintainers alike |
-| [`homey-platform.md`](homey-platform.md) | **Sixteen sections on how Homey actually behaves**, established against real hardware and documented nowhere else. The code cites it as `platform §n` |
+| [`homey-platform.md`](homey-platform.md) | **Seventeen sections on how Homey actually behaves**, established against real hardware and documented nowhere else. The code cites it as `platform §n` |
 | [`hardware-test-plan.md`](hardware-test-plan.md) | **The standing pass on a real Homey, run before every release.** What to do and how to report it, and nothing else |
 | [`hardware-test-coverage.md`](hardware-test-coverage.md) | What the script covers, what the suite covers instead, and which old test-plan lines were retired |
 | [`localisation.md`](localisation.md) | The app is English-only on purpose; how to add a language back, and the glossary kept from the removed Danish |
@@ -45,9 +45,23 @@ masters, the export script, and its own two documents:
 Nothing shipped is hand-edited: `python artwork/export-assets.py` builds every icon and image from
 `artwork/masters/`, and an edit to a shipped file is lost on the next export.
 
+## If you change how a setup screen looks
+
+| Document | What is in it |
+|---|---|
+| [`design/`](design) | **The Claude Design canvases the 0.6.0 pairing rewrite was built from** — all five device flows, one row each, happy path plus the special cases, with the iteration archive that says why each decision went the way it did. The durable visual reference the views are compared against |
+
+`npm run render:views` draws every screen to `.views/` and is the other half of that comparison:
+the canvas says what it should look like, the render says what it does. Neither runs in CI — both
+need Chrome, and the second needs a person.
+
 ## Archive
 
 [`history/`](history) is the completed remediation project that produced most of 0.5.0 — a master
 plan, nine phase files (`PHASE-0` through `PHASE-8`), and `DEVIATIONS.md`, which records where the
 plan and the code disagreed and what was done instead. All nine are done; it is kept for the reasoning, which two code
 comments still cite directly. Nothing in it describes work that is still outstanding.
+
+[`history/pairing-redesign-plan.md`](history/pairing-redesign-plan.md) sits beside it for the same
+reason: the plan the 0.6.0 pairing rewrite was landed from, including the decisions taken against
+the design canvases and the one place the implementation deliberately departs from them.
