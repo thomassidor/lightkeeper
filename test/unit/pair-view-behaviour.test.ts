@@ -106,11 +106,19 @@ describe('the light picker', () => {
     assert.equal(view.byId('lt-folded')?.children.length, 2, 'both rooms are one line each');
   });
 
-  test('Next is refused until something is picked', async () => {
+  test('an empty selection says so, because the view no longer owns Next', async () => {
+    /**
+     * This used to assert a disabled button in the card, and the button is
+     * gone: Homey draws the footer `Next` for every step whose `navigation`
+     * names one, and a second one at the end of our own scroll content was a
+     * duplicate the design never had. So the count line is what reports an
+     * empty selection now — the screen states it rather than blocking on it.
+     */
     const view = run();
     await view.settle();
 
-    assert.equal(view.byId('lt-next')?.disabled, true);
+    assert.equal(view.byId('lt-count')?.textContent, 'lights.noneChosen');
+    assert.equal(view.byId('lt-next'), null, 'and no second Next is drawn');
   });
 
   test('ticking every light in ONE room stores a zone target', async () => {
@@ -155,7 +163,7 @@ describe('the light picker', () => {
     await view.settle();
 
     assert.equal(view.byId('lt-open')?.children.length, 1, 'a room with picks is open');
-    assert.equal(view.byId('lt-next')?.disabled, false);
+    assert.equal(view.byId('lt-count')?.textContent, 'lights.chosen');
   });
 
   test('no lights at all is a state of this screen, not a dead end', async () => {
@@ -167,7 +175,6 @@ describe('the light picker', () => {
 
     assert.equal(view.byId('lt-picker')?.style.display, 'none');
     assert.notEqual(view.byId('lt-empty')?.style.display, 'none');
-    assert.equal(view.byId('lt-next')?.style.display, 'none', 'no dead Next');
   });
 });
 
@@ -401,7 +408,10 @@ describe('the schedule blocks screen', () => {
     await view.settle();
 
     assert.notEqual(view.byId('bl-overlap')?.style.display, 'none', 'the banner is shown');
-    assert.equal(view.byId('bl-next')?.disabled, false, 'and Next is not blocked');
+    // Nothing blocks the step. There is no Next in this view at all any more —
+    // Homey's own footer carries it — so "never blocked" is now the absence of
+    // anything that could block it.
+    assert.equal(view.byId('bl-next'), null, 'and no Next of ours to block');
     assert.ok(
       view.byId('bl-timeline')!.children.some(child => child.className === 'clash'),
       'the conflicting region is outlined on the timeline',

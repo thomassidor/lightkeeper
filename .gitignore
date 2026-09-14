@@ -33,6 +33,11 @@
 # holding screens that had been deleted three commits earlier.
 /views.zip
 
+# PNG exports of the design canvas, dropped here to be held against `.views/`.
+# Ignored for the same reason `.views/` is: a picture of a screen goes stale the
+# moment the screen changes, and docs/design/ already carries the canvas itself.
+/.designexports/
+
 # Local Claude Code settings — per-machine, not shared.
 .claude/settings.local.json
 

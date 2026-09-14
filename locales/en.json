@@ -44,7 +44,6 @@
   },
   "curve": {
     "title": "Your colours through the day",
-    "next": "Next",
     "step": "Step __index__ of __count__",
     "midnight": "midnight",
     "noon": "noon",
@@ -89,9 +88,9 @@
     "magenta": "Magenta"
   },
   "functions": {
-    "toggle": "On / off",
-    "on": "Turn on",
-    "off": "Turn off",
+    "toggle": "On and off",
+    "on": "On",
+    "off": "Off",
     "brightness_up": "Brighter",
     "brightness_down": "Dimmer",
     "warmer": "Warmer",
@@ -235,13 +234,13 @@
   },
   "lights": {
     "title": "Which lights?",
-    "next": "Next",
     "step": "Step __index__ of __count__",
     "search": "Search __count__ lights",
     "selectAll": "Select all",
     "selectNone": "Clear",
     "chosen": "__count__ chosen",
     "roomCount": "__picked__ of __total__",
+    "noRoom": "No room",
     "noneChosen": "Pick at least one light",
     "capColour": "Colour",
     "capTemperature": "Colour temperature",
@@ -249,11 +248,10 @@
     "capOnOff": "On and off only",
     "notALight": "not a light",
     "unavailable": "Not responding",
-    "emptyBody": "Lightkeeper uses lights Homey already has. Add a bulb or a lamp to Homey first, then come back.",
+    "emptyBody": "Lightkeeper uses lights already in Homey. Add a bulb or a lamp first, then come back.",
     "lookAgain": "Look again"
   },
   "intro": {
-    "start": "Start",
     "remoteTop": "Top",
     "remoteLeft": "Left",
     "remotePressed": "pressed",
@@ -274,7 +272,7 @@
     "whichLights": "Which lights",
     "whichLightsWhy": "Pick them by room",
     "theDay": "Morning, midday, evening",
-    "theDayWhy": "How warm each part of the day is, and how bright",
+    "theDayWhy": "How bright and how warm each part of the day is",
     "theCurve": "Your colours and their times",
     "theCurveWhy": "Start from a set and change the points that matter",
     "theSensor": "A sensor, or the sun",
@@ -335,7 +333,6 @@
   },
   "day": {
     "title": "Colour through the day",
-    "next": "Next",
     "step": "Step __index__ of __count__",
     "morning": "Morning",
     "midday": "Midday",
@@ -362,7 +359,6 @@
   },
   "remote": {
     "title": "Which remote?",
-    "next": "Next",
     "step": "Step __index__ of __count__",
     "none": "No remotes or switches found. Add one to Homey first.",
     "unavailable": "Not responding",
@@ -376,7 +372,6 @@
   },
   "blocks": {
     "title": "When are they on?",
-    "next": "Next",
     "step": "Step __index__ of __count__",
     "midnight": "midnight",
     "noon": "noon",
@@ -406,13 +401,13 @@
     "remove": "Remove this block",
     "add": "Add a block",
     "overlap": "Two blocks overlap between __from__ and __until__",
-    "overlapMeans": "The later one wins while they do. Nothing breaks — the lights simply stay on through both."
+    "overlapMeans": "The later one wins while they overlap. Nothing breaks — the lights simply stay on through both."
   },
   "tryit": {
     "title": "See any time of day",
     "midnight": "midnight",
     "noon": "noon",
-    "help": "Drag to a time, then show it on the lamps. Nothing is saved, and you can put them back.",
+    "help": "Drag to a time, then show it on the lamps.",
     "showAt": "Show __time__ on my lights",
     "putBack": "Put them back",
     "set": "Set",
@@ -420,7 +415,6 @@
   },
   "sensor": {
     "title": "Where should the reading come from?",
-    "next": "Next",
     "step": "Step __index__ of __count__",
     "aSensor": "A light sensor",
     "aSensorWhy": "Measures the light in the room itself.",
@@ -434,6 +428,7 @@
     "noneFound": "No light sensors on this Homey — the sun it is.",
     "reading": "__lux__ lx",
     "notResponding": "Not responding",
+    "noneHere": "none",
     "justNow": "just now",
     "minutesAgo": "__minutes__ min ago",
     "hoursAgo": "__hours__ h ago",
@@ -442,7 +437,6 @@
   },
   "response": {
     "title": "How bright should the lamps be?",
-    "next": "Next",
     "step": "Step __index__ of __count__",
     "which": "__index__ of __count__",
     "whenDark": "When the room is dark",
@@ -470,10 +464,10 @@
     "sixPm": "6pm",
     "tryIt": "Try it now",
     "tried": "Set __writes__ light(s) to what the room asks for right now.",
-    "stale": "__name__ has not reported for __hours__ hours. A few quiet hours in a still room are normal, but most light sensors report at least twice a day — and a stopped sensor holds your lights at one brightness."
+    "stale": "__name__ has not reported for __hours__ hours",
+    "staleMeans": "A few quiet hours in a still room are normal. Most light sensors report at least twice a day, so this one has probably stopped — and a stopped sensor holds your lights at one brightness."
   },
   "detail": {
-    "back": "Back to sensors",
     "missing": "That sensor",
     "useIt": "Use this one",
     "useAnyway": "Use it anyway",
@@ -501,13 +495,11 @@
   },
   "buttons": {
     "title": "What should each button do?",
-    "next": "Next",
     "step": "Step __index__ of __count__",
     "nothing": "Nothing",
     "pressToJump": "Press a button to jump to its row"
   },
   "job": {
-    "done": "Done",
     "nothing": "Nothing",
     "brightness": "Brightness",
     "off": "Off",
@@ -522,6 +514,7 @@
   "listen": {
     "title": "Press a button on the remote",
     "countdown": "Listening for __seconds__ seconds",
+    "nothingYet": "Heard nothing yet",
     "nothing": "Heard nothing. Some remotes only speak through Flow cards and cannot be heard here — pick it from the list instead.",
     "heard": "Heard __name__",
     "pickFromList": "Pick from the list instead",

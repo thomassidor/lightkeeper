@@ -531,6 +531,67 @@ inverted** in three places: higher `light_temperature` is warmer (platform §6),
 of 0.18 was reading as "Warm" beside a blue swatch. Storage keeps the platform's convention and the
 slider reads Candlelight to Daylight, which is the way round the design draws it.
 
+### The screens held against the design again, with Homey's chrome in the picture
+
+The redesign above was checked against the design canvas by rendering every screen on a white page.
+That render left out the one thing the app does not draw and cannot change — **the sheet Homey puts
+around a pairing view**, with its own header and its own `← Previous` / `Next →` footer — and the
+omission was not neutral. Held against a design that included the chrome, an app-drawn full-width
+`Next` looked like the design's own, and nine screens shipped drawing a **second Next** below the
+fold of a sheet that already had one.
+
+`npm run render:views` now reproduces that sheet, and takes the buttons from each driver's own
+`driver.compose.json` rather than from a list kept in step by hand. It also renders each driver's own
+`intro`, light picker and review: those three are one FILE and five SCREENS, and keyed by file name
+alone the contact sheet had been drawing the circadian intro five times over.
+
+What that turned up, screen by screen:
+
+- **The duplicate `Next` is gone** from the intro, the light picker, the circadian day, the curve,
+  the schedule blocks, the remote picker, the buttons screen and both daylight steps. The light
+  picker's "N chosen" line now carries what the disabled button used to say. Two screens keep a
+  button — the review, which creates the device, and the key screen, which validates the key — and
+  both stopped declaring a `navigation.next` so Homey draws none beside it. **On the key screen
+  that was a bypass, not just a duplicate**: Homey's own Next walked past an empty field and the
+  flow carried on with no key until the review failed to save.
+- **`font: 600 12px/1 inherit` is invalid CSS**, and every browser drops the whole declaration —
+  `inherit` is a CSS-wide keyword and may not be a component of a shorthand. Seven rules shipped
+  with it and rendered at the inherited 16px regular: the day and time steppers, the schedule's day
+  chips, both Add buttons, the Remove links. Measured in headless Chrome, then written as longhand.
+  `pair-view-styles.test.ts` now fails on the pattern.
+- **The curve chart drew its point handles outside itself.** A point at full brightness — which is
+  every point while "Set brightness too" is off, the default — was positioned at `bottom: 100%` and
+  pulled up by a margin that does nothing to a bottom-anchored box, so the whole row of handles sat
+  above the chart and over the heading. Seen on hardware before it was seen anywhere else.
+- **Selected things look selected.** The open card on the circadian day, the curve, the schedule
+  block and the daylight response now carries the accent border the design draws — all four were
+  hairline-bordered like every other card, so on four screens nothing said which of the list below
+  was being edited. The schedule's selected block is taller and haloed on its timeline; the day
+  chips are filled rather than outlined; a chosen colour swatch is ringed in the accent rather than
+  gapped in white; the job editor is seven cards rather than seven radio rows.
+- **The rules that were missing.** A `Set … too` switch now always sits under a hairline, the
+  schedule's Remove is centred under one, and a list of rows is inset by its card so the line
+  between two rows stops short of the card's edge instead of cutting it in half. The intro's
+  numbered decisions lost the three rules they had: the design spaces them, and a hairline turned a
+  promise about what is coming into a settings list.
+- **Colour swatches were washing out.** The palette is stored as Homey's hue and saturation, and a
+  near-white is saturation 0.05 — which `hsl()` paints as grey. The two whites rendered as two
+  indistinguishable greys on the screen whose whole job is to show that this device does colour.
+  Saturation is now lifted off zero for display and lightness falls faster, in the one formula both
+  the driver and the curve chart use.
+- **Every heading had 4px under it** and the design draws 16, so a title read as a label on the card
+  below rather than as the name of the screen. Steppers are bare glyphs rather than outlined boxes,
+  an unticked checkbox has a darker edge than a form field, and chevrons are lighter than the text
+  beside them.
+- **A light in no room, and a room with no sensor, are named.** `lib/` had hardcoded the English
+  word `Unassigned` for the first, which the translation rule exists to catch; the view now names it
+  and greys it. The sensor picker lists every room rather than only the rooms that have one, because
+  which rooms have none is half of what that screen answers.
+- Smaller: the pushed job editor commits on every change rather than on a `Done` button Homey's own
+  back arrow could bypass; the listening screen says "Heard nothing yet" from the first frame
+  instead of after thirty seconds of nothing; the try-it screen's time, label and strip are one card;
+  the daylight review's second end carries a swatch.
+
 
 ## 0.5.2
 

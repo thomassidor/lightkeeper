@@ -86,6 +86,17 @@ node scripts/render-icons.mjs --reference <url-to-a-published-icon.svg>
 than as thirteen files in whatever order their names sorted. Each card is captured at its screen's
 own height, which is why a long screen is long and a short one is not padded with white.
 
+**Homey's own sheet is drawn around every screen**, and that is the point rather than decoration:
+the container supplies a header and a `← Previous` / `Next →` footer for every step whose
+`navigation` names one, so a render on a bare white page cannot show that a view is drawing a
+SECOND Next below the fold — which is exactly what nine of them were doing. The buttons come from
+each driver's own compose, never from a list here. The dashed line across a long screen is the fold
+on an 812pt phone.
+
+`intro.html`, `lights.html` and `review.html` are one file and five screens (platform §8), so each
+is rendered per driver from `DRIVER_REPLIES` in `scripts/pair-view-fixtures.mjs`. Keyed by file name
+alone the sheet drew the circadian intro five times and no other device type's was ever on it.
+
 Both need headless Chrome — the house rasteriser, nothing to install — and write to `.views/`
 (`.views/icons/` for icons), which is gitignored. 24px of ink in a 40px circle is
 [platform §10](homey-platform.md#10-store-assets-what-is-validated-what-is-reviewed-and-what-homey-does-to-your-icon),

@@ -25,7 +25,7 @@
     {
       "id": "credential",
       "navigation": {
-        "next": "remote"
+        "prev": "intro"
       }
     },
     {

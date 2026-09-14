@@ -127,13 +127,25 @@ export function warmthSwatch(value: number): string {
 /**
  * A palette colour as something a browser will paint.
  *
- * Lightness falls as saturation rises, so a fully saturated hue reads as a
- * colour rather than as a pastel and a near-white swatch stays near white —
- * the same rule the curve screen's own swatches follow.
+ * Two curves, and both are there because a swatch is judged ON WHITE while the
+ * colour it stands for is judged in a room:
+ *
+ *  - **Lightness falls as saturation rises**, so a saturated hue reads as a
+ *    colour rather than as a pastel.
+ *  - **Saturation is lifted off zero**, because Homey's `light_saturation` for
+ *    a near-white is 0.05 and `hsl(36, 5%, …)` is grey. The two whites in the
+ *    palette are near-white HUES; drawn at their stored saturation they came
+ *    out as two indistinguishable greys, and the screen whose job is to show
+ *    that this device does colour opened with a row of them.
+ *
+ * DUPLICATED in `css()` in drivers/curve/pair/curve.html, which repaints the
+ * chart on every drag and so cannot ask the driver. Change one and change the
+ * other.
  */
 export function colourSwatch(colour: { hue: number; saturation: number }): string {
-  return `hsl(${Math.round(colour.hue * 360)},${Math.round(colour.saturation * 100)}%,`
-    + `${Math.round(88 - colour.saturation * 28)}%)`;
+  const saturation = Math.round((0.25 + colour.saturation * 0.55) * 100);
+  const lightness = Math.round(86 - colour.saturation * 36);
+  return `hsl(${Math.round(colour.hue * 360)},${saturation}%,${lightness}%)`;
 }
 
 export interface ReviewScreen {

@@ -13,7 +13,86 @@
  *
  * `test/unit/pair-view-render-fixtures.test.ts` discovers the views from disk and
  * fails if one has no entry here, so a new screen cannot quietly go unrendered.
+ *
+ * THREE views are one FILE and five SCREENS. `intro.html`, `lights.html` and
+ * `review.html` are shared by every driver (platform §8) and differ entirely in
+ * what the driver answers them with — a different promise, a different picture,
+ * a different number of steps. Keyed by file alone, the contact sheet drew the
+ * circadian intro five times and the four other device types were never on it.
+ * So `DRIVER_REPLIES` below is keyed `<driver>/<file>` and the renderer prefers
+ * it; `RENDER_REPLIES` keeps one entry per file for everything else.
+ *
+ * Their text is RESOLVED from locales/en.json through the same keys the drivers
+ * pass, rather than transcribed: a fixture that repeats a string is a fixture
+ * that goes stale the first time the string is edited, silently, on the one
+ * page whose whole job is to be looked at.
  */
+import { readFileSync } from 'node:fs';
+
+const EN = JSON.parse(
+  readFileSync(new URL('../locales/en.json', import.meta.url), 'utf8'));
+
+/**
+ * `Homey.__`, near enough: a dotted key and `__token__` substitution.
+ *
+ * @param {string} key
+ * @param {Record<string, string | number>} [tokens]
+ */
+function say(key, tokens) {
+  let node = EN;
+  for (const part of key.split('.')) node = node?.[part];
+  let text = typeof node === 'string' ? node : key;
+  for (const [name, value] of Object.entries(tokens ?? {})) {
+    text = text.split(`__${name}__`).join(String(value));
+  }
+  return text;
+}
+
+/**
+ * The intro payload a driver builds, from the same keys its driver.ts passes.
+ *
+ * @param {string} titleKey
+ * @param {string} blurbKey
+ * @param {string} hero
+ * @param {[string, string][]} decisions
+ * @param {string} nextView
+ */
+function intro(titleKey, blurbKey, hero, decisions, nextView) {
+  return {
+    getIntro: {
+      title: say(titleKey),
+      blurb: say(blurbKey),
+      hero,
+      decisions: decisions.map(([whatKey, whyKey]) =>
+        ({ what: say(whatKey), why: say(whyKey) })),
+      nextView,
+    },
+  };
+}
+
+/**
+ * The light picker, which differs per driver only in its subtitle and its place.
+ *
+ * @param {string} subtitleKey
+ * @param {number} stepIndex
+ * @param {number} stepCount
+ * @param {string} nextView
+ */
+function picker(subtitleKey, stepIndex, stepCount, nextView) {
+  return {
+    listTargets: {
+      rooms: ROOMS,
+      zones: ROOMS.map(room => ({ id: room.zoneId, name: room.zoneName })),
+      total: 54,
+      current: { kind: 'devices', deviceIds: ['l1', 'l2'] },
+      subtitle: say(subtitleKey),
+      stepIndex,
+      stepCount,
+      nextView,
+    },
+    selectTargets: { count: 2, support: SUPPORT },
+  };
+}
 
 /**
  * Lights the picker and every downstream screen agree about.
@@ -141,6 +220,39 @@ const BOUNDARIES = {
   fromSun: true,
 };
 
+/**
+ * A day of the Curve light, one bar an hour, for the review's picture.
+ *
+ * The same twenty-four the design canvas draws, so the contact sheet and the
+ * canvas can be held against each other without allowing for different data.
+ */
+const CURVE_BARS = [
+  { color: '#a96ba9', height: 0.38 },
+  { color: '#b06fa0', height: 0.39 },
+  { color: '#b87595', height: 0.40 },
+  { color: '#c17b8a', height: 0.41 },
+  { color: '#ca817f', height: 0.42 },
+  { color: '#d88c6d', height: 0.43 },
+  { color: '#efa658', height: 0.44 },
+  { color: '#f0bd8f', height: 0.52 },
+  { color: '#e2e6f2', height: 0.68 },
+  { color: '#dbe8fb', height: 0.80 },
+  { color: '#dde5f1', height: 0.76 },
+  { color: '#e2e2e8', height: 0.72 },
+  { color: '#e8e0df', height: 0.69 },
+  { color: '#eee3da', height: 0.66 },
+  { color: '#f2e6d6', height: 0.64 },
+  { color: '#edc9b6', height: 0.71 },
+  { color: '#e8ab96', height: 0.78 },
+  { color: '#e48376', height: 0.85 },
+  { color: '#e26a58', height: 0.90 },
+  { color: '#e0533f', height: 0.94 },
+  { color: '#c85356', height: 0.76 },
+  { color: '#b6567f', height: 0.58 },
+  { color: '#ab5da0', height: 0.42 },
+  { color: '#a763b8', height: 0.37 },
+];
+
 /** Four gestures, so the buttons screen shows both assigned and unassigned rows. */
 const GESTURES = [
   { key: 'button.top|true', buttonLabel: 'Top', actionLabel: 'Pressed' },
@@ -239,6 +351,7 @@ export const RENDER_REPLIES = {
         { minute: 1178, warmth: 0.86 },
         { minute: 1390, warmth: 0.86 },
       ],
+      boundaries: { morningEndMinute: 411, eveningStartMinute: 1128 },
       nowMinute: 1180,
     },
     previewAt: { writes: 2, skipped: 0, targets: [] },
@@ -282,6 +395,27 @@ export const RENDER_REPLIES = {
           // then explained rather than missing.
           { id: 's4', name: 'Cupboard sensor', zoneName: 'Hall', lux: null, at: null, available: false, selected: false },
         ] },
+        /**
+         * The rest of the house, sensor or not.
+         *
+         * Which rooms have NO light sensor is half of what this screen answers,
+         * and it is only answerable if those rooms are on the list saying so —
+         * so the fixture carries a house rather than the two rooms that happen
+         * to have one, and the folded list and its `none` rows are drawn.
+         */
+        { zoneName: 'Living room', sensors: [
+          { id: 's5', name: 'Shelf sensor', zoneName: 'Living room', lux: 90, at: Date.now() - 400_000, available: true, selected: false },
+        ] },
+        { zoneName: 'Bedroom', sensors: [
+          { id: 's6', name: 'Bedroom motion', zoneName: 'Bedroom', lux: 4, at: Date.now() - 7_200_000, available: true, selected: false },
+        ] },
+        { zoneName: 'Dining', sensors: [] },
+        { zoneName: 'Landing', sensors: [] },
+        { zoneName: 'Garden', sensors: [
+          { id: 's7', name: 'Garden light sensor', zoneName: 'Garden', lux: 8200, at: Date.now() - 120_000, available: true, selected: false },
+        ] },
+        { zoneName: 'Basement', sensors: [] },
+        { zoneName: '', unzoned: true, sensors: [] },
       ],
       selected: ['s1'],
       sky: { elevation: 18, level: 0.55, location: { latitude: 55.68, longitude: 12.57 } },
@@ -369,10 +503,12 @@ export const RENDER_REPLIES = {
   'buttons.html': {
     getButtons: {
       gestures: GESTURES,
+      // Resolved through the same keys the driver passes, so a renamed job is
+      // renamed on the contact sheet too.
       jobs: {
-        'button.top|true': { label: 'On / off' },
-        'button.top|hold': { label: 'Brighter' },
-        'button.bottom|true': { label: 'Turn off' },
+        'button.top|true': { label: say('functions.toggle') },
+        'button.top|hold': { label: say('functions.brightness_up') },
+        'button.bottom|true': { label: say('functions.off') },
       },
     },
   },
@@ -381,13 +517,13 @@ export const RENDER_REPLIES = {
     getGesture: {
       title: 'Left — Pressed',
       jobs: [
-        { id: null, label: 'Nothing', needsPreset: false },
-        { id: 'toggle', label: 'On / off', needsPreset: false },
-        { id: 'off', label: 'Turn off', needsPreset: false },
-        { id: 'brightness_up', label: 'Brighter', needsPreset: false },
-        { id: 'brightness_down', label: 'Dimmer', needsPreset: false },
-        { id: 'brightness_set', label: 'A set brightness', needsPreset: true },
-        { id: 'temperature_cycle', label: 'Step through warm and cool', needsPreset: false },
+        { id: null, label: say('job.nothing'), needsPreset: false },
+        { id: 'toggle', label: say('functions.toggle'), needsPreset: false },
+        { id: 'off', label: say('functions.off'), needsPreset: false },
+        { id: 'brightness_up', label: say('functions.brightness_up'), needsPreset: false },
+        { id: 'brightness_down', label: say('functions.brightness_down'), needsPreset: false },
+        { id: 'brightness_set', label: say('functions.brightness_set'), needsPreset: true },
+        { id: 'temperature_cycle', label: say('functions.temperature_cycle'), needsPreset: false },
       ],
       // The one job that carries a value, chosen so the render draws its
       // controls rather than only the list.
@@ -402,5 +538,141 @@ export const RENDER_REPLIES = {
   'listen.html': {
     startListening: { listening: true },
     stopListening: { listening: false },
+  },
+};
+
+/**
+ * The three shared views, per driver.
+ *
+ * Keyed `<driver>/<file>`, and `scripts/render-views.mjs` prefers these over the
+ * per-file entries above. Every value is either resolved from the locale through
+ * the key the driver passes, or is demo data of the same SHAPE the driver builds
+ * — the number of steps, the hero, the rows, the promise. Nothing here is a
+ * screen's own wording written out a second time.
+ */
+export const DRIVER_REPLIES = {
+  // ---- remote controller: four steps, and the only flow with a remote -----
+  'controller/intro.html': intro(
+    'intro.controllerTitle', 'intro.controllerBlurb', 'remote',
+    [['intro.theRemote', 'intro.theRemoteWhy'],
+     ['intro.whichLights', 'intro.whichLightsWhy'],
+     ['intro.theButtons', 'intro.theButtonsWhy'],
+     ['intro.checkIt', 'intro.checkItWhy']],
+    'credential'),
+  'controller/lights.html': picker('targets.subtitleController', 2, 4, 'buttons'),
+  'controller/review.html': {
+    getReview: {
+      stepIndex: 4,
+      stepCount: 4,
+      // No hero: a list of rows IS the review of a remote's buttons.
+      rows: [
+        { label: say('review.remote'), value: 'Hall remote', view: 'remote' },
+        { label: say('review.lights'), value: 'Ceiling, Reading lamp', view: 'lights' },
+        { label: say('review.buttonsWithAJob'), value: '4 / 6', view: 'buttons' },
+      ],
+      promise: say('review.promiseController'),
+    },
+  },
+
+  // ---- light schedule: three steps, and the second key-gated flow ---------
+  'schedule/intro.html': intro(
+    'intro.scheduleTitle', 'intro.scheduleBlurb', 'schedule',
+    [['intro.whichLights', 'intro.whichLightsWhy'],
+     ['intro.theBlocks', 'intro.theBlocksWhy'],
+     ['intro.checkIt', 'intro.checkItWhy']],
+    'credential'),
+  'schedule/lights.html': picker('targets.subtitleSchedule', 1, 3, 'blocks'),
+  'schedule/review.html': {
+    getReview: {
+      stepIndex: 3,
+      stepCount: 3,
+      rows: [
+        { label: say('review.lights'), value: 'Ceiling, Reading lamp', view: 'lights' },
+        { label: say('review.timeBlocks'), value: '3', view: 'blocks' },
+        { label: say('review.onTheseDays'), value: 'Mon to Fri', view: 'blocks' },
+      ],
+      promise: say('review.promiseSchedule', { count: 2 }),
+    },
+  },
+
+  // ---- circadian light: the day strip, on the intro and again on the review
+  'circadian/intro.html': intro(
+    'intro.circadianTitle', 'intro.circadianBlurb', 'day',
+    [['intro.whichLights', 'intro.whichLightsWhy'],
+     ['intro.theDay', 'intro.theDayWhy'],
+     ['intro.checkIt', 'intro.checkItWhy']],
+    'lights'),
+  'circadian/lights.html': picker('targets.subtitleCircadian', 1, 3, 'day'),
+  'circadian/review.html': {
+    getReview: {
+      stepIndex: 3,
+      stepCount: 3,
+      rows: [
+        { label: say('review.lights'), value: 'Ceiling, Reading lamp', view: 'lights' },
+        { label: say('review.morning'), value: 'Warm · 55%', view: 'day' },
+        { label: say('review.midday'), value: 'Cool white · 90%', view: 'day' },
+        { label: say('review.evening'), value: 'Deep amber · 45%', view: 'day' },
+      ],
+      promise: say('review.promiseCircadian', { count: 2 }),
+      hero: {
+        kind: 'strip',
+        stops: [
+          'rgb(239,166,88) 0%', 'rgb(242,230,214) 18%', 'rgb(234,240,251) 30%',
+          'rgb(234,240,251) 62%', 'rgb(242,230,214) 74%', 'rgb(239,166,88) 88%',
+          'rgb(239,166,88) 100%',
+        ],
+      },
+    },
+  },
+
+  // ---- Curve light: the same bars its own step 2 draws --------------------
+  'curve/intro.html': intro(
+    'intro.curveTitle', 'intro.curveBlurb', 'curve',
+    [['intro.whichLights', 'intro.whichLightsWhy'],
+     ['intro.theCurve', 'intro.theCurveWhy'],
+     ['intro.checkIt', 'intro.checkItWhy']],
+    'lights'),
+  'curve/lights.html': picker('targets.subtitleCurve', 1, 3, 'curve'),
+  'curve/review.html': {
+    getReview: {
+      stepIndex: 3,
+      stepCount: 3,
+      hero: { kind: 'bars', bars: CURVE_BARS },
+      rows: [
+        { label: say('review.lights'), value: 'Ceiling, Reading lamp', view: 'lights' },
+        { label: say('review.colourChanges'), value: '5 · 06:30–22:30', view: 'curve' },
+      ],
+      promise: say('review.promiseCurve', { count: 2 }),
+    },
+  },
+
+  // ---- Daylight light: four steps, and the only review with a live reading
+  'daylight/intro.html': intro(
+    'intro.daylightTitle', 'intro.daylightBlurb', 'daylight',
+    [['intro.whichLights', 'intro.whichLightsWhy'],
+     ['intro.theSensor', 'intro.theSensorWhy'],
+     ['intro.theResponse', 'intro.theResponseWhy'],
+     ['intro.checkIt', 'intro.checkItWhy']],
+    'lights'),
+  'daylight/lights.html': picker('targets.subtitleDaylight', 1, 4, 'sensor'),
+  'daylight/review.html': {
+    getReview: {
+      stepIndex: 4,
+      stepCount: 4,
+      hero: {
+        kind: 'now',
+        percent: '77%',
+        detail: say('review.nowFromSensor', { lux: 41, sensor: 'Kitchen motion' }),
+      },
+      rows: [
+        { label: say('review.lights'), value: 'Worktop, Island', view: 'lights' },
+        { label: say('review.readsFrom'), value: 'Kitchen motion', view: 'sensor' },
+        { label: say('review.darkRoom'),
+          value: `${say('review.underLux', { lux: 8 })} → 92%`, view: 'response' },
+        { label: say('review.brightRoom'),
+          value: `${say('review.overLux', { lux: 160 })} → 22%`, view: 'response' },
+      ],
+      promise: say('review.promiseDaylight', { count: 2 }),
+    },
   },
 };

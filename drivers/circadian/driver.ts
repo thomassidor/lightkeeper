@@ -287,12 +287,25 @@ module.exports = class CircadianDriver extends Homey.Driver {
       if (!state.target) throw new Error('Choose some lights first.');
       const context = this.sunContext();
       const points = zonePoints(state.zones, context, state.adjustBrightness);
+      const bounds = resolveBoundaries(state.zones, context);
 
       return {
         points: resolvePoints(points, context).map(point => ({
           minute: point.minute,
           warmth: point.warmth,
         })),
+        /**
+         * Where the two boundaries fall today, so the screen can name the ZONE
+         * a scrubbed minute is in.
+         *
+         * "Evening · warm" says which of the three the user is looking at;
+         * "Deep amber" alone says only what colour it happens to be, which is
+         * the one thing the strip under it is already showing.
+         */
+        boundaries: {
+          morningEndMinute: bounds.morningEndMinute,
+          eveningStartMinute: bounds.eveningStartMinute,
+        },
         nowMinute: localNow(this.timezone() ?? undefined, Date.now()).minutesOfDay,
       };
     });

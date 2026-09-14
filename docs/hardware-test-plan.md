@@ -126,6 +126,34 @@ see a screen. Every line here needs a phone.
 - [ ] **T121** The clean slate. Any Lightkeeper device paired before this build must come up
       **unavailable with a message**, not silently broken and not quietly reset — there are no
       migrations in this release on purpose. Delete and re-add it, and confirm the new one works.
+- [ ] **T122** **Count the Next buttons.** On every numbered step of every flow there must be
+      exactly ONE way forward — Homey's own, at the bottom of the sheet. Scroll each step to the
+      end and confirm there is no second full-width button below the content. The two screens that
+      DO carry their own are the review (`Add device`) and the key screen (`Save and continue`),
+      and on both of those Homey draws none of its own. This is the line the whole pass exists
+      for: the duplicate was invisible in every render taken without Homey's chrome around it.
+- [ ] **T123** **The curve chart with brightness OFF**, which is the default. Add a Curve light
+      and look at step 2 before touching anything: the point handles must sit inside the chart,
+      not over the heading above it, and the `Full` / `Off` captions must be absent — there is no
+      axis to label while every bar is full height. Then switch brightness on for one point and
+      confirm the gutter appears and the bars take their heights.
+- [ ] **T124** **Selected state, on the four screens that have one.** The circadian day, the
+      curve, a schedule block and the daylight response each open one card out of a list. On the
+      phone, the open card must be visibly bordered in the app's own violet — not the hairline
+      every other card has — so that tapping a row in the list below and looking up answers
+      "which of these am I editing". Check the schedule timeline too: the block being edited is
+      taller and haloed, not merely a darker shade of the same lavender.
+- [ ] **T125** **The small type, at the size it ships at.** A CSS shorthand that silently dropped
+      was rendering seven controls at 16px regular instead of the 12–14px they are written at, and
+      a desk monitor forgives that where a phone does not. Look at: the `−` and `+` on the
+      circadian day and curve steppers, the schedule's seven day chips, the HOUR/MINUTE captions,
+      both dashed `Add a …` buttons and the two `Remove this …` links. Report anything that reads
+      oversized, mis-weighted, or out of proportion with the row it sits in.
+- [ ] **T126** **The colour swatches, on a phone screen in daylight.** Open a Curve light's step 2
+      and confirm the eight featured colours are eight distinguishable colours — in particular
+      that "Neutral white" and "Cool white" do not read as two identical greys. Fold the other
+      sixteen out and confirm the same. Then pick one and check the chosen swatch's ring is
+      visible on a pale colour as well as on a saturated one.
 
 **0.6.0, the section before that — what a week of real evidence found, and the five fixes that came
 out of it.**
@@ -298,7 +326,9 @@ guideline. In range of the 80.8 / 90.1 MB readings from this same house earlier 
 compare a reading only with one from the same house.
 
 Still owed, and all of them need a person on a phone: T3, T9–T11, T54, and the new
-T112–T121 in [This release](#4-this-release).
+T112–T126 in [This release](#4-this-release). T122–T126 were added after that run — they came out
+of holding every screen against a re-export of the design canvas WITH Homey's own chrome in the
+picture, which is the one thing `render:views` had never drawn.
 
 ### Last run — 13 September 2026, Homey Pro 2023, firmware 13.5.0, app 0.6.0
 

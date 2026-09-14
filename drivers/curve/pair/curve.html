@@ -51,8 +51,15 @@
     --lk-accent-tint: #f3eefc;
     --lk-accent-wash: #fbf9fe;
     --lk-accent-line: #d9cbf5;
+    /* Between the accent and its line. The middle of the three listening dots,
+       and the only place a mid-tone is needed: the logo has none. */
+    --lk-accent-mid: #9f81dc;
     --lk-accent-strong: #3b2279;
     --lk-ring: rgba(42, 25, 88, .16);
+    /* The edge of a handle nobody has selected. It is NOT --lk-ring: at .16 a
+       26px circle on an orange strip had no edge at all, and the second
+       boundary looked like a smudge rather than something to drag. */
+    --lk-handle-edge: rgba(42, 25, 88, .45);
 
     /* The ink ladder. Every one of these clears WCAG AA (4.5:1) against
        --lk-surface, because all five are used between 11px and 15px — and the
@@ -73,7 +80,14 @@
     --lk-raised: #f7f8fa;
     --lk-line: #eceef2;
     --lk-field: #e3e6ec;
+    /* The edge of an UNTICKED box or radio, and only that. A shade darker than
+       --lk-field because an empty checkbox has to read as a control somebody
+       has not used yet; at the field grey it reads as a gap in the row. */
+    --lk-box: #d4d8e0;
     --lk-hover: #c9d2e0;
+    /* A chevron is an affordance, not a value: lighter than the text it sits
+       beside, so a list of rows reads as labels rather than as arrows. */
+    --lk-chev: #a8aeb9;
     --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
 
     /* The pairing primitives' own colours, here for the same reason every
@@ -81,6 +95,7 @@
        change misses. */
     --lk-knob-shadow: 0 1px 3px rgba(16, 24, 40, .3);
     --lk-slider-knob-shadow: 0 0 0 2px rgba(22, 24, 29, .6), 0 1px 4px rgba(16, 24, 40, .35);
+    --lk-slider-knob-shadow-warm: 0 0 0 2.5px #ffffff, 0 1px 4px rgba(16, 24, 40, .35);
     --lk-slider-inset: inset 0 0 0 1px rgba(22, 24, 29, .1);
     /* The two axes a slider can carry, as whole gradients rather than as a
        list of stops: a ramp is one decision about what the axis LOOKS like,
@@ -90,9 +105,20 @@
     --lk-bright-ramp: linear-gradient(90deg, #221a3d, #43318a, #7a5fc4,
                                       #b9a6e4, #ece5f9);
     --lk-handle-shadow: 0 2px 6px rgba(16, 24, 40, .2);
+    /* A small mark lifted off whatever it is drawn ON — the curve chart's
+       selected point, which sits on top of a bar of any colour. */
+    --lk-mark-shadow: 0 1px 4px rgba(16, 24, 40, .3);
+    /* The halo round a SELECTED block on the schedule timeline, and round a
+       selected swatch. Softer than --lk-ring is used for elsewhere, because it
+       is drawn against the accent itself rather than against white. */
+    --lk-select-halo: 0 0 0 3px rgba(42, 25, 88, .18);
     --lk-handle-shadow-sel: 0 0 0 4px var(--lk-ring), 0 2px 8px rgba(16, 24, 40, .28);
     --lk-hairline: rgba(22, 24, 29, .1);
     --lk-day-mark: rgba(22, 24, 29, .4);
+    /* The curve chart's own "you are editing this point" line. Accent rather
+       than ink, because on that chart it marks a SELECTION; on the day strip
+       the dashed lines mark sunrise and sunset, which are facts. */
+    --lk-curve-mark: rgba(42, 25, 88, .55);
     --lk-day-tag-bg: rgba(255, 255, 255, .86);
 
     --lk-ok-bg: #eaf7ef;   --lk-ok-ink: #10633a;
@@ -110,8 +136,17 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  #cv-root h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
-  #cv-root .sub { font-size: 14px; line-height: 1.5; color: var(--lk-sub); margin: 0 0 18px; }
+  /* 16px under a heading, which is the gap the design draws on every screen
+     that puts a control straight below one. It used to be 4px, and at 4px a
+     title read as a label ON the first card rather than as the name of the
+     screen. */
+  #cv-root h2 { margin: 0 0 16px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+  #cv-root .sub { font-size: 14px; line-height: 1.5; color: var(--lk-body); margin: 0 0 18px; }
+  /* A blurb belongs TO its heading — 6px between them, not 16. Written as a
+     pull on the blurb rather than as `h2:has(+ .sub)` on the heading because
+     the pairing container's webview is not somewhere to find out whether
+     `:has()` landed. */
+  #cv-root h2 + .sub { margin-top: -10px; }
   #cv-root p { font-size: 14px; line-height: 1.55; color: var(--lk-body); }
 
   #cv-root .card { background: var(--lk-surface); border: 1px solid var(--lk-line);
@@ -152,6 +187,12 @@
              min-height: 40px; }
   #cv-root .btn:hover { border-color: var(--lk-hover); }
   #cv-root .btn:disabled { opacity: .45; cursor: not-allowed; }
+  /* The same button across the width of the screen. What a secondary action
+     looks like when it is the only one on a pushed screen — "Stop listening",
+     "Close" — where a primary button would claim the choice was made. */
+  #cv-root .btn.wide { display: block; width: 100%; font-size: 16px; font-weight: 600;
+                    padding: 14px; border-radius: 12px; min-height: 50px;
+                    box-sizing: border-box; margin-top: 16px; }
   #cv-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
                      border-radius: 12px; border: none; background: var(--lk-accent);
                      color: var(--lk-accent-ink); cursor: pointer; min-height: 50px;
@@ -187,27 +228,47 @@
   #cv-root .steps { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
   #cv-root .steps i { width: 22px; height: 4px; border-radius: 999px;
                    background: var(--lk-field); }
+  /* Four steps, narrower dots: the run keeps the same overall width whether a
+     flow has three or four, so the header does not visibly grow between two
+     device types. */
+  #cv-root .steps.tight i { width: 16px; }
   #cv-root .steps i.on { background: var(--lk-accent); }
   #cv-root .steps span { margin-left: 4px; font-size: 12px; color: var(--lk-faint); }
 
   /* `label · value · chevron`. The one shape everything secondary takes:
-     a row that says what it is, what it is set to, and that it can be opened. */
-  #cv-root .row { display: flex; align-items: center; gap: 11px; width: 100%;
-               padding: 13px 14px; min-height: 44px; box-sizing: border-box;
+     a row that says what it is, what it is set to, and that it can be opened.
+
+     The row carries NO horizontal padding, and its card carries it instead
+     (`.card.rows` below). That is what insets the hairline between two rows
+     from the card's own edge — a rule that runs corner to corner reads as the
+     card being cut in half, and every list the design draws insets it. */
+  #cv-root .row { display: flex; align-items: center; gap: 10px; width: 100%;
+               padding: 13px 0; min-height: 44px; box-sizing: border-box;
                background: none; border: none; font: inherit; color: inherit;
                text-align: left; cursor: pointer; }
   #cv-root .row + .row { border-top: 1px solid var(--lk-line); }
-  #cv-root .row .label { flex: 1; font-size: 14.5px; font-weight: 500; }
-  #cv-root .row .value { font-size: 13px; color: var(--lk-muted); text-align: right; }
-  #cv-root .row .chev { flex: none; font-size: 15px; color: var(--lk-muted); }
+  #cv-root .row .label { flex: 1; font-size: 14.5px; }
+  #cv-root .row .value { font-size: 14px; color: var(--lk-muted); text-align: right; }
+  #cv-root .row .chev { flex: none; font-size: 15px; color: var(--lk-chev); }
   #cv-root .row .sub { font-size: 12.5px; color: var(--lk-muted); margin: 2px 0 0; }
+  /* The card a list of rows lives in. 4px top and bottom rather than 14:
+     a row's own 13px is already the space above the first label, and adding
+     the card's to it put a visible step between the card's edge and its
+     first line that no other card has. */
+  #cv-root .card.rows { padding: 4px 14px; }
 
-  /* The pill switch behind every "Set … too". */
-  #cv-root .toggle { display: flex; align-items: center; gap: 11px; width: 100%;
-                  padding: 12px 0; min-height: 44px; box-sizing: border-box;
-                  background: none; border: none; font: inherit; color: inherit;
+  /* The pill switch behind every "Set … too".
+     It carries a rule above it, always: a toggle is a new decision inside a
+     card that was until then about one thing, and without the rule it read as
+     the last line of the control above it. */
+  #cv-root .toggle { display: flex; align-items: center; gap: 10px; width: 100%;
+                  border-top: 1px solid var(--lk-line);
+                  margin-top: 14px; padding: 13px 0 0;
+                  min-height: 44px; box-sizing: border-box;
+                  background: none; border-left: none; border-right: none;
+                  border-bottom: none; font: inherit; color: inherit;
                   text-align: left; cursor: pointer; }
-  #cv-root .toggle .label { flex: 1; font-size: 14.5px; font-weight: 500; }
+  #cv-root .toggle .label { flex: 1; font-size: 14.5px; }
   #cv-root .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
                          position: relative; background: var(--lk-field);
                          transition: background .15s ease; }
@@ -241,25 +302,42 @@
                   touch-action: none; cursor: pointer; }
   /* Candlelight to daylight, left to right — the order the slider reads in,
      which is the REVERSE of the way a warmth is stored (platform §6). */
-  #cv-root .slider.warm { background: var(--lk-warm-ramp); }
+  #cv-root .slider.warm { background: var(--lk-warm-ramp); box-shadow: none; }
   #cv-root .slider.bright { background: var(--lk-bright-ramp); }
   #cv-root .slider .knob { position: absolute; top: -4px; bottom: -4px; width: 6px;
                         margin-left: -3px; border-radius: 4px;
                         background: var(--lk-surface);
                         box-shadow: var(--lk-slider-knob-shadow); }
+  /* The two ramps take OPPOSITE knobs, and that is not a slip: the warmth ramp
+     is light from end to end, so a white knob on it is invisible; the
+     brightness ramp starts at near-black, so a dark one is. Each knob is the
+     colour its own track is not. */
+  #cv-root .slider.warm .knob { background: var(--lk-ink);
+                             box-shadow: var(--lk-slider-knob-shadow-warm); }
   #cv-root .ends { display: flex; justify-content: space-between;
-                font-size: 11px; color: var(--lk-muted); margin: 9px 0 0; }
+                font-size: 11px; color: var(--lk-faint); margin: 9px 0 0; }
 
   /* The swatches a colour is chosen from, four across.
      Not one row of eight: at 390px that is 34px a swatch, under the touch
      minimum and too small to judge a colour by. Two rows of four is the same
      set of eight, legibly, and the sixteen that fold out below continue it. */
   #cv-root .swatches { display: grid; grid-template-columns: repeat(4, 1fr);
-                    gap: 8px; margin: 10px 0; }
-  #cv-root .swatch { height: 44px; border-radius: 9px; padding: 0;
+                    gap: 7px; margin: 0 0 11px; }
+  /* min-height as well as height: the container's own stylesheet is not ours
+     to read, and a swatch whose height is overridden away is a coloured line
+     rather than a colour anybody can judge. */
+  #cv-root .swatch { height: 34px; min-height: 34px; border-radius: 9px; padding: 0;
+                  box-sizing: border-box;
                   border: 1px solid var(--lk-hairline); cursor: pointer; }
-  #cv-root .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--lk-surface),
-                                                   0 0 0 4px var(--lk-accent); }
+  /* The chosen colour, and it has to survive being ON a colour: a ring drawn
+     in the accent with a soft halo outside it reads against every swatch in
+     the palette, which a white gap did not against the pale ones. */
+  #cv-root .swatch[aria-pressed="true"] { border: 2.5px solid var(--lk-accent);
+                                       box-shadow: 0 0 0 3px var(--lk-ring); }
+  /* The sixteen that fold out: same set, half the size, eight across. */
+  #cv-root .swatches.more { grid-template-columns: repeat(8, 1fr); gap: 6px;
+                         margin: 7px 0 0; }
+  #cv-root .swatches.more .swatch { height: 28px; min-height: 28px; border-radius: 7px; }
 
   /* The day strip: a picture of the whole day, drawn once and reused. */
   #cv-root .day { position: relative; height: 104px; border-radius: 12px;
@@ -273,13 +351,13 @@
   #cv-root .day .handle { position: absolute; top: 50%; width: 26px; height: 26px;
                        margin: -13px 0 0 -13px; border-radius: 50%;
                        background: var(--lk-surface); box-sizing: border-box;
-                       border: 2.5px solid var(--lk-ring);
+                       border: 2.5px solid var(--lk-handle-edge); z-index: 1;
                        box-shadow: var(--lk-handle-shadow); }
   #cv-root .day .handle.sel { width: 34px; height: 34px; margin: -17px 0 0 -17px;
                            border: 3px solid var(--lk-accent); z-index: 2;
                            box-shadow: var(--lk-handle-shadow-sel); }
   #cv-root .clockline { display: flex; justify-content: space-between;
-                     font-size: 12px; color: var(--lk-muted); margin-top: 6px; }
+                     font-size: 11px; color: var(--lk-faint); margin: 8px 2px 4px; }
 
   /* ==== end shared base ==== */
 
@@ -288,69 +366,101 @@
   /* The chart: bar HEIGHT is brightness, bar COLOUR is the colour. With
      brightness switched off — the default — every bar is full height and the
      chart is purely a day of colour, which is what the device is for. */
-  #cv-root .chart { display: flex; align-items: flex-end; gap: 2px; height: 110px;
-                    border-radius: 12px; background: var(--lk-flat-bg);
-                    position: relative; padding: 0 2px; box-sizing: border-box; }
-  /* A gutter for the Off and Full captions, only when there are captions to
-     put in it: with brightness switched off every bar is full height and the
-     chart is purely a day of colour, so the axis is not there to be labelled. */
-  #cv-root .chart { --gutter: 2px; }
-  #cv-root .chart.axed { padding-left: 34px; --gutter: 34px; }
+  /* The chart and its axis captions are two COLUMNS, not a panel with labels
+     floated inside it. Full and Off own a gutter of their own, so no bar is
+     ever drawn under a caption and the bars all start at the same left edge
+     whether the axis is labelled or not. There is no background behind the
+     bars: the day IS the picture, and a grey panel behind it only added an
+     edge the colours had to compete with. */
+  #cv-root .chartwrap { display: flex; align-items: stretch; gap: 8px;
+                        margin-bottom: 7px; }
+  /* Only shown when bar height MEANS something: with brightness switched off
+     every bar is full height and the chart is purely a day of colour, so
+     there is no axis to label. */
+  #cv-root .gutter { flex: none; width: 32px; height: 112px; display: flex;
+                     flex-direction: column; justify-content: space-between;
+                     align-items: flex-end; font-size: 10.5px;
+                     color: var(--lk-faint); }
+  #cv-root .chart { position: relative; flex: 1; height: 112px;
+                    display: flex; align-items: flex-end; gap: 2px; }
   #cv-root .chart i { flex: 1; border-radius: 2px 2px 0 0; }
   #cv-root .chart .at { position: absolute; top: 0; bottom: 0; width: 0;
-                        border-left: 1.5px dashed var(--lk-day-mark); }
+                        border-left: 1.5px dashed var(--lk-curve-mark); }
   /* Every point gets a handle, because the chart is the only place the SHAPE
      is visible: a list of times says when, and nothing says what the day looks
      like between them. The selected one is filled so tapping a row and looking
-     up answers "which of these am I editing". */
-  #cv-root .chart .dot { position: absolute; width: 11px; height: 11px;
-                         margin: -6px 0 0 -6px; border-radius: 50%;
-                         background: var(--lk-surface);
-                         border: 2px solid var(--lk-accent); box-sizing: border-box; }
-  #cv-root .chart .dot.sel { background: var(--lk-accent); }
-  /* Off and Full, on the chart itself. Bar height means brightness only once
-     somebody has been told which way up the axis runs. */
-  #cv-root .chart .cap { position: absolute; left: 8px; font-size: 11px;
-                         color: var(--lk-muted); }
-  #cv-root .chart .cap.top { top: 6px; }
-  #cv-root .chart .cap.bottom { bottom: 6px; }
-  #cv-root .axis { display: flex; justify-content: space-between;
-                   font-size: 11.5px; color: var(--lk-muted); margin: 4px 2px 0; }
+     up answers "which of these am I editing".
 
-  #cv-root .point { background: var(--lk-surface); border: 1px solid var(--lk-line);
-                    border-radius: 14px; box-shadow: var(--lk-shadow);
-                    padding: 14px; margin: 14px 0; }
-  #cv-root .point-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-  #cv-root .point-head .sw { flex: none; width: 26px; height: 26px; border-radius: 7px;
+     Centred on its own position with a transform rather than pulled up by a
+     negative margin: a dot is positioned from the BOTTOM, where a margin-top
+     does nothing, so the old rule left every dot sitting a full diameter above
+     the value it marked. */
+  #cv-root .chart .dot { position: absolute; width: 11px; height: 11px;
+                         border-radius: 50%; transform: translate(-50%, 50%);
+                         background: var(--lk-surface);
+                         border: 2.5px solid var(--lk-accent); box-sizing: border-box; }
+  #cv-root .chart .dot.sel { width: 15px; height: 15px; z-index: 2;
+                             background: var(--lk-accent);
+                             border: 2.5px solid var(--lk-surface);
+                             box-shadow: var(--lk-mark-shadow); }
+  /* A point at FULL brightness — which is every point while brightness is
+     switched off — centres on the chart's top edge and would then hang over
+     the heading above it. Tucked inside instead, by its own half-height. */
+  #cv-root .chart .dot.top { margin-bottom: -6px; }
+  #cv-root .chart .dot.sel.top { margin-bottom: -8px; }
+  #cv-root .axis { display: flex; justify-content: space-between;
+                   font-size: 11px; color: var(--lk-faint); margin: 0 2px 14px; }
+  /* Indented past the gutter, so midnight sits under the first bar. */
+  #cv-root .axis.axed { margin-left: 42px; }
+
+  /* The point being edited, and its accent border is what says so: the others
+     are rows in the card below, and this is one of them opened. A hairline like
+     every other card left the screen with no selected state at all. */
+  #cv-root .point { background: var(--lk-surface); border: 1.5px solid var(--lk-accent);
+                    border-radius: 14px; padding: 14px; margin: 0 0 8px; }
+  #cv-root .point-head { display: flex; align-items: center; gap: 10px; margin-bottom: 13px; }
+  #cv-root .point-head .sw { flex: none; width: 28px; height: 28px; border-radius: 8px;
                              border: 1px solid var(--lk-hairline); }
-  #cv-root .point-head .name { flex: 1; font-size: 16px; font-weight: 700; }
+  #cv-root .point-head .name { flex: 1; font-size: 15px; font-weight: 600; }
   #cv-root .point-head .which { font-size: 12.5px; color: var(--lk-muted); }
 
-  #cv-root .timeset { display: flex; align-items: center; gap: 8px;
-                      background: var(--lk-flat-bg); border-radius: 10px; padding: 6px 8px;
-                      margin-bottom: 12px; min-height: 44px; box-sizing: border-box; }
-  #cv-root .timeset .cap { flex: 1; font-size: 13px; color: var(--lk-body); }
-  #cv-root .timeset .val { font-size: 16px; font-weight: 700; min-width: 66px; text-align: center; }
-  #cv-root .timeset button { width: 34px; height: 34px; flex: none; border-radius: 8px;
-                             border: 1.5px solid var(--lk-field); background: var(--lk-surface);
-                             font: 600 18px/1 inherit; color: var(--lk-ink); cursor: pointer; }
+  #cv-root .timeset { display: flex; align-items: center; gap: 10px;
+                      background: var(--lk-raised); border-radius: 11px; padding: 9px 11px;
+                      margin-bottom: 13px; min-height: 44px; box-sizing: border-box; }
+  #cv-root .timeset .cap { flex: 1; font-size: 13.5px; color: var(--lk-body); }
+  #cv-root .timeset .val { font-size: 16px; font-weight: 600; min-width: 74px; text-align: center; }
+  /* A bare glyph, not a bordered box — the same stepper the circadian day
+     screen uses, and for the same reason: the time is what the row is about. */
+  #cv-root .timeset button { width: 22px; height: 30px; flex: none; border: none;
+                             background: none; padding: 0;
+                             font-size: 18px; line-height: 30px; color: var(--lk-muted); cursor: pointer; }
 
 
-  #cv-root .more { font-size: 13px; font-weight: 600; color: var(--lk-accent-strong);
-                   background: none; border: none; padding: 4px 0 10px;
-                   font-family: inherit; cursor: pointer; min-height: 44px; }
+  #cv-root .more { display: flex; align-items: center; font-size: 14px; font-weight: 500;
+                   color: var(--lk-accent-strong); background: none; border: none;
+                   margin-top: 9px; padding: 0; font-family: inherit; cursor: pointer;
+                   min-height: 44px; box-sizing: border-box; }
 
   #cv-root .others { background: var(--lk-surface); border: 1px solid var(--lk-line);
                      border-radius: 14px; box-shadow: var(--lk-shadow);
-                     overflow: hidden; margin-bottom: 14px; }
+                     padding: 4px 14px; margin-bottom: 14px; }
   #cv-root .others .sw { flex: none; width: 26px; height: 26px; border-radius: 7px;
                          border: 1px solid var(--lk-hairline); }
+  /* The time is the row's title, set at the row's own size: `font: inherit` on
+     .row otherwise leaves an unclassed div at the browser's 16px default. */
   #cv-root .others .text { flex: 1; }
+  #cv-root .others .text .at-time { font-size: 14.5px; }
+  #cv-root .others .row { gap: 11px; padding: 12px 0; }
+  #cv-root .others .row .sub { font-size: 12px; }
+  #cv-root .others .row .value { font-size: 13.5px; }
 
   #cv-root .add { width: 100%; min-height: 44px; border-radius: 12px; margin-bottom: 16px;
-                  border: 1.5px dashed var(--lk-field); background: none;
-                  font: 600 14px/1 inherit; color: var(--lk-accent-strong); cursor: pointer; }
+                  padding: 13px; box-sizing: border-box;
+                  border: 1.5px dashed var(--lk-hover); background: none;
+                  font-weight: 500; font-size: 14px; line-height: 1; color: var(--lk-accent-strong); cursor: pointer; }
 
+  /* The switch and the control it reveals are one thought: 13px, not nothing. */
+  #cv-root #cv-brightBlock { margin-top: 13px; }
   #cv-root .remove { font-size: 13px; font-weight: 600; color: var(--lk-bad-ink);
                      background: none; border: none; padding: 12px 0 0;
                      font-family: inherit; cursor: pointer; min-height: 44px; }
@@ -362,8 +472,14 @@
 
   <div id="cv-error" class="msg bad" style="display:none;"></div>
 
-  <div class="chart" id="cv-chart"></div>
-  <div class="axis">
+  <div class="chartwrap">
+    <div class="gutter" id="cv-gutter" style="display:none;">
+      <span data-i18n="curve.full"></span>
+      <span data-i18n="curve.off"></span>
+    </div>
+    <div class="chart" id="cv-chart"></div>
+  </div>
+  <div class="axis" id="cv-axis">
     <span data-i18n="curve.midnight"></span>
     <span data-i18n="curve.noon"></span>
     <span data-i18n="curve.midnight"></span>
@@ -385,7 +501,7 @@
 
     <div class="control-title" data-i18n="curve.colour"></div>
     <div class="swatches" id="cv-featured"></div>
-    <div class="swatches" id="cv-rest" style="display:none;"></div>
+    <div class="swatches more" id="cv-rest" style="display:none;"></div>
     <!--
       Sixteen more colours fold out IN PLACE, never onto a second screen. A set
       is a decision; a continuous picker is a tuning session, and a set of
@@ -414,7 +530,6 @@
   <div class="others" id="cv-others"></div>
   <button class="add" id="cv-add" data-i18n="curve.add"></button>
 
-  <button class="btn-primary" id="cv-next" data-i18n="curve.next"></button>
 </div>
 
 <script type="text/javascript">
@@ -475,6 +590,8 @@ function __lkBootCv(Homey) {
     steps: document.getElementById('cv-steps'),
     error: document.getElementById('cv-error'),
     chart: document.getElementById('cv-chart'),
+    gutter: document.getElementById('cv-gutter'),
+    axis: document.getElementById('cv-axis'),
     editor: document.getElementById('cv-editor'),
     pointSwatch: document.getElementById('cv-pointSwatch'),
     pointName: document.getElementById('cv-pointName'),
@@ -492,8 +609,7 @@ function __lkBootCv(Homey) {
     brightKnob: document.getElementById('cv-brightKnob'),
     remove: document.getElementById('cv-remove'),
     others: document.getElementById('cv-others'),
-    add: document.getElementById('cv-add'),
-    next: document.getElementById('cv-next')
+    add: document.getElementById('cv-add')
   };
 
   var state = {
@@ -524,14 +640,20 @@ function __lkBootCv(Homey) {
     return null;
   }
 
-  /** Homey's normalised hue/saturation as something a browser will paint. */
+  /**
+   * Homey's normalised hue/saturation as something a browser will paint.
+   *
+   * DUPLICATED from `colourSwatch()` in lib/pairing/flow-screens.ts, which is
+   * where the two curves are explained — lightness falls as saturation rises,
+   * and saturation is lifted off zero so a near-white HUE is a tint rather than
+   * a grey. This copy exists because the chart is repainted on every drag and
+   * cannot ask the driver. Change one and change the other.
+   */
   function css(colour) {
     if (!colour) return 'var(--lk-flat-bg)';
     return 'hsl(' + Math.round(colour.hue * 360) + ',' +
-      Math.round(colour.saturation * 100) + '%,' +
-      // Lightness falls as saturation rises, so a fully saturated hue reads as
-      // a colour rather than as a pastel. A near-white swatch stays near white.
-      Math.round(88 - colour.saturation * 28) + '%)';
+      Math.round((0.25 + colour.saturation * 0.55) * 100) + '%,' +
+      Math.round(86 - colour.saturation * 36) + '%)';
   }
 
   function sorted() {
@@ -569,11 +691,6 @@ function __lkBootCv(Homey) {
     return n + Homey.__(key);
   }
 
-  /** A fraction of the day as a position across the bars, gutter allowed for. */
-  function alongBars(fraction) {
-    return 'calc(var(--gutter) + (100% - var(--gutter)) * ' + fraction.toFixed(4) + ')';
-  }
-
   function renderChart() {
     clear(el.chart);
     var points = sorted();
@@ -598,22 +715,20 @@ function __lkBootCv(Homey) {
       el.chart.appendChild(bar);
     }
 
-    el.chart.className = 'chart' + (state.adjustBrightness ? ' axed' : '');
-    if (state.adjustBrightness) {
-      el.chart.appendChild(node('span', 'cap top', Homey.__('curve.full')));
-      el.chart.appendChild(node('span', 'cap bottom', Homey.__('curve.off')));
-    }
+    // Full and Off label an axis that only exists while bar height carries
+    // brightness. Without it the captions would be labelling nothing.
+    el.gutter.style.display = state.adjustBrightness ? '' : 'none';
+    el.axis.className = 'axis' + (state.adjustBrightness ? ' axed' : '');
 
     for (var i = 0; i < state.points.length; i++) {
       var point = state.points[i];
       var height = state.adjustBrightness && point.brightness !== undefined
         ? Math.max(6, point.brightness * 100)
         : 100;
-      var dot = node('div', 'dot' + (i === state.selected ? ' sel' : ''));
-      // Along the BARS, not along the box: an absolutely positioned percentage
-      // is measured from the border edge, and the captions take a gutter out
-      // of the left of it.
-      dot.style.left = alongBars(minuteOf(point) / 1440);
+      var dot = node('div', 'dot'
+        + (i === state.selected ? ' sel' : '')
+        + (height >= 100 ? ' top' : ''));
+      dot.style.left = (minuteOf(point) / 1440 * 100).toFixed(4) + '%';
       dot.style.bottom = height + '%';
       el.chart.appendChild(dot);
     }
@@ -621,7 +736,7 @@ function __lkBootCv(Homey) {
     var selectedPoint = state.points[state.selected];
     if (selectedPoint) {
       var mark = node('div', 'at');
-      mark.style.left = alongBars(minuteOf(selectedPoint) / 1440);
+      mark.style.left = (minuteOf(selectedPoint) / 1440 * 100).toFixed(4) + '%';
       el.chart.appendChild(mark);
     }
   }
@@ -760,7 +875,7 @@ function __lkBootCv(Homey) {
 
     var colour = colourOf(point.color);
     var text = node('div', 'text');
-    text.appendChild(node('div', null, clock(minuteOf(point))));
+    text.appendChild(node('div', 'at-time', clock(minuteOf(point))));
     text.appendChild(node('div', 'sub', colour ? colour.label : ''));
     row.appendChild(text);
 
@@ -783,7 +898,6 @@ function __lkBootCv(Homey) {
     renderEditor();
     renderOthers();
     el.add.style.display = state.points.length < state.maxPoints ? '' : 'none';
-    el.next.disabled = state.points.length < state.minPoints;
   }
 
   function stepTime(delta) {
@@ -873,7 +987,6 @@ function __lkBootCv(Homey) {
     push();
   });
 
-  el.next.addEventListener('click', function () { Homey.showView('review'); });
 
   function push() {
     emit('setCurve', {

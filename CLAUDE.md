@@ -46,7 +46,8 @@ npx homey app run --remote     # live logs, TEMPORARY — see below
 npm run sync:views             # splices views/shared/ into every pair view, then pair -> repair
                                # and shared views between drivers. See platform §8
 npm run sync:views:check       # what sync WOULD copy; writes nothing, exits 1 on drift. CI runs it
-npm run render:views           # draw every pairing screen to .views/ — needs Chrome, not CI
+npm run render:views           # draw every pairing screen, inside Homey's own sheet, to .views/
+                               # — needs Chrome, not CI
 npm run render:icons           # draw every icon at the App Store's 24px box. Chrome, not CI
 python artwork/export-assets.py   # re-export every shipped icon, image and the banner
 node scripts/evidence.mjs status        # is a seven-day recording running, and how big?
@@ -212,7 +213,14 @@ scripts/probe-lights.mjs        every light on a REAL Homey, pushed until it mis
                                 scope is HOMEY_TEST_ROOM; --all is typed, never defaulted. Reports
                                 to .probe/ (gitignored), raw plus a redacted sibling
 scripts/render-views.mjs        every pairing screen to a PNG, plus a contact sheet. Headless
-                                Chrome, the same rasteriser artwork/export-assets.py uses
+                                Chrome, the same rasteriser artwork/export-assets.py uses.
+                                It draws HOMEY'S OWN SHEET around each screen — the header, and
+                                the prev/next footer taken from that step's `navigation` — and
+                                the three views that are one file and five screens are rendered
+                                per DRIVER. Both were omissions that hid real defects: without
+                                the chrome a render cannot show that a view draws a second Next,
+                                and keyed by file name the sheet drew one driver's intro five
+                                times
 scripts/render-icons.mjs        every icon at the size the App Store draws it — 24px of ink in a
                                 40px circle (platform §10). The contact sheet that catches an icon
                                 too fine or too busy to read there
@@ -220,7 +228,10 @@ scripts/evidence.mjs            start | stop | status | export | note | clear | 
                                 REAL Homey's recorder. Needs a Personal API Key; use the SECOND
                                 one to export while a run continues (platform §2). Reports to
                                 .evidence/ (gitignored)
-scripts/pair-view-fixtures.mjs  the demo data those renders use, one entry per view
+scripts/pair-view-fixtures.mjs  the demo data those renders use, one entry per view — plus
+                                DRIVER_REPLIES, one per driver for the three views that are one
+                                FILE and five screens. Its text is resolved from locales/en.json
+                                through the same keys the drivers pass, never transcribed
 scripts/dump-card-fixtures.mjs  writes test/fixtures/cards/*.json from the hand-transcribed TS
                                 fixtures. Run BY HAND, only when those change; the JSON is the
                                 committed artefact and card-fixtures.test.ts fails on drift

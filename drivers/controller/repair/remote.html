@@ -51,8 +51,15 @@
     --lk-accent-tint: #f3eefc;
     --lk-accent-wash: #fbf9fe;
     --lk-accent-line: #d9cbf5;
+    /* Between the accent and its line. The middle of the three listening dots,
+       and the only place a mid-tone is needed: the logo has none. */
+    --lk-accent-mid: #9f81dc;
     --lk-accent-strong: #3b2279;
     --lk-ring: rgba(42, 25, 88, .16);
+    /* The edge of a handle nobody has selected. It is NOT --lk-ring: at .16 a
+       26px circle on an orange strip had no edge at all, and the second
+       boundary looked like a smudge rather than something to drag. */
+    --lk-handle-edge: rgba(42, 25, 88, .45);
 
     /* The ink ladder. Every one of these clears WCAG AA (4.5:1) against
        --lk-surface, because all five are used between 11px and 15px — and the
@@ -73,7 +80,14 @@
     --lk-raised: #f7f8fa;
     --lk-line: #eceef2;
     --lk-field: #e3e6ec;
+    /* The edge of an UNTICKED box or radio, and only that. A shade darker than
+       --lk-field because an empty checkbox has to read as a control somebody
+       has not used yet; at the field grey it reads as a gap in the row. */
+    --lk-box: #d4d8e0;
     --lk-hover: #c9d2e0;
+    /* A chevron is an affordance, not a value: lighter than the text it sits
+       beside, so a list of rows reads as labels rather than as arrows. */
+    --lk-chev: #a8aeb9;
     --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
 
     /* The pairing primitives' own colours, here for the same reason every
@@ -81,6 +95,7 @@
        change misses. */
     --lk-knob-shadow: 0 1px 3px rgba(16, 24, 40, .3);
     --lk-slider-knob-shadow: 0 0 0 2px rgba(22, 24, 29, .6), 0 1px 4px rgba(16, 24, 40, .35);
+    --lk-slider-knob-shadow-warm: 0 0 0 2.5px #ffffff, 0 1px 4px rgba(16, 24, 40, .35);
     --lk-slider-inset: inset 0 0 0 1px rgba(22, 24, 29, .1);
     /* The two axes a slider can carry, as whole gradients rather than as a
        list of stops: a ramp is one decision about what the axis LOOKS like,
@@ -90,9 +105,20 @@
     --lk-bright-ramp: linear-gradient(90deg, #221a3d, #43318a, #7a5fc4,
                                       #b9a6e4, #ece5f9);
     --lk-handle-shadow: 0 2px 6px rgba(16, 24, 40, .2);
+    /* A small mark lifted off whatever it is drawn ON — the curve chart's
+       selected point, which sits on top of a bar of any colour. */
+    --lk-mark-shadow: 0 1px 4px rgba(16, 24, 40, .3);
+    /* The halo round a SELECTED block on the schedule timeline, and round a
+       selected swatch. Softer than --lk-ring is used for elsewhere, because it
+       is drawn against the accent itself rather than against white. */
+    --lk-select-halo: 0 0 0 3px rgba(42, 25, 88, .18);
     --lk-handle-shadow-sel: 0 0 0 4px var(--lk-ring), 0 2px 8px rgba(16, 24, 40, .28);
     --lk-hairline: rgba(22, 24, 29, .1);
     --lk-day-mark: rgba(22, 24, 29, .4);
+    /* The curve chart's own "you are editing this point" line. Accent rather
+       than ink, because on that chart it marks a SELECTION; on the day strip
+       the dashed lines mark sunrise and sunset, which are facts. */
+    --lk-curve-mark: rgba(42, 25, 88, .55);
     --lk-day-tag-bg: rgba(255, 255, 255, .86);
 
     --lk-ok-bg: #eaf7ef;   --lk-ok-ink: #10633a;
@@ -110,8 +136,17 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  #rm-root h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
-  #rm-root .sub { font-size: 14px; line-height: 1.5; color: var(--lk-sub); margin: 0 0 18px; }
+  /* 16px under a heading, which is the gap the design draws on every screen
+     that puts a control straight below one. It used to be 4px, and at 4px a
+     title read as a label ON the first card rather than as the name of the
+     screen. */
+  #rm-root h2 { margin: 0 0 16px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+  #rm-root .sub { font-size: 14px; line-height: 1.5; color: var(--lk-body); margin: 0 0 18px; }
+  /* A blurb belongs TO its heading — 6px between them, not 16. Written as a
+     pull on the blurb rather than as `h2:has(+ .sub)` on the heading because
+     the pairing container's webview is not somewhere to find out whether
+     `:has()` landed. */
+  #rm-root h2 + .sub { margin-top: -10px; }
   #rm-root p { font-size: 14px; line-height: 1.55; color: var(--lk-body); }
 
   #rm-root .card { background: var(--lk-surface); border: 1px solid var(--lk-line);
@@ -152,6 +187,12 @@
              min-height: 40px; }
   #rm-root .btn:hover { border-color: var(--lk-hover); }
   #rm-root .btn:disabled { opacity: .45; cursor: not-allowed; }
+  /* The same button across the width of the screen. What a secondary action
+     looks like when it is the only one on a pushed screen — "Stop listening",
+     "Close" — where a primary button would claim the choice was made. */
+  #rm-root .btn.wide { display: block; width: 100%; font-size: 16px; font-weight: 600;
+                    padding: 14px; border-radius: 12px; min-height: 50px;
+                    box-sizing: border-box; margin-top: 16px; }
   #rm-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
                      border-radius: 12px; border: none; background: var(--lk-accent);
                      color: var(--lk-accent-ink); cursor: pointer; min-height: 50px;
@@ -187,27 +228,47 @@
   #rm-root .steps { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
   #rm-root .steps i { width: 22px; height: 4px; border-radius: 999px;
                    background: var(--lk-field); }
+  /* Four steps, narrower dots: the run keeps the same overall width whether a
+     flow has three or four, so the header does not visibly grow between two
+     device types. */
+  #rm-root .steps.tight i { width: 16px; }
   #rm-root .steps i.on { background: var(--lk-accent); }
   #rm-root .steps span { margin-left: 4px; font-size: 12px; color: var(--lk-faint); }
 
   /* `label · value · chevron`. The one shape everything secondary takes:
-     a row that says what it is, what it is set to, and that it can be opened. */
-  #rm-root .row { display: flex; align-items: center; gap: 11px; width: 100%;
-               padding: 13px 14px; min-height: 44px; box-sizing: border-box;
+     a row that says what it is, what it is set to, and that it can be opened.
+
+     The row carries NO horizontal padding, and its card carries it instead
+     (`.card.rows` below). That is what insets the hairline between two rows
+     from the card's own edge — a rule that runs corner to corner reads as the
+     card being cut in half, and every list the design draws insets it. */
+  #rm-root .row { display: flex; align-items: center; gap: 10px; width: 100%;
+               padding: 13px 0; min-height: 44px; box-sizing: border-box;
                background: none; border: none; font: inherit; color: inherit;
                text-align: left; cursor: pointer; }
   #rm-root .row + .row { border-top: 1px solid var(--lk-line); }
-  #rm-root .row .label { flex: 1; font-size: 14.5px; font-weight: 500; }
-  #rm-root .row .value { font-size: 13px; color: var(--lk-muted); text-align: right; }
-  #rm-root .row .chev { flex: none; font-size: 15px; color: var(--lk-muted); }
+  #rm-root .row .label { flex: 1; font-size: 14.5px; }
+  #rm-root .row .value { font-size: 14px; color: var(--lk-muted); text-align: right; }
+  #rm-root .row .chev { flex: none; font-size: 15px; color: var(--lk-chev); }
   #rm-root .row .sub { font-size: 12.5px; color: var(--lk-muted); margin: 2px 0 0; }
+  /* The card a list of rows lives in. 4px top and bottom rather than 14:
+     a row's own 13px is already the space above the first label, and adding
+     the card's to it put a visible step between the card's edge and its
+     first line that no other card has. */
+  #rm-root .card.rows { padding: 4px 14px; }
 
-  /* The pill switch behind every "Set … too". */
-  #rm-root .toggle { display: flex; align-items: center; gap: 11px; width: 100%;
-                  padding: 12px 0; min-height: 44px; box-sizing: border-box;
-                  background: none; border: none; font: inherit; color: inherit;
+  /* The pill switch behind every "Set … too".
+     It carries a rule above it, always: a toggle is a new decision inside a
+     card that was until then about one thing, and without the rule it read as
+     the last line of the control above it. */
+  #rm-root .toggle { display: flex; align-items: center; gap: 10px; width: 100%;
+                  border-top: 1px solid var(--lk-line);
+                  margin-top: 14px; padding: 13px 0 0;
+                  min-height: 44px; box-sizing: border-box;
+                  background: none; border-left: none; border-right: none;
+                  border-bottom: none; font: inherit; color: inherit;
                   text-align: left; cursor: pointer; }
-  #rm-root .toggle .label { flex: 1; font-size: 14.5px; font-weight: 500; }
+  #rm-root .toggle .label { flex: 1; font-size: 14.5px; }
   #rm-root .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
                          position: relative; background: var(--lk-field);
                          transition: background .15s ease; }
@@ -241,25 +302,42 @@
                   touch-action: none; cursor: pointer; }
   /* Candlelight to daylight, left to right — the order the slider reads in,
      which is the REVERSE of the way a warmth is stored (platform §6). */
-  #rm-root .slider.warm { background: var(--lk-warm-ramp); }
+  #rm-root .slider.warm { background: var(--lk-warm-ramp); box-shadow: none; }
   #rm-root .slider.bright { background: var(--lk-bright-ramp); }
   #rm-root .slider .knob { position: absolute; top: -4px; bottom: -4px; width: 6px;
                         margin-left: -3px; border-radius: 4px;
                         background: var(--lk-surface);
                         box-shadow: var(--lk-slider-knob-shadow); }
+  /* The two ramps take OPPOSITE knobs, and that is not a slip: the warmth ramp
+     is light from end to end, so a white knob on it is invisible; the
+     brightness ramp starts at near-black, so a dark one is. Each knob is the
+     colour its own track is not. */
+  #rm-root .slider.warm .knob { background: var(--lk-ink);
+                             box-shadow: var(--lk-slider-knob-shadow-warm); }
   #rm-root .ends { display: flex; justify-content: space-between;
-                font-size: 11px; color: var(--lk-muted); margin: 9px 0 0; }
+                font-size: 11px; color: var(--lk-faint); margin: 9px 0 0; }
 
   /* The swatches a colour is chosen from, four across.
      Not one row of eight: at 390px that is 34px a swatch, under the touch
      minimum and too small to judge a colour by. Two rows of four is the same
      set of eight, legibly, and the sixteen that fold out below continue it. */
   #rm-root .swatches { display: grid; grid-template-columns: repeat(4, 1fr);
-                    gap: 8px; margin: 10px 0; }
-  #rm-root .swatch { height: 44px; border-radius: 9px; padding: 0;
+                    gap: 7px; margin: 0 0 11px; }
+  /* min-height as well as height: the container's own stylesheet is not ours
+     to read, and a swatch whose height is overridden away is a coloured line
+     rather than a colour anybody can judge. */
+  #rm-root .swatch { height: 34px; min-height: 34px; border-radius: 9px; padding: 0;
+                  box-sizing: border-box;
                   border: 1px solid var(--lk-hairline); cursor: pointer; }
-  #rm-root .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--lk-surface),
-                                                   0 0 0 4px var(--lk-accent); }
+  /* The chosen colour, and it has to survive being ON a colour: a ring drawn
+     in the accent with a soft halo outside it reads against every swatch in
+     the palette, which a white gap did not against the pale ones. */
+  #rm-root .swatch[aria-pressed="true"] { border: 2.5px solid var(--lk-accent);
+                                       box-shadow: 0 0 0 3px var(--lk-ring); }
+  /* The sixteen that fold out: same set, half the size, eight across. */
+  #rm-root .swatches.more { grid-template-columns: repeat(8, 1fr); gap: 6px;
+                         margin: 7px 0 0; }
+  #rm-root .swatches.more .swatch { height: 28px; min-height: 28px; border-radius: 7px; }
 
   /* The day strip: a picture of the whole day, drawn once and reused. */
   #rm-root .day { position: relative; height: 104px; border-radius: 12px;
@@ -273,13 +351,13 @@
   #rm-root .day .handle { position: absolute; top: 50%; width: 26px; height: 26px;
                        margin: -13px 0 0 -13px; border-radius: 50%;
                        background: var(--lk-surface); box-sizing: border-box;
-                       border: 2.5px solid var(--lk-ring);
+                       border: 2.5px solid var(--lk-handle-edge); z-index: 1;
                        box-shadow: var(--lk-handle-shadow); }
   #rm-root .day .handle.sel { width: 34px; height: 34px; margin: -17px 0 0 -17px;
                            border: 3px solid var(--lk-accent); z-index: 2;
                            box-shadow: var(--lk-handle-shadow-sel); }
   #rm-root .clockline { display: flex; justify-content: space-between;
-                     font-size: 12px; color: var(--lk-muted); margin-top: 6px; }
+                     font-size: 11px; color: var(--lk-faint); margin: 8px 2px 4px; }
 
   /* ==== end shared base ==== */
 
@@ -288,15 +366,18 @@
   #rm-root .remotes { background: var(--lk-surface); border: 1px solid var(--lk-line);
                       border-radius: 14px; box-shadow: var(--lk-shadow);
                       overflow: hidden; margin-bottom: 14px; }
-  #rm-root .remote { display: flex; align-items: center; gap: 12px; width: 100%;
-                     padding: 13px 14px; min-height: 44px; box-sizing: border-box;
+  /* Inset by the card, so the hairline between two remotes stops short of its
+     edge instead of cutting it in half. */
+  #rm-root .remotes .list { padding: 0 14px; }
+  #rm-root .remote { display: flex; align-items: center; gap: 11px; width: 100%;
+                     padding: 13px 0; min-height: 44px; box-sizing: border-box;
                      background: none; border: none; border-bottom: 1px solid var(--lk-line);
                      font: inherit; color: inherit; text-align: left; cursor: pointer; }
   #rm-root .remote:last-child { border-bottom: none; }
   #rm-root .remote .box { flex: none; width: 22px; height: 22px; border-radius: 50%;
-                          border: 1.5px solid var(--lk-field); box-sizing: border-box;
+                          border: 1.5px solid var(--lk-box); box-sizing: border-box;
                           display: flex; align-items: center; justify-content: center;
-                          font-size: 13px; font-weight: 700; color: transparent; }
+                          font-size: 12px; font-weight: 700; color: transparent; }
   #rm-root .remote[aria-pressed="true"] .box { background: var(--lk-accent);
                                                border-color: var(--lk-accent);
                                                color: var(--lk-accent-ink); }
@@ -307,9 +388,19 @@
   /* A header ON the card, not a label floating above it — the same shape the
      light picker and the sensor picker use, so three screens that list the
      household by room list it the same way. */
-  #rm-root .room-title { font-size: 14.5px; font-weight: 500; color: var(--lk-ink);
-                         background: var(--lk-raised); padding: 12px 14px;
+  #rm-root .room-title { font-size: 13.5px; font-weight: 600; line-height: 1.2;
+                         color: var(--lk-ink); background: var(--lk-raised);
+                         padding: 12px 14px; min-height: 44px; box-sizing: border-box;
+                         display: flex; align-items: center;
                          border-bottom: 1px solid var(--lk-line); }
+
+  /* Pressing a button is a shortcut, not a step: one accent line under the
+     list, centred, rather than a row in a card of its own pretending to open
+     something the way every other chevron row does. */
+  #rm-root .press-to-find { display: block; width: 100%; text-align: center;
+                            background: none; border: none; font-weight: 500; font-size: 14px; line-height: 44px;
+                            color: var(--lk-accent-strong); cursor: pointer;
+                            min-height: 44px; margin-bottom: 8px; padding: 0; }
 </style>
 
 <div class="wrap" id="rm-root">
@@ -337,16 +428,10 @@
     cannot be heard at all (platform §4), so the list has to be the path that
     always works.
   -->
-  <div class="card" style="padding:0;">
-    <button class="row" id="rm-listen" type="button">
-      <span class="label" data-i18n="remote.pressToFind"></span>
-      <span class="chev">&rsaquo;</span>
-    </button>
-  </div>
+  <button class="press-to-find" id="rm-listen" type="button"
+          data-i18n="remote.pressToFind"></button>
 
   <div id="rm-msg" class="msg" style="display:none;"></div>
-
-  <button class="btn-primary" id="rm-next" data-i18n="remote.next"></button>
 </div>
 
 <script type="text/javascript">
@@ -406,13 +491,15 @@ function __lkBootRm(Homey) {
     empty: document.getElementById('rm-empty'),
     listen: document.getElementById('rm-listen'),
     msg: document.getElementById('rm-msg'),
-    next: document.getElementById('rm-next')
   };
 
   var state = { selected: null, usable: false };
 
   function renderSteps() {
     clear(el.steps);
+    // Four steps get narrower dots, so the run is the same width whether a
+    // flow has three or four of them.
+    el.steps.className = 'steps tight';
     for (var i = 1; i <= 4; i++) el.steps.appendChild(node('i', i <= 1 ? 'on' : null));
     el.steps.appendChild(node('span', null, Homey.__('remote.step', { index: 1, count: 4 })));
   }
@@ -434,9 +521,11 @@ function __lkBootRm(Homey) {
       var room = rooms[i];
       var card = node('div', 'remotes');
       card.appendChild(node('div', 'room-title', room.zoneName));
+      var list = node('div', 'list');
       for (var j = 0; j < room.sources.length; j++) {
-        card.appendChild(renderRemote(room.sources[j]));
+        list.appendChild(renderRemote(room.sources[j]));
       }
+      card.appendChild(list);
       el.rooms.appendChild(card);
     }
     el.empty.style.display = rooms.length === 0 ? '' : 'none';
@@ -480,7 +569,6 @@ function __lkBootRm(Homey) {
 
     emit('selectSource', source.id).then(function (found) {
       state.usable = !!found.usable;
-      el.next.disabled = !state.usable;
       if (found.usable) {
         show('ok', Homey.__('remote.found', {
           name: found.deviceName,
@@ -495,7 +583,6 @@ function __lkBootRm(Homey) {
       }
     }).catch(function (err) {
       state.usable = false;
-      el.next.disabled = true;
       fail(err);
     });
   }
@@ -508,10 +595,6 @@ function __lkBootRm(Homey) {
 
   el.listen.addEventListener('click', function () { Homey.showView('listen'); });
 
-  el.next.addEventListener('click', function () {
-    if (state.usable) Homey.showView('lights');
-  });
-
   el.reattachBtn.addEventListener('click', function () {
     el.reattachBtn.disabled = true;
     emit('applyReattach').then(function () {
@@ -523,7 +606,6 @@ function __lkBootRm(Homey) {
   });
 
   renderSteps();
-  el.next.disabled = true;
 
   // Repair only, and its failure is swallowed: "this is not a repair session"
   // is the ordinary answer, not an error worth a banner.

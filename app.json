@@ -365,7 +365,7 @@
         {
           "id": "credential",
           "navigation": {
-            "next": "remote"
+            "prev": "intro"
           }
         },
         {
@@ -693,7 +693,7 @@
         {
           "id": "credential",
           "navigation": {
-            "next": "lights"
+            "prev": "intro"
           }
         },
         {

@@ -44,16 +44,32 @@ export async function listSensorsPayload(
   catalog: DeviceCatalog,
   selectedIds: readonly string[],
 ): Promise<Record<string, unknown>> {
-  const devices = await catalog.allDevices();
+  const [devices, zones] = await Promise.all([catalog.allDevices(), catalog.allZones()]);
   const selected = new Set(selectedIds);
 
+  /**
+   * EVERY room, not only the rooms that have a sensor.
+   *
+   * A room with none is the interesting row: the question this screen asks is
+   * "where should the reading come from", and the answer "the kitchen has one
+   * and this room does not" is only visible if the rooms with none are on the
+   * list saying so. Listing only the rooms that have one showed two cards and
+   * left a house of eleven rooms looking like a house of two.
+   */
   const byZone = new Map<string, { zoneName: string; sensors: PickerSensor[] }>();
+  for (const zone of zones as Array<{ id: string; name: string }>) {
+    byZone.set(zone.id, { zoneName: zone.name, sensors: [] });
+  }
+
   for (const device of devices) {
     if (!device.capabilities.includes(LUMINANCE_CAPABILITY)) continue;
 
     const key = device.zone ?? 'unknown';
     if (!byZone.has(key)) {
-      byZone.set(key, { zoneName: device.zoneName || 'Unassigned', sensors: [] });
+      // A zone the zone list did not carry, which is the roomless bucket. The
+      // VIEW names it, for the reason target-picker.ts gives: a label built in
+      // `lib/` could never be translated.
+      byZone.set(key, { zoneName: '', sensors: [] });
     }
     byZone.get(key)!.sensors.push({
       id: device.id,
@@ -67,9 +83,13 @@ export async function listSensorsPayload(
 
   return {
     rooms: [...byZone.values()]
-      .sort((a, b) => a.zoneName.localeCompare(b.zoneName))
+      // Rooms alphabetically, and the roomless bucket last whatever the view
+      // ends up calling it: it is not a room, so it does not sort among them.
+      .sort((a, b) => (a.zoneName === '' ? 1 : b.zoneName === '' ? -1
+        : a.zoneName.localeCompare(b.zoneName)))
       .map(room => ({
         zoneName: room.zoneName,
+        unzoned: room.zoneName === '',
         sensors: [...room.sensors].sort((a, b) => a.name.localeCompare(b.name)),
       })),
     /**

@@ -49,10 +49,14 @@ export async function listTargetsPayload(
 
   // Grouped by room: a house with 39 lights is unusable as a flat grid.
   const byZone = new Map<string, { zoneId: string; zoneName: string; lights: unknown[] }>();
+  /* A light Homey has put in no zone still has to appear, and the word for that
+     is the VIEW's: `lib/` has no `homey.__`, so a label invented here could
+     never be translated. It used to read 'Unassigned', hardcoded, which is the
+     shape of bug the translation rule exists to catch. */
   for (const device of lights as any[]) {
     const key = device.zone ?? 'unknown';
     if (!byZone.has(key)) {
-      byZone.set(key, { zoneId: key, zoneName: device.zoneName || 'Unassigned', lights: [] });
+      byZone.set(key, { zoneId: key, zoneName: device.zoneName ?? '', lights: [] });
     }
     byZone.get(key)!.lights.push({
       id: device.id,
@@ -69,7 +73,10 @@ export async function listTargetsPayload(
 
   return {
     rooms: [...byZone.values()]
-      .sort((a, b) => a.zoneName.localeCompare(b.zoneName))
+      // Rooms alphabetically, and the roomless bucket last whatever it is
+      // called: it is not a room, so it does not belong among them.
+      .sort((a, b) => (a.zoneName === '' ? 1 : b.zoneName === '' ? -1
+        : a.zoneName.localeCompare(b.zoneName)))
       .map(room => ({
         /**
          * The room's own zone id, so "Select all" can store a ZONE target.
@@ -82,6 +89,8 @@ export async function listTargetsPayload(
          */
         zoneId: room.zoneId,
         zoneName: room.zoneName,
+        /** The view names this room itself, and greys it. See above. */
+        unzoned: room.zoneName === '',
         lights: sortLights(room.lights as any[]),
       })),
     zones: zones.map((zone: any) => ({ id: zone.id, name: zone.name })),

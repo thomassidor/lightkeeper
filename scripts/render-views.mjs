@@ -17,11 +17,23 @@
  * shells out to it the same way, with the same candidate list. Nothing is
  * installed for this.
  *
- * WHAT IT CANNOT SHOW. Homey injects a pairing view into ITS document, with its
- * own header, sheet chrome and scroll container around it (platform §8). This
- * renders the view alone on a white ground, which is the right approximation —
- * every screen the app draws is light and deliberately does not ask the OS — but
- * it is an approximation. Spacing against Homey's own chrome is not in here.
+ * THE CHROME IS DRAWN, and it has to be. Homey injects a pairing view into ITS
+ * document, inside a sheet with a header and a footer of its own (platform §8).
+ * This used to render the view alone on white, and the omission was not neutral:
+ * Homey's footer already carries `← Previous` and a blue `Next →` pill for every
+ * step whose `navigation` names one, so a render without it could not show that
+ * a view drawing its own full-width Next was drawing a SECOND one. Comparing
+ * such a render against a design that includes the chrome made the app's own
+ * button look like the design's, and the duplicate survived four screens.
+ *
+ * So the sheet is reproduced here from what a real Homey draws — measured off
+ * my.homey.app, metrics in CHROME below — and the buttons come from each
+ * driver's own `driver.compose.json`, never from a list kept in step by hand.
+ *
+ * It is still a reproduction, and two things about it are deliberately NOT the
+ * real sheet: the render is as tall as the whole screen rather than cut at the
+ * viewport (a contact sheet exists to show the end of the longest screen), and
+ * the fold is marked instead, where a phone would stop.
  *
  * USAGE
  *
@@ -38,7 +50,7 @@ import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
-import { RENDER_REPLIES } from './pair-view-fixtures.mjs';
+import { DRIVER_REPLIES, RENDER_REPLIES } from './pair-view-fixtures.mjs';
 
 const here = dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
 const ROOT = join(here, '..');
@@ -64,6 +76,26 @@ const CHROME_FLAGS = [
   '--force-device-scale-factor=2',
   '--virtual-time-budget=4000',
 ];
+
+/**
+ * Homey's own pairing sheet, measured off my.homey.app rather than guessed.
+ *
+ * `gutter` is the one number here that changes how OUR screens are judged: it
+ * is the space Homey puts either side of the injected view, on top of the 16px
+ * the view's own root already has. Everything else is chrome the app cannot
+ * touch and is reproduced only so the view is seen between the two things that
+ * actually sit above and below it on a phone.
+ *
+ * The fold is where a 812pt phone stops, which is the shortest screen anybody
+ * pairs on. Above it is what somebody sees without scrolling.
+ */
+const CHROME = {
+  gutter: 16,
+  headerHeight: 56,
+  footerHeight: 76,
+  radius: 14,
+  fold: 812,
+};
 
 /** The window the measuring pass uses, and the fallback if it says nothing. */
 const TALL = 1600;
@@ -128,7 +160,8 @@ function views() {
     .filter(driver => existsSync(join(DRIVERS, driver, 'pair')))
     .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
 
-  /** @type {{ driver: string, label: string, file: string, step: number, of: number }[]} */
+  /** @type {{ driver: string, label: string, file: string, step: number, of: number,
+               prev: boolean, next: boolean }[]} */
   const found = [];
   for (const driver of drivers) {
     const dir = join(DRIVERS, driver, 'pair');
@@ -141,8 +174,21 @@ function views() {
     const ordered = [...steps, ...files.filter(file => !steps.includes(file))];
     const label = compose.name?.en ?? driver;
 
+    /**
+     * Which chrome buttons Homey will draw around this view, which is the one
+     * thing about the real sheet a render can know for certain: `navigation`
+     * in driver.compose.json IS what the container reads. A view the compose
+     * does not name gets neither, because Homey never shows it.
+     */
+    const nav = new Map((compose.pair ?? []).map((/** @type {any} */ step) =>
+      [`${step.id}.html`, step.navigation ?? {}]));
+
     ordered.forEach((file, index) => {
-      found.push({ driver, label, file, step: index + 1, of: ordered.length });
+      const navigation = nav.get(file) ?? {};
+      found.push({
+        driver, label, file, step: index + 1, of: ordered.length,
+        prev: Boolean(navigation.prev), next: Boolean(navigation.next),
+      });
     });
   }
   return found;
@@ -183,8 +229,9 @@ function locales() {
  * @param {Record<string, unknown>} replies
  * @param {Record<string, string>} strings
  * @param {number} width
+ * @param {{ app: string, prev: boolean, next: boolean }} chrome
  */
-function page(html, replies, strings, width) {
+function page(html, replies, strings, width, chrome) {
   const stub = `
     var STRINGS = ${JSON.stringify(strings)};
     var REPLIES = ${JSON.stringify(replies)};
@@ -264,7 +311,12 @@ function page(html, replies, strings, width) {
       // vh unit, so the content box is the whole answer.
       if (!document.body) return;
       var rect = document.body.getBoundingClientRect();
-      document.title = 'fit:' + Math.ceil(rect.bottom + (window.scrollY || 0));
+      var tall = Math.ceil(rect.bottom + (window.scrollY || 0));
+      // A screen that fits on a phone has no fold to mark, and a dashed line
+      // across the white below it would read as one.
+      var fold = document.getElementById('lk-fold');
+      if (fold) fold.style.display = tall > ${CHROME.fold} ? '' : 'none';
+      document.title = 'fit:' + tall;
     }`;
 
   /**
@@ -283,16 +335,66 @@ function page(html, replies, strings, width) {
 
   const body = html.slice(html.indexOf('<div class="wrap"'));
 
+  /**
+   * Homey's footer, drawn only where the compose asks for it.
+   *
+   * The label is `Next` on every step that has one — NOT the verb the design
+   * canvas writes on the pill. The canvas puts `Start` on the intro and
+   * `Add device` on the review because that is the INTENT of the step; Homey
+   * draws the word `Next` regardless, and a render that flattered the canvas
+   * here would hide the one place the two genuinely disagree.
+   */
+  const footer = (chrome.prev || chrome.next)
+    ? `<div class="lk-foot">
+  ${chrome.prev ? '<span class="lk-prev">&#8592; Previous</span>' : '<span></span>'}
+  ${chrome.next ? '<span class="lk-next">Next &#8594;</span>' : ''}
+</div>`
+    : '';
+
   return `<!doctype html><html><head><meta charset="utf-8">
 <style>
-  /* Homey's own pairing sheet, approximated: white, light, and this wide. */
-  html, body { margin: 0; padding: 0; background: #ffffff; }
-  body { width: ${width}px; }
+  /* ---- Homey's pairing sheet, reproduced -------------------------------
+     Everything in this block is the CONTAINER, not the app: it exists so the
+     view is judged between the header and the footer it actually sits between.
+     Nothing here may leak into the view — the app's own styles are all scoped
+     to its root id — so these carry an lk- prefix that no view uses. */
+  html, body { margin: 0; padding: 0; background: #eceef2;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", sans-serif; }
+  body { width: ${width + CHROME.gutter * 2}px; }
+  .lk-sheet { position: relative; background: #ffffff;
+    border-radius: ${CHROME.radius}px; overflow: hidden; }
+  .lk-head { height: ${CHROME.headerHeight}px; display: flex; align-items: center;
+    gap: 12px; padding: 0 22px; box-sizing: border-box; }
+  .lk-head .back { font-size: 17px; color: #9aa0a9; }
+  .lk-head .title { flex: 1; font-size: 15px; font-weight: 500; color: #6a7180; }
+  .lk-head .shut { font-size: 17px; color: #b3b8c0; }
+  .lk-body { padding: 0 ${CHROME.gutter}px; }
+  .lk-foot { height: ${CHROME.footerHeight}px; display: flex; align-items: center;
+    justify-content: space-between; padding: 0 24px; box-sizing: border-box; }
+  .lk-prev { font-size: 15px; font-weight: 500; color: #8a9099; }
+  .lk-next { font-size: 15px; font-weight: 600; color: #ffffff; padding: 14px 30px;
+    border-radius: 999px; background: linear-gradient(100deg, #2f7ef0, #55a8f5); }
+  /* Where a phone stops. Drawn over everything, because what it marks is the
+     line between the part of a screen somebody sees and the part they have to
+     go looking for. */
+  .lk-fold { position: absolute; left: 0; right: 0; top: ${CHROME.fold}px;
+    border-top: 1px dashed #c2b4e6; pointer-events: none; }
+  .lk-fold span { position: absolute; right: 8px; top: -8px; font-size: 9px;
+    letter-spacing: .08em; text-transform: uppercase; color: #8d7bc0;
+    background: #ffffff; padding: 0 5px; }
 </style>
 ${style}
 <script>${stub}</script>
 </head><body>
+<div class="lk-sheet">
+<div class="lk-head"><span class="back">&#8592;</span><span class="title">${chrome.app}</span><span class="shut">&#10005;</span></div>
+<div class="lk-body">
 ${body}
+</div>
+${footer}
+<div class="lk-fold" id="lk-fold"><span>fold</span></div>
+</div>
 </body></html>`;
 }
 
@@ -300,10 +402,17 @@ function main() {
   const argv = process.argv.slice(2);
   const widthAt = argv.indexOf('--width');
   const width = widthAt >= 0 ? Number(argv[widthAt + 1]) : 390;
+  /* What a rendered PNG is actually wide, which is the view plus Homey's own
+     gutter either side. The contact sheet lays out at this, not at `width`. */
+  const shotWidth = width + CHROME.gutter * 2;
 
   const chrome = findChrome();
   const strings = locales();
   const all = views();
+  /* The word Homey puts in the sheet header is the APP's name, not the
+     driver's: a phone pairing a Curve light still says Lightkeeper. */
+  const appName = JSON.parse(
+    readFileSync(join(ROOT, '.homeycompose', 'app.json'), 'utf8')).name?.en ?? 'Lightkeeper';
 
   rmSync(OUT, { recursive: true, force: true });
   mkdirSync(OUT, { recursive: true });
@@ -317,7 +426,7 @@ function main() {
   const missing = [];
   let drawn = '';
 
-  for (const { driver, label, file, step, of } of all) {
+  for (const { driver, label, file, step, of, prev, next } of all) {
     if (driver !== drawn) {
       console.log(`  ${label}  (drivers/${driver}/pair)`);
       drawn = driver;
@@ -327,7 +436,19 @@ function main() {
     const entry = { driver, label, file, step, of, name, status: 'ok' };
     screens.push(entry);
 
-    const replies = /** @type {Record<string, Record<string, unknown>>} */ (RENDER_REPLIES)[file];
+    /**
+     * The driver's own demo data where there is any, the file's otherwise.
+     *
+     * `intro.html`, `lights.html` and `review.html` are one file and five
+     * screens (platform §8): what a driver answers them with is the entire
+     * difference between them. Rendered from the per-file entry alone, the sheet
+     * drew the circadian intro five times over and no other device type's was
+     * ever on it.
+     */
+    const byDriver = /** @type {Record<string, Record<string, unknown>>} */ (
+      DRIVER_REPLIES)[`${driver}/${file}`];
+    const replies = byDriver
+      ?? /** @type {Record<string, Record<string, unknown>>} */ (RENDER_REPLIES)[file];
     if (!replies) {
       entry.status = 'no fixture';
       missing.push(`${driver}/${file}`);
@@ -339,13 +460,14 @@ function main() {
     const temp = join(OUT, `${name}.html`);
     const shot = join(OUT, `${name}.png`);
 
-    writeFileSync(temp, page(source, replies, strings, width), 'utf8');
+    writeFileSync(temp, page(source, replies, strings, width,
+      { app: appName, prev, next }), 'utf8');
 
     // Two passes: one to ask the page how tall it is, one to shoot it at that
     // height. See `measure()` in the stub for why a second run is the only way
     // to get a card that is neither padded with white nor cut off.
     const measured = spawnSync(chrome, [...CHROME_FLAGS,
-      `--window-size=${width},${TALL}`,
+      `--window-size=${shotWidth},${TALL}`,
       '--dump-dom',
       pathToFileURL(temp).href,
     ], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
@@ -355,7 +477,7 @@ function main() {
       : TALL;
 
     const result = spawnSync(chrome, [...CHROME_FLAGS,
-      `--window-size=${width},${shotHeight}`,
+      `--window-size=${shotWidth},${shotHeight}`,
       `--screenshot=${shot}`,
       pathToFileURL(temp).href,
     ], { stdio: 'ignore' });
@@ -438,8 +560,8 @@ ${group.screens.map(card).join(String.fromCharCode(10))}
     color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
   .file { font-weight: 600; }
   .path { margin-left: auto; color: #a1a1aa; font-size: 11px; }
-  img { display: block; width: ${width}px; }
-  figure.absent { width: ${width}px; border-style: dashed; }
+  img { display: block; width: ${shotWidth}px; }
+  figure.absent { width: ${shotWidth}px; border-style: dashed; }
   .why { padding: 24px 12px; color: #a1a1aa; font-size: 12px; text-align: center; }
 </style></head><body>
 <header>
@@ -447,7 +569,11 @@ ${group.screens.map(card).join(String.fromCharCode(10))}
 <p>Rendered from the shipped files with demo fixtures, grouped by driver and in
 the order each driver shows them. What each screen <em>does</em> is checked by
 test/unit/pair-view-behaviour.test.ts; this page is only for judging how they
-look. Homey draws its own header and sheet around these, which is not shown.</p>
+look. Homey's own sheet &mdash; its header, and the <code>&larr; Previous</code> /
+<code>Next &rarr;</code> footer it draws from each step's <code>navigation</code>
+&mdash; is reproduced around every screen, because what the app draws is only
+judgeable against what sits above and below it. The dashed line is the fold on a
+812pt phone.</p>
 <div class="meta">${rendered.length} of ${screens.length} screens · ${width}px wide · ${new Date().toISOString().slice(0, 16).replace('T', ' ')}</div>
 <nav>${contents}</nav>
 </header>

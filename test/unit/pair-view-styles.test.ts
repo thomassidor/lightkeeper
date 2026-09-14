@@ -288,6 +288,34 @@ describe('pair view styles', () => {
     }
   });
 
+  test('no font shorthand ends in `inherit`, because that declaration is dropped', () => {
+    /**
+     * `font: 600 12px/1 inherit` looks like "this size, this weight, the font
+     * we already have". It is INVALID: `inherit` is a CSS-wide keyword and may
+     * only be an entire value, never a component of a shorthand — so the
+     * browser throws the whole declaration away and the element renders at
+     * whatever it inherited, 16px and regular.
+     *
+     * It shipped in seven places and nobody saw it, because every one of them
+     * was a control small enough that "a bit big" read as a design choice: the
+     * stepper glyphs, the day chips, the Add buttons. Measured in headless
+     * Chrome, `font: 600 12px/1 inherit` computes to 16px/400.
+     *
+     * Bare `font: inherit` is fine and is used by every button in these views —
+     * that one IS the whole value.
+     */
+    for (const view of Object.keys(VIEWS)) {
+      const bad = [...styleBlock(view).matchAll(/font:\s*[^;]*\S\s+inherit\s*;/g)]
+        .map(match => match[0].replace(/\s+/g, ' '));
+
+      assert.deepEqual(
+        bad, [],
+        `${view}: a font shorthand with \`inherit\` as a component is dropped `
+        + 'entirely — write the longhand properties instead',
+      );
+    }
+  });
+
   test('no view follows the operating system colour scheme', () => {
     /**
      * Every view carried a `prefers-color-scheme: dark` block restating the
