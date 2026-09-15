@@ -4,6 +4,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { runPairView } from '../support/pair-view-harness';
+import { valueAt as curveValueAt } from '../../lib/circadian/circadian-curve';
+import { DEFAULT_POINTS as REAL_POINTS } from '../../lib/circadian/circadian-types';
+import { PALETTE as REAL_PALETTE } from '../../lib/circadian/palette';
+import { colourSwatch } from '../../lib/pairing/flow-screens';
 
 /**
  * What the pairing screens DO, as opposed to whether they boot.
@@ -418,6 +422,80 @@ describe('the curve screen', () => {
     await view.settle();
 
     assert.equal(view.byId('cv-remove')?.style.display, 'none');
+  });
+
+  test('the chart blends between points, because the engine does', async () => {
+    /**
+     * The chart used to hold each colour flat and snap at the halfway mark, on
+     * the argument that a blended hue is no palette entry and the screen should
+     * not draw a colour nobody could have chosen. The engine blends —
+     * `mixColors()` is what a coloured segment actually does — so the picture
+     * disagreed with the day: five bands of colour where the room fades through
+     * the shades between them.
+     *
+     * Asserted against the ENGINE rather than against remembered values, because
+     * the view carries a hand-copied duplicate of that maths (it repaints on
+     * every edit and cannot ask the driver), and a copy is only worth having if
+     * something fails when it drifts.
+     */
+    const view = run({
+      points: REAL_POINTS,
+      palette: REAL_PALETTE.map(colour => ({
+        id: colour.id, label: colour.id, hue: colour.hue, saturation: colour.saturation,
+      })),
+      adjustBrightness: true,
+    });
+    await view.settle();
+
+    const bars = view.byId('cv-chart')!.children.filter(child => child.tagName === 'i');
+    assert.equal(bars.length, 24, 'one bar an hour');
+
+    for (let hour = 0; hour < 24; hour += 1) {
+      assert.equal(
+        bars[hour]!.style.background,
+        colourSwatch(curveValueAt(REAL_POINTS, hour * 60).color!),
+        `the bar at ${hour}:00 is the colour the engine holds there`,
+      );
+    }
+
+    // And the blend is visible rather than merely equal to itself: 11:00 sits
+    // between cool white and neutral and is neither of them.
+    assert.notEqual(bars[11]!.style.background, bars[9]!.style.background);
+    assert.notEqual(bars[11]!.style.background, bars[14]!.style.background);
+  });
+
+  test('the chart carries no handles — the dashed line is the only mark', async () => {
+    // A dot per point, the selected one filled, sat on top of the bars they were
+    // drawn from at 390px. The bars are the shape; the line says which point is
+    // open, and the card below names it.
+    const view = run({ points: REAL_POINTS, adjustBrightness: true });
+    await view.settle();
+
+    const chart = view.byId('cv-chart')!;
+    assert.equal(chart.querySelectorAll('.dot').length, 0);
+    assert.equal(chart.querySelectorAll('.at').length, 1);
+  });
+
+  test('switching brightness off remembers what each point held', async () => {
+    /**
+     * The default curve arrives with a shape — 44% at dawn, 94% in the evening,
+     * 36% at night — and one tap of the toggle used to replace all five with a
+     * flat 80% with no way back inside the session.
+     */
+    const view = run({ points: REAL_POINTS, adjustBrightness: true });
+    await view.settle();
+
+    view.fire(view.byId('cv-brightToggle')!, 'click');
+    await view.settle();
+    view.fire(view.byId('cv-brightToggle')!, 'click');
+    await view.settle();
+
+    const pushed = [...view.emitted].reverse()
+      .find(call => call.event === 'setCurve')?.data as Record<string, any>;
+    assert.deepEqual(
+      pushed.points.map((point: any) => point.brightness),
+      REAL_POINTS.map(point => point.brightness),
+    );
   });
 
   test('brightness is all-or-nothing across every point', async () => {

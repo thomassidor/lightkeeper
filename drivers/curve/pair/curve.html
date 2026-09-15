@@ -416,30 +416,15 @@
   #cv-root .chart { position: relative; flex: 1; height: 112px;
                     display: flex; align-items: flex-end; gap: 2px; }
   #cv-root .chart i { flex: 1; border-radius: 2px 2px 0 0; }
+  /* The dashed line is the ONLY mark on the chart, and it marks the selected
+     point. There were handles too — a dot per point, the selected one filled —
+     on the argument that the chart is the only place the shape is visible. They
+     were removed: at 390px the five of them sat on top of the bars they were
+     drawn from, and a dot at full brightness had to be tucked back inside the
+     top edge to stop it hanging over the heading. The bars ARE the shape, the
+     line says which point is open, and the card below it names that point. */
   #cv-root .chart .at { position: absolute; top: 0; bottom: 0; width: 0;
                         border-left: 1.5px dashed var(--lk-curve-mark); }
-  /* Every point gets a handle, because the chart is the only place the SHAPE
-     is visible: a list of times says when, and nothing says what the day looks
-     like between them. The selected one is filled so tapping a row and looking
-     up answers "which of these am I editing".
-
-     Centred on its own position with a transform rather than pulled up by a
-     negative margin: a dot is positioned from the BOTTOM, where a margin-top
-     does nothing, so the old rule left every dot sitting a full diameter above
-     the value it marked. */
-  #cv-root .chart .dot { position: absolute; width: 11px; height: 11px;
-                         border-radius: 50%; transform: translate(-50%, 50%);
-                         background: var(--lk-surface);
-                         border: 2.5px solid var(--lk-accent); box-sizing: border-box; }
-  #cv-root .chart .dot.sel { width: 15px; height: 15px; z-index: 2;
-                             background: var(--lk-accent);
-                             border: 2.5px solid var(--lk-surface);
-                             box-shadow: var(--lk-mark-shadow); }
-  /* A point at FULL brightness — which is every point while brightness is
-     switched off — centres on the chart's top edge and would then hang over
-     the heading above it. Tucked inside instead, by its own half-height. */
-  #cv-root .chart .dot.top { margin-bottom: -6px; }
-  #cv-root .chart .dot.sel.top { margin-bottom: -8px; }
   #cv-root .axis { display: flex; justify-content: space-between;
                    font-size: 11px; color: var(--lk-faint); margin: 0 2px 14px; }
   /* Indented past the gutter, so midnight sits under the first bar. */
@@ -468,7 +453,14 @@
                              font-size: 18px; line-height: 30px; color: var(--lk-muted); cursor: pointer; }
 
 
-  #cv-root .more { display: flex; align-items: center; font-size: 14px; font-weight: 500;
+  /* NOT `.more`: the fold-out swatch grid is `.swatches.more`, and a bare
+     `#cv-root .more` rule declaring `display: flex` sits LATER in this file than
+     the shared base's `#cv-root .swatches { display: grid }` at equal
+     specificity — so it won the cascade and laid the sixteen extra colours out
+     as one flex row of 24 hairlines instead of two rows of eight swatches. The
+     grid-template-columns from `.swatches.more` still applied, and applied to
+     nothing, which is why it looked like a deliberate rainbow strip. */
+  #cv-root .morelink { display: flex; align-items: center; font-size: 14px; font-weight: 500;
                    color: var(--lk-accent-strong); background: none; border: none;
                    margin-top: 9px; padding: 0; font-family: inherit; cursor: pointer;
                    min-height: 44px; box-sizing: border-box; }
@@ -539,7 +531,7 @@
       is a decision; a continuous picker is a tuning session, and a set of
       twenty-four shown at once is a tuning session with extra steps.
     -->
-    <button class="more" id="cv-more" type="button"></button>
+    <button class="morelink" id="cv-more" type="button"></button>
 
     <button class="toggle" id="cv-brightToggle" type="button" aria-checked="false">
       <span class="label" data-i18n="curve.alsoBrightness"></span>
@@ -657,6 +649,9 @@ function __lkBootCv(Homey) {
     maxPoints: 8
   };
 
+  /** What each point's brightness was when the toggle was last switched off. */
+  var remembered = {};
+
   function fail(err) {
     el.error.textContent = err && err.message ? err.message : String(err);
     el.error.style.display = '';
@@ -741,7 +736,7 @@ function __lkBootCv(Homey) {
     for (var minute = 0; minute < 1440; minute += 60) {
       var bar = node('i');
       var at = valueAt(points, minute);
-      bar.style.background = css(colourOf(at.color));
+      bar.style.background = css(at.color);
       bar.style.height = state.adjustBrightness
         ? Math.max(6, at.brightness * 100) + '%'
         : '100%';
@@ -753,19 +748,6 @@ function __lkBootCv(Homey) {
     el.gutter.style.display = state.adjustBrightness ? '' : 'none';
     el.axis.className = 'axis' + (state.adjustBrightness ? ' axed' : '');
 
-    for (var i = 0; i < state.points.length; i++) {
-      var point = state.points[i];
-      var height = state.adjustBrightness && point.brightness !== undefined
-        ? Math.max(6, point.brightness * 100)
-        : 100;
-      var dot = node('div', 'dot'
-        + (i === state.selected ? ' sel' : '')
-        + (height >= 100 ? ' top' : ''));
-      dot.style.left = (minuteOf(point) / 1440 * 100).toFixed(4) + '%';
-      dot.style.bottom = height + '%';
-      el.chart.appendChild(dot);
-    }
-
     var selectedPoint = state.points[state.selected];
     if (selectedPoint) {
       var mark = node('div', 'at');
@@ -775,12 +757,56 @@ function __lkBootCv(Homey) {
   }
 
   /**
+   * Two palette colours blended, ACROSS the disc rather than round the rim.
+   *
+   * DUPLICATED from `mixColors()` in lib/circadian/palette.ts, which is where
+   * the argument lives: half the palette's pairs are more than a quarter-turn
+   * apart, and an arc between two of those runs through hues nobody chose —
+   * ember to ocean went backwards through rose, magenta and violet. Fading
+   * through pale is the honest answer, because pale is what both ends have in
+   * common. This copy exists for the same reason `css()` above is one: the chart
+   * is repainted on every edit and cannot ask the driver. Change one and change
+   * the other.
+   *
+   * A segment with a colour at only ONE end holds that colour flat, which is
+   * also the engine's rule (`colorOf()`): there is nothing to blend towards,
+   * because a colour temperature is a point on a different axis.
+   */
+  function blend(from, to, fraction) {
+    if (!from) return to || null;
+    if (!to) return from;
+    if (fraction <= 0) return from;
+    if (fraction >= 1) return to;
+
+    var turn = Math.PI * 2;
+    var fromX = from.saturation * Math.cos(turn * from.hue);
+    var fromY = from.saturation * Math.sin(turn * from.hue);
+    var toX = to.saturation * Math.cos(turn * to.hue);
+    var toY = to.saturation * Math.sin(turn * to.hue);
+
+    var x = fromX + (toX - fromX) * fraction;
+    var y = fromY + (toY - fromY) * fraction;
+    var saturation = Math.sqrt(x * x + y * y);
+
+    // At the middle of the disc there is no angle to read — atan2(0, 0) is red —
+    // so a pair whose line passes close to white would swing through it. Held at
+    // whichever end is nearer instead; it is unsaturated there anyway.
+    if (saturation < 0.02) {
+      return { hue: fraction < 0.5 ? from.hue : to.hue, saturation: saturation };
+    }
+    return { hue: ((Math.atan2(y, x) / turn % 1) + 1) % 1, saturation: saturation };
+  }
+
+  /**
    * The value at a minute, cyclically.
    *
-   * A colour is held FLAT across a segment rather than blended, which is what
-   * the engine does when only one end of a segment carries one: blending two
-   * palette colours on screen would draw a hue that is no palette entry, and the
-   * chart would then show colours nobody could have chosen.
+   * The colour is BLENDED between the two bracketing points, because that is
+   * what the engine does with it. It used to be held flat and snapped at the
+   * halfway mark, on the argument that a blended hue is no palette entry and the
+   * chart should not show a colour nobody could have chosen — but the chart's
+   * job is to show what the ROOM will do, and the room is blended. A picture
+   * that disagreed with the engine drew five bands of colour where the lights
+   * fade through the shades between them.
    */
   function valueAt(points, minute) {
     var before = points[points.length - 1];
@@ -799,7 +825,10 @@ function __lkBootCv(Homey) {
     var fromB = before.brightness === undefined ? 1 : before.brightness;
     var toB = after.brightness === undefined ? 1 : after.brightness;
     return {
-      color: fraction < 0.5 ? before.color : after.color,
+      // Eased, not linear, and the same eased fraction the brightness uses:
+      // the engine mixes its colours on `ease(fraction)` too, so a screen that
+      // blended linearly would put every mid-segment shade in the wrong place.
+      color: blend(colourOf(before.color), colourOf(after.color), eased),
       brightness: fromB + (toB - fromB) * eased
     };
   }
@@ -961,9 +990,22 @@ function __lkBootCv(Homey) {
     // All or nothing: the engine interpolates brightness only where BOTH
     // bracketing points carry one, so a half-dimmed curve would have to invent
     // the missing segments.
+    //
+    // Switching it off REMEMBERS what each point held, because the default curve
+    // arrives with a shape — 44% at dawn up to 94% in the evening — and one
+    // accidental tap used to replace all five with a flat 80% with no way back
+    // inside the session.
     for (var i = 0; i < state.points.length; i++) {
-      state.points[i].brightness = state.adjustBrightness ? (state.points[i].brightness === undefined
-        ? 0.8 : state.points[i].brightness) : undefined;
+      var point = state.points[i];
+      if (state.adjustBrightness) {
+        var kept = remembered[point.id];
+        point.brightness = point.brightness === undefined
+          ? (kept === undefined ? 0.8 : kept)
+          : point.brightness;
+      } else {
+        if (point.brightness !== undefined) remembered[point.id] = point.brightness;
+        point.brightness = undefined;
+      }
     }
     render();
     push();

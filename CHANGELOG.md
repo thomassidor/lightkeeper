@@ -873,6 +873,48 @@ And the stale claims the sweep turned up on the way:
   "this device". The three that really are the remote's own — no configuration, the source gone, and
   the re-attach offer — name the Light Remote or the physical remote, whichever they mean.
 
+### The fold-out colours on the curve screen drew as hairlines
+
+- **"Show more colours" opened a rainbow strip instead of sixteen swatches.** The fold-out grid is
+  `class="swatches more"` and the button that opens it was `class="more"`, so the view's own
+  `#cv-root .more { display: flex }` — written for the button, and sitting later in the file than
+  the shared base's `#cv-root .swatches { display: grid }` at equal specificity — won the cascade and
+  applied to the grid as well. The sixteen colours were laid out as one flex row and squeezed to
+  **2px wide** (measured in headless Chrome, against 36 x 28 now), which read as a deliberate
+  spectrum bar rather than as a broken control: the eight-column grid was still declared, and still
+  applied to nothing. The button is `.morelink`, and the comment above the rule says why it may not
+  go back. Only the Colour Curve Light's screen draws that grid, and no other view carries the
+  colliding class.
+
+### The curve screen's chart, and the day a new one starts with
+
+- **The chart blends its colours now, because the engine always did.** A coloured segment fades from
+  one palette colour to the next — `mixColors()`, across the disc rather than round the rim — but
+  the pairing chart held each colour flat and snapped at the halfway mark, on the argument that a
+  blended hue is no palette entry and a screen should not draw a colour nobody could have chosen.
+  That is the wrong question: the chart's job is to show what the ROOM will do, and the room is
+  blended. It drew five bands where the lights fade through every shade between them. The view
+  carries a hand-copied duplicate of that maths — it repaints on every edit and cannot ask the
+  driver — so the new test compares all twenty-four bars against the engine itself rather than
+  against remembered values, which is the only thing that fails when the copy drifts.
+- **The handles are gone from the chart.** A dot per point with the selected one filled, on the
+  argument that the chart is the only place the shape is visible. At 390px the five of them sat on
+  top of the bars they were drawn from, and a point at full brightness had to be tucked back inside
+  the top edge to stop it hanging over the heading. The bars are the shape, the dashed line says
+  which point is open, and the card under it names that point.
+- **A new Colour Curve Light pairs with brightness switched on, and the five default points carry
+  one**: 44% at 06:30, 80% at 09:00, 64% at 14:00, 94% at 19:00, 36% at 22:30. A flat day of colour
+  is a picture of one axis — every bar full height, the Off-to-Full gutter hidden, nothing on the
+  screen saying the second axis exists. A dim dawn rising to a bright evening and falling back to a
+  low violet night is the shape a curve is for. Repairing an existing device is unchanged: it reads
+  the stored plan, so a curve saved without brightness keeps none rather than having five values
+  invented for it.
+- **Switching brightness off no longer forgets what the points held.** It is all-or-nothing by
+  design — the engine interpolates brightness only where both ends carry one — but switching it off
+  cleared all five values and switching it back on wrote a flat 80%, so one accidental tap destroyed
+  the shape with no way back inside the session.
+
+
 ## 0.5.2
 
 Four fixes, all found by reading one diagnostics export from a Homey that had been running for an

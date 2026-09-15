@@ -91,7 +91,16 @@ module.exports = class CurveDriver extends Homey.Driver {
   }
 
   override async onPair(session: any) {
-    await this.bindSession(session, { points: [...DEFAULT_POINTS] });
+    /**
+     * Brightness ON, because DEFAULT_POINTS carry one.
+     *
+     * Stated here rather than left to bindSession's default: this is a fact
+     * about the curve a NEW device starts with, and repair below reads the
+     * stored plan instead — a plan written before the default gained its
+     * brightnesses has points with none, and switching it on for them would
+     * invent five values the user never chose.
+     */
+    await this.bindSession(session, { points: [...DEFAULT_POINTS], adjustBrightness: true });
   }
 
   override async onRepair(session: any, device: any) {
