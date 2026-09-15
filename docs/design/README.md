@@ -1,32 +1,47 @@
-# The pairing redesign canvases
+# The pairing redesign canvas
 
-Two Claude Design canvases, the source of the pairing rewrite. Neither is bundled into the app —
-`docs/` never is — and neither is read by any script. They are here so the reasoning behind a screen
-survives the session it was designed in.
+`Lightkeeper pairing flows.dc.html` is the Claude Design canvas the pairing rewrite was built from:
+all five device types, one row each, the happy flow left to right and the special cases to the right
+of the divider. It is not bundled into the app — `docs/` never is — and no script reads it. It is
+here so the reasoning behind a screen survives the session it was designed in.
 
-Open either `.dc.html` in a browser; `support.js` beside them is the canvas runtime and has to stay
-where it is.
+Open it in a browser; `support.js` beside it is the canvas runtime and has to stay where it is.
 
-| File | What it is |
-|---|---|
-| `Lightkeeper pairing flows.dc.html` | **The settled design.** All five device types, one row each: the happy flow left to right, then the special cases to the right of the divider. This is what was built |
-| `Lightkeeper pairing redesign.dc.html` | The iteration archive — turns 1 to 4, every direction that was tried and rejected, and the seven day-editor options that turn 4 chose between. Read it for *why*, not for *what* |
+## How it was arrived at
 
-The settled file supersedes the archive wherever they disagree, and the archive says so itself at
-the top.
+A second canvas held the iteration — four turns and the seven day-editor options — and has been
+deleted, because the settled file supersedes it wherever they disagree and the rest is a picture of
+paths not taken. `git log --diff-filter=D -- docs/design` finds it. The argument worth keeping:
 
-**One thing in the shipped app deliberately departs from both.** The canvases move the Personal API
+- **Turn 1** offered two directions on one axis — lead with recognisable presets and hide the
+  machinery until asked, or make the setting directly manipulable so you drag the thing you are
+  describing.
+- **Turn 2** rejected both as still doing three jobs at once: set the thing, teach the model, and
+  warn about the edges. One decision per screen; every explanation either becomes the control's own
+  behaviour or leaves pairing entirely for the device's settings page, where it is read when it
+  matters rather than when somebody is trying to finish.
+- **Turn 3** stretched that over the whole circadian driver — an intro and three steps — on the
+  test that the skeleton then fits curve, daylight, schedule and controller unchanged.
+- **Turn 4** is the one that changed the product. The day handle in turn 3 *"lies by omission:
+  'warmest' is a single value the day passes through twice — once before the morning and once after
+  the evening — but a single dot at 21:00 reads as one moment."* Seven ways out were drawn; **4g,
+  round handles with the times inside their own group**, is what shipped.
+
+**One thing in the shipped app deliberately departs from the canvas.** It moves the Personal API
 Key screen to the end of the controller and schedule flows, on the grounds that the key only gates
 Flow *writes* at save. It ships early instead — after the intro, before step 1 — because somebody
 who reaches a four-step review and then cannot produce a key loses everything they just set up. The
 chore costs a returning user nothing, since the key is per-Homey and `credential.html` skips itself
 when a stored one is valid.
 
-`uploads/` holds the three screenshots of the OLD screens that were pasted into the review. The
-contact sheet of the old views that was also uploaded is not kept — `npm run render:views` produces
-the equivalent for whatever is on disk today.
+The screenshots of the OLD screens that were pasted into the review are not kept, for the same
+reason the contact sheet uploaded beside them was not: `npm run render:views` produces the
+equivalent for whatever is on disk today, and a picture of a screen that no longer exists is only a
+way to be wrong about it.
 
-The plan that turned these into code is [`../history/pairing-redesign-plan.md`](../history/pairing-redesign-plan.md).
+The plan that turned this into code has been deleted along with the rest of the archive; the
+decisions it recorded are in `CHANGELOG.md`'s 0.6.0 entry, and `git log --diff-filter=D --
+docs/history` finds the plan itself.
 
 ## `.designexports/`, and what a re-export changed
 
@@ -55,7 +70,7 @@ how this survived the first pass.
 ## What was compared, and where it departs
 
 Every screen was rendered with `npm run render:views` and held against these
-canvases on 13 September 2026, and against `.designexports/` on 14 September. The
+canvas on 13 September 2026, and against `.designexports/` on 14 September. The
 renders live in `.views/` (gitignored) and are regenerated rather than committed
 — a PNG of a screen goes stale the moment the screen changes, and the canvas plus
 the live render is the pair worth keeping.

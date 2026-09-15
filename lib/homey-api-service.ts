@@ -34,20 +34,28 @@ const HomeyAPI = require('homey-api/lib/HomeyAPI/HomeyAPI');
  * to the wrong place.
  */
 /**
- * Which managers the app-token client connects.
+ * Which managers the app-token client connects — and `insights` is deliberately
+ * NOT among them.
  *
- * `insights` is the newest and the only one that is not load-bearing: it serves
- * the week of readings a Daylight light's pairing screen draws behind its two
- * lux thresholds, which is what stops `brightLux = 500` being asked of an
- * interior room (platform §16). `connectManagers` treats a manager that will not
- * connect as degraded rather than fatal, and `readSensorWeek` answers `null`
- * rather than throwing, so a Homey that refuses this read loses the week and
- * keeps the app.
+ * `connect()` does not enable a manager's requests; it opens its realtime
+ * subscriptions. `Manager.__request` goes over HTTP either way. `DeviceCatalog`
+ * has relied on that for as long as it has existed — it calls
+ * `client.apps.getApps()` on a manager nobody connects, and that read works —
+ * so the same is true of the one thing the app asks Insights for.
  *
- * There is no `homey:manager:insights` to declare — `homey:manager:api`, which
- * the app already holds, is the only API permission that exists (platform §1).
+ * That one thing is `readSensorWeek`: a week of lux samples behind the two
+ * thresholds on a Daylight light's pairing screen (platform §16). It is history
+ * rather than a live value, so there is nothing to subscribe to, and connecting
+ * at every boot on every Homey bought two things we did not want — a
+ * subscription nobody reads, and `isConnected()` returning true, which is the
+ * gate that lets `Manager.__cache` retain a week of samples per sensor for the
+ * life of the client (platform §15).
+ *
+ * The four below ARE load-bearing: the app subscribes to device and zone events
+ * and to capability changes, and `Flow.isBroken` refuses to run without `flow`
+ * and `flowtoken` connected.
  */
-const READ_MANAGERS = ['devices', 'zones', 'flow', 'flowtoken', 'insights'];
+const READ_MANAGERS = ['devices', 'zones', 'flow', 'flowtoken'];
 
 async function connectManagers(
   api: any,
@@ -230,6 +238,10 @@ export class HomeyApiService {
     try { this.readApi?.destroy?.(); } catch { /* Best effort. */ }
     this.readApi = null;
     this.connecting = null;
+    // The WRITE client too. This owns both (see the class header), and tearing
+    // down only the read one left the key's socket session open at every
+    // shutdown — the same leak `discardClient()` fixes on the credential side.
+    this.credentials.destroy();
   }
 
   static async createWriteClient(address: string, token: string): Promise<any> {

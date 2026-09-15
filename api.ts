@@ -20,6 +20,7 @@ import type {
 } from './lib/app-contract';
 import { timezoneOf } from './lib/time/local-clock';
 import { messageOf } from './lib/support/homey-errors';
+import { heapReport } from './lib/support/heap-report';
 import { evidenceRoutes } from './lib/support/evidence-feature';
 
 /**
@@ -351,6 +352,10 @@ module.exports = {
     return {
       generatedAt: Date.now(),
       evidence: app.evidence?.status() ?? null,
+      // Never throws, and never assembled inline — platform §17 is the story of
+      // one bare memory call inside a literal taking a whole health sample with
+      // it, once a minute, for a week.
+      heap: heapReport(),
       semantics: DIAGNOSTIC_SEMANTICS,
       eventHistory: app.recentEvents.retention(),
       app: { id: homey.manifest.id, version: homey.manifest.version },

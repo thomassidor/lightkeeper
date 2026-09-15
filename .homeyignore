@@ -8,10 +8,20 @@
 /.github
 /CLAUDE.md
 /CONTRIBUTING.md
-# Internal review documents. Found in the packaged app by scripts/build.mjs's
-# own verifier, of all things: 136 KB of them were shipping to households.
-/CODE_REVIEW.md
-/LAUNCH_REVIEW.md
 /views
 
 /.evidence
+
+# Local artefacts that are gitignored but were NOT ignored here, which is a
+# different list and has to be kept as one. Anything in the working tree that
+# the CLI does not recognise goes into the archive: a 1.9 MB `print.pdf` and a
+# 1.7 MB `views.zip` were both found shipping to households, and `npm run
+# render:views` alone drops several megabytes of PNGs into `.views/`. None of it
+# is read on a Homey.
+# `test/unit/packaging.test.ts` fails if .gitignore grows an entry that is not
+# accounted for here.
+/.views
+/views.zip
+/.probe
+/.designexports
+/.dev-build

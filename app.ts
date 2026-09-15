@@ -25,7 +25,18 @@ import { fireAndForget } from './lib/support/async';
 import { BoundedLog } from './lib/support/bounded-log';
 import type { WriteRecord } from './lib/outputs/light-target-adapter';
 import { messageOf } from './lib/support/homey-errors';
+import { markPhase } from './lib/support/heap-report';
 import { timezoneOf } from './lib/time/local-clock';
+
+/**
+ * The first mark, and it has to be HERE rather than in `onInit`.
+ *
+ * Every import above has already run by this line — the app's ~100 modules and,
+ * through them, `homey-api` — so this reading is the floor the app starts from
+ * before a single line of its own logic executes. `onInit` cannot see it, which
+ * is exactly why "the app uses N MB" was never attributable.
+ */
+markPhase('modules-loaded');
 
 /**
  * Lightkeeper.
@@ -150,6 +161,9 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
   }
 
   override async onInit() {
+    // Three marks, and the gap between the first two is the point: everything
+    // this app's modules cost is already spent before this line runs.
+    markPhase('onInit-start');
     this.evidence = new EvidenceFeature({
       settings: { get: key => this.homey.settings.get(key),
         set: (key, value) => this.homey.settings.set(key, value),
@@ -321,6 +335,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     fireAndForget(this.revalidateCredential(), (...args) => this.log(...args), 'Stored-key revalidation');
 
     this.evidence.startTimer();
+    markPhase('onInit-end');
     this.log('Lightkeeper initialised');
   }
 

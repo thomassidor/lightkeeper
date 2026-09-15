@@ -34,7 +34,13 @@ function fakeApi() {
 class TestApiService extends HomeyApiService {
   attempts = 0;
   constructor(private readonly behaviour: () => Promise<any>) {
-    super({ app: { error: () => { /* silence */ } } }, {} as CredentialService);
+    // `destroy` is real on CredentialService and `HomeyApiService.destroy()`
+    // calls it — the write client is the other half of what this class owns,
+    // and tearing down only the read one used to leave its socket open.
+    super(
+      { app: { error: () => { /* silence */ } } },
+      { destroy: () => { /* nothing to close in a stub */ } } as unknown as CredentialService,
+    );
   }
 
   protected override async createAppApi(): Promise<any> {

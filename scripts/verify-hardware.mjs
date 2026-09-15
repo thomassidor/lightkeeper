@@ -1047,7 +1047,106 @@ async function commandMemory(api) {
 
   report('T59', ...verdictFor(megabytes, detail));
 
+  await reportMachinePressure(api);
+  await reportHeap(api);
+
   return megabytes;
+}
+
+/**
+ * The machine, before the app — T128.
+ *
+ * A PSS reading means nothing on its own. The reference Homey was at 10.6% free
+ * memory with 459 MB of swap in use on 14 September 2026, and under that
+ * pressure PSS reflects what the kernel has reclaimed as much as what the app
+ * holds. That is also the best explanation for the readings this pass has
+ * recorded swinging ~9 MB between restarts of one identical build, and it is
+ * why an unmodified build from five days earlier measured the same as HEAD
+ * (platform §15). Print it beside the number so nobody later reads a loaded
+ * Homey as a regression in this app.
+ *
+ * @param {any} api
+ */
+async function reportMachinePressure(api) {
+  try {
+    /** @type {any} */
+    const memory = await api.system.getMemoryInfo();
+    const total = Number(memory?.total);
+    const free = Number(memory?.free);
+    if (!Number.isFinite(total) || !Number.isFinite(free) || total <= 0) return;
+
+    const percent = (100 * free) / total;
+    const swap = Number(memory?.swap);
+    const detail = `Homey memory: ${mb(free)} MB free of ${mb(total)} MB (${percent.toFixed(1)}%)`
+      + (Number.isFinite(swap) ? `, ${mb(swap)} MB swap in use` : '');
+
+    // 15% is where the readings on the reference Homey stopped being
+    // reproducible, not a vendor threshold.
+    report('T128', percent < 15 ? 'INFO' : 'OK',
+      percent < 15
+        ? `${detail} — the machine is under pressure, so read T59 as a reading about this `
+          + 'Homey today rather than about the app. Take three, restarting between each.'
+        : detail);
+  } catch (error) {
+    report('T128', 'SKIPPED', `system.getMemoryInfo was refused: ${messageOf(error)}`);
+  }
+}
+
+/**
+ * What the app says about its OWN heap — T129, T130.
+ *
+ * This is the reading PSS cannot give. Holding a parsed catalogue and merely
+ * having parsed one cost the same RSS, so T59 can never tell them apart; a jump
+ * in `old_space` between two builds is a real finding where a jump in PSS is
+ * not (platform §15). The boot marks split the floor into "importing this app's
+ * own modules" and "everything after", which is the only attributable part of
+ * it (platform §17).
+ *
+ * @param {any} api
+ */
+async function reportHeap(api) {
+  let heap;
+  try {
+    const app = await appApi(api);
+    heap = (await app.get('/diagnostics'))?.heap;
+  } catch (error) {
+    report('T129', 'SKIPPED', `GET /diagnostics was refused: ${messageOf(error)}`);
+    return;
+  }
+
+  if (!heap || typeof heap !== 'object') {
+    report('T129', 'FAILED', 'GET /diagnostics carried no "heap" — the build predates it, '
+      + 'or heapReport() has stopped answering. Without it a retention regression is invisible.');
+    return;
+  }
+
+  const spaces = Object.entries(heap.spaces ?? {})
+    .sort((a, b) => Number(b[1]) - Number(a[1]))
+    .map(([name, bytes]) => `${name} ${mb(Number(bytes))}`)
+    .join(', ');
+
+  report('T129', 'OK', `app heap: ${mb(Number(heap.heapUsed))} MB used of `
+    + `${mb(Number(heap.heapTotal))} MB, limit ${mb(Number(heap.heapLimit))} MB`
+    + (spaces ? ` — ${spaces}` : ''));
+
+  for (const mark of heap.marks ?? []) {
+    report('-', 'INFO', `  at ${mark.phase}: ${mb(Number(mark.heapUsed))} MB of heap`);
+  }
+
+  /**
+   * T130 asserts what the sandbox REFUSES, which is a stranger thing to assert
+   * than what it allows — and it is the line that would catch a firmware
+   * mounting `/proc`, at which point §17's "RSS cannot be read from inside" is
+   * wrong and the app can finally measure itself properly.
+   */
+  const unavailable = Array.isArray(heap.unavailable) ? heap.unavailable : [];
+  if (heap.rss !== null && heap.rss !== undefined) {
+    report('T130', 'INFO', `this firmware ANSWERS /proc/self/statm: rss ${mb(Number(heap.rss))} MB. `
+      + 'That contradicts platform §17 — rewrite it, and start reporting rss from inside.');
+  } else {
+    report('T130', 'OK', `the sandbox still refuses ${unavailable.length} reading(s), as §17 records`
+      + (unavailable.length ? `: ${unavailable.join('; ')}` : ''));
+  }
 }
 
 /**

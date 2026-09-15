@@ -78,6 +78,57 @@ const ROUTE_CALL = "'/evidence";
 
 const devBuild = existsSync(join(ROOT, '.dev-build')) || process.env.LIGHTKEEPER_DEV === '1';
 
+/**
+ * Every top-level entry a packaged Lightkeeper is allowed to have.
+ *
+ * The CLI copies the repo root into `.homeybuild/` honouring `.homeyignore` and
+ * NOTHING ELSE — `.gitignore` is not consulted. So a file that git has been told
+ * to forget is still packaged, and the two mechanisms disagreeing is invisible
+ * until somebody lists the build. `CODE_REVIEW.md` and `LAUNCH_REVIEW.md` shipped
+ * 136 KB to households that way and were caught by accident; a stale `print.pdf`
+ * and a `views.zip` of deleted screens were sitting here for the same reason when
+ * this check was written, 3.6 MB between them.
+ *
+ * An allowlist rather than a denylist, because the failure is always a file
+ * nobody thought about. Adding a legitimate root means adding it here, which is
+ * one line and a moment's thought about whether a household should receive it.
+ *
+ * `eslint.config.mjs` and `tsconfig.test.json` are here deliberately. They ship,
+ * they carry `extends`/`include` paths that are not in the archive, and CLAUDE.md
+ * argues at length that this is inert and not worth fixing — nothing on the
+ * device reads either. They are listed so this check stays a stray-file guard
+ * rather than a reopening of that argument.
+ */
+const EXPECTED_ROOTS = new Set([
+  'LICENSE', 'README.txt',
+  'api.js', 'app.js', 'app.json',
+  'assets', 'drivers', 'lib', 'locales', 'settings',
+  'node_modules', 'package.json', 'package-lock.json',
+  'eslint.config.mjs', 'tsconfig.test.json',
+]);
+
+/**
+ * Fail the build on anything at the root of `.homeybuild/` that is not expected.
+ *
+ * Runs for dev and launch builds alike: a stray file is not a recorder problem,
+ * and the build that ships is not distinguishable from the build that does not
+ * (see the header). Dotfiles are skipped — the CLI's own default rules keep them
+ * out of the package, and `.dev-build` is deliberately one of them.
+ */
+function verifyNoStrays() {
+  if (!existsSync(BUILD)) return;
+  const strays = readdirSync(BUILD)
+    .filter(entry => !entry.startsWith('.') && !EXPECTED_ROOTS.has(entry));
+  if (strays.length > 0) {
+    const label = strays.length === 1 ? 'entry' : 'entries';
+    throw new Error(
+      `.homeybuild/ contains ${strays.length} unexpected top-level ${label}, which would ship to`
+      + ` households:\n  ${strays.join('\n  ')}\n`
+      + 'Delete it, add it to .homeyignore, or add it to EXPECTED_ROOTS in scripts/build.mjs.',
+    );
+  }
+}
+
 /** @param {string} directory @returns {Generator<string>} */
 function* filesUnder(directory) {
   for (const entry of readdirSync(directory)) {
@@ -204,6 +255,8 @@ function strip() {
  * resolution entirely.
  */
 execFileSync(process.execPath, [join(ROOT, 'node_modules/typescript/bin/tsc')], { cwd: ROOT, stdio: 'inherit' });
+
+verifyNoStrays();
 
 if (devBuild) {
   console.log('');

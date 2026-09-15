@@ -388,6 +388,18 @@ export class CircadianRuntime {
    */
   private readonly probes = new Map<string, { timer: unknown; generation: number }>();
   /** Monotonic per device; bumped on every write that could start a probe. */
+  /**
+   * Deliberately NOT dropped when a target leaves, unlike its five siblings
+   * above — and the asymmetry is the point rather than an oversight.
+   *
+   * The others are caches of what a lamp was last told; stale ones must go or a
+   * rejoining light is gated against a write from a plan it is no longer in.
+   * This is a monotonic counter a deferred probe compares itself against. Drop
+   * it and the count restarts at 1 for a light that leaves and rejoins, so a
+   * probe still in flight from the first spell matches the second and acts on
+   * an answer to a question nobody asked. Keeping one small number per device
+   * ever targeted is the cheaper half of that trade; `stop()` clears it.
+   */
   private readonly writeGeneration = new Map<string, number>();
 
   /** The target set this runtime is built against. See the controller's. */

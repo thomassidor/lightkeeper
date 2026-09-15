@@ -284,6 +284,44 @@ has something it should not.
       first setup and failed recovery: no candidate should keep controlling lights. Do not fill
       or damage the Homey's actual storage to induce this failure.
 
+**And the memory work, which changed what T59 and T60 mean.**
+
+Read [§15's "Where it stops, and what was established by trying"](homey-platform.md#15-homey-api-caches-every-getall-result-forever)
+before running these. The short version: on 14 September 2026 the unmodified 9 September build was
+reinstalled beside HEAD on the same Homey and measured the same, so **T59's number is a property of
+the machine rather than of this app**, and three restarts of one build spanned 71.4–80.1 MB.
+
+- [ ] **T127** Take T59 **three times**, restarting the app between each, and report all three.
+      A single reading cannot distinguish a 5 MB regression from noise on this hardware. Report the
+      spread, not the best one.
+- [ ] **T128** Before believing any of them, read the machine: `system.getMemoryInfo`'s `free` and
+      `swap`, and the `types` map. A Homey with 10.6% free memory and 459 MB of swap in use — which
+      is what the reference Homey was on 14 September — reports app PSS that reflects what the
+      kernel has reclaimed as much as what the app holds. If `free` is under about 15%, say so
+      alongside the number or it will be read as a regression later.
+- [ ] **T129** `GET /diagnostics` now carries `heap`. Confirm it answers, and record `heapUsed`,
+      the `spaces` split and the three `marks`. Expected on a freshly restarted app with no
+      devices: `modules-loaded` ≈ 8.8 MB, `onInit-end` ≈ 12.8 MB, settled ≈ 15.2 MB, with
+      `old_space` the largest space. **This is the only reading that can tell retention from a
+      parse**, so a jump in `old_space` between two builds is a real finding where a jump in PSS
+      is not.
+- [ ] **T130** Confirm `heap.unavailable` still names exactly the two readings the sandbox refuses
+      — `/proc/self/statm` with `ENOENT`, and nothing else. If `rss` starts answering, a firmware
+      has mounted `/proc` and §17 needs rewriting. Ignore `maxRss`: it is inherited from the
+      app-runner parent and reads identically across restarts and reinstalls.
+- [ ] **T131** Pair a Daylight light and open its sensor screen twice, a minute apart, on a sensor
+      whose lux has changed in between. The week behind the thresholds must redraw with the newer
+      reading — the Insights read now opts out of `homey-api`'s cache, which was both a retention
+      leak and a stale screen.
+- [ ] **T132** With a controller or curve light running, force a re-subscribe (rename a zone, or
+      add and remove a light from the target set) and confirm the lights keep responding. The
+      subscribe path now reads its device uncached so that `homey-api` does not queue a
+      whole-Homey device refresh behind every re-subscribe; a regression here shows as lights
+      that stop following after a catalogue change.
+- [ ] **T133** Run `npm run render:views` and then `npx homey app install`. The archive must not
+      grow by the size of `.views/`. Report the archive size the CLI prints — it was 11.6 MB with
+      826 files on 14 September.
+
 ### Last run — 13 September 2026 (evening), firmware 13.5.0, app 0.6.0 + the pairing rewrite
 
 Run **twice**, in **Studio** and then in **Garage**, because the pass takes its test lamps from one

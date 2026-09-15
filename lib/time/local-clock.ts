@@ -39,6 +39,38 @@ export function localNow(timezone: string | undefined, nowMs: number): LocalCloc
 }
 
 /**
+ * One `Intl.DateTimeFormat` per timezone, reused.
+ *
+ * Constructing one is not a plain object allocation: it builds an ICU formatter
+ * in ICU's own native arenas, which is memory `v8.getHeapStatistics()` cannot
+ * see and a heap profile will never show. This function is called from both 60 s
+ * tick paths and from four places in `app.ts` and `api.ts`, so the old
+ * construct-per-call was allocating off-heap on a timer for the life of the app.
+ *
+ * The map is bounded by the number of distinct timezone strings a Homey reports,
+ * which is one — it changes only if the household moves — so this is a memo, not
+ * a cache that needs eviction. An unusable timezone never reaches here: the
+ * caller's `try` catches the construction throw exactly as before, and a
+ * rejected string is simply never memoised.
+ */
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+function formatterFor(timezone: string): Intl.DateTimeFormat {
+  let formatter = formatters.get(timezone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    formatters.set(timezone, formatter);
+  }
+  return formatter;
+}
+
+/**
  * The same clock, plus whether the Homey's own timezone was actually used.
  *
  * The fallback below is right for a circadian light — a curve an hour out is
@@ -54,13 +86,7 @@ export function localNowResolved(
 ): { clock: LocalClock; resolved: boolean } {
   if (timezone) {
     try {
-      const parts = new Intl.DateTimeFormat('en-US', {
-        timeZone: timezone,
-        weekday: 'short',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-      }).formatToParts(new Date(nowMs));
+      const parts = formatterFor(timezone).formatToParts(new Date(nowMs));
 
       const weekday = parts.find(p => p.type === 'weekday')?.value ?? '';
       const hour = Number(parts.find(p => p.type === 'hour')?.value);

@@ -152,6 +152,10 @@ lib/
                                 lamp writes: that is DeviceQueue, inside command-scheduler.ts.
                                 KeyedMutex serialises subscribe/unsubscribe, device-lifecycle
                                 operations and flow folders instead
+    heap-report.ts              what the app can see of its OWN memory from inside the sandbox —
+                                v8 heap stats, the per-space split, and three boot marks, every
+                                reading behind its own guard. On /diagnostics. The signal PSS
+                                cannot give (platform §15, §17)
     evidence-sink.ts            the ONE seam between anything producing evidence and whatever
                                 consumes it. A file of its own so a runtime depends on a
                                 signature, never on the recorder that implements it today
@@ -252,6 +256,9 @@ docs/                           NOT bundled. `docs/README.md` indexes it
   privacy.md                    the privacy notice
   homey-review-notes.md         for Athom's reviewer
   localisation.md               English-only on purpose; how to add a language back
+  memory-investigation.md       WHY THE FOOTPRINT IS WHAT IT IS, measured against a control app
+                                installed beside it. An empty Homey app is 30.6 MB, which is the
+                                whole guideline — read this before optimising for memory
   hardware-test-plan.md         the standing pass on a real Homey: what to DO, and how to report
   hardware-test-coverage.md     what covers what — the script, the suite, and the retired lines
   commands.md                   every command in one place, with the trap that goes with each
@@ -259,7 +266,17 @@ docs/                           NOT bundled. `docs/README.md` indexes it
                                 behind each, and the two things that only looked like defects
   week-long-testing.md          the opt-in seven-day recorder: what it captures, what it does
                                 NOT, and how to read an archive back
-  history/                      ARCHIVE: the completed 0.5.0 remediation project
+  open-work.md                  WHAT IS KNOWN TO BE UNFINISHED, and nothing else. Carried out of
+                                the 9 September remediation pass when its 1,290-line review was
+                                deleted. The two other live lists stay where they belong and are
+                                linked, not copied
+  decisions.md                  five arguments that outlived the documents they were written in —
+                                the binding-shape fold, the declined device argument and what a
+                                fix needs, the filter that fails closed, InvalidRangeError's path,
+                                and two things the remediation deliberately did not do
+  design/                       the Claude Design canvas the 0.6.0 pairing rewrite was built
+                                from, its runtime, and a README that is itself a decision
+                                record: the four turns, and six deliberate departures
 artwork/                        NOT bundled. Every graphic's source, and its own two docs
   masters/                      every graphic's source
   export-assets.py              builds every shipped icon and image from those
@@ -639,6 +656,9 @@ Load-bearing product guarantees, not implementation details:
 - **Ramps hard-stop after 10 seconds.** Not configurable, deliberately not read from settings.
   Release events are routinely dropped on Zigbee and unreliable on Matter/Thread, so a stuck ramp is
   a certainty rather than a risk.
+- **Nothing survives teardown.** No timer, subscription, ramp or queued write outlives the runtime
+  that owns it. Every one of them holds a reference to a device that may already be deleted, and a
+  write that lands after teardown is a write nothing is left to attribute, cancel or report.
 - **A positive brightness is never written as darkness.** Brightness is stored perceptually and
   written in device values through γ = 2.2, so the bottom of the axis is where quantisation bites:
   5% becomes `dim` 0.0014, which `decimals: 2` rounds to 0.00. `MINIMUM_BRIGHTNESS` (0.10) is the
@@ -660,6 +680,10 @@ Load-bearing product guarantees, not implementation details:
   through — which is exactly how a Curve light came to sit on the colour it last held. The colour leg
   has always decided per device; the temperature leg now does too.
 - **Flows that look user-edited are never overwritten.** The controller is marked for repair instead.
+- **Folder work never blocks a Flow write.** Every `FlowFolderManager` method catches its own
+  failure and degrades to "no folder". A folder is presentation only and is never evidence of
+  ownership — attribution is the controller id in the bridge action's arguments (below), so a Flow
+  outside its folder is still ours and a Flow inside one is not ours because of it.
 - **An override always ends.** `OVERRIDE_EXPIRY_MS` (4 h) is the second way out, beside the `onoff`
   edge, and it exists because the `onoff` gesture assumes a PERSON raised the override. A lamp that
   accepts a write, acks it and reverts to its own values a minute later raises one just as well —
@@ -698,14 +722,35 @@ Load-bearing product guarantees, not implementation details:
   the app had read one, 43.9 MB immediately after), because V8 never returns the pages. So NOT
   retaining and never reading cost the same unless the read is avoided altogether — which is why
   `bridgeCards()` asks for its three cards by name and `getDiagnostics` peeks at the time card
-  rather than looking it up. Getting under 30 would mean parsing that response incrementally instead
-  of through `homey-api`. `node scripts/verify-hardware.mjs memory` checks it —
-  T59 reports the 30 MB guideline and fails past a 100 MB ceiling. That line is a smoke check for a
-  new bulk read, not a retention test: RSS cannot tell holding a catalogue from having parsed one.
-  **The floor moves with the house rather than with this app's code**, which was established by
-  installing two builds four days apart on one Homey and measuring both (67.5 MB and 68.2 MB against
-  the same four devices, 13 September 2026) — so compare a reading only with one from the same house,
-  and reinstall before believing a high one.
+  rather than looking it up.
+  **Do not reach for incremental parsing on the strength of that number: it was tried, and §15
+  records what happened.** A streaming reader was built, verified byte-exact against `homey-api`
+  across all 1832 cards, and measured on hardware — where it changed nothing, because this house's
+  catalogue is 1.0 MB rather than the 11.6 MB the figure above came from, and a 1 MB parse fits in
+  heap slack. It was reverted. Read §15's "Where it stops, and what was established by trying"
+  before spending a day on the same idea.
+  `node scripts/verify-hardware.mjs memory` checks the number — T59 reports the 30 MB guideline and
+  fails past a 100 MB ceiling. That line is a smoke check for a new bulk read, not a retention test:
+  RSS cannot tell holding a catalogue from having parsed one. **The signal that can is the app's own
+  `heapUsed`, which `/diagnostics` now carries** along with the per-space split and three boot marks
+  (§17) — 15.2 MB of heap with no devices, 8.8 MB of it spent importing the app's own modules before
+  `onInit` runs.
+  **And the guideline itself is not reachable by any app.** A do-nothing Homey app — `require('homey')`
+  and an empty `onInit` — was installed beside Lightkeeper on 15 September 2026 and measured in the
+  same minute: **30.6 MB of PSS**. Lightkeeper's own code accounts for **under 1 MB** above a control
+  app that has made the same API calls; the biggest app-attributable item is `socket.io-client`
+  inside `homey-api`, at ~13.7 MB of RSS to require. `docs/memory-investigation.md` has the whole
+  ladder, the control-app method, and the five recorded assumptions it overturns — including that
+  "V8 never gives the pages back" is a laptop fact, not a Homey one. **Read it before optimising
+  anything for memory**, and report this app's footprint as its margin over a control app rather
+  than as an absolute.
+  **The floor moves with the house rather than with this app's code.** Established twice: two builds
+  four days apart measuring the same (67.5 / 68.2 MB, 13 September 2026), and then properly, by
+  installing the unmodified 9 September build — whose own line recorded 36.6 MB — alongside HEAD on
+  14 September and getting **the same ~75 MB from both**. That Homey was at 10.6% free memory with
+  459 MB of swap in use. **Compare a reading only with one from the same house on the same day**,
+  take three (one build restarted three times read 71.4, 73.9 and 80.1 MB), and reinstall before
+  believing a high one.
 - **The API key is never logged, never returned over the app API, and never included in
   diagnostics.** Errors are classified before logging, because an error object can echo the token.
   `test/unit/diagnostics-redaction.test.ts` asserts this against serialised output.
@@ -719,10 +764,19 @@ Load-bearing product guarantees, not implementation details:
   a single session (platform §2), so two concurrent `createLocalAPI` calls fight over it — and at
   boot the app's own revalidation races every controller's first reconcile. Symptom if this is removed: a key
   that was just accepted "randomly" stops working minutes later.
+- **A credential is validated by a real Flow WRITE, never by a read.** A read succeeds on a key
+  that cannot write Flows at all (platform §1), so a read-probed key is accepted at pairing and then
+  fails at the first thing the device exists to do. The token-changed guard in `getWriteClient` is
+  the other half and stays with it.
 - **A recovered key returns controllers to ready without a restart.** `needs_credential` is the one
   state a health re-check may leave downward (`recoverFromCredentialFailure`), because it asserts
   the runtime was sound and only the key was not. Without it, "mint a new key and paste it in" ends
   with every device still unavailable, which reads as the new key being bad too.
+- **The Test control works before save, and without Flows.** `startWithoutFlows` and the ephemeral
+  runtimes behind it are what let somebody press a button on the pairing screen and watch the lamp
+  answer, which is the only evidence they get that the thing they are configuring works. It is easy
+  to break from either end — a refactor that assumes a registered runtime, or one that assumes
+  Flows exist — so it is stated here rather than left to the tests.
 - **Managed Flow references are only carried forward while the source device is unchanged.**
   `carryForwardFlows()`. A flow's trigger embeds the source device id, so after a re-attach (or a
   repair that picks a different remote) the old references describe flows that can never fire —

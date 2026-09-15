@@ -167,7 +167,8 @@ is 1 if anything failed.
 
 ```bash
 node scripts/verify-hardware.mjs spike            # can it reach a Homey at all? Default command
-node scripts/verify-hardware.mjs memory           # PSS against Homey's 30 MB guideline
+node scripts/verify-hardware.mjs memory           # PSS, the machine's free memory and swap,
+                                                 # and the app's own heap with three boot marks
 node scripts/verify-hardware.mjs flows redaction  # several at once
 node scripts/verify-hardware.mjs all              # every read-only command
 node scripts/verify-hardware.mjs full --yes       # the whole pass, in the plan's order
@@ -193,6 +194,16 @@ what each one would do, then refuses.
 
 `full` is `spike memory pair flows schedule preview rejoin restart bridge credential redaction repair
 teardown`, in that order.
+
+**The trap on `memory`: the PSS number is the least reliable thing the pass prints.** Three restarts
+of one identical build read 71.4, 73.9 and 80.1 MB, and an unmodified build from five days earlier
+measured the same as HEAD on the same Homey — so take **three readings, restarting between each**,
+read it on a freshly installed app, and only ever compare it with a reading from the same house on
+the same day. `T128` prints the machine's free memory and swap for exactly this reason; under about
+15% free, the number says more about the Homey than about the app. **`T129` — the app's own
+`heapUsed` and its per-space split — is the reading that can actually catch a regression**, because
+PSS cannot tell holding a parsed catalogue from having parsed one. See
+[platform §15](homey-platform.md#15-homey-api-caches-every-getall-result-forever).
 
 **It only ever touches its own devices.** Everything it builds is named `[verify] …`, every command
 selects from the marked ones, and `teardown` re-checks the mark against the Homey immediately before

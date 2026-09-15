@@ -17,7 +17,7 @@ Two Personal API Keys, and they must differ: a key holds a single live session a
 | Command | Test-plan lines | Effect on the Homey |
 |---|---|---|
 | `spike` | — | none. Answers whether the rest can run |
-| `memory` | T59, T60 | none — read-only |
+| `memory` | T59, T60, T128, T129, T130 | none — read-only |
 | `pair` | T5, T6, T7, T12, T13, T19, T20, T26, T77, T78 | builds one of each device type, its own even if you already have some. Reuses a marked one left by an earlier run. **T78 is where the `homey:manager:geolocation` permission is proved** — no unit test can reach it |
 | `flows` | T2, T8, T16, T23, T30, T79 | none — read-only |
 | `redaction` | T42–T45 | none. Searches the diagnostics report for both keys and a slice of each |
@@ -63,6 +63,15 @@ blob the app migrates.
 restores, the whole-app `restart`, and the lamps themselves, which are shared with whatever your own
 devices drive. `docs/hardware-test-plan.md` states all three where a person will read them before
 running the pass.
+
+**Read `memory`'s output from the bottom up, not the top.** T59's PSS is the least trustworthy
+number the pass produces: on 14 September 2026 the unmodified 9 September build was reinstalled
+beside HEAD on one Homey and measured the same, and three restarts of one build spanned 71.4–80.1 MB
+(platform §15). So the command now prints T128 — the machine's free memory and swap — and T129, the
+app's own `heapUsed`, per-space split and three boot marks read off `GET /diagnostics`. **T129 is the
+only one of the three that can distinguish holding a parsed catalogue from having parsed one**, which
+is the regression T59 was wrongly expected to catch. T130 asserts that the sandbox still refuses
+`/proc/self/statm`; if it ever answers, §17 is wrong and the app can measure its own RSS.
 
 **`memory` is the only line whose answer is a number rather than a state**, and it is here because
 the app was 48 MB against Homey's 30 MB guideline — almost all of it `homey-api` retaining both

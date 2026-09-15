@@ -306,6 +306,15 @@ export async function readSensorWeek(
     const log = await api?.insights?.getLogEntries({
       id: luminanceLogId(deviceId),
       resolution,
+      // Both halves of the opt-out, for both of platform §15's reasons.
+      // MEMORY: `insights` is one of the managers `HomeyApiService.read()`
+      // connects, so `isConnected()` is true and anything this returns is
+      // written into `ManagerInsights.__cache` for the life of the client — a
+      // week of samples per sensor, kept forever, to draw one pairing screen
+      // that is closed seconds later. CORRECTNESS: a week is a moving window,
+      // so a cached answer means the screen redraws yesterday's.
+      $cache: false,
+      $updateCache: false,
     });
     const values = Array.isArray(log?.values) ? log.values : null;
     if (!values) return null;

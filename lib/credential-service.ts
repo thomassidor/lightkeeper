@@ -164,6 +164,34 @@ export interface CredentialServiceOptions {
 
 export class CredentialService {
   private client: unknown = null;
+
+  /**
+   * Drop the write client AND close its socket.
+   *
+   * Every site that used to write `this.client = null` leaked: nulling the
+   * reference leaves `homey-api`'s `SocketSession`, its `SubscriptionRegistry`
+   * and its `DiscoveryManager` alive and connected, with nothing left holding
+   * them that could ever close them. A key that is re-minted a few times leaves
+   * that many orphaned socket.io connections open for the life of the app.
+   *
+   * Best effort on purpose: the common reason we are discarding a client is
+   * that its session already died (platform §2), and `destroy()` on a dead
+   * socket must not become an error the caller has to handle.
+   */
+  private discardClient(): void {
+    const previous = this.client as { destroy?: () => void } | null;
+    this.client = null;
+    try { previous?.destroy?.(); } catch { /* the session has already gone */ }
+  }
+
+  /**
+   * Teardown. Called from `HomeyApiService.destroy()`, which owns the read
+   * client and — until this existed — tore down only that one.
+   */
+  destroy(): void {
+    this.discardClient();
+    this.connecting = null;
+  }
   /** The handshake in flight, so concurrent callers cannot start a second one. */
   private connecting: Promise<unknown> | null = null;
   private status: CredentialStatus = { present: false, valid: false };
@@ -225,7 +253,7 @@ export class CredentialService {
         return this.getStatus();
       }
       this.options.log(`Stored API key is not usable: ${failure}`);
-      this.client = null;
+      this.discardClient();
       return this.fail(failure);
     }
   }
@@ -270,6 +298,10 @@ export class CredentialService {
 
     if (generation !== this.generation) return this.getStatus();
     this.options.settings.set(SETTINGS_KEY, token);
+    // A key being replaced leaves the PREVIOUS key's client connected unless it
+    // is closed here — this is the assignment that made "re-mint a key" leak one
+    // socket every time.
+    this.discardClient();
     this.client = client;
     // Any handshake still in flight belongs to the previous key.
     this.connecting = null;
@@ -278,7 +310,7 @@ export class CredentialService {
 
   clearCredential(): void {
     this.options.settings.unset(SETTINGS_KEY);
-    this.client = null;
+    this.discardClient();
     this.connecting = null;
     this.generation += 1;
     this.status = { present: false, valid: false };
@@ -337,7 +369,7 @@ export class CredentialService {
   reportFailure(error: unknown, revision = this.generation): CredentialFailure {
     const failure = classifyCredentialError(error);
     if (revision === this.generation && failure !== 'unknown') {
-      this.client = null;
+      this.discardClient();
       this.connecting = null;
       this.fail(failure);
     }

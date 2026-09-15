@@ -164,8 +164,10 @@ describe('LK-007: an app-level card with a filtered device argument', () => {
      *
      * So the decline stands and says why. Every reference device resolves through
      * `device_scoped`, so nothing shipped depends on this route; what changed is
-     * that a user who hits it now gets a message that names the cause. See
-     * DEVIATIONS.md for what a fix needs.
+     * that a user who hits it now gets a message that names the cause. A fix
+     * needs one `getFlowCardTriggers()` capture of such a card plus one Flow
+     * hand-built through the Web API setting that argument, to read back how the
+     * value serialises — until then it stays declined (`docs/decisions.md`).
      */
     const result = await discoveryOver([APP_LEVEL_FILTERED]).discover(device());
     assert.deepEqual(result.inputs, []);

@@ -33,8 +33,12 @@ export const RANGE_EXPANSION_CEILING = 12;
  *
  * `flow_enum` keeps its `argument`/`value` pair ON TOP of `fixedArgs` rather than
  * folding into `flow_fixed`, because that pair is also what its variant key is
- * built from (`enum:<value>`) — see `docs/history/DEVIATIONS.md` for the fold that was
- * considered and why it cannot keep that key stable.
+ * built from (`enum:<value>`). The fold was considered and cannot keep that key
+ * stable: once the enum value sits in `fixedArgs` beside a selector and a
+ * direction, nothing says which entry was the enum, so the compiler cannot
+ * rebuild `enum:<value>`. Hashing `fixedArgs` instead is a different key and
+ * churns every installed controller's Flows, since reuse is keyed on it.
+ * `docs/decisions.md` has the long form.
  */
 export type LogicalSourceBinding =
   | { kind: 'direct_capability'; capabilityId: string; interpreter: ValueInterpreter }

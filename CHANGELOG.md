@@ -592,6 +592,155 @@ What that turned up, screen by screen:
   instead of after thirty seconds of nothing; the try-it screen's time, label and strip are one card;
   the daylight review's second end carries a swatch.
 
+### The process documents cleared out, and a guard so the build stops shipping strays
+
+The repository had been carrying the record of building the app beside the app: a 1,290-line code
+review, a launch review it had already absorbed, the twelve-file remediation archive that produced
+0.5.0, the iteration canvas the pairing redesign was argued out in, and 1.4 MB of screenshots of
+screens that no longer exist. All of it finished, none of it bundled, and the reader of a `docs/`
+index had to decide each time which documents described the app and which described its past.
+
+Deleted — git history keeps every word — after four rescues, because most of the argument in those
+documents turned out to be duplicated in the code that it explains, and the rest had to be moved
+before it could be dropped:
+
+- **[`docs/open-work.md`](docs/open-work.md)** is new and is what the code review was still being
+  kept for: tests owed for seven launch-review fixes, two one-line defects still present in the
+  tree (a `targetIds` that defaults to writing nothing, and a `pendingColor` never read), the
+  fifteen structural items, and three questions only hardware can answer. It was on line 66 of
+  1,290 and is now the whole file.
+- **[`docs/decisions.md`](docs/decisions.md)** is new and holds the five arguments shipped code
+  still cites — why `flow_enum` was not folded into `flow_fixed`, why an app-level `type: "device"`
+  argument is declined **and what a fix would need**, why an unevaluable filter key fails closed,
+  how `InvalidRangeError` reaches the user, and the two things the remediation deliberately did not
+  do. The three code comments that used to point at the deleted archive now carry their own reason.
+- **Four invariants moved into `CLAUDE.md`'s safety list**, where the other six already were: a
+  credential is validated by a real Flow write and never by a read, folder work never blocks a Flow
+  write, nothing survives teardown, and the Test control works before save and without Flows.
+- **The design README absorbed the iteration canvas's argument** — the four turns, and the reason
+  the day editor ended up with two handles: *"'warmest' is a single value the day passes through
+  twice, but a single dot at 21:00 reads as one moment."*
+
+**And one thing that was not tidiness.** `.homeybuild/` was found holding a stale `print.pdf` and a
+`views.zip` of screens deleted three commits earlier — 3.6 MB that would have shipped to
+households, because the Homey CLI honours `.homeyignore` and does not consult `.gitignore` at all.
+That is the same way 136 KB of review documents shipped once before. `scripts/build.mjs` now checks
+`.homeybuild/`'s top level against an allowlist and **fails the build** on anything else, naming it
+— an allowlist rather than a denylist, because the file that ships is always the one nobody thought
+about.
+
+
+### What the memory number is actually made of
+
+A deep look at the app's footprint against Homey's 30 MB guideline. **The headline is a negative
+result, and it is the most useful thing here: the app's own code is not what puts it over.**
+
+The evidence, all gathered on one Homey on 14 September 2026:
+
+- **The 9 September build was reinstalled alongside HEAD and measured the same.** That build's own
+  test line recorded 36.6 MB five days earlier; on the same Homey, against the same five devices, it
+  read **80.7 / 73.6 / 72.9 MB** where HEAD read **80.1 / 73.9 / 71.4 MB**. Same code, same house,
+  five days, twice the number.
+- **What had changed was the Homey**: 10.6% free memory (0.20 of 1.85 GB), 459 MB of swap in use,
+  312 MB of app memory already swapped out, and a `homey` core process holding 476 MB.
+- **Three restarts of one identical build read 71.4, 73.9 and 80.1 MB**, so nothing smaller than
+  about 10 MB is measurable here from a single reading. Several single-number comparisons in the
+  older records cannot bear the weight they were given.
+
+Added, because none of the above was answerable before:
+
+- **The app can now see its own memory, and `/diagnostics` reports it.** `process.memoryUsage()`
+  throws in the app sandbox and `/proc` is not mounted at all, so RSS genuinely cannot be read from
+  inside — but `v8.getHeapStatistics()` and the per-space split can, and they are the only signal
+  that distinguishes *holding* a parsed catalogue from *having parsed* one, which PSS cannot.
+  Three boot marks come with it: the app's JS heap is **15.2 MB with no devices**, of which
+  **8.8 MB is spent importing its own modules** before `onInit` runs.
+- `process.resourceUsage().maxRSS` is reported but documented as unusable: it read an identical
+  105.3 MB across an app restart and two reinstalls, because it is inherited from the app-runner
+  parent through `fork()` rather than reset for the app.
+
+Tried and reverted, recorded so nobody spends the day again:
+
+- **Incremental parsing of the flow-card catalogue** — the lever the platform reference had named as
+  the only one left. It was built and it worked: byte-exact against `homey-api` across all 1832
+  cards, and on a cold process it cut the read from **+16.88 MB of RSS to +0.10 MB**. On hardware it
+  changed nothing, because the 11.6 MB payload the reasoning rested on is now **1.0 MB**, and a 1 MB
+  parse fits in heap slack that is already there. Reverted rather than kept for a theoretical house.
+- Two findings survive it: the card endpoint has **no server-side filter** (nine query shapes tried
+  against the live Homey, all returning byte-identical full bodies), and Node's global `fetch` is
+  undici, whose lazy initialisation alone costs **+21.24 MB of RSS** against `node:http`'s 6.81 MB.
+
+Fixed, and each of these is real regardless of the number:
+
+- **A whole-Homey device re-parse on every re-subscribe.** `makeCapabilityInstance` asks `homey-api`
+  to refresh every device in the house when the device it is called on is more than 2.5 s stale, and
+  a device served from cache always is — so every catalogue change, re-attach and client rebuild
+  queued a full `getDevices()`. Reading the one device fresh costs a single round trip instead.
+- **A sensor's Insights week was being cached forever.** The `insights` manager is connected, so a
+  week of lux samples per sensor was retained for the life of the client to draw a pairing screen
+  that closes seconds later — and the cached copy meant the screen redrew yesterday's week.
+- **A rate-limit map that was never cleared.** `lastLoggedAt` kept an entry per (device, capability)
+  that had ever failed a write, for the adapter's whole life.
+- **Local artefacts could still ship to households.** `.views/`, `.probe/`, `.designexports/` and
+  `views.zip` were gitignored but not ignored by the packager, so rendering the pairing screens and
+  then installing would upload them. A test now fails if `.gitignore` grows an entry that
+  `.homeyignore` does not account for — the companion to the build-output allowlist above, catching
+  the same class of mistake one step earlier.
+
+Two maps that look like the same leak and are not — `targetGenerations` and `writeGeneration` — now
+carry the reason they are deliberately never deleted: both are compared against a value captured
+earlier, and removing an entry would make a stale closure compare equal to a fresh one.
+
+For scale, every app on that Homey: Spotify 10.5 MB, Circadian Lighting 13.3, CountDown 13.3,
+IKEA 21.3, Hue 33.0, Reolink 61.8 — median 27.2 across 32 apps, with Lightkeeper second. A reading
+is only meaningful next to that list.
+
+### A control app, and what it proved about the memory number
+
+A second memory pass, starting from nothing and deliberately re-deriving what the first one had
+concluded. The method is the finding: **a do-nothing Homey app was installed beside Lightkeeper and
+both were measured in the same minute.** An absolute reading on a Homey at 11% free memory is worth
+very little — three restarts of one build span 9 MB — but a difference between two apps read seconds
+apart survives that, because both are subject to the same machine.
+
+`docs/memory-investigation.md` has the whole ladder. The short version:
+
+- **An empty Homey app — `require('homey')` and an empty `onInit` — costs 27.6 MB of PSS.** Homey's
+  guideline is 30 MB.
+- Layer by layer on one process: `require('homey-api')` +0.1 MB, the first API client **+8.8 MB**,
+  connecting five managers +1.7, reading 1816 flow cards +10.5, reading 119 devices +1.5, and a
+  **second API client +0.0**.
+- Left idle, that control app settled at 43.5 MB having built two clients and done five bulk reads —
+  while Lightkeeper with no devices sat at 44.3 MB. **The app's own code is about 1 MB of the
+  difference.**
+- The cost is the transport libraries, not Athom's client: `socket.io-client` alone is +13.7 MB of
+  RSS to require, `node-fetch` +10.2, and the whole of `homey-api`'s local client +18.1.
+
+Two recorded assumptions did not survive:
+
+- **"V8 never gives the pages back" is a laptop fact, not a Homey one.** PSS was observed *falling*
+  11.8 MB on an idle process with nothing freed, and repeat catalogue reads cost +2.3, then +1.2,
+  then +0.0 MB. A pressured kernel reclaims. Avoiding a transient peak is worth much less than the
+  platform reference assumed, and §15 now says so.
+- **Peer apps are not smaller; they are paged out.** Lightkeeper is the only app on that Homey with
+  a `pssSwap` of zero, because it is the one being restarted. Spotify reads 10.1 MB resident and
+  8.8 MB swapped; on `pssTotal` the median app is ~36 MB and Lightkeeper is second of thirty-two.
+  Comparing a freshly restarted app's `pss` with a week-old one's is the easiest mistake here, and
+  the first draft of the investigation made it.
+
+Fixed along the way, each because it is right rather than because the number moves:
+
+- **The write client's socket was never closed.** Four sites dropped the reference without calling
+  `destroy()`, and a fifth replaced a live client with a new one — so every credential failure,
+  every cleared key and every re-minted key left an orphaned socket.io connection open for the life
+  of the app, and shutdown tore down only the read client. All five now close the socket first.
+- **The `insights` manager is no longer connected at boot.** `connect()` opens realtime
+  subscriptions; it does not enable requests — which the app already relied on elsewhere without
+  noticing. Its one use is a week of history for a Daylight pairing screen, and there is nothing
+  live to subscribe to. Verified on hardware: all four lux sensors still return a full week.
+- **One `Intl.DateTimeFormat` per timezone instead of one per call.** Constructing one allocates in
+  ICU's native arenas — memory no heap profile can see — and it was being built on both 60-second
+  tick paths for the life of the app.
 
 ## 0.5.2
 

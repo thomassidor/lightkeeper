@@ -480,7 +480,7 @@ export class FlowBridgeManager {
          * BOTH of the compiler's declines, not just one.
          *
          * `InvalidRangeError` is documented as reaching the user through this
-         * same path — by its own class comment, by `DEVIATIONS.md` and by
+         * same path — by its own class comment and by
          * `lib/profiles/migrations.ts`, and the sibling caller
          * `findUncompilableBindings` catches both. Only this one did not, so it
          * escaped and aborted the whole pass before a single flow was written:

@@ -1199,6 +1199,14 @@ the same question.
 
 ### Not retaining is only half of it: V8 never gives the pages back
 
+> **Superseded in part, 15 September 2026.** Everything in this subsection is true on a laptop and
+> was measured there. On a Homey it is not: PSS was observed FALLING 11.8 MB on an idle app process,
+> with nothing freed and no collection requested, and repeat catalogue reads cost +2.3, then +1.2,
+> then +0.0 MB. A pressured kernel reclaims pages, so resident memory is not the one-way ratchet
+> this section describes, and **avoiding a transient peak is worth much less than the reasoning
+> below assumes.** Several decisions in this file rest on that reasoning; see
+> [`memory-investigation.md`](memory-investigation.md) §3.2 before relying on any of them.
+
 Measured on Node 22, parsing one 1700-card payload and then dropping every reference to it:
 
 ```
@@ -1267,21 +1275,91 @@ The consequence for the pass: T59's ceiling is **100 MB**, and it is not a budge
 own docblock in `scripts/verify-hardware.mjs`. **Compare a reading only with another reading from the
 same house**, and reinstall before believing a high one.
 
-### Where it stops, and what would move it
+### Where it stops, and what was established by trying
 
-**The app is substantially over Homey's 30 MB guideline, and stopping there was a decision rather
-than an oversight.** `SourceDiscoveryService.discover()` genuinely needs every trigger card — the Web API
-offers no server-side filter, and device-scoped cards are matched on card id (§4) — and it runs at
-every boot for every controller. One such read sets the floor.
+> **Read [`memory-investigation.md`](memory-investigation.md) first.** A second pass on
+> 15 September 2026 installed a do-nothing control app beside Lightkeeper and measured both in the
+> same minute. **An empty Homey app costs 30.6 MB of PSS** — the whole guideline — and Lightkeeper's
+> own code accounts for under 1 MB above a control app that has made the same API calls. The
+> guideline is not reachable by any app, the two-client design is free, and the single biggest
+> app-attributable cost is `socket.io-client` inside `homey-api`. Everything below remains accurate
+> about what was tried; what it lacks is the comparison that makes the numbers mean anything.
 
-Getting under 30 means never materialising that response: fetching it over plain HTTP with the same
-local URL and app token `createAppAPI` uses, and scanning it incrementally so each card is parsed,
-projected and dropped one at a time. That would put the peak at roughly the projection (~1.2 MB) and
-the app somewhere near 20 MB. It is the only lever left: there is nothing else of this size to stop
-holding, because nothing of this size is being held.
+**The app is substantially over Homey's 30 MB guideline, and as of 14 September 2026 that is known
+not to be a property of this app's code.** The lever this section used to name — never materialising
+the card response, scanning it incrementally instead — was built, shipped to hardware and measured.
+It is worth writing down what happened, because the result is the opposite of what the reasoning
+above predicts, and the reasoning was not wrong so much as out of date.
 
-Written down so the next person does not re-derive it. If the footprint has to come down further,
-that is the lever, and it is the only one left: there is nothing else of this size to stop holding.
+**1. There is no server-side filter, and that is now verified rather than assumed.**
+`HomeyAPIV3Local.json` declares `parameters: {}` for `getFlowCardTriggers`, `getFlowCardActions` and
+`getDevices`. Nine query shapes were tried against the live endpoint anyway — `uri`, `id`,
+`deviceId`, `filter`, `ownerUri`, `$filter`, `fields`, `$select`, `select` — and **all nine returned
+byte-identical full bodies** (200, 1816 items, 1,003,381 bytes). There is no filtered read to find.
+
+**2. Streaming works, and was byte-exact.** A scanner that finds top-level element boundaries and
+hands each one to `JSON.parse` separately produced **1832 of 1832 cards with zero field mismatches**
+against `homey-api`'s own result. On a cold process it cut the read from **+16.88 MB of RSS to
++0.10 MB**.
+
+Two traps inside that, both worth keeping even though the change was reverted:
+
+- **The raw endpoint returns a JSON ARRAY, and carries no `uri` field at all.** `homey-api` returns
+  an object keyed by id, and `Item`'s constructor synthesises `uri` as `homey:<itemId>:<id>` and
+  defines it as an own property. Verified reproducible from `id` for all 1832 cards. Note what that
+  means for §3: **every `card.uri` this app has ever used was constructed by the client library**,
+  not returned by the Homey. `FlowCardTrigger` even overrides `uri` with a deprecation getter
+  returning `undefined`; the value survives only because the constructor's own property shadows it.
+- **The HTTP client costs more than the parse.** Node's global `fetch` is undici, initialised lazily,
+  and that initialisation alone cost **+21.24 MB of RSS** — more than the materialising read it was
+  meant to replace. `node:http` cost **+6.81 MB** for the same body.
+
+**3. And on real hardware it changed nothing, because the premise had expired.** The 11.6 MB payload
+this section is built on is not what the reference Homey returns any more: it is **1.0 MB** for 1816
+trigger cards. A 1 MB parse fits inside the slack of a heap that is already 20 MB, so there are no
+new pages to keep. Measured, five devices, three restarts each:
+
+| build | readings | mean |
+|---|---|---|
+| materialising, through `homey-api` | 72.8 / 80.1 / 73.9 / 71.4 MB | ~74.5 MB |
+| streaming, `node:http` + incremental scan | 74.5 / 80.1 / 73.9 / 71.4 MB | ~75.0 MB |
+
+**4. The measurement noise is larger than anything left to win.** Three restarts of ONE identical
+build read **71.4, 73.9 and 80.1 MB**. Nothing below about 10 MB is measurable on this Homey from a
+single reading, which retires a lot of single-number comparisons recorded above.
+
+**5. The floor is the machine, and this was A/B'd the hard way.** The 9 September build `09e120a` —
+whose own test line recorded **36.6 MB** — was checked out into a worktree, built and installed on
+the same Homey on 14 September, against the same five devices: **80.7 / 73.6 / 72.9 MB**. Identical
+to HEAD. The same code, the same house, five days apart, doubled.
+
+What moved is the Homey itself. `system.getMemoryInfo` on 14 September:
+
+| | |
+|---|---|
+| total | 1.85 GB |
+| free | **0.20 GB — 10.6%** |
+| swap in use | **459 MB** |
+| 32 apps' PSS, summed | 900 MB, of which **312 MB already swapped out** |
+| `homey` core alone | 476 MB |
+
+Under that pressure PSS is partly an artefact of what the kernel has reclaimed, which is also the
+best available explanation for the ±9 MB band in point 4.
+
+**So the honest statement is: this app's own JS heap is 15.2 MB with no devices and 18.1 MB with
+five (§17 has the split), against an RSS of 74 MB. The remaining ~59 MB is not JS objects, is not
+readable from inside, and did not change when the app's code changed.** Getting under 30 MB on this
+Homey is not something this app can do by holding less.
+
+Two things that ARE worth doing, and were:
+
+- Every peer app on the same Homey, for scale: Spotify **10.5 MB**, Circadian Lighting 13.3, CountDown
+  13.3, IKEA 21.3, Hue 33.0, Reolink 61.8 — median 27.2. Lightkeeper was second of thirty-two. A
+  reading is only interesting next to that list, and `verify-hardware.mjs memory` should be read with
+  it.
+- The deep `homey-api` require is worth ~11 MB (above), and over half the app's heap at boot is its
+  own module graph (§17). Those are the only two levers measured to matter, and the first is already
+  taken.
 
 `scripts/verify-hardware.mjs` encodes the outcome rather than the guideline — T59 reports the 30 MB
 guideline and FAILS only past a 100 MB ceiling, because a line that failed on every run is a line
@@ -1289,17 +1367,27 @@ nobody reads.
 
 Know what that line cannot do. It is a smoke check for a second bulk read appearing, and **not** a
 regression test for retention: holding a parsed catalogue and merely having parsed one cost the same
-RSS, so the number cannot separate them. The signal that CAN is the app's own `heapUsed` measured
-after a read — a few MB when the catalogue is let go, ~17 MB higher when it is not. The app does not
-expose it today; exposing it on `/diagnostics` is what to do if this ever has to be a real test.
+RSS, so the number cannot separate them. The signal that CAN is the app's own `heapUsed` after a
+read — and **that is now on `/diagnostics`** (§17), which is what makes a retention regression
+detectable at all.
 
 ### A smaller one, in the same family
 
 `require('homey-api')` eagerly loads 218 modules — the whole Athom Cloud tree, every class of which
 loads its OpenAPI specification as a *static class field*, so the JSON is parsed at import time
 whether or not anything calls it. `require('homey-api/lib/HomeyAPI/HomeyAPI')` loads five, and
-`createAppAPI` / `createLocalAPI` require the local V3 client themselves on first use. Worth 0.5 MB
-of heap and 0.7 MB of RSS.
+`createAppAPI` / `createLocalAPI` require the local V3 client themselves on first use.
+
+**Re-measured 14 September 2026 on a cold process, and it is worth far more than first recorded.**
+The original note said 0.5 MB of heap and 0.7 MB of RSS:
+
+| | heap | RSS |
+|---|---|---|
+| `require('homey-api/lib/HomeyAPI/HomeyAPI')` — the deep path we use | −0.8 MB | **+1.1 MB** |
+| `require('homey-api')` — the package root | +3.1 MB | **+12.0 MB** |
+
+So the deep path is worth **~11 MB of RSS**, not 0.7, and it is one of the largest single savings in
+the app. The "do not tidy this back to the package root" note on it is load-bearing.
 
 ### Reading the number back
 
@@ -1307,6 +1395,22 @@ of heap and 0.7 MB of RSS.
 [the app-profiling tool](https://tools.developer.homey.app/tools/app-profiling) reports, and
 `GET /api/manager/system/memory` (`ManagerSystem.getMemoryInfo`) gives the per-app breakdown around
 it. `node scripts/verify-hardware.mjs memory` reads both — T59 and T60.
+
+Three things about those two that cost time to work out:
+
+- **`getAppUsage` answers `{ mem, cpu }`, and the numbers are under `mem`** — `{ rss, pss, pssSwap,
+  sharedClean, sharedDirty, pssTotal, sharedTotal }`. There is no top-level `pss`, which is why
+  `pssBytesIn()` searches rather than reading a field.
+- **`getMemoryInfo` answers `{ total, free, swap, types }`**, and `types` is keyed
+  `homey:app:<id>` for every app plus `homey`, `video`, `matterd`, `zigbeed` and friends. It is the
+  fastest way to see the whole machine at once, and the only way to see that the app you are
+  measuring is competing with a core process using 476 MB.
+- **Read `free` and `swap` before believing any app's number.** On a Homey with 10.6% free memory and
+  459 MB of swap in use, PSS reflects what the kernel has reclaimed as much as what the app holds.
+
+The app's own `heapUsed`, the per-space split and the boot marks come from `GET /diagnostics` on the
+app's own Web API instead — see §17. That is the reading that can tell retention from a parse, which
+PSS cannot.
 
 ---
 
@@ -1508,6 +1612,48 @@ So: **wrap it, and never put a platform call bare inside a literal you are handi
 else.** The app's own footprint is readable from OUTSIDE — `apps.getAppUsage`'s `pss` field, which is
 what `scripts/verify-hardware.mjs memory` reads — so nothing that mattered is lost; it simply cannot
 be read from in here.
+
+#### What CAN be read from in here, established 14 September 2026
+
+The conclusion above was right about RSS and wrong about memory in general. `lib/support/heap-report.ts`
+is the result, and `/diagnostics` now carries it — which is what §15 had asked for and left undone.
+
+| call | verdict on firmware 13.5.0 |
+|---|---|
+| `process.memoryUsage()` | throws `ENOENT … uv_resident_set_memory` |
+| `/proc/self/statm`, read directly | throws `ENOENT: no such file or directory` |
+| `v8.getHeapStatistics()` | **works** — `used_heap_size`, `total_heap_size`, `heap_size_limit`, `external_memory`, `malloced_memory` |
+| `v8.getHeapSpaceStatistics()` | **works** — the per-space split, which is what tells retention from a parse |
+| `process.resourceUsage()` | **answers**, and its `maxRSS` is a lie — see below |
+| `process.uptime()` | works |
+
+Two things follow.
+
+**`/proc` is not mounted for an app at all.** The failure is not libuv's reader being unusual; the
+file is not there. So RSS genuinely cannot be read from inside, by any route, and the outside reading
+is the only one. Do not go looking again.
+
+**`process.resourceUsage().maxRSS` must not be reported as this app's high-water mark.** It read
+**105.3 MB** identically across an app restart AND two reinstalls — three different process
+lifetimes, to the 0.1 MB. `maxRSS` survives `fork()` and is reset only by `exec()`, so a Homey that
+forks its app workers from a long-lived parent hands every one of them the parent's high-water mark.
+It is the app-runner's number, not the app's.
+
+What IS attributable is the JS heap, and `markPhase()` in `heap-report.ts` records it at three named
+points so the floor can be split. Measured on a freshly restarted app with no devices:
+
+| mark | `heapUsed` |
+|---|---|
+| `modules-loaded` — every import done, before any app logic | **8.8 MB** |
+| `onInit-start` | 8.9 MB |
+| `onInit-end` | 12.8 MB |
+| settled, no devices | 15.2 MB |
+| settled, five devices | 18.1 MB |
+
+So **well over half the app's JS heap is spent importing its own modules**, before a line of its
+logic runs — and the whole heap is 15 MB against an RSS of 74 MB. The gap is not JS objects, and
+`heap_size_limit` says V8 is working to a **73.4 MB** cap, nowhere near reached. Anything hunting the
+footprint should start from those two facts rather than from the app's caches.
 
 ### `onUninit`'s asynchronous work does not complete
 

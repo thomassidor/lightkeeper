@@ -15,6 +15,7 @@ import type { DaylightRuntimeManager } from './daylight/daylight-runtime-manager
 import type { DaylightEvaluator } from './daylight/daylight-evaluator';
 import type { LuminanceSource } from './daylight/luminance-source';
 import type { BoundedLog } from './support/bounded-log';
+import type { HeapReport } from './support/heap-report';
 import type { WriteRecord } from './outputs/light-target-adapter';
 import type { ControllerDiagnostics } from './runtime/controller-runtime';
 import type { ScheduleDiagnostics } from './schedules/schedule-runtime';
@@ -188,6 +189,16 @@ export type DaylightSummary =
 
 export interface DiagnosticsResponse {
   evidence: EvidenceStatus | null;
+  /**
+   * What the app can see of its own memory from inside the sandbox.
+   *
+   * Platform §15 named this as the one missing signal: `apps.getAppUsage`'s PSS
+   * cannot tell holding a parsed catalogue from merely having parsed one,
+   * because V8 keeps the pages either way. `heapUsed` can — a few MB when the
+   * catalogue is let go, ~17 MB higher when it is not — which is what makes a
+   * retention regression detectable at all.
+   */
+  heap: HeapReport;
   semantics: typeof DIAGNOSTIC_SEMANTICS;
   eventHistory: { capacity: number; retained: number; dropped: number };
   generatedAt: number;

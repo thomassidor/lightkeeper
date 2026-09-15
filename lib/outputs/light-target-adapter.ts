@@ -61,6 +61,16 @@ export interface WriteRecord {
 export class LightTargetAdapter {
   private generation = 0;
   private active = true;
+  /**
+   * Bumped — never DELETED — when a device stops being a target.
+   *
+   * `current()` captures the generation it saw and compares it later, so an
+   * entry removed from this map reads back as `undefined`, which is exactly
+   * what a closure captured before the device was ever added also holds. The
+   * two would compare equal and a cancelled subscription would look live.
+   * So this map keeps one small number per device that has ever been a target
+   * of this runtime, on purpose; `unsubscribeAll()` is what clears it.
+   */
   private readonly targetGenerations = new Map<string, number>();
 
   private readonly failedSubscriptions = new Set<string>();
@@ -98,7 +108,13 @@ export class LightTargetAdapter {
       && target === this.targetGenerations.get(deviceId);
   }
   private readonly recentFailures = new BoundedLog<TargetFailure>(50);
-  /** Rate-limit repeated transient errors from the same target. */
+  /**
+   * Rate-limit repeated transient errors from the same target.
+   *
+   * Keyed `deviceId:capability`, and dropped with the device in `unsubscribe()`
+   * — unlike `targetGenerations` above, nothing compares a captured value from
+   * here, so forgetting it is free and keeping it was simply a leak.
+   */
   private readonly lastLoggedAt = new Map<string, number>();
 
   /**
@@ -596,7 +612,27 @@ export class LightTargetAdapter {
 
     const client = await this.api.read();
     if (!current()) return;
-    const device = await client.devices.getDevice({ id: deviceId });
+    /**
+     * `$cache: false` here is a MEMORY fix, not a correctness one.
+     *
+     * `makeCapabilityInstance` asks the manager to refresh the whole Homey when
+     * the Device it is called on was last updated more than 2.5 s ago — see
+     * `Device.makeCapabilityInstance` and `ManagerDevices.scheduleRefresh` in
+     * `homey-api`. A device served out of `__cache` is almost always older than
+     * that, so every re-subscribe queued a full `getDevices()` of every device
+     * in the house one second later. That parse costs ~3.6 MB of resident floor
+     * and V8 never gives it back (platform §15), and re-subscribing happens on
+     * every catalogue change, every re-attach and every read-client rebuild.
+     *
+     * A freshly fetched device carries a fresh `__lastUpdated`, so the refresh
+     * is not scheduled at all. The cost is one single-device round trip in place
+     * of one whole-Homey one.
+     *
+     * `$updateCache` is deliberately left at its default: this device SHOULD
+     * still populate the cache `DeviceCatalog` relies on (see its own docblock
+     * for why that retention is cheaper than re-parsing).
+     */
+    const device = await client.devices.getDevice({ id: deviceId, $cache: false });
     if (!current()) return;
 
     const created: Unsubscribe[] = [];
@@ -640,6 +676,13 @@ export class LightTargetAdapter {
     // on every catalog change, so clearing there would wipe the streak
     // repeatedly and nothing would ever reach the threshold.
     this.failureStreaks.delete(deviceId);
+    // Same reasoning, and the same prefix sweep `TargetStateCache.forget()`
+    // does: these keys carry the capability, so the device id alone cannot
+    // address them.
+    const prefix = `${deviceId}:`;
+    for (const key of this.lastLoggedAt.keys()) {
+      if (key.startsWith(prefix)) this.lastLoggedAt.delete(key);
+    }
     // Through the same per-device lock, or an unsubscribe can interleave with a
     // subscribe and leave the instances it was meant to remove behind.
     return this.subscriptionLock.run(deviceId, () => this.unsubscribeNow(deviceId));
@@ -674,6 +717,7 @@ export class LightTargetAdapter {
     this.handles.clear();
     this.failureStreaks.clear();
     this.targetGenerations.clear();
+    this.lastLoggedAt.clear();
   }
 
   /**
