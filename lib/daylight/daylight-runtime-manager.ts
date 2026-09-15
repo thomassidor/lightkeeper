@@ -19,8 +19,8 @@ import { messageOf } from '../support/homey-errors';
  * **Its own manager rather than a widening of `CircadianRuntimeManager`**, and
  * the case for that is worth stating because the two look alike. That manager
  * serves two device types with ONE runtime class because they genuinely are one
- * engine — a circadian light is a curve with four derived points. A Daylight
- * light is not a curve at all: it has no times in it, and what it reads is a
+ * engine — a circadian light is a curve with four derived points. A Room-sensing
+ * Light is not a curve at all: it has no times in it, and what it reads is a
  * sensor and the sky. Sharing the manager would mean a registry holding two
  * unrelated runtime types and a `kind` that no longer told a reader which class
  * they had.
@@ -85,7 +85,7 @@ export class DaylightRuntimeManager {
      * matches `DeviceRegistry` and the device layer needs no adapter.
      *
      * A circadian light really does write its own plan back — pre-staging
-     * disables itself and persists that. A Daylight light has no verdict of that
+     * disables itself and persists that. A Room-sensing Light has no verdict of that
      * kind to record: it never pre-stages, so there is nothing it can learn
      * about the household that it would be wrong to forget on a restart.
      */
@@ -138,7 +138,7 @@ export class DaylightRuntimeManager {
     };
   }
 
-  /** One timer for every Daylight light, started with the first of them. */
+  /** One timer for every Room-sensing Light, started with the first of them. */
   private startTicking(): void {
     if (this.ticker !== null || this.registry.size === 0) return;
     const start = this.deps.setInterval ?? ((fn, ms) => setInterval(fn, ms));
@@ -166,7 +166,7 @@ export class DaylightRuntimeManager {
 
   async unregister(controllerId: string): Promise<void> {
     await this.registry.unregister(controllerId);
-    // One timer for every Daylight light on the Homey, so the last one out
+    // One timer for every Room-sensing Light on the Homey, so the last one out
     // turns it off.
     if (this.registry.size === 0) this.stopTicking();
   }

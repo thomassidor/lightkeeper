@@ -37,10 +37,10 @@ import {
  * **What this device type is, and what it deliberately is not.** It follows the
  * colour of the day — warm at night, cool through the middle — and the only thing
  * it asks is what those two ends should look like. The SHAPE is a constant
- * (`SIMPLE_SHAPE`), not a setting: once the times are adjustable this is the curve
- * controller with fewer fields, and the two device types stop being different
+ * (`SIMPLE_SHAPE`), not a setting: once the times are adjustable this is the
+ * Colour Curve Light with fewer fields, and the two device types stop being different
  * products. Somebody who wants their own times, or a colour at a particular hour,
- * adds a Curve light instead.
+ * adds a Colour Curve Light instead.
  *
  * **Neither screen asks for an API key.** The controller and the schedule both
  * open with the credential view because both generate Flows and an app's own token

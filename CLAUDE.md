@@ -15,23 +15,23 @@ already-paired remote, switch or dial into a controller for them, it puts them o
 follows the colour of the day with them, and it sets their brightness from how much light is
 already in the room.
 
-**Five device types, four jobs.** The first two — a light controller and a light schedule — work
-by generating and maintaining the Flows underneath, which is why they need a Personal API Key
-(platform §1). The third job has TWO device types, and they are the same engine: a **circadian
-light** divides the day into three zones — morning, midday, evening — anchored to the Homey's own
-sunrise and sunset, and a **Curve light** exposes the whole curve — every point, every time, and a
-colour from a closed palette instead of a warmth at any point. The fourth job is a **Daylight
-light**: it reads ONE `measure_luminance` sensor the household already owns, or the sun's own
-elevation computed from the Homey's position (platform §16), and holds its lights at a brightness
-that depends on how light it is already. **None of those three generates Flows at all**
-(platform §12): they watch the lights themselves and write to them directly, so none needs a
-key, none has a `needs_credential` state, and none appears in the orphan sweep's live set.
+**Five device types, four jobs.** The first two — a Light Remote and a light schedule — work by
+generating and maintaining the Flows underneath, which is why they need a Personal API Key (platform
+§1). The third job has TWO device types, and they are the same engine: a **circadian light** divides
+the day into three zones — morning, midday, evening — anchored to the Homey's own sunrise and
+sunset, and a **Colour Curve Light** exposes the whole curve — every point, every time, and a colour
+from a closed palette instead of a warmth at any point. The fourth job is a **Daylight light**: it
+reads ONE `measure_luminance` sensor the household already owns, or the sun's own elevation computed
+from the Homey's position (platform §16), and holds its lights at a brightness that depends on how
+light it is already. **None of those three generates Flows at all** (platform §12): they watch the
+lights themselves and write to them directly, so none needs a key, none has a `needs_credential`
+state, and none appears in the orphan sweep's live set.
 
 **Each job belongs to exactly one device type, and that is a change.** Until 0.6.0 a schedule
 window, a circadian end and a curve point could each say `fromDaylight` and borrow the fourth job
 inline, which put the same sensor picker and lux range on four different pairing screens and gave
 two device types two different daylight behaviours to explain. It is gone: a brightness is a
-number, and a brightness that follows the room is what a Daylight light is for.
+number, and a brightness that follows the room is what a Room-sensing Light is for.
 
 ## Commands
 
@@ -492,8 +492,8 @@ Nothing else in the reference has been re-checked.
 
 ## Two of the five device types share one flow lifecycle
 
-(The other three — a circadian light, a Curve light and a Daylight light — generate no Flows at all
-and appear nowhere below. See platform §12.)
+(The other three — a circadian light, a Colour Curve Light and a Room-sensing Light — generate no
+Flows at all and appear nowhere below. See platform §12.)
 
 `FlowBridgeManager` takes `BindableInput` — `{ key, label, binding, variantKey? }` — not
 `SelectableInput`. A schedule has no physical control, no action and no magnitude, but it does have a
@@ -671,16 +671,16 @@ Load-bearing product guarantees, not implementation details:
   is kept as light. `advanceDim()` is the same guarantee for relative steps, and its docblock carries
   the longer argument.
 - **A lamp is never sent a value the mode it is in makes it ignore.** Some lamps in colour mode
-  refuse a colour temperature and vice versa — silently, reporting the write as accepted
-  (platform §6) — so `planColor()` and `planTemperature()` each emit `light_mode` ahead of the value
-  it enables, and `WRITE_ORDER` keeps that order through the queue. Gating lamps are rare, one in
+  refuse a colour temperature and vice versa — silently, reporting the write as accepted (platform
+  §6) — so `planColor()` and `planTemperature()` each emit `light_mode` ahead of the value it
+  enables, and `WRITE_ORDER` keeps that order through the queue. Gating lamps are rare, one in
   roughly thirty-six measured across three probe runs, and that is the case FOR writing the mode
   unconditionally rather than against it: it costs one 212 ms ack on the lamps that do not gate, and
   §6 measured that a lamp cannot be asked which kind it is. The consequence for anything filtering
-  planned writes: **decide per DEVICE, never per write.** A `light_mode` value is a string, so a numeric
-  deadband applied to it compares `NaN` and silently drops the mode write while letting the value
-  through — which is exactly how a Curve light came to sit on the colour it last held. The colour leg
-  has always decided per device; the temperature leg now does too.
+  planned writes: **decide per DEVICE, never per write.** A `light_mode` value is a string, so a
+  numeric deadband applied to it compares `NaN` and silently drops the mode write while letting the
+  value through — which is exactly how a Colour Curve Light came to sit on the colour it last held.
+  The colour leg has always decided per device; the temperature leg now does too.
 - **Flows that look user-edited are never overwritten.** The controller is marked for repair instead.
 - **Folder work never blocks a Flow write.** Every `FlowFolderManager` method catches its own
   failure and degrades to "no folder". A folder is presentation only and is never evidence of
@@ -707,8 +707,8 @@ Load-bearing product guarantees, not implementation details:
 - **The orphan sweep refuses to run when no Flow-owning Lightkeeper device is live**, because every
   managed Flow would then look orphaned. The live set is the union of the controller and schedule
   registries PLUS every installed device of those two drivers — see `liveDeviceIds()` below for why
-  that is load-bearing rather than tidy. A circadian or Curve light is deliberately absent: neither
-  owns a Flow, so counting them would only inflate the count and stop the refusal firing.
+  that is load-bearing rather than tidy. A circadian or Colour Curve Light is deliberately absent:
+  neither owns a Flow, so counting them would only inflate the count and stop the refusal firing.
 - **A flow card catalogue is read, projected and dropped — never retained.** `homey-api` caches
   every `getAll` result for the life of the client (platform §15), and the two card catalogues are
   ~11.6 MB each on a real Homey: retaining them was 30 MB of a 48 MB footprint, against Homey's
@@ -851,21 +851,22 @@ Load-bearing product guarantees, not implementation details:
   responding all night; without the second, we asked six hundred times a night and never listened.
   Both halves ship together: suppression alone would freeze the streak at exactly the tripping value
   and remove the only writes that could clear it.
-- **A Daylight light never switches a lamp on or off, and has no pre-stage option at all.** A `dim`
-  write turns an off lamp on — measured, not suspected — so pre-staging is a colour-only idea and a
-  brightness-only device type has nothing to pre-stage. It writes to lamps that are already on. That
-  is the same promise the two curve-driven types make (platform §12), with one fewer setting to get
-  wrong.
-- **A Daylight light that cannot tell how light it is falls back to a number, never to darkness.**
-  `source: 'none'` is real — a Homey never told where it is, a flat battery in the one sensor — and
-  the response's own stored ends are what it holds at. A room that went dark because a sensor did
-  would be the worse surprise, and it is why `MINIMUM_BRIGHTNESS` is applied in the sanitiser rather
-  than at the write.
-- **A Daylight light reads exactly ONE sensor.** It used to mean up to eight, and their mean, which
-  sounds more robust and is not: a sensor in a cupboard and a sensor on a windowsill average to a
-  number neither of them ever reported, and the pairing screen could not say which one the response's
-  lux range belonged to. One sensor makes the range judgeable — the screen draws that sensor's own
-  last week behind the two thresholds — and makes a frozen sensor visible instead of diluted.
+- **A Room-sensing Light never switches a lamp on or off, and has no pre-stage option at all.** A
+  `dim` write turns an off lamp on — measured, not suspected — so pre-staging is a colour-only idea
+  and a brightness-only device type has nothing to pre-stage. It writes to lamps that are already
+  on. That is the same promise the two curve-driven types make (platform §12), with one fewer
+  setting to get wrong.
+- **A Room-sensing Light that cannot tell how light it is falls back to a number, never to
+  darkness.** `source: 'none'` is real — a Homey never told where it is, a flat battery in the one
+  sensor — and the response's own stored ends are what it holds at. A room that went dark because a
+  sensor did would be the worse surprise, and it is why `MINIMUM_BRIGHTNESS` is applied in the
+  sanitiser rather than at the write.
+- **A Room-sensing Light reads exactly ONE sensor.** It used to mean up to eight, and their mean,
+  which sounds more robust and is not: a sensor in a cupboard and a sensor on a windowsill average
+  to a number neither of them ever reported, and the pairing screen could not say which one the
+  response's lux range belonged to. One sensor makes the range judgeable — the screen draws that
+  sensor's own last week behind the two thresholds — and makes a frozen sensor visible instead of
+  diluted.
 - **A lux sensor never reaches the light seams.** `measure_luminance` is `setable: false` and
   declares no `min`/`max` (platform §16), and the `Capability` union in the intent planner is the set
   of things this app WRITES. `lib/daylight/luminance-source.ts` subscribes to it directly, with the

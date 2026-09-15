@@ -132,7 +132,8 @@ describe('render fixtures', () => {
       'the curve needs enough points to draw a shape');
     assert.ok(
       replies['curve.html'].getCurve.points.some((p: any) => p.color),
-      'and at least one coloured point, or the one thing the Curve light adds is not on screen',
+      'and at least one coloured point, or the one thing the Colour Curve Light adds '
+      + 'is not on screen',
     );
     assert.ok(
       replies['curve.html'].getCurve.palette.length

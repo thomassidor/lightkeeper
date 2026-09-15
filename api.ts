@@ -39,7 +39,7 @@ function appOf(homey: any): LightkeeperApp {
  * Every device this app can attribute a generated Flow to — controllers AND
  * schedules.
  *
- * Circadian lights, Curve lights and Daylight lights are deliberately NOT here,
+ * Circadian lights, Colour Curve Lights and Room-sensing Lights are deliberately NOT here,
  * and their absence is as load-bearing as the union below. None of the three
  * generates a Flow, so their ids appear in no bridge arguments and nothing can
  * ever be attributed to them; adding them would inflate `liveControllers` and,
@@ -408,7 +408,7 @@ module.exports = {
   // only what a caller who can already store an API key and delete Flows can do.
 
   /**
-   * Apply a saved circadian or Curve light's plan to its lights, now.
+   * Apply a saved circadian or Colour Curve Light's plan to its lights, now.
    *
    * Forced: the caller asked for a visible change and is owed one, even where
    * the lights already happen to sit close to the curve. Drained before
@@ -430,7 +430,8 @@ module.exports = {
      */
     const runtime = app.curves.get(id) ?? app.daylights.get(id);
     if (!runtime) {
-      throw new Error(`no circadian, Curve or Daylight light with id "${id}" is running`);
+      throw new Error(
+        `no circadian, Colour Curve or Room-sensing Light with id "${id}" is running`);
     }
 
     const outcome = await runtime.applyNow('preview', { force: true, waitForResults: true });
@@ -451,7 +452,7 @@ module.exports = {
     const app = appOf(homey);
     const id = idOf(params);
     const runtime = app.curves.get(id);
-    if (!runtime) throw new Error(`no circadian or Curve light with id "${id}" is running`);
+    if (!runtime) throw new Error(`no circadian or Colour Curve Light with id "${id}" is running`);
     return runtime.probePreStage();
   },
 
@@ -469,7 +470,7 @@ module.exports = {
   },
 
   /**
-   * Tick every Daylight light once, instead of waiting up to a minute.
+   * Tick every Room-sensing Light once, instead of waiting up to a minute.
    *
    * Its own route rather than folded into `tickCurves`, because that name would
    * then be a lie — and because the two are worth being able to drive

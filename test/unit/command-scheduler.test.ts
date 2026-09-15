@@ -69,8 +69,8 @@ describe('command scheduler', () => {
      * emit the mode first, but a queue that reorders them puts the mode after
      * the value it was meant to enable, and the lamp discards the value.
      *
-     * `light_mode` sat AFTER `light_temperature` in that order until a Curve
-     * light with a coloured point was run on real hardware: the lamp took the
+     * `light_mode` sat AFTER `light_temperature` in that order until a Colour
+     * Curve Light with a coloured point was run on real hardware: the lamp took the
      * colour, went into colour mode, and then held its old temperature against
      * every later write.
      */

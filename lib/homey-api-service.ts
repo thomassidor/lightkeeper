@@ -44,7 +44,7 @@ const HomeyAPI = require('homey-api/lib/HomeyAPI/HomeyAPI');
  * so the same is true of the one thing the app asks Insights for.
  *
  * That one thing is `readSensorWeek`: a week of lux samples behind the two
- * thresholds on a Daylight light's pairing screen (platform §16). It is history
+ * thresholds on a Room-sensing Light's pairing screen (platform §16). It is history
  * rather than a live value, so there is nothing to subscribe to, and connecting
  * at every boot on every Homey bought two things we did not want — a
  * subscription nobody reads, and `isConnected()` returning true, which is the

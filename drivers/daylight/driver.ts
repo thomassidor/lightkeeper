@@ -28,7 +28,7 @@ import {
 } from '../../lib/pairing/pair-session';
 
 /**
- * The Daylight light's driver: two screens, and the second one is the daylight
+ * The Room-sensing Light's driver: two screens, and the second one is the daylight
  * card.
  *
  * **What this device type is.** It holds a room at a brightness that depends on
@@ -419,7 +419,7 @@ module.exports = class DaylightDriver extends Homey.Driver {
       device,
       idPrefix: 'dayl',
       storeKey: 'daylight',
-      naming: { fallback: 'Daylight light', suffix: 'daylight' },
+      naming: { fallback: 'Room-sensing Light', suffix: 'daylight' },
       buildPlan: () => this.buildPlan(state),
     });
 

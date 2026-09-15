@@ -384,8 +384,8 @@ describe('a temperature write switches the lamp into temperature mode first', ()
    *
    * A lamp in COLOUR mode ignores a temperature exactly as a lamp in
    * temperature mode ignores a hue — silently, reporting the write as accepted
-   * and keeping its old value. Only `planColor` set `light_mode`, so a Curve
-   * light with a coloured point put a lamp into colour mode and then had every
+   * and keeping its old value. Only `planColor` set `light_mode`, so a Colour
+   * Curve Light with a coloured point put a lamp into colour mode and then had every
    * later temperature-only point thrown away by the lamp. The observed symptom:
    * a lamp written 0.43 sat at 0.87 and would not take a temperature from
    * anything, this app or otherwise, until its mode changed back.

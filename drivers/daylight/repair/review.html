@@ -416,7 +416,7 @@
   #rv-root .hero i { flex: 1; border-radius: 3px 3px 0 0; }
   #rv-root .hero.strip { display: block; }
 
-  /* The reading RIGHT NOW, which is the only thing on a Daylight light's review
+  /* The reading RIGHT NOW, which is the only thing on a Room-sensing Light's review
      that a person can check against the room they are standing in. */
   #rv-root .hero.now { height: auto; display: flex; align-items: flex-end; gap: 10px;
                        background: var(--lk-accent); color: var(--lk-accent-ink);
@@ -575,7 +575,7 @@ function __lkBootRv(Homey) {
    * Whatever picture the driver asked for, or none.
    *
    * Three shapes, because three are all that mean anything here: the day as a
-   * band of colour, a curve as the bars it is made of, and a Daylight light's
+   * band of colour, a curve as the bars it is made of, and a Room-sensing Light's
    * reading right now. A driver that sends no `hero` gets no frame at all —
    * an empty grey box above the rows would read as something that failed to
    * load.

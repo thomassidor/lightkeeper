@@ -17,7 +17,7 @@ import type { LuminanceSource } from '../../lib/daylight/luminance-source';
  * null, an empty object, or whatever a future firmware decides.
  *
  * The second is that a device with no sensors configured must not consult the
- * shared luminance service at all. It is shared, so a Daylight light that names
+ * shared luminance service at all. It is shared, so a Room-sensing Light that names
  * no sensor asking it for a mean would pick up whatever some other device's
  * sensors happen to read - a room dimmed by a reading from a different room.
  */

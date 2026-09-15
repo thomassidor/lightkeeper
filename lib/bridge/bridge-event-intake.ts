@@ -51,7 +51,7 @@ export interface IntakeRegistries {
    * A schedule boundary key is unmistakable, and asking the controller registry
    * about one first would produce a refusal reason about a missing mapping
    * catalogue — exactly the wrong sentence to leave in the diagnostics of a
-   * schedule that did not fire. A circadian or Curve light is absent because
+   * schedule that did not fire. A circadian or Colour Curve Light is absent because
    * neither owns a Flow, so neither can be named in one (platform §12).
    */
   schedule(controllerId: string, eventKey: string): DispatchOutcome;

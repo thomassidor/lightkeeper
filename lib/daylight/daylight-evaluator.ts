@@ -12,7 +12,7 @@ import type { LuminanceSource, WatchedSensor } from './luminance-source';
  *
  * Everything below it is pure or is the shared subscription service; everything
  * above it just asks "what brightness, then". That seam is what lets a schedule
- * and a Curve light use this feature without either of them growing a dependency
+ * and a Colour Curve Light use this feature without either of them growing a dependency
  * on where the Homey is.
  *
  * `location` is injected as a closure for the same reason `timezone` is: `lib/`

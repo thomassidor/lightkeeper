@@ -99,13 +99,13 @@
     "temperature_cycle": "Step through warm and cool"
   },
   "state": {
-    "noConfiguration": "This controller has no configuration. Repair it to set it up again.",
+    "noConfiguration": "This Light Remote has no configuration. Repair it to set it up again.",
     "needsCredential": "Lightkeeper needs a new API key to manage its Flows.",
-    "needsRepair": "This controller needs repair.",
-    "disabled": "This controller is disabled.",
-    "sourceGone": "The remote this controller uses is no longer paired.",
+    "needsRepair": "This device needs repair.",
+    "disabled": "This device is disabled.",
+    "sourceGone": "The remote this device listens to is no longer paired.",
     "surfaceChanged": "This remote now exposes different events. Open repair to remap it.",
-    "noTargets": "None of this controller's lights are available.",
+    "noTargets": "None of this device's lights are available.",
     "someTargets": "__count__ of __total__ lights unavailable.",
     "noTargetsResponding": "__count__ light(s) are not responding to Lightkeeper. Check that they are powered on.",
     "someTargetsNotResponding": "__count__ of __total__ lights are not responding. Check that they are powered on.",
@@ -153,8 +153,8 @@
     "keyRemoved": "Key removed.",
     "clockUnresolved": "Lightkeeper could not read the Homey's timezone, so this schedule will not fire.",
     "newKeyPlaceholder": "Paste a new API key",
-    "controllers": "Controllers",
-    "noControllers": "No controllers yet. Add one from Devices.",
+    "controllers": "Light Remotes",
+    "noControllers": "No Light Remotes yet. Add one from Devices.",
     "stateReady": "Ready",
     "statePartial": "Partial",
     "stateNeedsRepair": "Needs repair",
@@ -194,7 +194,7 @@
     "writeFailed": "failed",
     "copied": "Copied ✓",
     "selectToCopy": "Selected below — press Ctrl+C",
-    "controllerFallback": "Controller",
+    "controllerFallback": "Light Remote",
     "requestFailed": "The request could not be completed. Try again.",
     "schedules": "Schedules",
     "noSchedules": "No schedules yet. Add one from Devices.",
@@ -205,12 +205,12 @@
     "scheduleEveryDay": "every day",
     "scheduleFlows": "__flows__ managed Flow(s)",
     "scheduleClock": "Homey clock: __local__ (__zone__)",
-    "circadian": "Circadian and Curve lights",
-    "daylight": "Daylight lights",
-    "noDaylight": "No Daylight lights are set up.",
+    "circadian": "Circadian and Colour Curve Lights",
+    "daylight": "Room-sensing Lights",
+    "noDaylight": "No Room-sensing Lights are set up.",
     "daylightSky": "The sun is __degrees__° above the horizon",
     "daylightNoLocation": "This Homey has not said where it is",
-    "daylightNoLocationHelp": "Without a location Lightkeeper cannot work out where the sun is, so a Daylight light needs a light sensor instead. Set your location in Homey’s own settings.",
+    "daylightNoLocationHelp": "Without a location Lightkeeper cannot work out where the sun is, so a Room-sensing Light needs a light sensor instead. Set your location in Homey’s own settings.",
     "daylightNoSensors": "No light sensors are being read.",
     "daylightSensorLux": "__lux__ lx · __age__",
     "daylightSensorGone": "not responding",
@@ -225,7 +225,7 @@
     "daylightUnknown": "It cannot tell how light it is, so it is leaving these lights alone.",
     "daylightUsing": "Reading __names__.",
     "daylightUsingSky": "Following the sun; no light sensors chosen.",
-    "noCircadian": "No circadian or Curve lights yet. Add one from Devices.",
+    "noCircadian": "No circadian or Colour Curve Lights yet. Add one from Devices.",
     "circadianNow": "Now at __warmth__% warmth, next point at __next__",
     "circadianNowColour": "Now showing __colour__, next point at __next__",
     "circadianNowBetween": "Now between __from__ and __to__, next point at __next__",
@@ -325,7 +325,7 @@
     "rightNow": "Right now"
   },
   "tip": {
-    "daylight": "Want this to follow the room instead? A Daylight light sets brightness from how light it already is."
+    "daylight": "Want this to follow the room instead? A Room-sensing Light sets brightness from how light it already is."
   },
   "warmth": {
     "deepAmber": "Deep amber",
@@ -371,7 +371,7 @@
     "found": "__name__ · __buttons__ buttons, __events__ events",
     "unusable": "Nothing can be read from __name__, so it cannot drive anything. Pick another.",
     "reattach": "Use this one instead",
-    "reattachText": "The remote this controller used has gone. __name__ looks like the same kind of device."
+    "reattachText": "The remote this device used has gone. __name__ looks like the same kind of device."
   },
   "blocks": {
     "title": "When are they on?",

@@ -19,18 +19,18 @@ and the three sections after the first were previously written as 0.6.1, 0.7.0 a
 installed on the reference Homey during that period reported those numbers, which is why the
 hardware run records and the evidence archive still name them.*
 
-### Daylight lights, and daylight brightness inside schedules and curves
+### Room-sensing Lights, and daylight brightness inside schedules and curves
 
 Added:
 
-- **A Daylight light**: it holds its lights at a brightness that depends on how much light is in the
-  room already. Two settings — how bright the lights should be when the room is dark, and when it is
-  bright — and which of the two is larger is the user's choice rather than a mode, so the same device
-  either takes over as the daylight goes or follows the day. It reads `measure_luminance` sensors the
-  household already owns, averaging several, and where there are none it reads **how high the sun
-  is**, computed from the Homey's own position. *(The averaging was dropped later in this same
-  version — see "Every pairing screen redrawn" below. It reads one sensor.)*
-  With no sensor it also asks **when this room gets the most sun** — morning, the middle of the day,
+- **A Room-sensing Light**: it holds its lights at a brightness that depends on how much light is in
+  the room already. Two settings — how bright the lights should be when the room is dark, and when
+  it is bright — and which of the two is larger is the user's choice rather than a mode, so the same
+  device either takes over as the daylight goes or follows the day. It reads `measure_luminance`
+  sensors the household already owns, averaging several, and where there are none it reads **how
+  high the sun is**, computed from the Homey's own position. *(The averaging was dropped later in
+  this same version — see "Every pairing screen redrawn" below. It reads one sensor.)* With no
+  sensor it also asks **when this room gets the most sun** — morning, the middle of the day,
   afternoon, or not at all. The sun's height alone is symmetric about noon, so without that answer a
   room that gets its light at 5pm was treated as though it got it at 7am, and no other setting could
   say otherwise. It is asked as an observation rather than as a compass direction, because somebody
@@ -38,18 +38,19 @@ Added:
   cannot: an east window with a wall across it gets its sun in the afternoon. "Not at all" is the
   default and behaves exactly as before, and no answer can ever make a room read brighter than the
   sky itself. The question does not appear at all once a sensor is chosen — a sensor measures the
-  room, so a model of it would be a guess laid over a measurement.
-  Like the two curve-driven types it generates **no Flows** and needs no API key, it only dims lights
-  that are already on, and it never switches one on or off — brightness is never written to a light
-  that is off, which is measured rather than assumed (platform §12).
+  room, so a model of it would be a guess laid over a measurement. Like the two curve-driven types
+  it generates **no Flows** and needs no API key, it only dims lights that are already on, and it
+  never switches one on or off — brightness is never written to a light that is off, which is
+  measured rather than assumed (platform §12).
 - **A schedule window, a circadian end and a curve point can each follow the daylight**, instead of a
   brightness typed in once. *(Removed later in this same version — see "Every pairing screen
-  redrawn" below. Following the light in the room is what a Daylight light is for.)* One response per device, configured on that device's own screen through a
-  card shared byte-for-byte by all four screens that carry it. The brightness that was there stays
-  put as the **fallback** for when nothing can tell how light it is — which is the reason the number
-  sits beside the flag rather than being replaced by it.
-  A schedule reads the daylight once, at its boundary; a curve re-reads it on every tick. That
-  difference is stated on the screen, because the two look identical for the first evening.
+  redrawn" below. Following the light in the room is what a Room-sensing Light is for.)* One
+  response per device, configured on that device's own screen through a card shared byte-for-byte by
+  all four screens that carry it. The brightness that was there stays put as the **fallback** for
+  when nothing can tell how light it is — which is the reason the number sits beside the flag rather
+  than being replaced by it. A schedule reads the daylight once, at its boundary; a curve re-reads
+  it on every tick. That difference is stated on the screen, because the two look identical for the
+  first evening.
 - **`homey:manager:geolocation`**, and it is used for exactly one thing: the sun's position needs the
   Homey's position. Two synchronous accessors, read at the moment a brightness is computed, and the
   latitude never leaves the Homey. The arithmetic is the standard NOAA solar-position algorithm in
@@ -67,15 +68,15 @@ Fixed:
 
 - **A light whose lamps were switched off could report itself as broken.** Some Philips Hue bulbs
   refuse a colour sent to them while they are off — the bridge answers that the lamp is "soft off" —
-  and a circadian or Curve light with pre-staging switched on kept sending it once a minute for as
-  long as the lamps were off. Each refusal counted against the lamp, so the device eventually said
-  its lights were not responding, and on a device whose lamps all behave that way it took itself
-  offline. It happened at no predictable moment and cleared itself the next morning, which is why it
-  had gone unnoticed. A refused pre-stage write is no longer counted against a lamp: from the refusal
-  alone a lamp that is merely off looks exactly like one that is dead, so it says nothing either way.
-  Pre-staging also now stops offering a colour to a lamp that has refused three times running, and
-  tries again the next time that lamp is switched on. Found by the light probe run of 4 September
-  2026, on four of thirteen colour-capable bulbs behind one bridge.
+  and a circadian or Colour Curve Light with pre-staging switched on kept sending it once a minute
+  for as long as the lamps were off. Each refusal counted against the lamp, so the device eventually
+  said its lights were not responding, and on a device whose lamps all behave that way it took
+  itself offline. It happened at no predictable moment and cleared itself the next morning, which is
+  why it had gone unnoticed. A refused pre-stage write is no longer counted against a lamp: from the
+  refusal alone a lamp that is merely off looks exactly like one that is dead, so it says nothing
+  either way. Pre-staging also now stops offering a colour to a lamp that has refused three times
+  running, and tries again the next time that lamp is switched on. Found by the light probe run of 4
+  September 2026, on four of thirteen colour-capable bulbs behind one bridge.
 
 Two decisions worth reading before changing anything here:
 
@@ -106,7 +107,7 @@ Known:
 
 Fixed:
 
-- Schedules, circadian lights and Curve lights retain their selected lux sensors for their
+- Schedules, circadian lights and Colour Curve Lights retain their selected lux sensors for their
   runtime lifetime. Closing pairing no longer changes a saved device's brightness source;
   restarting also acquires the sensors without needing another Daylight device.
 - Failed sensor subscriptions no longer expose a permanently cached seed as a live reading.
@@ -158,13 +159,13 @@ promised; each fix ships the test its docblock had already claimed existed.
   there is, so it sat over every later verdict for ever, and the tile went on saying "Lightkeeper
   needs a new API key" against a key that worked.
 - The two tick-driven runtimes re-assess when their inputs move. `light-target-adapter.ts` says
-  the write-failure streak exists so a runtime does not "go on writing to that lamp every minute
-  for ever behind a green tile" — and it did exactly that, because health was assessed at start
-  and on a target-set change and nowhere else. A lamp cut at the wall stays `available: true`
-  (platform §6), so the fingerprint never moves and the unwritable set was consulted once, when
-  it was empty. A Daylight light also re-asks when its daylight SOURCE changes, which is the only
-  thing that could ever clear "it cannot tell how light it is" after a household finally gives
-  the Homey a location.
+  the write-failure streak exists so a runtime does not "go on writing to that lamp every minute for
+  ever behind a green tile" — and it did exactly that, because health was assessed at start and on a
+  target-set change and nowhere else. A lamp cut at the wall stays `available: true` (platform §6),
+  so the fingerprint never moves and the unwritable set was consulted once, when it was empty. A
+  Room-sensing Light also re-asks when its daylight SOURCE changes, which is the only thing that
+  could ever clear "it cannot tell how light it is" after a household finally gives the Homey a
+  location.
 
 **A value that is absent is no longer a value of zero.**
 
@@ -173,7 +174,7 @@ promised; each fix ships the test its docblock had already claimed existed.
   report then read as "changed by hand, to nothing", so the lamp stood down and stopped following
   its curve until its next power cycle. And `liveValuesOf()` cast a snapshot value straight to
   `number | undefined`: that does not coerce, but it mistypes, and every consumer downstream tests
-  `=== undefined` to mean "the lamp never told us" — so a Daylight light counted `null` as a real
+  `=== undefined` to mean "the lamp never told us" — so a Room-sensing Light counted `null` as a real
   reading, seeded its aim from a perceptual ZERO, and wrote `dim 0.01` to an already-lit lamp
   before fading it back up at 0.05 a tick. One guard now covers both paths.
 - A lamp's own power-on report is no longer read as a human override. The settle anchor was
@@ -431,8 +432,8 @@ Four engines changed shape, because several of those screens could not be drawn 
   having happened, and clamping the stored value would quietly rewrite what somebody chose. And
   because morning and evening are now independent temperatures either side of midnight, midnight is
   a third ramp rather than a step change.
-- **A Daylight light reads ONE sensor, and shows you its week.** Averaging up to eight sounds more
-  robust and is not: a cupboard sensor and a windowsill sensor average to a number neither ever
+- **A Room-sensing Light reads ONE sensor, and shows you its week.** Averaging up to eight sounds
+  more robust and is not: a cupboard sensor and a windowsill sensor average to a number neither ever
   reported, and the screen could not say whose week the lux range belonged to. The setup screen now
   draws that sensor's own last seven days from Homey's Insights as a 7 × 12 grid, and fills both
   thresholds in from it. This is the fix for a default of 5 → 500 lx that suited exactly one of the
@@ -448,7 +449,7 @@ Four engines changed shape, because several of those screens could not be drawn 
   put the same sensor picker and lux range on four different screens and gave two device types two
   different daylight behaviours to explain — a schedule sampling at its boundary, a curve following
   on every tick — which looked identical for the first evening. A brightness is a number; a
-  brightness that follows the room is a Daylight light. That took `views/shared/daylight-card.*`
+  brightness that follows the room is a Room-sensing Light. That took `views/shared/daylight-card.*`
   with it, and with it the largest piece of view-splicing machinery in the repo.
 - **A schedule's days belong to the schedule, and blocks may overlap.** Seven chips once, above the
   list, instead of seven per block. Overlapping blocks are no longer dropped by the sanitiser: the
@@ -463,7 +464,7 @@ Four engines changed shape, because several of those screens could not be drawn 
   nothing yet", and "pick from the list instead" always one tap away, because a card-only remote
   cannot be heard at all (platform §4).
 - **The palette is twenty-four colours**, eight shown with the rest folding out in place, and the
-  default curve is coloured — so the first thing a Curve light shows is that it does colour.
+  default curve is coloured — so the first thing a Colour Curve Light shows is that it does colour.
 - **"Select all" in a room stores the ROOM.** Ticking every light in one room and nothing elsewhere
   stores a zone target rather than a device list, so a lamp added to that room next month is picked
   up without re-pairing. Unticking one converts it back, and the review screen states which of the
@@ -513,7 +514,7 @@ a unit test:
   and `device()`. Six call sites, all of which compiled, passed the suite and
   validated at publish level, because every driver's `private get app()` was
   typed `any` — so `this.app.catalog.anything()` type-checked. On hardware they
-  threw the first time a real screen asked, and the Daylight light's sensor
+  threw the first time a real screen asked, and the Room-sensing Light's sensor
   picker could not list a single sensor. The accessor is now typed
   `LightkeeperApp`, which is what `lib/app-contract.ts` has existed for since
   0.5.0 and what the drivers had never used; typing it caught a second defect on
@@ -771,7 +772,7 @@ screen on hardware rather than by any test — so the store changelog and the RE
   everything that matches, because a folded room containing the light somebody just typed the name of
   is a search that did nothing.
 
-### A pointer to the Daylight light, wherever a brightness is typed in by hand
+### A pointer to the Room-sensing Light, wherever a brightness is typed in by hand
 
 Nothing here has shipped either — 0.6.0 is unpublished — so the store changelog and the README's
 summary are unchanged again. The store entry already says every setup screen was redrawn, and one
@@ -782,9 +783,9 @@ line of help on four of them does not change what the release is.
   then never moves, and the device that makes a brightness follow the room is a separate thing in
   Homey's add-device list that nobody browsing these screens has any reason to have seen. Each of
   them now carries one italic line under its slider: *Want this to follow the room instead? A
-  Daylight light sets brightness from how light it already is.* It names the device type as Homey
-  lists it, so it is something the reader can go and add rather than a capability they have to go
-  hunting for.
+  Room-sensing Light sets brightness from how light it already is.* It names the device type as
+  Homey lists it, so it is something the reader can go and add rather than a capability they have to
+  go hunting for.
 - **`.tip` is a new shared primitive**, in `views/shared/base.css` beside the toggle and the slider,
   because a pointer written four times is a pointer that drifts four ways. Deliberately not a `.msg`:
   a message takes a coloured ground and reports something that just happened, and this is an aside
@@ -854,6 +855,23 @@ And the stale claims the sweep turned up on the way:
   against a lockfile on 8.69.0; the hardware script was credited with fifteen `setCapabilityValue`
   calls and has fourteen; and `docs/design/README.md` opened with a superseded draft saying **one**
   thing departs from the canvas, forty lines above the list of six.
+
+### Three device types renamed
+
+- **"Light controller" is now "Light Remote", "Curve light" is now "Colour Curve Light", and
+  "Daylight light" is now "Room-sensing Light".** Nothing about what any of them does changed — the
+  driver ids, stored plans, generated Flows and mappings are untouched, so an already-paired device
+  keeps working and keeps whatever name its owner gave it. A device added from now on gets the new
+  type name in the Add-device list and on its pairing screens. "Circadian light" and "Light
+  schedule" are unchanged. Entries for 0.5.2 and earlier keep the names those releases actually
+  shipped under.
+- **The word "controller" leaves every string a user reads.** The settings page's section is now
+  **Light Remotes** rather than **Controllers**, and the tile text a device shows when something is
+  wrong stopped naming a device type it might not be: `state.needsRepair`, `state.disabled` and
+  `state.noTargets` are reached by all five device types through the shared device layer, so a
+  paused schedule and a Room-sensing Light were both being told they were a controller. They now say
+  "this device". The three that really are the remote's own — no configuration, the source gone, and
+  the re-attach offer — name the Light Remote or the physical remote, whichever they mean.
 
 ## 0.5.2
 

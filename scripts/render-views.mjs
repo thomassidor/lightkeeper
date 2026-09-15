@@ -410,7 +410,7 @@ function main() {
   const strings = locales();
   const all = views();
   /* The word Homey puts in the sheet header is the APP's name, not the
-     driver's: a phone pairing a Curve light still says Lightkeeper. */
+     driver's: a phone pairing a Colour Curve Light still says Lightkeeper. */
   const appName = JSON.parse(
     readFileSync(join(ROOT, '.homeycompose', 'app.json'), 'utf8')).name?.en ?? 'Lightkeeper';
 

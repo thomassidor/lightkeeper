@@ -46,7 +46,7 @@ export interface LightkeeperApp {
   readonly schedules: ScheduleRuntimeManager;
   /**
    * One registry for BOTH curve-driven device types — the circadian light and
-   * the curve light. See app.ts for why they share it.
+   * the Colour Curve Light. See app.ts for why they share it.
    */
   readonly curves: CircadianRuntimeManager;
   readonly daylights: DaylightRuntimeManager;

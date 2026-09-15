@@ -281,11 +281,11 @@ describe('orphan counting across both device types', () => {
     assert.equal(result.refused, 'no_live_controllers');
   });
 
-  test('Daylight lights are NOT in the live set either, for the same reason', async () => {
+  test('Room-sensing Lights are NOT in the live set either, for the same reason', async () => {
     // A fifth device type that owns no Flows. Asserted separately from the
     // circadian one because the exclusion is a decision per device type, and a
     // fifth entry added to the driver loop by reflex is exactly how this breaks:
-    // with one Daylight light installed the set would stop being empty, the
+    // with one Room-sensing Light installed the set would stop being empty, the
     // refusal would stop firing, and a sweep on a Homey with no Flow-owning
     // device at all would delete every managed Flow it found.
     const h = homey({ daylight: [ID.dayl], managed: [flow('f1', ID.ctrlGone)] });

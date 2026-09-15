@@ -67,7 +67,7 @@ module.exports = class CircadianDevice
    * The registry takes POINTS; this device stores two ends.
    *
    * The adapter is here rather than in the manager because the expansion is this
-   * device type's business: one registry serves both circadian and curve lights,
+   * device type's business: one registry serves both circadian and Colour Curve Lights,
    * which is what keeps §12's "ONE `setInterval` for every circadian device on
    * the Homey" true across two device types rather than two timers.
    */

@@ -269,7 +269,7 @@ module.exports = class CurveDriver extends Homey.Driver {
       device,
       idPrefix: 'curv',
       storeKey: 'curve',
-      naming: { fallback: 'Curve light', suffix: 'curve' },
+      naming: { fallback: 'Colour Curve Light', suffix: 'curve' },
       buildPlan: () => this.buildPlan(state),
     });
 

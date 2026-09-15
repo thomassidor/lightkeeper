@@ -99,7 +99,7 @@ export interface CircadianPlan {
   /**
    * The three zones a CIRCADIAN light stores, when this plan came from one.
    *
-   * Absent on a Curve light, which owns its points outright. Present on a
+   * Absent on a Colour Curve Light, which owns its points outright. Present on a
    * circadian light, where it is the SOURCE and `points` above is a snapshot
    * taken from it: the runtime re-derives the points from these zones on every
    * tick against the day's real sunrise, because a boundary anchored to the sun
@@ -128,7 +128,7 @@ export interface CircadianPlan {
  * The curve a new device starts with — five points, and deliberately not all
  * whites.
  *
- * The first thing somebody sees on a Curve light has to show what the device
+ * The first thing somebody sees on a Colour Curve Light has to show what the device
  * DOES, and a default of five colour temperatures is indistinguishable from a
  * circadian light with more steps. Amber into cool white into neutral, a coral
  * evening and a violet night says "this one does colour" without a sentence

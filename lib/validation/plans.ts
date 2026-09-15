@@ -676,7 +676,7 @@ export function validateSimpleCircadianPlan(raw: unknown): SimpleCircadianPlan {
 /**
  * The three fields every stored DEVICE plan opens with.
  *
- * A schedule, a Curve light, a circadian light and a Daylight light all carry a
+ * A schedule, a Colour Curve Light, a circadian light and a Room-sensing Light all carry a
  * schema version, a pause flag and a target, in that order, and each wrote the
  * same four lines out with only `ROOT.<kind>` differing. One helper makes "every
  * plan has these three" structural rather than a thing four functions happen to
@@ -714,9 +714,9 @@ function requireSunPeak(value: unknown, path: string): SunPeak {
 /**
  * One daylight response, validated at whichever of FOUR paths holds it.
  *
- * The `path` argument is what makes one function serve four stores: a Daylight
- * light keeps its response at the root of its plan, and a schedule, a circadian
- * light and a Curve light each keep one in an optional field. Four copies of
+ * The `path` argument is what makes one function serve four stores: a
+ * Room-sensing Light keeps its response at the root of its plan, and a schedule, a
+ * circadian light and a Colour Curve Light each keep one in an optional field. Four copies of
  * these six checks is four chances for them to disagree about what a response is.
  */
 function validateDaylightResponse(raw: unknown, path: string): DaylightResponse {

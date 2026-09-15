@@ -93,7 +93,7 @@ export interface CircadianRuntimeDeps {
    * Where the Homey is, for the boundaries a circadian light anchors to the sun.
    *
    * OPTIONAL, so the pairing screen's ephemeral rigs and every existing test
-   * keep working unchanged — and because a Curve light, which owns its points
+   * keep working unchanged — and because a Colour Curve Light, which owns its points
    * outright, never asks. Read per call rather than cached, so a corrected
    * location needs no restart; `usableLocation` is what refuses a Homey that has
    * never been told where it is, and the fixed-hours fallback is what happens
@@ -183,7 +183,7 @@ const PRE_STAGE_CHECK_MS = 1500;
  * write turns one on (platform §12) — but "colour" means a colour TEMPERATURE
  * on a lamp that has one and a HUE on a lamp that does not, and `planWrites()`
  * routes a colour-capable lamp away from the temperature leg by construction.
- * So during a Curve light's coloured segments the probe was armed by nothing at
+ * So during a Colour Curve Light's coloured segments the probe was armed by nothing at
  * all, and §12's promise that pre-staging is "self-disabling, and persists that"
  * could not fire: a lamp that wakes from a hue write repeated the surprise every
  * night.
@@ -233,7 +233,7 @@ export interface CircadianDiagnostics extends ReturnType<ControlHistory<Circadia
   /**
    * Which DEVICE TYPE this runtime belongs to.
    *
-   * One registry serves both — a circadian light and a curve light are the same
+   * One registry serves both — a circadian light and a Colour Curve Light are the same
    * engine, and sharing the registry is what keeps §12's one-timer property true
    * across two device types. This is what tells them apart on a settings page and
    * in a bug report.
@@ -252,7 +252,7 @@ export interface CircadianDiagnostics extends ReturnType<ControlHistory<Circadia
    * DRIVES a colour-capable lamp — `warmth` on such a point is only the fallback
    * for lamps that cannot take a colour. It was dropped from this projection
    * once, which left a coloured point indistinguishable from a temperature point
-   * at the same warmth: exactly the field a "my Curve light went the wrong
+   * at the same warmth: exactly the field a "my Colour Curve Light went the wrong
    * colour" report needs.
    */
   points: Array<{
@@ -791,7 +791,7 @@ export class CircadianRuntime {
   /**
    * The plan's points, re-derived from its zones against TODAY's sun.
    *
-   * A Curve light owns its points outright and this returns them untouched, for
+   * A Colour Curve Light owns its points outright and this returns them untouched, for
    * nothing — not even an allocation. A circadian light stores three zones and
    * two sun-anchored boundaries instead, and those have to be resolved against
    * the sunrise happening today rather than the one that was happening when the
@@ -1124,7 +1124,7 @@ export class CircadianRuntime {
          * is false — so the mode write was dropped whenever a warmth had ever
          * been written to that lamp. The temperature then went to a lamp still
          * in colour mode, which platform §6 measured is refused on a lamp that
-         * gates: a Curve light with one coloured point and one temperature point
+         * gates: a Colour Curve Light with one coloured point and one temperature point
          * came back round to white and stayed the colour it was.
          *
          * Gating lamps are RARE — one in roughly thirty-six across three probe
@@ -1635,7 +1635,7 @@ export class CircadianRuntime {
      *
      * "Cannot drive" is both axes, not just temperature. `planWrites()` sends a
      * palette colour to a lamp with `light_hue` and the point's warmth to one
-     * without, so a Curve light whose points carry colours drives a COLOUR-ONLY
+     * without, so a Colour Curve Light whose points carry colours drives a COLOUR-ONLY
      * lamp perfectly — and this reported it as "None of its lights can change
      * their warmth" and took the device offline. The pairing screen's own probe
      * tests such a lamp quite happily, so the two disagreed: pair it, watch the

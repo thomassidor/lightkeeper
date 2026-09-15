@@ -500,7 +500,7 @@ function clampTemperature(deviceId: string, value: number, cache: TargetStateCac
  * was ever written. A lamp sitting in COLOUR mode ignores a temperature exactly
  * as a lamp in temperature mode ignores a hue — silently, reporting the write
  * as accepted and keeping its old value. That asymmetry is invisible until one
- * device writes both to the same lamp, which is what a Curve light with a
+ * device writes both to the same lamp, which is what a Colour Curve Light with a
  * coloured point does: the colour switches the lamp to colour mode, and every
  * later temperature-only point is then thrown away by the lamp.
  *

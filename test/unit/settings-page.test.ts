@@ -203,7 +203,7 @@ describe('the settings page with one of every device type (the old 8.1)', () => 
     }
   });
 
-  test('a Daylight light says WHERE its brightness came from', async () => {
+  test('a Room-sensing Light says WHERE its brightness came from', async () => {
     /**
      * The one fact that makes this device type supportable. "Sensors" and "sun"
      * behave very differently — one measures the room, one infers it — so
@@ -218,7 +218,7 @@ describe('the settings page with one of every device type (the old 8.1)', () => 
     assert.ok(text.includes('Hall motion'), 'the sensor it is reading is not named');
   });
 
-  test('the sky readout is shown even with no Daylight light configured', async () => {
+  test('the sky readout is shown even with no Room-sensing Light configured', async () => {
     // Independent of any device on purpose: "does it know where the sun is" is a
     // question about the app, and it is the fastest check that the geolocation
     // permission resolved on this Homey.
@@ -273,9 +273,9 @@ describe('the settings page with one of every device type (the old 8.1)', () => 
 
   test('the circadian section carries both device types together', async () => {
     /**
-     * A circadian light and a Curve light are one engine and one registry
+     * A circadian light and a Colour Curve Light are one engine and one registry
      * (platform §12), so the settings page lists them in one section — which is
-     * what the old 8.1 meant by "the circadian and Curve lights together".
+     * what the old 8.1 meant by "the circadian and Colour Curve Lights together".
      */
     const view = open({
       ...POPULATED,
@@ -315,7 +315,7 @@ describe('the settings page with one of every device type (the old 8.1)', () => 
     assert.ok(textOf(view, 'schedules').includes('settings.stateNeedsCredential'));
     assert.ok(
       !textOf(view, 'circadian').includes('settings.stateNeedsCredential'),
-      'a circadian or Curve light has no needs_credential state at all (platform §12)',
+      'a circadian or Colour Curve Light has no needs_credential state at all (platform §12)',
     );
   });
 });

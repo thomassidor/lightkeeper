@@ -254,7 +254,7 @@ describe('schedule boundaries', () => {
  * "A window whose brightness follows the daylight" used to be a block here.
  *
  * `fromDaylight` and the inline `daylight` response are gone from a schedule.
- * Brightness from the room is what a Daylight light is for, and a schedule fires
+ * Brightness from the room is what a Room-sensing Light is for, and a schedule fires
  * AT a time rather than following anything afterwards — so the feature was two
  * different promises wearing one name. `daylight-runtime.test.ts` is where
  * following the room is tested now.

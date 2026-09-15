@@ -104,7 +104,7 @@ ICONS = [
     {
         'master': 'remote-remote-icon-master.svg',
         'out': ROOT / 'drivers' / 'controller' / 'assets' / 'icon.svg',
-        'title': 'Light controller',
+        'title': 'Light Remote',
         'desc': 'A handheld remote sending a signal.',
         'fit': (2.5600, -213.1, -265.0),
         'stroke': 6.7,
@@ -131,7 +131,7 @@ ICONS = [
     {
         'master': 'curve-icon-master.svg',
         'out': ROOT / 'drivers' / 'curve' / 'assets' / 'icon.svg',
-        'title': 'Curve light',
+        'title': 'Colour Curve Light',
         'desc': 'A three-point curve above a baseline.',
         'fit': (2.1129, -60.9, -58.8),
         'stroke': 5.5,
@@ -142,7 +142,7 @@ ICONS = [
         # see the master's own comment and artwork/provenance.md.
         'master': 'daylight-icon-master.svg',
         'out': ROOT / 'drivers' / 'daylight' / 'assets' / 'icon.svg',
-        'title': 'Daylight light',
+        'title': 'Room-sensing Light',
         'desc': 'A plain open circle.',
         'fit': (2.5526, -173.5, -173.5),
         'stroke': 5.5,

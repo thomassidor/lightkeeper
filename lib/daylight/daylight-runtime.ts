@@ -31,7 +31,7 @@ import { messageOf } from '../support/homey-errors';
 import { VisibleState } from '../runtime/visible-state';
 
 /**
- * One Daylight light, live.
+ * One Room-sensing Light, live.
  *
  * The brightness-only sibling of `CircadianRuntime`, and shorter than it by
  * everything a colour brings: no palette, no `light_mode`, no hue override, and
@@ -556,7 +556,7 @@ export class DaylightRuntime {
        * Only lamps that are already on, and there is no option to change that.
        *
        * A `dim` write turns an off lamp on — measured, not suspected — so a
-       * Daylight light that wrote to off lamps would switch a household's lights
+       * Room-sensing Light that wrote to off lamps would switch a household's lights
        * on one at a time through the night. The circadian types make this a
        * per-plan choice because a COLOUR write is only sometimes on; brightness
        * always is.
@@ -867,7 +867,7 @@ export class DaylightRuntime {
     }
 
     /**
-     * A Daylight light pointed at lamps that cannot dim does nothing at all, and
+     * A Room-sensing Light pointed at lamps that cannot dim does nothing at all, and
      * would otherwise report 'ready' for ever. Some-but-not-all is already
      * 'partial' by way of assessTargets — a group where three of five lamps dim
      * still works, and says so.

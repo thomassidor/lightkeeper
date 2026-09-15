@@ -80,15 +80,15 @@ Two consequences a reviewer may want to check:
 ## Why three of the five device types ask for no key at all
 
 A reviewer opening the Add-device list will find five drivers, two of which start
-with an API-key screen — **Light controller** and **Light schedule** — and three which
-do not: **Circadian light**, **Curve light** and **Daylight light**. That is deliberate
+with an API-key screen — **Light Remote** and **Light schedule** — and three which
+do not: **Circadian light**, **Colour Curve Light** and **Room-sensing Light**. That is deliberate
 and worth checking against the code, because those three are the place the key is
 genuinely unnecessary.
 
-A circadian light and a Curve light both make lights follow the colour temperature of
+A circadian light and a Colour Curve Light both make lights follow the colour temperature of
 the day, and they are one engine: the circadian light asks what the lights should look
 like at their warmest and coolest and supplies the shape of the day itself, while a
-Curve light exposes every point and lets any of them carry a colour from a closed
+Colour Curve Light exposes every point and lets any of them carry a colour from a closed
 palette instead of a warmth. A lamp that cannot show a colour is written the point's
 warmth instead, so the shape of the day is the same on every lamp.
 
@@ -118,7 +118,7 @@ Three consequences a reviewer may want to verify:
 
 ## Why `homey:manager:geolocation`, and what it is used for
 
-**New in 0.6.0, and it is one line of arithmetic.** The **Daylight light** sets its
+**New in 0.6.0, and it is one line of arithmetic.** The **Room-sensing Light** sets its
 lights' brightness from how much light is already in the room. Where the household
 owns a light sensor it reads that; where it does not — which is most households — it
 works out **how high the sun is**, and the sun's position needs the Homey's position.
@@ -145,7 +145,7 @@ Three things a reviewer may want to check:
   a number to interpolate against. The permission plus ~120 lines of arithmetic is the
   whole of the alternative.
 - **It degrades rather than failing.** A Homey that has never been told where it is,
-  or a user who declines the permission, gets a Daylight light that reports plainly
+  or a user who declines the permission, gets a Room-sensing Light that reports plainly
   that it cannot tell how light it is and **leaves the lights alone** — and one with a
   light sensor works completely, with no location at all.
 - **It reads a sensor and writes nothing to it.** `measure_luminance` is `setable:
@@ -165,7 +165,7 @@ Three things a reviewer may want to check:
   household's own history, it is used only to fill in two numbers on a screen, and
   none of it leaves the Homey.
 
-The Daylight light itself follows the same two rules as the colour-following types
+The Room-sensing Light itself follows the same two rules as the colour-following types
 above: it **never switches a light on or off**, only dimming lights that are already
 on, and it stands down for any light whose brightness someone changes by hand until
 that light is switched off and on again.
@@ -204,13 +204,13 @@ that light is switched off and on again.
     attributable to that device may be removed. Then check the orphan count in app
     settings: with the other device still running it must not report the survivor's
     Flows as orphans.
-15. Add a **Curve light** (no API-key screen). Draw a curve over the day, give one
+15. Add a **Colour Curve Light** (no API-key screen). Draw a curve over the day, give one
     point a colour rather than a warmth, and include a lamp that cannot show colour
     — it must take that point's warmth instead. Confirm **no Flows are created**,
     that the lights are right the moment they are switched on, and that the device
     never switches a lamp on or off by itself. A **Circadian light** is the same
     engine with two questions instead of a curve.
-16. Add a **Daylight light** (no API-key screen). Confirm **no Flows are created**.
+16. Add a **Room-sensing Light** (no API-key screen). Confirm **no Flows are created**.
     The second screen leads with what it currently reads: a sun elevation, plus any
     light sensor you pick and what it reads in lux. With a sensor picked, cover it
     with your hand and confirm the lamps ease down over a minute or two rather than
@@ -235,7 +235,7 @@ accident of implementation.
 
 ## Known limitations, stated plainly
 
-- **The Daylight light's icon and store image are PLACEHOLDERS in 0.6.0** — a plain
+- **The Room-sensing Light's icon and store image are PLACEHOLDERS in 0.6.0** — a plain
   circle and a flat violet disc. They satisfy every automated check and neither is
   the finished artwork; the record is in `artwork/provenance.md` and
   `artwork/asset-spec.md`, and replacing them is a publish blocker rather than a
@@ -246,7 +246,7 @@ accident of implementation.
   stated in the app's own FAQ along with the sensor placements that avoid it, rather
   than being left for a user to discover.
 - **What a real `measure_luminance` sensor reports is per-integration and is not
-  established.** The two lux thresholds a Daylight light asks for default to 5 and
+  established.** The two lux thresholds a Room-sensing Light asks for default to 5 and
   500, which is a judgement rather than a measurement; the pairing screen shows the
   chosen sensor's current reading so the user sets them against something real.
 - Compatibility follows what the source's owning integration exposes, not the

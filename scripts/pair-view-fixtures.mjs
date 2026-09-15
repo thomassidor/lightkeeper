@@ -221,7 +221,7 @@ const BOUNDARIES = {
 };
 
 /**
- * A day of the Curve light, one bar an hour, for the review's picture.
+ * A day of the Colour Curve Light, one bar an hour, for the review's picture.
  *
  * The same twenty-four the design canvas draws, so the contact sheet and the
  * canvas can be held against each other without allowing for different data.
@@ -628,7 +628,7 @@ export const DRIVER_REPLIES = {
     },
   },
 
-  // ---- Curve light: the same bars its own step 2 draws --------------------
+  // ---- Colour Curve Light: the same bars its own step 2 draws --------------------
   'curve/intro.html': intro(
     'intro.curveTitle', 'intro.curveBlurb', 'curve',
     [['intro.whichLights', 'intro.whichLightsWhy'],
@@ -649,7 +649,7 @@ export const DRIVER_REPLIES = {
     },
   },
 
-  // ---- Daylight light: four steps, and the only review with a live reading
+  // ---- Room-sensing Light: four steps, and the only review with a live reading
   'daylight/intro.html': intro(
     'intro.daylightTitle', 'intro.daylightBlurb', 'daylight',
     [['intro.whichLights', 'intro.whichLightsWhy'],

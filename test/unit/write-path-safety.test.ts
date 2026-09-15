@@ -330,7 +330,7 @@ describe('the target fingerprint sees what an id list cannot', () => {
  * coerce, but it mistypes, and every consumer downstream tests `=== undefined`
  * to mean "the lamp never told us". So a `null` — an integration that has not
  * reported yet, or one whose sensor battery went flat — counted as a real
- * reading of zero, and a Daylight light wrote `dim 0.01` to a lit lamp.
+ * reading of zero, and a Room-sensing Light wrote `dim 0.01` to a lit lamp.
  */
 describe('an unusable snapshot value is absent, not zero', () => {
   const snapshot = (values: Record<string, unknown>) => liveValuesOf({

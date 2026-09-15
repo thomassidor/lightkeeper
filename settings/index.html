@@ -376,7 +376,7 @@
    * the name - and the "paused is not a fault" comment appeared in three of
    * them. `fill` writes everything after the name, because that genuinely
    * differs: a schedule puts its flow count on the controls line, a circadian
-   * light adds a pre-stage note, a Daylight light names its own sensors.
+   * light adds a pre-stage note, a Room-sensing Light names its own sensors.
    *
    * `emptyText` is the RESOLVED string, not a locale key: `locales.test.ts`
    * scans the source for `t('...')` literals to prove every defined key is
@@ -481,7 +481,7 @@
   /**
    * Where a curve is right now, in the terms whoever built it actually chose.
    *
-   * A Curve light's point may be a COLOUR instead of a warmth, and then the
+   * A Colour Curve Light's point may be a COLOUR instead of a warmth, and then the
    * warmth is only the fallback for lamps that cannot show one
    * (lib/circadian/circadian-curve.ts). Reporting it regardless said
    * "Now at 36% warmth" about a curve whose every point was a colour — a number
@@ -601,7 +601,7 @@
   }
 
   /**
-   * Daylight lights, which report a brightness and — crucially — WHERE it came
+   * Room-sensing Lights, which report a brightness and — crucially — WHERE it came
    * from.
    *
    * "Sensors" and "sun" behave very differently: one measures the room and one

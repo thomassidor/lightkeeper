@@ -43,10 +43,10 @@ keys as you type, but a terminal that mangles that would put a live credential i
 so prefer the file.
 
 `full` **builds one of each device type**, tests those, and **deletes them again** at the end. It
-names everything it builds `[verify] …` and only ever touches devices carrying that mark, re-checking
-it against the Homey immediately before each permanent delete — so a controller, schedule, circadian
-or Curve light **you** paired is never chosen, never written to and never deleted. You can run this
-on the Homey you live with.
+names everything it builds `[verify] …` and only ever touches devices carrying that mark,
+re-checking it against the Homey immediately before each permanent delete — so a controller,
+schedule, circadian or Colour Curve Light **you** paired is never chosen, never written to and never
+deleted. You can run this on the Homey you live with.
 
 Three things it still does to the whole Homey, because they cannot be scoped to one device:
 
@@ -66,7 +66,10 @@ pass builds its own alongside it.
 
 The script cannot do these. Report each by its number.
 
-- [ ] **T3** Devices → Add device → Lightkeeper lists five device types, with five **different** pictures. (The Daylight light's is a PLACEHOLDER for this release — a flat violet disc, and a publish blocker recorded in `artwork/provenance.md`.) (It draws no icon at all from a CLI install — that is normal and resolves on publish.)
+- [ ] **T3** Devices → Add device → Lightkeeper lists five device types, with five **different**
+  pictures. (The Room-sensing Light's is a PLACEHOLDER for this release — a flat violet disc, and a
+  publish blocker recorded in `artwork/provenance.md`.) (It draws no icon at all from a CLI install
+  — that is normal and resolves on publish.)
 - [ ] **T9** Press the mapped button. The lights respond.
 - [ ] **T10** Hold the ramp button. It ramps, and **stops when you let go** — and never runs longer than about 10 seconds.
 - [ ] **T11** Turn the dial. The lights move by a sensible amount — **not** straight to full.
@@ -87,8 +90,8 @@ see a screen. Every line here needs a phone.
       back forward keeps what you had already chosen. Report any screen whose wording or layout
       reads wrong — this is the only pass in which a person sees them at the size they ship at.
 - [ ] **T113** The credential screen's two behaviours, in order. With **no** key stored, add a
-      light controller: the key screen appears after the intro and before step 1, and refuses to
-      go on until a key is accepted. Then add a **second** controller: it must pass straight
+      Light Remote: the key screen appears after the intro and before step 1, and refuses to
+      go on until a key is accepted. Then add a **second** Light Remote: it must pass straight
       through with no visible flash of the form. This is the whole argument for moving the screen
       to the front, and the flash is the one thing that would undo it.
 - [ ] **T114** The circadian day strip, which is the only drag target in the app. A horizontal
@@ -100,7 +103,7 @@ see a screen. Every line here needs a phone.
       Location, cleared). The day screen must say it is falling back to fixed times rather than
       drawing marks it cannot place, and the device must still run. Put the location back
       afterwards.
-- [ ] **T116** The sensor week, on real Insights data. Add a Daylight light and open a sensor's
+- [ ] **T116** The sensor week, on real Insights data. Add a Room-sensing Light and open a sensor's
       detail screen: the grid must show seven rows with a visible night and day, a scale carrying
       the sensor's own low and high, and a verdict sentence with numbers in it. Do it for a sensor
       you know to be **frozen** as well — it must say so and name the date it stopped. If the grid
@@ -132,11 +135,11 @@ see a screen. Every line here needs a phone.
       DO carry their own are the review (`Add device`) and the key screen (`Save and continue`),
       and on both of those Homey draws none of its own. This is the line the whole pass exists
       for: the duplicate was invisible in every render taken without Homey's chrome around it.
-- [ ] **T123** **The curve chart with brightness OFF**, which is the default. Add a Curve light
-      and look at step 2 before touching anything: the point handles must sit inside the chart,
-      not over the heading above it, and the `Full` / `Off` captions must be absent — there is no
-      axis to label while every bar is full height. Then switch brightness on for one point and
-      confirm the gutter appears and the bars take their heights.
+- [ ] **T123** **The curve chart with brightness OFF**, which is the default. Add a Colour Curve
+      Light and look at step 2 before touching anything: the point handles must sit inside the
+      chart, not over the heading above it, and the `Full` / `Off` captions must be absent — there
+      is no axis to label while every bar is full height. Then switch brightness on for one point
+      and confirm the gutter appears and the bars take their heights.
 - [ ] **T124** **Selected state, on the four screens that have one.** The circadian day, the
       curve, a schedule block and the daylight response each open one card out of a list. On the
       phone, the open card must be visibly bordered in the app's own violet — not the hairline
@@ -149,10 +152,10 @@ see a screen. Every line here needs a phone.
       circadian day and curve steppers, the schedule's seven day chips, the HOUR/MINUTE captions,
       both dashed `Add a …` buttons and the two `Remove this …` links. Report anything that reads
       oversized, mis-weighted, or out of proportion with the row it sits in.
-- [ ] **T126** **The colour swatches, on a phone screen in daylight.** Open a Curve light's step 2
-      and confirm the eight featured colours are eight distinguishable colours — in particular
-      that "Neutral white" and "Cool white" do not read as two identical greys. Fold the other
-      sixteen out and confirm the same. Then pick one and check the chosen swatch's ring is
+- [ ] **T126** **The colour swatches, on a phone screen in daylight.** Open a Colour Curve Light's
+      step 2 and confirm the eight featured colours are eight distinguishable colours — in
+      particular that "Neutral white" and "Cool white" do not read as two identical greys. Fold the
+      other sixteen out and confirm the same. Then pick one and check the chosen swatch's ring is
       visible on a pale colour as well as on a saturated one.
 
 **0.6.0, the section before that — what a week of real evidence found, and the five fixes that came
@@ -178,18 +181,18 @@ number is never reused.
       `reason: 'expired'`, and a write to that lamp must follow on the same pass. If no such lamp
       is to hand, dim one by hand from the Homey app and leave it: the same four hours apply.
       Before the fix this device did nothing for 88 of 93 hours while reporting `ready`.
-- [ ] **T108** Switch a lamp belonging to a Daylight light off, from the Homey app or at the wall,
-      and leave the device alone for a minute. The tile must **not** show it as overridden at any
-      point, and the export must carry `report_ignored` with `reason: 'dim_zero'` rather than an
-      `override`. Repeat on each integration you own: the defect was an integration reporting
-      `dim 0` a median of 29.9 s ahead of its own `onoff: false`, so the ordering is the thing
-      under test and it differs per bridge.
+- [ ] **T108** Switch a lamp belonging to a Room-sensing Light off, from the Homey app or at the
+      wall, and leave the device alone for a minute. The tile must **not** show it as overridden at
+      any point, and the export must carry `report_ignored` with `reason: 'dim_zero'` rather than an
+      `override`. Repeat on each integration you own: the defect was an integration reporting `dim
+      0` a median of 29.9 s ahead of its own `onoff: false`, so the ordering is the thing under test
+      and it differs per bridge.
 - [ ] **T109** Start a recording and leave a circadian light running across the point where its
       warmth crosses zero — the far end of the coolest anchor. Export, and confirm the analysis
       reports **`malformed: 0`**. This is the only end-to-end check on the redaction fix; the
       recording that found it had 93 unreadable records and `dropped: 0`. While the archive is
       open, re-confirm T100's redaction search: both keys' leading characters still absent.
-- [ ] **T110** A Daylight light whose sensor sits in the same room as its lamps, configured with
+- [ ] **T110** A Room-sensing Light whose sensor sits in the same room as its lamps, configured with
       the bright end higher than the dark end. Switch its lamps on and watch for ten minutes. The
       device must move to **partial** with the "brightening their own sensor" message once the
       climb has been observed five times, and `feedbackObservations` must be non-zero in the
@@ -237,11 +240,11 @@ has something it should not.
       file is gone from `/userdata` (the unauthenticated URL above should 404). Do the same from the
       settings page's **Discard archive** button and confirm **Start** becomes available again.
       *The settings-page half is still owed: only the CLI path was exercised.*
-- [ ] **T102** Cut one lamp of a three-lamp circadian or Daylight light at the wall and leave it.
-      Within a few minutes the tile must stop saying everything is well and report the lamp.
+- [ ] **T102** Cut one lamp of a three-lamp circadian or Room-sensing Light at the wall and leave
+      it. Within a few minutes the tile must stop saying everything is well and report the lamp.
       Switch it back on: the tile returns to normal within two ticks. This is the failure streak
-      finally reaching the device, and the wall switch is the only way to produce it — a lamp cut
-      at the wall stays `available: true` (platform §6), so nothing else changes.
+      finally reaching the device, and the wall switch is the only way to produce it — a lamp cut at
+      the wall stays `available: true` (platform §6), so nothing else changes.
 - [ ] **T103** With a controller whose Flows are healthy, edit one generated Flow in the Flow
       editor so it reads as user-edited, then switch one of its lamps off at the wall. The tile
       must say "open repair" and KEEP saying it — not swap to a lamp count, and not become
@@ -255,15 +258,16 @@ has something it should not.
 - [ ] **T105** Map a single control to Hold → Brighter and nothing else. Press and hold, then
       release. The ramp must start on the hold and STOP on the release — not run to the ten-second
       hard stop. Then give that mapping a per-light target and repeat: only that lamp may move.
-- [ ] **T106** With a circadian light and a Daylight light both running, kill the Homey's socket
+- [ ] **T106** With a circadian light and a Room-sensing Light both running, kill the Homey's socket
       (pull its network briefly, or restart the router). Once it is back, toggle a lamp at the
       wall and change a lux sensor's reading. Both must reach the app without restarting it, and
       `getDiagnostics` must not show two clients' worth of subscriptions.
 
-- [ ] **T91** Configure a schedule, a circadian light and a Curve light with a lux sensor,
-      without a standalone Daylight light using it. Close pairing completely, change the sensor's
-      reading, and verify the curve devices follow it and the schedule uses it at its next boundary.
-      Restart Lightkeeper and repeat. The source should remain the sensor, not the sky or fallback.
+- [ ] **T91** Configure a schedule, a circadian light and a Colour Curve Light with a lux sensor,
+      without a standalone Room-sensing Light using it. Close pairing completely, change the
+      sensor's reading, and verify the curve devices follow it and the schedule uses it at its next
+      boundary. Restart Lightkeeper and repeat. The source should remain the sensor, not the sky or
+      fallback.
 - [ ] **T92** Configure two devices with the same sensor. Pause/resume and remove one device;
       the remaining device must continue receiving readings. Open two previews and close one;
       the other must continue. Close both and confirm no unowned sensor remains watched.
@@ -310,18 +314,26 @@ the machine rather than of this app**, and three restarts of one build spanned 7
       — `/proc/self/statm` with `ENOENT`, and nothing else. If `rss` starts answering, a firmware
       has mounted `/proc` and §17 needs rewriting. Ignore `maxRss`: it is inherited from the
       app-runner parent and reads identically across restarts and reinstalls.
-- [ ] **T131** Pair a Daylight light and open its sensor screen twice, a minute apart, on a sensor
-      whose lux has changed in between. The week behind the thresholds must redraw with the newer
-      reading — the Insights read now opts out of `homey-api`'s cache, which was both a retention
-      leak and a stale screen.
-- [ ] **T132** With a controller or curve light running, force a re-subscribe (rename a zone, or
-      add and remove a light from the target set) and confirm the lights keep responding. The
-      subscribe path now reads its device uncached so that `homey-api` does not queue a
-      whole-Homey device refresh behind every re-subscribe; a regression here shows as lights
-      that stop following after a catalogue change.
+- [ ] **T131** Pair a Room-sensing Light and open its sensor screen twice, a minute apart, on a
+      sensor whose lux has changed in between. The week behind the thresholds must redraw with the
+      newer reading — the Insights read now opts out of `homey-api`'s cache, which was both a
+      retention leak and a stale screen.
+- [ ] **T132** With a controller or Colour Curve Light running, force a re-subscribe (rename a zone,
+      or add and remove a light from the target set) and confirm the lights keep responding. The
+      subscribe path now reads its device uncached so that `homey-api` does not queue a whole-Homey
+      device refresh behind every re-subscribe; a regression here shows as lights that stop
+      following after a catalogue change.
 - [ ] **T133** Run `npm run render:views` and then `npx homey app install`. The archive must not
       grow by the size of `.views/`. Report the archive size the CLI prints — it was 11.6 MB with
       826 files on 14 September.
+- [ ] **T134** The three renamed device types, on a Homey that already has devices of each paired
+      under the OLD names. **Devices → Add → Lightkeeper** must list **Light Remote**, **Colour
+      Curve Light** and **Room-sensing Light** beside the unchanged **Circadian light** and **Light
+      schedule**. The already-paired devices must keep the names their owner gave them, stay
+      available, and keep driving their lights — the rename touches no driver id, no store key and
+      no Flow, so a device that goes unavailable here means something else moved with it. Check the
+      app's settings page too: the first section is headed **Light Remotes**, and a device that is
+      mid-repair says "this device needs repair" rather than naming a type it is not.
 
 ### Last run — 13 September 2026 (evening), firmware 13.5.0, app 0.6.0 + the pairing rewrite
 
@@ -342,11 +354,11 @@ nothing about them is broken in a way a fix would help.
 - **`catalog.devices()` and `catalog.getDevice()` are not methods.** They are `allDevices()` and
   `device()`. Six call sites across three drivers, all added by the pairing rewrite, all invisible
   to `tsc`, to the suite and to `validate` — because every driver's `private get app()` was typed
-  `any`, so `this.app.catalog.anything()` compiled. On hardware they threw the moment a real
-  screen asked: the daylight light's sensor picker could not list a single sensor. Fixed, and the
+  `any`, so `this.app.catalog.anything()` compiled. On hardware they threw the moment a real screen
+  asked: the Room-sensing Light's sensor picker could not list a single sensor. Fixed, and the
   accessor is now typed `LightkeeperApp` — `lib/app-contract.ts` was written for exactly this and
-  the drivers had never used it. Typing it immediately caught a second one: `applyReattach` passed
-  a possibly-`undefined` device into `discover()`, which would have re-attached a controller to an
+  the drivers had never used it. Typing it immediately caught a second one: `applyReattach` passed a
+  possibly-`undefined` device into `discover()`, which would have re-attached a controller to an
   empty event surface and left it with no mappings.
 - **Two warmth sliders ran backwards** — found in the render comparison rather than here, but it is
   the same class: the job editor and the schedule block placed the knob at the raw `warmth`, where
@@ -374,8 +386,8 @@ picture, which is the one thing `render:views` had never drawn.
 `full --yes`: **72 OK, 2 failed, 0 skipped**, plus a whole-house `probe-lights.mjs` run. Both
 failures were T59 and T60, and both are the memory reading — **every functional line passed**,
 including the two the rejoin checks exist for (a lamp taken over by hand and given back on a power
-cycle, on both a circadian and a Curve light), the credential removal and recovery, and a teardown
-that left the four devices of this Homey's own untouched.
+cycle, on both a circadian and a Colour Curve Light), the credential removal and recovery, and a
+teardown that left the four devices of this Homey's own untouched.
 
 **T59/T60: the footprint doubled, and it is not this app's code.** 71.8 MB at the start of the pass
 and 90.1 MB at the end, against a 50 MB ceiling — where the same line read 36.6 MB on a fresh install
@@ -495,10 +507,10 @@ including the feedback notice properly hidden on a decreasing response. T101's s
 failed** for a second `pair repair` after the failure was fixed, and **7 OK** for `teardown`. The
 two devices the pass did not create were untouched throughout and running at the end.
 
-**The one failure was in the harness, not the app.** T77 reported that a Daylight light "was created
-but the app never registered a runtime for it — it did not initialise". It had initialised perfectly.
-The check searched `controllers`, `schedules` and `circadian` in the status response and omitted
-`daylight`, which is its own key — so a Daylight light could only ever fail it. Fixed in
+**The one failure was in the harness, not the app.** T77 reported that a Room-sensing Light "was
+created but the app never registered a runtime for it — it did not initialise". It had initialised
+perfectly. The check searched `controllers`, `schedules` and `circadian` in the status response and
+omitted `daylight`, which is its own key — so a Room-sensing Light could only ever fail it. Fixed in
 `scripts/verify-hardware.mjs`; T77 passes and reads "built daylight … the app reports it ready".
 Worth remembering as a shape: a green pass is only as honest as the list the check looks in.
 

@@ -741,7 +741,7 @@ export class ScheduleRuntime {
    * the daylight asks for.
    *
    * Sampled ONCE, here, at the boundary. A schedule fires AT a time and does not
-   * follow anything afterwards — that is what a Daylight light is for — and it is
+   * follow anything afterwards — that is what a Room-sensing Light is for — and it is
    * stated as a limit in the README and the FAQ rather than left to be
    * discovered.
    *

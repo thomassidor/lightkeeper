@@ -68,7 +68,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
   /**
    * ONE registry, TWO device types.
    *
-   * A circadian light and a curve light are the same engine — the difference is
+   * A circadian light and a Colour Curve Light are the same engine — the difference is
    * only what each stores and which pairing screen it shows. Sharing the registry
    * is what keeps §12's "one `setInterval` for every circadian device on the
    * Homey" true across both, rather than two timers over two maps.
@@ -83,7 +83,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
    * rather than inside the manager that mostly uses them.
    *
    * `luminance` holds one ref-counted subscription per light sensor for the
-   * WHOLE app: a Daylight light, three schedules and a Curve light may every one
+   * WHOLE app: a Room-sensing Light, three schedules and a Colour Curve Light may every one
    * of them name the sensor in the hall, and five listeners on one battery
    * device is five teardowns to get right.
    *
@@ -92,7 +92,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
    * the schedule and curve managers (whose plans may carry a response), and the
    * pairing screens, which show what it currently reads.
    *
-   * `daylights` is the registry of live Daylight lights, and owns the second
+   * `daylights` is the registry of live Room-sensing Lights, and owns the second
    * `setInterval` in this app.
    */
   luminance!: LuminanceSource;

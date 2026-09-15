@@ -119,7 +119,7 @@ than a gradient across a globe did. **The exact prompt text
 was not captured** — recorded as a gap rather than reconstructed, on the same principle that keeps
 `provenance.md` from inventing a model name.
 
-The subject brief, for whoever redraws it or draws the Curve light's:
+The subject brief, for whoever redraws it or draws the Colour Curve Light's:
 
 > Device picture for the part of Lightkeeper that makes lights follow the colour of the day — warm
 > at dawn, cool through the middle, warm again at night. The object that stands for it is a wall

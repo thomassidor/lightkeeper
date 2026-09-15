@@ -101,13 +101,13 @@ function house() {
 }
 
 describe('runtime resource ownership across component boundaries', () => {
-  test('a saved Daylight light keeps its sensor after a pairing disconnect and a restart', async () => {
+  test('a saved Room-sensing Light keeps its sensor after a pairing disconnect and a restart', async () => {
     // The claim is ref-counted and TOTAL per owner, so the question this asks is
     // whether a live device's claim survives the pairing session that made it
     // letting go. It has to: releasing a session's claim must never take a saved
     // device's subscription with it.
     //
-    // Only a Daylight light holds one now. A circadian light and a schedule used
+    // Only a Room-sensing Light holds one now. A circadian light and a schedule used
     // to, through the `fromDaylight` flag on a point or a window — the pairing
     // rewrite removed that, so neither touches the sensor service at all, and
     // that absence is asserted here rather than assumed.

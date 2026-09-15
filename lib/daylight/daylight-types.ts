@@ -5,8 +5,8 @@ import type { TargetSpec } from '../outputs/light-intent';
 /**
  * What a daylight response is, as persisted — in FOUR different stores.
  *
- * This one shape is a Daylight light's whole plan AND the optional `daylight`
- * field on a schedule, a circadian light and a Curve light. That is the reason
+ * This one shape is a Room-sensing Light's whole plan AND the optional `daylight`
+ * field on a schedule, a circadian light and a Colour Curve Light. That is the reason
  * it lives in its own file with its own sanitiser: four stores mean four
  * migration chains, and the one thing that must not happen is four slightly
  * different ideas of what a response is.
@@ -21,7 +21,7 @@ import type { TargetSpec } from '../outputs/light-intent';
  * and coolest.
  *
  * **There is deliberately no `managedFlows` here, and no credential.** Like the
- * two curve-driven types, a Daylight light writes no Flows (platform §12).
+ * two curve-driven types, a Room-sensing Light writes no Flows (platform §12).
  */
 
 /**

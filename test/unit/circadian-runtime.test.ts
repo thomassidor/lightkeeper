@@ -846,7 +846,7 @@ describe('pre-staging that turns out to be unsafe', () => {
   });
 
   /**
-   * The health check counted `light_temperature` alone, so a Curve light whose
+   * The health check counted `light_temperature` alone, so a Colour Curve Light whose
    * points carry colours, pointed at colour-only lamps, was reported as "None of
    * its lights can change their warmth" and taken offline — while `planWrites()`
    * drives exactly that lamp on the hue axis, and the pairing screen's probe
@@ -990,7 +990,7 @@ describe('diagnostics', () => {
 
     const diagnostics = h.runtime.diagnostics() as any;
     // The registry serves both device types; a runtime registered without a
-    // kind is a curve light's, which is what this harness builds.
+    // kind is a Colour Curve Light's, which is what this harness builds.
     assert.equal(diagnostics.kind, 'curve');
     assert.equal(diagnostics.localTime, 'Tue 22:15');
     assert.ok(diagnostics.now.warmth > 0.9);
@@ -1257,7 +1257,7 @@ describe('a brightness a person chose is a brightness the lamp shows', () => {
   });
 });
 
-describe('the diagnostics can describe a Curve light', () => {
+describe('the diagnostics can describe a Colour Curve Light', () => {
   const colouredPlan = () => plan({
     points: [
       { id: 'a', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.9, color: 'ember' },
@@ -1270,7 +1270,7 @@ describe('the diagnostics can describe a Curve light', () => {
      * `warmth` on a coloured point is only the fallback for lamps that cannot
      * take a colour, so a projection carrying warmth alone made a coloured point
      * indistinguishable from a plain temperature point at the same value — the
-     * one field a "my Curve light went the wrong colour" report needs.
+     * one field a "my Colour Curve Light went the wrong colour" report needs.
      */
     const h = harness({ devices: [colourLamp('l1')], plan: colouredPlan() });
 
@@ -1321,7 +1321,7 @@ describe('the diagnostics can describe a Curve light', () => {
  * "A curve point whose brightness follows the daylight" used to be a block here.
  *
  * `fromDaylight` is gone from a curve point, along with the inline `daylight`
- * response on the plan: brightness from the room is what a Daylight light is
+ * response on the plan: brightness from the room is what a Room-sensing Light is
  * for, and offering it on four device types meant four screens carrying the same
  * 250-line card. `daylight-runtime.test.ts` is where following the room lives.
  */

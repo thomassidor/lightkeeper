@@ -3,7 +3,7 @@ import { runMigrationChain, type MigrationResult, type MigrationStep } from '../
 import { validateDaylightPlan } from '../validation/plans';
 
 /**
- * The Daylight light's own migration chain — a FIFTH store, a fifth schema.
+ * The Room-sensing Light's own migration chain — a FIFTH store, a fifth schema.
  *
  * Separate from the other four for the reason all of them are separate: this
  * device type stores a response and nothing else, and one version number shared

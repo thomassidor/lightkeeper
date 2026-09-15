@@ -334,10 +334,10 @@ describe('the light-picker handlers', () => {
  * `registerDaylightCardHandlers` is gone, and with it this block.
  *
  * The shared daylight card was the "follow the daylight" section spliced into a
- * schedule, a circadian light and a Curve light. The pairing rewrite removed
+ * schedule, a circadian light and a Colour Curve Light. The pairing rewrite removed
  * `fromDaylight` from all three stores — brightness from the room is what a
- * Daylight light is for — so the card, its three handlers and the four-way
- * splice went with it. The Daylight light's own screen keeps its handlers, and
+ * Room-sensing Light is for — so the card, its three handlers and the four-way
+ * splice went with it. The Room-sensing Light's own screen keeps its handlers, and
  * they live in its own driver.
  */
 
@@ -379,7 +379,7 @@ describe('the save handler', () => {
     registerSaveHandler(host, handler, state, {
       idPrefix: 'dayl',
       storeKey: 'daylight',
-      naming: { fallback: 'Daylight light', suffix: 'daylight' },
+      naming: { fallback: 'Room-sensing Light', suffix: 'daylight' },
       buildPlan: () => ({ schemaVersion: 1 }),
     });
     const result = await call('save', '') as {
@@ -418,7 +418,7 @@ describe('the save handler', () => {
     registerSaveHandler(host, handler, {}, {
       idPrefix: 'curv',
       storeKey: 'curve',
-      naming: { fallback: 'Curve light', suffix: 'curve' },
+      naming: { fallback: 'Colour Curve Light', suffix: 'curve' },
       buildPlan: () => ({}),
     });
     const result = await call('save', 'Kitchen curve') as { device: { name: string } };

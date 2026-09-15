@@ -340,7 +340,7 @@
     },
     {
       "name": {
-        "en": "Light controller"
+        "en": "Light Remote"
       },
       "class": "service",
       "capabilities": [],
@@ -465,7 +465,7 @@
     },
     {
       "name": {
-        "en": "Curve light"
+        "en": "Colour Curve Light"
       },
       "class": "service",
       "capabilities": [
@@ -549,7 +549,7 @@
     },
     {
       "name": {
-        "en": "Daylight light"
+        "en": "Room-sensing Light"
       },
       "class": "service",
       "capabilities": [

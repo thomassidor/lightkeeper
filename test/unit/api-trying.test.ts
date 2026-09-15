@@ -109,7 +109,7 @@ function homey(options: {
   };
 
   /**
-   * A Daylight light answers the same `applyNow`/`drain` pair, which is the
+   * A Room-sensing Light answers the same `applyNow`/`drain` pair, which is the
    * whole reason ONE preview route serves two registries. Reusing the `curve`
    * factory is the point rather than a shortcut: if the two runtimes' surfaces
    * ever diverge, that route stops being honest and this stops compiling.
@@ -181,11 +181,12 @@ describe('POST /devices/:id/preview (T21, T27, T28)', () => {
     const { homey: h } = homey({ curves: [] });
     await assert.rejects(
       () => api.previewDevice({ homey: h, params: { id: CURVE_ID } }),
-      /no circadian, Curve or Daylight light with id "lk-circ-1755500000000-300001" is running/,
+      new RegExp('no circadian, Colour Curve or Room-sensing Light '
+        + `with id "${CURVE_ID}" is running`),
     );
   });
 
-  test('a Daylight light previews through the SAME route', async () => {
+  test('a Room-sensing Light previews through the SAME route', async () => {
     // Two registries, one route: "apply this device's plan to its lights now"
     // is the same request whether the plan is a curve or a daylight response,
     // and a second route would mean a caller that has to know which kind of
@@ -200,7 +201,7 @@ describe('POST /devices/:id/preview (T21, T27, T28)', () => {
     assert.equal(recorded.drained, 1);
   });
 
-  test('a curve id is still found when Daylight lights are running too', async () => {
+  test('a curve id is still found when Room-sensing Lights are running too', async () => {
     // The fallback must not shadow the first registry.
     const { homey: h, recorded } = homey({ curves: [CURVE_ID], daylight: [DAYLIGHT_ID] });
 
@@ -256,7 +257,7 @@ describe('POST /curves/tick', () => {
 });
 
 describe('POST /daylight/tick', () => {
-  test('one call ticks every Daylight light, and says how many', async () => {
+  test('one call ticks every Room-sensing Light, and says how many', async () => {
     // Its own route rather than folded into tickCurves, because a pass watching
     // whether the daylight loop settles wants to advance THAT clock and nothing
     // else — and because the other name would then be a lie.

@@ -158,7 +158,7 @@ describe('pair view styles', () => {
      *
      * The daylight CARD used to be the block here — the "follow the daylight"
      * section spliced into four screens. It went with `fromDaylight`: brightness
-     * from the room is what a Daylight light is for, and offering it on four
+     * from the room is what a Room-sensing Light is for, and offering it on four
      * device types meant four screens carrying the same 250 lines.
      *
      * What is spliced now is the sensor's-week grid, on the two daylight screens

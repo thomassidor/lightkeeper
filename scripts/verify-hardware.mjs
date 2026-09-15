@@ -39,7 +39,7 @@
  * not a file on the laptop. Every command selects from the marked ones, and
  * `teardown` deletes only those, re-checking the mark against the Homey
  * immediately before each permanent delete. A controller, schedule, circadian or
- * Curve light that YOU paired is never chosen, never written to and never
+ * Colour Curve Light that YOU paired is never chosen, never written to and never
  * deleted, so a `full` run can be done on the Homey you actually live with.
  *
  * WHAT IT STILL DOES TO YOUR HOMEY, because these cannot be scoped to a device:
@@ -246,7 +246,7 @@ const askTerminal = (question, secret) => new Promise((resolve, reject) => {
 /**
  * Switch one of a device's target lamps on OURSELVES, and hand back a restore.
  *
- * A circadian or Curve light writes colour only to lamps that are already on
+ * A circadian or Colour Curve Light writes colour only to lamps that are already on
  * (platform §12), so with every target off there is genuinely nothing for
  * `preview` or `rejoin` to observe. That used to be a prompt — and in an
  * unattended run (`--yes`, CI, anything without a TTY) the prompt could not be
@@ -961,7 +961,7 @@ async function commandSpike(api) {
   report('-', 'INFO', `credential: present=${status?.credential?.present} valid=${status?.credential?.valid}`);
   report('-', 'INFO', `${status?.controllers?.length ?? 0} controller(s), `
     + `${status?.schedules?.length ?? 0} schedule(s), `
-    + `${status?.circadian?.length ?? 0} circadian/curve light(s) running`);
+    + `${status?.circadian?.length ?? 0} circadian/Colour Curve Light(s) running`);
 
   try {
     /** @type {any} */
@@ -1617,7 +1617,7 @@ async function commandCredential(api, key) {
     .filter(c => c.state === 'needs_credential');
   report('T41', curvesTouched.length === 0 ? 'OK' : 'FAILED',
     curvesTouched.length === 0
-      ? `circadian and Curve lights untouched with no key stored: ${curveStates(midway) || 'none paired'}`
+      ? `circadian and Colour Curve Lights untouched with no key stored: ${curveStates(midway) || 'none paired'}`
       : `${curvesTouched.length} of them reported needs_credential, which they have no state for`);
 
   // T40 — and back, without a restart.
@@ -1693,14 +1693,14 @@ async function commandRejoin(api) {
   const ours = await ourDataIds(api);
   const all = (await curves()).filter(runtime => ours.has(runtimeId(runtime)));
   if (all.length === 0) {
-    report('T24', 'SKIPPED', 'no circadian or Curve light built by this pass is running — '
+    report('T24', 'SKIPPED', 'no circadian or Colour Curve Light built by this pass is running — '
       + NOTHING_OF_OURS);
     return;
   }
 
   for (const runtime of all) {
     const kind = String(runtime?.kind ?? 'circadian');
-    // T29 is the Curve light's line and T24 the circadian one; the check is the
+    // T29 is the Colour Curve Light's line and T24 the circadian one; the check is the
     // same, so `kind` decides which number it reports against.
     const rejoinLine = kind === 'curve' ? 'T29' : 'T24';
     const label = `${kind} "${runtime?.name ?? runtime?.id}"`;
@@ -1756,7 +1756,7 @@ async function commandRejoin(api) {
 
     await rejoinAfterPowerCycle(api, app, runtimeId(runtime), lampId, lampName, label, rejoinLine);
     // T25 is written once, for the circadian light, but the behaviour belongs to
-    // the shared engine — so it runs for a Curve light too and reports against
+    // the shared engine — so it runs for a Colour Curve Light too and reports against
     // the same number.
     await handOverAndRejoin(api, app, runtimeId(runtime), lampId, lampName, label);
 
@@ -2118,7 +2118,7 @@ async function commandRestart(api) {
   const curves = /** @type {any[]} */ (diagnostics?.circadian ?? [])
     .filter(runtime => ourCurves.has(runtimeId(runtime)));
   if (curves.length === 0) {
-    report('T34', 'SKIPPED', 'no circadian or Curve light built by this pass is running — '
+    report('T34', 'SKIPPED', 'no circadian or Colour Curve Light built by this pass is running — '
       + NOTHING_OF_OURS);
     return;
   }
@@ -2598,7 +2598,7 @@ async function commandPreview(api) {
   const curves = /** @type {any[]} */ (diagnostics?.circadian ?? [])
     .filter(runtime => ours.has(runtimeId(runtime)));
   if (curves.length === 0) {
-    report('T21', 'SKIPPED', 'no circadian or Curve light built by this pass is running — '
+    report('T21', 'SKIPPED', 'no circadian or Colour Curve Light built by this pass is running — '
       + NOTHING_OF_OURS);
     return;
   }
@@ -2626,7 +2626,7 @@ async function commandPreview(api) {
     /**
      * Writing to NO lamp is the correct answer when no lamp is on.
      *
-     * A circadian or Curve light never switches a light on — it writes colour,
+     * A circadian or Colour Curve Light never switches a light on — it writes colour,
      * and only to lights already on (platform §12). So `writes: 0, skipped: 1`
      * against an off lamp is the app obeying its central promise, and calling
      * that a failure is the harness asserting an absolute whose precondition it
@@ -3165,7 +3165,7 @@ async function commandPair(api, room) {
         /** @type {any} */
         const status = await app.get('/').catch(() => null);
         // All FIVE lists. `daylight` is its own key in the status response —
-        // a Daylight light is not folded into `circadian` the way a Curve light
+        // a Room-sensing Light is not folded into `circadian` the way a Colour Curve Light
         // is — and leaving it out meant T77 could only ever fail: the device
         // initialised fine and was looked for in three lists it is never in.
         const all = [
@@ -3328,7 +3328,7 @@ async function pairSessions(api) {
  * Which lamps each device type gets, from one room if one is named.
  *
  * Deliberately ONE lamp each, and different lamps where the Homey has enough of
- * them. A controller, a schedule, a circadian light and a Curve light all
+ * them. A controller, a schedule, a circadian light and a Colour Curve Light all
  * pointed at the same lamp is a documented disagreement — the schedule sets a
  * warmth at its boundary and the curve overwrites it within minutes — and a
  * pass that builds that on purpose spends the rest of its run explaining it.
@@ -3388,8 +3388,8 @@ async function pickLights(session, room) {
       circadian: at(0), curve: at(1), schedule: at(2), controller: at(3),
       // `at()` clamps, so a reference room with fewer than five lamps hands the
       // same one to more than one device type. That is fine for this pass and is
-      // the existing behaviour for four; a Daylight light writing `dim` to a
-      // lamp a Curve light is writing `light_temperature` to is two axes on one
+      // the existing behaviour for four; a Room-sensing Light writing `dim` to a
+      // lamp a Colour Curve Light is writing `light_temperature` to is two axes on one
       // lamp, not a conflict.
       daylight: at(4),
     };
@@ -3398,7 +3398,7 @@ async function pickLights(session, room) {
 
     if (warm.length === 0) {
       report('-', 'INFO', 'no lamp on this Homey reports light_temperature — the circadian '
-        + 'and Curve lights will have nothing to write');
+        + 'and Colour Curve Lights will have nothing to write');
     }
     return chosen;
   } catch (error) {
@@ -3654,7 +3654,7 @@ async function buildCurve(session, open, lights) {
   }
 
   /**
-   * One point is given a COLOUR, because that is the only thing the Curve light
+   * One point is given a COLOUR, because that is the only thing the Colour Curve Light
    * adds over the circadian one — and `preview` checks later that a
    * colour-capable lamp actually received it.
    */

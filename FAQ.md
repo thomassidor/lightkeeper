@@ -21,7 +21,7 @@ this is where the answers live.
 `homey:manager:api` is the only API permission that exists. A Personal API Key that *you* create
 succeeds at the full create/read/delete lifecycle, including from inside the app process.
 
-Since generating Flows is the entire mechanism by which controllers and schedules work, and no app
+Since generating Flows is the entire mechanism by which Light Remotes and schedules work, and no app
 permission grants it, Lightkeeper has to ask you for a key. There is no way around it, and
 [`docs/homey-platform.md` §1](docs/homey-platform.md#1-an-apps-own-token-cannot-write-flows) has the
 full evidence including the server-side stack trace.
@@ -30,11 +30,11 @@ full evidence including the server-side stack trace.
 
 | Device | Key? | Why |
 |---|---|---|
-| Light controller | **Yes** | It works by generating Flows |
+| Light Remote | **Yes** | It works by generating Flows |
 | Light schedule | **Yes** | Same — two Flows per window |
 | Circadian light | No | Generates no Flows at all |
-| Curve light | No | Same engine, same answer |
-| Daylight light | No | Same answer, different job |
+| Colour Curve Light | No | Same engine, same answer |
+| Room-sensing Light | No | Same answer, different job |
 
 Those three watch your lights over the app's own connection and write to them directly, so setting
 one up never asks for a key at all. They also keep working when a key expires.
@@ -70,7 +70,7 @@ No to both. Homey Cloud does not offer the local Web API access the design depen
 Pro 2019 and earlier cannot mint API Keys at all**, which is what sets the hardware floor at Homey
 Pro 2023.
 
-### What is the difference between a circadian light and a Curve light?
+### What is the difference between a circadian light and a Colour Curve Light?
 
 The same engine, two ways of asking.
 
@@ -80,25 +80,25 @@ midnight. Morning ends a little after sunrise and evening starts a little before
 out from your Homey's own location, so the day moves with the real one through the year. You choose
 those two offsets; the shape between them is deliberately not a setting.
 
-A **Curve light** hands you the whole curve: every point, every time, and a colour from a closed
-palette instead of a warmth at any point.
+A **Colour Curve Light** hands you the whole curve: every point, every time, and a colour from a
+closed palette instead of a warmth at any point.
 
-Pick a Curve light when you want a specific evening; pick a circadian light when you just want "warm
-at night, cool in the day". There is **no way to convert one into the other** — Homey has no
-mechanism for changing a device's driver — but adding one is cheap, since neither needs an API key
-or writes any Flows.
+Pick a Colour Curve Light when you want a specific evening; pick a circadian light when you just
+want "warm at night, cool in the day". There is **no way to convert one into the other** — Homey has
+no mechanism for changing a device's driver — but adding one is cheap, since neither needs an API
+key or writes any Flows.
 
-### What does a Daylight light do that a schedule cannot?
+### What does a Room-sensing Light do that a schedule cannot?
 
-A schedule happens **at a time**. A Daylight light happens **all the time**.
+A schedule happens **at a time**. A Room-sensing Light happens **all the time**.
 
 A schedule block comes on at seven at whatever brightness you set, and leaves the lights there. A
-Daylight light keeps looking at how light the room is, and keeps adjusting, for as long as the
+Room-sensing Light keeps looking at how light the room is, and keeps adjusting, for as long as the
 lights are on. If you want "keep this room at a comfortable level all evening as the light goes",
-that is the Daylight light; a schedule cannot do it, and setting one up to try produces a room that
-is right at seven and wrong at nine.
+that is the Room-sensing Light; a schedule cannot do it, and setting one up to try produces a room
+that is right at seven and wrong at nine.
 
-### Do I need a light sensor for a Daylight light?
+### Do I need a light sensor for a Room-sensing Light?
 
 No. Without one it uses **how high the sun is**, worked out from your Homey's own location — which
 Homey asked you for during setup, so you almost certainly have one. That handles the shape of the
@@ -156,8 +156,8 @@ Ordinary Flows, each with one internal Lightkeeper action card, filed in a folde
 **Lightkeeper**, and inside it a folder per device named after the device itself. Rename the device
 and the folder follows.
 
-- **A controller** gets one Flow per mapped event, triggered by your remote's own trigger card, and
-  only for events you actually mapped.
+- **A Light Remote** gets one Flow per mapped event, triggered by your remote's own trigger card,
+  and only for events you actually mapped.
 - **A schedule** gets two Flows per window — one at each end — triggered by Homey's own time trigger.
 
 You can look at them, and you can move them. If you **edit** one, Lightkeeper notices and stops
@@ -181,15 +181,15 @@ neither needs any reconfiguration.
 They will disagree. A schedule's warmth is applied at its boundary and then overwritten by the
 circadian light within a few minutes. **Use one or the other on a given lamp.**
 
-The same goes for a **Daylight light and anything else that sets brightness** on the same lamp: a
-Daylight light adjusts continuously, so it wins, and whatever the other device set is overwritten
-within a minute. A schedule block that switches the lamp ON is fine — the Daylight light takes the
-brightness from there — but a block that also sets a brightness is a block whose brightness lasts
-about a minute.
+The same goes for a **Room-sensing Light and anything else that sets brightness** on the same lamp:
+a Room-sensing Light adjusts continuously, so it wins, and whatever the other device set is
+overwritten within a minute. A schedule block that switches the lamp ON is fine — the Room-sensing
+Light takes the brightness from there — but a block that also sets a brightness is a block whose
+brightness lasts about a minute.
 
-One pair that does NOT conflict: a Daylight light and a circadian or Curve light on the same lamp,
-where the colour-following device is not also set to change brightness. They are then writing to
-different axes — one to the brightness, one to the warmth — and neither undoes the other.
+One pair that does NOT conflict: a Room-sensing Light and a circadian or Colour Curve Light on the
+same lamp, where the colour-following device is not also set to change brightness. They are then
+writing to different axes — one to the brightness, one to the warmth — and neither undoes the other.
 
 ### Why does my light only change colour every few minutes?
 
@@ -259,7 +259,7 @@ classifies them so it can send you to the right fix.
 live session, and two holders appear to invalidate one another — the symptom is a key that
 "randomly" stops working.
 
-### A Daylight light says it cannot tell how light it is
+### A Room-sensing Light says it cannot tell how light it is
 
 It has no light sensor reporting and no location to work the sun out from, so it is leaving your
 lights alone rather than guessing. Either fix works:
@@ -269,8 +269,8 @@ lights alone rather than guessing. Either fix works:
 - **Or pick a light sensor** in Repair. Most motion sensors have one, and a sensor needs no location
   at all.
 
-Homey settings → Lightkeeper shows which of the two it is: the Daylight lights section leads with
-the sun's current height, or says the Homey has not told it where it is.
+Homey settings → Lightkeeper shows which of the two it is: the Room-sensing Lights section leads
+with the sun's current height, or says the Homey has not told it where it is.
 
 ### A light is unavailable
 
@@ -285,12 +285,12 @@ Two different answers, depending on which device you have.
 lost. If your remote exposes no release event, Lightkeeper offers stepping rather than a hold ramp
 in the first place.
 
-**From a Daylight light:** it is meant to, as the light in the room changes — but it should settle
-and then stay put, not keep moving. If it keeps moving minute after minute, its light sensor is
-almost certainly in the same room as the lights it is driving, and is measuring them.
-[What to do about that](#can-a-light-sensor-be-in-the-same-room-as-the-lights-it-drives). Homey
-settings → Lightkeeper lists every write the app has made, which is the quickest way to tell
-"settled" from "hunting".
+**From a Room-sensing Light:** it is meant to, as the light in the room changes — but it should
+settle and then stay put, not keep moving. If it keeps moving minute after minute, its light sensor
+is almost certainly in the same room as the lights it is driving, and is measuring them. [What to do
+about that](#can-a-light-sensor-be-in-the-same-room-as-the-lights-it-drives). Homey settings →
+Lightkeeper lists every write the app has made, which is the quickest way to tell "settled" from
+"hunting".
 
 ### A schedule did not fire
 
@@ -336,9 +336,9 @@ Stated plainly, because a limit you find out about later is worse than one you w
   Switching a household's lights off at app start, on the guess that we might once have switched them
   on, is the worse surprise.
 - **Times are clock times.** Sunrise and sunset are not offered yet — for schedules or for curves.
-- **A circadian or Curve light never switches a light on or off.** It only changes the colour of
-  lights that are already on and — if you ask it to — sets the colour of lights that are off so they
-  are right the moment they come on.
+- **A circadian or Colour Curve Light never switches a light on or off.** It only changes the colour
+  of lights that are already on and — if you ask it to — sets the colour of lights that are off so
+  they are right the moment they come on.
 - **Setting the colour of a light that is off is opt-in**, because on some integrations a colour write
   switches the lamp on. It is provable from the pairing screen against your own lamps before you
   commit, and it disables itself for the whole device the first time a lamp comes on from one.
@@ -349,10 +349,10 @@ Stated plainly, because a limit you find out about later is worse than one you w
 - **A circadian light adjusts about once every few minutes**, only when the colour has moved enough to
   be visible, and only while the app is running. It does not catch up on time it was switched off for
   — it simply picks up wherever the day now is.
-- **A Curve light's colour is chosen from a closed palette** — candle, amber, peach, rose, lavender,
-  ocean, forest, ember — not a colour wheel. Hue and saturation are a two-dimensional choice with one
-  good answer per intent, and a name survives being read back a year later where a pair of coordinates
-  does not.
+- **A Colour Curve Light's colour is chosen from a closed palette** — candle, amber, peach, rose,
+  lavender, ocean, forest, ember — not a colour wheel. Hue and saturation are a two-dimensional
+  choice with one good answer per intent, and a name survives being read back a year later where a
+  pair of coordinates does not.
 - **One colour point colours the segments either side of it.** A colour is never blended into a colour
   temperature, because that would mean inventing a shade nobody chose. "Amber at 21:00" with
   temperature points at 19:00 and 23:00 is amber from 19:00 to 23:00, not an amber instant.
@@ -362,20 +362,21 @@ Stated plainly, because a limit you find out about later is worse than one you w
   the lights lose their colour towards the middle of that segment and pick the new one up on the way
   out. It is the same rule as the bullet above, applied to the one case where both ends *are* a
   colour: pale is what any two colours have in common.
-- **A Daylight light never switches a light on or off either.** It only dims lights that are already
-  on, and brightness is never written to a light that is off — a brightness write turns an off lamp
-  on, which is measured rather than suspected.
+- **A Room-sensing Light never switches a light on or off either.** It only dims lights that are
+  already on, and brightness is never written to a light that is off — a brightness write turns an
+  off lamp on, which is measured rather than suspected.
 - **A light sensor in the same room as the lights it drives measures those lights too.** Lightkeeper
   damps the resulting hunting — a threshold below what you would see, and small steps rather than
   jumps — but cannot remove it. [Which placements behave](#can-a-light-sensor-be-in-the-same-room-as-the-lights-it-drives).
-- **A Daylight light needs either a light sensor or your Homey's location.** With neither it says so
-  and leaves your lights alone rather than guessing.
+- **A Room-sensing Light needs either a light sensor or your Homey's location.** With neither it
+  says so and leaves your lights alone rather than guessing.
 - **A schedule block sets a brightness, it does not follow one.** Following the light in the room is
-  what a Daylight light is for, and a schedule and a Daylight light on the same lamp is a supported
-  pair as long as the block does not also set a brightness.
-- **A Daylight light reads one light sensor.** Not several averaged: two sensors in different parts
-  of a room average to a number neither of them reported, and the week you are shown while choosing
-  would then belong to nothing. If you want two rooms handled differently, that is two devices.
+  what a Room-sensing Light is for, and a schedule and a Room-sensing Light on the same lamp is a
+  supported pair as long as the block does not also set a brightness.
+- **A Room-sensing Light reads one light sensor.** Not several averaged: two sensors in different
+  parts of a room average to a number neither of them reported, and the week you are shown while
+  choosing would then belong to nothing. If you want two rooms handled differently, that is two
+  devices.
 - **Two schedule blocks may overlap, and the later one wins** while they do. The setup screen
   outlines the overlap and says so rather than refusing to let you draw it.
 - **The dimmest brightness you can set is 10%.** Below that there is nothing left to send a lamp:
@@ -402,12 +403,12 @@ a log line. There is a test that asserts this against the serialised output.
 
 It *does* include your device and zone names, so skim it before posting.
 
-For circadian, Curve and Daylight lights, the export retains the latest 60 control passes and
-120 power, override and ignored-report events per runtime. Each pass lists every target's
+For circadian, Colour Curve and Room-sensing Lights, the export retains the latest 60 control passes
+and 120 power, override and ignored-report events per runtime. Each pass lists every target's
 decision and, when it submitted commands, their eventual outcomes. Daylight passes include the
 sensor readings used at that time. An override includes when it was detected, which capability
-changed, its reported value and the expected value; “external” can mean another automation as
-well as a person. Power changes that resume control are recorded too.
+changed, its reported value and the expected value; “external” can mean another automation as well
+as a person. Power changes that resume control are recorded too.
 
 The export labels perceptual brightness separately from device dim values. `writes` counts
 planned capability commands; an API success is not a physical measurement of the lamp. Current
@@ -417,7 +418,7 @@ dropped. The top-level `recentEvents` contains bridge Flow intake only.
 
 ### How do I remove it?
 
-Deleting a controller or a schedule removes only the Flows it can attribute to that device.
+Deleting a Light Remote or a schedule removes only the Flows it can attribute to that device.
 Attribution is the device's own id, carried inside the Flow — so nothing that is not demonstrably
 ours is touched.
 
@@ -448,10 +449,10 @@ arithmetic is covered by unit tests rather than by a week of waiting. The trigge
 on is resolved at runtime by enumerating what your Homey actually offers, rather than hardcoding an
 id, so it adapts if a firmware update moves it.
 
-**Circadian and Curve lights have not yet run a full day on hardware.** Their curve — including the
-segment that wraps midnight — and every rule about when a write is worth making are covered by unit
-tests, and the pairing screen's **Try it now** proves the whole write path against your own lamps
-before you save.
+**Circadian and Colour Curve Lights have not yet run a full day on hardware.** Their curve —
+including the segment that wraps midnight — and every rule about when a write is worth making are
+covered by unit tests, and the pairing screen's **Try it now** proves the whole write path against
+your own lamps before you save.
 
 Over 1500 unit tests, type-clean, validated at `publish` level. The test fixtures are transcribed verbatim
 from the four real remotes above, and the expected results are written by hand beside them, so the

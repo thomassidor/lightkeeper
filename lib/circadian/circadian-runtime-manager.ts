@@ -40,7 +40,7 @@ export interface CircadianManagerDeps {
    * Where the Homey is, for the boundaries a circadian light anchors to the sun.
    *
    * Optional so the ephemeral rigs and the tests can build a manager without
-   * one; a Curve light owns its points outright and never asks, and a circadian
+   * one; a Colour Curve Light owns its points outright and never asks, and a circadian
    * light with no position falls back to fixed hours.
    */
   location?: () => unknown;

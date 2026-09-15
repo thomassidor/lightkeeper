@@ -40,10 +40,10 @@ add them the way you add any Homey device: **Devices → Add → Lightkeeper**.
 
 <table>
 <tr>
-<td width="160"><img src="drivers/controller/assets/images/large.png" width="140" alt="Light controller"></td>
+<td width="160"><img src="drivers/controller/assets/images/large.png" width="140" alt="Light Remote"></td>
 <td>
 
-### Light controller
+### Light Remote
 
 Turns a remote, switch or dial you have **already paired** with Homey into a controller for lights
 you choose. Pick the remote, pick the lights, say what each press, hold or turn should do — on, off,
@@ -91,10 +91,10 @@ one on or off itself.*
 </td>
 </tr>
 <tr>
-<td width="160"><img src="drivers/curve/assets/images/large.png" width="140" alt="Curve light"></td>
+<td width="160"><img src="drivers/curve/assets/images/large.png" width="140" alt="Colour Curve Light"></td>
 <td>
 
-### Curve light
+### Colour Curve Light
 
 The detailed version of the circadian light above. Same job — colour through the day — but rather
 than describing three parts of the day and letting Lightkeeper shape it, you draw the day yourself,
@@ -105,17 +105,17 @@ of twenty-four. Between two points the lights fade gradually from one to the nex
 Every point keeps a warmth even when you give it a colour, and a lamp that cannot show colours uses
 that warmth — so plain white lamps and colour lamps move through the same day together.
 
-*No API key, and the same rule: it never switches a light on or off.* Choose a Curve light when you
-want a particular look at a particular hour; choose a circadian light when "warm at night, cool in
-the day" is all you are after.
+*No API key, and the same rule: it never switches a light on or off.* Choose a Colour Curve Light
+when you want a particular look at a particular hour; choose a circadian light when "warm at night,
+cool in the day" is all you are after.
 
 </td>
 </tr>
 <tr>
-<td width="160"><img src="drivers/daylight/assets/images/large.png" width="140" alt="Daylight light"></td>
+<td width="160"><img src="drivers/daylight/assets/images/large.png" width="140" alt="Room-sensing Light"></td>
 <td>
 
-### Daylight light
+### Room-sensing Light
 
 Sets your lights' brightness from how much light is in the room **already** — dimming them as the
 morning comes up and lifting them again as it goes, or the other way round if you would rather the
@@ -138,12 +138,12 @@ one on or off.*
 All five have a **Test** button while you are setting them up, which drives your actual lights then
 and there, so you know it works before you save anything.
 
-The **light controller** and the **light schedule** do their work by writing Homey Flows behind the
+The **Light Remote** and the **light schedule** do their work by writing Homey Flows behind the
 scenes, and Lightkeeper looks after those Flows for you. You can point either one at a whole room
 instead of at named lamps, and a lamp you add to that room later is picked up on its own. Delete the
 device and its Flows are deleted with it — its own, and nothing else. **You never open the Flow
-editor.** The **circadian light** and the **Curve light** write no Flows at all: they watch your
-lights and adjust them directly, which is why neither needs a key.
+editor.** The **circadian light** and the **Colour Curve Light** write no Flows at all: they watch
+your lights and adjust them directly, which is why neither needs a key.
 
 ---
 
@@ -154,12 +154,12 @@ lights and adjust them directly, which is why neither needs a key.
 - **Firmware 12.9.0 or newer.**
 - **Homey Cloud is not supported.** Lightkeeper needs wide access to the local API on the Homey
   itself, which only Homey Pro offers.
-- **A Personal API Key**, but only if you are adding a light controller or a light schedule.
-  Circadian lights, Curve lights and Daylight lights need none.
+- **A Personal API Key**, but only if you are adding a Light Remote or a light schedule.
+  Circadian lights, Colour Curve Lights and Room-sensing Lights need none.
   [Why?](FAQ.md#why-does-it-need-a-personal-api-key)
-- **Your Homey's location**, for a circadian light, and for a Daylight light set to follow the sun.
-  Homey asks for it during setup, so you almost certainly have one already; the app reads it to work
-  out sunrise, sunset and how high the sun is, and it never leaves the Homey. Without one, a
+- **Your Homey's location**, for a circadian light, and for a Room-sensing Light set to follow the
+  sun. Homey asks for it during setup, so you almost certainly have one already; the app reads it to
+  work out sunrise, sunset and how high the sun is, and it never leaves the Homey. Without one, a
   circadian light falls back to 06:00 and 21:00 and says so while you are setting it up.
 
 ## Getting started
@@ -170,10 +170,10 @@ From the Homey App Store. Or, if you have cloned this repository, `npx homey app
 
 ### 2. Give it an API key — if you need one
 
-Only if you are adding a **light controller** or a **light schedule**, and Lightkeeper asks for it
-near the start of setup rather than at the end, so nothing you have filled in can be lost to it.
-Skip it entirely for a circadian light, a Curve light or a Daylight light. It is one key per Homey,
-so the second controller you add never asks again.
+Only if you are adding a **Light Remote** or a **light schedule**, and Lightkeeper asks for it near
+the start of setup rather than at the end, so nothing you have filled in can be lost to it. Skip it
+entirely for a circadian light, a Colour Curve Light or a Room-sensing Light. It is one key per
+Homey, so the second Light Remote you add never asks again.
 
 1. Open [my.homey.app](https://my.homey.app) and pick your Homey
 2. Settings → API Keys → New API Key
@@ -185,8 +185,9 @@ back out by the app, and never included in a diagnostics export. Lightkeeper use
 only: **writing Flows**.
 
 A key can stop working — Homey invalidates the session behind it from time to time, even though the
-key you pasted is unchanged. If that happens, everything already set up carries on: your controllers
-keep driving your lights and your schedules keep firing, because those Flows are already written.
+key you pasted is unchanged. If that happens, everything already set up carries on: your Light
+Remotes keep driving your lights and your schedules keep firing, because those Flows are already
+written.
 What stops is Lightkeeper's ability to write new Flows or repair existing ones. It asks you for a
 fresh key, and nothing you have configured is lost.
 
@@ -200,11 +201,11 @@ review jumps back to the step it came from.
 
 | Device | The steps |
 |---|---|
-| Light controller | API key → **1** choose a remote (listed by room, or press a button and let Lightkeeper find it) → **2** choose lights → **3** one row per button, each saying what it does → **4** review |
+| Light Remote | API key → **1** choose a remote (listed by room, or press a button and let Lightkeeper find it) → **2** choose lights → **3** one row per button, each saying what it does → **4** review |
 | Light schedule | API key → **1** choose lights → **2** draw the blocks on a day → **3** review |
 | Circadian light | **1** choose lights → **2** morning, midday and evening → **3** review |
-| Curve light | **1** choose lights → **2** build the curve point by point → **3** review |
-| Daylight light | **1** choose lights → **2** choose a sensor, or the sun → **3** dark and bright → **4** review |
+| Colour Curve Light | **1** choose lights → **2** build the curve point by point → **3** review |
+| Room-sensing Light | **1** choose lights → **2** choose a sensor, or the sun → **3** dark and bright → **4** review |
 
 Homey lets you rename a device afterwards, so there is no name field to fill in.
 
@@ -242,17 +243,17 @@ The five limits most likely to matter. [FAQ.md](FAQ.md#limits) has the rest, sta
   state, a dial position) or a Flow trigger card it offers. A few integrations publish neither, and
   then no app on your Homey can react to that remote, Lightkeeper included.
 - **Times are clock times** — an hour and a minute you type in. Sunrise and sunset are not available
-  yet, neither in schedules nor in circadian and Curve lights.
+  yet, neither in schedules nor in circadian and Colour Curve Lights.
 - **If the app was not running at the moment a window should have ended, that "off" is missed**, and
   those lights stay on until the next window switches them. Lightkeeper deliberately does not go
   back and catch up on a missed "off": having your lights go dark on you some time after a restart
   is the worse surprise.
 - **Two Lightkeeper devices pointed at the same lamp will fight over it** — a schedule sets
-  brightness and warmth as it switches lights on, while a circadian or Curve light keeps changing
-  them all day. Give any one lamp to one Lightkeeper device.
-- **A circadian light and a Curve light check in every few minutes**, and write to a lamp only once
-  the colour has moved far enough to be visible. Neither does anything while the app is not
-  running.
+  brightness and warmth as it switches lights on, while a circadian or Colour Curve Light keeps
+  changing them all day. Give any one lamp to one Lightkeeper device.
+- **A circadian light and a Colour Curve Light check in every few minutes**, and write to a lamp
+  only once the colour has moved far enough to be visible. Neither does anything while the app is
+  not running.
 
 ## When something is wrong
 
@@ -281,7 +282,7 @@ reads, what it stores, and for how long.
 
 **0.6.0** — the current release. A fifth device type, and then everything that followed it:
 
-- **Daylight lights**, which set brightness from how much light is already in the room, and draw
+- **Room-sensing Lights**, which set brightness from how much light is already in the room, and draw
   your sensor's own last week so "dark" and "bright" are numbers you can judge.
 - **Every setup screen redrawn.** One question per screen, a numbered path through each device, and
   a review of everything before it saves.
@@ -289,6 +290,9 @@ reads, what it stores, and for how long.
   anchored to your Homey's own sunrise and sunset instead of a fixed clock.
 - The five defects that a recorded week in a real home found — chief among them a light that
   quietly reverts to its own settings no longer muting its device for days.
+- **Three device types renamed**: Light controller → **Light Remote**, Curve light → **Colour
+  Curve Light**, Daylight light → **Room-sensing Light**. Names only; devices you already added
+  are untouched.
 
 The recorder that produced that week is a development tool and is not part of the app you install.
 
@@ -298,7 +302,7 @@ Earlier releases, one line each:
 |---|---|
 | **0.5.2** | Four fixes to the colour-following lights, and the dimmest brightness no longer meant off |
 | **0.5.1** | A shorter App Store listing, prose release notes, and icons legible at 24 px |
-| **0.5.0** | A Curve light as a fourth device type, a simpler circadian light, and less memory used |
+| **0.5.0** | A Colour Curve Light as a fourth device type, a simpler circadian light, and less memory used |
 | **0.4.0** | Circadian lights: follow the colour of the day, and no API key needed for them |
 | **0.3.1** | Generated Flows grouped into a folder per device |
 | **0.3.0** | New artwork throughout, a new palette, and a README banner |

@@ -7,7 +7,7 @@ to a shipped file is lost on the next export. What to produce, and why, is in
 
 ## Two placeholders, and they are a publish blocker
 
-**The Daylight light's two graphics are PLACEHOLDERS**, added with the device type on
+**The Room-sensing Light's two graphics are PLACEHOLDERS**, added with the device type on
 **3 September 2026** for 0.6.0:
 
 | File | What it is now | What it needs to be |
@@ -27,9 +27,9 @@ placeholder is a *quality* problem, which no test can hold — hence this sectio
 
 ### What came before
 
-Every other shipped graphic comes from a master drawn for it. The Curve light was the last one
-outstanding — it split out of the circadian light in 0.5.0 and shipped with that driver's graphics,
-which Athom's automated reviewer would have flagged as byte-identical reuse — and it got
+Every other shipped graphic comes from a master drawn for it. The Colour Curve Light was the last
+one outstanding — it split out of the circadian light in 0.5.0 and shipped with that driver's
+graphics, which Athom's automated reviewer would have flagged as byte-identical reuse — and it got
 `curve-icon-master.svg` and `curve-device-master.png` of its own on **27 August 2026**, before
 release.
 

@@ -4,7 +4,7 @@ import type { DaylightPlan } from '../../lib/daylight/daylight-types';
 import type { DaylightRuntime } from '../../lib/daylight/daylight-runtime';
 
 /**
- * One virtual device per Daylight light.
+ * One virtual device per Room-sensing Light.
  *
  * **It stores a response and reads a sensor.** No times in it at all, which is
  * what separates it from the two curve-driven types: they ask what the day looks

@@ -56,7 +56,7 @@ export interface LiveValues {
  * absent here too. A bare `as number | undefined` does not coerce, but it does
  * mistype: a `null` from an integration that has not reported yet, or one whose
  * sensor battery is flat, arrived typed as `number` and was then read as a real
- * reading. A Daylight light's `aimFor` tests `=== undefined`, so `null` counted
+ * reading. A Room-sensing Light's `aimFor` tests `=== undefined`, so `null` counted
  * as present, `toPerceptual(null)` clamped to 0, and the first tick wrote
  * `dim 0.01` to a LIT lamp before fading it back up. The docblock above always
  * claimed this; now the code does it.

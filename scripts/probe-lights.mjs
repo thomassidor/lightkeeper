@@ -3945,7 +3945,7 @@ async function probeLight(ctx, light, index, total) {
  *
  * Two reasons, and the second is the one nobody would guess. Probing such a lamp
  * confounds the measurement, obviously. But our writes also look like a human
- * override TO THAT DEVICE, and a circadian or Curve light responds by dropping
+ * override TO THAT DEVICE, and a circadian or Colour Curve Light responds by dropping
  * the lamp from its curve until it is power-cycled — so the probe can quietly
  * break the user's lighting until they notice a lamp that stopped following the
  * day.
@@ -3964,7 +3964,7 @@ async function scanForConflicts(api, lights) {
     const diagnostics = await withTimeout(app.get({ path: '/diagnostics' }), 20_000,
       'reading app diagnostics');
     // Every family, including 'daylight': this set is what stops the probe
-    // pushing a lamp the app is currently holding, and a Daylight light holds a
+    // pushing a lamp the app is currently holding, and a Room-sensing Light holds a
     // lamp's brightness continuously — which is exactly the sort of thing the
     // probe would otherwise fight for the length of a run.
     for (const family of ['controllers', 'schedules', 'circadian', 'daylight']) {

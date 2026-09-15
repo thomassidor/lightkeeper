@@ -15,8 +15,8 @@ import { messageOf } from '../support/homey-errors';
  * asked.
  *
  * An app-level service, a sibling of `DeviceCatalog` rather than a per-runtime
- * object, and the reason is arithmetic: a Daylight light, three schedules and a
- * Curve light may every one of them name the sensor in the hall. Five runtimes
+ * object, and the reason is arithmetic: a Room-sensing Light, three schedules and a
+ * Colour Curve Light may every one of them name the sensor in the hall. Five runtimes
  * each holding their own subscription to it is five listeners on one battery
  * device, five teardowns to get right, and five chances to leak one. So
  * subscriptions are REF-COUNTED here and the runtimes only retain and release.

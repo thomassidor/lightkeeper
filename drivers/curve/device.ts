@@ -4,7 +4,7 @@ import type { CircadianPlan } from '../../lib/circadian/circadian-types';
 import type { CircadianRuntime } from '../../lib/circadian/circadian-runtime';
 
 /**
- * One virtual device per curve light.
+ * One virtual device per Colour Curve Light.
  *
  * Everything it shares with the other four device types lives in
  * `LightkeeperDevice`. Three things differ, all for the same underlying reason —

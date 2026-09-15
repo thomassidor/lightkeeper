@@ -208,8 +208,8 @@ From a hand-built flow:
 colour mode ignores a `light_temperature` exactly as a lamp in temperature mode ignores a
 `light_hue` — silently, in both directions: the write is accepted, `ok: true` is recorded, and the
 lamp keeps its old value. The planner set `light_mode: 'color'` before hue and saturation and set
-nothing before temperature, which was invisible until one device wrote both to one lamp. A Curve
-light with a coloured point does: the colour put the lamp into colour mode and every later
+nothing before temperature, which was invisible until one device wrote both to one lamp. A Colour
+Curve Light with a coloured point does: the colour put the lamp into colour mode and every later
 temperature-only point was discarded by the lamp.
 
 Measured on hardware, 30 August 2026: written 0.430, held 0.870, and the lamp refused a temperature
@@ -510,7 +510,7 @@ and it serves siblings in that same folder, with correct MIME types:
 | `drivers/daylight/assets/icon.svg`, `assets/icon.svg` | 200 | `image/svg+xml` |
 | `settings/index.html` | 200 | `text/html` |
 
-(`daylight.html` was the Daylight light's own screen when this was measured; the 0.6.0 pairing
+(`daylight.html` was the Room-sensing Light's own screen when this was measured; the 0.6.0 pairing
 rewrite replaced it with `sensor.html`, `response.html` and `sensordetail.html`. The paths are left
 as they were probed — a measurement rewritten to match today's file list stops being a record of
 what was run.)
@@ -537,7 +537,7 @@ workaround, and that mechanism does load an external `src` — asynchronously. S
 is "it loads, but not before the inline boot", meaning the boot would have to wait on `onload`.
 Expected is not measured. **The test is one minute with the Homey app open:** add a
 `<script src="daylight.assets/probe.js">` that sets a global and `emit()`s a line back to the
-driver, open the Daylight light's pairing screen, and read the app log — a pair view runs in the
+driver, open the Room-sensing Light's pairing screen, and read the app log — a pair view runs in the
 CLIENT, so `console.log` never reaches the Homey and the reply has to come back through `emit()`.
 
 **The same applies between drivers.** Four screens are authored once and used by several drivers —
@@ -814,7 +814,7 @@ warm again at night — and they are ONE engine:
 | Device type | Stores | Asks for |
 |---|---|---|
 | **Circadian light** (`drivers/circadian/`) | three zones of the day | what morning, midday and evening look like |
-| **Curve light** (`drivers/curve/`) | a list of points | every point, every time, and a colour per point |
+| **Colour Curve Light** (`drivers/curve/`) | a list of points | every point, every time, and a colour per point |
 
 Neither is a schedule with more rows. A schedule fires AT a time; a curve has a value at EVERY
 minute, and that difference decides everything below.
@@ -850,11 +850,11 @@ Homey" true across two device types rather than two timers over two maps. The ci
 `enabled` and `preStage` back on the way out; `kind` in each runtime's diagnostics is what tells the
 two apart on a settings page and in a bug report.
 
-**A point may carry a COLOUR instead of a colour temperature** (Curve light only). The palette is
-closed (`lib/circadian/palette.ts`) and that is a decision, not a limitation: hue and saturation are
-a two-dimensional choice with one good answer per intent, most of the plane is a bad idea in a living
-room at 21:00, and a name survives being read back on a settings page a year later where a pair of
-coordinates does not. Three rules hold the feature together:
+**A point may carry a COLOUR instead of a colour temperature** (Colour Curve Light only). The
+palette is closed (`lib/circadian/palette.ts`) and that is a decision, not a limitation: hue and
+saturation are a two-dimensional choice with one good answer per intent, most of the plane is a bad
+idea in a living room at 21:00, and a name survives being read back on a settings page a year later
+where a pair of coordinates does not. Three rules hold the feature together:
 
 - **`warmth` stays required even on a coloured point.** It is what a lamp with no colour capability
   is written to instead, and what the neighbouring temperature segments interpolate towards — so the
@@ -950,11 +950,12 @@ by hand went unnoticed and the next tick took it back.
   lamp, so `litDim()` is doing what its docblock claims. Pre-staging is a colour-only idea, and `planWrites()` splits its two legs for exactly
   this reason.
 - **A circadian light's schema 1 → 2 is where this device type stopped being the curve editor.** The
-  step keeps the WARMEST and COOLEST points — the two values the user actually chose, and the two the
-  new shape is built to hold — and drops everything between them, because there is nowhere in the new
-  plan to put it. That is in the changelog rather than hidden, and a Curve light is where such a curve
-  can be rebuilt. The step runs `sanitiseCurve` first: a plan stored at version 1 was never
-  validated (the chain ended in a cast until the validators landed), so `points` may be anything.
+  step keeps the WARMEST and COOLEST points — the two values the user actually chose, and the two
+  the new shape is built to hold — and drops everything between them, because there is nowhere in
+  the new plan to put it. That is in the changelog rather than hidden, and a Colour Curve Light is
+  where such a curve can be rebuilt. The step runs `sanitiseCurve` first: a plan stored at version 1
+  was never validated (the chain ended in a cast until the validators landed), so `points` may be
+  anything.
 - **There is no migration BETWEEN the two device types**, and there cannot be: Homey has no way to
   change a device's driver. An existing circadian light becomes the simple one; a curve is a new
   device. Adding one is cheap — no API key, no Flows — which is what makes that acceptable.
@@ -1555,7 +1556,7 @@ the app's rule was written for — "a sensor reading is never treated as stale,
 because many Zigbee sensors report only on change, so a quiet sensor in a stable
 room is telling the truth" — and it is now measured rather than hypothesised:
 the rule is right, and the age display is the only thing standing between a user
-and a Daylight light that holds one brightness forever. Worse, the frozen Studio
+and a Room-sensing Light that holds one brightness forever. Worse, the frozen Studio
 sensor is in the room whose lamps this household actually automates.
 
 **`brightLux = 500` suits a kitchen and almost nothing else.** Of the two LIVE

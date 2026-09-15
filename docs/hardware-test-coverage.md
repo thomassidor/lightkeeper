@@ -166,10 +166,10 @@ Every other old number — 1.2, 2.1, 2.2, 2.3, 2.6, 2.8, 3.8, 4.3, 5.2, 5.3, 5.5
 ## A green pass is only as honest as the list its check looks in
 
 On 4 September 2026 T77 failed with "the app never registered a runtime for it — it did not
-initialise" for a Daylight light that had initialised perfectly. The check polled the app's own
-status response and searched `controllers`, `schedules` and `circadian` — omitting `daylight`,
-which is its own key because a Daylight light is not folded in with the curve-driven types the way
-a Curve light is. The line could only ever fail.
+initialise" for a Room-sensing Light that had initialised perfectly. The check polled the app's own
+status response and searched `controllers`, `schedules` and `circadian` — omitting `daylight`, which
+is its own key because a Room-sensing Light is not folded in with the curve-driven types the way a
+Colour Curve Light is. The line could only ever fail.
 
 It is recorded here rather than only in the fix because the failure mode is general and this pass
 has fifteen-odd checks shaped the same way: a check that enumerates a union will go on passing when
@@ -188,7 +188,7 @@ registry, not for `available`) was right; the list under it was incomplete.
   repo, because those assert against invariants rather than against an almanac.
 - **A real sensor.** What `measure_luminance` actually reports — its scale, its resolution and how
   often — is per-integration and is established nowhere (platform §16). The script deliberately
-  selects NO sensor when it builds its own Daylight light: this pass builds and deletes its own
+  selects NO sensor when it builds its own Room-sensing Light: this pass builds and deletes its own
   devices and must not subscribe to a household's battery-powered motion sensor as a side effect.
   T82 is a person doing it on purpose, and the numbers they report are the only evidence the
   `darkLux` / `brightLux` defaults of 5 and 500 will ever have.
@@ -282,7 +282,7 @@ Kept here so an old report that says `3.8 OK` is still readable, and so nobody r
 | 3.8 | An overnight midnight-crossing window switches off at the right time, and its Flow reads `Off at 01:30 (starts Fri)` | `schedule-bindings.test.ts` asserts that exact string, and `schedule-window.test.ts` covers the arithmetic. The only residue was "Homey's cron card fires on the minute", measured at ~11–22 ms and recorded in `homey-review-notes.md`. It cost an evening and taught nothing |
 | 5.5 | Two coloured points, checked for a shade between them | `curve-colour.test.ts` covers the interpolation. The hardware residue — a lamp accepting the hue — is T27 |
 | 9.2–9.4 | Repair each of the five device types | The failure it names — `unknown_error_getting_file` — is `repair-views.test.ts`. Whether each screen comes back seeded from the stored plan is the `repair` command, which covers all four under T46 |
-| T55–T60 | The 0.5.0 release lines: the new Curve light, the two-question circadian light, the migration, two lamp-driving fixes, and the two memory readings | Retired when 0.5.1 rewrote **This release**, which is what that section is for. What they found is in the plan's *Last run* record; the memory readings are the ones worth keeping, and platform §15 carries the reasoning |
+| T55–T60 | The 0.5.0 release lines: the new Colour Curve Light, the two-question circadian light, the migration, two lamp-driving fixes, and the two memory readings | Retired when 0.5.1 rewrote **This release**, which is what that section is for. What they found is in the plan's *Last run* record; the memory readings are the ones worth keeping, and platform §15 carries the reasoning |
 | T61–T65 | The 0.5.1 release lines: the store description, the changelog rendering as prose, and the flow-card icons in their 24px circles | Retired when 0.5.2 rewrote **This release**. They needed the published listing and no Homey at all; `npm run render:icons` reproduces the icon half locally, and `assets.test.ts` still owns the rules an icon must satisfy |
 
 ## The light probe, which is not part of the pass
@@ -381,7 +381,9 @@ the way in.
 Worth knowing before deciding a rendered screen is a luxury.
 
 - **`npm run render:views`** draws every pairing screen with demo data (`scripts/pair-view-fixtures.mjs`) using headless Chrome, the same rasteriser `artwork/export-assets.py` uses. Output goes to `.views/`, gitignored.
-- The Curve light's coloured dot set a `fill` **attribute**, which the view's own stylesheet overrode. Every assertion about the attribute passed while the dot drew in the wrong colour. Only the render showed it, and the fix was to set `style.fill` instead.
+- The Colour Curve Light's coloured dot set a `fill` **attribute**, which the view's own stylesheet
+  overrode. Every assertion about the attribute passed while the dot drew in the wrong colour. Only
+  the render showed it, and the fix was to set `style.fill` instead.
 - The render is **not** the pairing sheet: Homey draws its own header and scroll container around a view (platform §8), and this shows the view alone.
 
 

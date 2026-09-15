@@ -30,8 +30,8 @@ import type { TargetSpec } from '../outputs/light-intent';
  * here, taking its host as an argument; the SDK shell in the driver.
  *
  * What deliberately did NOT move: each driver's own `get`/`set` pair, its
- * `buildPlan`, its `SessionState`, its module docblock, and the Daylight
- * light's own `getDaylight` — which genuinely differs (`standalone: true`, a
+ * `buildPlan`, its `SessionState`, its module docblock, and the Room-sensing
+ * Light's own `getDaylight` — which genuinely differs (`standalone: true`, a
  * target guard, and it retains on the way IN rather than only on the way out).
  */
 
@@ -336,12 +336,13 @@ export function registerSaveHandler<TPlan>(
  * both handlers build an EPHEMERAL runtime over the plan on screen, so there is
  * something to see before a device exists.
  *
- * `curvePlan` is the one difference between the circadian light and the Curve
- * light. A circadian light stores two ends and expands them through
- * `expandSimplePlan`; a Curve light stores the points already. Both arrive here
+ * `curvePlan` is the one difference between the circadian light and the Colour
+ * Curve Light. A circadian light stores two ends and expands them through
+ * `expandSimplePlan`; a Colour Curve Light stores the points already. Both arrive
+ * here
  * as the same shape, which is why one pair of handlers serves both.
  *
- * A Daylight light is not a caller: it has no pre-stage to prove, because a
+ * A Room-sensing Light is not a caller: it has no pre-stage to prove, because a
  * `dim` write turns an off lamp on and a brightness-only device type has
  * nothing to pre-stage.
  */

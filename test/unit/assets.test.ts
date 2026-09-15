@@ -242,10 +242,10 @@ describe('icons', () => {
   /**
    * Icons and images a driver SHARES with another, pending its own artwork.
    *
-   * **Deliberately empty, and that is the point.** The curve light split out of
+   * **Deliberately empty, and that is the point.** The Colour Curve Light split out of
    * the circadian light in 0.5.0 and shipped with its graphics; this set is what
    * held that review finding — Athom's reviewer flags byte-identical icons as
-   * reuse — visible rather than tolerated silently. The curve light got its own
+   * reuse — visible rather than tolerated silently. The Colour Curve Light got its own
    * master before release, so the entry is gone and every icon below is now
    * compared against every other with no exemption.
    *
