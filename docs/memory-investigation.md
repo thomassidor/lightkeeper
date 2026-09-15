@@ -68,7 +68,7 @@ minute.
 
 ### 3.1 The 30 MB guideline is not reachable by any app, and never was
 
-An empty app is 30.6 MB, measured minutes after it started. This is not a Lightkeeper problem, and
+An empty app is 27.6-30.6 MB, depending on whether `homey-api` has been required yet, and it stays there (see the idling series below). This is not a Lightkeeper problem, and
 no amount of care with caches can address it.
 
 **The peer comparison needs care, and the obvious version of it is wrong.** Reading the other apps'
@@ -99,10 +99,30 @@ unknown amount, and a freshly restarted app's does not understate it at all.
 
 Which means the two readings that can be trusted are the ones taken **on two apps of the same age,
 in the same minute** — and by that measure Lightkeeper (44.3) sits 0.8 MB above a control app that
-had made the same API calls (43.5). *What is not yet established is whether a freshly restarted
-Spotify would read 18.9 MB or 30-something.* Until someone restarts a peer app and measures it
-immediately, "an empty app costs 30.6 MB" is proven for **this** empty app and merely plausible as
-a platform floor.
+had made the same API calls (43.5).
+
+**The obvious objection — that those peers are simply apps that have settled, and ours has not —
+was tested.** The control app was left idling and sampled every fifteen minutes:
+
+| uptime | `pss` | `rss` | `pssSwap` |
+|---|---|---|---|
+| 24 min | 27.7 | 57.3 | 0.0 |
+| 39 min | 27.8 | 57.3 | 0.0 |
+| 54 min | 27.8 | 57.4 | 0.0 |
+| 69 min | 27.8 | 57.4 | 0.0 |
+| 84 min | 27.9 | 57.4 | 0.0 |
+
+**Flat, and never paged out at all.** An idle Homey app does not settle downward on any timescale
+short of hours, so "a fresh app reads high because it is fresh" does not explain a peer sitting at
+18.9 MB total.
+
+What that leaves is the honest residue: the lowest peers' totals (Circadian Lighting 17.6, Spotify
+18.9) really are below this empty app's 27.9, and the only remaining explanation is the one that
+cannot be seen from outside — clean file-backed pages, evicted over days and counted in neither
+`pss` nor `pssSwap`. So **"an empty app costs 27.9 MB" is proven for a freshly started app and for
+at least an hour and a half of idling; whether it decays over days is unmeasured**, and it would
+take leaving a control app installed for a week to settle. It changes how the number is read, not
+what to change.
 
 **Either way, stop treating 30 MB as a target read off `pss`.** The measurable target is marginal
 cost over a control app measured at the same time.
