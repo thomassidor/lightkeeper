@@ -83,7 +83,7 @@ node scripts/render-icons.mjs --reference <url-to-a-published-icon.svg>
 
 `.views/index.html` is grouped by driver and, within a driver, follows the order that driver's own
 `driver.compose.json` puts its `pair` steps in — so the sheet reads as five flows from step 1 rather
-than as thirteen files in whatever order their names sorted. Each card is captured at its screen's
+than as fifteen files in whatever order their names sorted. Each card is captured at its screen's
 own height, which is why a long screen is long and a short one is not padded with white.
 
 **Homey's own sheet is drawn around every screen**, and that is the point rather than decoration:
@@ -237,6 +237,71 @@ widened after it is created.
 A finger on a remote (T9-T11), and eyes on a screen (T3, T53, T54). The first page of
 [`hardware-test-plan.md`](hardware-test-plan.md) is what is left for a person: mint the keys, press
 the remote three ways, look at the contact sheet.
+
+## Recording a week at home
+
+`node scripts/evidence.mjs <command…>` drives the opt-in evidence recorder on a real Homey:
+`start`, `stop`, `status`, `export`, `note`, `clear`, `analyze`. It records control decisions,
+sensor and light reports, write results, once-a-minute health samples and observations you type,
+as an encrypted archive in the app's own `/userdata`.
+
+**None of it is in the launch app.** A normal build strips the code, the six Web API routes and the
+settings section, so there is nothing to start. Create a `.dev-build` file at the repo root before
+installing to get a build that has it:
+
+```powershell
+New-Item .dev-build          # bash: touch .dev-build
+npx homey app install        # prints a DEV BUILD banner
+```
+
+Delete it and install again to go back. It is gitignored and sticky, every build says which kind it
+made, `scripts/build.mjs` is the switch, and `lib/support/evidence-feature.ts` explains the design.
+Install persistently — a `homey app run` session is not suitable for an unattended week.
+
+Start and stop from Homey → Lightkeeper → app settings. The page does not poll: a saved-record
+count that has not moved on a page you left open means nothing until you press **Refresh recording
+status**.
+
+```powershell
+node scripts/evidence.mjs status
+node scripts/evidence.mjs export
+node scripts/evidence.mjs analyze .evidence/<recording-file>.ndjson.gz
+node scripts/evidence.mjs note "Kitchen lamp kept getting brighter after I turned it on"
+node scripts/evidence.mjs stop
+node scripts/evidence.mjs clear <recording-id-from-status>
+```
+
+It takes the same connection configuration as the hardware pass — `HOMEY_ADDRESS` plus
+`HOMEY_API_KEY`, or the gitignored `scripts/hardware-env.json`. **Use the SECOND Personal API Key,
+not the one the app holds:** a key carries one session
+([platform §2](homey-platform.md#2-api-key-sessions-die-routinely)), so exporting over the app's own
+key interrupts the run you are exporting. Exporting while a run continues is fine — the export fixes
+an endpoint before reading, so it is a consistent prefix — and an existing destination file is never
+overwritten. Archives land in the gitignored `.evidence/`, carry device and room names, and go
+nowhere on their own.
+
+**Read `malformed` first.** It counts records in the archive that will not parse, and it is the one
+number the recorder itself cannot see: a run reporting `dropped: 0` and `error: null` still lost 93
+of 58,024 records, because redaction was mangling them on the way in. Any non-zero `malformed` means
+the timeline is incomplete whatever the manifest claims.
+
+The limits, none of which the settings page states:
+
+| | |
+|---|---|
+| a run ends | after seven days, on a manual stop, on a storage error, or at **64 MiB** of archive |
+| pending buffer | 512 KiB; a record over **32 KiB**, or past that buffer, is counted as dropped |
+| flush | compressed, encrypted and written every **15 s** — a power loss takes the unflushed tail, and restart recovery discards any uncommitted tail and records its size |
+| a full archive | is kept, never rotated away. Starting a new run refuses to overwrite it; `clear` is explicit |
+
+**Memory is not in an archive.** `process.memoryUsage()` throws inside the app sandbox
+([platform §17](homey-platform.md#17-the-app-sandbox-no-rss-and-onuninit-does-not-finish)), so every
+sample carries `memory: null`. Read the footprint from outside with
+`node scripts/verify-hardware.mjs memory`.
+
+The archive is encrypted because `/userdata` is served without authentication (§17): each compressed
+batch is AES-256-GCM, the random key lives in app settings, and downloads go through the
+authenticated app API. Neither the key nor any API credential is ever part of an export.
 
 ## Probing the lights
 

@@ -290,8 +290,7 @@ reads, what it stores, and for how long.
 - The five defects that a recorded week in a real home found — chief among them a light that
   quietly reverts to its own settings no longer muting its device for days.
 
-[`docs/evidence-findings.md`](docs/evidence-findings.md) is the full read of that recording. The
-recorder that produced it is a development tool and is not part of the app you install.
+The recorder that produced that week is a development tool and is not part of the app you install.
 
 Earlier releases, one line each:
 

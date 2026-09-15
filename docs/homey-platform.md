@@ -1197,15 +1197,19 @@ So: **anything reading a VALUE that can change under you passes `$cache: false`,
 `$updateCache: false` is the memory half; `$cache: false` is the correctness half, and they are not
 the same question.
 
-### Not retaining is only half of it: V8 never gives the pages back
+### V8 never gives the pages back — on a laptop, and NOT on a Homey
 
-> **Superseded in part, 15 September 2026.** Everything in this subsection is true on a laptop and
-> was measured there. On a Homey it is not: PSS was observed FALLING 11.8 MB on an idle app process,
-> with nothing freed and no collection requested, and repeat catalogue reads cost +2.3, then +1.2,
-> then +0.0 MB. A pressured kernel reclaims pages, so resident memory is not the one-way ratchet
-> this section describes, and **avoiding a transient peak is worth much less than the reasoning
-> below assumes.** Several decisions in this file rest on that reasoning; see
-> [`memory-investigation.md`](memory-investigation.md) §3.2 before relying on any of them.
+**Read the correction before the measurement, because the measurement is real and its conclusion
+does not transfer.** On a Homey, PSS was observed *falling* 11.8 MB on an idle app process, with
+nothing freed by the app and no collection requested, and repeat catalogue reads cost +2.3, then
++1.2, then +0.0 MB — each cheaper than the last, because the process is reusing pages it already
+has. A pressured kernel reclaims pages. Resident memory is **not** the one-way ratchet the laptop
+figures below describe, and **avoiding a transient peak is worth far less than the rest of this
+subsection assumes.** Several decisions recorded here rest on that ratchet; treat each as
+"reasonable, and no longer the reason".
+
+What follows is what was measured on a laptop, kept because it is true there and because it is the
+shape of the argument several comments still cite.
 
 Measured on Node 22, parsing one 1700-card payload and then dropping every reference to it:
 
@@ -1275,15 +1279,62 @@ The consequence for the pass: T59's ceiling is **100 MB**, and it is not a budge
 own docblock in `scripts/verify-hardware.mjs`. **Compare a reading only with another reading from the
 same house**, and reinstall before believing a high one.
 
-### Where it stops, and what was established by trying
+### What an empty app costs, which is the only number that makes the others mean anything
 
-> **Read [`memory-investigation.md`](memory-investigation.md) first.** A second pass on
-> 15 September 2026 installed a do-nothing control app beside Lightkeeper and measured both in the
-> same minute. **An empty Homey app costs 30.6 MB of PSS** — the whole guideline — and Lightkeeper's
-> own code accounts for under 1 MB above a control app that has made the same API calls. The
-> guideline is not reachable by any app, the two-client design is free, and the single biggest
-> app-attributable cost is `socket.io-client` inside `homey-api`. Everything below remains accurate
-> about what was tried; what it lacks is the comparison that makes the numbers mean anything.
+Everything above measures this app against itself. On 15 September 2026 a second pass measured it
+against **a do-nothing app installed beside it on the same Homey and read in the same minute** —
+`app.json` with an `api` block, `app.js` extending `Homey.App`, one route reporting
+`v8.getHeapStatistics()`, about forty lines.
+
+**An empty Homey app costs 30.6 MB of PSS. Homey's guideline is 30 MB.** Lightkeeper's own code —
+every cache, every runtime, every subscription — accounts for **under 1 MB** above that control app
+once the control app has made the same API calls: idle, the control app settled at 43.5 MB having
+created two clients and done five bulk reads, while Lightkeeper with no devices sat at 44.3 MB in
+the same minute.
+
+Three things fall out of that, and each retires an argument made above:
+
+- **The guideline is not reachable by any app**, so it is not a target to be read off `pss`. The
+  measurable target is *marginal cost over a control app measured at the same time*.
+- **The two-client design (§1) is free.** A second `HomeyAPIV3Local` — its own `SocketSession`,
+  `SubscriptionRegistry`, `DiscoveryManager` and manager set — cost **+0.0 MB**. The library's
+  modules are already loaded; a second instance is a handful of objects.
+- **The cost is the transport libraries, not Athom's client.** On a cold process:
+  `socket.io-client` alone is +2.78 MB of heap and **+13.75 MB of RSS**; `node-fetch` alone +2.30 /
+  +10.17 MB; the `HomeyAPIV3Local` require that pulls both, +4.01 / +18.09 MB. And `HomeyAPIV3`
+  declares only **nine** manager classes, not the fifty the specification lists — the "50 managers
+  per client" concern is unfounded.
+
+The catalogue read is likewise **not a permanent 12 MB floor**: the cost measured there is growing a
+small heap to fit a parse, not the size of the catalogue. Lightkeeper's heap is already ~13 MB by
+the end of `onInit`, so the same read lands in slack it already has — which is exactly why the
+streaming reader described in the next subsection measured neutral on hardware.
+
+**Four things are therefore settled as "do not attempt", with the reason:**
+
+| | why not |
+|---|---|
+| Hand-roll the socket.io v2 protocol over `ws` | ~5-8 MB addressable, and **high** risk: every capability subscription in the app rides that transport, against an undocumented Athom subscription protocol |
+| Replace `homey-api` with raw HTTP | the transport dependencies stay either way; the saving is Athom's thin client layer, and realtime subscriptions still need socket.io |
+| Stream the flow-card catalogue | already tried and reverted — see the next subsection |
+| Stop retaining `DeviceCatalog`'s device/zone maps | measured **negative**: re-parsing is dearer than holding, by about 5 MB |
+
+**Rebuilding the control app is the durable part of this, and the recipe has four traps in it:**
+
+- Read PSS from outside with `apps.getAppUsage({ id })` — the numbers are under `mem`, not at the
+  top level — and **always read the control app and the real app in the same pass**.
+- **Always read `pssSwap` beside `pss`.** An app with a large `pssSwap` has been paged out and its
+  `pss` is not its footprint; an app with `pssSwap: 0` was restarted recently and is fully resident.
+  This is the easiest mistake here, and the first version of this investigation made it.
+- Read `system.getMemoryInfo()` first: below about 15% free, nothing else means anything.
+- Install it from a short path — the CLI fails with an `ENOENT` on its own app directory when the
+  path is long — and uninstall it afterwards, because on a Homey at 11% free a second app is not a
+  free observer.
+
+Lightkeeper's own `GET /diagnostics` carries `heap` — `heapUsed`, the per-space split and three boot
+marks (§17) — which is what makes the app side of this comparable without a second install.
+
+### Where it stops, and what was established by trying
 
 **The app is substantially over Homey's 30 MB guideline, and as of 14 September 2026 that is known
 not to be a property of this app's code.** The lever this section used to name — never materialising

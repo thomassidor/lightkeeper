@@ -300,6 +300,34 @@ describe('the light-picker handlers', () => {
     await assert.rejects(() => call('selectTargets', { kind: 'devices', deviceIds: ['nope'] }));
     assert.equal(state.target, undefined);
   });
+
+  test('nothing ticked is a state of the screen, not a refusal', async () => {
+    /**
+     * The picker pushes its whole selection on every tap, and the first push is
+     * the empty one it opens with — so an empty list refused as invalid printed
+     * `target.deviceIds is empty` across step 1 before the user had touched
+     * anything.
+     */
+    const { host, handler, call } = rig();
+    const state: SharedSessionState = {};
+
+    registerTargetHandlers(host, handler, state, 'targets.subtitleCurve');
+
+    assert.equal(await call('selectTargets', { kind: 'devices', deviceIds: [] }), null);
+    assert.equal(state.target, undefined);
+  });
+
+  test('unticking the last light forgets what a repair session arrived with', async () => {
+    // Why the empty push is answered rather than skipped in the view: the target
+    // lives in the session, so only a round trip can clear it.
+    const { host, handler, call } = rig();
+    const state: SharedSessionState = { target: { kind: 'devices', deviceIds: ['light-1'] } };
+
+    registerTargetHandlers(host, handler, state, 'targets.subtitleCurve');
+    await call('selectTargets', { kind: 'devices', deviceIds: [] });
+
+    assert.equal(state.target, undefined);
+  });
 });
 
 /**

@@ -34,6 +34,29 @@ function validateTargetDto(raw: unknown): TargetSpec {
 }
 
 /**
+ * Nothing ticked yet, as opposed to something wrong.
+ *
+ * The light picker pushes the WHOLE selection on every tap, including the empty
+ * one the screen opens with, so a caller needs to tell "the user has not chosen
+ * yet" from "the user chose something impossible" before asking the catalogue
+ * anything. `validateTargetAgainstCatalog` below rightly refuses an empty list —
+ * a SAVED target of no lights is a device that can never do anything — and that
+ * refusal used to reach the screen as `target.deviceIds is empty`, printed
+ * across the top of step 1 before the user had touched it.
+ *
+ * Shape-only on purpose, and deliberately narrow: an empty `deviceIds` is the
+ * only thing it recognises. Anything else — a missing `kind`, a zone, a list of
+ * junk — falls through to the full check and is refused there.
+ */
+export function isEmptyDeviceSelection(raw: unknown): boolean {
+  if (typeof raw !== 'object' || raw === null) return false;
+  const candidate = raw as { kind?: unknown; deviceIds?: unknown };
+  return candidate.kind === 'devices'
+    && Array.isArray(candidate.deviceIds)
+    && candidate.deviceIds.length === 0;
+}
+
+/**
  * A target's shape AND its membership: every device exists, is a light
  * candidate, and appears once.
  *

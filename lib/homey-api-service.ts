@@ -168,6 +168,13 @@ export class HomeyApiService {
    * Deliberately narrow. A 4xx is the Homey answering — the client is fine and
    * the request was not — and invalidating on those would tear the socket down
    * and rebuild it on every not-found.
+   *
+   * **Open question, answerable only on hardware:** whether `homey-api`'s socket
+   * reconnects by itself, or whether a dropped connection leaves every
+   * subscription silently dead. This rebuild is written for the worse answer, so
+   * it is correct either way — but if the socket does self-heal, the rebuild is
+   * doing work that a reconnect already did, and the cost of finding out is one
+   * deliberate network interruption against a live Homey.
    */
   reportReadFailure(error: unknown): boolean {
     if (!isTransportFailure(error)) return false;

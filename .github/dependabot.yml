@@ -43,7 +43,7 @@ updates:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
       # A typescript major is gated by typescript-eslint's peer range
-      # (`>=4.8.4 <6.1.0` at 8.68.0), not by anything in this repo: TypeScript 7
+      # (`>=4.8.4 <6.1.0` at 8.69.0), not by anything in this repo: TypeScript 7
       # fails `npm ci` on the peer conflict before a file is compiled. Lift this
       # when typescript-eslint's own release notes say the next major is
       # supported — its bumps still arrive here, so that is the signal.

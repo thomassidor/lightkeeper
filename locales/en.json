@@ -324,6 +324,9 @@
     "aboveDegrees": "Above __degrees__°",
     "rightNow": "Right now"
   },
+  "tip": {
+    "daylight": "Want this to follow the room instead? A Daylight light sets brightness from how light it already is."
+  },
   "warmth": {
     "deepAmber": "Deep amber",
     "warm": "Warm",

@@ -37,8 +37,10 @@ export const RANGE_EXPANSION_CEILING = 12;
  * stable: once the enum value sits in `fixedArgs` beside a selector and a
  * direction, nothing says which entry was the enum, so the compiler cannot
  * rebuild `enum:<value>`. Hashing `fixedArgs` instead is a different key and
- * churns every installed controller's Flows, since reuse is keyed on it.
- * `docs/decisions.md` has the long form.
+ * churns every installed controller's Flows, since reuse is keyed on it; and
+ * storing a redundant `variantKey` inside the binding is one more field than the
+ * kind it would remove. So five kinds it is — the fold is a tidier type and a
+ * worse one, and it has been proposed twice.
  */
 export type LogicalSourceBinding =
   | { kind: 'direct_capability'; capabilityId: string; interpreter: ValueInterpreter }

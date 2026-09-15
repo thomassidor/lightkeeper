@@ -166,7 +166,7 @@ lib/
     evidence-recorder.ts        opt-in seven-day recording: gzip + AES-256-GCM batches appended
                                 to /userdata, the key in homey.settings, every record stripped
                                 and redacted on the way in. OFF costs one object literal per
-                                event. See docs/week-long-testing.md
+                                event. docs/commands.md has how to run one
     evidence-sampler.ts         what a periodic health sample is made of
   app-contract.ts               what api.ts and the device layer may use of the app
   homey-api-types.ts            the DEVICE and ZONE shapes homey-api returns, at the one
@@ -206,7 +206,7 @@ scripts/verify-hardware.mjs     most of the hardware pass. Talks to a REAL Homey
                                 (platform §2). Names everything it builds `[verify] …` and
                                 never creates, renames or deletes a Lightkeeper device it did
                                 not build. It DOES switch the lamps its own devices point at —
-                                fifteen setCapabilityValue calls, all behind `--yes`, all
+                                fourteen setCapabilityValue calls, all behind `--yes`, all
                                 restored — so read that as a promise about DEVICES, not lamps
 scripts/probe-lights.mjs        every light on a REAL Homey, pushed until it misbehaves. Reports
                                 findings — each naming the assumption it breaks and its file:line —
@@ -256,24 +256,11 @@ docs/                           NOT bundled. `docs/README.md` indexes it
   privacy.md                    the privacy notice
   homey-review-notes.md         for Athom's reviewer
   localisation.md               English-only on purpose; how to add a language back
-  memory-investigation.md       WHY THE FOOTPRINT IS WHAT IT IS, measured against a control app
-                                installed beside it. An empty Homey app is 30.6 MB, which is the
-                                whole guideline — read this before optimising for memory
   hardware-test-plan.md         the standing pass on a real Homey: what to DO, and how to report
   hardware-test-coverage.md     what covers what — the script, the suite, and the retired lines
   commands.md                   every command in one place, with the trap that goes with each
-  evidence-findings.md          WHAT ONE REAL RECORDING FOUND: six defects with the numbers
-                                behind each, and the two things that only looked like defects
-  week-long-testing.md          the opt-in seven-day recorder: what it captures, what it does
-                                NOT, and how to read an archive back
-  open-work.md                  WHAT IS KNOWN TO BE UNFINISHED, and nothing else. Carried out of
-                                the 9 September remediation pass when its 1,290-line review was
-                                deleted. The two other live lists stay where they belong and are
-                                linked, not copied
-  decisions.md                  five arguments that outlived the documents they were written in —
-                                the binding-shape fold, the declined device argument and what a
-                                fix needs, the filter that fails closed, InvalidRangeError's path,
-                                and two things the remediation deliberately did not do
+                                — including the seven-day recorder: how to start one, its limits,
+                                and reading `malformed` before believing a timeline
   design/                       the Claude Design canvas the 0.6.0 pairing rewrite was built
                                 from, its runtime, and a README that is itself a decision
                                 record: the four turns, and six deliberate departures
@@ -477,9 +464,9 @@ Nothing else in the reference has been re-checked.
   10.9.1 then ran clean on 22.12 anyway — the warning is npm's, not a refusal). `package.json`'s
   `engines.node: >=20.11` describes the app running on a Homey and does not cover the linter; CI's
   `node-version: 22` resolves to current 22.x and satisfies the floor. The bump was takeable because
-  `typescript-eslint@8.68.0` already declares `eslint ^10.0.0` in its peers — unlike the TypeScript
+  `typescript-eslint@8.69.0` already declares `eslint ^10.0.0` in its peers — unlike the TypeScript
   major that arrived in the same dependabot PR, which its peer range forbids outright.
-- **A `typescript` major is gated by `typescript-eslint`, not by us.** `typescript-eslint@8.68.0`
+- **A `typescript` major is gated by `typescript-eslint`, not by us.** `typescript-eslint@8.69.0`
   declares `typescript >=4.8.4 <6.1.0`, so TypeScript 7 cannot be installed beside it at all:
   `npm ci` fails on the peer conflict before a single file is compiled, which is what took
   dependabot's grouped PR #4 red. `.github/dependabot.yml` ignores typescript majors for that
@@ -525,6 +512,21 @@ Two traps in that shared path, both now covered by tests:
   the Flow editor left the trigger card and our action arguments untouched, so the app read the Flow as
   its own and ignored the edit. It only compares keys we generated: Homey may echo back more than it
   was given, and a superset is not an edit.
+
+## Two refactors that have been proposed and answered
+
+Both were considered properly during the 9 September structural review and declined. They read as
+obvious tidying, which is why they keep coming back:
+
+- **Do not lift the four runtime managers into a shared base class.** They tick alike and differ
+  everywhere that matters — what a pass plans, what counts as an override, what health means. A
+  common parent buys shared plumbing and pays for it with four subclasses that each override most of
+  it. `TickingRegistry` by composition is the shape that was endorsed instead, if the duplication
+  ever justifies the work.
+- **Do not build a migration-step factory.** The five migration chains look like one pattern and are
+  not: each step is a one-off transformation of a stored shape, written once and then frozen, and a
+  factory would make the frozen thing harder to read for no second caller. `runMigrationChain()` in
+  `lib/support/` is already the only shared part there is.
 
 ## Conventions
 
@@ -598,7 +600,7 @@ driver and fails pre-processing with `ENOENT: … driver.compose.json`; `.homeyi
 the archive, since nothing on a Homey reads it.
 
 On-disk duplication is unchanged and has to be — Homey needs a real file per folder and will not
-follow a reference (platform §8). What changed is that a human edits one file instead of thirteen.
+follow a reference (platform §8). What changed is that a human edits one file instead of 56.
 A real `<link>`/`<script src>` may yet be possible: the Homey does serve a sibling file next to a
 pair view (measured, platform §8). What is unmeasured is whether an injected view's own external
 reference loads once the pairing container has placed it in the shared document.
@@ -718,11 +720,13 @@ Load-bearing product guarantees, not implementation details:
   catalogue at all: it asks for its three cards by name and echoes back what the Homey returns,
   which still honours platform §3 because nothing is assembled and then trusted. Enumeration
   survives as the fallback.
-  Measured on hardware: one catalogue read costs **~12 MB of floor, permanently** (31.9 MB before
-  the app had read one, 43.9 MB immediately after), because V8 never returns the pages. So NOT
-  retaining and never reading cost the same unless the read is avoided altogether — which is why
-  `bridgeCards()` asks for its three cards by name and `getDiagnostics` peeks at the time card
-  rather than looking it up.
+  What those two call sites were designed against was a measurement — 31.9 MB before the app had
+  read a catalogue, 43.9 MB immediately after — read as a ~12 MB floor raised *permanently*, on the
+  grounds that V8 never returns the pages. **That premise is retired** (see below, and §15): on a
+  Homey PSS was observed falling on an idle process, and repeat reads cost +2.3, then +1.2, then
+  +0.0 MB. Avoiding a transient peak is worth much less than it looked. Both call sites stay as
+  they are — asking for three cards by name is simply cheaper than enumerating, whatever the pages
+  do afterwards — but **do not derive a new decision from the ratchet**, because it is not there.
   **Do not reach for incremental parsing on the strength of that number: it was tried, and §15
   records what happened.** A streaming reader was built, verified byte-exact against `homey-api`
   across all 1832 cards, and measured on hardware — where it changed nothing, because this house's
@@ -739,11 +743,11 @@ Load-bearing product guarantees, not implementation details:
   and an empty `onInit` — was installed beside Lightkeeper on 15 September 2026 and measured in the
   same minute: **30.6 MB of PSS**. Lightkeeper's own code accounts for **under 1 MB** above a control
   app that has made the same API calls; the biggest app-attributable item is `socket.io-client`
-  inside `homey-api`, at ~13.7 MB of RSS to require. `docs/memory-investigation.md` has the whole
-  ladder, the control-app method, and the five recorded assumptions it overturns — including that
-  "V8 never gives the pages back" is a laptop fact, not a Homey one. **Read it before optimising
-  anything for memory**, and report this app's footprint as its margin over a control app rather
-  than as an absolute.
+  inside `homey-api`, at ~13.7 MB of RSS to require. §15's "What an empty app costs" has the whole
+  ladder, the control-app method and its four traps, and the assumptions it overturns — including
+  that "V8 never gives the pages back" is a laptop fact, not a Homey one, and that the two-client
+  design (§1) costs +0.0 MB. **Read it before optimising anything for memory**, and report this
+  app's footprint as its margin over a control app rather than as an absolute.
   **The floor moves with the house rather than with this app's code.** Established twice: two builds
   four days apart measuring the same (67.5 / 68.2 MB, 13 September 2026), and then properly, by
   installing the unmodified 9 September build — whose own line recorded 36.6 MB — alongside HEAD on

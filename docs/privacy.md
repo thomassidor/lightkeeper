@@ -47,7 +47,7 @@ an encrypted, bounded archive of control decisions, sensor and light reports, wr
 periodic health snapshots and observations you enter, plus its metadata and encryption key in the
 app's settings. It can include device and room names. Recording stops after seven days or at
 64 MiB. You can export and clear it through the authenticated app API; it is not sent to a
-server. See [week-long-testing.md](week-long-testing.md).
+server.
 
 The API key is used only to create, update and delete the Flows Lightkeeper
 manages. It is never logged, never returned through the app's own API, and never

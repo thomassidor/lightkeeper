@@ -140,14 +140,16 @@ describe('release metadata', () => {
    * runs: two files generate their cases inside a `for` loop
    * (`pair-view-boot.test.ts` over every discovered view,
    * `plan-validation.test.ts` over a table), so each of those call sites expands
-   * to many tests. The derived number was 903 while the runner reported 937, and
-   * both README.md and FAQ.md quoted the wrong one with this guard green over the
-   * top of it.
+   * to many tests. When this was written the derived number was 903 while the
+   * runner reported 937, and both README.md and FAQ.md quoted the wrong one with
+   * this guard green over the top of it.
    *
    * Counting what actually runs would mean running the suite from inside the
-   * suite. So the docs claim a floor instead — "over 900" — and this asserts the
-   * claim is one the suite can still stand behind. A stale number is the kind of
-   * small dishonesty that makes a reader distrust the rest of the file; a number
+   * suite. So the docs claim a round floor instead — "over 1500" at the time of
+   * writing — and this asserts the claim is one the suite can still stand
+   * behind. Deliberately not restated as a number here: a docblock quoting the
+   * current count is the same staleness one level down. A stale number is the
+   * kind of small dishonesty that makes a reader distrust the rest of the file; a number
    * that can only ever be an UNDERSTATEMENT is not stale, it is conservative.
    */
   test('no doc claims more tests than the suite defines', () => {

@@ -317,6 +317,38 @@
   #lt-root .ends { display: flex; justify-content: space-between;
                 font-size: 11px; color: var(--lk-faint); margin: 9px 0 0; }
 
+  /* An aside under a control: "there is a device type that does this for you".
+     Deliberately NOT a .msg — a message has a coloured ground and is about
+     something that just happened, and this is a pointer nobody has to read to
+     finish the screen. So no ground, the faint ink, italic, and one mark in
+     front of every one of them so they read as the same kind of thing on four
+     different screens.
+
+     It sits directly under the control it qualifies rather than at the foot of
+     the card, because three of the four screens carry a second control below
+     it and an aside that floated to the bottom would read as belonging to
+     that one instead. */
+  #lt-root .tip { display: flex; align-items: flex-start; gap: 7px;
+               margin: 13px 0 0; font-size: 12px; line-height: 1.45;
+               font-style: italic; color: var(--lk-faint); }
+  /* The circled i, DRAWN rather than set. A glyph that the phone's font does
+     not carry renders as a box, which is why the one other mark this design
+     puts inside text — the row chevron — is an entity rather than an icon; a
+     circle and a letter need no font at all. Upright inside the italic line,
+     because a sloped circle reads as a smudge at 15px. `line-height` is the
+     content box (15px less two 1.2px borders), which is what centres the
+     letter without a second flex container.
+
+     A pseudo-element rather than a span, so a view's whole tip is one element
+     whose text `data-i18n` fills: Homey's own i18n pass writes the element's
+     text, and a mark written as a child would be written over. */
+  #lt-root .tip::before { content: "i"; flex: none; box-sizing: border-box;
+                       width: 15px; height: 15px; margin-top: 1px;
+                       border: 1.2px solid var(--lk-chev); border-radius: 50%;
+                       font-size: 10px; font-weight: 700; font-style: normal;
+                       line-height: 12.6px; text-align: center;
+                       color: var(--lk-chev); }
+
   /* The swatches a colour is chosen from, four across.
      Not one row of eight: at 390px that is 34px a swatch, under the touch
      minimum and too small to judge a colour by. Two rows of four is the same
@@ -382,6 +414,19 @@
   #lt-root .room-head .all { font-size: 13px; font-weight: 600; color: var(--lk-accent-strong);
                              background: none; border: none; padding: 0 0 0 4px;
                              font-family: inherit; cursor: pointer; }
+  /* The header IS the collapse control, so the name and the count are one
+     button and `Select all` stays its own. A room that opens and can never be
+     put away turns a long list into a longer one, and this screen opens onto a
+     house of 54 lights. */
+  #lt-root .room-head .toggle { flex: 1; min-width: 0; display: flex; align-items: center;
+                                gap: 10px; background: none; border: none; padding: 0;
+                                margin: 0; font: inherit; color: inherit; text-align: left;
+                                cursor: pointer; }
+  /* The same chevron every other row in the app uses, turned a quarter when the
+     room is open: one glyph means "there is more here" throughout, and its
+     direction says which way tapping goes. */
+  #lt-root .room-head .chev { flex: none; font-size: 15px; color: var(--lk-chev);
+                              transform: rotate(90deg); }
   #lt-root .lights { padding: 0 14px; }
 
   #lt-root .light { display: flex; align-items: center; gap: 12px; width: 100%;
@@ -516,7 +561,10 @@ function __lkBootLt(Homey) {
   var state = {
     rooms: [],
     selected: {},
-    /** Rooms the user has opened, plus any that arrived with a selection. */
+    /**
+     * What the user has SAID about each room: true opened, false collapsed,
+     * absent nothing. Tri-state on purpose — see `render()`.
+     */
     opened: {},
     query: '',
     support: null
@@ -579,16 +627,29 @@ function __lkBootLt(Homey) {
   function renderRoom(room) {
     var card = node('div', 'room');
     var head = node('div', 'room-head');
-    head.appendChild(node('span', room.unzoned ? 'name unzoned' : 'name',
+
+    // Everything but `Select all` is one button, and tapping it puts the room
+    // away again. Opening was the only thing the header could do before, so a
+    // house with a dozen rooms could only ever get longer.
+    var toggle = node('button', 'toggle');
+    toggle.type = 'button';
+    toggle.setAttribute('aria-expanded', 'true');
+    toggle.appendChild(node('span', 'chev', '›'));
+    toggle.appendChild(node('span', room.unzoned ? 'name unzoned' : 'name',
       room.unzoned ? t('lights.noRoom') : room.zoneName));
 
     var picked = 0;
     for (var i = 0; i < room.lights.length; i++) {
       if (state.selected[room.lights[i].id]) picked += 1;
     }
-    head.appendChild(node('span', 'count', Homey.__('lights.roomCount', {
+    toggle.appendChild(node('span', 'count', Homey.__('lights.roomCount', {
       picked: picked, total: room.lights.length
     })));
+    toggle.addEventListener('click', function () {
+      state.opened[room.zoneId] = false;
+      render();
+    });
+    head.appendChild(toggle);
 
     var all = node('button', 'all', picked === room.lights.length
       ? t('lights.selectNone') : t('lights.selectAll'));
@@ -653,7 +714,14 @@ function __lkBootLt(Homey) {
       }
       // Searching opens everything that matches: a folded room that contains the
       // light somebody just typed the name of is a search that did nothing.
-      if (state.opened[room.zoneId] || hasPick || state.query) openRooms.push(room);
+      //
+      // Otherwise the user's own answer wins over the ticks. A room opens ITSELF
+      // when something in it is chosen, which is what a repair session wants —
+      // but that cannot be the whole rule, or collapsing a room you have picked
+      // from would spring straight back open and the header would look broken.
+      var said = state.opened[room.zoneId];
+      var open = state.query ? true : (typeof said === 'boolean' ? said : hasPick);
+      if (open) openRooms.push(room);
       else foldedRooms.push(room);
     }
 
@@ -679,6 +747,7 @@ function __lkBootLt(Homey) {
     row.appendChild(node('span', 'label',
       room.unzoned ? t('lights.noRoom') : room.zoneName));
     row.appendChild(node('span', 'value', String(room.lights.length)));
+    row.appendChild(node('span', 'chev', '›'));
     row.addEventListener('click', function () {
       state.opened[room.zoneId] = true;
       render();
@@ -699,6 +768,10 @@ function __lkBootLt(Homey) {
     var mine = ++revision;
     emit('selectTargets', spec()).then(function (summary) {
       if (mine !== revision) return;
+      // A round trip that worked is the end of whatever the last one reported.
+      // Only `load()` used to clear this, so one failure left a red banner over
+      // a selection that had since been accepted.
+      el.loadError.style.display = 'none';
       state.support = summary && summary.support ? summary.support : null;
     }).catch(function (err) {
       if (mine !== revision) return;

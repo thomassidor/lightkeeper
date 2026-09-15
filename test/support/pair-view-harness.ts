@@ -438,7 +438,11 @@ export interface ViewRun {
 }
 
 export interface ViewOptions {
-  /** What each `emit(event)` resolves to. An absent event rejects. */
+  /**
+   * What each `emit(event)` resolves to. An absent event rejects, and a stub
+   * that IS an `Error` rejects with it — which is how a test reaches the
+   * failure path of a screen whose happy path it also drives.
+   */
   respond?: Record<string, unknown>;
   /** Locale lookups. Missing keys come back as the key, which is visible. */
   translate?: (key: string, tokens?: Record<string, unknown>) => string;
@@ -469,9 +473,11 @@ export function runPairView(html: string, options: ViewOptions = {}): ViewRun {
     emit: (event: string, data: unknown) => {
       emitted.push({ event, data });
       const responses = options.respond ?? {};
-      return Object.prototype.hasOwnProperty.call(responses, event)
-        ? Promise.resolve(responses[event])
-        : Promise.reject(new Error(`no stub for "${event}"`));
+      if (!Object.prototype.hasOwnProperty.call(responses, event)) {
+        return Promise.reject(new Error(`no stub for "${event}"`));
+      }
+      const reply = responses[event];
+      return reply instanceof Error ? Promise.reject(reply) : Promise.resolve(reply);
     },
     /**
      * The container pushes events to a view with `Homey.on`.

@@ -478,7 +478,7 @@ export class ControllerRuntime {
        * hold, not once per flush. See RampTick and runIntent.
        */
       (intent, ramp) => fireAndForget(
-        this.runIntent(intent, (ramp.targetIds ?? []).filter(id => this.targetIds.includes(id)),
+        this.runIntent(intent, ramp.targetIds.filter(id => this.targetIds.includes(id)),
           { modeAlreadySet: ramp.ticks > 1 }),
         this.deps.log, 'A ramp tick',
       ),

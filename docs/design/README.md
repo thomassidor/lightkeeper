@@ -27,13 +27,6 @@ paths not taken. `git log --diff-filter=D -- docs/design` finds it. The argument
   the evening — but a single dot at 21:00 reads as one moment."* Seven ways out were drawn; **4g,
   round handles with the times inside their own group**, is what shipped.
 
-**One thing in the shipped app deliberately departs from the canvas.** It moves the Personal API
-Key screen to the end of the controller and schedule flows, on the grounds that the key only gates
-Flow *writes* at save. It ships early instead — after the intro, before step 1 — because somebody
-who reaches a four-step review and then cannot produce a key loses everything they just set up. The
-chore costs a returning user nothing, since the key is per-Homey and `credential.html` skips itself
-when a stored one is valid.
-
 The screenshots of the OLD screens that were pasted into the review are not kept, for the same
 reason the contact sheet uploaded beside them was not: `npm run render:views` produces the
 equivalent for whatever is on disk today, and a picture of a screen that no longer exists is only a

@@ -37,7 +37,16 @@ export interface ActiveRamp {
   direction: RampDirection;
   startedAt: number;
   ticks: number;
-  targetIds?: string[];
+  /**
+   * The lights this ramp writes to, resolved when the hold began.
+   *
+   * Required, and deliberately not optional: the one reader filters it against
+   * the runtime's live target set, so an absent value would mean "write to
+   * nothing" — a hold that ticks for its full ten seconds and moves no lamp,
+   * reported as a ramp that ran. An empty array still says that, but it says it
+   * because somebody passed one.
+   */
+  targetIds: string[];
 }
 
 /**
@@ -93,11 +102,11 @@ export class RampEngine {
    * Begin ramping. Starting a ramp on a control that is already ramping
    * restarts it rather than stacking two.
    */
-  start(controlId: string, kind: ActiveRamp['kind'], direction: RampDirection, targetIds?: string[]): void {
+  start(controlId: string, kind: ActiveRamp['kind'], direction: RampDirection, targetIds: string[]): void {
     this.stop(controlId, 'superseded');
 
     const ramp: ActiveRamp = { controlId, kind, direction, startedAt: this.now(), ticks: 0,
-      ...(targetIds ? { targetIds: [...targetIds] } : {}) };
+      targetIds: [...targetIds] };
     const deltaPerTick = (this.ratePerSecond * TICK_MS) / 1000 * direction;
 
     const handle = this.setTimer(() => {

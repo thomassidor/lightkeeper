@@ -461,7 +461,10 @@ export const RENDER_REPLIES = {
       support: SUPPORT,
       lights: LIGHTS.slice(0, 2),
       entries: [
-        { id: 'a', onAt: 420, end: { kind: 'time', at: 520 } },
+        // The SELECTED block, and it carries a brightness so the render draws
+        // that control open rather than only its switch — the same reason the
+        // day, curve and job fixtures set theirs.
+        { id: 'a', onAt: 420, end: { kind: 'time', at: 520 }, brightness: 0.8 },
         { id: 'b', onAt: 1155, end: { kind: 'time', at: 1410 }, brightness: 0.2, temperature: 0.95 },
         // Crosses midnight AND overlaps the one above, so the render draws both
         // the wrapped bar and the outlined conflict.

@@ -393,11 +393,6 @@ No. No telemetry, opt-in or otherwise; no cloud; no analytics. Nothing leaves yo
 
 ### What is in a diagnostics export?
 
-For an unattended home test, use the separate **Week-long home test** section in app settings.
-It records on Homey across restarts; the ordinary bug-report export contains its status,
-not its full archive. [Recording and exporting a week](docs/week-long-testing.md) explains
-the start, observation and export steps, along with retention limits.
-
 Homey settings → Lightkeeper → **Copy for a bug report**. It is generated locally on your Homey and
 goes nowhere unless you paste it somewhere.
 

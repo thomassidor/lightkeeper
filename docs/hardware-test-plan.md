@@ -159,10 +159,11 @@ see a screen. Every line here needs a phone.
 out of it.**
 
 Unusually, these lines are not written from first principles: every one of them re-runs a
-behaviour that a 3.83-day recording on this same Homey caught getting it wrong.
-[`evidence-findings.md`](evidence-findings.md) has the numbers. That makes T107–T111 the priority
-of this pass — they are the only proof that the integrations which produced those findings now
-behave.
+behaviour that a 3.83-day recording on this same Homey caught getting it wrong — an override that
+never expired, 296 of 327 overrides raised by a `dim 0` report a median 29.9 s ahead of the lamp's
+own `onoff`, a tolerance that failed at exactly 0.03, and a daylight loop that ran away 95 times
+with nothing saying so. That makes T107–T111 the priority of this pass — they are the only proof
+that the integrations which produced those findings now behave.
 
 T98–T106 below were partly run on 9 September and the unticked ones are still owed, as are
 T91–T97. All of them belong to 0.6.0 too: the intermediate version numbers those lines were

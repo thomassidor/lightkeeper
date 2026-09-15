@@ -167,7 +167,8 @@ describe('LK-007: an app-level card with a filtered device argument', () => {
      * that a user who hits it now gets a message that names the cause. A fix
      * needs one `getFlowCardTriggers()` capture of such a card plus one Flow
      * hand-built through the Web API setting that argument, to read back how the
-     * value serialises — until then it stays declined (`docs/decisions.md`).
+     * value serialises — until then it stays declined. Do not implement it from
+     * the specification alone; that is precisely how `time_exactly_day` happened.
      */
     const result = await discoveryOver([APP_LEVEL_FILTERED]).discover(device());
     assert.deepEqual(result.inputs, []);

@@ -2,7 +2,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  RampEngine, canRamp, HARD_STOP_MS, TICK_MS, type RampStopReason,
+  RampEngine, canRamp, HARD_STOP_MS, TICK_MS, type RampStopReason, type ActiveRamp,
 } from '../../lib/outputs/ramp-engine';
 import type { LightIntent } from '../../lib/outputs/light-intent';
 
@@ -42,10 +42,11 @@ class FakeClock {
 function harness(ratePerSecond = 0.6) {
   const clock = new FakeClock();
   const ticks: LightIntent[] = [];
+  const ramps: ActiveRamp[] = [];
   const stops: Array<{ controlId: string; reason: RampStopReason }> = [];
 
   const engine = new RampEngine(
-    intent => ticks.push(intent),
+    (intent, ramp) => { ticks.push(intent); ramps.push(ramp); },
     (controlId, reason) => stops.push({ controlId, reason }),
     {
       ratePerSecond,
@@ -55,13 +56,41 @@ function harness(ratePerSecond = 0.6) {
     },
   );
 
-  return { clock, ticks, stops, engine };
+  return { clock, ticks, ramps, stops, engine };
 }
 
 describe('ramp engine', () => {
+  /**
+   * `targetIds` was optional, and the controller read it as `(ramp.targetIds ?? [])`
+   * — so an omitted argument meant "write to nothing": a hold that ticked for its
+   * full ten seconds, reported itself as a ramp that ran, and moved no lamp. The
+   * only caller always passed an array, which is why nobody saw it. Required now,
+   * and this is what keeps it required if the signature is ever widened again.
+   */
+  test('a ramp carries the targets it was started with, on every tick', () => {
+    const { clock, ramps, engine } = harness();
+    engine.start('up', 'brightness', 1, ['kitchen', 'hall']);
+    clock.advance(300);
+
+    assert.ok(ramps.length >= 3, 'the hold ticked');
+    for (const ramp of ramps) {
+      assert.deepEqual(ramp.targetIds, ['kitchen', 'hall']);
+    }
+  });
+
+  test('the started array is copied, so a later mutation cannot retarget a live hold', () => {
+    const { clock, ramps, engine } = harness();
+    const targets = ['kitchen'];
+    engine.start('up', 'brightness', 1, targets);
+    targets.push('bedroom');
+    clock.advance(200);
+
+    assert.deepEqual(ramps[0]?.targetIds, ['kitchen']);
+  });
+
   test('ticks at 100 ms while held', () => {
     const { clock, ticks, engine } = harness();
-    engine.start('up', 'brightness', 1);
+    engine.start('up', 'brightness', 1, ['l1']);
     clock.advance(1000);
 
     assert.equal(ticks.length, 10, 'one tick per 100 ms');
@@ -69,7 +98,7 @@ describe('ramp engine', () => {
 
   test('ramps at 60% of the perceptual range per second by default', () => {
     const { clock, ticks, engine } = harness();
-    engine.start('up', 'brightness', 1);
+    engine.start('up', 'brightness', 1, ['l1']);
     clock.advance(1000);
 
     const total = ticks.reduce((sum, t) => sum + (t as { delta: number }).delta, 0);
@@ -78,7 +107,7 @@ describe('ramp engine', () => {
 
   test('a downward ramp emits negative deltas', () => {
     const { clock, ticks, engine } = harness();
-    engine.start('down', 'brightness', -1);
+    engine.start('down', 'brightness', -1, ['l1']);
     clock.advance(300);
 
     assert.ok(ticks.every(t => (t as { delta: number }).delta < 0));
@@ -86,7 +115,7 @@ describe('ramp engine', () => {
 
   test('normal stop on release', () => {
     const { clock, ticks, stops, engine } = harness();
-    engine.start('up', 'brightness', 1);
+    engine.start('up', 'brightness', 1, ['l1']);
     clock.advance(500);
     engine.stop('up', 'released');
     const afterRelease = ticks.length;
@@ -98,7 +127,7 @@ describe('ramp engine', () => {
 
   test('MISSING RELEASE still terminates at the 10 second hard stop', () => {
     const { clock, ticks, stops, engine } = harness();
-    engine.start('up', 'brightness', 1);
+    engine.start('up', 'brightness', 1, ['l1']);
 
     // The release never arrives — routine on Zigbee.
     clock.advance(60_000);
@@ -112,7 +141,7 @@ describe('ramp engine', () => {
   test('the hard stop is not configurable', () => {
     // Constructing with any options must not change it.
     const { clock, stops, engine } = harness(5);
-    engine.start('up', 'brightness', 1);
+    engine.start('up', 'brightness', 1, ['l1']);
     clock.advance(HARD_STOP_MS - TICK_MS);
     assert.equal(stops.length, 0, 'still ramping just before the limit');
 
@@ -122,7 +151,7 @@ describe('ramp engine', () => {
 
   test('any other input from the same controller stops the ramp', () => {
     const { clock, stops, engine } = harness();
-    engine.start('up', 'brightness', 1);
+    engine.start('up', 'brightness', 1, ['l1']);
     clock.advance(300);
 
     engine.stopAllExcept('down', 'other_input');
@@ -133,7 +162,7 @@ describe('ramp engine', () => {
 
   test('target unavailability stops the ramp', () => {
     const { clock, stops, engine } = harness();
-    engine.start('up', 'brightness', 1);
+    engine.start('up', 'brightness', 1, ['l1']);
     clock.advance(200);
     engine.stopAll('target_unavailable');
 
@@ -142,8 +171,8 @@ describe('ramp engine', () => {
 
   test('cancellation on uninit leaves nothing running', () => {
     const { clock, ticks, engine } = harness();
-    engine.start('up', 'brightness', 1);
-    engine.start('warm', 'temperature', -1);
+    engine.start('up', 'brightness', 1, ['l1']);
+    engine.start('warm', 'temperature', -1, ['l1']);
     clock.advance(200);
 
     const stopped = engine.stopAll('shutdown');
@@ -157,9 +186,9 @@ describe('ramp engine', () => {
 
   test('restarting a ramping control replaces it rather than stacking', () => {
     const { clock, ticks, engine } = harness();
-    engine.start('up', 'brightness', 1);
+    engine.start('up', 'brightness', 1, ['l1']);
     clock.advance(300);
-    engine.start('up', 'brightness', 1);
+    engine.start('up', 'brightness', 1, ['l1']);
     const before = ticks.length;
     clock.advance(1000);
 
@@ -169,9 +198,9 @@ describe('ramp engine', () => {
 
   test('the hard stop clock restarts with the ramp', () => {
     const { clock, stops, engine } = harness();
-    engine.start('up', 'brightness', 1);
+    engine.start('up', 'brightness', 1, ['l1']);
     clock.advance(9000);
-    engine.start('up', 'brightness', 1);
+    engine.start('up', 'brightness', 1, ['l1']);
     clock.advance(9000);
 
     assert.equal(stops.length, 0, 'a re-held control gets a fresh 10 seconds');
@@ -181,7 +210,7 @@ describe('ramp engine', () => {
 
   test('temperature ramps emit temperature intents', () => {
     const { clock, ticks, engine } = harness();
-    engine.start('warm', 'temperature', -1);
+    engine.start('warm', 'temperature', -1, ['l1']);
     clock.advance(200);
 
     assert.ok(ticks.every(t => t.type === 'temperature_delta'));

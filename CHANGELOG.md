@@ -247,7 +247,7 @@ install.**
   limit expose loss rather than silently replacing earlier evidence.
 - Timestamped observations can be attached from the settings page while it runs, and an archive
   that has stopped can be discarded there. `scripts/evidence.mjs` streams an export to a private
-  `.evidence/` directory and analyses it; see [`docs/week-long-testing.md`](docs/week-long-testing.md).
+  `.evidence/` directory and analyses it; see `docs/week-long-testing.md`.
 - It does not change how often the control loops run. A 60-second maintenance poll that had been
   written alongside it was removed before release: it re-read the ~11.6 MB trigger-card catalogue
   about once a minute for as long as the app ran (platform §15), turning an event-driven app into
@@ -273,8 +273,9 @@ install.**
 Five defects, every one of them found in a single 3.83-day recording from the reference Homey
 rather than by reading the code — 58,024 records, nine live devices, and a manifest that said
 `dropped: 0` and every tile `ready` while one device had done nothing for 88 of the 93 hours.
-[`docs/evidence-findings.md`](docs/evidence-findings.md) is the full read, with the numbers behind
-each of these.
+The numbers behind each are in the sections below; the full read of that recording was kept as a
+document for a while and has since been deleted, its durable findings folded into the code they
+justify.
 
 **An override never expired, and one uncooperative lamp muted a device for days.**
 
@@ -604,12 +605,12 @@ Deleted — git history keeps every word — after four rescues, because most of
 documents turned out to be duplicated in the code that it explains, and the rest had to be moved
 before it could be dropped:
 
-- **[`docs/open-work.md`](docs/open-work.md)** is new and is what the code review was still being
+- **`docs/open-work.md`** is new and is what the code review was still being
   kept for: tests owed for seven launch-review fixes, two one-line defects still present in the
   tree (a `targetIds` that defaults to writing nothing, and a `pendingColor` never read), the
   fifteen structural items, and three questions only hardware can answer. It was on line 66 of
   1,290 and is now the whole file.
-- **[`docs/decisions.md`](docs/decisions.md)** is new and holds the five arguments shipped code
+- **`docs/decisions.md`** is new and holds the five arguments shipped code
   still cites — why `flow_enum` was not folded into `flow_fixed`, why an app-level `type: "device"`
   argument is declined **and what a fix would need**, why an unevaluable filter key fails closed,
   how `InvalidRangeError` reaches the user, and the two things the remediation deliberately did not
@@ -703,7 +704,8 @@ both were measured in the same minute.** An absolute reading on a Homey at 11% f
 very little — three restarts of one build span 9 MB — but a difference between two apps read seconds
 apart survives that, because both are subject to the same machine.
 
-`docs/memory-investigation.md` has the whole ladder. The short version:
+The whole ladder is below; the investigation document it came from has since been deleted, and what
+survives it is `docs/homey-platform.md` §15.
 
 - **An empty Homey app — `require('homey')` and an empty `onInit` — costs 27.6 MB of PSS.** Homey's
   guideline is 30 MB.
@@ -741,6 +743,117 @@ Fixed along the way, each because it is right rather than because the number mov
 - **One `Intl.DateTimeFormat` per timezone instead of one per call.** Constructing one allocates in
   ICU's native arenas — memory no heap profile can see — and it was being built on both 60-second
   tick paths for the life of the app.
+
+### Two things the light picker got wrong, both seen on a real Homey
+
+Neither of these ever shipped — both are defects in the pairing rewrite above, found by opening the
+screen on hardware rather than by any test — so the store changelog and the README's summary of
+0.6.0 are unchanged. They are recorded here because the record is what this file is for.
+
+- **The light picker opened with `target.deviceIds is empty` printed across it.** The screen pushes
+  its whole selection to the driver on every tap, and the first push is the empty one it opens with
+  — which the driver refused as an invalid target and the view showed as a red banner, before the
+  user had touched anything. Nothing ticked is a STATE of that screen, not a failed save: the driver
+  now answers an empty device list by clearing the session's target and returning nothing. The round
+  trip still happens rather than being skipped in the view, because a repair session arrives with a
+  target already chosen and unticking the last light has to forget it. A saved target of no lights is
+  still refused, by the save handler that always did it ("Choose some lights first"). The count line
+  under the list — "Pick at least one light" — is what says so on screen, which is what it was for.
+  The view also clears the banner on the next round trip that works: only reloading the screen used
+  to, so one failure left a red line over a selection that had since been accepted.
+- **A room could be opened and never put away again.** The header of an open room did nothing, so a
+  house of 54 lights could only ever get longer as you looked through it. The name and the count are
+  now one button that collapses the room, with the same chevron every other row in the app uses,
+  turned a quarter when the room is open; `Select all` stays its own button beside it. What the user
+  says outranks the ticks: a room opens itself when something in it is chosen, which is what a repair
+  session wants, but a room collapsed by hand stays collapsed — otherwise one it had a light ticked
+  in would spring straight back open and the header would look broken. Searching still opens
+  everything that matches, because a folded room containing the light somebody just typed the name of
+  is a search that did nothing.
+
+### A pointer to the Daylight light, wherever a brightness is typed in by hand
+
+Nothing here has shipped either — 0.6.0 is unpublished — so the store changelog and the README's
+summary are unchanged again. The store entry already says every setup screen was redrawn, and one
+line of help on four of them does not change what the release is.
+
+- **Four screens that ask for a brightness now say what the fifth device type is for.** A schedule
+  block, a circadian zone, a curve point and a button's "A set brightness" each take a number that
+  then never moves, and the device that makes a brightness follow the room is a separate thing in
+  Homey's add-device list that nobody browsing these screens has any reason to have seen. Each of
+  them now carries one italic line under its slider: *Want this to follow the room instead? A
+  Daylight light sets brightness from how light it already is.* It names the device type as Homey
+  lists it, so it is something the reader can go and add rather than a capability they have to go
+  hunting for.
+- **`.tip` is a new shared primitive**, in `views/shared/base.css` beside the toggle and the slider,
+  because a pointer written four times is a pointer that drifts four ways. Deliberately not a `.msg`:
+  a message takes a coloured ground and reports something that just happened, and this is an aside
+  nobody has to read to finish the screen. The circled `i` in front of it is drawn in CSS rather than
+  set as a glyph — a character the phone's font does not carry renders as a box — and it is a
+  pseudo-element rather than a child span, so Homey's own `data-i18n` pass can fill the element's
+  text without writing the mark away.
+- **The schedule screen's render fixture now opens its brightness control.** The other three already
+  set theirs on purpose, so `npm run render:views` drew this line on three screens out of four; a
+  control that is folded away in every fixture is a control the contact sheet cannot show anything
+  about.
+
+### Five investigation documents deleted, and what they were hiding
+
+Five documents in `docs/` were narratives of how a conclusion was reached, not references anybody
+consults twice: `week-long-testing.md`, `decisions.md`, `evidence-findings.md`,
+`memory-investigation.md` and `open-work.md`. 812 lines, cited from 29 places. Deleted — and
+deleting them was the thing that surfaced what follows, because every citation had to be read to be
+repaired, and several turned out to be repeating something the code had stopped doing.
+
+Two defects fixed, both carried in `open-work.md` and cited by nothing in code:
+
+- **A ramp could be started with no lights to write to.** `RampEngine.start` took `targetIds`
+  optionally and the controller read it as `(ramp.targetIds ?? [])`, so an omitted argument meant
+  "write to nothing": a hold that ticked for its full ten seconds, reported itself as a ramp that
+  ran, and moved nothing. The one caller always passed an array, which is why it was never seen.
+  Required now, copied on the way in so a caller's later mutation cannot retarget a live hold, and
+  pinned by two tests.
+- **A dead field in the circadian runtime, and three comments explaining the file in terms of a
+  method that does not exist.** `pendingColor` was written, deleted at five sites and cleared at
+  teardown, and never once read; the hue/saturation pair is really committed from the two outcomes
+  of the same batch. The comments called that mechanism `noteColorWritten`, which appears nowhere in
+  the repo. Field removed, comments rewritten to describe what the code does.
+
+What the deleted documents knew that nothing else did was folded into the places that depend on it,
+rather than into a sixth document:
+
+- **`docs/commands.md` gained the recorder** it had been silently missing while claiming to be every
+  command — `scripts/evidence.mjs` in full, the `.dev-build` switch, the archive's limits (seven
+  days, 64 MiB, 512 KiB pending, 32 KiB per record, a 15 s flush), why it is encrypted, and
+  **read `malformed` first**: a run reporting `dropped: 0` can still have lost records on the way in.
+- **`docs/homey-platform.md` §15 gained the only memory number that means anything** — an empty
+  Homey app costs 30.6 MB of PSS against a 30 MB guideline, and this app's own code is under 1 MB
+  above a control app that has made the same calls — plus the control-app method and its four traps,
+  and four strategies recorded as "do not attempt", with the measurement behind each.
+- **"V8 never gives the pages back" is no longer stated as current.** It is true on a laptop and
+  false on a Homey, where PSS was watched falling on an idle process. `CLAUDE.md` asserted it as the
+  live reason for two design choices and only retracted it twenty lines later; §15 said it twice and
+  corrected itself in two blockquotes. Both now lead with what holds.
+- **Three questions only hardware can answer now sit at the guards written for their worst case** —
+  Hue's power-on event order at `PRE_STAGE_CHECK_MS`, whether `homey-api`'s socket reconnects by
+  itself at the read-client rebuild, and what a `decimals: 1` lamp does with `dim 0.01` at `litDim`.
+  A guard that stands in for an unanswered question should say which question.
+- **Two refactors that have been proposed twice are recorded as answered** in `CLAUDE.md`: no base
+  class for the four runtime managers, no migration-step factory.
+
+And the stale claims the sweep turned up on the way:
+
+- **The FAQ told users to open a settings section that does not exist in their app.** The week-long
+  recorder is stripped from every non-development build; the diagnostics answer now describes only
+  what a user actually has.
+- **Four pair views claimed "every `innerHTML` site in the app escapes correctly."** There are no
+  `innerHTML` sites; that was the point of the rewrite that removed them.
+- `CONTRIBUTING.md` said sixteen platform sections where there are seventeen; `CLAUDE.md` said a
+  shared view block is edited in one file instead of thirteen, where it is 56; the contact sheet's
+  note said thirteen pair views where there are fifteen; two `typescript-eslint` pins named 8.68.0
+  against a lockfile on 8.69.0; the hardware script was credited with fifteen `setCapabilityValue`
+  calls and has fourteen; and `docs/design/README.md` opened with a superseded draft saying **one**
+  thing departs from the canvas, forty lines above the list of six.
 
 ## 0.5.2
 

@@ -164,7 +164,15 @@ export interface CircadianAction extends ControlAction {
 const COLOR_STEP = 0.03;
 
 
-/** Mirrors the adapter's own post-write check, in the opposite direction. */
+/**
+ * Mirrors the adapter's own post-write check, in the opposite direction.
+ *
+ * **Open question, answerable only on hardware:** which of `onoff`, `dim` and
+ * the colour axes a Hue bridge reports FIRST when a lamp is switched back on at
+ * the wall. 1.5 s is written for the worst ordering — long enough that a lamp
+ * reporting its colour before its `onoff` is still seen as the same event — and
+ * the only way to shorten it is to watch a real bridge's event order.
+ */
 const PRE_STAGE_CHECK_MS = 1500;
 
 /**
@@ -181,8 +189,8 @@ const PRE_STAGE_CHECK_MS = 1500;
  * night.
  *
  * Keyed on `light_hue` rather than on saturation or mode, because mode and
- * saturation ride in the same batch — the same reason `noteColorWritten` commits
- * the pair off the hue outcome.
+ * saturation ride in the same batch — the same reason `noteOutcomes()` commits
+ * the pair off the hue outcome and its sibling saturation together.
  */
 const PRE_STAGE_CAPABILITIES: readonly Capability[] = ['light_temperature', 'light_hue'];
 
@@ -611,7 +619,6 @@ export class CircadianRuntime {
         // describes.
         this.lastWritten.delete(deviceId);
         this.lastColorWritten.delete(deviceId);
-        this.pendingColor.delete(deviceId);
       }
       return;
     }
@@ -723,7 +730,6 @@ export class CircadianRuntime {
       this.overrides.delete(deviceId);
       this.lastWritten.delete(deviceId);
       this.lastColorWritten.delete(deviceId);
-      this.pendingColor.delete(deviceId);
       this.history.events.add({ at: this.now(), type: 'override_cleared', deviceId, reason: 'expired' });
       this.deps.log(`${deviceId}'s manual override has lapsed; circadian control resumes`);
     }
@@ -1097,9 +1103,6 @@ export class CircadianRuntime {
         );
         const wanted = color.writes.filter(write =>
           force || this.colorHasMoved(write.deviceId, value.color!));
-        for (const write of wanted) {
-          if (write.capability === 'light_hue') this.pendingColor.set(write.deviceId, value.color);
-        }
         planned.push(...wanted);
       }
 
@@ -1255,12 +1258,18 @@ export class CircadianRuntime {
          * wrote its colour once, on the first pass, and never again.
          */
         this.lastColorWritten.delete(outcome.deviceId);
-        this.pendingColor.delete(outcome.deviceId);
       }
       if (outcome.capability === 'light_hue') {
-        // Saturation is written in the same batch, so recording it from the hue
-        // outcome would be recording a value that has not landed yet. The pair
-        // is recorded from the PLAN instead — see noteColorWritten.
+        /**
+         * The pair is committed from the two outcomes of the SAME batch, and
+         * only when both succeeded.
+         *
+         * Recording the hue's own value alone would record half a colour, and
+         * pairing it with what the plan asked for would record a saturation
+         * that has not landed — a lamp that took the hue and refused the
+         * saturation would then be gated against a colour it is not showing.
+         * The sibling outcome is the only thing here that says what arrived.
+         */
         const saturation = outcomes.find(candidate => candidate.deviceId === outcome.deviceId
           && candidate.capability === 'light_saturation');
         if (saturation?.status === 'succeeded') {
@@ -1288,17 +1297,6 @@ export class CircadianRuntime {
       this.lastWritten.set(outcome.deviceId, entry);
     }
   }
-
-  /**
-   * The colour this pass planned, per device, held until its hue write lands.
-   *
-   * Saturation goes out in the same batch as the hue, so recording the pair from
-   * the hue's own outcome would record a saturation that has not landed. This
-   * holds the planned pair and `noteColorWritten` commits it when the hue
-   * succeeds — the same "only what LANDED counts" rule as `noteOutcomes`, which
-   * is the entire recovery mechanism this runtime has.
-   */
-  private readonly pendingColor = new Map<string, { hue: number; saturation: number }>();
 
   /**
    * What we last sent one lamp, gathered from the two maps that hold it.
@@ -1697,7 +1695,6 @@ export class CircadianRuntime {
         // Same reason as in stop(): a light that leaves and later rejoins the plan
         // must not be gated against what we wrote to it while it was ours.
         this.lastColorWritten.delete(deviceId);
-        this.pendingColor.delete(deviceId);
         this.preStageDeclines.delete(deviceId);
         this.cancelProbe(deviceId);
       }
@@ -1747,7 +1744,6 @@ export class CircadianRuntime {
       // left `colorHasMoved()` comparing the new curve's colour against a record
       // from the old one — and declining the first write.
       this.lastColorWritten.clear();
-      this.pendingColor.clear();
       this.preStageDeclines.clear();
       this.targetIds = [];
       this.targetNames = [];

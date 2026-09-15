@@ -213,13 +213,13 @@ describe('what the ramp engine tells its consumer', () => {
       { setInterval: clock.setInterval, clearInterval: clock.clearInterval, now: clock.nowFn },
     );
 
-    engine.start('warm', 'temperature', -1);
+    engine.start('warm', 'temperature', -1, ['l1']);
     clock.advance(300);
     assert.deepEqual(seen, [1, 2, 3], 'the first tick of a hold must be distinguishable');
 
     // A fresh hold re-establishes the mode, so a lamp somebody switched to
     // colour between two holds is corrected by the next one.
-    engine.start('warm', 'temperature', -1);
+    engine.start('warm', 'temperature', -1, ['l1']);
     clock.advance(200);
     assert.deepEqual(seen, [1, 2, 3, 1, 2]);
 

@@ -5,12 +5,13 @@
  * ## Why this file exists at all
  *
  * The recorder is a development tool. It is genuinely useful — a single 3.83-day
- * archive found five defects that reading the code had not, and
- * `docs/evidence-findings.md` is that read — and it has no business in the app a
- * household installs: it writes an encrypted archive to `/userdata`, exposes six
- * Web API routes, and puts a "Start seven-day recording" button on the settings
- * page. None of that is for them, and all of it is surface an App Store reviewer
- * would reasonably ask about.
+ * archive found five defects that reading the code had not, including a lamp
+ * that acked every write and reverted ninety seconds later, which had been
+ * muting its device for 88 of 93 recorded hours while reporting `ready` — and it
+ * has no business in the app a household installs: it writes an encrypted
+ * archive to `/userdata`, exposes six Web API routes, and puts a "Start
+ * seven-day recording" button on the settings page. None of that is for them,
+ * and all of it is surface an App Store reviewer would reasonably ask about.
  *
  * So it is built out of the launch app entirely, and back in on request.
  * `scripts/build.mjs` is the switch and `.dev-build` is what flips it; this file

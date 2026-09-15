@@ -166,6 +166,74 @@ describe('the light picker', () => {
     assert.equal(view.byId('lt-count')?.textContent, 'lights.chosen');
   });
 
+  test('a room the user opened can be put away again', async () => {
+    /**
+     * The header is the only collapse control there is, and before it existed a
+     * list of rooms could only ever get longer — this screen opens onto a house
+     * of 54 lights.
+     */
+    const view = run();
+    await view.settle();
+
+    view.fire(view.byId('lt-folded')!.children[0]!, 'click');
+    assert.equal(view.byId('lt-open')?.children.length, 1, 'the room opened');
+
+    const head = view.byId('lt-open')!.children[0]!.descendants()
+      .find(node => node.className === 'toggle')!;
+    view.fire(head, 'click');
+
+    assert.equal(view.byId('lt-open')?.children.length, 0, 'and closed again');
+    assert.equal(view.byId('lt-folded')?.children.length, 2);
+  });
+
+  test('a room with a light ticked in it still collapses', async () => {
+    /**
+     * A room opens ITSELF when something in it is chosen, which is what a repair
+     * session wants — but that cannot be the whole rule, or a room you had
+     * picked from would spring straight back open and the header would look
+     * broken. What the user said outranks the ticks.
+     */
+    const view = run();
+    await view.settle();
+
+    view.fire(view.byId('lt-folded')!.children[0]!, 'click');
+    const room = view.byId('lt-open')!.children[0]!;
+    view.fire(room.descendants().filter(node => node.className === 'light')[0]!, 'click');
+    await view.settle();
+
+    view.fire(view.byId('lt-open')!.children[0]!.descendants()
+      .find(node => node.className === 'toggle')!, 'click');
+
+    assert.equal(view.byId('lt-open')?.children.length, 0, 'collapsed with a pick in it');
+    assert.equal(view.byId('lt-count')?.textContent, 'lights.chosen', 'and the pick is kept');
+  });
+
+  test('an empty selection is not an error, and a later one clears the banner', async () => {
+    /**
+     * The screen pushes its whole selection on every tap, starting with the
+     * empty one it opens with. The driver answers that with `null` rather than
+     * refusing it — `target.deviceIds is empty` used to be printed across the
+     * top of step 1 before anybody had touched the screen — and a push that
+     * works clears whatever the last one reported.
+     */
+    const view = run();
+    await view.settle();
+
+    assert.equal(view.byId('lt-loadError')?.style.display, 'none', 'nothing to report yet');
+
+    const failing = runPairView(read('controller/lights.html'), {
+      respond: {
+        listTargets: {
+          rooms: ROOMS, zones: [], total: 3, current: null,
+          subtitle: 'The lights', stepIndex: 1, stepCount: 3, nextView: 'day',
+        },
+        selectTargets: new Error('Homey said no'),
+      },
+    });
+    await failing.settle();
+    assert.equal(failing.byId('lt-loadError')?.textContent, 'Homey said no');
+  });
+
   test('no lights at all is a state of this screen, not a dead end', async () => {
     // The one screen in the flow allowed two sentences, because the user's
     // model is wrong: they expect Lightkeeper to FIND lights, and it borrows

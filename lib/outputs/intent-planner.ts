@@ -428,6 +428,13 @@ function representableStep(deviceId: string, cache: TargetStateCache): number | 
  * — the delta path deliberately allows low values, and `offBelowMinimum`
  * deliberately turns a lamp off below its minimum, and both go through
  * `clampDim` too.
+ *
+ * **Open question, answerable only on hardware:** what a lamp declaring
+ * `decimals: 1` actually does with a `dim` of 0.01 — accept and round to zero,
+ * accept and clamp to its own smallest step, or refuse. This writes one declared
+ * step rather than anything smaller, which is safe under all three answers; the
+ * question only matters if someone proposes writing below the declared
+ * resolution on the grounds that a lamp might honour it.
  */
 function litDim(deviceId: string, value: number, cache: TargetStateCache): number {
   const quantised = clampDim(deviceId, value, cache);

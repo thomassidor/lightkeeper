@@ -5,7 +5,7 @@ import { listTargetsPayload, resolveSummary } from './target-picker';
 import { deriveSuffixedName } from './derive-name';
 import { mintDeviceId } from '../bridge/flow-bridge-manager';
 import { flowWriteProbe } from '../credential-service';
-import { validateTargetAgainstCatalog } from '../validation/pairing-dto';
+import { isEmptyDeviceSelection, validateTargetAgainstCatalog } from '../validation/pairing-dto';
 import { messageOf } from '../support/homey-errors';
 import type { LightkeeperApp } from '../app-contract';
 import type { TargetSpec } from '../outputs/light-intent';
@@ -212,6 +212,18 @@ export function registerTargetHandlers(
   handler('selectTargets', async (spec: unknown) => {
     const revision = ++selectionRevision;
     state.target = undefined;
+    // Nothing ticked is a STATE of the picker, not a failed save. The screen
+    // pushes its whole selection on every tap — including the empty one it
+    // opens with — so refusing an empty list here put `target.deviceIds is
+    // empty` at the top of step 1 before anybody had touched it.
+    //
+    // The round trip still has to happen rather than being skipped in the view:
+    // a repair session arrives with a target already in `state`, and unticking
+    // the last light must forget it. Returning early after the clear above is
+    // what does that. The save handlers already refuse a session with no target
+    // ("Choose some lights first"), which is where an empty selection is
+    // properly stopped.
+    if (isEmptyDeviceSelection(spec)) return null;
     // The pairing channel is a webview, so this is the same class of boundary
     // as a generated Flow's arguments: shape AND membership are checked before
     // anything is persisted. A well-formed id naming something that is not a
