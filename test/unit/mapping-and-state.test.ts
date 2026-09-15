@@ -2,7 +2,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  MappingEngine, availableFunctions, intentForLightFunction,
+  MappingEngine, availableFunctions, honouredFunctions, intentForLightFunction,
 } from '../../lib/mapping/mapping-engine';
 import { intentForFunction } from '../../lib/runtime/controller-runtime';
 import { DEFAULT_BEHAVIOR, type LightFunction, type MappingRule } from '../../lib/mapping/mapping-types';
@@ -14,6 +14,7 @@ const LIGHT_FUNCTIONS: readonly LightFunction[] = [
   'warmer', 'colder', 'temperature_cycle',
 ];
 import { TargetStateCache } from '../../lib/outputs/target-state-cache';
+import { paletteColor } from '../../lib/circadian/palette';
 import { dedupeByInputKey } from '../../lib/profiles/controller-profile';
 import type { InputEvent } from '../../lib/inputs/input-event';
 
@@ -105,19 +106,71 @@ describe('mapping engine', () => {
 });
 
 describe('available functions', () => {
-  test('offers only what the targets support', () => {
-    assert.deepEqual(availableFunctions({ onoff: 3, dim: 0, light_temperature: 0 }),
-      ['toggle', 'on', 'off']);
-    assert.deepEqual(availableFunctions({ onoff: 3, dim: 3, light_temperature: 2 }), [
-      'toggle', 'on', 'off',
+  test('offers only what the targets support, in the order the grid reads', () => {
+    // The order is the 3x3 the buttons screen draws: a row per family, and the
+    // third column setting a value in each. A screen laying them out in columns
+    // and a list yielding them in some other order would drift the first time a
+    // function was added, so the order is the engine's.
+    assert.deepEqual(availableFunctions({ onoff: 3, dim: 0, light_temperature: 0, light_hue: 0 }),
+      ['on', 'off', 'toggle']);
+    assert.deepEqual(availableFunctions({ onoff: 3, dim: 3, light_temperature: 2, light_hue: 2 }), [
+      'on', 'off', 'toggle',
       'brightness_up', 'brightness_down', 'brightness_set',
-      'warmer', 'colder', 'temperature_cycle',
+      'warmer', 'colder',
+      'color_set',
     ]);
   });
 
+  test('a retired job is offered to nobody and honoured for everybody', () => {
+    // `temperature_cycle` lost its cell when the list became a grid. A button
+    // already assigned to it goes on working, so the two lists differ by
+    // exactly that — and only while the lamps can still do warmth at all.
+    const support = { onoff: 3, dim: 3, light_temperature: 2, light_hue: 0 };
+
+    assert.ok(!availableFunctions(support).includes('temperature_cycle'));
+    assert.ok(honouredFunctions(support).includes('temperature_cycle'));
+    assert.ok(!honouredFunctions({ onoff: 3, dim: 3, light_temperature: 0, light_hue: 0 })
+      .includes('temperature_cycle'), 'not on lamps that cannot change warmth at all');
+  });
+
+  test('a colour job is offered only where a lamp can take a colour', () => {
+    const noColour = { onoff: 3, dim: 3, light_temperature: 3, light_hue: 0 };
+    assert.ok(!availableFunctions(noColour).includes('color_set'));
+    assert.ok(availableFunctions({ ...noColour, light_hue: 1 }).includes('color_set'));
+  });
+
   test('partial support still offers the function — hiding makes the app look broken', () => {
-    const functions = availableFunctions({ onoff: 3, dim: 3, light_temperature: 1 });
+    const functions = availableFunctions({ onoff: 3, dim: 3, light_temperature: 1, light_hue: 0 });
     assert.ok(functions.includes('warmer'), 'one of three supporting is enough to offer the row');
+  });
+});
+
+describe('the colour job', () => {
+  const behavior = DEFAULT_BEHAVIOR;
+
+  test('resolves to the palette colour, both axes together', () => {
+    // Half a colour is a colour nobody chose, which is why the intent carries
+    // hue and saturation and the rule stores neither: it stores the NAME.
+    const amber = paletteColor('amber')!;
+
+    assert.deepEqual(
+      intentForLightFunction('color_set', behavior, 1, { color: 'amber' }),
+      { type: 'color_absolute', hue: amber.hue, saturation: amber.saturation },
+    );
+  });
+
+  test('degrades to light rather than to a colour nobody chose', () => {
+    // Validation refuses both of these on the way in and on the way out, so
+    // this is the live gesture path failing closed. Turning the lights on is
+    // the honest answer to "this button was meant to produce light".
+    assert.deepEqual(
+      intentForLightFunction('color_set', behavior, 1, undefined),
+      { type: 'power', value: true },
+    );
+    assert.deepEqual(
+      intentForLightFunction('color_set', behavior, 1, { color: 'gone-from-the-palette' }),
+      { type: 'power', value: true },
+    );
   });
 });
 

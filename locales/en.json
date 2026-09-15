@@ -22,6 +22,10 @@
     "reattachAmbiguous": "__count__ remotes look like this one, so Lightkeeper cannot tell which it was. Open repair and choose the right one — your mappings and lights are kept either way."
   },
   "targets": {
+    "allCount": "all __count__",
+    "pair": "__first__ and __second__",
+    "someLights": "__count__ lights",
+    "noneOfThem": "no lights any more",
     "subtitleController": "The lights this remote will control.",
     "subtitleSchedule": "The lights this schedule turns on and off.",
     "subtitleCircadian": "The lights that follow the colour of the day.",
@@ -96,6 +100,7 @@
     "warmer": "Warmer",
     "colder": "Cooler",
     "brightness_set": "A set brightness",
+    "color_set": "Set colour",
     "temperature_cycle": "Step through warm and cool"
   },
   "state": {
@@ -360,6 +365,11 @@
     "title": "Which remote?",
     "step": "Step __index__ of __count__",
     "none": "No remotes or switches found. Add one to Homey first.",
+    "noMatch": "No device of that name. Check the spelling, or clear the search.",
+    "search": "Search __count__ devices",
+    "otherWhy": "Homey has heard no button press from the rest of the house.",
+    "showOther": "Show every other device",
+    "hideOther": "Hide the other devices",
     "unavailable": "Not responding",
     "events": "__count__ separate presses",
     "noEvents": "Nothing heard from it yet",
@@ -495,11 +505,33 @@
   "buttons": {
     "title": "What should each button do?",
     "step": "Step __index__ of __count__",
-    "nothing": "Nothing",
-    "pressToJump": "Press a button to jump to its row"
+    "notSet": "Not set",
+    "detail": "__job__ · __lights__",
+    "pressToJump": "Press a button on the remote to jump to its row"
+  },
+  "count": {
+    "zero": "zero",
+    "one": "one",
+    "two": "two",
+    "three": "three",
+    "four": "four",
+    "five": "five",
+    "six": "six",
+    "seven": "seven",
+    "eight": "eight",
+    "nine": "nine",
+    "ten": "ten",
+    "eleven": "eleven",
+    "twelve": "twelve"
   },
   "job": {
-    "nothing": "Nothing",
+    "does": "Does",
+    "doNothing": "Do nothing",
+    "to": "To",
+    "allLights": "All __count__ lights",
+    "colour": "Colour",
+    "moreColours": "More colours",
+    "fewerColours": "Fewer colours",
     "brightness": "Brightness",
     "off": "Off",
     "full": "Full",

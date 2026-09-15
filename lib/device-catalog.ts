@@ -35,7 +35,15 @@ export interface CatalogZone {
   parent: string | null;
 }
 
-const LIGHT_CAPABILITIES = ['onoff', 'dim', 'light_temperature'] as const;
+/**
+ * What `capabilitySummary` counts — the capabilities a JOB can need.
+ *
+ * `light_hue` is here and `light_saturation` is not, deliberately: a colour is
+ * written as both axes together (half a colour is a colour nobody chose), and
+ * every lamp that declares one declares the other. Counting one of the pair is
+ * counting the pair; counting both would double a lamp's vote.
+ */
+const LIGHT_CAPABILITIES = ['onoff', 'dim', 'light_temperature', 'light_hue'] as const;
 
 export class DeviceCatalog {
   private devices: Map<string, CatalogDevice> | null = null;
@@ -214,11 +222,13 @@ export class DeviceCatalog {
   }
 
   /** How many of these targets support each light capability. */
-  async capabilitySummary(deviceIds: string[]): Promise<{ onoff: number; dim: number; light_temperature: number; total: number }> {
+  async capabilitySummary(deviceIds: string[]): Promise<{
+    onoff: number; dim: number; light_temperature: number; light_hue: number; total: number;
+  }> {
     const devices = await Promise.all(deviceIds.map(id => this.device(id)));
     const present = devices.filter((d): d is CatalogDevice => d !== undefined);
 
-    const summary = { onoff: 0, dim: 0, light_temperature: 0, total: present.length };
+    const summary = { onoff: 0, dim: 0, light_temperature: 0, light_hue: 0, total: present.length };
     for (const device of present) {
       for (const capability of LIGHT_CAPABILITIES) {
         if (device.capabilities.includes(capability)) summary[capability] += 1;

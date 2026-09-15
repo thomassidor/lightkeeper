@@ -112,7 +112,7 @@ const LIGHTS = [
   { id: 'p1', name: 'Dishwasher', zoneName: 'Living room', capabilities: ['onoff'], isLight: false, available: true, selected: false },
 ];
 
-const SUPPORT = { onoff: 3, dim: 3, light_temperature: 2, total: 3 };
+const SUPPORT = { onoff: 3, dim: 3, light_temperature: 2, light_hue: 2, total: 3 };
 const TIMEZONE = 'Europe/Copenhagen';
 
 /**
@@ -255,11 +255,33 @@ const CURVE_BARS = [
 
 /** Four gestures, so the buttons screen shows both assigned and unassigned rows. */
 const GESTURES = [
-  { key: 'button.top|true', buttonLabel: 'Top', actionLabel: 'Pressed' },
-  { key: 'button.top|hold', buttonLabel: 'Top', actionLabel: 'Held' },
-  { key: 'button.bottom|true', buttonLabel: 'Bottom', actionLabel: 'Pressed' },
-  { key: 'button.left|true', buttonLabel: 'Left', actionLabel: 'Pressed' },
+  { key: 'button.top|true', label: 'Top · Press' },
+  { key: 'button.top|hold', label: 'Top · Long press' },
+  { key: 'button.bottom|true', label: 'Bottom · Press' },
+  { key: 'button.left|true', label: 'Left · Press' },
 ];
+
+/** The lights a demo remote drives, and the two a demo button aims at. */
+const RULE_LIGHTS = [
+  { id: 'light-1', name: 'Floor lamp' },
+  { id: 'light-2', name: 'Shelf strip' },
+  { id: 'light-3', name: 'Reading lamp' },
+];
+
+/**
+ * The same palette as the job screen is sent it: painted, not as two axes.
+ *
+ * That screen draws its swatches once and asks the driver for the colour, so
+ * the driver runs `colourSwatch()` — the fixture runs the same two curves so a
+ * render shows what a Homey would.
+ */
+const PALETTE_SWATCHES = PALETTE.map(colour => ({
+  id: colour.id,
+  label: colour.label,
+  swatch: `hsl(${Math.round(colour.hue * 360)},`
+    + `${Math.round((0.25 + colour.saturation * 0.55) * 100)}%,`
+    + `${Math.round(86 - colour.saturation * 36)}%)`,
+}));
 
 export const RENDER_REPLIES = {
   // ---- shared by every driver --------------------------------------------
@@ -492,14 +514,41 @@ export const RENDER_REPLIES = {
           { id: 'r2', name: 'Bedside dimmer', ownerName: 'Philips Hue', available: true, eventCount: 4 },
         ] },
         { zoneName: 'Kitchen', sources: [
-          { id: 'r3', name: 'Kitchen button', ownerName: 'Aqara', available: false, eventCount: 0 },
+          { id: 'r3', name: 'Kitchen button', ownerName: 'Aqara', available: false, eventCount: 2 },
         ] },
       ],
+      /**
+       * The rest of the house, which on a real Homey is most of it. Drawn
+       * folded, so what the render shows is the ROW — which is the thing worth
+       * looking at, since it is all that stands between the user and a hundred
+       * devices they did not come here for.
+       */
+      others: [
+        { zoneName: 'Kitchen', sources: [
+          { id: 'o1', name: 'Dishwasher', ownerName: 'Bosch', available: true, eventCount: 0 },
+        ] },
+        { zoneName: 'Living room', sources: [
+          { id: 'o2', name: 'Ceiling spots', ownerName: 'Philips Hue', available: true, eventCount: 0 },
+          { id: 'o3', name: 'Floor lamp', ownerName: 'IKEA Trådfri', available: true, eventCount: 0 },
+        ] },
+      ],
+      candidateCount: 3,
+      otherCount: 3,
+      total: 6,
       current: 'r1',
     },
     selectSource: {
       deviceName: 'Hall remote', ownerName: 'IKEA Trådfri',
-      eventCount: 8, controls: 4, usable: true, rejected: [],
+      eventCount: 8, usable: true, rejected: [],
+      // `controls` is the driver's list of the remote's controls, and the
+      // screen shows its LENGTH. A bare 4 here rendered a message no real
+      // Homey could produce.
+      controls: [
+        { controlId: 'button.top', label: 'Top', inputs: [] },
+        { controlId: 'button.bottom', label: 'Bottom', inputs: [] },
+        { controlId: 'button.left', label: 'Left', inputs: [] },
+        { controlId: 'button.right', label: 'Right', inputs: [] },
+      ],
     },
   },
 
@@ -507,32 +556,68 @@ export const RENDER_REPLIES = {
     getButtons: {
       gestures: GESTURES,
       // Resolved through the same keys the driver passes, so a renamed job is
-      // renamed on the contact sheet too.
+      // renamed on the contact sheet too. `detail` is composed the way the
+      // driver composes it — the job, then the lights it drives — because the
+      // whole point of that line is that a per-button target is legible from
+      // the list.
       jobs: {
-        'button.top|true': { label: say('functions.toggle') },
-        'button.top|hold': { label: say('functions.brightness_up') },
-        'button.bottom|true': { label: say('functions.off') },
+        'button.top|true': {
+          label: say('functions.toggle'),
+          detail: say('buttons.detail', {
+            job: say('functions.toggle'),
+            lights: say('targets.allCount', { count: say('count.three') }),
+          }),
+        },
+        'button.top|hold': {
+          label: say('functions.brightness_up'),
+          detail: say('buttons.detail', {
+            job: say('functions.brightness_up'),
+            lights: 'Floor lamp',
+          }),
+        },
+        'button.bottom|true': {
+          label: say('functions.off'),
+          detail: say('buttons.detail', {
+            job: say('functions.off'),
+            lights: say('targets.allCount', { count: say('count.three') }),
+          }),
+        },
       },
     },
   },
 
   'job.html': {
     getGesture: {
-      title: 'Left — Pressed',
+      title: 'Top · Long press',
+      /**
+       * Nine, in the order the driver yields them, which is the order the grid
+       * reads: power across the top, brightness in the middle, warmth and
+       * colour at the bottom, and the third column setting a value in each row.
+       * "Do nothing" is NOT in this list — it is the tile below the grid, and
+       * drawing it here would put it in the grid.
+       */
       jobs: [
-        { id: null, label: say('job.nothing'), needsPreset: false },
-        { id: 'toggle', label: say('functions.toggle'), needsPreset: false },
-        { id: 'off', label: say('functions.off'), needsPreset: false },
-        { id: 'brightness_up', label: say('functions.brightness_up'), needsPreset: false },
-        { id: 'brightness_down', label: say('functions.brightness_down'), needsPreset: false },
-        { id: 'brightness_set', label: say('functions.brightness_set'), needsPreset: true },
-        { id: 'temperature_cycle', label: say('functions.temperature_cycle'), needsPreset: false },
+        { id: 'on', label: say('functions.on'), preset: 'none' },
+        { id: 'off', label: say('functions.off'), preset: 'none' },
+        { id: 'toggle', label: say('functions.toggle'), preset: 'none' },
+        { id: 'brightness_up', label: say('functions.brightness_up'), preset: 'none' },
+        { id: 'brightness_down', label: say('functions.brightness_down'), preset: 'none' },
+        { id: 'brightness_set', label: say('functions.brightness_set'), preset: 'brightness' },
+        { id: 'warmer', label: say('functions.warmer'), preset: 'none' },
+        { id: 'colder', label: say('functions.colder'), preset: 'none' },
+        { id: 'color_set', label: say('functions.color_set'), preset: 'colour' },
       ],
-      // The one job that carries a value, chosen so the render draws its
-      // controls rather than only the list.
-      chosen: 'brightness_set',
-      needsPreset: true,
-      preset: { brightness: 0.6, temperature: 0.85 },
+      // The newest job, chosen, so the render draws the grid, the palette that
+      // opens under it AND the checklist. A job carrying no value would show
+      // the screen's two halves and neither of its editors.
+      chosen: 'color_set',
+      presetKind: 'colour',
+      preset: { color: 'amber' },
+      colors: PALETTE_SWATCHES,
+      featuredColors: 8,
+      lights: RULE_LIGHTS,
+      allLabel: say('job.allLights', { count: say('count.three') }),
+      chosenLights: ['light-1'],
     },
     setGesture: { set: true },
     test: { writes: 2, skipped: 0, targets: 2 },

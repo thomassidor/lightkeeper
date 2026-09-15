@@ -47,7 +47,9 @@ add them the way you add any Homey device: **Devices → Add → Lightkeeper**.
 
 Turns a remote, switch or dial you have **already paired** with Homey into a controller for lights
 you choose. Pick the remote, pick the lights, say what each press, hold or turn should do — on, off,
-brighter, dimmer, warmer, cooler.
+brighter, dimmer, warmer, cooler, a set brightness, or a colour. Each button can drive **all** the
+lights or **just some of them**, so one remote can dim the floor lamp with one button and the whole
+room with another.
 
 *Needs a Personal API Key: a token you generate on your own Homey, which is what lets Lightkeeper
 write Flows on your behalf. [Step 2 below](#2-give-it-an-api-key--if-you-need-one) walks through
@@ -201,7 +203,7 @@ review jumps back to the step it came from.
 
 | Device | The steps |
 |---|---|
-| Light Remote | API key → **1** choose a remote (listed by room, or press a button and let Lightkeeper find it) → **2** choose lights → **3** one row per button, each saying what it does → **4** review |
+| Light Remote | API key → **1** choose a remote (listed by room, or press a button and let Lightkeeper find it) → **2** choose lights → **3** one row per button, each saying what it does and to which lights → **4** review |
 | Light schedule | API key → **1** choose lights → **2** draw the blocks on a day → **3** review |
 | Circadian light | **1** choose lights → **2** morning, midday and evening → **3** review |
 | Colour Curve Light | **1** choose lights → **2** build the curve point by point → **3** review |

@@ -104,6 +104,21 @@
                                     #f2e6d6, #eaf0fb, #dbe8fb);
     --lk-bright-ramp: linear-gradient(90deg, #221a3d, #43318a, #7a5fc4,
                                       #b9a6e4, #ece5f9);
+    /* The two ENDS of the warmth axis, for the two tiles that nudge along it
+       rather than setting it. The whole ramp draws the same picture on both,
+       which is no picture at all, so each of these runs from the middle of
+       --lk-warm-ramp out to one end of it.
+       The cool end is DEEPER than that ramp's own #dbe8fb: at 30x12px on white
+       the real end of the axis is a chip with no edge, so the tile that said
+       "cooler" showed nothing at all. Deepened to where it reads, and no
+       further — it is a picture of a direction, not a colour to match. */
+    --lk-warmer-ramp: linear-gradient(90deg, #f7efe3, #e8892c);
+    --lk-cooler-ramp: linear-gradient(90deg, #f7efe3, #7ba7e0);
+    /* A lamp that is ON, drawn rather than named: the one warm accent in an
+       interface that is otherwise entirely violet, because "on" is a picture of
+       light and the brand colour is a picture of the app. */
+    --lk-lamp-lit: #f0b429;
+    --lk-lamp-glow: rgba(240, 180, 41, .22);
     --lk-handle-shadow: 0 2px 6px rgba(16, 24, 40, .2);
     /* A small mark lifted off whatever it is drawn ON — the curve chart's
        selected point, which sits on top of a bar of any colour. */
@@ -366,9 +381,15 @@
      the palette, which a white gap did not against the pale ones. */
   #jb-root .swatch[aria-pressed="true"] { border: 2.5px solid var(--lk-accent);
                                        box-shadow: 0 0 0 3px var(--lk-ring); }
-  /* The sixteen that fold out: same set, half the size, eight across. */
+  /* The sixteen that fold out: same set, half the size, eight across.
+
+     18px above them, not the 7px between the featured rows: at the same gap the
+     fold-out read as two more rows of the grid above it rather than as the set
+     that had just been opened, and the eye had to measure swatch sizes to find
+     where one group ended. The space is what separates them; both sets are
+     still the same palette, so nothing stronger than space is wanted. */
   #jb-root .swatches.more { grid-template-columns: repeat(8, 1fr); gap: 6px;
-                         margin: 7px 0 0; }
+                         margin: 18px 0 0; }
   #jb-root .swatches.more .swatch { height: 28px; min-height: 28px; border-radius: 7px; }
 
   /* The day strip: a picture of the whole day, drawn once and reused. */
@@ -395,29 +416,120 @@
 
   /* ---- this view only ---------------------------------------------------- */
 
-  /* Seven stacked cards, not seven rows in one card with a radio each.
-     This screen asks ONE question and the answer is the whole row, so the row
-     is the control: the chosen one is filled and bordered in the accent, which
-     is legible from across a list where a 22px radio was not. */
-  #jb-root .jobs { display: flex; flex-direction: column; gap: 7px; margin-bottom: 16px; }
-  #jb-root .job { display: flex; align-items: center; gap: 10px; width: 100%;
-                  padding: 13px 14px; min-height: 44px; box-sizing: border-box;
-                  border: 1.5px solid var(--lk-line); border-radius: 12px;
-                  background: var(--lk-surface);
-                  font: inherit; color: inherit; text-align: left; cursor: pointer;
-                  transition: border-color .12s ease, background .12s ease; }
-  #jb-root .job[aria-pressed="true"] { border-color: var(--lk-accent);
-                                       background: var(--lk-accent-tint); }
-  #jb-root .job .text { flex: 1; display: flex; align-items: center;
-                        justify-content: space-between; gap: 10px; }
-  #jb-root .job .name { font-size: 15px; }
-  #jb-root .job[aria-pressed="true"] .name { font-weight: 600; }
-  #jb-root .job .meta { font-size: 12.5px; color: var(--lk-muted); }
+  /* NINE JOBS AS A GRID, and the grid is the grouping.
 
-  /* The one job that needs a value: what "a set brightness" is set TO. */
+     They were a stack of full-width rows, which is the right shape for a list
+     of unlike things and the wrong one for a set with structure: power,
+     brightness and colour across three rows, and "up, down, set a value" down
+     the three columns. Position says which family a job belongs to, so no group
+     headings are needed and none are drawn — and the third column reads the
+     same way in all three rows, which is what makes a nine-item grid
+     scannable where a nine-item list is not.
+
+     A tile is the base's `.tile`, so the chosen one is bordered and tinted the
+     way every other "this is the one you picked" in the app is. */
+  #jb-root .grid { display: grid; grid-template-columns: repeat(3, 1fr);
+                   gap: 7px; margin: 0 0 7px; }
+  #jb-root .grid .tile { margin: 0; padding: 11px 6px 10px; text-align: center; }
+  #jb-root .grid .name { font-size: 12.5px; font-weight: 500; line-height: 1.25; }
+  /* The value, and ONLY once its tile is chosen. "60%" printed on an unchosen
+     tile read as the only brightness on offer rather than as this button's. */
+  #jb-root .grid .meta { font-size: 11.5px; color: var(--lk-muted); margin-top: 3px; }
+
+  /* Do nothing sits APART, full width, below the grid: it is the absence of a
+     job rather than a tenth kind of one, and it is what an unmapped button
+     already says. Same tile, same chosen state, different shape. */
+  #jb-root .none { display: flex; align-items: center; gap: 11px; margin: 0 0 16px;
+                   text-align: left; }
+  /* The grid centres its own icons with `margin: auto`, which in a row pushes
+     the label to the far end. Here the icon leads the line. */
+  #jb-root .none .ico { margin: 0; }
+  #jb-root .none .name { flex: 1; font-size: 14.5px; font-weight: 500; }
+
+  /* ---- the picture on each tile ------------------------------------------
+
+     Every tile carries a picture of its EFFECT rather than a number or a glyph:
+     bars that climb for brighter and fall for dimmer, a track that runs dark to
+     light for a set brightness, the warm and the cool end of the same ramp, and
+     three dots for a colour. Drawn in CSS from the palette's own tokens — an
+     icon file would be a second place the brand lives, and an inline SVG would
+     mean building markup from a string, which no view in this app does. */
+  #jb-root .ico { height: 22px; margin: 1px auto 7px; display: flex;
+                  align-items: flex-end; justify-content: center; gap: 3px; }
+  #jb-root .ico span { display: block; }
+
+  /* Power. A lit lamp, an unlit one, and the two of them side by side. */
+  #jb-root .ico-on, #jb-root .ico-off, #jb-root .ico-toggle { align-items: center; }
+  #jb-root .ico-on .lamp { width: 18px; height: 18px; border-radius: 50%;
+                           background: var(--lk-lamp-lit);
+                           box-shadow: 0 0 0 3px var(--lk-lamp-glow); }
+  #jb-root .ico-off .lamp { width: 18px; height: 18px; border-radius: 50%;
+                            border: 2px solid var(--lk-box); box-sizing: border-box; }
+  #jb-root .ico-toggle .lamp { width: 14px; height: 14px; border-radius: 50%;
+                               background: var(--lk-lamp-lit); }
+  #jb-root .ico-toggle .lamp.out { background: none;
+                                   border: 2px solid var(--lk-box); box-sizing: border-box; }
+
+  /* Brightness. Three bars, climbing — and the same three reversed for down,
+     because a dimmer is not a different picture, it is the same one read the
+     other way. */
+  #jb-root .ico-up .bar, #jb-root .ico-down .bar { width: 4px; border-radius: 2px;
+                                                   background: var(--lk-accent); }
+  #jb-root .ico-up .bar:nth-child(1), #jb-root .ico-down .bar:nth-child(3) { height: 8px; }
+  #jb-root .ico-up .bar:nth-child(2), #jb-root .ico-down .bar:nth-child(2) { height: 14px; }
+  #jb-root .ico-up .bar:nth-child(3), #jb-root .ico-down .bar:nth-child(1) { height: 20px; }
+
+  /* The three that SET a value are tracks, not steps: the whole axis, with the
+     value living somewhere along it. */
+  #jb-root .ico-level .track { width: 30px; height: 12px; border-radius: 6px;
+                               background: var(--lk-bright-ramp); }
+  #jb-root .ico-warm .track { width: 30px; height: 12px; border-radius: 6px;
+                              background: var(--lk-warmer-ramp); }
+  #jb-root .ico-cool .track { width: 30px; height: 12px; border-radius: 6px;
+                              background: var(--lk-cooler-ramp); }
+  #jb-root .ico-colour { gap: 4px; align-items: center; }
+  #jb-root .ico-colour .dot { width: 9px; height: 9px; border-radius: 50%; }
+
+  /* ---- what a job is set to ---------------------------------------------- */
+
+  /* Only ever under the tile that needs one. */
   #jb-root .preset { background: var(--lk-flat-bg); border-radius: 12px;
                      padding: 12px 14px; margin: 0 0 16px; }
   #jb-root #jb-warmBlock { margin-top: 13px; }
+  /* The swatch grids keep the BASE's own margins, and this is a rule about not
+     writing one. `#jb-root .preset .swatches { margin: 0 }` was here to tighten
+     the card, and it silently took the 14px the base puts above the fold-out
+     set with it: same specificity as `#jb-root .swatches.more`, further down
+     the file, so it won. The gap between the featured eight and the sixteen
+     below them went back to looking like one grid of twenty-four. */
+  #jb-root .preset .morelink { display: block; width: 100%; margin: 9px 0 0;
+                               background: none; border: none; padding: 0;
+                               font: inherit; font-size: 13px; color: var(--lk-accent);
+                               text-align: left; cursor: pointer; }
+  #jb-root .preset .chosen-name { font-size: 12.5px; color: var(--lk-muted);
+                                  margin: 9px 0 0; }
+
+  /* ---- and to which lights ----------------------------------------------- */
+
+  /* The second half of the sentence. Same checklist the light picker draws,
+     because it is the same question asked of a shorter list — and "all of them"
+     is a row of its own rather than a state you reach by ticking everything:
+     ticked individually, the set would freeze against today's lights, while the
+     row means INHERIT and goes on following a room that gains a lamp. */
+  #jb-root .pick { display: flex; align-items: center; gap: 12px; width: 100%;
+                   padding: 12px 0; min-height: 44px; box-sizing: border-box;
+                   background: none; border: none; border-bottom: 1px solid var(--lk-line);
+                   font: inherit; color: inherit; text-align: left; cursor: pointer; }
+  #jb-root .pick:last-child { border-bottom: none; }
+  #jb-root .pick .box { flex: none; width: 22px; height: 22px; border-radius: 6px;
+                        border: 1.5px solid var(--lk-box); box-sizing: border-box;
+                        display: flex; align-items: center; justify-content: center;
+                        font-size: 13px; font-weight: 700; color: transparent; }
+  #jb-root .pick[aria-pressed="true"] .box { background: var(--lk-accent);
+                                             border-color: var(--lk-accent);
+                                             color: var(--lk-accent-ink); }
+  #jb-root .pick .name { flex: 1; font-size: 14.5px; }
+  #jb-root .pick[aria-pressed="true"] .name { font-weight: 600; }
 
 </style>
 
@@ -426,13 +538,24 @@
 
   <div id="jb-error" class="msg bad" style="display:none;"></div>
 
-  <div class="jobs" id="jb-list"></div>
+  <!--
+    The screen reads as a sentence: this button DOES this, TO these lights. Two
+    headings and nothing else between them, because every extra line is a word
+    in the middle of that sentence.
+  -->
+  <div class="section-title" data-i18n="job.does"></div>
+  <div class="grid" id="jb-grid"></div>
+
+  <button class="tile none" id="jb-none" type="button" aria-pressed="false">
+    <span class="ico ico-off"><span class="lamp"></span></span>
+    <span class="name" data-i18n="job.doNothing"></span>
+  </button>
 
   <!--
-    Only ever shown under "A set brightness". It is the one job whose name is
-    not enough — a button whose job is "make it cosy" needs to know what cosy
-    is — and a rule that says it sets a brightness and carries none is refused
-    on both the screen's path and the stored-plan path.
+    Only ever shown under the tile that needs it. "A set brightness" is the job
+    whose name is not enough — a button whose job is "make it cosy" needs to know
+    what cosy is — and a rule that says it sets a brightness and carries none is
+    refused on both the screen's path and the stored-plan path.
   -->
   <div class="preset" id="jb-preset" style="display:none;">
     <div class="control-title"><span data-i18n="job.brightness"></span> <span id="jb-brightPct"></span></div>
@@ -462,7 +585,28 @@
     </div>
   </div>
 
-  <div class="card rows">
+  <!--
+    And the same for a colour: the Colour Curve Light's own closed palette, eight
+    shown and sixteen folded out in place. A palette rather than a picker, for
+    the three reasons written at the top of lib/circadian/palette.ts.
+  -->
+  <div class="preset" id="jb-colours" style="display:none;">
+    <div class="control-title" data-i18n="job.colour"></div>
+    <div class="swatches" id="jb-featured"></div>
+    <div class="swatches more" id="jb-rest" style="display:none;"></div>
+    <button class="morelink" id="jb-more" type="button" data-i18n="job.moreColours"></button>
+    <div class="chosen-name" id="jb-colourName"></div>
+  </div>
+
+  <!--
+    WHICH lights, out of the ones this remote already drives. "All of them" is a
+    row rather than a state you reach by ticking every box: it means inherit, so
+    a room that gains a lamp gains it here too.
+  -->
+  <div class="section-title" id="jb-toTitle" data-i18n="job.to" style="display:none;"></div>
+  <div class="card rows" id="jb-lights" style="display:none;"></div>
+
+  <div class="card rows" id="jb-tryCard">
     <button class="row" id="jb-try" type="button">
       <span class="label" data-i18n="job.tryIt"></span>
       <span class="chev">&rsaquo;</span>
@@ -524,7 +668,8 @@ function __lkBootJb(Homey) {
   var el = {
     title: document.getElementById('jb-title'),
     error: document.getElementById('jb-error'),
-    list: document.getElementById('jb-list'),
+    grid: document.getElementById('jb-grid'),
+    none: document.getElementById('jb-none'),
     preset: document.getElementById('jb-preset'),
     brightPct: document.getElementById('jb-brightPct'),
     bright: document.getElementById('jb-bright'),
@@ -533,6 +678,14 @@ function __lkBootJb(Homey) {
     warmBlock: document.getElementById('jb-warmBlock'),
     warm: document.getElementById('jb-warm'),
     warmKnob: document.getElementById('jb-warmKnob'),
+    colours: document.getElementById('jb-colours'),
+    featured: document.getElementById('jb-featured'),
+    rest: document.getElementById('jb-rest'),
+    more: document.getElementById('jb-more'),
+    colourName: document.getElementById('jb-colourName'),
+    toTitle: document.getElementById('jb-toTitle'),
+    lights: document.getElementById('jb-lights'),
+    tryCard: document.getElementById('jb-tryCard'),
     try: document.getElementById('jb-try'),
     msg: document.getElementById('jb-msg'),
   };
@@ -540,13 +693,53 @@ function __lkBootJb(Homey) {
   var state = {
     jobs: [],
     chosen: null,
-    needsPreset: false,
-    preset: { brightness: 0.6, temperature: undefined }
+    /** 'none' | 'brightness' | 'colour' — which editor the chosen tile opens. */
+    presetKind: 'none',
+    brightness: { brightness: 0.6, temperature: undefined },
+    colour: null,
+    colors: [],
+    featuredColors: 8,
+    showAllColours: false,
+    lights: [],
+    allLabel: '',
+    /** null is ALL of them, and goes on meaning that as the room changes. */
+    chosenLights: null,
   };
 
-  function fail(err) {
-    el.error.textContent = err && err.message ? err.message : String(err);
-    el.error.style.display = '';
+  /**
+   * The picture on a tile, built from nodes because no view in this app assigns
+   * innerHTML — which rules out an inline SVG and is why these are CSS shapes
+   * with a class each. `parts` is how many children the shape needs; the CSS
+   * does the rest.
+   */
+  var ICONS = {
+    on: { css: 'ico-on', parts: ['lamp'] },
+    off: { css: 'ico-off', parts: ['lamp'] },
+    toggle: { css: 'ico-toggle', parts: ['lamp', 'lamp out'] },
+    brightness_up: { css: 'ico-up', parts: ['bar', 'bar', 'bar'] },
+    brightness_down: { css: 'ico-down', parts: ['bar', 'bar', 'bar'] },
+    brightness_set: { css: 'ico-level', parts: ['track'] },
+    warmer: { css: 'ico-warm', parts: ['track'] },
+    colder: { css: 'ico-cool', parts: ['track'] },
+    color_set: { css: 'ico-colour', parts: ['dot', 'dot', 'dot'] },
+    temperature_cycle: { css: 'ico-warm', parts: ['track'] }
+  };
+
+  /** The three dots on the colour tile are three REAL palette colours. */
+  function paintColourIcon(icon) {
+    var dots = icon.children;
+    for (var i = 0; i < dots.length; i++) {
+      var colour = state.colors[i * 3];
+      if (colour) dots[i].style.background = colour.swatch;
+    }
+  }
+
+  function iconFor(id) {
+    var spec = ICONS[id] || { css: 'ico-off', parts: ['lamp'] };
+    var icon = node('span', 'ico ' + spec.css);
+    for (var i = 0; i < spec.parts.length; i++) icon.appendChild(node('span', spec.parts[i]));
+    if (id === 'color_set') paintColourIcon(icon);
+    return icon;
   }
 
   function setSlider(knob, value) {
@@ -574,8 +767,10 @@ function __lkBootJb(Homey) {
   }
 
   draggable(el.bright, function (fraction) {
-    state.preset.brightness = fraction;
+    state.brightness.brightness = fraction;
     renderPreset();
+    renderGrid();
+    push();
   });
 
   /**
@@ -590,66 +785,212 @@ function __lkBootJb(Homey) {
   function sliderToWarmth(fraction) { return 1 - fraction; }
 
   draggable(el.warm, function (fraction) {
-    state.preset.temperature = sliderToWarmth(fraction);
+    state.brightness.temperature = sliderToWarmth(fraction);
     renderPreset();
+    renderGrid();
+    push();
   });
 
   el.warmToggle.addEventListener('click', function () {
-    state.preset.temperature = state.preset.temperature === undefined ? 0.8 : undefined;
+    state.brightness.temperature = state.brightness.temperature === undefined ? 0.8 : undefined;
     renderPreset();
+    renderGrid();
+    push();
+  });
+
+  el.more.addEventListener('click', function () {
+    state.showAllColours = !state.showAllColours;
+    renderColours();
   });
 
   function renderPreset() {
-    el.preset.style.display = state.needsPreset ? '' : 'none';
-    if (!state.needsPreset) return;
+    el.preset.style.display = state.presetKind === 'brightness' ? '' : 'none';
+    el.colours.style.display = state.presetKind === 'colour' ? '' : 'none';
 
-    el.brightPct.textContent = Math.round(state.preset.brightness * 100) + '%';
-    setSlider(el.brightKnob, state.preset.brightness);
+    if (state.presetKind === 'colour') renderColours();
+    if (state.presetKind !== 'brightness') return;
 
-    var hasWarmth = state.preset.temperature !== undefined;
+    el.brightPct.textContent = Math.round(state.brightness.brightness * 100) + '%';
+    setSlider(el.brightKnob, state.brightness.brightness);
+
+    var hasWarmth = state.brightness.temperature !== undefined;
     el.warmToggle.setAttribute('aria-checked', hasWarmth ? 'true' : 'false');
     el.warmBlock.style.display = hasWarmth ? '' : 'none';
-    if (hasWarmth) setSlider(el.warmKnob, warmthToSlider(state.preset.temperature));
+    if (hasWarmth) setSlider(el.warmKnob, warmthToSlider(state.brightness.temperature));
+  }
+
+  function renderColours() {
+    clear(el.featured);
+    clear(el.rest);
+    for (var i = 0; i < state.colors.length; i++) {
+      var swatch = swatchFor(state.colors[i]);
+      if (i < state.featuredColors) el.featured.appendChild(swatch);
+      else el.rest.appendChild(swatch);
+    }
+    el.rest.style.display = state.showAllColours ? '' : 'none';
+    el.more.textContent = Homey.__(state.showAllColours ? 'job.fewerColours' : 'job.moreColours');
+
+    var chosen = colourById(state.colour);
+    el.colourName.textContent = chosen ? chosen.label : '';
+  }
+
+  function swatchFor(colour) {
+    var swatch = node('button', 'swatch');
+    swatch.type = 'button';
+    swatch.style.background = colour.swatch;
+    swatch.title = colour.label;
+    swatch.setAttribute('aria-label', colour.label);
+    swatch.setAttribute('aria-pressed', state.colour === colour.id ? 'true' : 'false');
+    swatch.addEventListener('click', function () {
+      state.colour = colour.id;
+      renderColours();
+      renderGrid();
+      push();
+    });
+    return swatch;
+  }
+
+  function colourById(id) {
+    for (var i = 0; i < state.colors.length; i++) {
+      if (state.colors[i].id === id) return state.colors[i];
+    }
+    return null;
   }
 
   function render() {
-    clear(el.list);
-    for (var i = 0; i < state.jobs.length; i++) {
-      el.list.appendChild(renderJob(state.jobs[i]));
-    }
+    renderGrid();
     renderPreset();
+    renderLights();
+    // Nothing to try when the answer is "do nothing", and a Test that ran the
+    // absence of a job would be a control with nothing to prove.
+    el.tryCard.style.display = state.chosen === null ? 'none' : '';
+  }
+
+  function renderGrid() {
+    clear(el.grid);
+    for (var i = 0; i < state.jobs.length; i++) {
+      el.grid.appendChild(renderJob(state.jobs[i]));
+    }
+    el.none.setAttribute('aria-pressed', state.chosen === null ? 'true' : 'false');
+    el.none.className = state.chosen === null ? 'tile none sel' : 'tile none';
   }
 
   function renderJob(job) {
-    var row = node('button', 'job');
-    row.type = 'button';
-    row.setAttribute('aria-pressed', state.chosen === job.id ? 'true' : 'false');
+    var tile = node('button', state.chosen === job.id ? 'tile sel' : 'tile');
+    tile.type = 'button';
+    tile.setAttribute('aria-pressed', state.chosen === job.id ? 'true' : 'false');
 
-    var text = node('div', 'text');
-    text.appendChild(node('div', 'name', job.label));
+    tile.appendChild(iconFor(job.id));
+    tile.appendChild(node('div', 'name', job.label));
+
     /**
-     * The one job whose name is not the whole answer, summarised ON its row.
+     * The value belongs to the CHOSEN tile and to no other.
      *
-     * "A set brightness" says nothing about which brightness, and the controls
-     * that set it are only shown while that row is the chosen one — so the row
-     * itself has to carry the value, the way every other list in the flow does.
+     * It used to read "60%" on the row whether or not that row was the answer,
+     * which made one brightness look like the only brightness on offer rather
+     * than like this button's own.
      */
-    var meta = job.needsPreset && state.chosen === job.id ? presetText() : job.meta;
-    if (meta) text.appendChild(node('div', 'meta', meta));
-    row.appendChild(text);
+    var value = state.chosen === job.id ? valueText(job) : '';
+    if (value) tile.appendChild(node('div', 'meta', value));
 
+    tile.addEventListener('click', function () { choose(job); });
+    return tile;
+  }
+
+  function valueText(job) {
+    if (job.preset === 'brightness') {
+      var parts = [Math.round(state.brightness.brightness * 100) + '%'];
+      if (state.brightness.temperature !== undefined) {
+        parts.push(Homey.__(warmthKey(state.brightness.temperature)));
+      }
+      return parts.join(', ');
+    }
+    if (job.preset === 'colour') {
+      var colour = colourById(state.colour);
+      return colour ? colour.label : '';
+    }
+    return '';
+  }
+
+  /**
+   * A job with no value chosen yet is never SENT with no value.
+   *
+   * The driver refuses a "set a brightness" carrying no brightness, and rightly
+   * — so the first tap fills one in rather than pushing something that will be
+   * dropped and reported as an error under a tile the user has just chosen.
+   */
+  function choose(job) {
+    state.chosen = job === null ? null : job.id;
+    state.presetKind = job === null ? 'none' : job.preset;
+    if (state.presetKind === 'colour' && !state.colour && state.colors.length) {
+      state.colour = state.colors[0].id;
+    }
+    render();
+    push();
+  }
+
+  el.none.addEventListener('click', function () { choose(null); });
+
+  function renderLights() {
+    // One light and there is no second question: this button drives it, and a
+    // checklist of one is a control with nothing to choose.
+    var many = state.lights.length > 1;
+    el.toTitle.style.display = many ? '' : 'none';
+    el.lights.style.display = many ? '' : 'none';
+    if (!many) return;
+
+    clear(el.lights);
+    el.lights.appendChild(pickRow(null, state.allLabel, state.chosenLights === null));
+    for (var i = 0; i < state.lights.length; i++) {
+      var light = state.lights[i];
+      el.lights.appendChild(pickRow(
+        light.id,
+        light.name,
+        state.chosenLights !== null && state.chosenLights.indexOf(light.id) !== -1
+      ));
+    }
+  }
+
+  function pickRow(id, name, ticked) {
+    var row = node('button', 'pick');
+    row.type = 'button';
+    row.setAttribute('aria-pressed', ticked ? 'true' : 'false');
+    if (id !== null) row.dataset.id = id;
+    row.appendChild(node('span', 'box', '✓'));
+    row.appendChild(node('span', 'name', name));
     row.addEventListener('click', function () {
-      state.chosen = job.id;
-      state.needsPreset = !!job.needsPreset;
-      render();
+      if (id === null) state.chosenLights = null;
+      else toggleLight(id);
+      renderLights();
       push();
     });
     return row;
   }
 
+  /**
+   * Ticking every light is the same answer as "all of them", and is STORED as
+   * that answer.
+   *
+   * The two are not equivalent underneath: a list of ids freezes the rule
+   * against the lights that existed when it was saved, while "all of them"
+   * follows the device — so a room that gains a lamp gains it on this button
+   * too. Two ways to say one thing, one of which quietly stops being true, is
+   * worth collapsing. Clearing the last box collapses the same way, because a
+   * button aimed at no lights at all is not an answer.
+   */
+  function toggleLight(id) {
+    var chosen = state.chosenLights === null ? [] : state.chosenLights.slice();
+    var at = chosen.indexOf(id);
+    if (at === -1) chosen.push(id);
+    else chosen.splice(at, 1);
+    state.chosenLights = (chosen.length === 0 || chosen.length === state.lights.length)
+      ? null
+      : chosen;
+  }
+
   el.try.addEventListener('click', function () {
     el.msg.style.display = 'none';
-    emit('test', { func: state.chosen, preset: presetOrNull() }).then(function (result) {
+    emit('test', { func: state.chosen, deviceIds: state.chosenLights }).then(function (result) {
       el.msg.className = 'msg ok';
       el.msg.textContent = Homey.__('job.tried', { writes: result.writes });
       el.msg.style.display = '';
@@ -659,16 +1000,6 @@ function __lkBootJb(Homey) {
       el.msg.style.display = '';
     });
   });
-
-  /** "60%, warm" — the preset as the row above the sliders reads it. */
-  function presetText() {
-    if (!state.needsPreset) return '';
-    var parts = [Math.round(state.preset.brightness * 100) + '%'];
-    if (state.preset.temperature !== undefined) {
-      parts.push(Homey.__(warmthKey(state.preset.temperature)));
-    }
-    return parts.join(', ');
-  }
 
   /**
    * A warmth as the WORD the rest of the app uses for it, not a number.
@@ -685,10 +1016,20 @@ function __lkBootJb(Homey) {
   }
 
   function presetOrNull() {
-    if (!state.needsPreset) return null;
-    var preset = { brightness: state.preset.brightness };
-    if (state.preset.temperature !== undefined) preset.temperature = state.preset.temperature;
-    return preset;
+    if (state.presetKind === 'brightness') {
+      var preset = { brightness: state.brightness.brightness };
+      if (state.brightness.temperature !== undefined) {
+        preset.temperature = state.brightness.temperature;
+      }
+      return preset;
+    }
+    if (state.presetKind === 'colour' && state.colour) return { color: state.colour };
+    return null;
+  }
+
+  function fail(err) {
+    el.error.textContent = err && err.message ? err.message : String(err);
+    el.error.style.display = '';
   }
 
   /**
@@ -698,24 +1039,39 @@ function __lkBootJb(Homey) {
    * ask this view anything on the way — so a job held until a button at the
    * bottom of the page was pressed was a job silently lost by anybody who used
    * the back arrow instead. Every tap, every slider and every switch pushes.
+   *
+   * Nothing jumps back to the buttons screen on a tap any more, and that is
+   * this screen's own doing: it asks TWO questions now, and returning after the
+   * first would put the second — which lights — out of reach of anybody who
+   * answered them in the order they are written.
    */
   var pushing = 0;
   function push() {
     var mine = ++pushing;
-    emit('setGesture', { job: state.chosen, preset: presetOrNull() })
-      .catch(function (err) { if (mine === pushing) fail(err); });
+    return emit('setGesture', {
+      job: state.chosen,
+      preset: presetOrNull(),
+      lights: state.chosenLights,
+    })
+      .then(function () { el.error.style.display = 'none'; return true; })
+      .catch(function (err) { if (mine === pushing) fail(err); return false; });
   }
 
   emit('getGesture').then(function (payload) {
     el.title.textContent = payload.title;
     state.jobs = payload.jobs || [];
     state.chosen = payload.chosen;
-    state.needsPreset = !!payload.needsPreset;
-    if (payload.preset) state.preset = payload.preset;
+    state.presetKind = payload.presetKind || 'none';
+    state.colors = payload.colors || [];
+    state.featuredColors = payload.featuredColors || 8;
+    state.lights = payload.lights || [];
+    state.allLabel = payload.allLabel || '';
+    state.chosenLights = payload.chosenLights || null;
+    if (payload.preset && payload.preset.color) state.colour = payload.preset.color;
+    else if (payload.preset) state.brightness = payload.preset;
     render();
   }).catch(fail);
 }
-
 (function () {
   var tries = 0;
   function waitForHomey() {

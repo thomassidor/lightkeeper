@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 
 import { deriveControllerName, deriveSuffixedName } from '../../lib/pairing/derive-name';
 import {
-  mappingGroups, mappingRuleRows, ruleTargetFor, singleLightOf,
+  mappingGroups, mappingRuleRows, ruleTargetFrom, singleLightOf,
 } from '../../lib/pairing/mapping-screen';
-import { groupSourcesByRoom } from '../../lib/pairing/source-list';
+import { buildSourceList, groupSourcesByRoom } from '../../lib/pairing/source-list';
 import { validateMappingRules } from '../../lib/validation/pairing-dto';
 import type { DeviceCatalog } from '../../lib/device-catalog';
 import type { MappingRule } from '../../lib/mapping/mapping-types';
@@ -316,14 +316,24 @@ describe('and the rows agree with the sections', () => {
   test('a row’s section round-trips back to the target it stores', () => {
     // The inverse the save path uses. If these two disagree, a rule moves rooms
     // every time the screen is opened and saved.
-    assert.equal(ruleTargetFor('__all__'), null);
-    assert.equal(ruleTargetFor(null), null);
-    assert.equal(ruleTargetFor(undefined), null);
-    assert.deepEqual(ruleTargetFor('l2'), devicesTarget(['l2']));
+    assert.equal(ruleTargetFrom(null), null);
+    assert.equal(ruleTargetFrom([]), null, 'nothing named is not a target that matches nothing');
+    assert.deepEqual(ruleTargetFrom(['l2']), devicesTarget(['l2']));
+    assert.deepEqual(ruleTargetFrom(['l1', 'l2']), devicesTarget(['l1', 'l2']));
 
-    const rows = mappingRuleRows(
-      [rule('r1', 'toggle', 'top:short', ['l2'])], [CEILING, READING]);
-    assert.deepEqual(ruleTargetFor(rows[0]!.groupKey), devicesTarget(['l2']));
+    // And the leg that carries the old screen's spelling to the new one, which
+    // is where a `groupKey` is read now: `setRules` is still a pair-session
+    // handler, and a pair session is a scriptable Web API surface (platform §14).
+    const { rules } = validateMappingRules(
+      [
+        { id: 'r1', function: 'toggle', inputKey: 'top:short', groupKey: 'l2' },
+        { id: 'r2', function: 'off', inputKey: 'top:long', groupKey: '__all__' },
+      ],
+      new Set(['l1', 'l2']),
+      ['toggle', 'off'],
+    );
+    assert.deepEqual(rules.map(r => r.deviceIds), [['l2'], null]);
+    assert.deepEqual(ruleTargetFrom(rules[0]!.deviceIds), devicesTarget(['l2']));
   });
 
   test('an unassigned rule keeps its null input key', () => {
@@ -349,7 +359,7 @@ describe('the remote picker groups by room', () => {
     ], undefined);
 
     assert.deepEqual(rooms.map(r => r.zoneName), ['Bedroom', 'Kitchen']);
-    assert.deepEqual(rooms[1]!.devices.map(d => d.name), ['Alpha remote', 'Zebra remote']);
+    assert.deepEqual(rooms[1]!.sources.map(d => d.name), ['Alpha remote', 'Zebra remote']);
   });
 
   test('a remote in no room still appears', () => {
@@ -359,7 +369,7 @@ describe('the remote picker groups by room', () => {
 
     assert.equal(rooms.length, 1);
     assert.equal(rooms[0]!.zoneName, 'Unassigned');
-    assert.equal(rooms[0]!.devices[0]!.name, 'Loose remote');
+    assert.equal(rooms[0]!.sources[0]!.name, 'Loose remote');
   });
 
   test('the already-chosen remote is marked, and only it', () => {
@@ -368,7 +378,7 @@ describe('the remote picker groups by room', () => {
       source('s2', 'Other remote', 'z1', 'Hall'),
     ], 's2');
 
-    const selected = rooms[0]!.devices.filter(d => d.selected);
+    const selected = rooms[0]!.sources.filter(d => d.selected);
     assert.deepEqual(selected.map(d => d.id), ['s2']);
   });
 
@@ -376,7 +386,7 @@ describe('the remote picker groups by room', () => {
     // It is what the screen shows to say "this one exposes eight gestures", and
     // it comes from discovery rather than from the device.
     const rooms = groupSourcesByRoom([source('s1', 'Tap dial', 'z1', 'Hall', 12)], undefined);
-    assert.equal(rooms[0]!.devices[0]!.eventCount, 12);
+    assert.equal(rooms[0]!.sources[0]!.eventCount, 12);
   });
 
   test('nothing to choose from is an empty list, not a throw', () => {
@@ -391,6 +401,63 @@ describe('the remote picker groups by room', () => {
       source('s2', 'B', 'z2', 'Bedroom'),
     ], undefined);
     assert.deepEqual(rooms.map(r => r.zoneName), ['Ærøskøbing', 'Bedroom'].sort((a, b) => a.localeCompare(b)));
+  });
+
+  /**
+   * The split, which is what makes the screen usable on a real house.
+   *
+   * Every device on the Homey used to be drawn as one alphabetical run —
+   * a hundred and more rows, nearly all of them lamps and sensors that
+   * `selectSource` would refuse. What decides is `eventCount`: a device with
+   * none is one Homey has never heard a gesture from.
+   */
+  describe('and folds away what Homey cannot hear', () => {
+    test('a device with no events is offered second, not first', () => {
+      const list = buildSourceList([
+        source('s1', 'Hall remote', 'z1', 'Hall', 8),
+        source('s2', 'Dishwasher', 'z2', 'Kitchen', 0),
+        source('s3', 'Floor lamp', 'z1', 'Hall', 0),
+      ], undefined);
+
+      assert.deepEqual(list.rooms.map(r => r.zoneName), ['Hall']);
+      assert.deepEqual(list.rooms[0]!.sources.map(d => d.name), ['Hall remote']);
+      assert.deepEqual(list.others.map(r => r.zoneName), ['Hall', 'Kitchen']);
+      assert.equal(list.candidateCount, 1);
+      assert.equal(list.otherCount, 2);
+    });
+
+    test('nothing is removed — the second list holds every one of them', () => {
+      // A remote whose events reach the Homey by a route this app cannot count
+      // ahead of time is rare and real, so the fold is a fold and never a
+      // filter. `selectSource` is what finally decides, on the device itself.
+      const ranked = [
+        source('s1', 'Hall remote', 'z1', 'Hall', 8),
+        source('s2', 'Dishwasher', 'z2', 'Kitchen', 0),
+      ];
+      const list = buildSourceList(ranked, undefined);
+
+      const ids = [...list.rooms, ...list.others].flatMap(r => r.sources.map(d => d.id));
+      assert.deepEqual(ids.sort(), ['s1', 's2']);
+    });
+
+    test('the remote a repair session opens on is never the thing that is hidden', () => {
+      // The reason to repair is often that the integration changed underneath
+      // the device and it stopped exposing anything. Folding it away would
+      // leave a screen whose only tick is somewhere the user cannot see.
+      const list = buildSourceList([
+        source('s1', 'Hall remote', 'z1', 'Hall', 8),
+        source('s2', 'Silent remote', 'z2', 'Kitchen', 0),
+      ], 's2');
+
+      assert.deepEqual(list.rooms.map(r => r.zoneName), ['Hall', 'Kitchen']);
+      assert.deepEqual(list.others, []);
+      assert.equal(list.rooms[1]!.sources[0]!.selected, true);
+    });
+
+    test('a house Homey has heard nothing from is two empty lists, not a throw', () => {
+      const list = buildSourceList([], undefined);
+      assert.deepEqual(list, { rooms: [], others: [], candidateCount: 0, otherCount: 0 });
+    });
   });
 });
 
@@ -475,5 +542,86 @@ describe('mapping rows that have stopped belonging', () => {
   test('a malformed payload still throws', () => {
     assert.throws(() => validateMappingRules([{ id: 5 }], LIGHTS, OFFERED, KEYS), /rules\[0\]/);
     assert.throws(() => validateMappingRules('not a list', LIGHTS, OFFERED, KEYS), /rules/);
+  });
+});
+
+describe('a rule that names its own lights', () => {
+  const LIGHTS = new Set(['l1', 'l2', 'l3']);
+  const OFFERED = ['toggle', 'brightness_set', 'color_set'] as const;
+
+  const row = (over: Record<string, unknown> = {}) => ({
+    id: 'r1', function: 'toggle', inputKey: 'n2_on|press', ...over,
+  });
+
+  test('a subset is kept as a subset, and "all of them" as null', () => {
+    const { rules, dropped } = validateMappingRules(
+      [row({ lights: ['l1', 'l3'] }), row({ id: 'r2', lights: null })],
+      LIGHTS, OFFERED,
+    );
+
+    assert.deepEqual(dropped, []);
+    assert.deepEqual(rules.map(r => r.deviceIds), [['l1', 'l3'], null]);
+  });
+
+  test('one stranger in the list drops the whole rule', () => {
+    // Half a rule is worse than none: a button that drives two of the three
+    // lights it says it drives is the "looks configured, does something else"
+    // failure, and it would be invisible on every screen.
+    const { rules, dropped } = validateMappingRules(
+      [row({ lights: ['l1', 'not-ours'] })], LIGHTS, OFFERED,
+    );
+
+    assert.equal(rules.length, 0);
+    assert.match(dropped[0]!.reason, /not one of this controller's lights/);
+  });
+
+  test('a rule aimed at nothing is dropped rather than read as "everything"', () => {
+    // An empty list and null are opposite answers. The screen never sends one —
+    // clearing the last box re-ticks "all lights" — so this is the fail-closed
+    // half of that rule for every other way in.
+    const { rules, dropped } = validateMappingRules([row({ lights: [] })], LIGHTS, OFFERED);
+
+    assert.equal(rules.length, 0);
+    assert.match(dropped[0]!.reason, /names no lights/);
+  });
+
+  test('a colour job carries a palette colour, and a brightness job a brightness', () => {
+    const { rules, dropped } = validateMappingRules(
+      [
+        row({ function: 'color_set', preset: { color: 'amber' } }),
+        row({ id: 'r2', function: 'brightness_set', preset: { brightness: 0.4 } }),
+      ],
+      LIGHTS, OFFERED,
+    );
+
+    assert.deepEqual(dropped, []);
+    assert.deepEqual(rules.map(r => r.preset), [{ color: 'amber' }, { brightness: 0.4 }]);
+  });
+
+  test('a value of the wrong kind is refused, not quietly kept', () => {
+    // The union exists so that a brightness on a colour job is unsayable. The
+    // kind comes from the FUNCTION, never from which field the payload happens
+    // to carry, or a colour job would store a brightness and no colour.
+    assert.throws(
+      () => validateMappingRules(
+        [row({ function: 'color_set', preset: { brightness: 0.4 } })], LIGHTS, OFFERED,
+      ),
+      /preset\.color/,
+    );
+    assert.throws(
+      () => validateMappingRules(
+        [row({ function: 'color_set', preset: { color: 'not-a-colour' } })], LIGHTS, OFFERED,
+      ),
+      /not a colour in the palette/,
+    );
+  });
+
+  test('a colour job with no colour at all is dropped, like a brightness with none', () => {
+    const { rules, dropped } = validateMappingRules(
+      [row({ function: 'color_set' })], LIGHTS, OFFERED,
+    );
+
+    assert.equal(rules.length, 0);
+    assert.match(dropped[0]!.reason, /no colour to set/);
   });
 });

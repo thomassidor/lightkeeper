@@ -104,6 +104,21 @@
                                     #f2e6d6, #eaf0fb, #dbe8fb);
     --lk-bright-ramp: linear-gradient(90deg, #221a3d, #43318a, #7a5fc4,
                                       #b9a6e4, #ece5f9);
+    /* The two ENDS of the warmth axis, for the two tiles that nudge along it
+       rather than setting it. The whole ramp draws the same picture on both,
+       which is no picture at all, so each of these runs from the middle of
+       --lk-warm-ramp out to one end of it.
+       The cool end is DEEPER than that ramp's own #dbe8fb: at 30x12px on white
+       the real end of the axis is a chip with no edge, so the tile that said
+       "cooler" showed nothing at all. Deepened to where it reads, and no
+       further — it is a picture of a direction, not a colour to match. */
+    --lk-warmer-ramp: linear-gradient(90deg, #f7efe3, #e8892c);
+    --lk-cooler-ramp: linear-gradient(90deg, #f7efe3, #7ba7e0);
+    /* A lamp that is ON, drawn rather than named: the one warm accent in an
+       interface that is otherwise entirely violet, because "on" is a picture of
+       light and the brand colour is a picture of the app. */
+    --lk-lamp-lit: #f0b429;
+    --lk-lamp-glow: rgba(240, 180, 41, .22);
     --lk-handle-shadow: 0 2px 6px rgba(16, 24, 40, .2);
     /* A small mark lifted off whatever it is drawn ON — the curve chart's
        selected point, which sits on top of a bar of any colour. */
@@ -366,9 +381,15 @@
      the palette, which a white gap did not against the pale ones. */
   #sn-root .swatch[aria-pressed="true"] { border: 2.5px solid var(--lk-accent);
                                        box-shadow: 0 0 0 3px var(--lk-ring); }
-  /* The sixteen that fold out: same set, half the size, eight across. */
+  /* The sixteen that fold out: same set, half the size, eight across.
+
+     18px above them, not the 7px between the featured rows: at the same gap the
+     fold-out read as two more rows of the grid above it rather than as the set
+     that had just been opened, and the eye had to measure swatch sizes to find
+     where one group ended. The space is what separates them; both sets are
+     still the same palette, so nothing stronger than space is wanted. */
   #sn-root .swatches.more { grid-template-columns: repeat(8, 1fr); gap: 6px;
-                         margin: 7px 0 0; }
+                         margin: 18px 0 0; }
   #sn-root .swatches.more .swatch { height: 28px; min-height: 28px; border-radius: 7px; }
 
   /* The day strip: a picture of the whole day, drawn once and reused. */
@@ -454,9 +475,8 @@
   #sn-root .sensor.dead .box { border-color: var(--lk-field);
                                background: var(--lk-flat-bg); }
 
-  /* The rooms with nothing to open, and the rooms nobody has opened: one line
-     each, with a count or the word for none. Which rooms have NO sensor is half
-     of what this screen answers. */
+  /* The rooms with no sensor at all: one line each, saying so. Which rooms have
+     NO sensor is half of what this screen answers. */
   #sn-root .folded { background: var(--lk-surface); border: 1px solid var(--lk-line);
                      border-radius: 14px; box-shadow: var(--lk-shadow);
                      overflow: hidden; padding: 0 14px; margin-bottom: 16px; }
@@ -559,11 +579,7 @@ function __lkBootSn(Homey) {
     none: document.getElementById('sn-none')
   };
 
-  var state = {
-    rooms: [], chosen: null, sky: null, anySensors: false,
-    /** Rooms the user has opened, by name. The chosen sensor's opens itself. */
-    opened: {}
-  };
+  var state = { rooms: [], chosen: null, sky: null, anySensors: false };
 
   function t(key) { return Homey.__(key); }
 
@@ -618,35 +634,48 @@ function __lkBootSn(Homey) {
     el.useSensor.setAttribute('aria-pressed', usingSensor ? 'true' : 'false');
     el.useSun.setAttribute('aria-pressed', usingSensor ? 'false' : 'true');
     el.useSensor.disabled = !state.anySensors;
-    el.list.style.display = usingSensor ? '' : 'none';
 
     clear(el.list);
     clear(el.folded);
-    var opened = 0;
+    var empties = 0;
     for (var i = 0; i < state.rooms.length; i++) {
       var room = state.rooms[i];
       /**
-       * A room is OPEN if it holds the chosen sensor, or if it was tapped.
+       * EVERY sensor is drawn, and none of them is behind a tap.
        *
-       * Everything else is one line with a count, which is what makes a house
-       * of eleven rooms readable on a 390px screen — and what puts the rooms
-       * with no sensor at all on the page, saying so, instead of leaving them
-       * out and making the house look smaller than it is.
+       * A room used to open only if it held the chosen sensor or had been
+       * tapped, on the argument that a house of eleven rooms has to fold to fit
+       * a 390px screen. What that actually produced was a screen saying "4
+       * found" above a list showing one, with the other three behind rooms
+       * nobody had a reason to tap: the count was the only evidence they
+       * existed, and a count is not a list. Sensors are rare — the folding was
+       * sized for the LIGHT picker's problem, where a house has forty — so
+       * showing all of them costs a short scroll and removes the one thing this
+       * screen got wrong.
+       *
+       * The rooms with no sensor stay one line each, saying so. That half was
+       * right: leaving them out makes the house look smaller than it is, and
+       * "this room has none" is half the answer to where the reading should
+       * come from.
        */
-      var holdsChosen = false;
-      for (var h = 0; h < room.sensors.length; h++) {
-        if (room.sensors[h].id === state.chosen) holdsChosen = true;
-      }
-      var open = room.sensors.length > 0
-        && (holdsChosen || state.opened[room.zoneName] === true);
-      if (open) {
-        opened += 1;
+      if (room.sensors.length > 0) {
         el.list.appendChild(openRoom(room));
       } else {
+        empties += 1;
         el.folded.appendChild(foldedRoom(room));
       }
     }
-    el.folded.style.display = opened < state.rooms.length ? '' : 'none';
+    /**
+     * The room list belongs to the SENSOR option, all of it.
+     *
+     * Only the open rooms used to be hidden when the sun was picked, and the
+     * folded ones stayed — so a house whose rooms had been expanded while
+     * browsing showed "4 found" over a list of one, the other three having been
+     * drawn into the hidden container. A room list under "the sun" answers a
+     * question nobody is still asking, so both halves go together.
+     */
+    el.list.style.display = usingSensor ? '' : 'none';
+    el.folded.style.display = usingSensor && empties > 0 ? '' : 'none';
   }
 
   function openRoom(room) {
@@ -661,24 +690,20 @@ function __lkBootSn(Homey) {
     return card;
   }
 
+  /**
+   * A room with no sensor: one line, saying so, and nothing to tap.
+   *
+   * It takes no click handler because a room only reaches this list by having
+   * nothing in it — there is no longer any such thing as a room folded over
+   * sensors it is hiding.
+   */
   function foldedRoom(room) {
-    var empty = room.sensors.length === 0;
-    var row = node('button', 'row'
-      + (empty ? ' empty-room' : '')
-      + (room.unzoned ? ' unzoned' : ''));
+    var row = node('button', 'row empty-room' + (room.unzoned ? ' unzoned' : ''));
     row.type = 'button';
+    row.disabled = true;
     row.appendChild(node('span', 'label',
       room.unzoned ? t('lights.noRoom') : room.zoneName));
-    row.appendChild(node('span', 'value',
-      empty ? t('sensor.noneHere') : String(room.sensors.length)));
-    if (!empty) {
-      row.addEventListener('click', function () {
-        state.opened[room.zoneName] = true;
-        render();
-      });
-    } else {
-      row.disabled = true;
-    }
+    row.appendChild(node('span', 'value', t('sensor.noneHere')));
     return row;
   }
 

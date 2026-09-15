@@ -711,8 +711,24 @@ export class ControllerRuntime {
     const resolved = this.engine?.resolve({ inputKey, event });
     if (!resolved) return;
 
+    /**
+     * A rule's own lights, and never a light this device does not target.
+     *
+     * The intersection is not belt and braces: a button may aim at a subset of
+     * the device's lights, and a selection narrowed afterwards can leave a rule
+     * naming one that was dropped. The pairing flow re-aims such a rule the
+     * moment the selection changes, and a stored profile written by anything
+     * else — a hand edit, an older build, a half-applied plan — has never been
+     * through that. Writing to a light the user removed from this device is the
+     * one outcome nothing downstream would catch, because every write would
+     * succeed.
+     *
+     * The ramp path has always filtered this way; this is the same rule on the
+     * path that does the writing.
+     */
     const targets = resolved.target
-      ? (await this.resolver.resolve(resolved.target)).devices.map(d => d.id)
+      ? (await this.resolver.resolve(resolved.target)).devices
+        .map(d => d.id).filter(id => this.targetIds.includes(id))
       : this.targetIds;
 
     // A hold on a rampable control starts a ramp instead of one step.

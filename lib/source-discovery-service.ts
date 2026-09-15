@@ -4,6 +4,7 @@ import type { HomeyApiService } from './homey-api-service';
 import type { CatalogDevice } from './device-catalog';
 import { FlowCardCatalogue } from './flow-card-catalogue';
 import {
+  isGestureCard,
   normalizeCards,
   titleTextOf,
   type DiscoveredTriggerCard,
@@ -114,23 +115,54 @@ export class SourceDiscoveryService {
    * Rank plausible sources first, never hard-filter. A device with no
    * discoverable events must still be selectable, so the user sees "no usable
    * remote events found" rather than an unexplained absence.
+   *
+   * `eventCount` is what the picker splits on — a device with none is folded
+   * away behind one row — so it has to mean the same thing `selectSource` will
+   * report a moment later. It counts the cards of BOTH strong routes, through
+   * the same gesture test `normalizeCards` applies. It remains an over-estimate
+   * of the final input count, because only normalisation knows that a card's
+   * argument cannot be enumerated; what it is no longer is a count of cards
+   * that were never going to be inputs at all.
    */
   async rankSources(devices: CatalogDevice[]): Promise<RankedSource[]> {
     const allCards = await this.cards.triggerCards();
 
     const scopedCount = new Map<string, number>();
+    /**
+     * App-level cards naming a device through a FILTERED argument — discovery's
+     * other strong route (platform §4), and the reason a remote can be usable
+     * with no device-scoped card of its own. There is no way to count these but
+     * to evaluate the filter per device, so they are collected first: the cost
+     * is (the few such cards) × (devices) rather than (every card) × (devices).
+     */
+    const filteredArgCards: DiscoveredTriggerCard[] = [];
+
     for (const card of allCards) {
+      // Generated capability cards are not input. `STATE_CARD` alone let a
+      // lamp's own `onoff_true`/`onoff_false` through, which scored every bulb,
+      // plug and speaker in the house as a two-event remote — see
+      // isGestureCard().
+      if (!isGestureCard(card)) continue;
+
       const deviceId = deviceIdOfScopedCard(card.id);
-      if (!deviceId) continue;
-      const { shortId } = card;
-      // Capability cards are not input; counting them would rank a thermometer
-      // above a remote.
-      if (/^(measure_|alarm_|meter_)|_threshold_|_changed$|_duration$/.test(shortId)) continue;
-      scopedCount.set(deviceId, (scopedCount.get(deviceId) ?? 0) + 1);
+      if (deviceId) {
+        scopedCount.set(deviceId, (scopedCount.get(deviceId) ?? 0) + 1);
+        continue;
+      }
+      // An UNfiltered device argument accepts every device on the Homey, so
+      // counting it would add the same number to every score and say nothing.
+      // It is discovery's weak route for the same reason.
+      if (card.args.some(arg => arg?.type === 'device' && arg.filter)) {
+        filteredArgCards.push(card);
+      }
     }
 
     return [...devices]
-      .map(device => ({ device, eventCount: scopedCount.get(device.id) ?? 0 }))
+      .map(device => ({
+        device,
+        eventCount: (scopedCount.get(device.id) ?? 0)
+          + countFilteredArgCards(filteredArgCards, device),
+      }))
       .sort((a, b) => {
         const byEvents = b.eventCount - a.eventCount;
         if (byEvents !== 0) return byEvents;
@@ -139,6 +171,17 @@ export class SourceDiscoveryService {
         return a.device.name.localeCompare(b.device.name);
       });
   }
+}
+
+/** How many of these app-level cards name THIS device through their filter. */
+function countFilteredArgCards(cards: DiscoveredTriggerCard[], device: CatalogDevice): number {
+  let count = 0;
+  for (const card of cards) {
+    const matches = card.args.some(arg => arg?.type === 'device' && arg.filter
+      && deviceMatchesFilter(arg.filter, device).matches);
+    if (matches) count += 1;
+  }
+  return count;
 }
 
 function remoteScore(device: CatalogDevice): number {

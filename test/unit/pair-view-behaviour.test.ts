@@ -8,6 +8,7 @@ import { valueAt as curveValueAt } from '../../lib/circadian/circadian-curve';
 import { DEFAULT_POINTS as REAL_POINTS } from '../../lib/circadian/circadian-types';
 import { PALETTE as REAL_PALETTE } from '../../lib/circadian/palette';
 import { colourSwatch } from '../../lib/pairing/flow-screens';
+import { buildSourceList } from '../../lib/pairing/source-list';
 
 /**
  * What the pairing screens DO, as opposed to whether they boot.
@@ -864,6 +865,220 @@ describe('the review screen', () => {
   });
 });
 
+// ------------------------------------------------------------ the remote
+
+describe('the remote picker, against the list the driver really sends', () => {
+  /**
+   * The reply is BUILT by `groupSourcesByRoom`, not transcribed.
+   *
+   * This screen shipped reading `room.sources` while the picker returned
+   * `room.devices`, and every check in the suite passed: the boot test answers
+   * with `rooms: []`, so the loop over a room's remotes never ran, and the
+   * render fixture was written to match the view rather than the driver. On a
+   * real Homey step 1 of 4 drew "Cannot read properties of undefined (reading
+   * 'length')" and there was no way past it.
+   *
+   * So the one thing worth pinning is that the two ends agree — which they can
+   * only be shown to do by passing the picker's own output to the view.
+   */
+  const RANKED = [
+    { device: { id: 'r1', name: 'Hall remote', zone: 'z1', zoneName: 'Hallway', ownerName: 'IKEA Tradfri', available: true }, eventCount: 8 },
+    { device: { id: 'r2', name: 'Bedside dimmer', zone: 'z1', zoneName: 'Hallway', ownerName: 'Philips Hue', available: true }, eventCount: 4 },
+    { device: { id: 'r3', name: 'Kitchen button', zone: 'z2', zoneName: 'Kitchen', ownerName: 'Aqara', available: false }, eventCount: 0 },
+  ];
+
+  const run = (current: string | null = null, selected: unknown = undefined) => runPairView(
+    read('controller/remote.html'), {
+      respond: {
+        checkReattach: null,
+        listSources: {
+          ...buildSourceList(RANKED, current ?? undefined),
+          total: RANKED.length,
+          current,
+        },
+        selectSource: selected ?? {
+          deviceName: 'Hall remote', ownerName: 'IKEA Tradfri', eventCount: 8,
+          controls: [{ controlId: 'button.top', label: 'Top', inputs: [] }],
+          usable: true, rejected: [],
+        },
+      },
+    },
+  );
+
+  test('only what Homey can hear a gesture from is on the screen to begin with', async () => {
+    const view = run();
+    await view.settle();
+
+    assert.equal(view.byId('rm-error')!.style.display, 'none',
+      view.byId('rm-error')!.textContent);
+    // The Kitchen button reports nothing, so its whole room is behind the fold.
+    assert.deepEqual(
+      view.byId('rm-rooms')!.querySelectorAll('.room-title').map(node => node.textContent),
+      ['Hallway'],
+    );
+    assert.deepEqual(
+      view.byId('rm-rooms')!.querySelectorAll('.name').map(node => node.textContent),
+      ['Bedside dimmer', 'Hall remote'],
+    );
+    assert.equal(view.byId('rm-others')!.style.display, 'none');
+    assert.equal(view.byId('rm-otherCount')!.textContent, '1');
+  });
+
+  test('the rest of the house is one row away, and says how many', async () => {
+    // Folded, never filtered: a remote whose events reach the Homey by a route
+    // this app cannot count ahead of time is rare and real, so "my remote is
+    // not in the list" has to have an answer on the screen.
+    const view = run();
+    await view.settle();
+
+    view.fire(view.byId('rm-otherToggle')!, 'click');
+    await view.settle();
+
+    assert.equal(view.byId('rm-others')!.style.display, '');
+    assert.deepEqual(
+      view.byId('rm-others')!.querySelectorAll('.name').map(node => node.textContent),
+      ['Kitchen button'],
+    );
+
+    view.fire(view.byId('rm-otherToggle')!, 'click');
+    await view.settle();
+    assert.equal(view.byId('rm-others')!.style.display, 'none');
+  });
+
+  test('a remote that has been heard from says how much, and an unavailable one says so', async () => {
+    const view = run();
+    await view.settle();
+    view.fire(view.byId('rm-otherToggle')!, 'click');
+    await view.settle();
+
+    // `Homey.__` is the identity in the harness, so a label IS its key.
+    const meta = view.byId('rm-rooms')!.querySelectorAll('.meta').map(node => node.textContent);
+    assert.equal(meta[0], 'remote.events · Philips Hue');
+
+    const other = view.byId('rm-others')!.querySelectorAll('.meta').map(node => node.textContent);
+    assert.equal(other[0], 'remote.noEvents · Aqara · remote.unavailable');
+  });
+
+  test('the search spans both lists, and does not make the user open the second', async () => {
+    // A fold that hides the device somebody has just typed the name of is a
+    // search that did nothing.
+    const view = run();
+    await view.settle();
+
+    view.byId('rm-search')!.value = 'kitchen';
+    view.fire(view.byId('rm-search')!, 'input');
+    await view.settle();
+
+    assert.deepEqual(
+      view.byId('rm-rooms')!.querySelectorAll('.name').map(node => node.textContent), []);
+    assert.deepEqual(
+      view.byId('rm-others')!.querySelectorAll('.name').map(node => node.textContent),
+      ['Kitchen button'],
+    );
+    // The fold means nothing while a search is running: everything that matches
+    // is already drawn.
+    assert.equal(view.byId('rm-otherRow')!.style.display, 'none');
+    assert.equal(view.byId('rm-empty')!.style.display, 'none');
+  });
+
+  test('a search that matches nothing says so, and does not say "add one to Homey"', async () => {
+    const view = run();
+    await view.settle();
+
+    view.byId('rm-search')!.value = 'zzz';
+    view.fire(view.byId('rm-search')!, 'input');
+    await view.settle();
+
+    assert.equal(view.byId('rm-empty')!.style.display, '');
+    assert.equal(view.byId('rm-empty')!.textContent, 'remote.noMatch');
+  });
+
+  test('tapping one marks it, and only it', async () => {
+    // The tick is drawn by `.remote[aria-pressed="true"] .box`, so this is the
+    // whole of what a selection looks like. Every row used to be cleared and
+    // none set, leaving a screen that answered a tap with nothing visible.
+    const view = run();
+    await view.settle();
+
+    const rows = view.byId('rm-rooms')!.querySelectorAll('.remote');
+    view.fire(rows[1]!, 'click');
+    await view.settle();
+
+    assert.deepEqual(
+      rows.map(row => row.getAttribute('aria-pressed')),
+      ['false', 'true'],
+    );
+    assert.equal(view.byId('rm-msg')!.textContent, 'remote.found');
+  });
+
+  test('a repair session opens on the remote the controller already uses, even a silent one', async () => {
+    // r3 reports nothing, which is the ordinary reason to repair — the
+    // integration changed underneath it. Folding it away would leave a screen
+    // whose only tick is somewhere the user cannot see.
+    const view = run('r3');
+    await view.settle();
+
+    const rows = view.byId('rm-rooms')!.querySelectorAll('.remote');
+    assert.deepEqual(
+      rows.map(row => row.getAttribute('aria-pressed')),
+      ['false', 'false', 'true'],
+    );
+    assert.equal(view.byId('rm-otherCount')!.textContent, '0');
+  });
+
+  test('a remote nothing can be read from reports itself here, not three screens later', async () => {
+    const view = run(null, {
+      deviceName: 'Kitchen button', ownerName: 'Aqara', eventCount: 0,
+      controls: [], usable: false, rejected: [],
+    });
+    await view.settle();
+    view.fire(view.byId('rm-otherToggle')!, 'click');
+    await view.settle();
+
+    view.fire(view.byId('rm-others')!.querySelectorAll('.remote')[0]!, 'click');
+    await view.settle();
+
+    assert.equal(view.byId('rm-msg')!.className, 'msg bad');
+    assert.equal(view.byId('rm-msg')!.textContent, 'remote.unusable');
+  });
+
+  test('nothing heard from anything opens the second list itself', async () => {
+    // Otherwise the whole screen is one closed row, and the house it is hiding
+    // is the only place the remote can be.
+    const view = runPairView(read('controller/remote.html'), {
+      respond: {
+        checkReattach: null,
+        listSources: {
+          ...buildSourceList([RANKED[2]!], undefined), total: 1, current: null,
+        },
+      },
+    });
+    await view.settle();
+
+    assert.equal(view.byId('rm-others')!.style.display, '');
+    assert.deepEqual(
+      view.byId('rm-others')!.querySelectorAll('.name').map(node => node.textContent),
+      ['Kitchen button'],
+    );
+    assert.equal(view.byId('rm-empty')!.style.display, 'none');
+  });
+
+  test('no remotes at all is a state of the screen, not an error', async () => {
+    const view = runPairView(read('controller/remote.html'), {
+      respond: {
+        checkReattach: null,
+        listSources: { rooms: [], others: [], otherCount: 0, total: 0, current: null },
+      },
+    });
+    await view.settle();
+
+    assert.equal(view.byId('rm-empty')!.style.display, '');
+    assert.equal(view.byId('rm-empty')!.textContent, 'remote.none');
+    assert.equal(view.byId('rm-otherBlock')!.style.display, 'none');
+    assert.equal(view.byId('rm-error')!.style.display, 'none');
+  });
+});
+
 // ----------------------------------------------------------- the buttons
 
 describe('the controller buttons screen', () => {
@@ -871,10 +1086,12 @@ describe('the controller buttons screen', () => {
     respond: {
       getButtons: {
         gestures: [
-          { key: 'button.top|true', buttonLabel: 'Top', actionLabel: 'Pressed' },
-          { key: 'button.left|true', buttonLabel: 'Left', actionLabel: 'Pressed' },
+          { key: 'button.top|true', label: 'Top · Press' },
+          { key: 'button.left|true', label: 'Left · Press' },
         ],
-        jobs: { 'button.top|true': { label: 'On / off' } },
+        jobs: {
+          'button.top|true': { label: 'On / off', detail: 'On / off · all three' },
+        },
       },
       editGesture: { editing: 'button.left|true' },
     },
@@ -889,14 +1106,53 @@ describe('the controller buttons screen', () => {
 
   test('a gesture with no job reads as finished, not as a warning', async () => {
     // "Not assigned" five times over read as unfinished work. A button with no
-    // job is a button somebody set up exactly as they meant to.
+    // job is a button somebody set up exactly as they meant to, so the row
+    // recedes — no red, no badge, nothing to clear.
     const view = run();
     await view.settle();
 
     const rows = view.byId('bt-list')!.children;
-    const none = rows[1]!.descendants().find(node => node.className.includes('job'))!;
-    assert.match(none.className, /none/);
-    assert.equal(none.textContent, 'buttons.nothing');
+    assert.match(rows[1]!.className, /unset/);
+    assert.ok(
+      !rows[1]!.descendants().some(node => node.className === 'sub'),
+      'and no second line, because there is no job and no lights to name',
+    );
+    assert.equal(
+      rows[1]!.descendants().find(node => node.className.includes('value'))!.textContent,
+      'buttons.notSet',
+    );
+  });
+
+  test('every row says what it is in a mark as well as in a word', async () => {
+    // Counting what is left to do used to mean reading the right-hand column
+    // downwards. The mark answers it in the margin, and the two states differ
+    // in fill rather than in colour.
+    const view = run();
+    await view.settle();
+
+    const rows = view.byId('bt-list')!.children;
+    for (const row of rows) {
+      assert.ok(
+        row.descendants().some(node => node.className === 'mark'),
+        'every gesture row carries its own mark',
+      );
+    }
+    assert.doesNotMatch(rows[0]!.className, /unset/);
+    assert.match(rows[1]!.className, /unset/);
+  });
+
+  test('a set row says what it does AND which lights, without opening anything', async () => {
+    // A per-button target that can only be found by opening a row is a feature
+    // nobody discovers: a remote whose top button dims the floor lamp would
+    // read exactly like one that dims everything.
+    const view = run();
+    await view.settle();
+
+    const row = view.byId('bt-list')!.children[0]!;
+    assert.equal(row.descendants().find(node => node.className === 'label')?.textContent,
+      'Top · Press');
+    assert.equal(row.descendants().find(node => node.className === 'sub')?.textContent,
+      'On / off · all three');
   });
 
   test('tapping a row tells the driver which one before pushing the editor', async () => {
@@ -921,5 +1177,195 @@ describe('the controller buttons screen', () => {
 
     view.push('heard', 'button.left|true');
     assert.match(view.byId('bt-list')!.children[1]!.className, /sel/);
+  });
+});
+// ------------------------------------------------------- the job editor
+
+describe('the job editor, pushed from one gesture', () => {
+  const JOBS = [
+    { id: 'on', label: 'On', preset: 'none' },
+    { id: 'off', label: 'Off', preset: 'none' },
+    { id: 'toggle', label: 'On and off', preset: 'none' },
+    { id: 'brightness_up', label: 'Brighter', preset: 'none' },
+    { id: 'brightness_down', label: 'Dimmer', preset: 'none' },
+    { id: 'brightness_set', label: 'A set brightness', preset: 'brightness' },
+    { id: 'warmer', label: 'Warmer', preset: 'none' },
+    { id: 'colder', label: 'Cooler', preset: 'none' },
+    { id: 'color_set', label: 'Set colour', preset: 'colour' },
+  ];
+
+  const LIGHTS = [
+    { id: 'l1', name: 'Floor lamp' },
+    { id: 'l2', name: 'Shelf strip' },
+    { id: 'l3', name: 'Reading lamp' },
+  ];
+
+  const run = (over: Record<string, unknown> = {}) => runPairView(read('controller/job.html'), {
+    respond: {
+      getGesture: {
+        title: 'Top · Press',
+        jobs: JOBS,
+        chosen: null,
+        presetKind: 'none',
+        preset: null,
+        colors: [
+          { id: 'amber', label: 'Warm amber', swatch: 'hsl(40,66%,59%)' },
+          { id: 'candle', label: 'Candlelight', swatch: 'hsl(29,55%,66%)' },
+          { id: 'ocean', label: 'Ocean', swatch: 'hsl(198,64%,61%)' },
+          { id: 'forest', label: 'Forest', swatch: 'hsl(126,55%,66%)' },
+        ],
+        featuredColors: 2,
+        lights: LIGHTS,
+        allLabel: 'All three lights',
+        chosenLights: null,
+        ...over,
+      },
+      setGesture: { set: true },
+      test: { writes: 2, skipped: 0, targets: 2 },
+    },
+  });
+
+  const lastSet = (view: ReturnType<typeof runPairView>) =>
+    [...view.emitted].reverse().find(call => call.event === 'setGesture')?.data as
+      { job: string | null; preset: unknown; lights: string[] | null } | undefined;
+
+  test('nine jobs as a grid, and "do nothing" is not one of them', async () => {
+    // Position carries the grouping — power, brightness, colour across; up,
+    // down, set a value down — so a tenth tile in the grid would put a job in a
+    // family it does not belong to. The absence of a job sits below it instead.
+    const view = run();
+    await view.settle();
+
+    assert.equal(view.byId('jb-grid')!.children.length, 9);
+    assert.ok(view.byId('jb-none'), 'and it has a control of its own');
+  });
+
+  test('a job is saved with the lights it drives, not just with its own name', async () => {
+    const view = run();
+    await view.settle();
+
+    view.fire(view.byId('jb-grid')!.children[3]!, 'click');
+    await view.settle();
+
+    assert.deepEqual(lastSet(view), {
+      job: 'brightness_up',
+      preset: null,
+      // null is "all of them", which keeps following the room.
+      lights: null,
+    });
+  });
+
+  test('ticking one light aims the button at that light alone', async () => {
+    const view = run();
+    await view.settle();
+
+    const rows = view.byId('jb-lights')!.children;
+    // Row 0 is "All three lights"; the rest are the lights themselves.
+    view.fire(rows[1]!, 'click');
+    await view.settle();
+
+    assert.deepEqual(lastSet(view)?.lights, ['l1']);
+  });
+
+  test('ticking every light is stored as "all of them", never as a list', async () => {
+    // The two are not equivalent: a list freezes against today's lights while
+    // "all" follows the device, so the screen cannot offer a second way to say
+    // the same thing that quietly stops being true.
+    const view = run();
+    await view.settle();
+
+    const rows = () => view.byId('jb-lights')!.children;
+    view.fire(rows()[1]!, 'click');
+    await view.settle();
+    view.fire(rows()[2]!, 'click');
+    await view.settle();
+    view.fire(rows()[3]!, 'click');
+    await view.settle();
+
+    assert.equal(lastSet(view)?.lights, null);
+    assert.equal(rows()[0]!.attributes['aria-pressed'], 'true');
+  });
+
+  test('clearing the last light goes back to all of them rather than to none', async () => {
+    const view = run({ chosenLights: ['l1'] });
+    await view.settle();
+
+    view.fire(view.byId('jb-lights')!.children[1]!, 'click');
+    await view.settle();
+
+    assert.equal(lastSet(view)?.lights, null);
+  });
+
+  test('a light checklist of one is no question at all, so it is not asked', async () => {
+    const view = run({ lights: [{ id: 'l1', name: 'Floor lamp' }] });
+    await view.settle();
+
+    assert.equal(view.byId('jb-lights')!.style.display, 'none');
+    assert.equal(view.byId('jb-toTitle')!.style.display, 'none');
+  });
+
+  test('the colour job arrives with a colour, because one without is refused', async () => {
+    // The driver drops a rule that says it sets a colour and carries none — so
+    // the first tap fills one in rather than pushing something that comes back
+    // as an error under the tile just chosen.
+    const view = run();
+    await view.settle();
+
+    view.fire(view.byId('jb-grid')!.children[8]!, 'click');
+    await view.settle();
+
+    assert.deepEqual(lastSet(view)?.preset, { color: 'amber' });
+    assert.equal(view.byId('jb-colours')!.style.display, '');
+  });
+
+  test('only the featured colours are shown until the rest are asked for', async () => {
+    const view = run({ chosen: 'color_set', presetKind: 'colour', preset: { color: 'ocean' } });
+    await view.settle();
+
+    assert.equal(view.byId('jb-featured')!.children.length, 2);
+    assert.equal(view.byId('jb-rest')!.style.display, 'none');
+
+    view.fire(view.byId('jb-more')!, 'click');
+    await view.settle();
+
+    assert.equal(view.byId('jb-rest')!.children.length, 2);
+    assert.equal(view.byId('jb-rest')!.style.display, '');
+  });
+
+  test('the brightness editor opens only under the job that carries one', async () => {
+    const view = run();
+    await view.settle();
+    assert.equal(view.byId('jb-preset')!.style.display, 'none');
+
+    view.fire(view.byId('jb-grid')!.children[5]!, 'click');
+    await view.settle();
+
+    assert.equal(view.byId('jb-preset')!.style.display, '');
+    assert.deepEqual(lastSet(view)?.preset, { brightness: 0.6 });
+  });
+
+  test('"do nothing" clears the job, and takes the Test control with it', async () => {
+    const view = run({ chosen: 'toggle' });
+    await view.settle();
+    assert.equal(view.byId('jb-tryCard')!.style.display, '');
+
+    view.fire(view.byId('jb-none')!, 'click');
+    await view.settle();
+
+    assert.equal(lastSet(view)?.job, null);
+    assert.equal(view.byId('jb-tryCard')!.style.display, 'none');
+  });
+
+  test('Test runs against the lights this button drives, not against all of them', async () => {
+    const view = run({ chosen: 'toggle', chosenLights: ['l2'] });
+    await view.settle();
+
+    view.fire(view.byId('jb-try')!, 'click');
+    await view.settle();
+
+    assert.deepEqual(
+      view.emitted.find(call => call.event === 'test')?.data,
+      { func: 'toggle', deviceIds: ['l2'] },
+    );
   });
 });

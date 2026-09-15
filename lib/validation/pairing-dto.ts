@@ -1,12 +1,12 @@
-import { validateTarget } from './plans';
+import { readMappingPreset, validateTarget } from './plans';
 import {
-  requireArray, requireOneOf, requireRecord, requireString, requireUnitInterval, fail,
+  requireArray, requireOneOf, requireRecord, requireString, fail,
 } from './guards';
 import type { DeviceCatalog } from '../device-catalog';
 import type { TargetSpec } from '../outputs/light-intent';
 import type { LightFunction } from '../mapping/mapping-types';
 import {
-  FUNCTION_CAPABILITY, FUNCTION_NEEDS_PRESET, type MappingPreset,
+  FUNCTION_CAPABILITY, FUNCTION_PRESET, type MappingPreset,
 } from '../mapping/mapping-types';
 import { LUMINANCE_CAPABILITY } from '../daylight/daylight-types';
 
@@ -27,6 +27,15 @@ import { LUMINANCE_CAPABILITY } from '../daylight/daylight-types';
  */
 
 const MAX_RULES = 64;
+/**
+ * The most lights one rule may name.
+ *
+ * The same ceiling the target picker itself works under — a controller cannot
+ * point at more lights than this, so a rule cannot aim at more either — and it
+ * is here for the same reason MAX_RULES is: the payload arrives from a webview,
+ * and "the view sent it" is not permission to allocate against it.
+ */
+const MAX_RULE_LIGHTS = 64;
 
 /** A target's shape, before anything is asked of the catalogue. */
 function validateTargetDto(raw: unknown): TargetSpec {
@@ -162,9 +171,16 @@ export interface MappingRuleDto {
   id: string;
   function: LightFunction;
   inputKey: string | null;
-  /** '__all__' inherits the controller's own targets; anything else is a device id. */
-  groupKey: string;
-  /** Required by `brightness_set`, refused by every other function. */
+  /**
+   * Which of the controller's lights this rule drives, or null for all of them.
+   *
+   * null is not "none" and is not the full list written out: it means INHERIT,
+   * so a rule aimed at everything follows a room that gains a lamp, exactly as
+   * the device itself does. Writing the ids out instead would freeze the rule
+   * against the lights that existed on the day it was saved.
+   */
+  deviceIds: string[] | null;
+  /** Whatever `FUNCTION_PRESET` says this function takes, and nothing else. */
   preset?: MappingPreset;
 }
 
@@ -189,14 +205,29 @@ export interface MappingRuleDto {
  * Dropping and reporting is what `dedupeByInputKey`, `sanitiseEntries` and
  * `sanitiseCurve` all already do with their own payloads.
  */
-function readPreset(raw: unknown, path: string): MappingPreset {
-  const preset = requireRecord(raw, path);
-  return {
-    brightness: requireUnitInterval(preset.brightness, `${path}.brightness`),
-    ...(preset.temperature !== undefined
-      ? { temperature: requireUnitInterval(preset.temperature, `${path}.temperature`) }
-      : {}),
-  };
+/**
+ * Which lights a rule names, in either of the two spellings a caller may use.
+ *
+ * `lights` is the buttons flow's: a list of device ids, or null for "all of the
+ * controller's". `groupKey` is what the screen this flow replaced sent — one
+ * device id, or the literal `__all__` — and it is still read because `setRules`
+ * is a pair-session handler and pair sessions are a scriptable Web API surface
+ * (platform §14), so the old spelling is somebody's script until it is not.
+ *
+ * A payload carrying both is a payload nobody wrote deliberately, so `lights`
+ * wins and the older field is ignored rather than merged.
+ */
+function readRuleLights(rule: Record<string, unknown>, path: string): string[] | null {
+  if (rule.lights !== undefined && rule.lights !== null) {
+    return requireArray(rule.lights, `${path}.lights`, MAX_RULE_LIGHTS)
+      .map((id, n) => requireString(id, `${path}.lights[${n}]`));
+  }
+  if (rule.lights === null) return null;
+
+  const groupKey = rule.groupKey === undefined
+    ? '__all__'
+    : requireString(rule.groupKey, `${path}.groupKey`);
+  return groupKey === '__all__' ? null : [groupKey];
 }
 
 export function validateMappingRules(
@@ -222,15 +253,28 @@ export function validateMappingRules(
   entries.forEach((entry, i) => {
     const path = `rules[${i}]`;
     const rule = requireRecord(entry, path);
-    const groupKey = requireString(rule.groupKey, `${path}.groupKey`);
     const id = requireString(rule.id, `${path}.id`);
     const inputKey = rule.inputKey === null || rule.inputKey === undefined
       ? null
       : requireString(rule.inputKey, `${path}.inputKey`);
+    const deviceIds = readRuleLights(rule, path);
 
     // ---- membership: dropped and named, never thrown --------------------
-    if (groupKey !== '__all__' && !selected.has(groupKey)) {
-      dropped.push({ index: i, reason: `"${groupKey}" is not one of this controller's lights` });
+    const stranger = deviceIds?.find(deviceId => !selected.has(deviceId));
+    if (stranger !== undefined) {
+      dropped.push({ index: i, reason: `"${stranger}" is not one of this controller's lights` });
+      return;
+    }
+    /**
+     * A rule aimed at nothing is dropped, not stored as "all".
+     *
+     * An empty list is what a checklist with every box cleared sends, and the
+     * two readings of it — "no lights" and "every light" — are opposite. The
+     * screen never sends one (clearing the last box re-ticks "all lights"), so
+     * this is the fail-closed half of that rule for every other way in.
+     */
+    if (deviceIds !== null && deviceIds.length === 0) {
+      dropped.push({ index: i, reason: 'names no lights at all' });
       return;
     }
 
@@ -261,22 +305,22 @@ export function validateMappingRules(
      * function is dropped too, because it is a value nothing will ever read and
      * keeping it would leave a stored rule nobody can explain.
      */
-    const needsPreset = FUNCTION_NEEDS_PRESET[func];
+    const kind = FUNCTION_PRESET[func];
     const preset = rule.preset === undefined || rule.preset === null
       ? undefined
-      : readPreset(rule.preset, `${path}.preset`);
+      : readMappingPreset(rule.preset, `${path}.preset`, kind);
 
-    if (needsPreset && preset === undefined) {
-      dropped.push({ index: i, reason: 'has no brightness to set' });
+    if (kind !== 'none' && preset === undefined) {
+      dropped.push({ index: i, reason: `has no ${kind === 'colour' ? 'colour' : 'brightness'} to set` });
       return;
     }
-    if (!needsPreset && preset !== undefined) {
-      dropped.push({ index: i, reason: `"${func}" does not take a brightness` });
+    if (kind === 'none' && preset !== undefined) {
+      dropped.push({ index: i, reason: `"${func}" does not take a value` });
       return;
     }
 
     rules.push({
-      id, function: func, inputKey, groupKey,
+      id, function: func, inputKey, deviceIds,
       ...(preset !== undefined ? { preset } : {}),
     });
   });

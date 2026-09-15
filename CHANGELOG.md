@@ -925,6 +925,189 @@ And the stale claims the sweep turned up on the way:
   of the three rather than with a promise that was not kept.
 
 
+### Step 1 of the Light Remote could not list a single remote
+
+- **"Which remote?" drew `Cannot read properties of undefined (reading 'length')` and nothing
+  else**, on the first screen of the only flow that has one — so a Light Remote could not be paired
+  at all. The picker in `lib/pairing/source-list.ts` returned each room's remotes as `devices` and
+  the screen read `room.sources`. Both ends were covered and both passed: the boot test answers
+  `listSources` with `rooms: []`, so the loop over a room's remotes never ran, and the render
+  fixture had been written to match the view rather than the driver, which is exactly how a fixture
+  authored by hand stops being evidence. The list is `sources` now, which is also what the two
+  sibling pickers call theirs — `lights` in `target-picker.ts`, `sensors` in `sensor-picker.ts`.
+  The regression test builds the reply with `groupSourcesByRoom` itself and runs the real view on
+  it, so the two ends cannot disagree again without a red test.
+- **Choosing a remote showed no tick.** The row's selected state is drawn by
+  `.remote[aria-pressed="true"] .box`, and the re-render cleared every row and set none — so a tap
+  produced a message about the remote and no visible choice, and a repair session that opened on
+  the remote already in use marked nothing. It also needed the driver to say which remote that is:
+  `listSources` returned only the rooms, while the screen had always read a `current` beside them.
+- **The "found it" line reported `[object Object]` where the button count belongs.** `selectSource`
+  returns the remote's controls as a list — the buttons screen and the hardware script both read it
+  as one — and the screen passed the whole list into a message expecting a number.
+
+
+### "Which remote?" listed the whole house
+
+The first screen of the Light Remote drew every device on the Homey as one alphabetical run,
+grouped by room — a hundred and more rows on an ordinary house, nearly all of them lamps, plugs,
+sensors and appliances that the very next tap would have refused with "nothing can be read from
+it". The remote somebody had come to pick was somewhere in it.
+
+- **The screen now draws two lists: what Homey can hear a gesture from, and — behind one row —
+  everything else.** The reasoning it replaces is written down in `lib/pairing/source-list.ts` and
+  was answering the wrong question: there is indeed no reliable way to tell a remote from anything
+  else that exposes trigger cards, and the screen does not have to. It has to hide what CANNOT
+  work. Nothing is filtered away — the second list holds every device, in its room, and
+  `selectSource` is still what finally decides, on the device itself.
+- **`eventCount` now means what the screen says it means**, which is what made the split possible.
+  It counted device-scoped trigger cards by id, excluding the sensor-shaped ones; but every Homey
+  device carries generated capability cards, and a lamp's own `onoff_true`/`onoff_false` are not
+  sensor-shaped. Every bulb, plug and speaker in the house scored two, which is why the old screen
+  could not have sorted its way out of the problem either. Ranking now applies the same gesture test
+  `normalizeCards` does — "Turned on" is not a press — and counts the second strong route as well
+  (platform §4), so a remote reachable only through a filtered app-level card is not folded away as
+  if the Homey had never heard of it.
+- **A search box over both lists**, the same one the light picker has and for the same reason: the
+  name is what somebody knows. Searching opens the second list, because a fold that hides the device
+  whose name has just been typed is a search that did nothing.
+- **Lightkeeper's own devices are gone from the list.** A schedule or a circadian light is not a
+  remote, and carries generated capability cards like anything else. `lightCandidates()` has
+  excluded them since it was written; this list had not.
+- Two smaller consequences, both pinned by tests. The remote a repair session opens on is always in
+  the first list whatever it now reports — the ordinary reason to repair is that the integration
+  changed underneath it and it went silent, and folding it away would leave a screen whose only tick
+  was somewhere the user could not see. And a house Homey has heard nothing from at all opens the
+  second list itself, rather than presenting one closed row as the whole screen.
+
+
+### Every button on the Light Remote's step 3 was drawn inside Homey's own grey pill
+
+The screen that asks what each button should do put every gesture's name in a grey rounded box with
+the container's padding and the container's ink, nothing like the plain name-over-its-second-line
+the design draws. It looked right in every render taken of it.
+
+- **A pair view is injected into the pairing container's own document, so a class name is shared
+  with whatever that document already styles.** The row's two lines were called `.button` and
+  `.action` and its value `.job` — names that say exactly what they are on, and that a UI framework
+  has almost certainly spent already. Our rules for them declared a font size and a colour, so
+  everything they did not declare — background, padding, radius — came from the container.
+- **The rows are built from the base's own `label · value · chevron` vocabulary now**, which every
+  other list in the app already uses and which is the shape the design draws here. The card, its
+  padding and its inset hairlines are `card rows` from the shared base rather than a second recipe
+  for the same card, so this screen's own CSS is three rules: the gap under the card, the weight on
+  a name that stands above a second line, and one step more ink on a job than on the "Nothing"
+  beside it.
+- **No render could have caught this, and that is the durable part.** `render-views.mjs` draws a
+  view alone on a white page — the container's stylesheet is not in this repo and is not in that
+  document, so the local render was faithful to the design both before and after the fix. What
+  changed instead is a test that fails if any pair view takes the class name `button` again, and a
+  hardware line (T127) that says to look at those rows on a phone. The list of names the container
+  owns is one long on purpose: a longer one would be guesswork about a stylesheet nobody here has
+  read.
+
+### What each button is set to, said in the margin
+
+Which buttons had a job and which had not was carried by one word at the far end of each row, so
+counting what was left to do meant reading the right-hand column downwards.
+
+- **Every row now opens with a mark: filled where the button has a job, an empty ring where it has
+  none.** The two differ in fill rather than in colour, so the list answers "what have I still not
+  set" at a glance, on a small screen, and to a colour-blind reader. The name and its job carry the
+  weight; a row with no job recedes — no red, no badge, nothing to clear, because a four-button
+  remote where two buttons do nothing is a remote somebody set up exactly as they meant to. That
+  word is "Not set" now rather than "Nothing".
+- **"Press a button on the remote to jump to its row" moved above the list**, where it is an
+  instruction for using the list rather than a footnote about it. Below it, it was read after the
+  decision it offers to speed up, and on a remote with more rows than fit a screen it was never
+  read at all.
+- **The row a real press lands on is finally drawn.** Press-to-find has always scrolled to the row
+  and added a class to mark it; nothing styled that class, so the only feedback that the press had
+  been heard at all was the scroll — on a screen that may already be showing the row it scrolled
+  to.
+
+### Choosing what a button does now takes you back to the list
+
+The job editor is a pushed screen with one question on it, and answering it left you where you
+were: the tap was saved, the row behind it had changed, and the only way to see that was to find
+Homey's back arrow yourself.
+
+- **A tap on a job saves it and returns to the buttons list**, where the row it belongs to now says
+  what it does. The save lands first on purpose — the buttons screen re-reads its rows when it
+  comes back into view, so a navigation that overtook the save would draw the job the tap replaced.
+- **"A set brightness" is the exception, because picking it is not the end of the question.** It
+  reveals the brightness and warmth sliders on that same screen, and going back would take them
+  away before they had been touched. That row stays, and the back arrow is the way out of it — the
+  same way out it has always had, which is why the choice is committed on every change rather than
+  held for a Done button.
+- Testing a job on a real lamp is where it was: choose the job, and if you want to watch it happen,
+  open the row again and use "Try it" with the job already chosen.
+
+### One remote, different lights on different buttons
+
+A Light Remote drove every light it was given with every button it had. The engine had carried a
+per-rule target since it was written — `MappingRule.target`, null meaning "inherit" — and nothing
+since the pairing rewrite could set one, so the top button could dim the floor lamp only if the
+whole device was about the floor lamp.
+
+- **Each button now says which lights it drives, and the buttons list says it without opening
+  anything.** A row reads `Top · Long press` over `Brighter · Floor lamp`, so a remote whose top
+  button dims one lamp and whose bottom button dims the room is legible as that from the list. The
+  default stays short whatever the house is: `all three`, not three names, and not thirty.
+- **"All of them" is stored as inherit, never as a list of today's lights.** Ticking every box in
+  the checklist collapses back to it, and so does clearing the last one, because a written-out list
+  freezes a button against the lights that existed on the day it was saved while "all" goes on
+  following a room that gains a lamp. Narrowing the lights on step 2 re-aims any button that named
+  one of the lamps dropped, and the runtime writes to a light outside the device's own selection
+  under no circumstances.
+- **The job editor is a nine-tile grid, and the grid is the grouping.** Power, brightness and colour
+  across; up, down and "set a value" down each column, so every column reads the same way in all
+  three rows and no group headings are needed. Each tile carries a picture of its effect rather than
+  a number — bars that climb, a track from dark to light, the warm and cool ends of one ramp, three
+  dots for a colour — and the value appears only under the tile that has been chosen, because "60%"
+  printed on a tile nobody picked read as the only brightness on offer.
+- **"Do nothing" sits below the grid, full width.** It is the absence of a job rather than a tenth
+  kind of one, and it is what an unmapped button already says.
+- **A new job: a colour.** One colour from the same closed palette a Colour Curve Light chooses
+  from, stored by name rather than as two numbers, and offered only where a lamp can actually take
+  one. **"Step through warm and cool" is no longer offered** — the grid's third column sets a value,
+  and for the colour row that value is a colour. A button already assigned to it goes on stepping
+  through warm and cool, keeps its tile while it is the one selected, and is honoured everywhere a
+  stored rule is read: retired is not deleted.
+- The Test control now runs against the lights that button drives rather than against all of them,
+  which is the only way to prove a per-button target on a real lamp.
+- The sixteen colours that fold out now sit 18px below the featured eight rather than 7px. At the
+  same gap as the rows above them they read as more of the same grid, and finding where one group
+  ended meant measuring swatch sizes. The Colour Curve Light's palette gets it too — same block,
+  same two groups. The job screen had also been overriding that margin away without meaning to:
+  `#jb-root .preset .swatches { margin: 0 }` and `#jb-root .swatches.more` carry the same
+  specificity, and the view's own block is further down the file, so the reset won.
+- **Two things that shipped broken and are fixed here.** A view that names a colour token the shared
+  base does not define draws nothing at all — no error, no warning, the declaration simply dropped —
+  and the "Cooler" tile did exactly that. A test now fails on any token a view uses and the base
+  does not define. And choosing a job no longer jumps back to the buttons list: that screen asks two
+  questions now, and returning after the first put the second out of reach.
+
+### "4 found", above a list showing one
+
+The Room-sensing Light's sensor screen folded every room behind a tap, opening only the room
+holding the chosen sensor. On a house with four light sensors in four rooms that drew a heading
+saying four had been found above a list showing one, with the other three behind rooms nobody had a
+reason to open: the count was the only evidence they existed, and a count is not a list.
+
+- **Every sensor is drawn, and none of them is behind a tap.** The folding was sized for the light
+  picker's problem — a house has forty lamps and four lux sensors — so showing all of them costs a
+  short scroll. Rooms with no sensor stay one line each saying so, which was the half of that design
+  that was right: leaving them out makes the house look smaller than it is, and "this room has none"
+  is half the answer to where the reading should come from. Those rows no longer accept a tap,
+  because there is nothing behind them any more.
+- **Choosing the sun hides the room list entirely.** It used to hide only the OPEN rooms: the
+  per-room fold state survived the toggle, so a room expanded while browsing sensors was drawn into
+  the hidden container and appeared in neither list — one more way to be told four and shown one.
+  The fold state is gone with the folding, and a room list under "the sun" was answering a question
+  nobody is still asking.
+
+
 ## 0.5.2
 
 Four fixes, all found by reading one diagnostics export from a Homey that had been running for an

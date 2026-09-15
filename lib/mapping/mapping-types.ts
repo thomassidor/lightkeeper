@@ -1,14 +1,22 @@
 import type { TargetSpec } from '../outputs/light-intent';
 
-/** The lighting functions a user can assign an event to. */
+/**
+ * The lighting functions a user can assign an event to.
+ *
+ * The nine the buttons screen offers are a 3×3 grid: power, brightness and
+ * colour across, and "up, down, set a value" down each column. That shape is
+ * the reason `color_set` exists and the reason `temperature_cycle` is no longer
+ * offered — see RETIRED_FUNCTIONS below, which is also why it is still HERE.
+ */
 export type LightFunction =
   | 'toggle' | 'on' | 'off'
   | 'brightness_up' | 'brightness_down'
   | 'warmer' | 'colder'
-  | 'brightness_set' | 'temperature_cycle';
+  | 'brightness_set' | 'color_set' | 'temperature_cycle';
 
 /** Which capability a function needs — drives which rows appear. */
-export const FUNCTION_CAPABILITY: Record<LightFunction, 'onoff' | 'dim' | 'light_temperature'> = {
+export const FUNCTION_CAPABILITY:
+Record<LightFunction, 'onoff' | 'dim' | 'light_temperature' | 'light_hue'> = {
   toggle: 'onoff',
   on: 'onoff',
   off: 'onoff',
@@ -17,47 +25,98 @@ export const FUNCTION_CAPABILITY: Record<LightFunction, 'onoff' | 'dim' | 'light
   warmer: 'light_temperature',
   colder: 'light_temperature',
   brightness_set: 'dim',
+  color_set: 'light_hue',
   temperature_cycle: 'light_temperature',
 };
 
 /**
- * The functions that carry a stored value, and what that value is.
+ * Offered to nobody new, honoured for everybody who has one.
  *
- * `brightness_set` is the one a person actually asks for — "this button makes it
- * cosy" — and it is the first function in this app that cannot be expressed by
- * its name alone: it needs the brightness, and optionally the warmth, that the
- * button should produce. Everything else is relative or a power state, which is
- * why nothing here needed a value before.
+ * `temperature_cycle` lost its place when the job list became a grid: the third
+ * column is "set a value", and for the warmth row that value is a colour. A
+ * retired function is NOT a deleted one — a button already assigned to it goes
+ * on stepping through warm and cool, the engine still resolves it and a stored
+ * profile carrying it still validates. It simply cannot be chosen again.
+ *
+ * Deleting it instead would have quarantined every profile that names it, which
+ * is the same argument the palette makes about removing a colour.
+ */
+export const RETIRED_FUNCTIONS: readonly LightFunction[] = ['temperature_cycle'];
+
+/**
+ * The functions that carry a stored value, and WHICH value each one carries.
+ *
+ * `brightness_set` and `color_set` are the two a person actually asks for —
+ * "this button makes it cosy" — and they are the functions that cannot be
+ * expressed by their name alone: one needs the brightness (and optionally the
+ * warmth) the button should produce, the other the colour. Everything else is
+ * relative or a power state, which is why nothing here needed a value at first.
+ *
+ * It replaced a boolean. Two kinds of value cannot be told apart by "does it
+ * need one", and the screen has to know which editor to open under the tile.
  *
  * `temperature_cycle` needs none. It steps through the warmth axis and wraps,
  * which is the gesture a one-button remote gets instead of a warmer and a cooler
  * button, and where it starts is wherever the lamp already is.
  */
-export const FUNCTION_NEEDS_PRESET: Record<LightFunction, boolean> = {
-  toggle: false,
-  on: false,
-  off: false,
-  brightness_up: false,
-  brightness_down: false,
-  warmer: false,
-  colder: false,
-  brightness_set: true,
-  temperature_cycle: false,
+export type PresetKind = 'none' | 'brightness' | 'colour';
+
+export const FUNCTION_PRESET: Record<LightFunction, PresetKind> = {
+  toggle: 'none',
+  on: 'none',
+  off: 'none',
+  brightness_up: 'none',
+  brightness_down: 'none',
+  warmer: 'none',
+  colder: 'none',
+  brightness_set: 'brightness',
+  color_set: 'colour',
+  temperature_cycle: 'none',
 };
 
+export interface BrightnessPreset {
+  /** Perceptual brightness 0–1, on the same axis every other slider in the app uses. */
+  brightness: number;
+  /** Normalised colour temperature 0–1, where 1 is warmest. Absent = leave it alone. */
+  temperature?: number;
+}
+
+export interface ColorPreset {
+  /**
+   * A palette id, never a hue and a saturation.
+   *
+   * The same closed palette the Colour Curve Light chooses from, and for the
+   * same reasons written down at the top of `lib/circadian/palette.ts`: a name
+   * survives being read back a year later, a coordinate does not, and a name is
+   * translatable. `paletteColor()` turns it into the two axes at the moment the
+   * intent is built.
+   */
+  color: string;
+}
+
 /**
- * The value a function needs, where its name is not enough.
+ * The value a function needs, where its name is not enough — whichever kind of
+ * value that is. Never both, and never a choice.
  *
  * Named `preset` rather than `args`, and that is worth a line: `fixedArgs` one
  * layer over means a generated Flow card's ARGUMENTS, which is a different thing
  * entirely, and a `MappingRule.args` sitting beside a `Binding.fixedArgs` would
  * be genuinely confusing to read.
+ *
+ * A union rather than one record with optional halves, because "a preset" is
+ * not a thing in its own right: it is the rest of the sentence a job started,
+ * and a `brightness` on a colour job is a number nothing will ever read. Every
+ * reader discriminates, which is the point.
  */
-export interface MappingPreset {
-  /** Perceptual brightness 0–1, on the same axis every other slider in the app uses. */
-  brightness: number;
-  /** Normalised colour temperature 0–1, where 1 is warmest. Absent = leave it alone. */
-  temperature?: number;
+export type MappingPreset = BrightnessPreset | ColorPreset;
+
+/** Narrowing for the union above, in one place so the test can name it. */
+export function isBrightnessPreset(preset: MappingPreset): preset is BrightnessPreset {
+  return 'brightness' in preset;
+}
+
+export function isColorPreset(preset: MappingPreset): preset is ColorPreset {
+  return 'color' in preset;
 }
 
 export interface MappingRule {
@@ -68,13 +127,14 @@ export interface MappingRule {
   /** null = inherit the controller's targets. Set per rule on the mapping screen. */
   target: TargetSpec | null;
   /**
-   * Required when `function` is `brightness_set`, refused otherwise.
+   * Required by whatever `FUNCTION_PRESET` says this function takes, refused
+   * where it says `none`, and of the KIND it names.
    *
-   * Both halves are enforced — in `validateMappingRules` on the way in and in
+   * All three are enforced — in `validateMappingRules` on the way in and in
    * `validateControllerProfile` on the way back out — because a rule that says
    * "a set brightness" and carries no brightness is the "looks configured, does
-   * nothing" failure this app exists to prevent, and a preset on a `toggle` is a
-   * value nothing will ever read.
+   * nothing" failure this app exists to prevent, a preset on a `toggle` is a
+   * value nothing will ever read, and a colour on a brightness job is both.
    */
   preset?: MappingPreset;
 }

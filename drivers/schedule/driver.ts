@@ -101,7 +101,12 @@ module.exports = class ScheduleDriver extends Homey.Driver {
 
     // ---------------------------------------------------------- credentials
 
-    registerCredentialHandlers(host, handler, 'targets');
+    // The view id the credential screen jumps to, which is this driver's step 1
+    // — not the controller's. 'targets' was that view's id before the pairing
+    // rewrite renamed it, and a showView() naming a view that no longer exists
+    // renders an EMPTY screen rather than failing: intro -> credential -> blank,
+    // for every household that already had a key stored.
+    registerCredentialHandlers(host, handler, 'lights');
 
     handler('add_device', async () => true);
 

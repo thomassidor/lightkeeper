@@ -38,9 +38,14 @@ import { SHARED_VIEWS, SHARED_SOURCE_DRIVER, sync } from '../../scripts/sync-vie
 const ROOT = join(import.meta.dirname, '..', '..');
 const DRIVERS = join(ROOT, 'drivers');
 
+interface DriverStep {
+  id: string;
+  navigation?: { prev?: string; next?: string };
+}
+
 interface DriverManifest {
-  pair?: Array<{ id: string }>;
-  repair?: Array<{ id: string }>;
+  pair?: DriverStep[];
+  repair?: DriverStep[];
 }
 
 const drivers = readdirSync(DRIVERS, { withFileTypes: true })
@@ -150,6 +155,92 @@ describe('repair views', () => {
         );
       }
     }
+  });
+
+  /**
+   * A view id a driver hands to a screen has to name a view that driver actually
+   * declares. `Homey.showView('targets')` on a driver whose step 1 is called
+   * `lights` does not throw and does not stay put: it renders an EMPTY sheet,
+   * with the header, the Previous arrow and nothing between them.
+   *
+   * That is not hypothetical. The pairing rewrite renamed the schedule's
+   * `targets` view to `lights` and the controller's `source` view to `remote`,
+   * and two hardcoded ids were left behind — the schedule's credential screen
+   * and the shared view's own fallback. Every household that already had an API
+   * key stored got intro -> credential -> blank, because the credential screen
+   * skips itself and jumps straight on when a valid key is present.
+   *
+   * Nothing else can catch it: `validate` never reads a driver's TypeScript, the
+   * view files are shared byte-for-byte so they cannot know the answer
+   * themselves, and a driver containing `extends Homey.Driver` cannot be
+   * imported by a test at all (platform §13). So the ids are read out of the
+   * source as text.
+   */
+  test('every view id a driver names is a view that driver declares', () => {
+    // `nextView: 'x'` in a screen payload, `view: 'x'` on a review row — which
+    // is where a jump back to a step comes from — and the credential screen's
+    // destination, which is a positional argument rather than a field.
+    const NAMED = [
+      /nextView:\s*'([^']+)'/g,
+      /view:\s*'([^']+)'/g,
+      /registerCredentialHandlers\([^)]*?,\s*'([^']+)'\s*\)/g,
+    ];
+
+    for (const driver of drivers) {
+      const source = readFileSync(join(DRIVERS, driver.id, 'driver.ts'), 'utf8');
+      const declared = new Set((driver.manifest.pair ?? []).map(view => view.id));
+
+      const named = NAMED.flatMap(pattern => [...source.matchAll(pattern)].map(m => m[1]));
+      assert.ok(named.length > 0, `${driver.id}/driver.ts names no view at all — has the payload shape changed?`);
+
+      for (const id of named) {
+        assert.ok(
+          declared.has(id),
+          `${driver.id}/driver.ts sends pairing to the view "${id}", which drivers/${driver.id}/`
+          + `driver.compose.json does not declare (it has: ${[...declared].join(', ')}). `
+          + 'Homey renders an empty screen for an unknown view id rather than failing.',
+        );
+      }
+    }
+  });
+
+  test('every view a driver navigates to by prev or next is declared', () => {
+    for (const driver of drivers) {
+      for (const flow of ['pair', 'repair'] as const) {
+        const steps = driver.manifest[flow] ?? [];
+        const declared = new Set(steps.map(view => view.id));
+
+        for (const step of steps) {
+          for (const [direction, target] of Object.entries(step.navigation ?? {})) {
+            assert.ok(
+              declared.has(target),
+              `${driver.id}: ${flow} view "${step.id}" navigates ${direction} to "${target}", `
+              + 'which is not one of its own views',
+            );
+          }
+        }
+      }
+    }
+  });
+
+  /**
+   * The shared credential screen carries a hardcoded destination for the case
+   * where a driver does not answer with one. It is the CONTROLLER's next view,
+   * because the controller is where that file is authored — and it is only ever
+   * reached on a driver that has stopped supplying its own, which is exactly
+   * when a stale id would go unnoticed.
+   */
+  test("the credential view's fallback names a real controller view", () => {
+    const view = readFileSync(join(DRIVERS, SHARED_SOURCE_DRIVER, 'pair', 'credential.html'), 'utf8');
+    const fallback = /var nextView = '([^']+)'/.exec(view);
+    assert.ok(fallback, 'credential.html no longer declares a fallback view');
+
+    const source = drivers.find(d => d.id === SHARED_SOURCE_DRIVER)!;
+    assert.ok(
+      (source.manifest.pair ?? []).some(step => step.id === fallback[1]),
+      `credential.html falls back to the view "${fallback[1]}", which the ${SHARED_SOURCE_DRIVER} `
+      + 'driver does not declare',
+    );
   });
 
   test('the repair flow offers the same steps as pairing', () => {

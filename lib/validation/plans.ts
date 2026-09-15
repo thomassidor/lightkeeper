@@ -7,8 +7,9 @@ import { MINUTES_PER_DAY } from '../time/wall-clock';
 import { isPaletteColor } from '../circadian/palette';
 import type { TargetSpec } from '../outputs/light-intent';
 import {
-  FUNCTION_NEEDS_PRESET,
-  type ControllerBehavior, type LightFunction, type MappingRule,
+  FUNCTION_PRESET,
+  type ControllerBehavior, type LightFunction, type MappingPreset, type MappingRule,
+  type PresetKind,
 } from '../mapping/mapping-types';
 import type { ControllerProfile, ManagedFlowReference } from '../profiles/controller-profile';
 import {
@@ -261,26 +262,15 @@ function validateMappingRule(raw: unknown, path: string): MappingRule {
    * exactly the "looks configured, does nothing" failure quarantining exists
    * for.
    */
+  const kind = FUNCTION_PRESET[func];
   const preset = rule.preset === undefined || rule.preset === null
     ? undefined
-    : {
-      brightness: requireUnitInterval(
-        requireRecord(rule.preset, `${path}.preset`).brightness, `${path}.preset.brightness`,
-      ),
-      ...(requireRecord(rule.preset, `${path}.preset`).temperature !== undefined
-        ? {
-          temperature: requireUnitInterval(
-            requireRecord(rule.preset, `${path}.preset`).temperature,
-            `${path}.preset.temperature`,
-          ),
-        }
-        : {}),
-    };
+    : readMappingPreset(rule.preset, `${path}.preset`, kind);
 
-  if (FUNCTION_NEEDS_PRESET[func] && preset === undefined) {
+  if (kind !== 'none' && preset === undefined) {
     fail(`${path}.preset`, `is missing, and "${func}" cannot run without one`);
   }
-  if (!FUNCTION_NEEDS_PRESET[func] && preset !== undefined) {
+  if (kind === 'none' && preset !== undefined) {
     fail(`${path}.preset`, `is set, but "${func}" never reads one`);
   }
 
@@ -292,6 +282,34 @@ function validateMappingRule(raw: unknown, path: string): MappingRule {
       ? null
       : validateTarget(rule.target, `${path}.target`),
     ...(preset !== undefined ? { preset } : {}),
+  };
+}
+
+/**
+ * A rule's value, read as the KIND its function declares and never as both.
+ *
+ * Shared with `validateMappingRules` on the pairing side, which reaches it
+ * through this module the same way it reaches `validateTarget` — one reader, so
+ * a value the screen may send and a value a profile may hold cannot drift apart.
+ *
+ * The kind is the caller's, not the payload's: trusting a `color` field to mean
+ * "this is a colour preset" would let a brightness job be stored with a colour
+ * and no brightness, which is the shape the union exists to make unsayable.
+ */
+export function readMappingPreset(raw: unknown, path: string, kind: PresetKind): MappingPreset {
+  const preset = requireRecord(raw, path);
+
+  if (kind === 'colour') {
+    const color = requireString(preset.color, `${path}.color`);
+    if (!isPaletteColor(color)) fail(`${path}.color`, 'is not a colour in the palette');
+    return { color };
+  }
+
+  return {
+    brightness: requireUnitInterval(preset.brightness, `${path}.brightness`),
+    ...(preset.temperature !== undefined
+      ? { temperature: requireUnitInterval(preset.temperature, `${path}.temperature`) }
+      : {}),
   };
 }
 

@@ -580,3 +580,24 @@ function humanise(value: string): string {
     .replace(/[_-]+/g, ' ')
     .replace(/^\w/, c => c.toUpperCase());
 }
+
+/**
+ * Could this card be a gesture at all?
+ *
+ * The cheap half of `normalizeCards` — the two tests above that need nothing
+ * but the card itself — pulled out so that RANKING can ask the same question
+ * the catalogue will later answer. It is deliberately an over-estimate: a card
+ * that names a gesture can still be declined for an argument this app cannot
+ * enumerate, and only `normalizeCards` knows that. What it is not is a guess.
+ *
+ * Why it exists: every Homey device carries generated capability cards, and
+ * `STATE_CARD` only catches the sensor-shaped ones. A lamp's own `onoff_true`
+ * and `onoff_false` survive that filter, so counting cards by id alone scored
+ * every bulb, plug and speaker in the house as a two-event "remote" and the
+ * picker had no way to tell them from the one device the user was looking for.
+ * `actionOf` is what settles it: "Turned on" is not a press.
+ */
+export function isGestureCard(card: DiscoveredTriggerCard): boolean {
+  if (STATE_CARD.test(card.shortId)) return false;
+  return actionOf(card) !== null;
+}

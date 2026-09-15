@@ -162,6 +162,17 @@ describe('render fixtures', () => {
       'with a gap in it, or the hatched cell — the whole point of the grid — is never drawn',
     );
 
+    // The remote picker: both lists, or the render shows a screen that has
+    // nothing to fold and the row nobody would otherwise see is never drawn.
+    const sources = replies['remote.html'].listSources;
+    assert.ok(sources.rooms.length >= 2, 'candidates in more than one room');
+    assert.ok(sources.otherCount > 0 && sources.others.length > 0,
+      'and a folded remainder, because on a real house that is most of it');
+    assert.ok(
+      sources.rooms.every((r: any) => r.sources.every((s: any) => s.eventCount > 0)),
+      'nothing silent in the first list, or the fixture draws a screen the driver cannot send',
+    );
+
     // The controller: rows with jobs and rows without, and the job that carries
     // a value.
     assert.ok(replies['buttons.html'].getButtons.gestures.length >= 3, 'several gestures');
@@ -170,7 +181,21 @@ describe('render fixtures', () => {
         .some((g: any) => !(g.key in replies['buttons.html'].getButtons.jobs)),
       'and one with no job, because "Nothing" is a finished state worth drawing',
     );
-    assert.ok(replies['job.html'].getGesture.needsPreset,
-      'the job editor opens on the one job that carries a value, or its controls never draw');
+    // The job editor: a job that carries a value, so the editor under the grid
+    // draws, and a light subset, so the checklist is not nine ticks and a
+    // question nobody can see the point of.
+    const gesture = replies['job.html'].getGesture;
+    assert.equal(gesture.jobs.length, 9, 'nine tiles, or the grid is not a grid');
+    assert.ok(gesture.jobs.every((job: any) => job.id !== null),
+      'do nothing is the tile below the grid, so it must not be in the grid itself');
+    assert.notEqual(gesture.presetKind, 'none',
+      'the editor opens on a job that carries a value, or its controls never draw');
+    assert.ok(gesture.colors.length > gesture.featuredColors,
+      'more colours than are featured, or the fold-out has nothing behind it');
+    assert.ok(gesture.lights.length >= 3, 'enough lights that a subset is visibly a subset');
+    assert.ok(
+      gesture.chosenLights && gesture.chosenLights.length < gesture.lights.length,
+      'and a subset chosen, because per-button lights is the thing this screen gained',
+    );
   });
 });

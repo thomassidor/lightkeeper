@@ -104,6 +104,21 @@
                                     #f2e6d6, #eaf0fb, #dbe8fb);
     --lk-bright-ramp: linear-gradient(90deg, #221a3d, #43318a, #7a5fc4,
                                       #b9a6e4, #ece5f9);
+    /* The two ENDS of the warmth axis, for the two tiles that nudge along it
+       rather than setting it. The whole ramp draws the same picture on both,
+       which is no picture at all, so each of these runs from the middle of
+       --lk-warm-ramp out to one end of it.
+       The cool end is DEEPER than that ramp's own #dbe8fb: at 30x12px on white
+       the real end of the axis is a chip with no edge, so the tile that said
+       "cooler" showed nothing at all. Deepened to where it reads, and no
+       further — it is a picture of a direction, not a colour to match. */
+    --lk-warmer-ramp: linear-gradient(90deg, #f7efe3, #e8892c);
+    --lk-cooler-ramp: linear-gradient(90deg, #f7efe3, #7ba7e0);
+    /* A lamp that is ON, drawn rather than named: the one warm accent in an
+       interface that is otherwise entirely violet, because "on" is a picture of
+       light and the brand colour is a picture of the app. */
+    --lk-lamp-lit: #f0b429;
+    --lk-lamp-glow: rgba(240, 180, 41, .22);
     --lk-handle-shadow: 0 2px 6px rgba(16, 24, 40, .2);
     /* A small mark lifted off whatever it is drawn ON — the curve chart's
        selected point, which sits on top of a bar of any colour. */
@@ -366,9 +381,15 @@
      the palette, which a white gap did not against the pale ones. */
   #bt-root .swatch[aria-pressed="true"] { border: 2.5px solid var(--lk-accent);
                                        box-shadow: 0 0 0 3px var(--lk-ring); }
-  /* The sixteen that fold out: same set, half the size, eight across. */
+  /* The sixteen that fold out: same set, half the size, eight across.
+
+     18px above them, not the 7px between the featured rows: at the same gap the
+     fold-out read as two more rows of the grid above it rather than as the set
+     that had just been opened, and the eye had to measure swatch sizes to find
+     where one group ended. The space is what separates them; both sets are
+     still the same palette, so nothing stronger than space is wanted. */
   #bt-root .swatches.more { grid-template-columns: repeat(8, 1fr); gap: 6px;
-                         margin: 7px 0 0; }
+                         margin: 18px 0 0; }
   #bt-root .swatches.more .swatch { height: 28px; min-height: 28px; border-radius: 7px; }
 
   /* The day strip: a picture of the whole day, drawn once and reused. */
@@ -395,27 +416,73 @@
 
   /* ---- this view only ---------------------------------------------------- */
 
-  #bt-root .gestures { background: var(--lk-surface); border: 1px solid var(--lk-line);
-                       border-radius: 14px; box-shadow: var(--lk-shadow);
-                       padding: 4px 14px; margin-bottom: 14px; }
+  /* THE NAMES ON THIS SCREEN ARE NOT FREE, and that is what was wrong with it.
+
+     A pair view is injected into the pairing container's OWN document (see the
+     script header), so a class name is shared with whatever the container
+     styles under the same name. This screen's rows called their two lines
+     `.button` and `.action` and their value `.job` — names that describe
+     exactly what they are, and that a UI framework is likely to have spent
+     already. On a real Homey every gesture's name came out inside the
+     container's grey pill, with its own padding and its own ink, while the
+     local render — one view alone on a white page, nothing else in the
+     document — drew the design. A render cannot show this class of defect at
+     all; only hardware can.
+
+     So the rows are built from the base's own `label · value · chevron`
+     vocabulary instead, which every other list in the app already uses and
+     which is the shape the design draws here. What is left below is the three
+     things this list does differently, and nothing else. */
+
   #bt-root .gesture .what { flex: 1; }
-  #bt-root .gesture .button { font-size: 14.5px; font-weight: 500; }
-  #bt-root .gesture .action { font-size: 12px; color: var(--lk-muted); margin-top: 2px; }
-  /* A gesture with no job is not a warning. "Nothing" is a finished state: a
-     four-button remote where two buttons do nothing is a remote somebody set up
-     exactly as they meant to. */
+
+  /* WHAT IS SET AND WHAT IS NOT, before a word of the row is read.
+
+     A dot at the head of the row: filled in the app's own violet where the
+     button has a job, an empty ring where it has none. The state used to be
+     carried by the value alone — one grey word against four dark ones, at the
+     far end of the row from the name it belongs to — and counting what was
+     left to do meant reading the right-hand column downwards. A mark in the
+     margin makes the same list answer it at a glance, and the two marks differ
+     in FILL rather than in colour, so the answer survives a glance, a small
+     screen and a colour-blind reader.
+
+     It is aligned to the first line rather than to the row, because the row is
+     two lines high and a dot centred between them points at neither. */
+  #bt-root .gesture .mark { flex: none; width: 9px; height: 9px; border-radius: 50%;
+                            align-self: flex-start; margin-top: 5px;
+                            box-sizing: border-box; background: var(--lk-accent); }
+  #bt-root .gesture.unset .mark { background: none; border: 1.5px solid var(--lk-box); }
+
   /* A job reads as a VALUE on the row, not as a link: the whole row is the
      target and colouring the value accent made it look like the only tappable
-     part of it. */
-  #bt-root .gesture .job { font-size: 14px; color: var(--lk-body); text-align: right; }
-  #bt-root .gesture .job.none { color: var(--lk-muted); }
+     part of it. It carries the weight instead — the name and its job are the
+     two things this screen is a list OF, and the gesture's second line is what
+     they are read against. */
+  #bt-root .gesture .label,
+  #bt-root .gesture .value { font-weight: 600; color: var(--lk-ink); }
+  /* The job and its lights, as one line under the button's name. It takes the
+     base's row sub — 12.5px, muted — and only needs saying here because it may
+     be the longer of the two lines and must not wrap into the value. */
+  #bt-root .gesture .sub { line-height: 1.35; }
+  /* A gesture with no job is not a warning, so an unset row recedes rather than
+     alerting: no red, no badge, nothing to clear. A four-button remote where
+     two buttons do nothing is a remote somebody set up exactly as they meant
+     to, and this row says so quietly enough to be left alone. */
+  #bt-root .gesture.unset .label,
+  #bt-root .gesture.unset .value { font-weight: 400; color: var(--lk-muted); }
+
+  /* The row a real press landed on. It is the only feedback that the press was
+     heard AT ALL on a screen that may be scrolled well away from it, and it
+     used to be a class the JS added and no rule drew. */
+  #bt-root .gesture.sel { background: var(--lk-accent-tint); border-radius: 8px; }
 
   /* In a card of its own, with the indicator on the right where an indicator
      goes. Loose on the page it read as a caption on the list above it. */
   #bt-root .hint { display: flex; align-items: center; gap: 10px;
                    background: var(--lk-flat-bg); border-radius: 12px;
                    padding: 13px 14px; font-size: 13.5px; color: var(--lk-body);
-                   margin: 0 0 16px; min-height: 44px; box-sizing: border-box; }
+                   margin: 0 0 14px; min-height: 44px; box-sizing: border-box; }
   #bt-root .hint span:first-child { flex: 1; }
   #bt-root .hint .dot { flex: none; width: 8px; height: 8px; border-radius: 50%;
                         background: var(--lk-accent-line); }
@@ -428,18 +495,23 @@
 
   <div id="bt-error" class="msg bad" style="display:none;"></div>
 
-  <div class="gestures" id="bt-list"></div>
-
   <!--
     Listening runs while this screen is open: press a button on the remote and
     the row it belongs to is scrolled to and highlighted. It is an accelerant,
     never the only path — a card-only remote is never heard (platform §4), and
     every row is tappable regardless.
+
+    ABOVE the list, because it is an instruction for using the list and not a
+    footnote about it: below, it was read after the decision it was offering to
+    speed up, and on a remote with more rows than fit a screen it was never read
+    at all.
   -->
   <div class="hint">
     <span data-i18n="buttons.pressToJump"></span>
     <span class="dot" id="bt-dot"></span>
   </div>
+
+  <div class="card rows" id="bt-list"></div>
 
 </div>
 
@@ -523,19 +595,34 @@ function __lkBootBt(Homey) {
   }
 
   function renderGesture(gesture) {
-    var row = node('button', 'row gesture');
+    var job = state.jobs[gesture.key];
+
+    // The row carries the state, not one span inside it: the dot, the name and
+    // the value all say the same thing, and they say it from one class.
+    var row = node('button', 'row gesture' + (job ? '' : ' unset'));
     row.type = 'button';
     row.dataset.key = gesture.key;
 
+    row.appendChild(node('span', 'mark'));
+
+    /**
+     * The button on top, what it does UNDER it — job and lights in one line.
+     *
+     * The gesture used to take both lines ("Top" over "Pressed") and the job sat
+     * at the right-hand end as a value. That left nowhere to say which lights a
+     * button drives, and a per-button target that can only be found by opening a
+     * row is a feature nobody discovers: a remote whose top button dims the
+     * floor lamp reads exactly like one that dims everything.
+     */
     var what = node('div', 'what');
-    what.appendChild(node('div', 'button', gesture.buttonLabel));
-    what.appendChild(node('div', 'action', gesture.actionLabel));
+    what.appendChild(node('div', 'label', gesture.label));
+    if (job) what.appendChild(node('div', 'sub', job.detail));
     row.appendChild(what);
 
-    var job = state.jobs[gesture.key];
-    var label = node('span', 'job' + (job ? '' : ' none'),
-      job ? job.label : Homey.__('buttons.nothing'));
-    row.appendChild(label);
+    // Only an unset row carries a word on the right. A set one has said what it
+    // does on its own second line, and repeating it there was the same answer
+    // twice.
+    if (!job) row.appendChild(node('span', 'value', Homey.__('buttons.notSet')));
     row.appendChild(node('span', 'chev', '›'));
 
     row.addEventListener('click', function () {

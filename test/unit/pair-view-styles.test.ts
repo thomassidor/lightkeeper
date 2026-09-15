@@ -218,6 +218,46 @@ describe('pair view styles', () => {
     }
   });
 
+  test('no view takes a class name the pairing container itself styles', () => {
+    /**
+     * Scoping protects one view from another; it does not protect a view from
+     * the CONTAINER. A pair view is injected into the pairing container's own
+     * document, so a class name is shared with whatever that document already
+     * styles under it — and the container's stylesheet is not in this repo, so
+     * the only evidence about it is what a real Homey draws.
+     *
+     * `button` is the one name there IS evidence for. The buttons screen called
+     * each gesture's name `.button`, and on hardware every one of them came out
+     * inside the container's grey pill with its own padding and its own ink,
+     * while the local render — one view alone on a white page — drew the design.
+     * A render cannot show this class of defect at all, which is why it is
+     * written down here instead.
+     *
+     * The list is one name long on purpose: a longer one would be guesswork
+     * about a stylesheet nobody here has read. Add to it when hardware shows
+     * another, never before.
+     */
+    const TAKEN = ['button'];
+
+    for (const view of Object.keys(VIEWS)) {
+      const text = read(view);
+      const assigned = [
+        // class="…" in the markup
+        ...[...text.matchAll(/class="([^"]+)"/g)].map(match => match[1]!),
+        // node(tag, 'classes', …) in the script — the only other way one is set
+        ...[...text.matchAll(/node\('[a-z]+', '([^']+)'/g)].map(match => match[1]!),
+      ].flatMap(value => value.split(/\s+/));
+
+      for (const name of TAKEN) {
+        assert.ok(
+          !assigned.includes(name),
+          `${view} takes the class name \`${name}\`, which the pairing container `
+          + 'styles itself — the container wins on everything our rule does not declare',
+        );
+      }
+    }
+  });
+
   test('every rule is scoped to the view root', () => {
     for (const [view, root] of Object.entries(VIEWS)) {
       const style = styleBlock(view);
@@ -284,6 +324,37 @@ describe('pair view styles', () => {
         literals, [],
         `${view}: hard-coded colour(s) outside the token declarations — `
         + 'add a token instead, or the next palette change will miss it',
+      );
+    }
+  });
+
+  test('every token a view uses is a token the base defines', () => {
+    /**
+     * An undefined custom property is not an error anywhere: the declaration is
+     * simply dropped and the element renders with no background, no colour, no
+     * shadow — which on a 30x12px chip is an icon that is not there.
+     *
+     * That shipped. The "cooler" tile asked for `--lk-cooler-ramp` through a
+     * name one letter different from the one the base declares, passed the
+     * colour-literal check above (it IS a token) and drew nothing at all. Every
+     * other check in this file is about what a view says; this one is about
+     * whether the base answers.
+     */
+    const base = baseBlock(Object.keys(VIEWS)[0]!);
+    const defined = new Set(
+      [...base.matchAll(/(--lk-[\w-]+)\s*:/g)].map(match => match[1]!),
+    );
+
+    for (const view of Object.keys(VIEWS)) {
+      const used = new Set(
+        [...read(view).matchAll(/var\((--lk-[\w-]+)/g)].map(match => match[1]!),
+      );
+      const missing = [...used].filter(token => !defined.has(token));
+
+      assert.deepEqual(
+        missing, [],
+        `${view} uses ${missing.join(', ')}, which the shared base does not define — `
+        + 'the declaration is dropped in silence and the element draws nothing',
       );
     }
   });

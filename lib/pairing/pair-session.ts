@@ -188,6 +188,16 @@ export interface LightsScreen {
    * it, and the driver does.
    */
   nextView: string;
+  /**
+   * Called once a new selection has been validated and stored.
+   *
+   * The controller is the only driver with anything to do here, and what it has
+   * to do cannot live in this shared function: its buttons may each aim at a
+   * SUBSET of the chosen lights, so narrowing the selection can leave a button
+   * pointing at a light that is no longer one of the device's. Every other
+   * driver passes nothing.
+   */
+  onSelected?: (target: TargetSpec) => void | Promise<void>;
 }
 
 export function registerTargetHandlers(
@@ -232,6 +242,7 @@ export function registerTargetHandlers(
     const summary = await resolveSummary(host.app.catalog, target);
     if (revision !== selectionRevision) throw new Error('Target selection changed.');
     state.target = target;
+    await options.onSelected?.(target);
     return summary;
   });
 }

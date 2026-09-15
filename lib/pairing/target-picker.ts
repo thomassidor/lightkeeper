@@ -130,6 +130,8 @@ export interface CapabilitySupport {
   onoff: number;
   dim: number;
   light_temperature: number;
+  /** How many of them can take a colour, which is what offers the colour job. */
+  light_hue: number;
   total: number;
 }
 

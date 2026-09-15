@@ -3471,16 +3471,25 @@ async function buildController(session, open, lights) {
     `the stored key is ${status?.valid ? 'recognised' : `NOT valid (${status?.failure})`} — `
     + 'the setup screen would let a user straight through');
 
+  /**
+   * `rooms` is the screen's FIRST list — the devices Homey can hear a gesture
+   * from — and `others` is the rest of the house, which the screen folds away.
+   * Reading only the first is deliberate: this walks the path a user walks, and
+   * a run that reached past the fold would pass on a screen nobody could use.
+   * The split itself is reported below, because how much of a real house lands
+   * on each side is the thing only hardware can say.
+   */
   /** @type {any} */
   const sources = await session.emit(open, 'listSources');
+  const folded = Number(sources?.otherCount ?? 0);
   const candidates = /** @type {any[]} */ (sources?.rooms ?? [])
-    .flatMap(room => /** @type {any[]} */ (room?.devices ?? []))
+    .flatMap(room => /** @type {any[]} */ (room?.sources ?? []))
     .filter(d => (d?.eventCount ?? 0) > 0)
     .sort((a, b) => (b.eventCount ?? 0) - (a.eventCount ?? 0));
 
   if (candidates.length === 0) {
     report('T7', 'SKIPPED', 'no device on this Homey exposes any trigger events, so there '
-      + 'is no remote to build a controller from');
+      + `is no remote to build a controller from (${folded} devices folded away)`);
     return null;
   }
 
@@ -3493,12 +3502,14 @@ async function buildController(session, open, lights) {
    * usable INPUTS survived normalisation. A device can rank top on the first and
    * yield zero of the second — the first run of this command picked a dishwasher
    * with twelve cards and no usable input, then gave up as though the Homey had
-   * no remotes at all.
+   * no remotes at all. That dishwasher would now be behind the fold, because a
+   * card has to name a gesture before it is counted at all; the gap the loop
+   * covers is narrower than it was and has not closed.
    *
-   * There is deliberately no cleverness about which devices "look like" remotes:
-   * `lib/pairing/source-list.ts` says why a guess at the top of that list is
-   * worse than an honest one, and the same applies here. Ask each in turn and
-   * believe the answer.
+   * There is deliberately no cleverness here about which devices "look like"
+   * remotes. `lib/pairing/source-list.ts` says why: the screen hides what
+   * CANNOT work rather than guessing at what a device is, and the same applies
+   * to this loop. Ask each in turn and believe the answer.
    */
   const MAX_TRIES = 8;
   /** @type {any} */
@@ -3527,6 +3538,9 @@ async function buildController(session, open, lights) {
   if (rejected.length > 0) note(`skipped: ${rejected.join('; ')}`);
   note(`remote chosen: "${remote.name}" — ${picked.eventCount} usable input(s) across `
     + `${picked.controls.length} control(s)`);
+  // Only hardware can say how much of a real house the picker puts on screen
+  // and how much it folds away, and that ratio is the whole point of the split.
+  note(`remote picker: ${candidates.length} device(s) shown, ${folded} folded away`);
 
   await session.emit(open, 'selectTargets', targetOfLight(lights.controller));
 

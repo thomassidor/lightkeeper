@@ -104,6 +104,21 @@
                                     #f2e6d6, #eaf0fb, #dbe8fb);
     --lk-bright-ramp: linear-gradient(90deg, #221a3d, #43318a, #7a5fc4,
                                       #b9a6e4, #ece5f9);
+    /* The two ENDS of the warmth axis, for the two tiles that nudge along it
+       rather than setting it. The whole ramp draws the same picture on both,
+       which is no picture at all, so each of these runs from the middle of
+       --lk-warm-ramp out to one end of it.
+       The cool end is DEEPER than that ramp's own #dbe8fb: at 30x12px on white
+       the real end of the axis is a chip with no edge, so the tile that said
+       "cooler" showed nothing at all. Deepened to where it reads, and no
+       further — it is a picture of a direction, not a colour to match. */
+    --lk-warmer-ramp: linear-gradient(90deg, #f7efe3, #e8892c);
+    --lk-cooler-ramp: linear-gradient(90deg, #f7efe3, #7ba7e0);
+    /* A lamp that is ON, drawn rather than named: the one warm accent in an
+       interface that is otherwise entirely violet, because "on" is a picture of
+       light and the brand colour is a picture of the app. */
+    --lk-lamp-lit: #f0b429;
+    --lk-lamp-glow: rgba(240, 180, 41, .22);
     --lk-handle-shadow: 0 2px 6px rgba(16, 24, 40, .2);
     /* A small mark lifted off whatever it is drawn ON — the curve chart's
        selected point, which sits on top of a bar of any colour. */
@@ -366,9 +381,15 @@
      the palette, which a white gap did not against the pale ones. */
   #rm-root .swatch[aria-pressed="true"] { border: 2.5px solid var(--lk-accent);
                                        box-shadow: 0 0 0 3px var(--lk-ring); }
-  /* The sixteen that fold out: same set, half the size, eight across. */
+  /* The sixteen that fold out: same set, half the size, eight across.
+
+     18px above them, not the 7px between the featured rows: at the same gap the
+     fold-out read as two more rows of the grid above it rather than as the set
+     that had just been opened, and the eye had to measure swatch sizes to find
+     where one group ended. The space is what separates them; both sets are
+     still the same palette, so nothing stronger than space is wanted. */
   #rm-root .swatches.more { grid-template-columns: repeat(8, 1fr); gap: 6px;
-                         margin: 7px 0 0; }
+                         margin: 18px 0 0; }
   #rm-root .swatches.more .swatch { height: 28px; min-height: 28px; border-radius: 7px; }
 
   /* The day strip: a picture of the whole day, drawn once and reused. */
@@ -394,6 +415,17 @@
   /* ==== end shared base ==== */
 
   /* ---- this view only ---------------------------------------------------- */
+
+  /* The same three rules the light picker carries, for the same reason and in
+     the same shape: a house has more devices than a screen can be scrolled
+     through, and the name is what somebody knows. Copied rather than shared
+     because the spliced blocks are the ones that appear in every view, and
+     these appear in two. */
+  #rm-root .search { display: flex; align-items: center; background: var(--lk-flat-bg);
+                     border-radius: 11px; padding: 11px 13px; margin-bottom: 14px;
+                     min-height: 44px; box-sizing: border-box; }
+  #rm-root .search input { border: none; background: none; padding: 0; font-size: 14.5px; }
+  #rm-root .search input:focus { outline: none; box-shadow: none; }
 
   #rm-root .remotes { background: var(--lk-surface); border: 1px solid var(--lk-line);
                       border-radius: 14px; box-shadow: var(--lk-shadow);
@@ -426,6 +458,12 @@
                          display: flex; align-items: center;
                          border-bottom: 1px solid var(--lk-line); }
 
+  /* The line under the list that says what was folded away, and the one under
+     the fold that says what the second list is. Both are the muted ink at the
+     same size as the light picker's count line, because they answer the same
+     question — how much of the house is not on screen. */
+  #rm-root .count-line { font-size: 13px; color: var(--lk-muted); margin: 0 2px 14px; }
+
   /* Pressing a button is a shortcut, not a step: one accent line under the
      list, centred, rather than a row in a card of its own pretending to open
      something the way every other chevron row does. */
@@ -451,6 +489,10 @@
 
   <div id="rm-error" class="msg bad" style="display:none;"></div>
 
+  <div class="search">
+    <input type="text" id="rm-search" autocomplete="off" />
+  </div>
+
   <div id="rm-rooms"></div>
   <div class="empty" id="rm-empty" style="display:none;" data-i18n="remote.none"></div>
 
@@ -464,6 +506,27 @@
           data-i18n="remote.pressToFind"></button>
 
   <div id="rm-msg" class="msg" style="display:none;"></div>
+
+  <!--
+    The rest of the house, folded.
+
+    Every device Homey knows about is still here and still selectable — a remote
+    whose events only arrive through a route this app cannot count is rare but
+    real, and the answer to "my remote is not in the list" has to be a row the
+    user can open rather than a dead end. What it is not is the first thing on
+    the screen.
+  -->
+  <div id="rm-otherBlock" style="display:none;">
+    <div class="count-line" id="rm-otherWhy" data-i18n="remote.otherWhy"></div>
+    <div class="card rows" id="rm-otherRow">
+      <button class="row" id="rm-otherToggle" type="button">
+        <span class="label" data-i18n="remote.showOther"></span>
+        <span class="value" id="rm-otherCount"></span>
+        <span class="chev">&rsaquo;</span>
+      </button>
+    </div>
+    <div id="rm-others" style="display:none;"></div>
+  </div>
 </div>
 
 <script type="text/javascript">
@@ -478,6 +541,15 @@
  * how many buttons, how many events — because that is what tells somebody they
  * have picked the right one, and because a remote the app cannot read anything
  * from has to say so here rather than three screens later.
+ *
+ * TWO lists, and a search box over both. The first holds the devices Homey can
+ * hear a gesture from; the second holds the rest of the house, folded behind
+ * one row. This screen used to draw every device on the Homey as one
+ * alphabetical run — a hundred-odd rows on an ordinary house, nearly all of
+ * them lamps, plugs and sensors that `selectSource` would refuse — and the one
+ * remote somebody was looking for was somewhere in it. The split is
+ * `buildSourceList` in lib/pairing/source-list.ts, which is also where the
+ * argument for folding rather than filtering is written down.
  */
 function __lkBootRm(Homey) {
   var __root = document.getElementById('rm-root');
@@ -519,13 +591,30 @@ function __lkBootRm(Homey) {
     reattachText: document.getElementById('rm-reattachText'),
     reattachBtn: document.getElementById('rm-reattachBtn'),
     error: document.getElementById('rm-error'),
+    search: document.getElementById('rm-search'),
     rooms: document.getElementById('rm-rooms'),
     empty: document.getElementById('rm-empty'),
     listen: document.getElementById('rm-listen'),
     msg: document.getElementById('rm-msg'),
+    otherBlock: document.getElementById('rm-otherBlock'),
+    otherWhy: document.getElementById('rm-otherWhy'),
+    otherRow: document.getElementById('rm-otherRow'),
+    otherToggle: document.getElementById('rm-otherToggle'),
+    otherCount: document.getElementById('rm-otherCount'),
+    others: document.getElementById('rm-others'),
   };
 
-  var state = { selected: null, usable: false };
+  var state = {
+    selected: null, usable: false, query: '',
+    rooms: [], others: [], otherCount: 0,
+    /**
+     * Whether the second list is open, as the USER answered it — null until
+     * they say. The default depends on what is in the first list, and that
+     * cannot be the whole rule: a screen with nothing to pick from has to open
+     * itself, and one the user then folded away must stay folded.
+     */
+    showOthers: null,
+  };
 
   function renderSteps() {
     clear(el.steps);
@@ -547,25 +636,87 @@ function __lkBootRm(Homey) {
     el.error.style.display = '';
   }
 
-  function renderRooms(rooms) {
-    clear(el.rooms);
+  function matches(source) {
+    if (!state.query) return true;
+    return source.name.toLowerCase().indexOf(state.query) !== -1;
+  }
+
+  /** Draw these rooms into this container, and answer how many rows were drawn. */
+  function renderRooms(container, rooms) {
+    clear(container);
+    var shown = 0;
     for (var i = 0; i < rooms.length; i++) {
       var room = rooms[i];
+      var list = node('div', 'list');
+      var drawn = 0;
+      for (var j = 0; j < room.sources.length; j++) {
+        if (!matches(room.sources[j])) continue;
+        list.appendChild(renderRemote(room.sources[j]));
+        drawn += 1;
+      }
+      // A room the search emptied is a room that is not on screen, not an
+      // empty card with a title.
+      if (drawn === 0) continue;
       var card = node('div', 'remotes');
       card.appendChild(node('div', 'room-title', room.zoneName));
-      var list = node('div', 'list');
-      for (var j = 0; j < room.sources.length; j++) {
-        list.appendChild(renderRemote(room.sources[j]));
-      }
       card.appendChild(list);
-      el.rooms.appendChild(card);
+      container.appendChild(card);
+      shown += drawn;
     }
-    el.empty.style.display = rooms.length === 0 ? '' : 'none';
+    return shown;
+  }
+
+  /**
+   * Both lists, and what the screen says about the one it folded.
+   *
+   * The first holds the devices Homey can hear a gesture from; the second holds
+   * every other device in the house. Nothing is removed — a remote whose events
+   * reach the Homey by a route this app cannot count ahead of time is rare and
+   * real, and "my remote is not in the list" has to have an answer on the
+   * screen rather than in a support thread.
+   */
+  function renderLists() {
+    var shown = renderRooms(el.rooms, state.rooms);
+
+    /**
+     * Searching opens the second list, and so does having nothing in the first.
+     *
+     * A fold that hides the device somebody just typed the name of is a search
+     * that did nothing, and a screen whose only content is a closed row is a
+     * screen with nothing on it. Between those two, the user's own answer wins.
+     */
+    var open = state.query ? true
+      : (state.showOthers === null ? state.rooms.length === 0 : state.showOthers);
+
+    var otherShown = 0;
+    if (open) otherShown = renderRooms(el.others, state.others);
+    else clear(el.others);
+
+    el.others.style.display = open && otherShown > 0 ? '' : 'none';
+    el.otherBlock.style.display = state.otherCount > 0 ? '' : 'none';
+    // The fold is meaningless while a search is running: everything that
+    // matches is already on screen, in both lists.
+    el.otherRow.style.display = state.query ? 'none' : '';
+    el.otherToggle.querySelectorAll('.label')[0].textContent =
+      Homey.__(open ? 'remote.hideOther' : 'remote.showOther');
+    el.otherCount.textContent = String(state.otherCount);
+
+    if (shown + otherShown > 0) {
+      el.empty.style.display = 'none';
+      return;
+    }
+    // Two different nothings. "Add one to Homey first" is wrong advice for a
+    // house full of devices and a search box with a typo in it.
+    el.empty.textContent = Homey.__(state.query ? 'remote.noMatch' : 'remote.none');
+    el.empty.style.display = '';
   }
 
   function renderRemote(source) {
     var row = node('button', 'remote');
     row.type = 'button';
+    // The id on the row is what render() finds it again by, so a selection can
+    // be moved without rebuilding the list.
+    row.dataset.id = source.id;
     row.setAttribute('aria-pressed', state.selected === source.id ? 'true' : 'false');
     row.appendChild(node('div', 'box', '✓'));
 
@@ -602,9 +753,13 @@ function __lkBootRm(Homey) {
     emit('selectSource', source.id).then(function (found) {
       state.usable = !!found.usable;
       if (found.usable) {
+        // `controls` is the list of the remote's controls, not a count of them:
+        // the buttons screen is built from it, and the hardware script reads
+        // its length too. Passed whole, the message read "[object Object]".
+        var controls = found.controls || [];
         show('ok', Homey.__('remote.found', {
           name: found.deviceName,
-          buttons: found.controls,
+          buttons: controls.length,
           events: found.eventCount
         }));
       } else {
@@ -619,11 +774,36 @@ function __lkBootRm(Homey) {
     });
   }
 
+  /**
+   * Mark the chosen remote, and only it.
+   *
+   * The tick is drawn by `.remote[aria-pressed="true"] .box`, so this is the
+   * whole of what selection LOOKS like. It used to clear every row and set
+   * none, which meant a screen that answered a tap with a message and no
+   * visible choice — and, on repair, a pre-selected remote nothing showed.
+   */
   function render() {
-    var rows = el.rooms.querySelectorAll('.remote');
-    for (var i = 0; i < rows.length; i++) rows[i].setAttribute('aria-pressed', 'false');
-    render.selected = state.selected;
+    // Both lists: the chosen remote can be in either, and on repair it is in
+    // the first whatever it now reports (see buildSourceList).
+    var rows = __root.querySelectorAll('.remote');
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].setAttribute('aria-pressed',
+        rows[i].getAttribute('data-id') === state.selected ? 'true' : 'false');
+    }
   }
+
+  el.search.addEventListener('input', function () {
+    state.query = el.search.value.trim().toLowerCase();
+    renderLists();
+  });
+
+  el.otherToggle.addEventListener('click', function () {
+    // Read the drawn state rather than flipping a null: the row's label already
+    // says which way it goes, and toggling `null` would send the first tap the
+    // wrong way on a screen whose first list is empty.
+    state.showOthers = el.others.style.display === 'none';
+    renderLists();
+  });
 
   el.listen.addEventListener('click', function () { Homey.showView('listen'); });
 
@@ -648,11 +828,14 @@ function __lkBootRm(Homey) {
   }).catch(function () { });
 
   emit('listSources').then(function (payload) {
-    renderRooms(payload.rooms || []);
-    if (payload.current) {
-      state.selected = payload.current;
-      render();
-    }
+    state.rooms = payload.rooms || [];
+    state.others = payload.others || [];
+    state.otherCount = payload.otherCount || 0;
+    // The whole house, because the search box spans both lists: a placeholder
+    // counting only the first would promise less than it searches.
+    el.search.placeholder = Homey.__('remote.search', { count: payload.total || 0 });
+    if (payload.current) state.selected = payload.current;
+    renderLists();
   }).catch(fail);
 }
 

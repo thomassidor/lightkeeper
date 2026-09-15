@@ -2,17 +2,20 @@ import type { LightkeeperApp } from '../../lib/app-contract';
 import { mintDeviceId } from '../../lib/bridge/flow-bridge-manager';
 import Homey from 'homey';
 import { PressListener } from '../../lib/pairing/press-listener';
-import { registerIntroHandler, registerReviewHandler } from '../../lib/pairing/flow-screens';
+import {
+  colourSwatch, registerIntroHandler, registerReviewHandler,
+} from '../../lib/pairing/flow-screens';
 
 import {
-  DEFAULT_BEHAVIOR, FUNCTION_CAPABILITY, FUNCTION_NEEDS_PRESET,
+  DEFAULT_BEHAVIOR, FUNCTION_CAPABILITY, FUNCTION_PRESET,
   type LightFunction, type MappingRule,
 } from '../../lib/mapping/mapping-types';
+import { FEATURED_COLORS, PALETTE } from '../../lib/circadian/palette';
 import {
   CURRENT_SCHEMA_VERSION, dedupeByInputKey, type ControllerProfile,
 } from '../../lib/profiles/controller-profile';
 import { validateMappingRules } from '../../lib/validation/pairing-dto';
-import { availableFunctions } from '../../lib/mapping/mapping-engine';
+import { availableFunctions, honouredFunctions } from '../../lib/mapping/mapping-engine';
 import { groupByControl, type SelectableInput } from '../../lib/inputs/selectable-input';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
 import { HealthMonitor } from '../../lib/runtime/health-monitor';
@@ -20,8 +23,10 @@ import { findUncompilableBindings } from '../../lib/bridge/flow-binding-compiler
 import {
   resolveSummary, targetDeviceIds, targetLights,
 } from '../../lib/pairing/target-picker';
-import { groupSourcesByRoom } from '../../lib/pairing/source-list';
-import { mappingGroups, mappingRuleRows, ruleTargetFor } from '../../lib/pairing/mapping-screen';
+import { buildSourceList } from '../../lib/pairing/source-list';
+import {
+  mappingGroups, mappingRuleRows, ruleTargetFrom,
+} from '../../lib/pairing/mapping-screen';
 import { deriveControllerName } from '../../lib/pairing/derive-name';
 import {
   handlerRegistrar,
@@ -215,9 +220,24 @@ module.exports = class ControllerDriver extends Homey.Driver {
     // -------------------------------------------------------------- sources
 
     handler('listSources', async () => {
-      const devices = await this.app.catalog.allDevices();
+      // Lightkeeper's own devices are excluded the way they are from the light
+      // picker: a schedule or a circadian light is not a remote, it carries
+      // generated capability cards like anything else, and offering one here
+      // would only ever be noise. `lightCandidates()` has made the same
+      // exclusion since it was written; this list had not.
+      const devices = (await this.app.catalog.allDevices())
+        .filter(device => !this.app.catalog.isOwnDevice(device));
       const ranked = await this.app.discovery.rankSources(devices);
-      return { rooms: groupSourcesByRoom(ranked as any[], state.sourceDeviceId) };
+      // `current` as well as the rooms: repair opens on the remote the
+      // controller was built from, and the screen marks it from this rather
+      // than from each source's own `selected` — one field to read instead of
+      // a search through every room.
+      return {
+        ...buildSourceList(ranked as any[], state.sourceDeviceId),
+        /** Both lists, for the search box that spans both. */
+        total: ranked.length,
+        current: state.sourceDeviceId ?? null,
+      };
     });
 
     handler('selectSource', async (deviceId: string) => {
@@ -266,6 +286,28 @@ module.exports = class ControllerDriver extends Homey.Driver {
       stepIndex: 2,
       stepCount: 4,
       nextView: 'buttons',
+      /**
+       * Narrowing the lights re-aims the buttons that named one of them.
+       *
+       * A button may drive a SUBSET of the device's lights, so unticking a lamp
+       * on this screen can leave a rule pointing at a light the device no longer
+       * targets — which the runtime would refuse to write to anyway, leaving a
+       * row that reads as configured and moves nothing.
+       *
+       * A rule left with nothing falls back to "all of them" rather than being
+       * deleted: the job was a decision and the lights were a refinement of it,
+       * so the refinement is what goes. It is not a silent change either — the
+       * buttons screen is the very next thing this flow shows, and every row
+       * says which lights it drives.
+       */
+      onSelected: async target => {
+        const kept = new Set(await targetDeviceIds(this.app.catalog, target));
+        state.mappings = state.mappings.map(rule => {
+          if (rule.target?.kind !== 'devices') return rule;
+          const narrowed = rule.target.deviceIds.filter(id => kept.has(id));
+          return { ...rule, target: ruleTargetFrom(narrowed) };
+        });
+      },
     });
 
     // --------------------------------------------------------------- review
@@ -325,19 +367,38 @@ module.exports = class ControllerDriver extends Homey.Driver {
     handler('getButtons', async () => {
       if (!state.target) throw new Error('Choose some lights first.');
 
-      const jobs: Record<string, { label: string }> = {};
+      /**
+       * The job AND the lights it drives, on the row, as one line.
+       *
+       * Per-button lights would otherwise be a setting you can only discover by
+       * opening a row and reading a checklist — and a remote whose top button
+       * dims the floor lamp while its bottom button dims everything is
+       * indistinguishable, on this screen, from one that does neither. The
+       * summary is what makes the whole mapping legible without opening
+       * anything.
+       */
+      const lights = await targetLights(this.app.catalog, state.target);
+
+      const jobs: Record<string, { label: string; detail: string }> = {};
       for (const rule of state.mappings) {
         if (rule.inputKey === null) continue;
-        jobs[rule.inputKey] = { label: this.homey.__(`functions.${rule.function}`) };
+        const label = this.homey.__(`functions.${rule.function}`);
+        const aimed = await this.lightsPhrase(rule.target, lights);
+        jobs[rule.inputKey] = {
+          label,
+          // One light in the whole device and the second half says nothing: it
+          // is the same lamp on every row, and the row is shorter without it.
+          detail: aimed === null ? label : this.homey.__('buttons.detail', { job: label, lights: aimed }),
+        };
       }
 
       return {
         gestures: state.catalogue.map(input => ({
           key: input.key,
-          // Split so a control with one action does not read "Top — Press" when
-          // "Top" is the whole of what there is to say.
-          buttonLabel: input.label.split(' — ')[0],
-          actionLabel: input.label.split(' — ').slice(1).join(' — '),
+          // "Top · Press" as ONE line, because the row's second line now carries
+          // the job and its lights. Split on the normalizer's own separator so a
+          // control with no action of its own ("1 up rotary") stays as it is.
+          label: input.label.split(' — ').join(' · '),
         })),
         jobs,
       };
@@ -365,25 +426,80 @@ module.exports = class ControllerDriver extends Homey.Driver {
       const input = state.catalogue.find(candidate => candidate.key === state.editing);
       const rule = state.mappings.find(candidate => candidate.inputKey === state.editing);
 
+      /**
+       * A retired job keeps its tile for as long as THIS button is the one
+       * using it.
+       *
+       * `availableFunctions` is what may be chosen and no longer includes
+       * `temperature_cycle` (see RETIRED_FUNCTIONS). A button already assigned
+       * to it would otherwise open an editor with nothing selected, which reads
+       * as "this button does nothing" about a button that does something.
+       */
+      const honoured = honouredFunctions(summary.support);
+      const tiles = rule && !offered.includes(rule.function) && honoured.includes(rule.function)
+        ? [...offered, rule.function]
+        : offered;
+
+      const lights = await targetLights(this.app.catalog, state.target);
+      const aimed = rule?.target ? await targetDeviceIds(this.app.catalog, rule.target) : null;
+
       return {
-        title: input?.label ?? '',
+        title: input ? input.label.split(' — ').join(' · ') : '',
         /**
-         * "Nothing" first, and it is a real choice rather than an absence.
+         * Nine jobs as a grid, and "do nothing" is NOT one of them.
          *
-         * A button with no job is a finished button; offering it as an option is
-         * what stops an unassigned row reading as work left undone.
+         * A button with no job is a finished button, so the absence of a job is
+         * offered as plainly as any job — but apart from the grid rather than as
+         * a tenth kind of job inside it. The screen draws the separation; this
+         * list is only the grid's own contents.
          */
-        jobs: [
-          { id: null, label: this.homey.__('job.nothing'), needsPreset: false },
-          ...offered.map(fn => ({
-            id: fn,
-            label: this.homey.__(`functions.${fn}`),
-            needsPreset: FUNCTION_NEEDS_PRESET[fn],
-          })),
-        ],
+        jobs: tiles.map(fn => ({
+          id: fn,
+          label: this.homey.__(`functions.${fn}`),
+          /** 'none' | 'brightness' | 'colour' — which editor the tile opens. */
+          preset: FUNCTION_PRESET[fn],
+        })),
         chosen: rule?.function ?? null,
-        needsPreset: rule ? FUNCTION_NEEDS_PRESET[rule.function] : false,
+        presetKind: rule ? FUNCTION_PRESET[rule.function] : 'none',
         preset: rule?.preset ?? null,
+        /**
+         * The same closed palette a Colour Curve Light chooses from, painted by
+         * the view from the two axes rather than from a hex string: there is no
+         * hex anywhere in the palette, and inventing one here would be a second
+         * definition of "amber" to keep in step.
+         */
+        colors: PALETTE.map(colour => ({
+          id: colour.id,
+          label: this.homey.__(colour.labelKey),
+          /**
+           * The CSS the swatch is painted in, computed HERE.
+           *
+           * `colourSwatch()` already turns Homey's two normalised axes into an
+           * hsl() a browser will paint, and the curve screen carries a second
+           * copy of that maths because its chart repaints on every drag and
+           * cannot ask the driver. This screen draws its swatches once, so it
+           * asks — a third copy of two magic curves is a third place to get
+           * them wrong.
+           */
+          swatch: colourSwatch(colour),
+        })),
+        featuredColors: FEATURED_COLORS,
+        /**
+         * WHICH lights, and the answer is a subset of the device's own — never
+         * the whole Homey. The second half of the sentence this screen is:
+         * this button does THIS, to THESE.
+         */
+        lights: lights.map(light => ({ id: light.id, name: light.name })),
+        /**
+         * "All three lights", as a phrase rather than as a field.
+         *
+         * Composed here because the view cannot: a count as a WORD is a locale
+         * lookup per number, and `lib/` and the views are both the wrong side
+         * of `homey.__` for that.
+         */
+        allLabel: this.homey.__('job.allLights', { count: this.countWord(lights.length) }),
+        /** null means all of them, and keeps meaning that as the room changes. */
+        chosenLights: aimed,
       };
     });
 
@@ -397,7 +513,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
      */
     handler('setGesture', async (payload: unknown) => {
       if (!state.editing) throw new Error('No button is being edited.');
-      const asked = payload as { job?: unknown; preset?: unknown } | undefined;
+      const asked = payload as { job?: unknown; preset?: unknown; lights?: unknown } | undefined;
       const job = typeof asked?.job === 'string' ? asked.job : null;
 
       const kept = state.mappings.filter(rule => rule.inputKey !== state.editing);
@@ -407,16 +523,31 @@ module.exports = class ControllerDriver extends Homey.Driver {
         return { cleared: true };
       }
 
+      /**
+       * `honouredFunctions`, not `availableFunctions`: a button already set to a
+       * retired job keeps its tile, so the screen can send that job straight
+       * back at us when something else on the row changes. Validating against
+       * what may be CHOSEN would then refuse to re-save a mapping it had just
+       * drawn as chosen.
+       */
+      const summary = await resolveSummary(this.app.catalog, state.target!);
       const { rules, dropped } = validateMappingRules(
         [{
           id: `r-${state.editing}`,
-          groupKey: '__all__',
+          /**
+           * Passed through unread: null is "all of this controller's lights"
+           * and a list is a subset, and both are checked against what the
+           * previous screen actually chose — a pair session is a scriptable Web
+           * API surface (platform §14), so a light nobody selected must not
+           * become a target by being named here.
+           */
+          lights: asked?.lights ?? null,
           function: job,
           inputKey: state.editing,
           ...(asked?.preset ? { preset: asked.preset } : {}),
         }],
         new Set(await targetDeviceIds(this.app.catalog, state.target!)),
-        availableFunctions((await resolveSummary(this.app.catalog, state.target!)).support),
+        honouredFunctions(summary.support),
         new Set(state.catalogue.map(input => input.key)),
       );
 
@@ -428,7 +559,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
         id: rules[0]!.id,
         function: rules[0]!.function,
         inputKey: rules[0]!.inputKey,
-        target: null,
+        target: ruleTargetFrom(rules[0]!.deviceIds),
         ...(rules[0]!.preset !== undefined ? { preset: rules[0]!.preset } : {}),
       }];
       return { set: true };
@@ -550,8 +681,8 @@ module.exports = class ControllerDriver extends Homey.Driver {
           id: r.id,
           function: r.function,
           inputKey: r.inputKey,
-          // '__all__' inherits the controller's own targets.
-          target: ruleTargetFor(r.groupKey),
+          // null inherits the controller's own targets.
+          target: ruleTargetFrom(r.deviceIds),
         }));
       return { count: state.mappings.length };
     });
@@ -648,6 +779,58 @@ module.exports = class ControllerDriver extends Homey.Driver {
    * somebody adds a lamp to that room, and this line is the only place that
    * difference is ever visible.
    */
+  /**
+   * Which lights a rule drives, as the shortest true phrase for them.
+   *
+   * null when there is nothing worth saying — a device with one light says the
+   * same name on every row, and a row is clearer without it.
+   *
+   * The shape of the answer is the whole point: "all three" for the default
+   * stays short whether the device has three lights or thirty, a subset of one
+   * or two is worth naming outright, and past that a count beats a list that
+   * would wrap onto a third line. The alternative — naming every light — is
+   * what made the old mapping grid unreadable on a house with nine lamps.
+   */
+  private async lightsPhrase(
+    target: TargetSpec | null,
+    lights: Array<{ id: string; name: string }>,
+  ): Promise<string | null> {
+    if (lights.length <= 1) return null;
+
+    if (target === null) {
+      return this.homey.__('targets.allCount', { count: this.countWord(lights.length) });
+    }
+
+    const aimed = new Set(await targetDeviceIds(this.app.catalog, target));
+    const names = lights.filter(light => aimed.has(light.id)).map(light => light.name);
+
+    if (names.length === lights.length) {
+      return this.homey.__('targets.allCount', { count: this.countWord(lights.length) });
+    }
+    // Every named light has gone. Not reachable from the screens — narrowing the
+    // selection re-aims the rule first — but this reads a STORED profile, and
+    // saying so beats an empty half-sentence.
+    if (names.length === 0) return this.homey.__('targets.noneOfThem');
+    if (names.length === 1) return names[0]!;
+    if (names.length === 2) {
+      return this.homey.__('targets.pair', { first: names[0]!, second: names[1]! });
+    }
+    return this.homey.__('targets.someLights', { count: this.countWord(names.length) });
+  }
+
+  /**
+   * A small count as a word, because "all three" is a phrase and "all 3" is a
+   * field. Past twelve the digits read better than the words do.
+   */
+  private countWord(count: number): string {
+    const words = [
+      'zero', 'one', 'two', 'three', 'four', 'five', 'six',
+      'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',
+    ];
+    const word = words[count];
+    return word === undefined ? String(count) : this.homey.__(`count.${word}`);
+  }
+
   private async lightsSummary(
     target: TargetSpec,
     summary: { count: number },

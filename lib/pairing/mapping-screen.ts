@@ -87,6 +87,15 @@ export function mappingGroups(lights: PickerLight[], allLightsLabel: string): Ma
  * and the row it belongs to would silently vanish from the screen. The user's
  * mapping is still in the profile; there is simply nowhere on the page it
  * appears.
+ *
+ * A rule naming SEVERAL lights reads here as `__all__`, and that is a limit of
+ * this screen rather than of the rule: a section is one light or all of them,
+ * which is the most the screen these rows were written for could say. The
+ * buttons flow stores subsets and draws them itself — `getButtons` names them on
+ * the row and `getGesture` ticks them in a checklist. Nothing renders these rows
+ * any more; `getMapping` is kept because `setRules` is, and `setRules` is kept
+ * because it is a scriptable Web API surface the hardware pass drives
+ * (platform §14).
  */
 export function mappingRuleRows(rules: MappingRule[], lights: PickerLight[]): MappingRuleRow[] {
   const single = singleLightOf(lights);
@@ -109,9 +118,12 @@ export function mappingRuleRows(rules: MappingRule[], lights: PickerLight[]): Ma
  * The inverse of the `groupKey` above, and the reason it is here rather than
  * inline: the two must agree, and a round trip through both is the only way to
  * say so in a test.
+ *
+ * It takes a LIST because a rule may name several lights — the buttons flow
+ * stores a subset of the device's own, and one device id was the most the
+ * screen this replaced could say. The legacy spelling is read one layer up, in
+ * `validateMappingRules`, which turns either spelling into this one.
  */
-export function ruleTargetFor(groupKey: string | null | undefined): TargetSpec | null {
-  return groupKey && groupKey !== '__all__'
-    ? { kind: 'devices', deviceIds: [groupKey] }
-    : null;
+export function ruleTargetFrom(deviceIds: string[] | null): TargetSpec | null {
+  return deviceIds && deviceIds.length > 0 ? { kind: 'devices', deviceIds } : null;
 }

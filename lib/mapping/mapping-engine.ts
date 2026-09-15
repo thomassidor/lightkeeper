@@ -1,8 +1,11 @@
 import type { InputEvent } from '../inputs/input-event';
 import type { LightIntent, TargetSpec } from '../outputs/light-intent';
-import type {
-  ControllerBehavior, LightFunction, MappingPreset, MappingRule,
+import {
+  FUNCTION_CAPABILITY, RETIRED_FUNCTIONS,
+  isBrightnessPreset, isColorPreset,
+  type ControllerBehavior, type LightFunction, type MappingPreset, type MappingRule,
 } from './mapping-types';
+import { paletteColor } from '../circadian/palette';
 
 /**
  * Resolves normalised events into configured light intents.
@@ -69,13 +72,32 @@ export function intentForLightFunction(
      * at whatever the lamps were last set to.
      */
     case 'brightness_set':
-      return preset === undefined
-        ? { type: 'power', value: true }
-        : {
+      return preset !== undefined && isBrightnessPreset(preset)
+        ? {
           type: 'preset_absolute',
           brightness: preset.brightness,
           ...(preset.temperature !== undefined ? { temperature: preset.temperature } : {}),
-        };
+        }
+        : { type: 'power', value: true };
+
+    /**
+     * The same closed-palette colour a Colour Curve Light writes, on a press.
+     *
+     * It degrades the same way `brightness_set` does, and for one more reason
+     * besides a missing preset: a palette id that no longer resolves. Removing a
+     * colour from the palette is documented as unsafe for exactly this class of
+     * reader, but a hand-edited profile can still name one — and turning the
+     * lights on is the honest answer to "this button was meant to produce
+     * light", where writing a hue nobody chose is not.
+     */
+    case 'color_set': {
+      const colour = preset !== undefined && isColorPreset(preset)
+        ? paletteColor(preset.color)
+        : undefined;
+      return colour === undefined
+        ? { type: 'power', value: true }
+        : { type: 'color_absolute', hue: colour.hue, saturation: colour.saturation };
+    }
   }
   // No default arm: the switch covers every LightFunction, and an added member
   // must fail to compile here rather than silently resolve to undefined.
@@ -113,13 +135,43 @@ export class MappingEngine {
   }
 }
 
-/** Which functions are offerable given the targets' combined capabilities. */
+/**
+ * Which functions are offerable given the targets' combined capabilities.
+ *
+ * The order is the grid the buttons screen draws, read left to right: the power
+ * row, the brightness row, the colour row, each ending in the one that sets a
+ * value rather than nudging one. A screen that lays them out in three columns
+ * and a list that yields them in another order would drift the first time a
+ * function was added, so the order lives here with the rule.
+ *
+ * `temperature_cycle` is deliberately absent — see RETIRED_FUNCTIONS. A stored
+ * rule that names it is still honoured; this list is what a person may CHOOSE.
+ */
 export function availableFunctions(
-  support: { onoff: number; dim: number; light_temperature: number },
+  support: { onoff: number; dim: number; light_temperature: number; light_hue?: number },
 ): LightFunction[] {
   const available: LightFunction[] = [];
-  if (support.onoff > 0) available.push('toggle', 'on', 'off');
+  if (support.onoff > 0) available.push('on', 'off', 'toggle');
   if (support.dim > 0) available.push('brightness_up', 'brightness_down', 'brightness_set');
-  if (support.light_temperature > 0) available.push('warmer', 'colder', 'temperature_cycle');
+  if (support.light_temperature > 0) available.push('warmer', 'colder');
+  if ((support.light_hue ?? 0) > 0) available.push('color_set');
   return available;
+}
+
+/**
+ * What may be STORED, as against what may be chosen.
+ *
+ * A retired function is honoured for as long as somebody has one (see
+ * RETIRED_FUNCTIONS), so a validator that checked stored rules against
+ * `availableFunctions()` would quietly delete a working button the next time the
+ * whole set was written back. It still has to be a function the chosen lamps can
+ * perform — a warmth cycle aimed at lights with no warmth is the same dead row
+ * as any other, retired or not.
+ */
+export function honouredFunctions(
+  support: { onoff: number; dim: number; light_temperature: number; light_hue?: number },
+): LightFunction[] {
+  const offered = availableFunctions(support);
+  const capable = new Set(offered.map(fn => FUNCTION_CAPABILITY[fn]));
+  return [...offered, ...RETIRED_FUNCTIONS.filter(fn => capable.has(FUNCTION_CAPABILITY[fn]))];
 }

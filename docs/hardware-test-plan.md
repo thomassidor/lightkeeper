@@ -152,6 +152,32 @@ see a screen. Every line here needs a phone.
       circadian day and curve steppers, the schedule's seven day chips, the HOUR/MINUTE captions,
       both dashed `Add a …` buttons and the two `Remove this …` links. Report anything that reads
       oversized, mis-weighted, or out of proportion with the row it sits in.
+- [ ] **T128** **One remote, two different sets of lights.** Pair a Light Remote over three or more
+      lamps. Give the top button a job aimed at ALL of them and the bottom button the same job aimed
+      at ONE, using the checklist under "To". The buttons list must say which lights each drives —
+      "all three" against one row and the lamp's own name against the other — and then press the two
+      real buttons: exactly the named lamps may move, and nothing else in the room. Then go back to
+      step 2, untick the lamp the bottom button named, and return: that row must have been re-aimed
+      to all of them rather than left pointing at a light the device no longer has.
+- [ ] **T129** **The colour job, on a lamp that can take a colour.** Assign "Set colour", pick a
+      colour, and use Test — the lamp must land on that colour, from colour mode or from white.
+      Check the nine tiles on a set of lamps with NO colour support as well: the colour tile must be
+      absent rather than present and dead, and on lamps with no warmth the two warmth tiles too. If
+      you have a button still set to "step through warm and cool" from an earlier build, open it:
+      the tile must be there and selected, and the button must go on working.
+- [ ] **T127** **The buttons screen's rows, on the phone and nowhere else.** Open step 3 of a
+      Light Remote and look at the gesture names. Each one is plain text over its own second line —
+      "Top" above "Pressed" — on the card's white, with no pill, no box and no tint behind it. It
+      shipped drawing every name inside the pairing container's own grey button pill, because the
+      row called that element `.button` and the container styles `.button` itself. No render can
+      show this: a view rendered alone on a white page has none of the container's CSS in the
+      document with it. While you are there, check the value on the right — a job in dark ink,
+      "Not set" a step lighter — and the second line under each name at its own smaller size. Each
+      row opens with a mark: filled on a button that has a job, an empty ring on one that has not,
+      and the unset rows must read as quieter than the set ones rather than as warnings. Press a
+      real button and watch the row it belongs to: it must be scrolled to AND visibly tinted for
+      about a second.
+
 - [ ] **T126** **The colour swatches, on a phone screen in daylight.** Open a Colour Curve Light's
       step 2 and confirm the eight featured colours are eight distinguishable colours — in
       particular that "Neutral white" and "Cool white" do not read as two identical greys. Fold the
