@@ -914,6 +914,16 @@ And the stale claims the sweep turned up on the way:
   cleared all five values and switching it back on wrote a flat 80%, so one accidental tap destroyed
   the shape with no way back inside the session.
 
+### The Light Remote intro draws the three gestures, not step 3 in miniature
+
+- **The picture at the top of the Light Remote flow is three button caps — Press, Hold, Turn —
+  instead of three rows reading "Top / pressed / On and off".** Those rows were the buttons screen
+  shrunk: the screen after next, drawn twice, telling a user nothing the title had not already told
+  them. Press, hold and turn are the three things the app can actually tell apart on a remote, which
+  is the one fact somebody deciding whether to start this flow needs — a dial is not a different
+  kind of device here, it is a third gesture. A remote with no dial simply reaches step 3 with two
+  of the three rather than with a promise that was not kept.
+
 
 ## 0.5.2
 

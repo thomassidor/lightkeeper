@@ -29,6 +29,60 @@ const read = (view: string) => {
   return readFileSync(join(DRIVERS, driver!, 'pair', file!), 'utf8');
 };
 
+// -------------------------------------------------------------- the intro
+
+describe('the intro, and the picture it draws for a Light Remote', () => {
+  const intro = (hero: string) => runPairView(read('controller/intro.html'), {
+    respond: {
+      getIntro: {
+        title: 'Give the buttons a job', blurb: 'A sentence.', hero,
+        decisions: [{ what: 'Which remote', why: 'Press a button' }],
+        nextView: 'credential',
+      },
+    },
+  });
+
+  test('a remote is drawn as its three gestures, in the order a user meets them', async () => {
+    /**
+     * The hero used to be the buttons screen in miniature — three rows of
+     * "Top / pressed / On and off" — which drew a screen two steps ahead and
+     * said nothing the title had not. Press, hold and turn are what
+     * `event-normalizer.ts` can actually tell apart, so they are what the
+     * picture may promise.
+     */
+    const view = intro('remote');
+    await view.settle();
+
+    const caps = view.byId('in-hero')!.querySelectorAll('.cap');
+    assert.deepEqual(caps.map(cap => cap.className), ['cap', 'cap hold', 'cap turn']);
+    // `Homey.__` is the identity here, so a label IS the key it asks for, and
+    // locales.test.ts is what proves the key exists.
+    assert.deepEqual(
+      view.byId('in-hero')!.querySelectorAll('.lab').map(node => node.textContent),
+      ['intro.remotePress', 'intro.remoteHold', 'intro.remoteTurn'],
+    );
+  });
+
+  test('and every cap carries the disc the CSS draws the gesture on', async () => {
+    // The mark on a turned dial and the halo on a held press are both drawn on
+    // the inner disc, so a cap without one renders as an empty ring.
+    const view = intro('remote');
+    await view.settle();
+
+    for (const cap of view.byId('in-hero')!.querySelectorAll('.cap')) {
+      assert.equal(cap.children.length, 1, 'one disc per cap');
+      assert.equal(cap.children[0]!.tagName, 'b');
+    }
+  });
+
+  test('an unknown hero hides the frame rather than leaving a gap', async () => {
+    const view = intro('no-such-picture');
+    await view.settle();
+
+    assert.equal(view.byId('in-hero')!.style['display'], 'none');
+  });
+});
+
 // ---------------------------------------------------------------- the key
 
 describe('the API key screen, which now sits between the intro and step one', () => {

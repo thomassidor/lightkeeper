@@ -252,13 +252,9 @@
     "lookAgain": "Look again"
   },
   "intro": {
-    "remoteTop": "Top",
-    "remoteLeft": "Left",
-    "remotePressed": "pressed",
-    "remoteHeld": "held",
-    "remoteToggle": "On and off",
-    "remoteBrighter": "Brighter",
-    "remoteNothing": "Nothing yet",
+    "remotePress": "Press",
+    "remoteHold": "Hold",
+    "remoteTurn": "Turn",
     "circadianTitle": "Warm at night, cool at noon",
     "circadianBlurb": "Your lights follow the sun instead of sitting at one colour all day.",
     "curveTitle": "Set your own colours",

@@ -397,10 +397,10 @@
 
   /* The hero. Five small renderers share this frame, because what each device
      type does is easier to show than to say: a day of colour, a curve, a lux
-     ramp, blocks on a timeline, a remote's rows. */
+     ramp, blocks on a timeline, the three gestures a remote has. */
   /* The hero has NO ground of its own. Four of the five pictures are shapes
-     drawn straight onto the page — bars, a gradient, a list — and a grey panel
-     behind them put a box round a picture that had not asked for one. The one
+     drawn straight onto the page — bars, a gradient, three caps — and a grey
+     panel behind them put a box round a picture that had not asked for one. The one
      that does need a ground is the schedule's timeline, where the blocks are
      read AGAINST the rest of the day, and it declares it itself. */
   #in-root .hero { height: 66px; border-radius: 11px; overflow: hidden;
@@ -414,22 +414,50 @@
   #in-root .hero .block { position: absolute; top: 10px; bottom: 10px;
                           border-radius: 8px; background: var(--lk-accent); }
 
-  /* One row per thing a remote can do, which is the buttons screen in
-     miniature: the gesture as a key cap, what it is, and the job on the right. */
-  #in-root .hero.rows { display: block; height: auto; border-radius: 12px;
-                        background: var(--lk-surface);
-                        border: 1px solid var(--lk-line); padding: 4px 13px;
-                        box-sizing: border-box; }
-  #in-root .press { display: flex; align-items: center; gap: 10px; padding: 10px 0;
-                    border-bottom: 1px solid var(--lk-line); }
-  #in-root .press:last-child { border-bottom: none; }
-  #in-root .press .key { flex: none; font-weight: 600; font-size: 12px; line-height: 1;
-                         color: var(--lk-accent-strong); background: var(--lk-accent-tint);
-                         border: 1px solid var(--lk-accent-line); border-radius: 6px;
-                         padding: 5px 7px; }
-  #in-root .press .act { font-size: 12.5px; color: var(--lk-muted); }
-  #in-root .press .job { flex: 1; text-align: right; font-size: 13.5px; font-weight: 500; }
-  #in-root .press .job.none { font-weight: 400; color: var(--lk-muted); }
+  /* The three gestures a remote can offer, drawn as three button caps.
+     It used to be the buttons screen in miniature — three rows of "Top /
+     pressed / On and off" — which drew step 3 twice and said nothing the title
+     had not. What a user does not know yet is that a press, a hold and a turn
+     are three DIFFERENT things they can each give a job to, and those three are
+     exactly what `lib/inputs/event-normalizer.ts` reduces every remote in the
+     house to (`press`, `long_press`, the rotation pair). So the picture is the
+     vocabulary rather than a preview of one screen. */
+  #in-root .hero.gestures { display: flex; height: auto; gap: 8px;
+                            align-items: stretch; border-radius: 0; }
+  #in-root .gesture { flex: 1; box-sizing: border-box;
+                      background: var(--lk-surface); border: 1px solid var(--lk-line);
+                      border-radius: 12px; padding: 13px 0 11px;
+                      display: flex; flex-direction: column; align-items: center; gap: 9px; }
+  /* A cap, not an icon: the same accent ring every control on these screens is
+     drawn with, and a dark disc where a thumb lands. */
+  #in-root .cap { position: relative; width: 38px; height: 38px; border-radius: 50%;
+                  background: var(--lk-accent-tint);
+                  box-shadow: inset 0 0 0 1.5px var(--lk-accent-line);
+                  display: flex; align-items: center; justify-content: center; }
+  #in-root .cap b { position: relative; display: block; width: 21px; height: 21px;
+                    border-radius: 50%; background: var(--lk-accent); }
+  /* Held: a second ring outside the first, for a press that has not ended yet.
+     No still picture can show duration, so it is drawn as something spreading
+     outwards from the cap instead. */
+  #in-root .cap.hold::before { content: ''; position: absolute; inset: -5px;
+                               border-radius: 50%;
+                               border: 1.5px solid var(--lk-accent-soft); }
+  /* Turned: a sweep around the cap, and a mark on the disc that the sweep has
+     carried away from the top. Together they read as a dial that has been moved
+     off where it started. The direction is carried by the sweep going pale
+     rather than by an arrowhead, which at 38px comes out as three grey pixels.
+     Both ends of the sweep are the tint it is drawn on, so the seam every conic
+     gradient has falls where nothing can see it; ending on the mid-tone drew a
+     hard radius and the cap read as a pie chart. */
+  #in-root .cap.turn { background:
+      conic-gradient(from 150deg, var(--lk-accent-tint) 0deg,
+                     var(--lk-accent-mid) 200deg, var(--lk-accent-tint) 340deg); }
+  #in-root .cap.turn b { transform: rotate(38deg); }
+  #in-root .cap.turn b::after { content: ''; position: absolute; left: 50%; top: 3px;
+                                width: 2px; height: 7px; margin-left: -1px;
+                                border-radius: 1px; background: var(--lk-accent-ink); }
+  #in-root .gesture .lab { font-size: 12px; font-weight: 500; color: var(--lk-sub);
+                           line-height: 1; }
 
   /* The three or four decisions the flow is about to ask for. Naming them up
      front is the whole job of this screen: a user who knows what is coming can
@@ -585,21 +613,25 @@ function __lkBootIn(Homey) {
     }
   }
 
-  /** One row per thing a remote can do, which is the buttons screen in miniature. */
+  /**
+   * The three gestures a remote can offer: press, hold, turn.
+   *
+   * That is the vocabulary the event normalizer reduces every remote in the
+   * house to, so it is a promise the buttons screen can keep. A remote with no
+   * dial arrives at step 3 with two of the three, which is a shorter screen
+   * rather than a broken promise.
+   */
   function heroRemote() {
-    el.hero.className = 'hero rows';
-    var rows = [
-      ['intro.remoteTop', 'intro.remotePressed', 'intro.remoteToggle', false],
-      ['intro.remoteTop', 'intro.remoteHeld', 'intro.remoteBrighter', false],
-      ['intro.remoteLeft', 'intro.remotePressed', 'intro.remoteNothing', true]
-    ];
-    for (var i = 0; i < rows.length; i++) {
-      var row = node('div', 'press');
-      row.appendChild(node('span', 'key', Homey.__(rows[i][0])));
-      row.appendChild(node('span', 'act', Homey.__(rows[i][1])));
-      row.appendChild(node('span', rows[i][3] ? 'job none' : 'job',
-        Homey.__(rows[i][2])));
-      el.hero.appendChild(row);
+    el.hero.className = 'hero gestures';
+    var caps = [['', 'intro.remotePress'], ['hold', 'intro.remoteHold'],
+      ['turn', 'intro.remoteTurn']];
+    for (var i = 0; i < caps.length; i++) {
+      var tile = node('div', 'gesture');
+      var cap = node('div', caps[i][0] ? 'cap ' + caps[i][0] : 'cap');
+      cap.appendChild(node('b'));
+      tile.appendChild(cap);
+      tile.appendChild(node('span', 'lab', Homey.__(caps[i][1])));
+      el.hero.appendChild(tile);
     }
   }
 
