@@ -67,9 +67,9 @@ pass builds its own alongside it.
 The script cannot do these. Report each by its number.
 
 - [ ] **T3** Devices → Add device → Lightkeeper lists five device types, with five **different**
-  pictures. (The Room-sensing Light's is a PLACEHOLDER for this release — a flat violet disc, and a
-  publish blocker recorded in `artwork/provenance.md`.) (It draws no icon at all from a CLI install
-  — that is normal and resolves on publish.)
+  pictures. (All five are real as of 16 September 2026 — the Room-sensing Light's placeholder disc
+  was the last one, and replacing it closed the publish blocker in `artwork/provenance.md`.) (It
+  draws no icon at all from a CLI install — that is normal and resolves on publish.)
 - [ ] **T9** Press the mapped button. The lights respond.
 - [ ] **T10** Hold the ramp button. It ramps, and **stops when you let go** — and never runs longer than about 10 seconds.
 - [ ] **T11** Turn the dial. The lights move by a sensible amount — **not** straight to full.

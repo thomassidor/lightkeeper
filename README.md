@@ -282,21 +282,24 @@ reads, what it stores, and for how long.
 
 ## Changelog
 
-**0.6.0** — the current release. A fifth device type, and then everything that followed it:
+**0.6.0** — the current release.
 
-- **Room-sensing Lights**, which set brightness from how much light is already in the room, and draw
-  your sensor's own last week so "dark" and "bright" are numbers you can judge.
+- **Room-sensing Lights**, a fifth device type, which set brightness from how much light is already
+  in the room and draw your sensor's own last week so "dark" and "bright" are numbers you can judge.
+  No API key, and they never switch a light on or off.
 - **Every setup screen redrawn.** One question per screen, a numbered path through each device, and
-  a review of everything before it saves.
+  a review of everything before it saves. An API key, where one is needed, is asked for near the
+  start instead of the end.
 - **Circadian lights follow the real sun**: three parts of the day, with morning and evening
   anchored to your Homey's own sunrise and sunset instead of a fixed clock.
-- The five defects that a recorded week in a real home found — chief among them a light that
-  quietly reverts to its own settings no longer muting its device for days.
+- **A Light Remote reads as one row per button**, each able to drive its own lights, and can find
+  the right remote by listening for a press. Two new jobs: a set brightness, and a set colour.
+  Schedules keep their days in one place, and two blocks may overlap.
+- **A light that quietly reverts to its own settings no longer mutes its device for days**, and
+  switching a light off is no longer mistaken for taking it over by hand.
 - **Three device types renamed**: Light controller → **Light Remote**, Curve light → **Colour
   Curve Light**, Daylight light → **Room-sensing Light**. Names only; devices you already added
   are untouched.
-
-The recorder that produced that week is a development tool and is not part of the app you install.
 
 Earlier releases, one line each:
 

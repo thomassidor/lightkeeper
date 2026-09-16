@@ -8,1165 +8,350 @@ something says so in its own entry instead.
 
 ## 0.6.0
 
-A fifth device type, and the first thing in this app that reads a sensor rather than only writing
-to lights — and then, because none of this had shipped yet, everything that followed it: a full
-code review remediated, a week-long recorder built for development use only, and the five defects
-that recorder's first real week of evidence found.
+A fifth device type, a rewritten setup flow, and three device types renamed. Nothing in this release
+had been published, so the notes below describe what 0.6.0 **ends up** doing rather than the order it
+was built in.
 
-*Three later development versions were folded into this entry. Nothing had been published, so
-numbering the intermediate states bought nobody anything; the work is in chronological order below,
-and the three sections after the first were previously written as 0.6.1, 0.7.0 and 0.7.1. Builds
-installed on the reference Homey during that period reported those numbers, which is why the
-hardware run records and the evidence archive still name them.*
+### Room-sensing Lights, a fifth device type
 
-### Room-sensing Lights, and daylight brightness inside schedules and curves
-
-Added:
-
-- **A Room-sensing Light**: it holds its lights at a brightness that depends on how much light is in
-  the room already. Two settings — how bright the lights should be when the room is dark, and when
-  it is bright — and which of the two is larger is the user's choice rather than a mode, so the same
-  device either takes over as the daylight goes or follows the day. It reads `measure_luminance`
-  sensors the household already owns, averaging several, and where there are none it reads **how
-  high the sun is**, computed from the Homey's own position. *(The averaging was dropped later in
-  this same version — see "Every pairing screen redrawn" below. It reads one sensor.)* With no
-  sensor it also asks **when this room gets the most sun** — morning, the middle of the day,
+- **It holds its lights at a brightness that depends on how much light is in the room already.** Two
+  settings — how bright the lights should be when the room is dark, and when it is bright — and which
+  of the two is larger is the user's choice rather than a mode, so the same device either takes over
+  as the daylight goes or follows the day.
+- **It reads ONE `measure_luminance` sensor** the household already owns. Averaging several sounds
+  more robust and is not: a cupboard sensor and a windowsill sensor average to a number neither ever
+  reported, and the screen could not say whose week the lux range belonged to.
+- **Where there is no sensor it reads how high the sun is**, computed from the Homey's own position.
+  `homey:manager:geolocation` is declared for exactly that, read at the moment a brightness is
+  computed, and the latitude never leaves the Homey. The arithmetic is the standard NOAA
+  solar-position algorithm in `lib/daylight/solar-elevation.ts` — pure, no dependencies, asserted
+  against values astronomy fixes independently of any implementation. SDK v3 has no solar helper and
+  Homey's own sunrise cards fire rather than answer (platform §16).
+- **The setup screen draws that sensor's own last seven days** from Homey's Insights as a 7 × 12 grid
+  and fills both lux thresholds in from it. A default of 5 → 500 lx suited exactly one of the four
+  sensors in the reference house; two of the other three would have sat pinned at one end all day and
+  read as "this feature does nothing". The same picture says two things it would otherwise take a
+  month to notice — a sensor that barely changes all week, and one that has stopped reporting. No new
+  permission: `homey:manager:insights` does not exist, and `homey:manager:api` covers it.
+- **With no sensor it asks when the room gets the most sun** — morning, the middle of the day,
   afternoon, or not at all. The sun's height alone is symmetric about noon, so without that answer a
-  room that gets its light at 5pm was treated as though it got it at 7am, and no other setting could
-  say otherwise. It is asked as an observation rather than as a compass direction, because somebody
-  who lives in a room knows when the light comes in, and because it then absorbs what a bearing
-  cannot: an east window with a wall across it gets its sun in the afternoon. "Not at all" is the
-  default and behaves exactly as before, and no answer can ever make a room read brighter than the
-  sky itself. The question does not appear at all once a sensor is chosen — a sensor measures the
-  room, so a model of it would be a guess laid over a measurement. Like the two curve-driven types
-  it generates **no Flows** and needs no API key, it only dims lights that are already on, and it
-  never switches one on or off — brightness is never written to a light that is off, which is
-  measured rather than assumed (platform §12).
-- **A schedule window, a circadian end and a curve point can each follow the daylight**, instead of a
-  brightness typed in once. *(Removed later in this same version — see "Every pairing screen
-  redrawn" below. Following the light in the room is what a Room-sensing Light is for.)* One
-  response per device, configured on that device's own screen through a card shared byte-for-byte by
-  all four screens that carry it. The brightness that was there stays put as the **fallback** for
-  when nothing can tell how light it is — which is the reason the number sits beside the flag rather
-  than being replaced by it. A schedule reads the daylight once, at its boundary; a curve re-reads
-  it on every tick. That difference is stated on the screen, because the two look identical for the
-  first evening.
-- **`homey:manager:geolocation`**, and it is used for exactly one thing: the sun's position needs the
-  Homey's position. Two synchronous accessors, read at the moment a brightness is computed, and the
-  latitude never leaves the Homey. The arithmetic is the standard NOAA solar-position algorithm in
-  `lib/daylight/solar-elevation.ts` — pure, no dependencies, and asserted against values astronomy
-  fixes independently of any implementation (declination at the poles, `90 −` the latitude gap at
-  noon, hemispheric mirroring at an equinox, an hour per 15° of longitude). SDK v3 has no solar
-  helper and Homey's own sunrise cards fire rather than answer, so this is the whole of the
-  alternative (platform §16).
-- **A sky readout on the settings page**, above the per-device cards: the sun's current elevation and
-  every watched sensor with its reading **and that reading's age**. It is the fastest check that the
-  permission resolved, and the age is the only thing that can reveal a sensor which has stopped —
-  because a reading is deliberately never treated as stale.
-
-Fixed:
-
-- **A light whose lamps were switched off could report itself as broken.** Some Philips Hue bulbs
-  refuse a colour sent to them while they are off — the bridge answers that the lamp is "soft off" —
-  and a circadian or Colour Curve Light with pre-staging switched on kept sending it once a minute
-  for as long as the lamps were off. Each refusal counted against the lamp, so the device eventually
-  said its lights were not responding, and on a device whose lamps all behave that way it took
-  itself offline. It happened at no predictable moment and cleared itself the next morning, which is
-  why it had gone unnoticed. A refused pre-stage write is no longer counted against a lamp: from the
-  refusal alone a lamp that is merely off looks exactly like one that is dead, so it says nothing
-  either way. Pre-staging also now stops offering a colour to a lamp that has refused three times
-  running, and tries again the next time that lamp is switched on. Found by the light probe run of 4
-  September 2026, on four of thirteen colour-capable bulbs behind one bridge.
+  room that gets its light at 5pm was treated as though it got it at 7am. It is asked as an
+  observation rather than a compass direction, because somebody who lives in a room knows when the
+  light comes in, and because it absorbs what a bearing cannot: an east window with a wall across it
+  gets its sun in the afternoon. "Not at all" is the default and still brightens and darkens with the
+  day, taking the diffuse share flat. The question disappears once a sensor is chosen.
+- **A sky readout on the settings page**: the sun's current elevation, and every watched sensor with
+  its reading **and that reading's age**. The age is the only thing that can reveal a sensor which has
+  stopped, because a reading is deliberately never treated as stale.
+- Like the two curve-driven types it generates **no Flows** and needs no API key, it only dims lights
+  that are already on, and it never switches one on or off — brightness is never written to a light
+  that is off, which is measured rather than assumed (platform §12).
 
 Two decisions worth reading before changing anything here:
 
 - **The daylight loop terminates, and two constants are what make it.** A light sensor in the room
   whose lamps it drives measures those lamps, so this is a closed loop, and an undamped closed loop
   hunts — a room that pulses once a minute for as long as the app runs. A deadband makes it settle
-  (inside the band there is no next write to provoke the next reading) and a slew limit makes any
-  residual movement a fade. The app damps that loop and does not remove it; the FAQ says so plainly
-  and names the sensor placements that avoid it altogether.
+  and a slew limit makes any residual movement a fade. The app damps that loop and does not remove
+  it; the FAQ names the sensor placements that avoid it altogether.
 - **The slew is measured from what we aim at, never from what the lamp reports.** Slewing from the
   lamp's own level looks more honest and stalls: on a lamp whose `dim` moves in tenths, every
   perceptual aim from 0.10 to about 0.45 quantises to the same value, so an aim that only advanced on
   a successful write would never leave the floor while the room went dark around it.
 
-Known:
+**A device that watches its own feedback loop.** A Room-sensing Light counts the loop's signature —
+we raised the aim, and the reading then rose — and after five observations reports `partial` with
+`state.daylightFeedback`, naming the two remedies. Deliberately not "pinned at the bright end": on a
+sunny afternoon an increasing response sits there legitimately, and flagging that would be a false
+alarm on a well-placed sensor.
 
-- **What a real `measure_luminance` sensor reports is per-integration and not yet established.** The
-  two lux thresholds default to 5 and 500, which is a judgement rather than a measurement, and the
-  pairing screen shows the chosen sensor's live reading so it is set against something real. T82 in
-  the hardware plan is where that evidence comes from.
-- **Sunrise and sunset anchors are still refused for curves and schedules**, and are no longer
-  *blocked*: the permission is declared and the solar arithmetic is here. What is missing is the last
-  step — `resolveAnchor()` wants a minute, and an elevation function gives an angle at an instant —
-  plus a decision about what a day with no sunrise means. Half-working would be a curve that silently
-  sits at one colour (platform §12).
+### Every setup screen redrawn
 
-### Lifecycle, sensor ownership and write cancellation
+Setting a device up used to put the abstract control first: two unlabelled sliders standing for a
+whole day, a function-first grid of every job crossed with every gesture, two lux numbers with nothing
+to judge them against, and an API-key chore before anything of value was visible. Every screen now
+holds **one control and at most one sentence**; everything secondary is a row with a chevron; every
+caveat has left pairing for the review screen or the device's settings. About seventy per cent of the
+words on those screens are gone, and none of them were deleted — they moved.
 
-Fixed:
+- Each of the five device types is an unnumbered **intro**, a numbered step per question, and a
+  **review** that states what will happen before anything is saved. Every row on the review jumps back
+  to the step that owns it. Fifteen screens are authored where there were eight, four of them shared
+  by every driver and answered from a payload the driver supplies, so five different flows — three
+  steps or four, with or without a key — share one file each rather than five near-copies.
+- **The API key is asked for near the START, not at the end.** A user who reaches a four-step review
+  and then cannot produce a key loses everything they just filled in. It sits after the intro and
+  before step 1, and skips itself silently when a valid key is already stored — which is every Light
+  Remote and schedule after the first, since the key is per Homey.
+- **"Select all" in a room stores the ROOM.** Ticking every light in one room and nothing elsewhere
+  stores a zone target rather than a device list, so a lamp added to that room next month is picked up
+  without re-pairing. Unticking one converts it back, and the review states which of the two the
+  device ended up with, because the difference is invisible otherwise.
+- **The light picker collapses again.** A room's name and count are one button with the same chevron
+  every other row uses. A room opens itself when something in it is chosen, but a room collapsed by
+  hand stays collapsed; searching opens everything that matches.
+- **The sensor picker draws every sensor**, none behind a tap. Rooms with no sensor stay one line each
+  saying so — "this room has none" is half the answer to where the reading should come from.
+- **No view assigns `innerHTML`.** The two that built card markup as strings now build nodes, which
+  took `escapeHtml()` with them and turned "every interpolation is escaped" into the stronger "nothing
+  is interpolated".
+- **Every screen is light.** Each view used to carry a `prefers-color-scheme: dark` block restating
+  the palette, so a phone in dark mode got dark cards inside Homey's white panel. There is no query
+  that reports the container's own colour, so the views match the one panel Homey actually draws.
 
-- Schedules, circadian lights and Colour Curve Lights retain their selected lux sensors for their
-  runtime lifetime. Closing pairing no longer changes a saved device's brightness source;
-  restarting also acquires the sensors without needing another Daylight device.
-- Failed sensor subscriptions no longer expose a permanently cached seed as a live reading.
-  Recovery retries start after one second and back off to at most once per minute. Releasing
-  the last owner cancels recovery. Successfully subscribed, quiet sensors still do not expire.
-- Automatic brightness commands are cancelled when a lamp is switched off or leaves its target
-  zone, including commands waiting in an active flush. Eligibility is checked again immediately
-  before dispatch. Commands already handed to Homey cannot be recalled.
-- A failed runtime start or preview releases acquired listeners and sensor claims. Startup and
-  target refresh cannot restore resources after teardown, and late completions cannot re-arm
-  implied-on probes or populate the replacement runtime's state.
-- Failure to persist an edited configuration restores the previous stored and running plan.
-  If recovery also fails, the candidate stays stopped and the device reports unavailable.
-  Delayed callbacks from replaced runtimes cannot overwrite the restored plan.
-
-Maintenance:
-
-- Shared startup, teardown and sensor-claim helpers keep ownership rules consistent across the
-  four engines. Preview instances have unique ownership IDs.
-- Added integration and concurrency regressions over real runtimes, scheduling, adapters,
-  sensor ownership and evaluation, with fake Homey boundaries and controlled failures.
-- No stored-plan migration or external API change. Hardware checks T91–T97 are documented in
-  the hardware test plan and have not been run for this change.
-
-### Health verdicts that compose, and an opt-in recorder
-
-The remediation of a full code review, plus one new opt-in capability. Everything below was
-found by reading the code against what its own comments and CLAUDE.md's safety-property list
-promised; each fix ships the test its docblock had already claimed existed.
-
-**Health verdicts now compose instead of overwriting each other.**
-
-- A controller learns about its health from two independent places, on two different triggers:
-  reconciliation (a Flow was edited, a control would not compile, a reference could not be
-  stored) and the lights themselves. Both were written straight to the visible state by
-  whichever ran last, and `start()`'s order is buildRuntime → reconcileFlows → assessHealth, so
-  the monitor always spoke last. A controller told "a Flow was edited, open repair" had that
-  replaced by "1 of 3 lights unavailable" — a different problem, a less actionable one, and
-  `partial` also flips the device back to AVAILABLE so the repair prompt disappears from the
-  tile. One lamp switched off at the wall was enough, and it recurred on every target refresh
-  and every credential change. There is now one ranked verdict function
-  (`lib/runtime/verdict.ts`): needs_credential > needs_repair > partial > ready, ties to the
-  verdict that names an action. `needs_credential` outranks `needs_repair` because repair WRITES
-  Flows (platform §1), so a repair prompt on a dead key sends the user into a flow that cannot
-  complete.
-- A remembered `needs_credential` is the one state either verdict forgets on request, and it has
-  to be both of them — reconciliation classifies a 401/403 that way and the health monitor has
-  its own credential branch. Found while writing the test: a stale copy is the most severe state
-  there is, so it sat over every later verdict for ever, and the tile went on saying "Lightkeeper
-  needs a new API key" against a key that worked.
-- The two tick-driven runtimes re-assess when their inputs move. `light-target-adapter.ts` says
-  the write-failure streak exists so a runtime does not "go on writing to that lamp every minute for
-  ever behind a green tile" — and it did exactly that, because health was assessed at start and on a
-  target-set change and nowhere else. A lamp cut at the wall stays `available: true` (platform §6),
-  so the fingerprint never moves and the unwritable set was consulted once, when it was empty. A
-  Room-sensing Light also re-asks when its daylight SOURCE changes, which is the only thing that
-  could ever clear "it cannot tell how light it is" after a household finally gives the Homey a
-  location.
-
-**A value that is absent is no longer a value of zero.**
-
-- `Number(null)` is 0 and 0 is pitch dark — the trap CLAUDE.md records for lux, open on all five
-  light axes. A live report of `null` became an apparent zero in actual state, and the NEXT
-  report then read as "changed by hand, to nothing", so the lamp stood down and stopped following
-  its curve until its next power cycle. And `liveValuesOf()` cast a snapshot value straight to
-  `number | undefined`: that does not coerce, but it mistypes, and every consumer downstream tests
-  `=== undefined` to mean "the lamp never told us" — so a Room-sensing Light counted `null` as a real
-  reading, seeded its aim from a perceptual ZERO, and wrote `dim 0.01` to an already-lit lamp
-  before fading it back up at 0.05 a tick. One guard now covers both paths.
-- A lamp's own power-on report is no longer read as a human override. The settle anchor was
-  deleted at the off edge and not re-armed at the on edge, so a bulb power-cycled at the wall that
-  reports its level alongside `onoff:true` could be marked as overridden and skipped on every tick
-  until its next power cycle — defeating the headline promise that a lamp is the right colour
-  however it was switched on.
-- Dimming down on a lamp declaring `decimals: 1` no longer writes a value that lamp shows as off.
-  The floor defaulted to 0.01, which is the `decimals: 2` representable step wearing a policy
-  name; on a tenths lamp it quantises to 0.00 — darkness, written by the one branch whose entire
-  purpose is to refuse to write darkness.
-- Synchronised group brightness no longer nudges a lamp already on the group target one step past
-  it. `advanceDim`'s guarantee that a lamp MOVES is right per lamp and wrong for a group, so the
-  one lamp that started in the right place was the one that drifted, on every press.
-
-**Fixed elsewhere.**
-
-- One-tap re-attach no longer offers whichever identical remote came first. The portable
-  fingerprint is device-agnostic by design, so two STYRBARs or two BILRESAs tie — and nothing
-  excluded a remote another live controller was already listening to. A household with two
-  BILRESAs (the re-add case platform §7 exists for) could be told to re-attach onto the one still
-  driving another controller. Remotes in use are excluded, and a genuine tie now says so and
-  sends the user to repair to choose, instead of promising one tap.
-- A save the app could not have loaded back is refused when it is made. The only validator in the
-  device layer was the one that runs at load, so a route could persist a plan that the NEXT APP
-  RESTART then refused — the device going unavailable saying "set this device up again", days
-  later, with nothing to connect it to the action that caused it.
-- Deleting a device no longer recreates a `Lightkeeper` folder the user had removed, and no longer
-  attempts a folder WRITE from a delete — which, on a dead key, could flip every device to
-  "needs a new API key" while tidying up after a removal.
-- Sensor ids from a pairing screen are checked against the catalogue, not only for shape. A lamp
-  id accepted as a sensor was subscribed to, never reported a lux value, and left the device
-  running on the sky for ever while the settings page listed a sensor with no reading.
-- A "not found" is no longer inferred from a `404` appearing anywhere in an error message. Homey
-  echoes device and flow ids back inside errors, and roughly one UUID in three hundred contains
-  `404` between two non-digits — enough for a 409 or a 500 to be read as "already gone", the
-  reference dropped, and the Flow left firing where the orphan sweep cannot see it.
-- A plan written by a NEWER version of the app now says to update the app, instead of telling
-  somebody whose configuration is perfectly intact to set their device up again.
-- A hand-edited controller profile with an absurd range no longer hangs device startup: the
-  expansion is refused before the array is built, rather than after.
-- A "test it now" probe can no longer write to a lamp after its own runtime has stopped.
-- Reading the whole Flow list for an orphan count now reports a transport failure, so a dead
-  socket does not fail every count and sweep for the rest of the app run.
-- `network` as part of a word is no longer read as a network failure, which used to throw away a
-  working client on an ordinary `TypeError` from our own code.
-
-**Diagnostics.**
-
-- Per-runtime history of the last 60 control passes and 120 power/override events, with each
-  pass's per-target decisions, the sensor inputs behind a daylight pass, and command completion
-  outcomes. Kept independently of the short command log, so six lamps cannot erase an hour of
-  history in five ticks, and truncation is reported rather than silent.
-- Brightness units, snapshot timestamps and API-success semantics are labelled in the export.
-- The feedback risk of a lux sensor in the room it drives is explained on all four daylight
-  configuration screens, without changing any saved response.
-
-**A seven-day recording, for tracking down something intermittent — and NOT in the app you
-install.**
-
-- It is a development tool, and it is built out of a released build entirely: the code, its six
-  Web API routes and its settings section are all removed at build time, and the build fails if
-  any of it is left. `.dev-build` at the repository root puts it back for a local install. The
-  design is in `lib/support/evidence-feature.ts`; the switch is `scripts/build.mjs`. Everything
-  below describes what that development build does.
-
-- Off unless started from app settings, stops by itself after seven days, and the deadline
-  survives app restarts and reinstalling the same build. Batches are gzipped and AES-256-GCM
-  encrypted on the Homey's own storage; every record passes a field stripper and the same key
-  redaction the logs use, so an API key cannot reach an archive. Bounded buffers and a 64 MiB
-  limit expose loss rather than silently replacing earlier evidence.
-- Timestamped observations can be attached from the settings page while it runs, and an archive
-  that has stopped can be discarded there. `scripts/evidence.mjs` streams an export to a private
-  `.evidence/` directory and analyses it; see `docs/week-long-testing.md`.
-- It does not change how often the control loops run. A 60-second maintenance poll that had been
-  written alongside it was removed before release: it re-read the ~11.6 MB trigger-card catalogue
-  about once a minute for as long as the app ran (platform §15), turning an event-driven app into
-  a poller. State-triggered re-assessment does that job instead.
-
-**Repository.**
-
-- CI audits the shipped dependency tree and fails on a new high or critical. CLAUDE.md records
-  four accepted moderates and says to re-check at each bump; nothing did.
-- `*.css` and `*.js` are pinned to LF. `views/shared/` holds four such files and they are spliced
-  byte-for-byte into thirteen LF pair views, so a Windows checkout saw every view as drifted
-  before touching a line.
-- The manifest's `api` block is now checked against `api.ts`'s exports. It is a name map: a name
-  matching nothing gives no build error, no validate error and no test failure — only a 404 when
-  somebody presses the button.
-- Twelve documentation phrases predating the fourth and fifth device types, two stale claims in
-  CLAUDE.md (the version lives in four places, not three; three files carried three different
-  wrong line counts) and one safety claim about the hardware script that was true of devices and
-  read as one about lamps.
-
-### What a week of real evidence found
-
-Five defects, every one of them found in a single 3.83-day recording from the reference Homey
-rather than by reading the code — 58,024 records, nine live devices, and a manifest that said
-`dropped: 0` and every tile `ready` while one device had done nothing for 88 of the 93 hours.
-The numbers behind each are in the sections below; the full read of that recording was kept as a
-document for a while and has since been deleted, its durable findings folded into the code they
-justify.
-
-**An override never expired, and one uncooperative lamp muted a device for days.**
-
-- A lamp in the recording accepted every write, acknowledged it, and reverted to its own fixed
-  `dim 0.41` / `light_temperature 0.83` ninety seconds later, every single time, whatever it had
-  been sent. Nothing distinguishes that from a person, so it was read as one — and an override was
-  cleared only by an `onoff` edge, by the target leaving the plan, or by the runtime stopping. The
-  "Studio circadian" device therefore stood down for 23.6 h, then 23.1 h, 15.5 h, 15.2 h and 11.0 h
-  back to back, lamp on throughout, reporting `ready` throughout.
-- `OVERRIDE_EXPIRY_MS` (4 hours, in `lib/outputs/target-state-cache.ts`) is the escape hatch, applied
-  lazily by `expireOverrides()` in both runtimes from `applyNow()` and `diagnostics()` — no new timer,
-  and nothing reads as overridden after control has resumed. Four hours is a balance rather than a
-  discovery: long enough not to fight somebody who dimmed the lamps for an evening, short enough that
-  a lamp the app cannot drive costs one evening instead of a week.
-- Expiry also drops `committed` / `lastWritten` for that lamp, and that is half the fix rather than
-  tidiness. The lamp was moved while the override stood, so an unchanged plan against an unchanged
-  *intended* value would have planned nothing, the no-op filter would have dropped it, and the lamp
-  would have stayed exactly where it was put — the same silence one layer down.
-
-**Switching a lamp off was read as overriding us, 296 times.**
-
-- The `lamp_off` guard reads the cache's `actualOn`, which only moves when the `onoff` report lands.
-  Measured across the recording: this integration reports `dim 0` a **median of 29.9 seconds before**
-  the matching `onoff: false` (232 pairs, minimum 29.2 s). In that window the cache still believes the
-  lamp is on and the power-settling window has not opened, so the report went straight to
-  `noteOverride`. 296 of the 327 overrides in the whole archive were this and nothing else — a false
-  badge for thirty seconds each time, and 296 junk entries evicting real history from a 120-entry log.
-- A reported `dim` of 0 is now the lamp going off whatever `onoff` has said yet, logged as
-  `report_ignored` with `reason: 'dim_zero'`. It needs no clock and no ordering: neither runtime can
-  write 0 (`MINIMUM_BRIGHTNESS` is 0.10 perceptual and `litDim()` guarantees a positive brightness is
-  never written as darkness), and a person dragging a dimmer to zero switches the lamp off, which
-  arrives as `onoff` and clears any override anyway.
-
-**Redaction was destroying records, and `dropped` could not see it.**
-
-- `KEY_MATERIAL`'s `[0-9a-f]{20,}` alternative also matches the decimal expansion of a small number.
-  A circadian warmth crossing zero produced `4.829384756102938e-6`, which serialises as
-  `0.000004829384756102938` — twenty-one characters — and came out as `{"warmth":0.<redacted>,…}`.
-  **93 of 58,024 records in this archive are unparseable for that reason.** The docblock argued only
-  that twenty hex characters cannot be a UUID; it never considered a number.
-- Invisible, too: the damage happens after `++m.sequence` and the line writes successfully, so
-  `dropped` stayed 0 and the settings page, `evidence.mjs status` and the export manifest all reported
-  a complete recording.
-- Fixed in three places. The pattern requires the run not to follow a decimal point or a digit; the
-  two deliberate copies in `scripts/evidence.mjs` and `scripts/probe-lights.mjs` carry the same change
-  and the reason; and the recorder now re-parses any line redaction actually changed, counting it in
-  `dropped` rather than writing it — so the next such flaw arrives as a number rather than a hole.
-  `analyze` reports `malformed` in its interpretation line, and the recording doc says to read it first.
-
-**The 0.03 override tolerance failed at exactly 0.03.**
-
-- `Math.abs(0.83 - 0.86)` is `0.030000000000000027`, so `<= OVERRIDE_TOLERANCE` forgave a bridge three
-  hundredths out at one end of the axis and called it a person at the other. The archive has two
-  `light_temperature 0.83 vs 0.86` overrides: exactly the rounding the constant exists to absorb,
-  which under the bug above meant standing down for good.
-- `withinOverrideTolerance()` now owns the comparison for all three sites — daylight brightness,
-  circadian temperature/brightness, circadian hue — which also collapses a triplication.
-
-**A daylight feedback loop that ran 95 times, with nothing to show for it but a diagnostics field.**
-
-- Both daylight devices reported `feedbackRisk: 'increasing_sensor_response'` in 100% of samples. The
-  kitchen sensor read a median of **1 lux with its lamp off and 680 lux with it on** — it was
-  measuring the lamp, not the sky. Every switch-on started a climb: median 5 writes and 225 s to
-  settle, worst case 540 s, the response pinned at its own `bright` end in 62.7% of lit samples, and
-  all 506 of that device's writes were this. Loop gain was about 3, so the deadband could not damp it
-  away; only the response's ceiling bounded it.
-- The pairing screen already warned about the configuration, correctly. The device did not. It now
-  watches for the loop's signature — we raised the aim, and the reading then rose — and after five
-  observations reports `partial` with `state.daylightFeedback`, naming the two remedies. Deliberately
-  not "pinned at the bright end": on a sunny afternoon an increasing response sits there legitimately,
-  and flagging that would be a false alarm on a well-placed sensor. `feedbackObservations` is in
-  diagnostics and in the evidence, so the next recording can be read for it.
-
-**And the memory analysis that was never going to work.**
-
-- `process.memoryUsage()` throws in the app sandbox (platform §17), so every one of the 5,512 health
-  samples carries `memory: null` — correctly, since the guard exists to keep the rest of the sample.
-  But `scripts/evidence.mjs` still reported `maxRssBytes`, permanently 0 in a shape that looked like a
-  measurement, and `docs/week-long-testing.md` promised "memory use", "peak RSS" and advice to watch
-  for "growing memory". All four are gone, pointing instead at
-  `node scripts/verify-hardware.mjs memory`, which reads the footprint from outside where it exists.
-
-### A whole-house probe run, and the three defects it found in itself
-
-Nothing in the app changed here. A full pass on the reference Homey — `verify-hardware.mjs full`,
-then `probe-lights.mjs` over all 55 lamps of 9 integrations — came back with every functional line
-passing, and with three faults in the probe itself. They are worth a changelog entry because two of
-them left somebody's house changed.
-
-- **A restore could not put two Hue bulbs back.** The probe writes a lamp's snapshot back when it is
-  done, and it wrote `dim` first. On a lamp found OFF the snapshot's `dim` is 0 — which a Hue treats
-  as soft off, not as a brightness — so every colour and temperature write after it was refused
-  outright and the run finished by telling a person to set two lamps by hand. `dim` now goes last
-  among the values, where it gates nothing. Replaying the same values in that order restored both
-  bulbs exactly, which is the fix's own proof, and `restorePlan()` is lifted out so the order is
-  tested without a Homey.
-- **It woke a NAS it had already been told it could not switch off.** A Synology DiskStation answered
-  the off write with `Device is always-on`, was switched ON one step later for the echo measurement,
-  and then refused both writes that would have put it back. The evidence that the change could not be
-  undone arrived one write before the damage. A device that refuses to switch off is now never
-  switched on — guarded in the one function every write goes through, so a fourth step cannot forget
-  it — and the run says so as `PROBE_ONE_WAY_POWER`.
-- **Two reporting faults, both of which mislead in the direction of alarm.** A run against a device
-  that refused every write published `PROBE_SUSPECT_CACHE` at critical — a finding whose own text says
-  to believe nothing else in the report — because it counted lamps that had taken no write as evidence
-  that no reading moved. And the headline finding count double-counted run-level findings, printing 4
-  over a breakdown of 3. A boolean in the put-these-back list printed as `0.000`.
-
-**The pass also re-based the memory line.** T59 read 68 MB on a freshly installed app where the same
-line read 36.6 MB four days earlier, so the 9 September build and the 13 September build were
-installed one after the other on that Homey against the same four devices: **67.5 MB and 68.2 MB**.
-The app's code is not the difference, and what in the house is was not identified. The ceiling that
-fails the line is now 100 MB rather than 50, the line no longer diagnoses a cause it cannot know, and
-platform §15 carries the measurements — including the three explanations that were ruled out. The app
-is still well over Homey's 30 MB guideline, which is unchanged and known.
-
-
-### Every pairing screen redrawn, and four engines reshaped to make them honest
-
-The last thing to go into 0.6.0, and the largest. Setting a device up used to put the abstract
-control first: two unlabelled sliders standing for a whole day, a function-first grid of every job
-crossed with every gesture, two lux numbers with nothing to judge them against, and an API-key chore
-before anything of value was visible. Every screen now holds **one control and at most one
-sentence**; everything secondary is a row with a chevron; every caveat has left pairing for the
-review screen or the device's settings. About seventy per cent of the words on those screens are
-gone, and none of them were deleted — they moved.
-
-Each of the five device types is now an unnumbered **intro**, a numbered step per question, and a
-**review** that states what will happen before anything is saved. Every row on the review jumps back
-to the step that owns it. Fifteen screens are authored where there were eight, four of them shared
-by every driver and answered from a payload the driver supplies, so five different flows — three
-steps or four, with or without a key — share one file each rather than five near-copies.
-
-**The API key is asked for near the START, not at the end.** The design put it behind the work, on
-the reasoning that the key only gates Flow writes at save. That is true and it is the wrong trade: a
-user who reaches a four-step review and then cannot produce a key loses everything they just filled
-in. It sits after the intro and before step 1, and it skips itself silently when a valid key is
-already stored — which is every controller and schedule after the first, since the key is per Homey.
-
-Four engines changed shape, because several of those screens could not be drawn honestly otherwise.
+### Four engines reshaped under those screens
 
 - **A circadian light has three zones, not two ends, and its day follows the real sun.** Morning,
-  midday and evening, each with its own warmth and — newly optional — its own brightness. Morning
-  ends at sunrise plus an offset and evening begins at sunset plus one, both stepped in quarter
-  hours, so the day moves through the year instead of sitting at a fixed clock. `sunTimes()` in
-  `lib/daylight/solar-elevation.ts` is the new pure function behind it: the hour-angle solution over
-  the same NOAA sequence the elevation already used, answering `null` where no horizon crossing
-  exists. That last part is what lifted the `{ kind: 'sun' }` anchor, declared since 0.5.0 and
-  refused in three places because a sun anchor accepted by the sanitiser and thrown on by the
-  resolver is a curve silently stuck at one colour. All three refusals went together.
-  The boundaries are clamped when they are RESOLVED rather than when they are stored: north of about
-  60° a short winter day can bring two perfectly reasonable offsets into collision with no edit
-  having happened, and clamping the stored value would quietly rewrite what somebody chose. And
-  because morning and evening are now independent temperatures either side of midnight, midnight is
-  a third ramp rather than a step change.
-- **A Room-sensing Light reads ONE sensor, and shows you its week.** Averaging up to eight sounds
-  more robust and is not: a cupboard sensor and a windowsill sensor average to a number neither ever
-  reported, and the screen could not say whose week the lux range belonged to. The setup screen now
-  draws that sensor's own last seven days from Homey's Insights as a 7 × 12 grid, and fills both
-  thresholds in from it. This is the fix for a default of 5 → 500 lx that suited exactly one of the
-  four sensors in the reference house (platform §16); two of the other three would have sat pinned
-  at one end of their range all day and read as "this feature does nothing". The same picture says
-  two things it would otherwise take a month to notice — a sensor that barely changes all week, and
-  a sensor that has stopped reporting. No new permission was needed: `homey:manager:insights` does
-  not exist, `homey:manager:api` covers it, and the app's own token reads a foreign device's log.
-  The two solar-elevation thresholds became per-device for the same reason the lux ones already
-  were, and `SunPeak`'s `'none'` became `'flat'` — a room with no direct sun still brightens and
-  darkens, so it holds the diffuse share rather than nothing.
-- **Following the daylight from inside a schedule, a circadian end or a curve point is gone.** It
-  put the same sensor picker and lux range on four different screens and gave two device types two
-  different daylight behaviours to explain — a schedule sampling at its boundary, a curve following
-  on every tick — which looked identical for the first evening. A brightness is a number; a
-  brightness that follows the room is a Room-sensing Light. That took `views/shared/daylight-card.*`
-  with it, and with it the largest piece of view-splicing machinery in the repo.
+  midday and evening, each with its own warmth and — newly optional — its own brightness. Morning ends
+  at sunrise plus an offset and evening begins at sunset plus one, both stepped in quarter hours, so
+  the day moves through the year instead of sitting at a fixed clock. `sunTimes()` is the new pure
+  function behind it, answering `null` where no horizon crossing exists — which is what lifted the
+  `{ kind: 'sun' }` anchor that had been declared since 0.5.0 and refused in three places. Boundaries
+  are clamped when they are RESOLVED rather than when stored: north of about 60° a short winter day
+  can bring two reasonable offsets into collision with no edit having happened. Midnight is a third
+  ramp rather than a step change, because morning and evening are now independent temperatures either
+  side of it.
 - **A schedule's days belong to the schedule, and blocks may overlap.** Seven chips once, above the
   list, instead of seven per block. Overlapping blocks are no longer dropped by the sanitiser: the
-  runtime has always resolved them deterministically — the later one wins while they overlap — so
-  the screen outlines the region and says so, and Next is never blocked. Deleting a row somebody had
-  just drawn was the worse surprise.
-- **The controller's grid is inverted.** One row per thing the remote can do, in the order the
-  buttons sit, each stating its job in a sentence; "Nothing" is a finished state rather than a
-  warning. One rule per gesture is now structural — a row holds one job — as well as enforced in
-  `setRules`. Two new jobs arrive with it, both carrying a value: **a set brightness** and **step
-  through warm and cool**. Press-to-find is its own bounded screen: thirty seconds, a live "heard
-  nothing yet", and "pick from the list instead" always one tap away, because a card-only remote
-  cannot be heard at all (platform §4).
+  runtime has always resolved them deterministically — the later one wins while they overlap — so the
+  screen outlines the region and says so, and Next is never blocked. Deleting a row somebody had just
+  drawn was the worse surprise.
+- **A Light Remote is one row per button**, in the order the buttons sit, each stating its job in a
+  sentence and opening with a mark: filled where the button has a job, an empty ring where it has
+  none. The two differ in fill rather than colour, so the list answers "what have I still not set" at
+  a glance and to a colour-blind reader. "Not set" is a finished state, not a warning. One rule per
+  gesture is now structural — a row holds one job — as well as enforced in `setRules`.
+- **Each button drives its own lights.** `MappingRule.target` had carried a per-rule target since it
+  was written, and nothing could set one — so the top button could dim the floor lamp only if the
+  whole device was about the floor lamp. A row now reads `Top · Long press` over `Brighter · Floor
+  lamp`. "All of them" is stored as inherit, never as a list of today's lights, so it goes on
+  following a room that gains a lamp; narrowing the lights on step 2 re-aims any button that named a
+  lamp dropped, and the runtime writes outside the device's own selection under no circumstances.
+- **The job editor is a nine-tile grid, and the grid is the grouping.** Power, brightness and colour
+  across; up, down and "set a value" down each column, so every column reads the same way in all three
+  rows and no group headings are needed. Each tile carries a picture of its effect rather than a
+  number, and the value appears only under the tile that has been chosen. "Do nothing" sits below the
+  grid, full width: the absence of a job rather than a tenth kind of one.
+- **Two new jobs: a set brightness, and a colour** — one colour from the same closed palette a Colour
+  Curve Light chooses from, stored by name rather than as two numbers, and offered only where a lamp
+  can take one. **"Step through warm and cool" is not offered**: the grid's third column sets a value,
+  and for the colour row that value is a colour. It existed briefly during this release's development;
+  a button assigned to it goes on working and keeps its tile while it is the one selected, because
+  retired is not deleted.
+- **Press-to-find is its own bounded screen**: thirty seconds, a live "heard nothing yet", and "pick
+  from the list instead" always one tap away, because a card-only remote cannot be heard at all
+  (platform §4).
+- **The remote picker draws two lists**: what Homey can hear a gesture from, and — behind one row —
+  everything else. There is no reliable way to tell a remote from anything else exposing trigger
+  cards, and the screen does not have to; it has to hide what CANNOT work. Nothing is filtered away.
+  `eventCount` now means what the screen says: it applies the same gesture test `normalizeCards` does
+  ("Turned on" is not a press) and counts the second strong route as well (platform §4), where before
+  every bulb, plug and speaker in the house scored two. Lightkeeper's own devices are gone from it.
 - **The palette is twenty-four colours**, eight shown with the rest folding out in place, and the
   default curve is coloured — so the first thing a Colour Curve Light shows is that it does colour.
-- **"Select all" in a room stores the ROOM.** Ticking every light in one room and nothing elsewhere
-  stores a zone target rather than a device list, so a lamp added to that room next month is picked
-  up without re-pairing. Unticking one converts it back, and the review screen states which of the
-  two the device ended up with, because the difference is invisible otherwise.
+  The curve chart blends between them, because the engine always did: it drew five bands where the
+  lights fade through every shade. A new Colour Curve Light pairs with brightness switched on and five
+  default points carrying one, and switching brightness off no longer forgets what the points held.
+
+**Following the daylight from inside a schedule, a circadian end or a curve point is not part of this
+release.** It put the same sensor picker and lux range on four different screens and gave two device
+types two different daylight behaviours to explain — a schedule sampling at its boundary, a curve
+following on every tick — which looked identical for the first evening. A brightness is a number; a
+brightness that follows the room is what a Room-sensing Light is for. Four screens that ask for a
+brightness carry one line saying so.
 
 **There are no migrations, and that is deliberate.** Every stored shape here changed, and the one
-Homey running this app starts from a clean slate — so all five migration chains were reset to
-version 1 with empty step tables rather than extended. A device carrying an older plan comes up
-unavailable with a message, which is the signal to delete and re-add it. Nothing has been published,
-so nobody else is carrying one.
-
-**Every screen was then rendered and held against the design canvases**, which
-is the only check that catches a screen that boots and draws wrongly —
-`npm run render:views` draws all 28 to `.views/` and `docs/design/` is what they
-were compared with. Ten differences came out of it, and two were defects rather
-than polish:
-
-- **Two warmth sliders ran backwards.** The job editor and the schedule block
-  placed the knob at the raw `warmth`, where 1 is the WARMEST end (platform §6),
-  on a track that now runs candlelight-left to daylight-right — so the handle sat
-  over the opposite colour to the one it stood for, captioned "Coolest" at the
-  warm end. Nothing had looked wrong while the track was a plain fill, because a
-  fill says nothing about which end is which. Both now invert at the same seam
-  the circadian day screen already used, and all three read the same way round.
-- **The sensor detail screen named its sensor twice**, once as the heading and
-  again inside the card directly under it, which reads as two different sensors.
-
-The other eight are the design's own shapes, applied: sliders carry their axis
-as a gradient with no fill, so the whole range is visible rather than "this much
-of the way along"; a control's title is sentence case with its value on the
-right, not a small-caps section label; swatches are four across rather than
-eight in a row that fell under the touch minimum; the curve chart carries a
-handle per point and an Off-to-Full axis; the week grid is the app's own violet,
-stepped into six shades so the pattern is legible; a schedule overlap is an
-amber notice with its consequence on a second line, and the region it names is
-outlined dashed; the sensor picker's two options are stacked full width with the
-chosen sensor's live reading beside the name; and the remote picker says how
-many separate presses the Homey can hear from each remote, which is the line the
-README has promised since 0.1.0 and the rewrite had dropped.
-
-**And then it was run on a real Homey, twice — Studio and Garage — which found two
-more.** Both were in code the rewrite had added, and neither was reachable from
-a unit test:
-
-- **Three drivers called catalogue methods that do not exist.**
-  `catalog.devices()` and `catalog.getDevice()`; the methods are `allDevices()`
-  and `device()`. Six call sites, all of which compiled, passed the suite and
-  validated at publish level, because every driver's `private get app()` was
-  typed `any` — so `this.app.catalog.anything()` type-checked. On hardware they
-  threw the first time a real screen asked, and the Room-sensing Light's sensor
-  picker could not list a single sensor. The accessor is now typed
-  `LightkeeperApp`, which is what `lib/app-contract.ts` has existed for since
-  0.5.0 and what the drivers had never used; typing it caught a second defect on
-  the spot, a re-attach that passed a possibly-missing device into discovery and
-  would have left a controller with no mappings at all.
-- **The hardware pass itself was pointed at three handlers that no longer
-  exist**, and one of its assertions had been deliberately reversed by this
-  release: it required the later of two overlapping schedule blocks to be
-  dropped. Both are now what the screens do.
-
-Two smaller things fell out of the rewrite and are worth recording. **No view assigns `innerHTML`
-any more** — the two that built card markup as strings now build nodes, which took `escapeHtml()`
-with them and turned "every interpolation is escaped" into the stronger "nothing is interpolated";
-the safety test keeps its allowlist machinery with an empty allowlist. And the **warmth ladder was
-inverted** in three places: higher `light_temperature` is warmer (platform §6), so a midday warmth
-of 0.18 was reading as "Warm" beside a blue swatch. Storage keeps the platform's convention and the
-slider reads Candlelight to Daylight, which is the way round the design draws it.
-
-### The screens held against the design again, with Homey's chrome in the picture
-
-The redesign above was checked against the design canvas by rendering every screen on a white page.
-That render left out the one thing the app does not draw and cannot change — **the sheet Homey puts
-around a pairing view**, with its own header and its own `← Previous` / `Next →` footer — and the
-omission was not neutral. Held against a design that included the chrome, an app-drawn full-width
-`Next` looked like the design's own, and nine screens shipped drawing a **second Next** below the
-fold of a sheet that already had one.
-
-`npm run render:views` now reproduces that sheet, and takes the buttons from each driver's own
-`driver.compose.json` rather than from a list kept in step by hand. It also renders each driver's own
-`intro`, light picker and review: those three are one FILE and five SCREENS, and keyed by file name
-alone the contact sheet had been drawing the circadian intro five times over.
-
-What that turned up, screen by screen:
-
-- **The duplicate `Next` is gone** from the intro, the light picker, the circadian day, the curve,
-  the schedule blocks, the remote picker, the buttons screen and both daylight steps. The light
-  picker's "N chosen" line now carries what the disabled button used to say. Two screens keep a
-  button — the review, which creates the device, and the key screen, which validates the key — and
-  both stopped declaring a `navigation.next` so Homey draws none beside it. **On the key screen
-  that was a bypass, not just a duplicate**: Homey's own Next walked past an empty field and the
-  flow carried on with no key until the review failed to save.
-- **`font: 600 12px/1 inherit` is invalid CSS**, and every browser drops the whole declaration —
-  `inherit` is a CSS-wide keyword and may not be a component of a shorthand. Seven rules shipped
-  with it and rendered at the inherited 16px regular: the day and time steppers, the schedule's day
-  chips, both Add buttons, the Remove links. Measured in headless Chrome, then written as longhand.
-  `pair-view-styles.test.ts` now fails on the pattern.
-- **The curve chart drew its point handles outside itself.** A point at full brightness — which is
-  every point while "Set brightness too" is off, the default — was positioned at `bottom: 100%` and
-  pulled up by a margin that does nothing to a bottom-anchored box, so the whole row of handles sat
-  above the chart and over the heading. Seen on hardware before it was seen anywhere else.
-- **Selected things look selected.** The open card on the circadian day, the curve, the schedule
-  block and the daylight response now carries the accent border the design draws — all four were
-  hairline-bordered like every other card, so on four screens nothing said which of the list below
-  was being edited. The schedule's selected block is taller and haloed on its timeline; the day
-  chips are filled rather than outlined; a chosen colour swatch is ringed in the accent rather than
-  gapped in white; the job editor is seven cards rather than seven radio rows.
-- **The rules that were missing.** A `Set … too` switch now always sits under a hairline, the
-  schedule's Remove is centred under one, and a list of rows is inset by its card so the line
-  between two rows stops short of the card's edge instead of cutting it in half. The intro's
-  numbered decisions lost the three rules they had: the design spaces them, and a hairline turned a
-  promise about what is coming into a settings list.
-- **Colour swatches were washing out.** The palette is stored as Homey's hue and saturation, and a
-  near-white is saturation 0.05 — which `hsl()` paints as grey. The two whites rendered as two
-  indistinguishable greys on the screen whose whole job is to show that this device does colour.
-  Saturation is now lifted off zero for display and lightness falls faster, in the one formula both
-  the driver and the curve chart use.
-- **Every heading had 4px under it** and the design draws 16, so a title read as a label on the card
-  below rather than as the name of the screen. Steppers are bare glyphs rather than outlined boxes,
-  an unticked checkbox has a darker edge than a form field, and chevrons are lighter than the text
-  beside them.
-- **A light in no room, and a room with no sensor, are named.** `lib/` had hardcoded the English
-  word `Unassigned` for the first, which the translation rule exists to catch; the view now names it
-  and greys it. The sensor picker lists every room rather than only the rooms that have one, because
-  which rooms have none is half of what that screen answers.
-- Smaller: the pushed job editor commits on every change rather than on a `Done` button Homey's own
-  back arrow could bypass; the listening screen says "Heard nothing yet" from the first frame
-  instead of after thirty seconds of nothing; the try-it screen's time, label and strip are one card;
-  the daylight review's second end carries a swatch.
-
-### The process documents cleared out, and a guard so the build stops shipping strays
-
-The repository had been carrying the record of building the app beside the app: a 1,290-line code
-review, a launch review it had already absorbed, the twelve-file remediation archive that produced
-0.5.0, the iteration canvas the pairing redesign was argued out in, and 1.4 MB of screenshots of
-screens that no longer exist. All of it finished, none of it bundled, and the reader of a `docs/`
-index had to decide each time which documents described the app and which described its past.
-
-Deleted — git history keeps every word — after four rescues, because most of the argument in those
-documents turned out to be duplicated in the code that it explains, and the rest had to be moved
-before it could be dropped:
-
-- **`docs/open-work.md`** is new and is what the code review was still being
-  kept for: tests owed for seven launch-review fixes, two one-line defects still present in the
-  tree (a `targetIds` that defaults to writing nothing, and a `pendingColor` never read), the
-  fifteen structural items, and three questions only hardware can answer. It was on line 66 of
-  1,290 and is now the whole file.
-- **`docs/decisions.md`** is new and holds the five arguments shipped code
-  still cites — why `flow_enum` was not folded into `flow_fixed`, why an app-level `type: "device"`
-  argument is declined **and what a fix would need**, why an unevaluable filter key fails closed,
-  how `InvalidRangeError` reaches the user, and the two things the remediation deliberately did not
-  do. The three code comments that used to point at the deleted archive now carry their own reason.
-- **Four invariants moved into `CLAUDE.md`'s safety list**, where the other six already were: a
-  credential is validated by a real Flow write and never by a read, folder work never blocks a Flow
-  write, nothing survives teardown, and the Test control works before save and without Flows.
-- **The design README absorbed the iteration canvas's argument** — the four turns, and the reason
-  the day editor ended up with two handles: *"'warmest' is a single value the day passes through
-  twice, but a single dot at 21:00 reads as one moment."*
-
-**And one thing that was not tidiness.** `.homeybuild/` was found holding a stale `print.pdf` and a
-`views.zip` of screens deleted three commits earlier — 3.6 MB that would have shipped to
-households, because the Homey CLI honours `.homeyignore` and does not consult `.gitignore` at all.
-That is the same way 136 KB of review documents shipped once before. `scripts/build.mjs` now checks
-`.homeybuild/`'s top level against an allowlist and **fails the build** on anything else, naming it
-— an allowlist rather than a denylist, because the file that ships is always the one nobody thought
-about.
-
-
-### What the memory number is actually made of
-
-A deep look at the app's footprint against Homey's 30 MB guideline. **The headline is a negative
-result, and it is the most useful thing here: the app's own code is not what puts it over.**
-
-The evidence, all gathered on one Homey on 14 September 2026:
-
-- **The 9 September build was reinstalled alongside HEAD and measured the same.** That build's own
-  test line recorded 36.6 MB five days earlier; on the same Homey, against the same five devices, it
-  read **80.7 / 73.6 / 72.9 MB** where HEAD read **80.1 / 73.9 / 71.4 MB**. Same code, same house,
-  five days, twice the number.
-- **What had changed was the Homey**: 10.6% free memory (0.20 of 1.85 GB), 459 MB of swap in use,
-  312 MB of app memory already swapped out, and a `homey` core process holding 476 MB.
-- **Three restarts of one identical build read 71.4, 73.9 and 80.1 MB**, so nothing smaller than
-  about 10 MB is measurable here from a single reading. Several single-number comparisons in the
-  older records cannot bear the weight they were given.
-
-Added, because none of the above was answerable before:
-
-- **The app can now see its own memory, and `/diagnostics` reports it.** `process.memoryUsage()`
-  throws in the app sandbox and `/proc` is not mounted at all, so RSS genuinely cannot be read from
-  inside — but `v8.getHeapStatistics()` and the per-space split can, and they are the only signal
-  that distinguishes *holding* a parsed catalogue from *having parsed* one, which PSS cannot.
-  Three boot marks come with it: the app's JS heap is **15.2 MB with no devices**, of which
-  **8.8 MB is spent importing its own modules** before `onInit` runs.
-- `process.resourceUsage().maxRSS` is reported but documented as unusable: it read an identical
-  105.3 MB across an app restart and two reinstalls, because it is inherited from the app-runner
-  parent through `fork()` rather than reset for the app.
-
-Tried and reverted, recorded so nobody spends the day again:
-
-- **Incremental parsing of the flow-card catalogue** — the lever the platform reference had named as
-  the only one left. It was built and it worked: byte-exact against `homey-api` across all 1832
-  cards, and on a cold process it cut the read from **+16.88 MB of RSS to +0.10 MB**. On hardware it
-  changed nothing, because the 11.6 MB payload the reasoning rested on is now **1.0 MB**, and a 1 MB
-  parse fits in heap slack that is already there. Reverted rather than kept for a theoretical house.
-- Two findings survive it: the card endpoint has **no server-side filter** (nine query shapes tried
-  against the live Homey, all returning byte-identical full bodies), and Node's global `fetch` is
-  undici, whose lazy initialisation alone costs **+21.24 MB of RSS** against `node:http`'s 6.81 MB.
-
-Fixed, and each of these is real regardless of the number:
-
-- **A whole-Homey device re-parse on every re-subscribe.** `makeCapabilityInstance` asks `homey-api`
-  to refresh every device in the house when the device it is called on is more than 2.5 s stale, and
-  a device served from cache always is — so every catalogue change, re-attach and client rebuild
-  queued a full `getDevices()`. Reading the one device fresh costs a single round trip instead.
-- **A sensor's Insights week was being cached forever.** The `insights` manager is connected, so a
-  week of lux samples per sensor was retained for the life of the client to draw a pairing screen
-  that closes seconds later — and the cached copy meant the screen redrew yesterday's week.
-- **A rate-limit map that was never cleared.** `lastLoggedAt` kept an entry per (device, capability)
-  that had ever failed a write, for the adapter's whole life.
-- **Local artefacts could still ship to households.** `.views/`, `.probe/`, `.designexports/` and
-  `views.zip` were gitignored but not ignored by the packager, so rendering the pairing screens and
-  then installing would upload them. A test now fails if `.gitignore` grows an entry that
-  `.homeyignore` does not account for — the companion to the build-output allowlist above, catching
-  the same class of mistake one step earlier.
-
-Two maps that look like the same leak and are not — `targetGenerations` and `writeGeneration` — now
-carry the reason they are deliberately never deleted: both are compared against a value captured
-earlier, and removing an entry would make a stale closure compare equal to a fresh one.
-
-For scale, every app on that Homey: Spotify 10.5 MB, Circadian Lighting 13.3, CountDown 13.3,
-IKEA 21.3, Hue 33.0, Reolink 61.8 — median 27.2 across 32 apps, with Lightkeeper second. A reading
-is only meaningful next to that list.
-
-### A control app, and what it proved about the memory number
-
-A second memory pass, starting from nothing and deliberately re-deriving what the first one had
-concluded. The method is the finding: **a do-nothing Homey app was installed beside Lightkeeper and
-both were measured in the same minute.** An absolute reading on a Homey at 11% free memory is worth
-very little — three restarts of one build span 9 MB — but a difference between two apps read seconds
-apart survives that, because both are subject to the same machine.
-
-The whole ladder is below; the investigation document it came from has since been deleted, and what
-survives it is `docs/homey-platform.md` §15.
-
-- **An empty Homey app — `require('homey')` and an empty `onInit` — costs 27.6 MB of PSS.** Homey's
-  guideline is 30 MB.
-- Layer by layer on one process: `require('homey-api')` +0.1 MB, the first API client **+8.8 MB**,
-  connecting five managers +1.7, reading 1816 flow cards +10.5, reading 119 devices +1.5, and a
-  **second API client +0.0**.
-- Left idle, that control app settled at 43.5 MB having built two clients and done five bulk reads —
-  while Lightkeeper with no devices sat at 44.3 MB. **The app's own code is about 1 MB of the
-  difference.**
-- The cost is the transport libraries, not Athom's client: `socket.io-client` alone is +13.7 MB of
-  RSS to require, `node-fetch` +10.2, and the whole of `homey-api`'s local client +18.1.
-
-Two recorded assumptions did not survive:
-
-- **"V8 never gives the pages back" is a laptop fact, not a Homey one.** PSS was observed *falling*
-  11.8 MB on an idle process with nothing freed, and repeat catalogue reads cost +2.3, then +1.2,
-  then +0.0 MB. A pressured kernel reclaims. Avoiding a transient peak is worth much less than the
-  platform reference assumed, and §15 now says so.
-- **Peer apps are not smaller; they are paged out.** Lightkeeper is the only app on that Homey with
-  a `pssSwap` of zero, because it is the one being restarted. Spotify reads 10.1 MB resident and
-  8.8 MB swapped; on `pssTotal` the median app is ~36 MB and Lightkeeper is second of thirty-two.
-  Comparing a freshly restarted app's `pss` with a week-old one's is the easiest mistake here, and
-  the first draft of the investigation made it.
-
-Fixed along the way, each because it is right rather than because the number moves:
-
-- **The write client's socket was never closed.** Four sites dropped the reference without calling
-  `destroy()`, and a fifth replaced a live client with a new one — so every credential failure,
-  every cleared key and every re-minted key left an orphaned socket.io connection open for the life
-  of the app, and shutdown tore down only the read client. All five now close the socket first.
-- **The `insights` manager is no longer connected at boot.** `connect()` opens realtime
-  subscriptions; it does not enable requests — which the app already relied on elsewhere without
-  noticing. Its one use is a week of history for a Daylight pairing screen, and there is nothing
-  live to subscribe to. Verified on hardware: all four lux sensors still return a full week.
-- **One `Intl.DateTimeFormat` per timezone instead of one per call.** Constructing one allocates in
-  ICU's native arenas — memory no heap profile can see — and it was being built on both 60-second
-  tick paths for the life of the app.
-
-### Two things the light picker got wrong, both seen on a real Homey
-
-Neither of these ever shipped — both are defects in the pairing rewrite above, found by opening the
-screen on hardware rather than by any test — so the store changelog and the README's summary of
-0.6.0 are unchanged. They are recorded here because the record is what this file is for.
-
-- **The light picker opened with `target.deviceIds is empty` printed across it.** The screen pushes
-  its whole selection to the driver on every tap, and the first push is the empty one it opens with
-  — which the driver refused as an invalid target and the view showed as a red banner, before the
-  user had touched anything. Nothing ticked is a STATE of that screen, not a failed save: the driver
-  now answers an empty device list by clearing the session's target and returning nothing. The round
-  trip still happens rather than being skipped in the view, because a repair session arrives with a
-  target already chosen and unticking the last light has to forget it. A saved target of no lights is
-  still refused, by the save handler that always did it ("Choose some lights first"). The count line
-  under the list — "Pick at least one light" — is what says so on screen, which is what it was for.
-  The view also clears the banner on the next round trip that works: only reloading the screen used
-  to, so one failure left a red line over a selection that had since been accepted.
-- **A room could be opened and never put away again.** The header of an open room did nothing, so a
-  house of 54 lights could only ever get longer as you looked through it. The name and the count are
-  now one button that collapses the room, with the same chevron every other row in the app uses,
-  turned a quarter when the room is open; `Select all` stays its own button beside it. What the user
-  says outranks the ticks: a room opens itself when something in it is chosen, which is what a repair
-  session wants, but a room collapsed by hand stays collapsed — otherwise one it had a light ticked
-  in would spring straight back open and the header would look broken. Searching still opens
-  everything that matches, because a folded room containing the light somebody just typed the name of
-  is a search that did nothing.
-
-### A pointer to the Room-sensing Light, wherever a brightness is typed in by hand
-
-Nothing here has shipped either — 0.6.0 is unpublished — so the store changelog and the README's
-summary are unchanged again. The store entry already says every setup screen was redrawn, and one
-line of help on four of them does not change what the release is.
-
-- **Four screens that ask for a brightness now say what the fifth device type is for.** A schedule
-  block, a circadian zone, a curve point and a button's "A set brightness" each take a number that
-  then never moves, and the device that makes a brightness follow the room is a separate thing in
-  Homey's add-device list that nobody browsing these screens has any reason to have seen. Each of
-  them now carries one italic line under its slider: *Want this to follow the room instead? A
-  Room-sensing Light sets brightness from how light it already is.* It names the device type as
-  Homey lists it, so it is something the reader can go and add rather than a capability they have to
-  go hunting for.
-- **`.tip` is a new shared primitive**, in `views/shared/base.css` beside the toggle and the slider,
-  because a pointer written four times is a pointer that drifts four ways. Deliberately not a `.msg`:
-  a message takes a coloured ground and reports something that just happened, and this is an aside
-  nobody has to read to finish the screen. The circled `i` in front of it is drawn in CSS rather than
-  set as a glyph — a character the phone's font does not carry renders as a box — and it is a
-  pseudo-element rather than a child span, so Homey's own `data-i18n` pass can fill the element's
-  text without writing the mark away.
-- **The schedule screen's render fixture now opens its brightness control.** The other three already
-  set theirs on purpose, so `npm run render:views` drew this line on three screens out of four; a
-  control that is folded away in every fixture is a control the contact sheet cannot show anything
-  about.
-
-### Five investigation documents deleted, and what they were hiding
-
-Five documents in `docs/` were narratives of how a conclusion was reached, not references anybody
-consults twice: `week-long-testing.md`, `decisions.md`, `evidence-findings.md`,
-`memory-investigation.md` and `open-work.md`. 812 lines, cited from 29 places. Deleted — and
-deleting them was the thing that surfaced what follows, because every citation had to be read to be
-repaired, and several turned out to be repeating something the code had stopped doing.
-
-Two defects fixed, both carried in `open-work.md` and cited by nothing in code:
-
-- **A ramp could be started with no lights to write to.** `RampEngine.start` took `targetIds`
-  optionally and the controller read it as `(ramp.targetIds ?? [])`, so an omitted argument meant
-  "write to nothing": a hold that ticked for its full ten seconds, reported itself as a ramp that
-  ran, and moved nothing. The one caller always passed an array, which is why it was never seen.
-  Required now, copied on the way in so a caller's later mutation cannot retarget a live hold, and
-  pinned by two tests.
-- **A dead field in the circadian runtime, and three comments explaining the file in terms of a
-  method that does not exist.** `pendingColor` was written, deleted at five sites and cleared at
-  teardown, and never once read; the hue/saturation pair is really committed from the two outcomes
-  of the same batch. The comments called that mechanism `noteColorWritten`, which appears nowhere in
-  the repo. Field removed, comments rewritten to describe what the code does.
-
-What the deleted documents knew that nothing else did was folded into the places that depend on it,
-rather than into a sixth document:
-
-- **`docs/commands.md` gained the recorder** it had been silently missing while claiming to be every
-  command — `scripts/evidence.mjs` in full, the `.dev-build` switch, the archive's limits (seven
-  days, 64 MiB, 512 KiB pending, 32 KiB per record, a 15 s flush), why it is encrypted, and
-  **read `malformed` first**: a run reporting `dropped: 0` can still have lost records on the way in.
-- **`docs/homey-platform.md` §15 gained the only memory number that means anything** — an empty
-  Homey app costs 30.6 MB of PSS against a 30 MB guideline, and this app's own code is under 1 MB
-  above a control app that has made the same calls — plus the control-app method and its four traps,
-  and four strategies recorded as "do not attempt", with the measurement behind each.
-- **"V8 never gives the pages back" is no longer stated as current.** It is true on a laptop and
-  false on a Homey, where PSS was watched falling on an idle process. `CLAUDE.md` asserted it as the
-  live reason for two design choices and only retracted it twenty lines later; §15 said it twice and
-  corrected itself in two blockquotes. Both now lead with what holds.
-- **Three questions only hardware can answer now sit at the guards written for their worst case** —
-  Hue's power-on event order at `PRE_STAGE_CHECK_MS`, whether `homey-api`'s socket reconnects by
-  itself at the read-client rebuild, and what a `decimals: 1` lamp does with `dim 0.01` at `litDim`.
-  A guard that stands in for an unanswered question should say which question.
-- **Two refactors that have been proposed twice are recorded as answered** in `CLAUDE.md`: no base
-  class for the four runtime managers, no migration-step factory.
-
-And the stale claims the sweep turned up on the way:
-
-- **The FAQ told users to open a settings section that does not exist in their app.** The week-long
-  recorder is stripped from every non-development build; the diagnostics answer now describes only
-  what a user actually has.
-- **Four pair views claimed "every `innerHTML` site in the app escapes correctly."** There are no
-  `innerHTML` sites; that was the point of the rewrite that removed them.
-- `CONTRIBUTING.md` said sixteen platform sections where there are seventeen; `CLAUDE.md` said a
-  shared view block is edited in one file instead of thirteen, where it is 56; the contact sheet's
-  note said thirteen pair views where there are fifteen; two `typescript-eslint` pins named 8.68.0
-  against a lockfile on 8.69.0; the hardware script was credited with fifteen `setCapabilityValue`
-  calls and has fourteen; and `docs/design/README.md` opened with a superseded draft saying **one**
-  thing departs from the canvas, forty lines above the list of six.
+Homey running this app starts from a clean slate — so all five migration chains were reset to version
+1 with empty step tables rather than extended. A device carrying an older plan comes up unavailable
+with a message, which is the signal to delete and re-add it. Nothing has been published, so nobody
+else is carrying one.
 
 ### Three device types renamed
 
 - **"Light controller" is now "Light Remote", "Curve light" is now "Colour Curve Light", and
   "Daylight light" is now "Room-sensing Light".** Nothing about what any of them does changed — the
   driver ids, stored plans, generated Flows and mappings are untouched, so an already-paired device
-  keeps working and keeps whatever name its owner gave it. A device added from now on gets the new
-  type name in the Add-device list and on its pairing screens. "Circadian light" and "Light
-  schedule" are unchanged. Entries for 0.5.2 and earlier keep the names those releases actually
-  shipped under.
-- **The word "controller" leaves every string a user reads.** The settings page's section is now
-  **Light Remotes** rather than **Controllers**, and the tile text a device shows when something is
-  wrong stopped naming a device type it might not be: `state.needsRepair`, `state.disabled` and
-  `state.noTargets` are reached by all five device types through the shared device layer, so a
-  paused schedule and a Room-sensing Light were both being told they were a controller. They now say
-  "this device". The three that really are the remote's own — no configuration, the source gone, and
-  the re-attach offer — name the Light Remote or the physical remote, whichever they mean.
+  keeps working and keeps whatever name its owner gave it. "Circadian light" and "Light schedule" are
+  unchanged. Entries for 0.5.2 and earlier keep the names those releases actually shipped under.
+- **The word "controller" leaves every string a user reads.** The settings page's section is **Light
+  Remotes**, and the tile text a device shows when something is wrong stopped naming a device type it
+  might not be: `state.needsRepair`, `state.disabled` and `state.noTargets` are reached by all five
+  device types, so a paused schedule and a Room-sensing Light were both being told they were a
+  controller. They say "this device" now. The three that really are the remote's own name it.
 
-### The fold-out colours on the curve screen drew as hairlines
+### Health, overrides and lights that stop answering
 
-- **"Show more colours" opened a rainbow strip instead of sixteen swatches.** The fold-out grid is
-  `class="swatches more"` and the button that opens it was `class="more"`, so the view's own
-  `#cv-root .more { display: flex }` — written for the button, and sitting later in the file than
-  the shared base's `#cv-root .swatches { display: grid }` at equal specificity — won the cascade and
-  applied to the grid as well. The sixteen colours were laid out as one flex row and squeezed to
-  **2px wide** (measured in headless Chrome, against 36 x 28 now), which read as a deliberate
-  spectrum bar rather than as a broken control: the eight-column grid was still declared, and still
-  applied to nothing. The button is `.morelink`, and the comment above the rule says why it may not
-  go back. Only the Colour Curve Light's screen draws that grid, and no other view carries the
-  colliding class.
+- **Health verdicts compose instead of overwriting each other.** A device learns about its health from
+  two independent places on two different triggers — reconciliation, and the lights themselves — and
+  both were written straight to the visible state by whichever ran last. A device told "a Flow was
+  edited, open repair" had that replaced by "1 of 3 lights unavailable": a different problem, a less
+  actionable one, and `partial` also flips the device back to available so the repair prompt
+  disappears from the tile. One lamp switched off at the wall was enough. There is now one ranked
+  verdict (`lib/runtime/verdict.ts`): needs_credential > needs_repair > partial > ready, ties to the
+  verdict that names an action. `needs_credential` outranks `needs_repair` because repair WRITES Flows
+  (platform §1), so a repair prompt on a dead key sends the user into a flow that cannot complete.
+- **A remembered `needs_credential` is forgotten on request by both verdicts.** A stale copy is the
+  most severe state there is, so it sat over every later verdict for ever, and the tile went on saying
+  "Lightkeeper needs a new API key" against a key that worked.
+- **A lamp that stops accepting writes surfaces within a minute or two.** The write-failure streak
+  exists so a runtime does not go on writing to a lamp for ever behind a green tile — and it did
+  exactly that, because health was assessed at start and on a target-set change and nowhere else. A
+  lamp cut at the wall stays `available: true` (platform §6), so the fingerprint never moved and the
+  unwritable set was consulted once, when it was empty.
+- **A light whose lamps were switched off could report itself as broken.** Some Philips Hue bulbs
+  refuse a colour sent while they are off — the bridge answers "soft off" — and a circadian or Colour
+  Curve Light with pre-staging on kept sending it once a minute for as long as the lamps were off.
+  Each refusal counted against the lamp, so the device eventually said its lights were not responding,
+  and where all its lamps behave that way it took itself offline. A refused pre-stage write is no
+  longer counted: from the refusal alone a lamp that is merely off looks exactly like one that is
+  dead. Pre-staging also stops offering a colour to a lamp that has refused three times running, and
+  tries again the next time that lamp is switched on. Found on four of thirteen colour-capable bulbs
+  behind one bridge.
+- **An override expires after four hours.** A lamp that accepts every write, acknowledges it and
+  reverts to its own values ninety seconds later is indistinguishable from a person, so it was read as
+  one — and an override was cleared only by an `onoff` edge, by the target leaving the plan, or by the
+  runtime stopping. One device stood down for 23.6 h, then 23.1 h, 15.5 h, 15.2 h and 11.0 h back to
+  back, lamp on throughout, reporting `ready` throughout. Four hours is a balance: long enough not to
+  fight somebody who dimmed the lamps for an evening, short enough that a lamp the app cannot drive
+  costs one evening instead of a week. Expiry also drops `committed`/`lastWritten` for that lamp —
+  without it the plan is unchanged, the no-op filter drops the write, and the lamp stays where it was
+  put. Both halves ship together or neither does anything.
+- **Switching a lamp off is no longer read as overriding us.** The `lamp_off` guard reads `actualOn`,
+  which only moves when the `onoff` report lands, and one integration reports `dim 0` a median of
+  **29.9 seconds before** the matching `onoff: false`. In that window the report went straight to
+  `noteOverride`: 296 of 327 overrides in a recorded week were this and nothing else, each a false
+  badge and a junk entry evicting real history from a 120-entry log. A reported `dim` of 0 is now the
+  lamp going off whatever `onoff` has said yet — neither runtime can write 0, so a reported 0 is
+  always the lamp's own.
+- **A tolerance is compared with an epsilon, never a bare `<=`.** `Math.abs(0.83 - 0.86)` is
+  `0.030000000000000027`, so the same three hundredths was forgiven at one end of the axis and
+  prosecuted at the other — which, under the expiry bug above, meant standing down for good.
+  `withinOverrideTolerance()` owns the comparison for all three sites.
 
-### The curve screen's chart, and the day a new one starts with
+### A value that is absent is no longer a value of zero
 
-- **The chart blends its colours now, because the engine always did.** A coloured segment fades from
-  one palette colour to the next — `mixColors()`, across the disc rather than round the rim — but
-  the pairing chart held each colour flat and snapped at the halfway mark, on the argument that a
-  blended hue is no palette entry and a screen should not draw a colour nobody could have chosen.
-  That is the wrong question: the chart's job is to show what the ROOM will do, and the room is
-  blended. It drew five bands where the lights fade through every shade between them. The view
-  carries a hand-copied duplicate of that maths — it repaints on every edit and cannot ask the
-  driver — so the new test compares all twenty-four bars against the engine itself rather than
-  against remembered values, which is the only thing that fails when the copy drifts.
-- **The handles are gone from the chart.** A dot per point with the selected one filled, on the
-  argument that the chart is the only place the shape is visible. At 390px the five of them sat on
-  top of the bars they were drawn from, and a point at full brightness had to be tucked back inside
-  the top edge to stop it hanging over the heading. The bars are the shape, the dashed line says
-  which point is open, and the card under it names that point.
-- **A new Colour Curve Light pairs with brightness switched on, and the five default points carry
-  one**: 44% at 06:30, 80% at 09:00, 64% at 14:00, 94% at 19:00, 36% at 22:30. A flat day of colour
-  is a picture of one axis — every bar full height, the Off-to-Full gutter hidden, nothing on the
-  screen saying the second axis exists. A dim dawn rising to a bright evening and falling back to a
-  low violet night is the shape a curve is for. Repairing an existing device is unchanged: it reads
-  the stored plan, so a curve saved without brightness keeps none rather than having five values
-  invented for it.
-- **Switching brightness off no longer forgets what the points held.** It is all-or-nothing by
-  design — the engine interpolates brightness only where both ends carry one — but switching it off
-  cleared all five values and switching it back on wrote a flat 80%, so one accidental tap destroyed
-  the shape with no way back inside the session.
+- **`Number(null)` is 0 and 0 is pitch dark**, open on all five light axes. A live report of `null`
+  became an apparent zero in actual state, and the NEXT report read as "changed by hand, to nothing",
+  so the lamp stood down and stopped following its curve until its next power cycle. `liveValuesOf()`
+  also cast a snapshot value straight to `number | undefined`, which mistypes rather than coerces — so
+  a Room-sensing Light counted `null` as a real reading, seeded its aim from a perceptual zero and
+  wrote `dim 0.01` to an already-lit lamp before fading it back up at 0.05 a tick. One guard covers
+  both paths.
+- **A lamp's own power-on report is no longer read as a human override.** The settle anchor was
+  deleted at the off edge and not re-armed at the on edge, so a bulb power-cycled at the wall could be
+  marked overridden and skipped on every tick until its next power cycle — defeating the headline
+  promise that a lamp is the right colour however it was switched on.
+- **Dimming down on a lamp declaring `decimals: 1` no longer writes a value that lamp shows as off.**
+  The floor defaulted to 0.01, the `decimals: 2` representable step wearing a policy name; on a tenths
+  lamp it quantises to 0.00 — darkness, written by the one branch whose purpose is to refuse it.
+- **Synchronised group brightness no longer nudges a lamp already on the group target one step past
+  it.** `advanceDim`'s guarantee that a lamp MOVES is right per lamp and wrong for a group, so the one
+  lamp that started in the right place was the one that drifted, on every press.
 
-### The Light Remote intro draws the three gestures, not step 3 in miniature
+### Other fixes
 
-- **The picture at the top of the Light Remote flow is three button caps — Press, Hold, Turn —
-  instead of three rows reading "Top / pressed / On and off".** Those rows were the buttons screen
-  shrunk: the screen after next, drawn twice, telling a user nothing the title had not already told
-  them. Press, hold and turn are the three things the app can actually tell apart on a remote, which
-  is the one fact somebody deciding whether to start this flow needs — a dial is not a different
-  kind of device here, it is a third gesture. A remote with no dial simply reaches step 3 with two
-  of the three rather than with a promise that was not kept.
+- **One-tap re-attach no longer offers whichever identical remote came first.** The portable
+  fingerprint is device-agnostic by design, so two STYRBARs tie — and nothing excluded a remote
+  another live controller was already listening to. Remotes in use are excluded, and a genuine tie now
+  says so and sends the user to repair to choose.
+- **A save the app could not have loaded back is refused when it is made.** The only validator in the
+  device layer ran at load, so a route could persist a plan the next restart refused — the device
+  going unavailable saying "set this device up again", days later, with nothing to connect it to.
+- **Deleting a device no longer recreates a `Lightkeeper` folder the user had removed**, and no longer
+  attempts a folder WRITE from a delete — which, on a dead key, could flip every device to "needs a
+  new API key" while tidying up.
+- **Sensor ids from a pairing screen are checked against the catalogue**, not only for shape. A lamp
+  id accepted as a sensor was subscribed to, never reported a lux value, and left the device running
+  on the sky for ever.
+- **A "not found" is no longer inferred from `404` appearing anywhere in an error message.** Homey
+  echoes ids back inside errors, and roughly one UUID in three hundred contains `404` between two
+  non-digits — enough for a 409 or a 500 to be read as "already gone" and the Flow left firing where
+  the orphan sweep cannot see it.
+- **A plan written by a NEWER version now says to update the app**, instead of telling somebody whose
+  configuration is intact to set their device up again.
+- **The write client's socket is closed.** Four sites dropped the reference without calling
+  `destroy()` and a fifth replaced a live client, so every credential failure, cleared key and
+  re-minted key left an orphaned socket open for the life of the app.
+- **A whole-Homey device re-parse on every re-subscribe is gone.** `makeCapabilityInstance` asks
+  `homey-api` to refresh every device in the house when the device it is called on is more than 2.5 s
+  stale, and a device served from cache always is — so every catalogue change, re-attach and client
+  rebuild queued a full `getDevices()`.
+- **A sensor's Insights week is no longer cached forever**, and the `insights` manager is not
+  connected at boot: `connect()` opens realtime subscriptions and there is nothing live to subscribe
+  to. The cached copy had meant the pairing screen redrew yesterday's week.
+- Smaller: a hand-edited profile with an absurd range no longer hangs startup; a "test it now" probe
+  cannot write after its own runtime has stopped; an orphan count reports a transport failure rather
+  than failing every sweep for the rest of the run; `network` as part of a word is no longer read as a
+  network failure; a rate-limit map that was never cleared is; and one `Intl.DateTimeFormat` per
+  timezone instead of one per call.
 
+### Diagnostics
 
-### Step 1 of the Light Remote could not list a single remote
+- **Per-runtime history of the last 60 control passes and 120 power/override events**, with each
+  pass's per-target decisions, the sensor inputs behind a daylight pass, and command completion
+  outcomes. Kept independently of the short command log, so six lamps cannot erase an hour of history
+  in five ticks, and truncation is reported rather than silent.
+- **The app can see its own memory.** `process.memoryUsage()` throws in the app sandbox and `/proc` is
+  not mounted (platform §17), but `v8.getHeapStatistics()` and the per-space split can be read — and
+  they are the only signal that distinguishes *holding* a parsed catalogue from *having parsed* one,
+  which PSS cannot. Three boot marks come with it: the app's JS heap is **15.2 MB with no devices**,
+  of which **8.8 MB is spent importing its own modules** before `onInit` runs.
+- Brightness units, snapshot timestamps and API-success semantics are labelled in the export.
 
-- **"Which remote?" drew `Cannot read properties of undefined (reading 'length')` and nothing
-  else**, on the first screen of the only flow that has one — so a Light Remote could not be paired
-  at all. The picker in `lib/pairing/source-list.ts` returned each room's remotes as `devices` and
-  the screen read `room.sources`. Both ends were covered and both passed: the boot test answers
-  `listSources` with `rooms: []`, so the loop over a room's remotes never ran, and the render
-  fixture had been written to match the view rather than the driver, which is exactly how a fixture
-  authored by hand stops being evidence. The list is `sources` now, which is also what the two
-  sibling pickers call theirs — `lights` in `target-picker.ts`, `sensors` in `sensor-picker.ts`.
-  The regression test builds the reply with `groupSourcesByRoom` itself and runs the real view on
-  it, so the two ends cannot disagree again without a red test.
-- **Choosing a remote showed no tick.** The row's selected state is drawn by
-  `.remote[aria-pressed="true"] .box`, and the re-render cleared every row and set none — so a tap
-  produced a message about the remote and no visible choice, and a repair session that opened on
-  the remote already in use marked nothing. It also needed the driver to say which remote that is:
-  `listSources` returned only the rooms, while the screen had always read a `current` beside them.
-- **The "found it" line reported `[object Object]` where the button count belongs.** `selectSource`
-  returns the remote's controls as a list — the buttons screen and the hardware script both read it
-  as one — and the screen passed the whole list into a message expecting a number.
+**What the memory work established, since it changes how the number should be read.** A do-nothing
+Homey app — `require('homey')` and an empty `onInit` — costs **27.6 MB of PSS** against Homey's 30 MB
+guideline, and Lightkeeper's own code is about **1 MB** above a control app that has made the same
+calls. The cost is the transport libraries: `socket.io-client` alone is +13.7 MB of RSS to require.
+Two recorded assumptions did not survive: "V8 never gives the pages back" is a laptop fact and not a
+Homey one — PSS was watched *falling* on an idle process — and peer apps are not smaller but paged
+out. The whole ladder, its method and its traps are in platform §15; report this app's footprint as
+its margin over a control app rather than as an absolute.
 
+### Repository and tooling
 
-### "Which remote?" listed the whole house
+- **A seven-day evidence recorder, built OUT of the app you install.** It is a development tool: the
+  code, its six Web API routes and its settings section are removed at build time, and the build fails
+  if any of it is left. `.dev-build` at the repository root puts it back for a local install.
+- **`scripts/build.mjs` fails the build on a stray in `.homeybuild/`.** It was found holding a stale
+  `print.pdf` and a `views.zip` of deleted screens — 3.6 MB that would have shipped to households,
+  because the Homey CLI honours `.homeyignore` and does not consult `.gitignore` at all. An allowlist
+  rather than a denylist, because the file that ships is always the one nobody thought about. A test
+  also fails if `.gitignore` grows an entry `.homeyignore` does not account for.
+- **`npm run render:views` draws Homey's own sheet** around each screen — its header and its
+  `← Previous` / `Next →` footer — and renders each driver's own intro, light picker and review
+  separately. Both were omissions that hid real defects: without the chrome, nine screens had shipped
+  drawing a **second Next** below a sheet that already had one, and on the key screen that was a
+  bypass rather than a duplicate, since Homey's own Next walked past an empty field.
+- **`npm run sync:views` splices the shared blocks** from `views/shared/` into all 56 pair and repair
+  views, rather than each being hand-maintained under an instruction to "edit this block in all files,
+  or in none of them".
+- **CI audits the shipped dependency tree** and fails on a new high or critical. The manifest's `api`
+  block is checked against `api.ts`'s exports — a name matching nothing gave no build error, no
+  validate error and no test failure, only a 404 when somebody pressed the button.
+- **`docs/homey-platform.md` is the platform reference**, seventeen numbered sections cited from over
+  150 places as `platform §n`. Five investigation documents that narrated how conclusions were reached
+  were deleted, their durable findings folded into the code and the reference that depend on them.
 
-The first screen of the Light Remote drew every device on the Homey as one alphabetical run,
-grouped by room — a hundred and more rows on an ordinary house, nearly all of them lamps, plugs,
-sensors and appliances that the very next tap would have refused with "nothing can be read from
-it". The remote somebody had come to pick was somewhere in it.
+### The Room-sensing Light's artwork
 
-- **The screen now draws two lists: what Homey can hear a gesture from, and — behind one row —
-  everything else.** The reasoning it replaces is written down in `lib/pairing/source-list.ts` and
-  was answering the wrong question: there is indeed no reliable way to tell a remote from anything
-  else that exposes trigger cards, and the screen does not have to. It has to hide what CANNOT
-  work. Nothing is filtered away — the second list holds every device, in its room, and
-  `selectSource` is still what finally decides, on the device itself.
-- **`eventCount` now means what the screen says it means**, which is what made the split possible.
-  It counted device-scoped trigger cards by id, excluding the sensor-shaped ones; but every Homey
-  device carries generated capability cards, and a lamp's own `onoff_true`/`onoff_false` are not
-  sensor-shaped. Every bulb, plug and speaker in the house scored two, which is why the old screen
-  could not have sorted its way out of the problem either. Ranking now applies the same gesture test
-  `normalizeCards` does — "Turned on" is not a press — and counts the second strong route as well
-  (platform §4), so a remote reachable only through a filtered app-level card is not folded away as
-  if the Homey had never heard of it.
-- **A search box over both lists**, the same one the light picker has and for the same reason: the
-  name is what somebody knows. Searching opens the second list, because a fold that hides the device
-  whose name has just been typed is a search that did nothing.
-- **Lightkeeper's own devices are gone from the list.** A schedule or a circadian light is not a
-  remote, and carries generated capability cards like anything else. `lightCandidates()` has
-  excluded them since it was written; this list had not.
-- Two smaller consequences, both pinned by tests. The remote a repair session opens on is always in
-  the first list whatever it now reports — the ordinary reason to repair is that the integration
-  changed underneath it and it went silent, and folding it away would leave a screen whose only tick
-  was somewhere the user could not see. And a house Homey has heard nothing from at all opens the
-  second list itself, rather than presenting one closed row as the whole screen.
-
-
-### Every button on the Light Remote's step 3 was drawn inside Homey's own grey pill
-
-The screen that asks what each button should do put every gesture's name in a grey rounded box with
-the container's padding and the container's ink, nothing like the plain name-over-its-second-line
-the design draws. It looked right in every render taken of it.
-
-- **A pair view is injected into the pairing container's own document, so a class name is shared
-  with whatever that document already styles.** The row's two lines were called `.button` and
-  `.action` and its value `.job` — names that say exactly what they are on, and that a UI framework
-  has almost certainly spent already. Our rules for them declared a font size and a colour, so
-  everything they did not declare — background, padding, radius — came from the container.
-- **The rows are built from the base's own `label · value · chevron` vocabulary now**, which every
-  other list in the app already uses and which is the shape the design draws here. The card, its
-  padding and its inset hairlines are `card rows` from the shared base rather than a second recipe
-  for the same card, so this screen's own CSS is three rules: the gap under the card, the weight on
-  a name that stands above a second line, and one step more ink on a job than on the "Nothing"
-  beside it.
-- **No render could have caught this, and that is the durable part.** `render-views.mjs` draws a
-  view alone on a white page — the container's stylesheet is not in this repo and is not in that
-  document, so the local render was faithful to the design both before and after the fix. What
-  changed instead is a test that fails if any pair view takes the class name `button` again, and a
-  hardware line (T127) that says to look at those rows on a phone. The list of names the container
-  owns is one long on purpose: a longer one would be guesswork about a stylesheet nobody here has
-  read.
-
-### What each button is set to, said in the margin
-
-Which buttons had a job and which had not was carried by one word at the far end of each row, so
-counting what was left to do meant reading the right-hand column downwards.
-
-- **Every row now opens with a mark: filled where the button has a job, an empty ring where it has
-  none.** The two differ in fill rather than in colour, so the list answers "what have I still not
-  set" at a glance, on a small screen, and to a colour-blind reader. The name and its job carry the
-  weight; a row with no job recedes — no red, no badge, nothing to clear, because a four-button
-  remote where two buttons do nothing is a remote somebody set up exactly as they meant to. That
-  word is "Not set" now rather than "Nothing".
-- **"Press a button on the remote to jump to its row" moved above the list**, where it is an
-  instruction for using the list rather than a footnote about it. Below it, it was read after the
-  decision it offers to speed up, and on a remote with more rows than fit a screen it was never
-  read at all.
-- **The row a real press lands on is finally drawn.** Press-to-find has always scrolled to the row
-  and added a class to mark it; nothing styled that class, so the only feedback that the press had
-  been heard at all was the scroll — on a screen that may already be showing the row it scrolled
-  to.
-
-### Choosing what a button does now takes you back to the list
-
-The job editor is a pushed screen with one question on it, and answering it left you where you
-were: the tap was saved, the row behind it had changed, and the only way to see that was to find
-Homey's back arrow yourself.
-
-- **A tap on a job saves it and returns to the buttons list**, where the row it belongs to now says
-  what it does. The save lands first on purpose — the buttons screen re-reads its rows when it
-  comes back into view, so a navigation that overtook the save would draw the job the tap replaced.
-- **"A set brightness" is the exception, because picking it is not the end of the question.** It
-  reveals the brightness and warmth sliders on that same screen, and going back would take them
-  away before they had been touched. That row stays, and the back arrow is the way out of it — the
-  same way out it has always had, which is why the choice is committed on every change rather than
-  held for a Done button.
-- Testing a job on a real lamp is where it was: choose the job, and if you want to watch it happen,
-  open the row again and use "Try it" with the job already chosen.
-
-### One remote, different lights on different buttons
-
-A Light Remote drove every light it was given with every button it had. The engine had carried a
-per-rule target since it was written — `MappingRule.target`, null meaning "inherit" — and nothing
-since the pairing rewrite could set one, so the top button could dim the floor lamp only if the
-whole device was about the floor lamp.
-
-- **Each button now says which lights it drives, and the buttons list says it without opening
-  anything.** A row reads `Top · Long press` over `Brighter · Floor lamp`, so a remote whose top
-  button dims one lamp and whose bottom button dims the room is legible as that from the list. The
-  default stays short whatever the house is: `all three`, not three names, and not thirty.
-- **"All of them" is stored as inherit, never as a list of today's lights.** Ticking every box in
-  the checklist collapses back to it, and so does clearing the last one, because a written-out list
-  freezes a button against the lights that existed on the day it was saved while "all" goes on
-  following a room that gains a lamp. Narrowing the lights on step 2 re-aims any button that named
-  one of the lamps dropped, and the runtime writes to a light outside the device's own selection
-  under no circumstances.
-- **The job editor is a nine-tile grid, and the grid is the grouping.** Power, brightness and colour
-  across; up, down and "set a value" down each column, so every column reads the same way in all
-  three rows and no group headings are needed. Each tile carries a picture of its effect rather than
-  a number — bars that climb, a track from dark to light, the warm and cool ends of one ramp, three
-  dots for a colour — and the value appears only under the tile that has been chosen, because "60%"
-  printed on a tile nobody picked read as the only brightness on offer.
-- **"Do nothing" sits below the grid, full width.** It is the absence of a job rather than a tenth
-  kind of one, and it is what an unmapped button already says.
-- **A new job: a colour.** One colour from the same closed palette a Colour Curve Light chooses
-  from, stored by name rather than as two numbers, and offered only where a lamp can actually take
-  one. **"Step through warm and cool" is no longer offered** — the grid's third column sets a value,
-  and for the colour row that value is a colour. A button already assigned to it goes on stepping
-  through warm and cool, keeps its tile while it is the one selected, and is honoured everywhere a
-  stored rule is read: retired is not deleted.
-- The Test control now runs against the lights that button drives rather than against all of them,
-  which is the only way to prove a per-button target on a real lamp.
-- The sixteen colours that fold out now sit 18px below the featured eight rather than 7px. At the
-  same gap as the rows above them they read as more of the same grid, and finding where one group
-  ended meant measuring swatch sizes. The Colour Curve Light's palette gets it too — same block,
-  same two groups. The job screen had also been overriding that margin away without meaning to:
-  `#jb-root .preset .swatches { margin: 0 }` and `#jb-root .swatches.more` carry the same
-  specificity, and the view's own block is further down the file, so the reset won.
-- **Two things that shipped broken and are fixed here.** A view that names a colour token the shared
-  base does not define draws nothing at all — no error, no warning, the declaration simply dropped —
-  and the "Cooler" tile did exactly that. A test now fails on any token a view uses and the base
-  does not define. And choosing a job no longer jumps back to the buttons list: that screen asks two
-  questions now, and returning after the first put the second out of reach.
-
-### "4 found", above a list showing one
-
-The Room-sensing Light's sensor screen folded every room behind a tap, opening only the room
-holding the chosen sensor. On a house with four light sensors in four rooms that drew a heading
-saying four had been found above a list showing one, with the other three behind rooms nobody had a
-reason to open: the count was the only evidence they existed, and a count is not a list.
-
-- **Every sensor is drawn, and none of them is behind a tap.** The folding was sized for the light
-  picker's problem — a house has forty lamps and four lux sensors — so showing all of them costs a
-  short scroll. Rooms with no sensor stay one line each saying so, which was the half of that design
-  that was right: leaving them out makes the house look smaller than it is, and "this room has none"
-  is half the answer to where the reading should come from. Those rows no longer accept a tap,
-  because there is nothing behind them any more.
-- **Choosing the sun hides the room list entirely.** It used to hide only the OPEN rooms: the
-  per-room fold state survived the toggle, so a room expanded while browsing sensors was drawn into
-  the hidden container and appeared in neither list — one more way to be told four and shown one.
-  The fold state is gone with the folding, and a room list under "the sun" was answering a question
-  nobody is still asking.
-
-
-### The heading moved when the sensor list unfolded
-
-Opening the sensor picker's list made the screen a little taller than the pairing sheet, a scrollbar
-appeared, and every line of text re-measured in the width it left behind — so "Where should the
-reading come from?" sat on one line before the tap and on two afterwards. The text had not changed;
-the usable width had.
-
-- **Every pairing screen now reserves the scrollbar's gutter**, so the width is one number for the
-  whole session whether the bar is showing or not. The mechanism already existed and was in exactly
-  one screen — the API-key step — which is why this was invisible on a Light Remote and a light
-  schedule and happened every time on the other three device types: the scrolling element belongs to
-  Homey's pairing container and outlives each screen, so whichever screen boots first settles it for
-  the rest of the flow. It is spliced into all fifty-six views from one source now, and a test fails
-  if a view is added without it.
-- **A screen title that does not fit on one line now breaks evenly.** "Where should the reading come
-  from?" is the longest title in the app, and on a phone it has never fitted: it broke 295px + 54px,
-  leaving "from?" alone on the second line. It is 163 + 185 now. This is not a way round a title
-  that is too long — at 20px it wants 354px and at 18px still 319px, against a 311px column, so no
-  size holds it on one line at phone width without shrinking every other title by an eighth. The
-  wording is unchanged, a title that already fits is unaffected, and a browser without balanced
-  wrapping breaks exactly where it did.
-
-
-### The Room-sensing Light's artwork, and two other icons that caught up with their names
-
-The Room-sensing Light shipped in this release with two placeholder graphics: a plain stroked circle
-for its icon and a flat violet disc for its store image. Both are gone, which closes the last publish
-blocker in the app.
-
-- **A supplied mark replaces the circle.** Six strokes — a dome-topped form with two folds inside it,
-  and three diagonals across its lower right. It is the one icon in the set that does not depict what
-  its device type does, and the one that reads worst at the 24px the App Store draws a driver icon
-  into; that was weighed before shipping and is written down in `artwork/provenance.md` under *The
-  hood mark*, together with the brief for whoever redraws it, rather than presented as a drawing that
-  succeeded.
-- **About 8 KB of C2PA provenance metadata came with it and was stripped.** The export copies a
-  master's inner markup through verbatim, and Homey fetches an icon by MD5 to use as a flat alpha
-  mask — so an embedded manifest is weight that nothing on the device can read. It would have been
-  larger than every other master in `artwork/masters/` put together. The provenance is in
-  `artwork/provenance.md`, where this folder keeps it for every other master too.
-- **The Light Remote's and the Colour Curve Light's icons still carried their old names.** Renaming
-  the three device types earlier in this release updated the titles in the export script but never
-  re-ran it, so the shipped files said "Light controller" and "Curve light" in their `<title>`. Both
-  were regenerated. Nothing renders that element — it is there for a reader opening the file — which
-  is exactly why it went unnoticed.
-
-- **The store image is a render of the device, replacing the violet disc.** Guideline 1.4 rejects a
-  flat shape as a device image, which is why the other four are not one. It is the third render of
-  the same wall-unit family as the circadian and Colour Curve Lights, so the three engine-driven
-  device types read as one app in a driver list, and its face carries what this one actually does: a
-  curve descending from a glowing amber ring to a plain grey one, a moon under the lit end and a sun
-  under the dim end. Dark room, bright lamp. It also gains a domed sensor lens the others have no
-  use for — the one signal that this device type reads something rather than only writing.
-- **The crop was checked before the master was committed, not after.** The export finds a subject by
-  non-white detection, and this render's drop shadow falls to the right of the device, so the
-  detected box runs about 17% past the object's true edge. The resulting square was rendered and
-  looked at: the device sits centred with even margins, and the box aspect is within a hundredth of
-  the shipped Colour Curve Light master's. `artwork/provenance.md` records the numbers and the
-  threshold to measure against, because the next master to crop badly will fail exactly here.
+- **Its icon and device image were placeholders** — a plain stroked circle and a flat violet disc,
+  both of which satisfied every automated check and neither of which was finished work. Both were
+  replaced, which closed the last publish blocker.
+- The device image is a render of the same rounded-square wall unit as the circadian and Colour Curve
+  Lights, so the three engine-driven device types read as one app in a driver list, and its face
+  carries what this one does: a curve descending from a glowing amber ring to a plain grey one, a moon
+  under the lit end and a sun under the dim end. Dark room, bright lamp. It also gains a domed sensor
+  lens the others have no use for — the one signal that this device type reads something rather than
+  only writing.
+- **The icon is the one graphic in the app that does not depict what its device type does**, and the
+  one that reads worst at the 24px the App Store draws a driver icon into. It was supplied as artwork
+  and shipped as given; `artwork/provenance.md`'s *The hood mark* carries the reasoning and the brief
+  for whoever redraws it. About 8 KB of C2PA metadata arrived with it and was stripped in the master,
+  because Homey uses an icon as a flat alpha mask fetched by MD5 and nothing on the device can read an
+  embedded manifest.
+- **Two other icons were stale.** Renaming three device types updated the titles in
+  `artwork/export-assets.py` but never re-ran it, so the shipped files still said "Light controller"
+  and "Curve light" in their `<title>`. Nothing renders that element, which is why it went unnoticed.
 
 ## 0.5.2
 
