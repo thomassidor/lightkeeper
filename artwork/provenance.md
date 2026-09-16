@@ -5,25 +5,54 @@ to a shipped file is lost on the next export. What to produce, and why, is in
 [`asset-spec.md`](asset-spec.md); how Homey consumes it is in
 [`../docs/homey-platform.md`](../docs/homey-platform.md) §10.
 
-## Two placeholders, and they are a publish blocker
+## The placeholders are gone, and the publish blocker with them
 
-**The Room-sensing Light's two graphics are PLACEHOLDERS**, added with the device type on
-**3 September 2026** for 0.6.0:
+**The Room-sensing Light shipped with two PLACEHOLDER graphics** on **3 September 2026** for 0.6.0 —
+a plain stroked circle for its icon, a flat violet disc for its device image. Both satisfied every
+automated check, which was deliberate so the device type could ship, install and be tested, and
+neither was finished work. **Both were replaced on 16 September 2026**, which closed the publish
+blocker recorded here, in `artwork/asset-spec.md`, in `docs/homey-review-notes.md` and in each
+master's own comment.
 
-| File | What it is now | What it needs to be |
-|---|---|---|
-| `daylight-icon-master.svg` | A plain stroked circle | Line art that says "brightness from the light in the room". A bare circle reads as a dot beside four icons that mean something, and at the 24 px the App Store draws a driver icon into (§10) that is all it will be |
-| `daylight-device-master.png` | A flat violet disc on studio white | **Photography.** Homey's guideline 1.4 rejects a flat shape as a device image, which is why the other four masters are photographs. This one would be rejected on sight |
+The icon is *The hood mark* below, and it ships with a recorded reservation. The device image is
+`daylight-device-master.png`, further down, and has none.
 
-Both satisfy every automated check — that is deliberate, so the device type can ship, install and be
-tested — and neither is finished work. **Replacing them is a release blocker before publishing**, and
-it is recorded here, in `artwork/asset-spec.md`'s table, in `docs/homey-review-notes.md`'s known
-limitations, and in each master's own comment. Four places rather than one, because a placeholder
-recorded once is a placeholder that ships.
+`test/unit/assets.test.ts`'s `PENDING_ARTWORK` set is still **empty**, and was throughout: that set
+excuses an icon from the no-two-identical comparison, and neither placeholder was ever identical to
+anything. A placeholder is a *quality* problem, which no test can hold — which is why this section
+existed, and why it is kept as a record now rather than deleted.
 
-`test/unit/assets.test.ts`'s `PENDING_ARTWORK` set is still **empty**, and correctly so: that set
-excuses an icon from the no-two-identical comparison, and a circle is not identical to anything. The
-placeholder is a *quality* problem, which no test can hold — hence this section.
+### The hood mark
+
+`daylight-icon-master.svg` was **supplied as artwork on 16 September 2026** and shipped as given,
+replacing the plain stroked circle that stood there from 3 September. Six strokes: a dome-topped form
+with two folds inside it, and three parallel diagonals across its lower right. It was delivered under
+the name `hood-mark.svg`, carrying `aria-label="Abstract hooded figure with three motion strokes"`.
+
+**Two departures, both deliberate, neither to be quietly repaired.**
+
+**It does not depict what its device type does.** Every other icon in the set does — a remote sending
+a signal, a stopwatch, a sun on the horizon, a curve with its points — and `asset-spec.md` records
+that the circadian and curve sets were made to show the *same thing* in the icon as in the device
+picture, so a device type reads the same on a tile as in a driver list. This one shows neither a
+sensor nor a light. It was raised before shipping, with the 24 px render below as the evidence, and
+re-supplied unchanged; that is the decision, and it is recorded rather than re-argued. Anyone
+redrawing it has an obvious brief to hand: the device render's own face — a curve descending from a
+lit dot with a moon to an open dot with a sun — which is what "brightness from the light already in
+the room" looks like.
+
+**And it is the least legible of the six at 24 px**, which is the size that rules a driver icon
+(§10). The three diagonals are 8 units apart on a 512 canvas and merge into one smear there; the two
+folds inside the dome collapse into its outline. `npm run render:icons` draws the comparison. The
+other five were each cut down until they survived that box — the curve icon went from thirteen
+strokes to five — so the precedent for a redraw is to *remove* strokes, not to thin them.
+
+The C2PA manifest it arrived with — roughly 8 KB of base64 in a `<metadata>` element, larger than
+every other master in this folder combined — was stripped when the master was written, not in the
+export: `build_icon()` copies inner markup through verbatim, and Homey fetches an icon by MD5 to use
+as an alpha mask, so provenance metadata inside one is weight nothing can read. The provenance is
+here instead, which is where this folder keeps it for every other master.
+
 
 ### What came before
 
@@ -47,16 +76,18 @@ asserts each pending entry names a real icon target, so the list cannot outlive 
 | `schedule-icon-master.svg` | `drivers/schedule/assets/icon.svg` |
 | `circadian-icon-master.svg` | `drivers/circadian/assets/icon.svg` |
 | `curve-icon-master.svg` | `drivers/curve/assets/icon.svg` |
+| `daylight-icon-master.svg` | `drivers/daylight/assets/icon.svg` |
 | `app-hero-master.png` 1499×1049 | `assets/images/*` and `readme/banner.png` |
 | `remote-device-master.png` 1499×1049 | `drivers/controller/assets/images/*` |
 | `schedule-device-master.png` 1500×1049 | `drivers/schedule/assets/images/*` |
 | `circadian-device-master.png` 1499×1049 | `drivers/circadian/assets/images/*` |
 | `curve-device-master.png` 1254² | `drivers/curve/assets/images/*` |
+| `daylight-device-master.png` 1254² | `drivers/daylight/assets/images/*` |
 | `logo-bitmap-original.png` 1071² | nothing ships from it; it is the palette's source of truth |
 
 Supplied by the author on **23 August 2026**, replacing a set generated on 12 August 2026. The
 photographs are image-model output from the prompts in
-[`asset-spec.md`](asset-spec.md#prompts-for-the-five-images), reviewed to exclude logos,
+[`asset-spec.md`](asset-spec.md#prompts-for-the-six-images), reviewed to exclude logos,
 trademarks, brand-recognisable hardware and text — Homey's review checks that store imagery is not
 manufacturer photography, so that matters. The prompts live there and are not repeated here; this file
 carries the date, the tool and the rights.
@@ -107,7 +138,7 @@ recorded here so nobody "fixes" it into 1500 × 1050 and reframes the crop for n
 
 **It carries text, and the brief says not to.** The four hour labels — 06:00, 12:00, 18:00, 00:00 —
 break the "no text, no numerals" rule that
-[`asset-spec.md`](asset-spec.md#prompts-for-the-five-images) applies to every device shot, for a
+[`asset-spec.md`](asset-spec.md#prompts-for-the-six-images) applies to every device shot, for a
 stated reason: numerals turn to mush at 75 px and printed type in a store image reads as clipart.
 Checked at 75 px, both halves of that prediction hold — the labels are illegible — **and the image
 still works**, because they degrade into a faint tick row under the curve rather than into visible
@@ -121,6 +152,37 @@ for you", the other says "every point is yours". Both were redrawn in 0.5.1 for 
 box (see **Icon weight** below); before that the curve was four points over a row of hour ticks
 inside a rounded-square frame, and the circadian light was a bulb under a daylight arc. Each icon's
 canvas fit comes from `--measure`, stored in the script so a normal export needs no browser.
+
+## `daylight-device-master.png`
+
+Supplied by the author on **16 September 2026**, generated with **ChatGPT's image model** (OpenAI) —
+same delivery route as the circadian and curve pairs above, and checked against the same filter: no
+logo, trademark, brand-recognisable hardware, or resemblance to a real product. It replaced the flat
+violet disc that had stood since 3 September and was the last thing holding the publish blocker open.
+
+**1254 × 1254, square**, matching `curve-device-master.png` rather than the landscape masters. Same
+note applies: `subject_square()` finds the subject by non-white detection, so a master's aspect never
+reaches a shipped file. Nothing to fix.
+
+It is the **third render of the same device family** — the rounded-square wall unit, three-quarter
+from the left, on studio white — which is what makes the three engine-driven device types read as one
+app in a driver list. What differs is the face, and here it carries the whole idea: a curve
+descending from a glowing amber ring to a plain grey one, a crescent moon under the lit end, a sun
+under the dim end. Dark room, bright lamp. It also gains a domed sensor lens, which none of the
+others has and which is the one honest signal that this device type *reads* something rather than
+only writing.
+
+**The subject box includes the drop shadow, and that was checked rather than assumed.** The device's
+true right edge is at x≈1075; non-white detection runs out to x=1224 because a soft shadow falls to
+the right, so the box is about 17% wider than the object. The resulting crop was rendered and looked
+at before the master was committed — the device sits centred with even margins, and the box aspect
+(1.08) is within a hundredth of the shipped curve master's (1.09), so the behaviour is in family
+rather than new. **If a future master ever crops badly, this is the thing to measure first**: the
+threshold is `L < 245`, and a shadow softer than that is invisible to it while a harder one is not.
+
+**It carries no text and no numerals**, so it does not need the exception the curve master takes
+above. The moon and sun are line-art glyphs, and at 75 × 75 the lens and the lit amber ring are what
+survive — checked, not assumed.
 
 ## Icon weight
 

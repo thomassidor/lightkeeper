@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 960" width="960" height="960">
-  <title>Daylight light</title>
-  <desc>A plain open circle.</desc>
+  <title>Room-sensing Light</title>
+  <desc>A hooded form with three strokes across it.</desc>
 
   <!-- GENERATED from artwork/masters/daylight-icon-master.svg by
        artwork/export-assets.py. Edit the master, then re-run the script;
@@ -14,9 +14,14 @@
        The transform centres the master's drawing and scales it to fill the
        canvas, which guideline 1.5 asks for; stroke widths are pre-divided by the
        scale so they render at 40 units on this 960 canvas. -->
-  <g transform="translate(-173.5 -173.5) scale(2.5526)" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="15.67">
-    <g stroke-width="15.67">
-    <circle cx="256" cy="256" r="170"/>
+  <g transform="translate(-557.2 -557.2) scale(4.0514)" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="9.87">
+    <g stroke-width="9.87">
+    <path d="M257.0 314.0 L178.4 337.7 L178.4 207.4 A 61.3 56.4 0 0 1 301.1 207.4 L301.1 249.9"/>
+    <path d="M219.6 154.4 C218.9 189.2 207.1 235.9 178.4 259.9"/>
+    <path d="M242.1 151.3 C241.3 198.0 224.9 253.8 178.4 278.7"/>
+    <path d="M261.3 228.5 L333.6 300.8"/>
+    <path d="M255.4 257.5 L331.5 333.6"/>
+    <path d="M250.6 287.9 L323.7 360.9"/>
     </g>
   </g>
 </svg>

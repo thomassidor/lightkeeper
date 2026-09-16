@@ -138,14 +138,16 @@ ICONS = [
         'house': DEVICE_STROKE,
     },
     {
-        # PLACEHOLDER. A plain circle, and a release blocker until it is drawn -
-        # see the master's own comment and artwork/provenance.md.
+        # daylight-icon-master.svg: ink 163x218 of 512 - the smallest drawing in
+        # the set, hence a fit scale near twice the others'. The shipped weight is
+        # unaffected: --weight homey (the default) normalises every icon to
+        # DEVICE_STROKE, and 'stroke' below only feeds --weight drawn.
         'master': 'daylight-icon-master.svg',
         'out': ROOT / 'drivers' / 'daylight' / 'assets' / 'icon.svg',
         'title': 'Room-sensing Light',
-        'desc': 'A plain open circle.',
-        'fit': (2.5526, -173.5, -173.5),
-        'stroke': 5.5,
+        'desc': 'A hooded form with three strokes across it.',
+        'fit': (4.0514, -557.2, -557.2),
+        'stroke': 7.8,
         'house': DEVICE_STROKE,
     },
 ]

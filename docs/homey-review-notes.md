@@ -235,11 +235,14 @@ accident of implementation.
 
 ## Known limitations, stated plainly
 
-- **The Room-sensing Light's icon and store image are PLACEHOLDERS in 0.6.0** — a plain
-  circle and a flat violet disc. They satisfy every automated check and neither is
-  the finished artwork; the record is in `artwork/provenance.md` and
-  `artwork/asset-spec.md`, and replacing them is a publish blocker rather than a
-  nice-to-have. Flagged here rather than left to be noticed.
+- **The Room-sensing Light's icon does not depict what that device type does.** Its
+  store image, and every other icon in the app, does. Both of that device type's
+  graphics were placeholders when 0.6.0's work began and both were replaced on
+  16 September 2026; the image is a render in the same family as the other device
+  shots, and the icon is a supplied mark that was shipped with a recorded reservation
+  rather than presented as a drawing that succeeded. The reasoning is in
+  `artwork/provenance.md` under *The hood mark*. Flagged here rather than left to be
+  noticed.
 - **A light sensor in the same room as the lights it drives measures those lights**,
   which closes a control loop. The app damps it — a deadband below what the eye can
   see, and a slew limit of one small step per minute — and cannot remove it. This is

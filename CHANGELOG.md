@@ -1130,6 +1130,44 @@ the usable width had.
   wording is unchanged, a title that already fits is unaffected, and a browser without balanced
   wrapping breaks exactly where it did.
 
+
+### The Room-sensing Light's artwork, and two other icons that caught up with their names
+
+The Room-sensing Light shipped in this release with two placeholder graphics: a plain stroked circle
+for its icon and a flat violet disc for its store image. Both are gone, which closes the last publish
+blocker in the app.
+
+- **A supplied mark replaces the circle.** Six strokes — a dome-topped form with two folds inside it,
+  and three diagonals across its lower right. It is the one icon in the set that does not depict what
+  its device type does, and the one that reads worst at the 24px the App Store draws a driver icon
+  into; that was weighed before shipping and is written down in `artwork/provenance.md` under *The
+  hood mark*, together with the brief for whoever redraws it, rather than presented as a drawing that
+  succeeded.
+- **About 8 KB of C2PA provenance metadata came with it and was stripped.** The export copies a
+  master's inner markup through verbatim, and Homey fetches an icon by MD5 to use as a flat alpha
+  mask — so an embedded manifest is weight that nothing on the device can read. It would have been
+  larger than every other master in `artwork/masters/` put together. The provenance is in
+  `artwork/provenance.md`, where this folder keeps it for every other master too.
+- **The Light Remote's and the Colour Curve Light's icons still carried their old names.** Renaming
+  the three device types earlier in this release updated the titles in the export script but never
+  re-ran it, so the shipped files said "Light controller" and "Curve light" in their `<title>`. Both
+  were regenerated. Nothing renders that element — it is there for a reader opening the file — which
+  is exactly why it went unnoticed.
+
+- **The store image is a render of the device, replacing the violet disc.** Guideline 1.4 rejects a
+  flat shape as a device image, which is why the other four are not one. It is the third render of
+  the same wall-unit family as the circadian and Colour Curve Lights, so the three engine-driven
+  device types read as one app in a driver list, and its face carries what this one actually does: a
+  curve descending from a glowing amber ring to a plain grey one, a moon under the lit end and a sun
+  under the dim end. Dark room, bright lamp. It also gains a domed sensor lens the others have no
+  use for — the one signal that this device type reads something rather than only writing.
+- **The crop was checked before the master was committed, not after.** The export finds a subject by
+  non-white detection, and this render's drop shadow falls to the right of the device, so the
+  detected box runs about 17% past the object's true edge. The resulting square was rendered and
+  looked at: the device sits centred with even margins, and the box aspect is within a hundredth of
+  the shipped Colour Curve Light master's. `artwork/provenance.md` records the numbers and the
+  threshold to measure against, because the next master to crop badly will fail exactly here.
+
 ## 0.5.2
 
 Four fixes, all found by reading one diagnostics export from a Homey that had been running for an

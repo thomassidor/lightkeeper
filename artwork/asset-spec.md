@@ -29,8 +29,8 @@ which of these rules a validator enforces versus a human reviewer, is in
 | `drivers/circadian/assets/images/{small,large,xlarge}.png` | Render of a device showing the warm-to-cool arc | The same two places |
 | `drivers/curve/assets/icon.svg` | Line-art three-point curve above a baseline | This device type's icon when adding a device, and on its tile afterwards |
 | `drivers/curve/assets/images/{small,large,xlarge}.png` | Render of a device showing a four-point coloured curve | The same two places |
-| `drivers/daylight/assets/icon.svg` | **PLACEHOLDER** — a plain stroked circle | This device type's icon when adding a device, and on its tile afterwards |
-| `drivers/daylight/assets/images/{small,large,xlarge}.png` | **PLACEHOLDER** — a flat violet disc on white, which guideline 1.4 rejects | The same two places |
+| `drivers/daylight/assets/icon.svg` | Line-art hooded form with three strokes across it | This device type's icon when adding a device, and on its tile afterwards |
+| `drivers/daylight/assets/images/{small,large,xlarge}.png` | Render of a device showing the room's light falling and the lamp's brightness rising | The same two places |
 | `artwork/readme/banner.png` | The hero photograph with the logo on a rounded violet tile | The top of `README.md`. Ships nowhere; built by the same script |
 
 Rules, for whoever draws or generates the next set:
@@ -48,11 +48,18 @@ Rules, for whoever draws or generates the next set:
 - **`xlarge` is optional** and no validator ever opens it, but ship it: it is what a
   high-resolution screen gets.
 
-**The two rows marked PLACEHOLDER are a publish blocker**, not a style note: they satisfy every
-automated check and neither is finished work. The full record, and what each needs to become, is in
-[`provenance.md`](provenance.md#two-placeholders-and-they-are-a-publish-blocker).
+**There are no placeholders left.** The last two — the Room-sensing Light's icon and device image —
+were replaced on 16 September 2026, which closed the publish blocker that had stood since the device
+type shipped on 3 September. The record is in [`provenance.md`](provenance.md).
 
-## Prompts for the five images
+One departure survives that replacement and is not a precedent: the daylight **icon** is the only one
+in the set that does not depict what its device type does, and the one that reads worst at 24 px.
+That was argued once and settled; the reasoning, and the brief for whoever redraws it, are under
+[*The hood mark*](provenance.md#the-hood-mark). The device image beside it does not share the problem
+— it shows exactly what the device does. Do not treat the icon as licence to relax the rules above
+for anything else.
+
+## Prompts for the six images
 
 The icons come from the SVG masters, so only the photographs need generating. Each prompt carries its
 own app context and palette, so one block can be pasted into a generator on its own. Generate larger
@@ -160,6 +167,33 @@ predicts, but they degrade into a faint tick row rather than visible broken text
 its coloured points carries the meaning alone. Recorded rather than quietly excepted, in
 [`provenance.md`](provenance.md) too. If a reviewer objects, re-render the same composition without
 the labels; nothing else changes. **Do not add numerals to anything else on the strength of this.**
+
+**6. Daylight device** — for `drivers/daylight/assets/images/*`. Delivered **16 September 2026**,
+and it is what closed the last placeholder in the app. Square, 1254×1254; the export finds the
+subject and crops it. Same device family again, and this time the face carries the whole idea: the
+darker the room, the brighter the lamp. **The exact prompt text was not captured** — same gap as
+prompts 4 and 5; the brief below is written from what shipped.
+
+> Device picture for the part of Lightkeeper that sets a lamp's brightness from how much light is
+> already in the room. The object that stands for it is a wall sensor whose face shows the trade it
+> makes.
+>
+> Product render on a pure white background. One original generic square wall sensor with generously
+> rounded corners, matte warm-white body, seen three-quarter from the left so the side face reads as
+> depth. A dark domed sensor lens set into the upper middle of the front. Across the lower half, a
+> smooth curve descending left to right: at its high left end a glowing warm-amber ring casting a
+> soft halo onto the body, at its low right end a plain grey ring. A small line-art crescent moon
+> below the lit end, a small line-art sun below the dim end. The curve gradients from warm amber at
+> the left to pale grey at the right. Soft even studio light, subtle contact shadow. Whole object
+> with even margin, the lens and the lit ring still readable at 75×75. No text, no numerals, no
+> logos, no branding, no resemblance to any real product, no hand, no props, no packaging, no
+> watermark.
+
+**The moon and the sun are the right way round, and it is worth saying why.** The lit end sits under
+the moon because a *dark* room is what makes this device turn a lamp *up*; the dim end sits under the
+sun. It reads as counterintuitive for about a second and is exactly what the device does. Note also
+that the response is not required to run that way — which of the two brightnesses is higher is the
+user's choice — so this picture shows the common case, not a rule.
 
 Four things in those prompts are deliberate, so nobody "fixes" them:
 

@@ -1,26 +1,34 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"
      fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
-     role="img" aria-label="A plain open circle">
+     role="img" aria-label="A hooded form with three strokes across it">
   <!--
-    PLACEHOLDER. A plain circle, and deliberately nothing more.
-    
-    The real Daylight light icon has not been drawn yet. This exists so the
-    driver can ship, be installed and be tested, and so that
-    `test/unit/assets.test.ts` has something real to check — its eleven rules are
-    all satisfied by a circle: line art, black paint only, a declared
-    stroke-width, no full-canvas rect, ink inside [20, 940] of the exported 960
-    canvas, ink spanning at least 70% of it, and not byte-identical to any other
-    icon.
+    Supplied as artwork, 16 September 2026, and shipped as given. Six strokes: a
+    dome-topped form with two folds inside it, and three parallel diagonals
+    across its lower right.
 
-    It is NOT a design. A bare circle says nothing about what this device does,
-    and at the 24px the App Store draws a driver icon into (platform §10) it will
-    read as a dot beside four icons that mean something. Replacing it is a
-    release blocker, recorded in artwork/provenance.md and artwork/asset-spec.md.
+    Two things a later editor should know rather than rediscover.
 
-    Radius 170 of 512 leaves the stroke inside the canvas and, after the export
-    script's fit, spans the 70% the ink test requires.
+    It was delivered carrying a C2PA manifest in a <metadata> element - about
+    8 KB of base64, larger than every other master in this folder combined.
+    That is STRIPPED here rather than in the export, because build_icon() copies
+    inner markup through verbatim and Homey fetches an icon by MD5 to use as an
+    alpha mask: provenance metadata inside one is weight that nothing can read.
+    The provenance lives in artwork/provenance.md, which is where this folder
+    keeps it for every other master too.
+
+    And it is the one icon in the set that does not depict what its device type
+    does - the reservation, and the 24px reading that prompted it, are recorded
+    under "The hood mark" in artwork/provenance.md. Recorded, not re-argued.
+
+    Stroke 7.8 of 512, on the group so the export's substitution finds it -
+    ICONS['stroke'] in export-assets.py must mirror this number.
   -->
-  <g stroke-width="5.5">
-    <circle cx="256" cy="256" r="170"/>
+  <g stroke-width="7.8">
+    <path d="M257.0 314.0 L178.4 337.7 L178.4 207.4 A 61.3 56.4 0 0 1 301.1 207.4 L301.1 249.9"/>
+    <path d="M219.6 154.4 C218.9 189.2 207.1 235.9 178.4 259.9"/>
+    <path d="M242.1 151.3 C241.3 198.0 224.9 253.8 178.4 278.7"/>
+    <path d="M261.3 228.5 L333.6 300.8"/>
+    <path d="M255.4 257.5 L331.5 333.6"/>
+    <path d="M250.6 287.9 L323.7 360.9"/>
   </g>
 </svg>
