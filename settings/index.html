@@ -681,17 +681,34 @@
     // see now: a count is not consent, a specific list is.
     var approvedSweep = null;
 
+    /**
+     * Why a sweep was refused, in words that match the reason.
+     *
+     * Three reasons reach here and they are not interchangeable. "No device is
+     * running" tells somebody to go and look at their devices; "I could not read
+     * my own driver" tells them to wait and reload; "you did not say which
+     * Flows" can only come from something that is not this page. One message for
+     * all three sent the first advice for all of them.
+     */
+    function refusalText(reason, total) {
+      if (reason === 'devices_unreadable') return t('sweepUnreadable');
+      if (reason === 'no_approval') return t('sweepNotApproved');
+      return t('sweepRefused', { total: total });
+    }
+
     function refreshOrphans() {
       return api('GET', '/orphans').then(function (info) {
         var text = document.getElementById('orphanText');
         var button = document.getElementById('sweep');
         approvedSweep = null;
 
-        // With no controller running, EVERY managed Flow looks orphaned. The
-        // count is meaningless in that state, so say so and hide the button
-        // rather than offering a delete the API would refuse anyway.
+        // With no controller running, EVERY managed Flow looks orphaned — and
+        // a driver that would not list its devices leaves the same hole with
+        // none of the same symptoms. The count is meaningless in either state,
+        // so say WHICH one and hide the button rather than offering a delete the
+        // API would refuse anyway.
         if (info.refused) {
-          text.textContent = t('sweepRefused', { total: info.total });
+          text.textContent = refusalText(info.refused, info.total);
           button.style.display = 'none';
           return;
         }
@@ -739,7 +756,7 @@
           msg.textContent = t('sweepStale');
         } else if (result.refused) {
           msg.className = 'msg partial';
-          msg.textContent = t('sweepRefused', { total: result.kept });
+          msg.textContent = refusalText(result.refused, result.kept);
         } else {
           msg.className = 'msg ready';
           msg.textContent = result.failed

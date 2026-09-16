@@ -181,6 +181,8 @@
     "deleteOrphans": "Delete __count__ orphaned Flow(s)",
     "sweepRefused": "__total__ generated Flow(s) found, but no Lightkeeper device is running right now. Every Flow would look orphaned, so nothing will be deleted. Check your Lightkeeper devices first.",
     "sweepStale": "The list changed while it was on screen, so nothing was deleted. Here it is again.",
+    "sweepUnreadable": "Lightkeeper could not list its own devices just now, so it cannot tell which Flows are orphaned. Nothing was deleted. Reload this page in a moment.",
+    "sweepNotApproved": "That request did not name which Flows to delete, so nothing was deleted. Reload this page and use the button.",
     "sweepUnmanaged": "__unmanaged__ Flow(s) use a Lightkeeper card but were not created by this app, so they are left alone.",
     "sweeping": "Deleting… this can take a while for hundreds of Flows.",
     "swept": "Deleted __deleted__, kept __kept__.",

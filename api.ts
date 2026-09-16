@@ -18,6 +18,7 @@ import {
 import type {
   DiagnosticsResponse, LightkeeperApp, StatusResponse,
 } from './lib/app-contract';
+import { requireArray } from './lib/validation/guards';
 import { timezoneOf } from './lib/time/local-clock';
 import { messageOf } from './lib/support/homey-errors';
 import { heapReport } from './lib/support/heap-report';
@@ -56,7 +57,10 @@ function appOf(homey: any): LightkeeperApp {
  * delete the lot. The guard below ("no live controllers, refuse") would not have
  * caught it either: with one controller running, the set is not empty.
  */
-function liveDeviceIds(app: LightkeeperApp, homey: any): Set<string> {
+function liveDeviceIds(
+  app: LightkeeperApp,
+  homey: any,
+): { ids: Set<string>; enumerated: boolean } {
   const ids = new Set<string>([
     ...app.controllers.all().map(runtime => runtime.controllerId),
     ...app.schedules.all().map(runtime => runtime.controllerId),
@@ -73,11 +77,18 @@ function liveDeviceIds(app: LightkeeperApp, homey: any): Set<string> {
    * repair it; its Flows are still its own. Existing is the right test, not
    * having started.
    *
-   * Best-effort per driver: a driver that will not enumerate must not silently
-   * SHRINK the protected set, so a failure is logged and the runtime ids stand.
+   * A driver that will not enumerate must not silently SHRINK the protected
+   * set — and a log line is not enough to stop that, which is what this used to
+   * rely on. `enumerated: false` travels with the ids and REFUSES the sweep:
+   * with the controllers live, the "nothing is running" guard would not fire,
+   * so every schedule device without a registered runtime would read as
+   * unattributable and be offered up for deletion. The preview is computed from
+   * the same shrunken set, so it would agree with the mistake rather than catch
+   * it.
    *
    * Circadian is deliberately absent, as above.
    */
+  let enumerated = true;
   for (const driverId of ['controller', 'schedule']) {
     try {
       for (const device of homey.drivers.getDriver(driverId).getDevices()) {
@@ -85,12 +96,24 @@ function liveDeviceIds(app: LightkeeperApp, homey: any): Set<string> {
         if (typeof id === 'string' && id) ids.add(id);
       }
     } catch (error) {
+      enumerated = false;
       app.log?.(`Could not enumerate installed ${driverId} devices:`, messageOf(error));
     }
   }
 
-  return ids;
+  return { ids, enumerated };
 }
+
+/**
+ * The most flow ids a sweep approval may carry.
+ *
+ * Every other list-shaped input in this app goes through
+ * `requireArray(value, path, max)`, whose docblock argues the cap is "not
+ * defensive theatre". This one did not, and it is the list that becomes a loop
+ * over `deleteFlow`. Well above any real Homey: the app caps itself at 12 flow
+ * variants per control and 12 windows per schedule.
+ */
+const MAX_APPROVED_FLOWS = 2000;
 
 /**
  * One card per running device, with a device that cannot describe itself left
@@ -330,27 +353,58 @@ module.exports = {
    */
   async countOrphans({ homey }: any) {
     const app = appOf(homey);
-    return app.bridge.countOrphans(liveDeviceIds(app, homey));
+    const live = liveDeviceIds(app, homey);
+    const preview = await app.bridge.countOrphans(live.ids);
+
+    // A count computed from an incomplete live set is not a count worth showing
+    // — see `liveDeviceIds`. Refused rather than corrected, because there is no
+    // correction available: we do not know what the driver would have listed.
+    return live.enumerated ? preview : { ...preview, refused: 'devices_unreadable' };
   },
 
   /**
    * Returns `{ deleted, kept, failed, unmanaged, refused? }`.
    *
-   * The body carries back the `token` and `flowIds` from the count the user
-   * was actually shown. Without them the sweep still runs — the settings page
-   * always sends them, and an older page must not be broken by a newer app —
-   * but with them it can refuse (`refused: 'stale_preview'`) when the set has
-   * moved since. See countOrphans in the bridge manager.
+   * The body MUST carry back the `token` and `flowIds` from the count the user
+   * was actually shown, and a request without them deletes nothing.
+   *
+   * It used to fall through to an unapproved sweep, on the reasoning that "an
+   * older page must not be broken by a newer app". There is no older page —
+   * nothing has ever been published — so that protected nobody while leaving
+   * the app's one bulk-delete callable with no approval at all, over a surface
+   * anybody holding a Personal API Key can reach (platform §14). `countOrphans`
+   * states the rule this restores: the user approved a specific set, not a
+   * number.
+   *
+   * The refusal is structured rather than a throw, because the same shape
+   * already carries `stale_preview` and `no_live_controllers` and the settings
+   * page renders all three the same way. The manager's parameter stays optional
+   * on purpose — the suite drives it directly, and that is a caller with no user
+   * on the other end to approve anything.
    */
   async sweepOrphans({ homey, body }: any) {
     const app = appOf(homey);
-    const token = typeof body?.token === 'string' ? body.token : null;
-    const flowIds = Array.isArray(body?.flowIds) ? body.flowIds.map(String) : null;
+    const live = liveDeviceIds(app, homey);
 
-    return app.bridge.sweepOrphans(
-      liveDeviceIds(app, homey),
-      token && flowIds ? { token, flowIds } : undefined,
-    );
+    const token = typeof body?.token === 'string' ? body.token : null;
+    const flowIds = Array.isArray(body?.flowIds)
+      ? requireArray(body.flowIds, 'flowIds', MAX_APPROVED_FLOWS).map(String)
+      : null;
+
+    if (!live.enumerated || !token || !flowIds) {
+      // One extra read, on a path that deletes nothing, so the refusal can say
+      // how many Flows it is declining to touch rather than reporting zero.
+      const preview = await app.bridge.countOrphans(live.ids);
+      return {
+        deleted: 0,
+        kept: preview.total,
+        failed: 0,
+        unmanaged: preview.unmanaged,
+        refused: live.enumerated ? 'no_approval' : 'devices_unreadable',
+      };
+    }
+
+    return app.bridge.sweepOrphans(live.ids, { token, flowIds });
   },
 
   /**

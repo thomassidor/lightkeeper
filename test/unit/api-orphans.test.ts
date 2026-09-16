@@ -71,6 +71,12 @@ function homey(options: {
    */
   brokenDiagnostics?: string[];
   /**
+   * A driver that will not list its devices — a restart in progress, or a
+   * driver that failed to load. The sweep must refuse rather than treat the
+   * devices it could not see as gone.
+   */
+  unreadableDriver?: 'controller' | 'schedule';
+  /**
    * Per device kind for the per-runtime diagnostics, plus `interleaved` for
    * the app-level log the settings page actually reads.
    */
@@ -215,6 +221,9 @@ function homey(options: {
          * `installedOnly` adds.
          */
         getDriver(driverId: string) {
+          if (driverId === options.unreadableDriver) {
+            throw new Error(`the ${driverId} driver is not ready`);
+          }
           const withRuntimes = driverId === 'controller'
             ? (options.controllers ?? [])
             : (options.schedules ?? []);
@@ -240,6 +249,23 @@ const flow = (id: string, controllerId: string) => ({
   folder: null,
   actions: [{ id: CARD, args: { controller: controllerId, event_key: 'k' } }],
 });
+
+/**
+ * A sweep the way the settings page runs one: count first, then hand the count's
+ * own approval back.
+ *
+ * Not a convenience. `POST /orphans` REFUSES a request with no `token`/`flowIds`
+ * — a count is not consent, a specific list is — so a bare `sweepOrphans(h.args)`
+ * now deletes nothing whatever the fixture says, and four tests that assert
+ * "nothing was deleted" would have passed for the wrong reason forever.
+ */
+async function sweep(h: { args: any }) {
+  const preview = await api.countOrphans(h.args);
+  return api.sweepOrphans({
+    ...h.args,
+    body: { token: preview.token, flowIds: preview.flowIds },
+  });
+}
 
 describe('orphan counting across both device types', () => {
   test('a schedule\'s flows are not counted as orphans', async () => {
@@ -270,8 +296,8 @@ describe('orphan counting across both device types', () => {
   test('the sweep is handed the union of both registries', async () => {
     const h = homey({ controllers: [ID.ctrl], schedules: [ID.sched, ID.schedTwo] });
 
-    await api.sweepOrphans(h.args);
-    assert.deepEqual([...h.swept[0]!].sort(), [ID.ctrl, ID.sched, ID.schedTwo].sort());
+    await sweep(h);
+    assert.deepEqual([...h.swept.at(-1)!].sort(), [ID.ctrl, ID.sched, ID.schedTwo].sort());
   });
 
   test('circadian devices are NOT in the live set, because they own no Flows', async () => {
@@ -282,8 +308,8 @@ describe('orphan counting across both device types', () => {
     // a Flow at all.
     const h = homey({ circadian: [ID.circ], managed: [flow('f1', ID.ctrlGone)] });
 
-    await api.sweepOrphans(h.args);
-    assert.deepEqual([...h.swept[0]!], []);
+    await sweep(h);
+    assert.deepEqual([...h.swept.at(-1)!], []);
 
     const result = await api.countOrphans(h.args);
     assert.equal(result.refused, 'no_live_controllers');
@@ -298,8 +324,8 @@ describe('orphan counting across both device types', () => {
     // device at all would delete every managed Flow it found.
     const h = homey({ daylight: [ID.dayl], managed: [flow('f1', ID.ctrlGone)] });
 
-    await api.sweepOrphans(h.args);
-    assert.deepEqual([...h.swept[0]!], []);
+    await sweep(h);
+    assert.deepEqual([...h.swept.at(-1)!], []);
 
     const result = await api.countOrphans(h.args);
     assert.equal(result.refused, 'no_live_controllers');
@@ -334,7 +360,7 @@ describe('orphan counting across both device types', () => {
     const preview = await api.countOrphans(h.args);
     assert.equal(preview.orphans, 0, 'installed is the test, not having started');
 
-    await api.sweepOrphans(h.args);
+    await sweep(h);
     assert.deepEqual(h.deleted, []);
   });
 
@@ -361,6 +387,90 @@ describe('orphan counting across both device types', () => {
 
     await api.sweepOrphans({ ...h.args, body: { token: preview.token, flowIds: preview.flowIds } });
     assert.deepEqual(h.deleted, ['f2']);
+  });
+
+  /**
+   * A count is not consent, a specific list is — and the route used to accept
+   * neither.
+   *
+   * `sweepOrphans` fell through to an unapproved sweep when the body carried no
+   * `token`/`flowIds`, justified as not breaking an older settings page. There
+   * is no older page: nothing has ever been published. So the escape hatch
+   * protected nobody while leaving the app's one bulk-delete callable with no
+   * approval at all, over a surface anybody with a Personal API Key can reach
+   * (platform §14).
+   */
+  test('a sweep with no approval in the body deletes nothing', async () => {
+    const h = homey({
+      controllers: [ID.ctrl],
+      managed: [flow('f1', ID.ctrl), flow('f2', ID.ctrlGone)],
+    });
+
+    // The fixture has a real orphan, so a refusal here is the guard and not the
+    // absence of anything to delete.
+    assert.equal((await api.countOrphans(h.args)).orphans, 1);
+
+    const result = await api.sweepOrphans(h.args);
+    assert.equal(result.refused, 'no_approval');
+    assert.deepEqual(h.deleted, []);
+    // And it says how many it declined to touch rather than reporting zero.
+    assert.equal(result.kept, 2);
+  });
+
+  test('half an approval is no approval', async () => {
+    const h = homey({
+      controllers: [ID.ctrl],
+      managed: [flow('f1', ID.ctrl), flow('f2', ID.ctrlGone)],
+    });
+    const preview = await api.countOrphans(h.args);
+
+    for (const body of [{ token: preview.token }, { flowIds: preview.flowIds }]) {
+      const result = await api.sweepOrphans({ ...h.args, body });
+      assert.equal(result.refused, 'no_approval');
+    }
+    assert.deepEqual(h.deleted, []);
+  });
+
+  test('an approval list longer than the cap is refused outright', async () => {
+    const h = homey({ controllers: [ID.ctrl], managed: [flow('f1', ID.ctrlGone)] });
+    const preview = await api.countOrphans(h.args);
+
+    await assert.rejects(
+      () => api.sweepOrphans({
+        ...h.args,
+        body: { token: preview.token, flowIds: new Array(2001).fill('f1') },
+      }),
+      /flowIds has more than 2000 entries/,
+    );
+    assert.deepEqual(h.deleted, []);
+  });
+
+  /**
+   * A driver that will not enumerate is a refusal, not a smaller live set.
+   *
+   * `liveDeviceIds` logged the failure and carried on. With the controllers
+   * live, the "nothing is running" guard does not fire — so every schedule
+   * device without a registered runtime reads as unattributable, and the
+   * preview, computed from the same shrunken set, agrees with the mistake
+   * instead of catching it.
+   */
+  test('a driver that will not list its devices refuses the count and the sweep', async () => {
+    const h = homey({
+      controllers: [ID.ctrl],
+      schedules: [ID.sched],
+      unreadableDriver: 'schedule',
+      managed: [flow('f1', ID.ctrl), flow('f2', ID.sched)],
+    });
+
+    const preview = await api.countOrphans(h.args);
+    assert.equal(preview.refused, 'devices_unreadable');
+
+    const result = await api.sweepOrphans({
+      ...h.args,
+      body: { token: preview.token, flowIds: preview.flowIds },
+    });
+    assert.equal(result.refused, 'devices_unreadable');
+    assert.deepEqual(h.deleted, []);
   });
 
   test('a sweep whose approval has gone stale deletes nothing', async () => {
