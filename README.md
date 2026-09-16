@@ -282,29 +282,25 @@ reads, what it stores, and for how long.
 
 ## Changelog
 
-**0.6.0** — the current release.
+**0.6.1** — the current release. A general review of the whole app, and the eleven things it found:
 
-- **Room-sensing Lights**, a fifth device type, which set brightness from how much light is already
-  in the room and draw your sensor's own last week so "dark" and "bright" are numbers you can judge.
-  No API key, and they never switch a light on or off.
-- **Every setup screen redrawn.** One question per screen, a numbered path through each device, and
-  a review of everything before it saves. An API key, where one is needed, is asked for near the
-  start instead of the end.
-- **Circadian lights follow the real sun**: three parts of the day, with morning and evening
-  anchored to your Homey's own sunrise and sunset instead of a fixed clock.
-- **A Light Remote reads as one row per button**, each able to drive its own lights, and can find
-  the right remote by listening for a press. Two new jobs: a set brightness, and a set colour.
-  Schedules keep their days in one place, and two blocks may overlap.
-- **A light that quietly reverts to its own settings no longer mutes its device for days**, and
-  switching a light off is no longer mistaken for taking it over by hand.
-- **Three device types renamed**: Light controller → **Light Remote**, Curve light → **Colour
-  Curve Light**, Daylight light → **Room-sensing Light**. Names only; devices you already added
-  are untouched.
+- **A Colour Curve Light could stop for good**, if one of its points was set to follow sunrise or
+  sunset — and it took the Lightkeeper settings page down with it, so the screen you would open to
+  find out why showed you nothing at all.
+- **The Flow cleanup could delete without being asked.** It shows you the exact list and you approve
+  it; a request that skipped that step used to go ahead anyway.
+- **"Put them back" could put the wrong lights back** — the next light you set up restored the
+  previous session's lamps if you had closed that screen without pressing it.
+- Six more, and four problems closed before they could happen to anyone.
+
+None of it was visible to the tests, the type-checks or the linter, which were green throughout, so
+every fix ships with the test that would have caught it.
 
 Earlier releases, one line each:
 
 | Version | What changed |
 |---|---|
+| **0.6.0** | A fifth device type that reads a room's own light, every setup screen redrawn, circadian lights that follow the real sun, and three device types renamed |
 | **0.5.2** | Four fixes to the colour-following lights, and the dimmest brightness no longer meant off |
 | **0.5.1** | A shorter App Store listing, prose release notes, and icons legible at 24 px |
 | **0.5.0** | A Colour Curve Light as a fourth device type, a simpler circadian light, and less memory used |

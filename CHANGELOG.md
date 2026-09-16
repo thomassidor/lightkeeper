@@ -6,6 +6,93 @@ release in a few bullets and one line for each older one; this is where the deta
 Newest first. Pre-1.0, so there are no major bumps for breaking changes: a change that would break
 something says so in its own entry instead.
 
+## 0.6.1
+
+A general review of the whole app for bugs, at every severity, ranked — and the eleven things it
+found. The suite, the two type-checks, the linter and the view-sync check were all green before it
+and stayed green through it, so none of this was visible to anything already running. Every fix
+ships with the test that would have caught it, and the ones that could be were run against the old
+code first to confirm they fail on it.
+
+### A Colour Curve Light could stop for good, and take the settings page with it
+
+A point that followed sunrise or sunset was accepted when saved and could never be evaluated. The
+circadian light's sun-following runs through its zones' BOUNDARIES — `resolveBoundaries()` reads
+today's sunrise and `zonePoints()` emits clock anchors from it — and a point's anchor is a different
+mechanism entirely, which nothing supplies a curve runtime with the day's sun times for. So
+`resolveAnchor()` threw on every tick, the manager caught it per device, and the light silently
+stopped changing anything: "looks configured, does nothing", which is the failure this app exists to
+prevent.
+
+Both `CircadianAnchor`'s own docblock and `resolveAnchor`'s already claimed the sanitiser refused
+these. It did not, and neither did the store's validator, whose comment had been updated as though
+the zones' sun-following made point anchors work too. Both gates refuse it now and all three
+comments say what is true. The throw stays, so a future half-wiring fails loudly instead.
+
+The second half is worse. `getStatus` called `runtime.diagnostics()` straight inside four `.map()`s,
+so one throwing device made `GET /` fail and the settings page rendered NOTHING — no other device,
+no API key box, no Flow cleanup, no recent-writes log, on the one screen somebody opens when
+something is wrong. A device that cannot describe itself is now left off the page instead of
+replacing it: the id and state a fallback card could carry truthfully are already on the device's own
+tile in Homey, so an absence invents nothing, and the log line names which device and why.
+
+### The Flow cleanup could delete without being asked
+
+`POST /orphans` with no `token`/`flowIds` in the body fell through to an UNAPPROVED sweep — the
+manager skips both the stale-preview check and the approved-id intersection when `approved` is
+undefined, so it deleted every orphan it found. The comment justified it as not breaking an older
+settings page. There is no older page, because nothing has been published, so it protected nobody
+while leaving the app's one bulk-delete callable with no approval at all, over a surface anybody
+holding a Personal API Key can reach (platform §14). `countOrphans` already stated the rule it
+broke: the user approved a specific set, not a number.
+
+`liveDeviceIds` had the same shape of hole. It logged a driver that would not enumerate and carried
+on, under a comment saying such a driver "must not silently SHRINK the protected set" — but a log
+does not stop it, and with the controllers live the "nothing is running" guard does not fire. Every
+schedule device without a registered runtime would have read as unattributable, and the preview,
+computed from the same shrunken set, would have agreed with the mistake rather than caught it. Both
+now refuse, in words that match the reason: "no device is running" sends you to look at your
+devices, "I could not read my own driver" tells you to wait and reload.
+
+### The other nine
+
+- **"Put them back" could put the wrong lights back.** Trying a circadian light's colours out scrubs
+  through the day on real lamps, and remembers how they were so it can restore them. That memory
+  was kept on the driver rather than on the setup session, so closing the screen without pressing
+  "Put them back" left it behind: the next time you set one up, that button restored the PREVIOUS
+  session's lights to their old values and left the ones you had just been scrubbing where they
+  were.
+- **A sensor's week could name the wrong days.** The grid that shows a sensor's last seven days is
+  the evidence behind the two brightness thresholds, and around a clock change its day labels were
+  off by one — for a week ending just after the spring change, Sunday was missing and every earlier
+  row was named as the day before it.
+- **A Light Remote named with spaces had no name.** A name of nothing but spaces was saved as
+  given, producing a tile that appears to be unnamed. It falls back to the derived name now, as
+  every other device type already did.
+- **A rejected API key left a connection open.** A key with the wrong permissions connects fine and
+  only fails when Lightkeeper tries to write a Flow, so every retry leaked one connection for as
+  long as the app ran. Two such paths, both closed. Trying a key and having it rejected also no
+  longer interrupts the check running against the key you already had.
+- **A schedule reconciled its Flows on every refusal.** Paused schedules still fire their Flows, by
+  design, and every one of those refusals triggered a full re-read and comparison of every Flow the
+  device owns — twice a day, forever, for a device asked to do nothing. Only the one refusal that
+  means a Flow was edited does that now.
+- **A deleted device left a record behind.** Every Light Remote and schedule ever added wrote a
+  bookkeeping entry that nothing ever removed, so they accumulated for the life of the Homey.
+- **One unusual Flow card could break remote discovery.** A trigger card with an unnamed argument
+  made the whole scan fail rather than just that card — which is the remote picker, the health
+  check and the Flow reconcile, for every device on the Homey.
+- **Four stale copies of a comment were shipping inside two sensor screens**, each contradicting the
+  real one. The splicer prepends rather than replaces anything written above a shared function, and
+  the check that compares those copies could not see it because every carrier had accumulated
+  identically. There is now a check that can, over all three spliced helpers.
+- **Four more were closed although none can happen today**, because each is one edit away and three
+  of them fail silently rather than loudly: a write queue that an empty pass could strand for good, a
+  remote-listening screen whose subscriptions could outlive it being closed, a lamp that could be
+  switched on at zero brightness in the non-default synchronised group mode, and a schedule route
+  that could take a device offline instead of refusing.
+
+
 ## 0.6.0
 
 A fifth device type, a rewritten setup flow, and three device types renamed. Nothing in this release

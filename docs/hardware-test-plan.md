@@ -78,11 +78,44 @@ The script cannot do these. Report each by its number.
 
 ## 4. This release
 
-**0.6.0, last section of all — every pairing screen redrawn, and four engines reshaped under them.**
+**0.6.1 — a general code review, on top of an 0.6.0 pass that is still owed.**
 
-Nothing in this block can be checked by the script, and that is the point: `verify-hardware.mjs`
+Normally the previous release's lines are deleted here rather than carried, because they have been
+run. **These have not**: nothing has been published, and the 0.6.0 block below was only partly
+worked through. So both are live, and they are kept apart rather than merged — 0.6.1's three are
+specific and take a few minutes, while 0.6.0's is a full pass with a phone.
+
+Nothing in either block can be checked by the script, and that is the point: `verify-hardware.mjs`
 drives pair sessions over the Web API (platform §14), so it proves the HANDLERS answer. It cannot
 see a screen. Every line here needs a phone.
+
+### 0.6.1 — the code review's three
+
+The fixes whose evidence is not in the suite. Everything else that review changed is covered by a
+unit test, and the ones that could be were run against the old code first to confirm they fail on it.
+
+- [ ] **T135** A rejected API key, twice. Paste a key with **read-only** permissions into Homey
+      settings → Lightkeeper. It must be refused with "does not have permission to manage Flows",
+      the key you already had must keep working, and every device must stay as it was — no tile
+      going to "needs credential". Do it a second time, then paste the good key again: both
+      rejections used to leave a live connection behind, and the only way to see that from outside
+      is that nothing degrades over repeated attempts. Check `/diagnostics` afterwards for the
+      credential block reading `present=true valid=true`.
+- [ ] **T136** The circadian try-it screen, across two sessions. Add a circadian light, open
+      **Try it**, scrub the day so the lamps visibly change, then **close the pairing sheet
+      without** pressing "Put them back" — the lamps stay where the preview left them, which is
+      expected. Now start a **second** circadian light on a **different** set of lamps, open its
+      Try it, scrub, and press "Put them back". Only the second set may move, and it must return to
+      how it was. The first set staying put is the pass; the first set changing is the bug this
+      line exists for.
+- [ ] **T137** A Colour Curve Light and the settings page. With at least one of each device type
+      paired, open Homey settings → Lightkeeper: every section must render — the API key box, all
+      five device lists, the Flows section and the recent-writes log. One device that cannot
+      describe itself used to blank the whole page, so "it loaded at all" is the assertion. Then
+      open **Flows → Delete orphaned Flows** and confirm it names a count and a list before
+      offering the button, and that pressing it with nothing orphaned offers no button at all.
+
+### 0.6.0 — every pairing screen redrawn, and four engines reshaped under them
 
 - [ ] **T112** Pair one of each of the five device types by hand, end to end, on the phone. Each
       one opens with an intro naming what it will ask, then numbered steps, then a review. Every
