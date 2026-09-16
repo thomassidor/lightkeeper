@@ -36,10 +36,22 @@ export const MAX_POINTS = 8;
  * Where an anchor sits in the day.
  *
  * Only `clock` is accepted today. `sun` is declared from the start so that
- * anchoring to real sunrise and sunset — which needs `homey:manager:geolocation`
- * and solar maths the SDK does not provide (platform §9) — lands later as a new
- * variant rather than as a reshape of every stored plan. sanitiseCurve() rejects
- * it until then, and resolveAnchor() throws on it, so it can never half-work.
+ * anchoring a POINT to real sunrise and sunset lands later as a new variant
+ * rather than as a reshape of every stored plan.
+ *
+ * **The circadian light already follows the sun, and not through this.** Its
+ * three zones carry sun-anchored BOUNDARIES, resolved by `resolveBoundaries()`
+ * in simple-curve.ts and handed to `zonePoints()`, which emits clock anchors
+ * because the boundaries have already been clamped against each other. That is a
+ * different mechanism, and conflating the two is what let this variant through:
+ * `sanitiseAnchor` accepted a sun-anchored point and `validateAnchor` validated
+ * one, for a Colour Curve Light whose `resolvedPoints()` passes no `AnchorContext`
+ * at all — so `resolveAnchor()` threw on every tick, the device silently stopped
+ * writing, and `getStatus` (which called `diagnostics()` unguarded) took the
+ * whole settings page down with it.
+ *
+ * So both gates refuse it now, which is what this comment and `resolveAnchor`'s
+ * both already claimed. Widening it later means supplying the context first.
  */
 export type CircadianAnchor =
   | { kind: 'clock'; at: number }
@@ -275,23 +287,11 @@ function sanitiseAnchor(raw: unknown): CircadianAnchor | string {
   if (!raw || typeof raw !== 'object') return 'the time is missing';
   const source = raw as Record<string, unknown>;
 
-  if (source.kind === 'sun') {
-    // Resolvable since the circadian light's boundaries started following the
-    // sun: `sunTimes` in lib/daylight/solar-elevation.ts supplies the minute and
-    // the runtime threads it in as an `AnchorContext`. A day with no sunrise at
-    // all — a polar one, or a Homey that has never been told where it is — falls
-    // back to fixed hours rather than refusing, which is decided in
-    // `resolveBoundaries`, not here.
-    if (source.event !== 'sunrise' && source.event !== 'sunset') {
-      return 'a sun anchor must be sunrise or sunset';
-    }
-    const offset = typeof source.offset === 'number' && Number.isFinite(source.offset)
-      ? source.offset
-      : null;
-    if (offset === null) return 'the offset from the sun is not a number of minutes';
-    if (Math.abs(offset) > MINUTES_PER_DAY) return 'the offset from the sun is more than a day';
-    return { kind: 'sun', event: source.event, offset };
-  }
+  // Refused, and `CircadianAnchor`'s own docblock says why. The circadian
+  // light's sun-following runs through its zones' boundaries, not through a
+  // point's anchor; nothing threads an `AnchorContext` into the curve runtime,
+  // so a sun-anchored point is one `resolveAnchor()` throws on every tick.
+  if (source.kind === 'sun') return 'a point cannot follow the sun yet';
 
   const at = parseMinutes(source.at);
   return at === null ? 'the time is not a time of day' : { kind: 'clock', at };

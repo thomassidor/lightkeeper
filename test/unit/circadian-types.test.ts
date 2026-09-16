@@ -57,24 +57,38 @@ describe('sanitiseCurve', () => {
     ]);
   });
 
-  test('accepts a sun anchor, now that one can be resolved', () => {
-    // Declared in the type from the start so it would land as a variant rather
-    // than a reshape. It landed: `sunTimes` supplies the minute and the runtime
-    // threads it in as an AnchorContext.
+  /**
+   * A sun anchor is refused, and this test replaces one that asserted the
+   * opposite.
+   *
+   * The old one read "accepts a sun anchor, now that one can be resolved", on
+   * the belief that the circadian light's sun-following had made point anchors
+   * resolvable. It had not: the zones carry sun-anchored BOUNDARIES, and
+   * `zonePoints()` emits CLOCK anchors from them. A Colour Curve Light's stored
+   * points go to `valueAt()` with no `AnchorContext` at all, so a sun-anchored
+   * point threw out of `resolveAnchor()` on every tick — the device silently
+   * stopped writing, and `getStatus` took the whole settings page down with it.
+   *
+   * Both `CircadianAnchor`'s docblock and `resolveAnchor`'s already claimed this
+   * refusal. Now it exists.
+   */
+  test('refuses a sun anchor, because nothing can resolve one for a point', () => {
     const result = sanitiseCurve([
       { anchor: { kind: 'sun', event: 'sunset', offset: -30 }, warmth: 1 },
       clock(360, 0.2),
       clock(1080, 1),
     ]);
-    assert.equal(result.points.length, 3);
-    assert.deepEqual(result.dropped, []);
-    assert.deepEqual(
-      result.points.find(point => point.anchor.kind === 'sun')?.anchor,
-      { kind: 'sun', event: 'sunset', offset: -30 },
-    );
+    assert.equal(result.points.length, 2);
+    assert.ok(result.points.every(point => point.anchor.kind === 'clock'));
+    assert.deepEqual(result.dropped, [
+      { index: 0, reason: 'a point cannot follow the sun yet' },
+    ]);
   });
 
-  test('a sun anchor still has to be a sun anchor', () => {
+  test('a well-formed sun anchor is refused for the same reason as a malformed one', () => {
+    // The shape no longer matters, so the reason no longer varies with it: the
+    // point is dropped because the ANCHOR KIND has nothing to resolve against,
+    // not because the event or the offset was wrong.
     const result = sanitiseCurve([
       { anchor: { kind: 'sun', event: 'moonrise', offset: 0 }, warmth: 1 },
       { anchor: { kind: 'sun', event: 'sunset', offset: 'soon' }, warmth: 1 },
@@ -82,8 +96,10 @@ describe('sanitiseCurve', () => {
       clock(1080, 1),
     ]);
     assert.equal(result.points.length, 2);
-    assert.match(result.dropped[0].reason, /sunrise or sunset/);
-    assert.match(result.dropped[1].reason, /not a number of minutes/);
+    assert.deepEqual(result.dropped.map(d => d.reason), [
+      'a point cannot follow the sun yet',
+      'a point cannot follow the sun yet',
+    ]);
   });
 
   test('drops a second point at the same minute', () => {

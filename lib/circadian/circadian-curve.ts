@@ -73,10 +73,17 @@ export function resolveAnchor(anchor: CircadianAnchor, context: AnchorContext = 
 
   const base = anchor.event === 'sunrise' ? context.sunriseMinute : context.sunsetMinute;
   if (base === undefined) {
-    // Throwing beats defaulting. A sun anchor that quietly resolved to midnight
-    // would produce a curve that is wrong in a way nothing on screen could show,
-    // and sanitiseCurve() refuses these on the way in precisely so this is
-    // unreachable rather than merely unlikely.
+    /**
+     * Throwing beats defaulting. A sun anchor that quietly resolved to midnight
+     * would produce a curve that is wrong in a way nothing on screen could show.
+     *
+     * This used to claim it was unreachable because `sanitiseCurve()` refused a
+     * sun anchor on the way in. It did not — it accepted one, `validateAnchor`
+     * validated one, and `resolvedPoints()` passes no context for a Colour Curve
+     * Light, so this threw on every tick of a device that then silently stopped
+     * writing. Both gates refuse it now, so the claim is true; the throw stays
+     * because it is what makes a future half-wiring fail loudly instead.
+     */
     throw new Error(`No ${anchor.event} time is available to anchor to`);
   }
   return wrap(base + anchor.offset);

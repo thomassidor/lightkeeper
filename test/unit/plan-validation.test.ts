@@ -163,18 +163,30 @@ describe('every rejection names the field', () => {
       ...validCircadian(),
       points: [{ id: 'p1', anchor: { kind: 'clock', at: 0 }, warmth: 1.5 }],
     }), /CircadianPlan\.points\[0\]\.warmth is above 1/],
-    ['a sun anchor to something that is not the sunrise or the sunset', () => ({
+    /**
+     * A sun-anchored POINT, refused by kind — which is what the two cases this
+     * replaces were really about.
+     *
+     * They asserted on `.event` and `.offset`, which meant the validator was
+     * accepting the variant and only policing its fields. Nothing threads an
+     * `AnchorContext` into the curve runtime, so a stored plan carrying one
+     * threw out of `resolveAnchor()` on every tick. `sanitiseCurve` is the
+     * pairing screen's gate; this is the STORE's, and a store can be written out
+     * of band — so it fails here, quarantining the device with a reason, rather
+     * than letting it run and do nothing.
+     */
+    ['a sun-anchored point, which no context can resolve', () => ({
       ...validCircadian(),
       points: DEFAULT_POINTS.map((point, i) => (i === 0
-        ? { ...point, anchor: { kind: 'sun', event: 'moonrise', offset: 0 } }
+        ? { ...point, anchor: { kind: 'sun', event: 'sunrise', offset: 0 } }
         : point)),
-    }), /CircadianPlan\.points\[0\]\.anchor\.event is not one of sunrise, sunset/],
-    ['a sun offset that has wrapped past a whole day', () => ({
+    }), /CircadianPlan\.points\[0\]\.anchor\.kind is not one of clock/],
+    ['a sun anchor that is not even well-formed, refused by kind first', () => ({
       ...validCircadian(),
       points: DEFAULT_POINTS.map((point, i) => (i === 0
-        ? { ...point, anchor: { kind: 'sun', event: 'sunrise', offset: 5000 } }
+        ? { ...point, anchor: { kind: 'sun', event: 'moonrise', offset: 5000 } }
         : point)),
-    }), /CircadianPlan\.points\[0\]\.anchor\.offset is above 1440/],
+    }), /CircadianPlan\.points\[0\]\.anchor\.kind is not one of clock/],
     // Two points, because the curve now has a lower bound too — one point is
     // not a curve, and this case is about the brightness rule.
     ['brightness following a curve that has none', () => ({

@@ -45,6 +45,7 @@ const ID = {
   schedTwo: 'lk-sched-1755500000000-200002',
   schedGone: 'lk-sched-1755500000000-200003',
   circ: 'lk-circ-1755500000000-300001',
+  circTwo: 'lk-circ-1755500000000-300002',
   dayl: 'lk-dayl-1755500000000-400001',
 };
 
@@ -64,6 +65,11 @@ function homey(options: {
   installedOnly?: { controller?: string[]; schedule?: string[] };
   /** What a schedule has ALREADY resolved, if anything. Never looked up here. */
   timeCard?: { card: null; candidates: never[] };
+  /**
+   * Device ids whose `diagnostics()` throws, so the status payload can be
+   * asserted against a device that cannot describe itself.
+   */
+  brokenDiagnostics?: string[];
   /**
    * Per device kind for the per-runtime diagnostics, plus `interleaved` for
    * the app-level log the settings page actually reads.
@@ -90,7 +96,9 @@ function homey(options: {
     controllerId: id,
     currentState: 'ready',
     currentProfile: { source: { name: id }, mappings: [], managedFlows: [] },
-    diagnostics: () => ({
+    diagnostics: () => (options.brokenDiagnostics?.includes(id)
+      ? (() => { throw new Error(`no sunrise time is available to anchor to (${id})`); })()
+      : {
       kind,
       name: id,
       enabled: true,
@@ -389,6 +397,39 @@ describe('the settings payload', () => {
     // The pair of facts that says "this is working" without waiting for dusk.
     assert.equal(status.circadian[0].now.warmth, 0.9);
     assert.equal(status.circadian[0].nextPoint.at, '23:00');
+  });
+
+  /**
+   * One device that cannot describe itself must not blank the page.
+   *
+   * Every list in `getStatus` called `runtime.diagnostics()` straight inside a
+   * `.map()`, so a single throw made `GET /` fail and the settings page rendered
+   * NOTHING — no other device, no credential box, no orphan sweep, on the one
+   * screen somebody reaches for when something is wrong.
+   *
+   * Reachable: a Colour Curve Light whose stored plan carried a sun anchor threw
+   * out of `valueAt()` on every call. That plan is refused at both gates now, so
+   * this is the second half of the fix rather than the whole of it — the point
+   * being that the page survives whatever the next such bug turns out to be.
+   */
+  test('a device whose diagnostics throw is left out, and the rest still render', async () => {
+    const h = homey({
+      controllers: [ID.ctrl],
+      schedules: [ID.sched],
+      circadian: [ID.circ, ID.circTwo],
+      daylight: [ID.dayl],
+      brokenDiagnostics: [ID.circ],
+    });
+
+    const status = await api.getStatus(h.args);
+
+    // The broken one is absent; its healthy sibling is not.
+    assert.deepEqual(status.circadian.map((card: any) => card.id), [ID.circTwo]);
+    // And every other list is untouched, which is the whole point.
+    assert.equal(status.controllers.length, 1);
+    assert.equal(status.schedules.length, 1);
+    assert.equal(status.daylight.length, 1);
+    assert.equal(status.credential.valid, true);
   });
 
   test('reports schedules alongside controllers', async () => {

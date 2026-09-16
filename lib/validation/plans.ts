@@ -509,29 +509,22 @@ function uniqueIds<T extends { id: string }>(items: T[], path: string): T[] {
 
 function validateAnchor(raw: unknown, path: string): CircadianAnchor {
   const anchor = requireRecord(raw, path);
-  const kind = requireOneOf(anchor.kind, `${path}.kind`, ['clock', 'sun'] as const);
-
-  if (kind === 'sun') {
-    /**
-     * Resolvable since the circadian light's boundaries started following the
-     * sun. `sunTimes` in lib/daylight/solar-elevation.ts supplies the minute and
-     * the runtime threads it in; a day with no sunrise at all — polar, or a
-     * Homey that has never been told where it is — falls back to fixed hours in
-     * `resolveBoundaries` rather than failing here, because a circadian light on
-     * fixed hours is still a circadian light.
-     *
-     * The offset is bounded at a day because beyond that it is not an offset
-     * from anything: it has wrapped, and the point it names is not the one whose
-     * name is on it.
-     */
-    return {
-      kind: 'sun',
-      event: requireOneOf(anchor.event, `${path}.event`, ['sunrise', 'sunset'] as const),
-      offset: requireNumber(anchor.offset, `${path}.offset`, {
-        min: -MINUTES_PER_DAY, max: MINUTES_PER_DAY, integer: true,
-      }),
-    };
-  }
+  /**
+   * `clock` only, and the comment this replaces is the reason it has to be said
+   * here as well as in `sanitiseAnchor`.
+   *
+   * That comment read "resolvable since the circadian light's boundaries started
+   * following the sun", which is true of the BOUNDARIES and not of a point's
+   * anchor — two different mechanisms, and the conflation is what let a plan
+   * through that `resolveAnchor()` then threw on every tick (see
+   * `CircadianAnchor` in lib/circadian/circadian-types.ts).
+   *
+   * `sanitiseCurve` is the pairing screen's gate; this one is the STORE's, and a
+   * store can be written out of band. Failing here quarantines the device with a
+   * reason on its tile, which is the honest outcome for a plan the runtime
+   * cannot evaluate — and strictly better than the silence it replaces.
+   */
+  requireOneOf(anchor.kind, `${path}.kind`, ['clock'] as const);
 
   return {
     kind: 'clock',

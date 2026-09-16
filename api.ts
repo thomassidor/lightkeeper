@@ -93,6 +93,42 @@ function liveDeviceIds(app: LightkeeperApp, homey: any): Set<string> {
 }
 
 /**
+ * One card per running device, with a device that cannot describe itself left
+ * out rather than taking the page down.
+ *
+ * Every list in `getStatus` called `runtime.diagnostics()` straight inside a
+ * `.map()`, so one throwing device made `GET /` fail and the WHOLE settings page
+ * render nothing — no other device, no credential box, no orphan sweep. That is
+ * not hypothetical: a Colour Curve Light whose stored plan carried a sun anchor
+ * threw out of `valueAt()` on every call (see `CircadianAnchor` in
+ * lib/circadian/circadian-types.ts, now refused at both gates).
+ *
+ * Omitted rather than shown as a broken card, because the two facts a fallback
+ * card could carry truthfully — the id and the state — are already on the
+ * device's own tile in Homey. A device missing from this page is visible as an
+ * absence and invents nothing; the log line names which one and why.
+ */
+function cards<TRuntime, TCard>(
+  app: LightkeeperApp,
+  runtimes: readonly TRuntime[],
+  idOfRuntime: (runtime: TRuntime) => string,
+  card: (runtime: TRuntime) => TCard,
+): TCard[] {
+  const built: TCard[] = [];
+  for (const runtime of runtimes) {
+    try {
+      built.push(card(runtime));
+    } catch (error) {
+      app.log?.(
+        `Leaving ${idOfRuntime(runtime)} off the status page — its diagnostics threw:`,
+        messageOf(error),
+      );
+    }
+  }
+  return built;
+}
+
+/**
  * The device id in a route, or a throw the caller can read.
  *
  * `:id` is the device's `data.id` — the same id `/diagnostics` reports as
@@ -153,7 +189,7 @@ module.exports = {
     return {
       credential: app.credentials.getStatus(),
       recentEvents: app.recentEvents.entries().slice(0, 12),
-      controllers: app.controllers.all().map(runtime => {
+      controllers: cards(app, app.controllers.all(), r => r.controllerId, runtime => {
         const diagnostics = runtime.diagnostics();
         return {
           id: runtime.controllerId,
@@ -165,7 +201,7 @@ module.exports = {
           targetNames: diagnostics.targetNames,
         };
       }),
-      schedules: app.schedules.all().map(runtime => {
+      schedules: cards(app, app.schedules.all(), r => r.controllerId, runtime => {
         const diagnostics = runtime.diagnostics();
         return {
           id: runtime.controllerId,
@@ -188,7 +224,7 @@ module.exports = {
       // Both device types, in one list: they are the same engine and the
       // settings page shows them the same way. `kind` in each runtime's own
       // diagnostics is what distinguishes a circadian light from a curve one.
-      circadian: app.curves.all().map(runtime => {
+      circadian: cards(app, app.curves.all(), r => r.controllerId, runtime => {
         const diagnostics = runtime.diagnostics();
         return {
           id: runtime.controllerId,
@@ -211,7 +247,7 @@ module.exports = {
           preStageDisabled: diagnostics.preStageDisabled,
         };
       }),
-      daylight: app.daylights.all().map(runtime => {
+      daylight: cards(app, app.daylights.all(), r => r.controllerId, runtime => {
         const diagnostics = runtime.diagnostics();
         return {
           id: runtime.controllerId,
