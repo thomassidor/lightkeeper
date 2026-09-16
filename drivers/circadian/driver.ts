@@ -57,6 +57,23 @@ interface SessionState {
   zones: CircadianZones;
   adjustBrightness: boolean;
   preStage: boolean;
+  /**
+   * The lamps as they were before this session's first scrub, or absent.
+   *
+   * Taken ONCE, before the first preview write, and held for the life of the
+   * pairing SESSION — which is what this used to say while living on the
+   * driver, where it is held for the life of the app. A Homey driver is a
+   * singleton, and there is no `disconnect` handler here to clear it: abandon
+   * the try-it screen without pressing "Put them back", open another session,
+   * press it there, and `putBack` wrote the PREVIOUS session's lamps back to
+   * the previous session's values while leaving this session's lamps scrubbed.
+   *
+   * Re-taking it on every scrub would snapshot the values the previous scrub
+   * wrote, and "Put them back" would put them back to the last preview — which
+   * is not a restore, it is a no-op wearing a restore's name. So: once per
+   * session, and a session is what `bindSession` builds.
+   */
+  restore?: LampSnapshot[] | null;
 }
 
 /** What the try-it screen restores, and the only capabilities it touches. */
@@ -71,16 +88,6 @@ interface LampSnapshot {
 }
 
 module.exports = class CircadianDriver extends Homey.Driver {
-
-  /**
-   * The lamps as they were before the first scrub, or null.
-   *
-   * On the DRIVER rather than in the session state because it is not part of
-   * the plan being built — it is a debt the screen incurs against the real room,
-   * and it outlives any one handler call.
-   */
-  private restore: LampSnapshot[] | null = null;
-
 
   /**
    * What `lib/pairing/pair-session.ts` needs of this driver.
@@ -344,22 +351,44 @@ module.exports = class CircadianDriver extends Homey.Driver {
         ],
       };
 
-      if (!this.restore) this.restore = await this.snapshot(state.target);
+      state.restore ??= await this.snapshot(state.target);
+      const snapshot = state.restore;
 
       const runtime = await this.app.curves.ephemeral(frozen);
       try {
         const outcome = await runtime.applyNow('preview', { force: true, waitForResults: true });
         await runtime.drain();
-        return { ...outcome, targets: this.restore.map(lamp => ({ name: lamp.name, written: lamp.on })) };
+
+        /**
+         * What each lamp was actually SENT, from the runtime's own per-device
+         * decisions.
+         *
+         * This used to report `lamp.on` from the snapshot — whether the lamp was
+         * lit BEFORE the preview — under a field the screen renders as "Set" or
+         * "Left alone". That is a different fact wearing a write result's name,
+         * and it is wrong in both directions: a pre-staged lamp that was off is
+         * written to, and a lit lamp the runtime declined is not.
+         */
+        const commands = new Map(
+          (runtime.diagnostics().lastAction?.targets ?? [])
+            .map(target => [target.deviceId, target.commands]),
+        );
+        return {
+          ...outcome,
+          targets: snapshot.map(lamp => ({
+            name: lamp.name,
+            written: (commands.get(lamp.id) ?? 0) > 0,
+          })),
+        };
       } finally {
         await runtime.stop();
       }
     });
 
-    /** Put every lamp back where it was before the first scrub. */
+    /** Put every lamp back where it was before this session's first scrub. */
     handler('restorePreview', async () => {
-      const snapshot = this.restore;
-      this.restore = null;
+      const snapshot = state.restore;
+      state.restore = null;
       if (!snapshot) return { restored: 0 };
       return { restored: await this.putBack(snapshot) };
     });
@@ -483,17 +512,24 @@ module.exports = class CircadianDriver extends Homey.Driver {
     for (const lamp of snapshot) {
       try {
         const device = await api.devices.getDevice({ id: lamp.id });
+        let written = 0;
         for (const capability of RESTORABLE) {
           if (capability === 'onoff') continue;
           if (!(capability in lamp.values)) continue;
           await device.setCapabilityValue({
             capabilityId: capability, value: lamp.values[capability],
           });
+          written += 1;
         }
         if ('onoff' in lamp.values) {
           await device.setCapabilityValue({ capabilityId: 'onoff', value: lamp.values.onoff });
+          written += 1;
         }
-        restored += 1;
+        // Counted on having WRITTEN something, not on having read the device.
+        // `snapshot()` records no values at all for a lamp the catalogue had
+        // none for, and those were being reported back as lamps put back —
+        // "3 lights restored" for a loop that sent nothing.
+        if (written > 0) restored += 1;
       } catch (error) {
         this.error(`Could not put ${lamp.name} back:`, messageOf(error));
       }

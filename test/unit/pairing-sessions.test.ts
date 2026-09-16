@@ -1,6 +1,11 @@
 import { test, describe } from 'node:test';
 import { ownsNothing, zoneLights } from '../support/fake-catalog';
 import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 import { deriveControllerName, deriveSuffixedName } from '../../lib/pairing/derive-name';
 import {
@@ -624,4 +629,52 @@ describe('a rule that names its own lights', () => {
     assert.equal(rules.length, 0);
     assert.match(dropped[0]!.reason, /no colour to set/);
   });
+});
+
+/**
+ * A Homey driver is a SINGLETON, so nothing per-session may live on it.
+ *
+ * This is a source scan rather than a behavioural test, and it has to be: a file
+ * containing `extends Homey.Driver` cannot be imported by a test at all
+ * (platform §13), so the only thing that can hold this invariant is a reader.
+ *
+ * The bug it pins: the circadian driver held the try-it screen's lamp snapshot
+ * — the values "Put them back" restores — in a private field on the driver. Its
+ * own docblock said "held for the life of the pairing session", and there is no
+ * `disconnect` handler on that driver to clear it, so it was held for the life
+ * of the APP. Abandoning the try-it screen and opening a second session meant
+ * the second session took no snapshot of its own and "Put them back" wrote the
+ * FIRST session's lamps back to the first session's values, leaving the second
+ * session's lamps scrubbed.
+ *
+ * Per-session state belongs on the `state` object `bindSession` builds, which is
+ * per session by construction. A driver may still have `readonly` collaborators
+ * and getters — what it may not have is a field a handler writes to.
+ */
+describe('drivers keep no per-session state on the driver', () => {
+  const DRIVERS = readdirSync(join(ROOT, 'drivers'), { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => entry.name)
+    .sort();
+
+  test('there is a driver to check at all', () => {
+    // A glob that matches nothing passes every assertion under it.
+    assert.ok(DRIVERS.length >= 5, `found ${DRIVERS.length} drivers`);
+  });
+
+  for (const driverId of DRIVERS) {
+    test(`${driverId} assigns to no instance field`, () => {
+      const source = readFileSync(join(ROOT, 'drivers', driverId, 'driver.ts'), 'utf8');
+
+      // `this.x = …`, but not `this.x === …` and not a call.
+      const assignments = [...source.matchAll(/\bthis\.(\w+)\s*=(?!=)/g)].map(match => match[1]);
+
+      assert.deepEqual(
+        assignments, [],
+        `${driverId}/driver.ts writes to this.${assignments.join(', this.')} — a driver is a `
+        + 'singleton, so that value is shared by every concurrent pair and repair session. Put it '
+        + 'on the session state instead.',
+      );
+    });
+  }
 });
