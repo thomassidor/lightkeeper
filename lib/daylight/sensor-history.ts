@@ -118,8 +118,9 @@ export function bucketWeek(
 
   const days: IsoWeekday[] = [];
   for (let row = 0; row < ROWS; row++) {
-    // Row 0 is the oldest of the seven; the last row is today.
-    days.push(localNow(timezone, nowMs - (ROWS - 1 - row) * 86_400_000).isoWeekday);
+    // Row 0 is the oldest of the seven; the last row is today. Walked the same
+    // way `rowFor` files samples — see `weekdayOfRow`, which is the whole point.
+    days.push(weekdayOfRow(ROWS - 1 - row, timezone, nowMs));
   }
 
   const usable: number[] = [];
@@ -171,10 +172,38 @@ export function bucketWeek(
  * every row before the change by one.
  */
 function rowFor(sampleMs: number, timezone: string | undefined, nowMs: number): number | null {
-  const midnight = (ms: number) => ms - localNow(timezone, ms).minutesOfDay * 60_000;
-  const back = Math.round((midnight(nowMs) - midnight(sampleMs)) / 86_400_000);
+  const back = Math.round((localMidnight(timezone, nowMs) - localMidnight(timezone, sampleMs))
+    / 86_400_000);
   if (!Number.isFinite(back) || back < 0 || back > ROWS - 1) return null;
   return ROWS - 1 - back;
+}
+
+/** The instant local midnight began, for the local day containing `ms`. */
+function localMidnight(timezone: string | undefined, ms: number): number {
+  return ms - localNow(timezone, ms).minutesOfDay * 60_000;
+}
+
+/**
+ * The weekday to write on a row, derived the way the row is FILLED.
+ *
+ * This used to be `localNow(timezone, nowMs - back * 86_400_000).isoWeekday` — a
+ * rigid 24 hours per step, while `rowFor` above deliberately goes via local
+ * midnights precisely because "a clock change inside the week makes one of the
+ * differences 23 or 25 hours". The two disagreed across every DST transition.
+ *
+ * Worked, Europe/Copenhagen, now Monday 31 March 2025 00:30 local: the
+ * spring-forward Sunday was 23 hours long, so `nowMs - 86_400_000` lands on
+ * SATURDAY 23:30 — and the row that `rowFor` fills with Sunday's samples was
+ * labelled Sat, along with every row before the transition. Twice a year, on the
+ * grid that exists to be the evidence for the two lux thresholds.
+ *
+ * Noon of the target local day, because a day that is 23 or 25 hours long still
+ * unambiguously contains its own midday, while its midnight is exactly the
+ * instant the shift can move.
+ */
+function weekdayOfRow(back: number, timezone: string | undefined, nowMs: number): IsoWeekday {
+  const start = localMidnight(timezone, nowMs) - back * 86_400_000;
+  return localNow(timezone, start + 43_200_000).isoWeekday;
 }
 
 /** Linear-interpolated percentile over an already-sorted list. */

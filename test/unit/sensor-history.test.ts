@@ -131,6 +131,52 @@ describe('the week grid', () => {
     }
   });
 
+  /**
+   * The label on a row names the day whose samples land in it.
+   *
+   * The existing clock-change test above runs at MIDDAY, where the hour the
+   * spring-forward removes cannot push an instant across a midnight — which is
+   * why it passed while this was broken. Near midnight it can, and did: the row
+   * labels were walked back a rigid 24 hours while `rowFor` files samples by
+   * local midnight, so the grid read "… Thu Fri Sat Mon" with Sunday missing
+   * and every earlier row naming the wrong day.
+   *
+   * Asserted against `rowFor`'s own answer rather than against a remembered
+   * list, because the two agreeing is the property — a label is only right if it
+   * names the day whose readings are under it.
+   */
+  test('after a clock change, each row is labelled with the day it holds', () => {
+    // Monday 00:30 local, the morning after Copenhagen springs forward
+    // (2026-03-29). Twenty-four hours earlier is Saturday 23:30, not Sunday.
+    const now = Date.parse('2026-03-30T00:30:00+02:00');
+
+    // One sample at local midday on each of the seven days. 24-29 March are
+    // still CET; 30 March is CEST, the shift having happened on the 29th.
+    const samples: HistorySample[] = [
+      { t: Date.parse('2026-03-24T12:00:00+01:00'), v: 100 },
+      { t: Date.parse('2026-03-25T12:00:00+01:00'), v: 100 },
+      { t: Date.parse('2026-03-26T12:00:00+01:00'), v: 100 },
+      { t: Date.parse('2026-03-27T12:00:00+01:00'), v: 100 },
+      { t: Date.parse('2026-03-28T12:00:00+01:00'), v: 100 },
+      { t: Date.parse('2026-03-29T12:00:00+02:00'), v: 100 },
+      { t: Date.parse('2026-03-30T12:00:00+02:00'), v: 100 },
+    ];
+
+    const week = bucketWeek(samples, TZ, now);
+
+    // Tue 24th through Mon 30th, in ISO weekdays. Sunday the 29th is the one
+    // the rigid 24-hour walk skipped, and everything before it shifted by a day.
+    assert.deepEqual([...week.days], [2, 3, 4, 5, 6, 7, 1]);
+
+    // And every row actually holds the readings its label claims.
+    for (let row = 0; row < ROWS; row++) {
+      assert.ok(
+        week.cells[row]!.some(cell => cell !== null),
+        `row ${row} (labelled ${week.days[row]}) holds the day's readings`,
+      );
+    }
+  });
+
   test('buckets on local hours, not UTC', () => {
     // 00:30 local in Copenhagen in winter is 23:30 the previous day in UTC.
     // Bucketed in UTC this lands in the last column of the day before; bucketed
