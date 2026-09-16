@@ -276,3 +276,55 @@ describe('command scheduler', () => {
     ]);
   });
 });
+
+/**
+ * A flush that finds nothing to write must not wedge the device's queue.
+ *
+ * `runFlush` used to clear `queue.activeFlush` in its own `finally`. An async
+ * function runs synchronously up to its first `await`, so a pass that RETURNED
+ * before reaching one — an empty `pending` — cleared the field, and `flush` then
+ * assigned a resolved promise back into it. `schedule()` early-returns while
+ * `activeFlush` is non-null, so that device was never written to again for the
+ * life of the app: not an error, not a failed write, silence.
+ *
+ * Latent rather than live — every caller happens to guarantee a non-empty
+ * `pending` — so it is reached here through the private method, which is the
+ * only way to ask the question at all. That is the point of pinning it: the next
+ * caller does not have to know.
+ */
+describe('a queue survives a flush with nothing in it', () => {
+  test('an empty flush leaves the device writable', async () => {
+    const h = harness();
+
+    // Build the queue and let its first burst land.
+    h.scheduler.submit([{ deviceId: 'l1', capability: 'onoff', value: true }]);
+    await h.clock.advance(1);
+    assert.equal(h.written.length, 1);
+
+    // A flush with nothing pending — the path that used to strand the slot.
+    await (h.scheduler as unknown as { flush(id: string): Promise<void> }).flush('l1');
+
+    h.scheduler.submit([{ deviceId: 'l1', capability: 'dim', value: 0.4 }]);
+    await h.clock.advance(500);
+
+    assert.deepEqual(
+      h.written.map(w => w.capability), ['onoff', 'dim'],
+      'the second write never arrived, so the queue was stranded by the empty flush',
+    );
+  });
+
+  test('and so does a second empty flush straight after it', async () => {
+    const h = harness();
+    h.scheduler.submit([{ deviceId: 'l1', capability: 'onoff', value: true }]);
+    await h.clock.advance(1);
+
+    const flush = (h.scheduler as unknown as { flush(id: string): Promise<void> }).flush.bind(h.scheduler);
+    await flush('l1');
+    await flush('l1');
+
+    h.scheduler.submit([{ deviceId: 'l1', capability: 'dim', value: 0.4 }]);
+    await h.clock.advance(500);
+
+    assert.equal(h.written.length, 2);
+  });
+});

@@ -328,9 +328,24 @@ function planBrightnessDelta(
       continue;
     }
 
+    /**
+     * A write that is expected to switch the lamp ON is never darkness.
+     *
+     * `advanceDim` guarantees a lamp MOVES, and the branch above catches the
+     * `delta < 0` case — but SYNCHRONISED mode bypasses `advanceDim` entirely
+     * (see the note on `raw`), and the `next <= 0` guard is `delta < 0` only. So
+     * an off lamp being raised, in a group whose average is near the floor, on a
+     * lamp declaring `decimals: 1`, planned `{ dim: 0, impliesOn: true }`: the
+     * adapter then probes, finds the lamp still off, and switches it on at
+     * nothing. Through `litDim` for the same reason the branch above is —
+     * `minimumBrightness` is not a floor on every lamp.
+     */
+    const turningOn = turningOnViaDim.has(deviceId);
     writes.push({
-      deviceId, capability: 'dim', value: next,
-      ...(turningOnViaDim.has(deviceId) ? { impliesOn: true } : {}),
+      deviceId,
+      capability: 'dim',
+      value: turningOn ? litDim(deviceId, Math.max(next, behavior.minimumBrightness), cache) : next,
+      ...(turningOn ? { impliesOn: true } : {}),
     });
   }
 

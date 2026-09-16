@@ -19,18 +19,27 @@ import type { HomeyApiService } from '../../lib/homey-api-service';
 
 interface FakeInstance { destroyed: boolean }
 
-function harness(devices: Array<Partial<CatalogDevice>> = []) {
+function harness(
+  devices: Array<Partial<CatalogDevice>> = [],
+  options: { holdDevice?: string } = {},
+) {
   const instances: FakeInstance[] = [];
   const subscribed: string[] = [];
   const logs: string[] = [];
   let fire: ((value: unknown) => void) | null = null;
   const timers: Array<() => void> = [];
 
+  // A `getDevice` that does not resolve until the test says so, which is the
+  // only way to land a `stop()` inside `watch()`'s own await.
+  let release: (() => void) | null = null;
+  const held = new Promise<void>(resolve => { release = resolve; });
+
   const api = {
     read: async () => ({
       devices: {
         getDevice: async ({ id }: { id: string }) => {
           if (id === 'broken') throw new Error('gone');
+          if (id === options.holdDevice) await held;
           return {
             makeCapabilityInstance: (capability: string, listener: (value: unknown) => void) => {
               subscribed.push(`${id}.${capability}`);
@@ -70,6 +79,8 @@ function harness(devices: Array<Partial<CatalogDevice>> = []) {
     logs,
     press: (value: unknown) => fire?.(value),
     expire: () => timers.forEach(fn => fn()),
+    armed: () => timers.length,
+    release: () => release?.(),
   };
 }
 
@@ -153,6 +164,41 @@ describe('PressListener', () => {
     assert.deepEqual(h.subscribed, ['r1.button']);
     assert.ok(h.logs.some(line => line.includes('Could not listen')));
     await h.listener.stop();
+  });
+
+  /**
+   * A `stop()` landing inside `watch()`'s own await must still release
+   * everything.
+   *
+   * `stop()` swaps `this.offs` for a fresh array and drains the old one. The
+   * candidate whose `getDevice` was in flight then created its instances and
+   * pushed them into the NEW array, with nothing scheduled to drain it — live
+   * subscriptions on a household's remotes after the screen had closed. The
+   * loop's `if (!this.listening) break` guards the next candidate, not the one
+   * already running. And the window timer was armed afterwards regardless, on a
+   * listener that had stopped.
+   *
+   * Bounded rather than permanent — the stray timer drains it within WINDOW_MS,
+   * and `start()` stops first — but the class header promises "every
+   * subscription released on stop however stop is reached", and this is the one
+   * path where that was not true.
+   */
+  test('a stop inside a subscription in flight leaves nothing behind', async () => {
+    const h = harness([{ id: 'r0', capabilities: ['button'] }], { holdDevice: 'r0' });
+
+    const started = h.listener.start(h.candidates, () => undefined);
+    // Let start() reach the held getDevice before stopping.
+    await new Promise(resolve => setImmediate(resolve));
+
+    await h.listener.stop();
+    h.release();
+    await started;
+
+    assert.deepEqual(
+      h.instances.filter(instance => !instance.destroyed), [],
+      'a subscription outlived the stop that was supposed to release it',
+    );
+    assert.equal(h.armed(), 0, 'a window was armed on a listener that had stopped');
   });
 
   test('the key names the capability and the value, so a row can match it', async () => {

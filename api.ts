@@ -665,7 +665,22 @@ module.exports = {
         : 'a schedule needs at least one block');
     }
 
+    /**
+     * The stored plan has to BE there, because this route only replaces part of
+     * it.
+     *
+     * `{ ...undefined, entries, days }` is legal and produces a plan with no
+     * `schemaVersion`, no `enabled` and no `target`. `applyPlan` then fails
+     * validation, rolls back to `null` and leaves the device unavailable — so a
+     * route that meant to change the blocks took the device offline instead.
+     * Only reachable on a device whose store is already broken, which is exactly
+     * when a clear message beats a quarantine.
+     */
     const stored = device.getStoreValue('schedule');
+    if (!stored || typeof stored !== 'object') {
+      throw new Error(`the schedule device "${id}" has no stored plan to add blocks to`);
+    }
+
     const days = body?.days === undefined
       ? stored?.days ?? null
       : sanitiseScheduleDays(body.days);

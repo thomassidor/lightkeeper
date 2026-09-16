@@ -35,6 +35,63 @@ const dimWrites = (
   writes.filter(w => w.capability === 'dim').map(w => [w.deviceId, Number(w.value)]),
 );
 
+/**
+ * A write that is expected to switch a lamp ON must not be darkness.
+ *
+ * `advanceDim` guarantees a lamp MOVES, and the `next <= 0` branch catches the
+ * downward case — but synchronised mode bypasses `advanceDim` entirely and that
+ * branch is `delta < 0` only. So raising an off lamp, in a group whose mean sits
+ * near the floor, on a lamp declaring `decimals: 1`, planned
+ * `{ dim: 0, impliesOn: true }`: the adapter probes, finds the lamp still off,
+ * and switches it on at nothing.
+ *
+ * Tenths is the cruel case for the same reason it is everywhere else in this
+ * file — the perceptual curve is steepest at the bottom and quantisation happens
+ * in DEVICE values, so a 0.1 perceptual aim is 0.1^2.2 ≈ 0.0063, which rounds to
+ * 0.0 at one decimal.
+ */
+describe('turning a lamp on is never turning it on at nothing', () => {
+  test('synchronised mode does not plan an implied-on write of zero', () => {
+    const cache = cacheWith([
+      { id: 'a', on: false, dim: 0, dimDecimals: 1 },
+      { id: 'b', on: false, dim: 0, dimDecimals: 1 },
+    ]);
+
+    const { writes } = planIntent(
+      { type: 'brightness_delta', delta: 0.1 },
+      ['a', 'b'],
+      cache,
+      { ...DEFAULT_BEHAVIOR, groupBrightnessMode: 'synchronised', increaseWhileOff: 'turn_on_and_apply' },
+    );
+
+    const implied = writes.filter(w => w.impliesOn === true);
+    assert.ok(implied.length > 0, 'both lamps are off and being raised');
+    for (const write of implied) {
+      assert.ok(
+        Number(write.value) > 0,
+        `${write.deviceId} would be switched on at ${String(write.value)}`,
+      );
+    }
+  });
+
+  test('a relative-mode implied-on write is positive too', () => {
+    // The default path, which `advanceDim` already protected — asserted so the
+    // two modes are held to one rule rather than to whichever guard they hit.
+    const cache = cacheWith([{ id: 'a', on: false, dim: 0, dimDecimals: 1 }]);
+
+    const { writes } = planIntent(
+      { type: 'brightness_delta', delta: 0.1 },
+      ['a'],
+      cache,
+      { ...DEFAULT_BEHAVIOR, increaseWhileOff: 'turn_on_and_apply' },
+    );
+
+    const implied = writes.filter(w => w.impliesOn === true);
+    assert.equal(implied.length, 1);
+    assert.ok(Number(implied[0]!.value) > 0);
+  });
+});
+
 describe('group toggle', () => {
   test('any on → all off', () => {
     const cache = cacheWith([

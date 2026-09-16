@@ -307,7 +307,30 @@ export class CommandScheduler {
     if (queue.activeFlush) return queue.activeFlush;
     if (this.stopped) return Promise.resolve();
 
-    const run = this.runFlush(deviceId, queue);
+    /**
+     * The slot is claimed by the `.finally()` rather than by `runFlush` itself,
+     * and the ordering is the whole reason.
+     *
+     * `runFlush` used to clear `queue.activeFlush` in its own `finally`. An
+     * async function runs synchronously up to its first `await`, so a pass that
+     * RETURNED before reaching one — an empty `pending`, or every write
+     * ineligible — cleared the field and then had this line assign a resolved
+     * promise back into it. `schedule()` early-returns while `activeFlush` is
+     * non-null, so that device's queue would be wedged for the life of the app:
+     * its lamp never written to again, silently.
+     *
+     * Every caller happens to guarantee a non-empty `pending` today —
+     * `drain()` clears the timer before flushing, `cancelTarget` and `stop`
+     * clear both, and `submit` fills it first — so it is closed by four call
+     * sites agreeing. A `.finally()` callback is a microtask and cannot run
+     * before the next statement, which closes it structurally instead.
+     */
+    const run = this.runFlush(deviceId, queue).finally(() => {
+      queue.activeFlush = null;
+      // Anything that arrived mid-flush gets its own pass. This is the
+      // guaranteed final write.
+      if (queue.pending.size > 0 && !this.stopped) this.schedule(deviceId);
+    });
     queue.activeFlush = run;
     return run;
   }
@@ -315,68 +338,60 @@ export class CommandScheduler {
   private async runFlush(deviceId: string, queue: DeviceQueue): Promise<void> {
     const generation = queue.generation;
     const eligible = () => !this.stopped && queue.generation === generation;
-    try {
-      const snapshot = [...queue.pending.entries()];
-      queue.pending.clear();
-      if (snapshot.length === 0) return;
+    const snapshot = [...queue.pending.entries()];
+    queue.pending.clear();
+    if (snapshot.length === 0) return;
 
-      queue.lastWriteAt = this.now();
+    queue.lastWriteAt = this.now();
 
-      snapshot.sort((a, b) => WRITE_ORDER.indexOf(a[0]) - WRITE_ORDER.indexOf(b[0]));
-      // The one exception WRITE_ORDER cannot express: switching OFF goes last,
-      // or the lamp visibly jumps to the burst's new level before going dark.
-      const turningOff = snapshot.find(([cap, write]) => cap === 'onoff' && write.value === false);
-      if (turningOff) {
-        snapshot.splice(snapshot.indexOf(turningOff), 1);
-        snapshot.push(turningOff);
+    snapshot.sort((a, b) => WRITE_ORDER.indexOf(a[0]) - WRITE_ORDER.indexOf(b[0]));
+    // The one exception WRITE_ORDER cannot express: switching OFF goes last,
+    // or the lamp visibly jumps to the burst's new level before going dark.
+    const turningOff = snapshot.find(([cap, write]) => cap === 'onoff' && write.value === false);
+    if (turningOff) {
+      snapshot.splice(snapshot.indexOf(turningOff), 1);
+      snapshot.push(turningOff);
+    }
+
+    // Serialised per target; failures are independent so one bad write
+    // never blocks the rest of this device's burst, let alone other devices.
+    for (const [capability, write] of snapshot) {
+      if (!eligible()) {
+        for (const waiter of write.waiters) {
+          waiter.settle({ status: 'cancelled', deviceId, capability, reason: 'scheduler stopped' });
+        }
+        continue;
       }
-
-      // Serialised per target; failures are independent so one bad write
-      // never blocks the rest of this device's burst, let alone other devices.
-      for (const [capability, write] of snapshot) {
-        if (!eligible()) {
+      const startedAt = this.now();
+      try {
+        await this.executor(deviceId, capability, write.value, {
+          impliesOn: write.impliesOn, preStage: write.preStage, eligible,
+        });
+        if (!eligible()) throw new WriteCancelled();
+        for (const waiter of write.waiters) {
+          waiter.settle({
+            status: 'succeeded', deviceId, capability,
+            value: write.value, ms: this.now() - startedAt,
+          });
+        }
+      } catch (error) {
+        if (error instanceof WriteCancelled) {
           for (const waiter of write.waiters) {
-            waiter.settle({ status: 'cancelled', deviceId, capability, reason: 'scheduler stopped' });
+            waiter.settle({ status: 'cancelled', deviceId, capability, reason: error.message });
           }
           continue;
         }
-        const startedAt = this.now();
-        try {
-          await this.executor(deviceId, capability, write.value, {
-            impliesOn: write.impliesOn, preStage: write.preStage, eligible,
-          });
-          if (!eligible()) throw new WriteCancelled();
-          for (const waiter of write.waiters) {
-            waiter.settle({
-              status: 'succeeded', deviceId, capability,
-              value: write.value, ms: this.now() - startedAt,
-            });
-          }
-        } catch (error) {
-          if (error instanceof WriteCancelled) {
-            for (const waiter of write.waiters) {
-              waiter.settle({ status: 'cancelled', deviceId, capability, reason: error.message });
-            }
-            continue;
-          }
-          this.options.onError?.(deviceId, capability, error);
-          // The message only. The adapter has already classified and redacted
-          // it; an error OBJECT from the API boundary can quote the key back
-          // inside itself — see the `failed` outcome above, and CLAUDE.md's
-          // key-hygiene property.
-          const message = messageOf(error);
-          for (const waiter of write.waiters) {
-            waiter.settle({ status: 'failed', deviceId, capability, error: message });
-          }
+        this.options.onError?.(deviceId, capability, error);
+        // The message only. The adapter has already classified and redacted
+        // it; an error OBJECT from the API boundary can quote the key back
+        // inside itself — see the `failed` outcome above, and CLAUDE.md's
+        // key-hygiene property.
+        const message = messageOf(error);
+        for (const waiter of write.waiters) {
+          waiter.settle({ status: 'failed', deviceId, capability, error: message });
         }
       }
-    } finally {
-      queue.activeFlush = null;
     }
-
-    // Anything that arrived mid-flush gets its own pass. This is the
-    // guaranteed final write.
-    if (queue.pending.size > 0 && !this.stopped) this.schedule(deviceId);
   }
 
   /**

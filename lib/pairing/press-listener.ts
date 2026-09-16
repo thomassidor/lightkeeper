@@ -89,6 +89,11 @@ export class PressListener {
       await this.watch(api, candidate, onHeard);
     }
 
+    // A `stop()` that landed while the loop above was awaiting has already
+    // drained `offs` and cleared the timer; arming a new one here would put a
+    // live window on a listener that is not listening.
+    if (!this.listening) return;
+
     const schedule = this.deps.setTimeout ?? ((fn, ms) => setTimeout(fn, ms));
     this.timer = schedule(() => {
       fireAndForget(this.stop(), this.deps.log, 'Stopping the press listener');
@@ -113,6 +118,20 @@ export class PressListener {
       this.deps.log(`Could not listen to ${candidate.name}:`, messageOf(error));
       return;
     }
+
+    /**
+     * Re-checked AFTER the await, which is the only place it can be.
+     *
+     * `stop()` swaps `this.offs` for a fresh array and drains the old one. A
+     * stop landing during the `getDevice` above therefore drained an array this
+     * call no longer holds, and the instances created below went into the NEW
+     * one with nothing scheduled to drain it — live capability subscriptions on
+     * a household's remotes, after the screen that wanted them had closed. The
+     * class header promises "every subscription released on stop however stop
+     * is reached"; the loop's own `if (!this.listening) break` guards the next
+     * candidate, not the one already in flight.
+     */
+    if (!this.listening) return;
 
     for (const capability of capabilities) {
       try {
