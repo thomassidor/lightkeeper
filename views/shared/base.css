@@ -153,8 +153,19 @@
   /* 16px under a heading, which is the gap the design draws on every screen
      that puts a control straight below one. It used to be 4px, and at 4px a
      title read as a label ON the first card rather than as the name of the
-     screen. */
-  #ROOT h2 { margin: 0 0 16px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+     screen.
+
+     `text-wrap: balance` is for the titles that do not fit on one line, and the
+     longest is the sensor picker's: measured at 311px — a 390px phone, less
+     Homey's gutter, our padding and the scrollbar gutter — it breaks 295px +
+     54px, which leaves `from?` alone on the second line. Balanced it is
+     163 + 185. Not a workaround for a title that is too long: at 20px it needs
+     354px, and even 18px needs 319px, so there is no size that holds it on one
+     line at phone width without shrinking every other title in the app by an
+     eighth. A one-line title is unaffected, so this costs the other screens
+     nothing, and a browser without it wraps exactly as before. */
+  #ROOT h2 { margin: 0 0 16px; font-size: 20px; font-weight: 700; letter-spacing: -.01em;
+             text-wrap: balance; }
   #ROOT .sub { font-size: 14px; line-height: 1.5; color: var(--lk-body); margin: 0 0 18px; }
   /* A blurb belongs TO its heading — 6px between them, not 16. Written as a
      pull on the blurb rather than as `h2:has(+ .sub)` on the heading because

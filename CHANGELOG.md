@@ -1108,6 +1108,28 @@ reason to open: the count was the only evidence they existed, and a count is not
   nobody is still asking.
 
 
+### The heading moved when the sensor list unfolded
+
+Opening the sensor picker's list made the screen a little taller than the pairing sheet, a scrollbar
+appeared, and every line of text re-measured in the width it left behind — so "Where should the
+reading come from?" sat on one line before the tap and on two afterwards. The text had not changed;
+the usable width had.
+
+- **Every pairing screen now reserves the scrollbar's gutter**, so the width is one number for the
+  whole session whether the bar is showing or not. The mechanism already existed and was in exactly
+  one screen — the API-key step — which is why this was invisible on a Light Remote and a light
+  schedule and happened every time on the other three device types: the scrolling element belongs to
+  Homey's pairing container and outlives each screen, so whichever screen boots first settles it for
+  the rest of the flow. It is spliced into all fifty-six views from one source now, and a test fails
+  if a view is added without it.
+- **A screen title that does not fit on one line now breaks evenly.** "Where should the reading come
+  from?" is the longest title in the app, and on a phone it has never fitted: it broke 295px + 54px,
+  leaving "from?" alone on the second line. It is 163 + 185 now. This is not a way round a title
+  that is too long — at 20px it wants 354px and at 18px still 319px, against a 311px column, so no
+  size holds it on one line at phone width without shrinking every other title by an eighth. The
+  wording is unchanged, a title that already fits is unaffected, and a browser without balanced
+  wrapping breaks exactly where it did.
+
 ## 0.5.2
 
 Four fixes, all found by reading one diagnostics export from a Homey that had been running for an

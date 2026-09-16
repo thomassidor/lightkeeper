@@ -415,7 +415,9 @@ describe('pair view styles', () => {
  *
  * `stabiliseScrollbar` and `emit` are byte-identical in every view and have to
  * be: a pair view is plain browser script in a shared document, so there is no
- * module to import them from. Unlike the CSS they had no guard, so one of them
+ * module to import them from. Both are spliced from `views/shared/` now, so this
+ * guards the splice rather than a human's diligence — and still earns its keep,
+ * because nothing runs `sync:views` for you. Unlike the CSS they had no guard, so one of them
  * could be fixed in one view and left wrong in the other four — and `emit` is
  * the only path from a view to its driver, so a divergence there is a screen
  * that renders and does nothing.
@@ -473,6 +475,30 @@ describe('pair view script helpers', () => {
 
   test('stabiliseScrollbar() is identical everywhere it appears', () => {
     assertIdentical('stabiliseScrollbar');
+  });
+
+  /**
+   * And it appears EVERYWHERE, which the test above cannot say on its own.
+   *
+   * The scrolling element belongs to the pairing container, not to a view, so it
+   * outlives every screen in the session: whichever view boots first decides
+   * whether the gutter is reserved for the whole flow. While this lived in the
+   * credential screen alone, the two device types that have one were stable from
+   * step 1 and the three without it were stable nowhere — so unfolding the sensor
+   * list took 15px off the usable width and the heading above it moved from one
+   * line to two, under the tap that unfolded it.
+   *
+   * A floor of one view would have passed that entire time, which is why this is
+   * "all of them" rather than "more than one".
+   */
+  test('every view reserves the scrollbar gutter', () => {
+    for (const view of Object.keys(VIEWS)) {
+      assert.ok(
+        helper(view, 'stabiliseScrollbar') !== null,
+        `${view} does not stabilise the scrollbar — one view that skips it leaves `
+        + "the whole flow's width free to change when a list unfolds",
+      );
+    }
   });
 
   test('emit() is identical everywhere it appears', () => {

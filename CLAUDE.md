@@ -242,9 +242,10 @@ scripts/dump-card-fixtures.mjs  writes test/fixtures/cards/*.json from the hand-
 scripts/hardware-env.json       GITIGNORED. A Homey address and two Personal API Keys, read by
                                 verify-hardware.mjs when the env vars are not set
 views/shared/                   NOT bundled. The one authored copy of each block that appears
-                                in more than one pair view — the CSS base and emit() in all 56,
-                                the week grid's CSS and weekGrid() in the two daylight screens
-                                that draw it. `npm run sync:views` splices them in
+                                in more than one pair view — the CSS base, emit() and
+                                stabiliseScrollbar() in all 56, the week grid's CSS and weekGrid()
+                                in the two daylight screens that draw it. `npm run sync:views`
+                                splices them in
 settings/index.html             app settings page
 locales/en.json                 all user-facing strings
 .homeycompose/                  the manifest's SOURCE; app.json is generated from it
@@ -578,15 +579,16 @@ container's document rather than getting their own iframe. They must not load `h
 every CSS rule is scoped to the view's root id, and the boot guard lives on the root element rather
 than in a global. Each file's header explains this.
 
-**The shared blocks are GENERATED, and `views/shared/` is where they are authored.** The CSS base
-and `emit()` appear in every view file; the week grid — its own CSS and `weekGrid()` — appears in
-the two daylight screens that draw a sensor's history. (`wc -l views/shared/*` for the sizes: they
-are quoted nowhere, deliberately, because three places once carried three stale numbers.) All of it
-used to be authored by hand in every copy, under an in-file instruction to "edit this block in all
-files, or in none of them", with `test/unit/pair-view-styles.test.ts` asserting they stayed
-identical. `npm run sync:views` now splices them from
-`views/shared/{base.css,emit.js,week-grid.css,week-grid.js}`, substituting each view's own root id
-for `#ROOT` — the same normalisation that test does in reverse.
+**The shared blocks are GENERATED, and `views/shared/` is where they are authored.** The CSS base,
+`emit()` and `stabiliseScrollbar()` appear in every view file; the week grid — its own CSS and
+`weekGrid()` — appears in the two daylight screens that draw a sensor's history.
+(`wc -l views/shared/*` for the sizes: they are quoted nowhere, deliberately, because three places
+once carried three stale numbers.) All of it used to be authored by hand in every copy, under an
+in-file instruction to "edit this block in all files, or in none of them", with
+`test/unit/pair-view-styles.test.ts` asserting they stayed identical. `npm run sync:views` now
+splices them from
+`views/shared/{base.css,emit.js,stabilise-scrollbar.js,week-grid.css,week-grid.js}`, substituting
+each view's own root id for `#ROOT` — the same normalisation that test does in reverse.
 **Edit the source, never the view.** `npm run sync:views:check` fails in CI until they agree.
 
 Two conventions the splicer imposes on those source files, both learned by breaking them: the
@@ -605,10 +607,17 @@ A real `<link>`/`<script src>` may yet be possible: the Homey does serve a sibli
 pair view (measured, platform §8). What is unmeasured is whether an injected view's own external
 reference loads once the pairing container has placed it in the shared document.
 
-The other shared helpers — `stabiliseScrollbar()`, `node()`, `clear()`, `pad()` — are
-byte-identical **wherever they appear**, which is not everywhere: a view that draws no list needs
-no `clear()`. The test asserts that weaker, correct property rather than demanding all of them in
-all of them.
+**`stabiliseScrollbar()` is in every view because the scroller is not ours.** It reserves the
+scrollbar's gutter on the pairing container's scrolling element, which outlives each screen — so
+whichever view boots first decides whether the width is one number for the flow or two. It lived in
+the credential screen alone, which made the two device types that have one stable from step 1 and
+the three without one stable nowhere: unfolding the sensor list took the scrollbar's width off the
+usable width and the heading above it moved from one line to two, under the tap that unfolded it.
+`pair-view-styles.test.ts` asserts every view has it, not just that the copies agree.
+
+The remaining shared helpers — `node()`, `clear()`, `pad()` — are byte-identical **wherever they
+appear**, which is not everywhere: a view that draws no list needs no `clear()`. The test asserts
+that weaker, correct property rather than demanding all of them in all of them.
 
 Both tests discover views from disk, so a new driver's screens are covered the moment they exist.
 

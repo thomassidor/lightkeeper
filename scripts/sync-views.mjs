@@ -107,6 +107,16 @@ const BLOCKS = [
   },
   { source: 'emit.js', kind: 'function', name: 'emit', scoped: false },
   /**
+   * The scrollbar gutter, in every view.
+   *
+   * NOT optional, and that is the point: the scroller belongs to the pairing
+   * container and outlives each screen, so one view that skips it leaves the
+   * whole flow's width free to change when a list unfolds. It lived in the
+   * credential view alone, which is why the two device types that have one
+   * were stable and the three without it were not.
+   */
+  { source: 'stabilise-scrollbar.js', kind: 'function', name: 'stabiliseScrollbar', scoped: false },
+  /**
    * The sensor's-week grid, on the two daylight screens that draw it.
    *
    * Optional, because only two views carry it. Same mechanism the daylight card
