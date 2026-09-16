@@ -104,6 +104,24 @@ export function sanitizedWriteError(error: unknown): Error {
 }
 
 /**
+ * Close a `homey-api` client, whoever is holding it.
+ *
+ * The body `discardClient()` used to inline, lifted because `setCredential` has
+ * two paths holding a CANDIDATE client that `this.client` never pointed at — a
+ * failed write probe and a superseded candidate — and both were dropping it on
+ * the floor. Nulling a reference does not close a `SocketSession`.
+ *
+ * Best effort on purpose: the common reason we are discarding a client is that
+ * its session already died (platform §2), and `destroy()` on a dead socket must
+ * not become an error the caller has to handle.
+ */
+function destroyClient(client: unknown): void {
+  try {
+    (client as { destroy?: () => void } | null | undefined)?.destroy?.();
+  } catch { /* the session has already gone */ }
+}
+
+/**
  * Classify an error from a flow write. The three failures look alike and mean
  * completely different things; conflating them sends users to the wrong fix.
  */
@@ -179,9 +197,9 @@ export class CredentialService {
    * socket must not become an error the caller has to handle.
    */
   private discardClient(): void {
-    const previous = this.client as { destroy?: () => void } | null;
+    const previous = this.client;
     this.client = null;
-    try { previous?.destroy?.(); } catch { /* the session has already gone */ }
+    destroyClient(previous);
   }
 
   /**
@@ -204,6 +222,24 @@ export class CredentialService {
    * after the user pasted it.
    */
   private generation = 0;
+
+  /**
+   * A counter for CANDIDATES, which is not the same thing as the one above.
+   *
+   * `setCredential` used to bump `generation` on its way in, before the key it
+   * was given had been proved or stored. That is a change of credential state,
+   * and the class header promises the opposite: "a candidate never disturbs the
+   * incumbent". It disturbed two things. `superseded()` compares `generation`,
+   * so a revalidation of the good stored key in flight at that moment was
+   * discarded — "Discarding a revalidation of a key that has since changed",
+   * about a key that had not changed. And `reportFailure`/`reportSuccess` are
+   * gated on `revision === this.generation`, so a real write failure on the live
+   * key went unpublished because somebody had mistyped one into the settings box.
+   *
+   * Two counters because there are two races, and only one of them is about the
+   * stored key moving.
+   */
+  private candidates = 0;
 
   constructor(private readonly options: CredentialServiceOptions) {
     this.status.present = Boolean(this.token);
@@ -284,20 +320,41 @@ export class CredentialService {
       return failedStatus('malformed', this.token !== null);
     }
 
-    const generation = ++this.generation;
+    const candidate = ++this.candidates;
     let client: unknown;
     try {
       client = await this.options.createWriteClient(await this.options.getLocalAddress(), token);
       await validate(client);
     } catch (error) {
-      // Deliberately not logging the error object — it can echo the token back.
+      /**
+       * The candidate's own client is closed here, and that is not tidiness.
+       *
+       * `createWriteClient` SUCCEEDED on this path — only `validate` threw — so
+       * there is a live `SocketSession` with nothing left holding it, which is
+       * exactly the leak `discardClient()` below documents. The likeliest way to
+       * reach it is the commonest mistake there is: a read-scoped key connects
+       * perfectly well and fails the write probe (platform §1), so every retry
+       * used to leak one connection for the life of the app.
+       *
+       * Deliberately not logging the error object — it can echo the token back.
+       */
+      destroyClient(client);
       const failure = classifyCredentialError(error);
       this.options.log(`API key rejected: ${failure}`);
       return failedStatus(failure, this.token !== null);
     }
 
-    if (generation !== this.generation) return this.getStatus();
+    // A newer candidate arrived while this one was being proved. Its client is
+    // live too, and abandoning it leaks the same way.
+    if (candidate !== this.candidates) {
+      destroyClient(client);
+      return this.getStatus();
+    }
+
     this.options.settings.set(SETTINGS_KEY, token);
+    // NOW the stored key has changed, so now the generation moves — see the
+    // field's own docblock, and `candidates` beside it.
+    this.generation += 1;
     // A key being replaced leaves the PREVIOUS key's client connected unless it
     // is closed here — this is the assignment that made "re-mint a key" leak one
     // socket every time.

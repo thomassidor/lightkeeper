@@ -23,17 +23,31 @@ const VALID_KEY = '2d36cd94-0d54-4e5b-abb6-51b70b58ae07:4b0dd18f-0cb6-446c-9e56-
 function harness() {
   const store = new Map<string, unknown>();
   const logs: string[] = [];
+  /**
+   * Every client this harness hands out, and whether it was closed.
+   *
+   * `homey-api`'s client owns a `SocketSession`, a `SubscriptionRegistry` and a
+   * `DiscoveryManager`; nulling a reference to it closes none of them. So the
+   * only way to assert "no connection was leaked" is to count `destroy()` calls
+   * against clients handed out.
+   */
+  const clients: Array<{ token: string; destroyed: boolean }> = [];
   const service = new CredentialService({
     settings: {
       get: k => store.get(k),
       set: (k, v) => { store.set(k, v); },
       unset: k => { store.delete(k); },
     },
-    createWriteClient: async (_address, token) => ({ token }),
+    createWriteClient: async (_address, token) => {
+      const client = { token, destroyed: false, destroy() { this.destroyed = true; } };
+      clients.push(client);
+      return client;
+    },
     getLocalAddress: async () => 'http://127.0.0.1:80',
     log: (...args) => logs.push(args.join(' ')),
   });
-  return { service, store, logs };
+  const leaked = () => clients.filter(client => !client.destroyed);
+  return { service, store, logs, clients, leaked };
 }
 
 describe('API key shape', () => {
@@ -270,5 +284,74 @@ describe('the settings page mirrors the failure map', () => {
     for (const failure of FAILURES) {
       assert.equal(typeof describeFailure(failure), 'string', failure);
     }
+  });
+});
+
+/**
+ * A rejected key must not leave a connection behind.
+ *
+ * `discardClient()` exists because "every site that used to write
+ * `this.client = null` leaked" — and `setCredential` had two paths holding a
+ * client that `this.client` never pointed at, so neither got that treatment.
+ * Counted rather than reasoned about: `destroy()` is the only thing that closes
+ * a `SocketSession`, so the assertion has to be about the call.
+ */
+describe('a candidate key leaves nothing connected', () => {
+  test('a key that connects and fails the write probe closes its client', async () => {
+    // The commonest mistake there is: a read-scoped key connects perfectly well
+    // and only fails the WRITE (platform §1). Every retry used to leak one.
+    const h = harness();
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const status = await h.service.setCredential(VALID_KEY, async () => {
+        throw Object.assign(new Error('Missing Scopes'), { statusCode: 403 });
+      });
+      assert.equal(status.valid, false);
+      assert.equal(status.failure, 'insufficient_scope');
+    }
+
+    assert.equal(h.clients.length, 3, 'three attempts, three clients built');
+    assert.deepEqual(h.leaked(), [], 'and none of them left open');
+  });
+
+  test('a candidate superseded by a newer one closes its client too', async () => {
+    const h = harness();
+    let release: (() => void) | null = null;
+    const held = new Promise<void>(resolve => { release = resolve; });
+
+    // The slow candidate is still being validated when a second one lands and
+    // wins outright.
+    const slow = h.service.setCredential(VALID_KEY, async () => { await held; });
+    const fast = await h.service.setCredential(VALID_KEY, async () => { /* accepted */ });
+    assert.equal(fast.valid, true);
+
+    release!();
+    await slow;
+
+    assert.equal(h.clients.length, 2);
+    assert.equal(h.leaked().length, 1, 'only the winner stays connected');
+    assert.equal(h.leaked()[0], h.clients[1], 'and it is the one that won');
+  });
+
+  /**
+   * A candidate must not disturb the incumbent, which the class header promises
+   * and the generation counter used to break.
+   *
+   * `setCredential` bumped `generation` on the way IN, before the key was proved
+   * or stored — so `revision` moved for a key that never became the stored one.
+   * `reportFailure`/`reportSuccess` are gated on `revision === generation`, which
+   * meant a real write failure on the LIVE key went unpublished because somebody
+   * had mistyped one into the settings box.
+   */
+  test('a rejected candidate does not move the revision', async () => {
+    const h = harness();
+    await h.service.setCredential(VALID_KEY, async () => { /* accepted */ });
+
+    const before = h.service.revision;
+    await h.service.setCredential(VALID_KEY, async () => {
+      throw Object.assign(new Error('Missing Scopes'), { statusCode: 403 });
+    });
+
+    assert.equal(h.service.revision, before, 'the stored key did not change');
   });
 });
