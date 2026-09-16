@@ -594,8 +594,15 @@ each view's own root id for `#ROOT` — the same normalisation that test does in
 Two conventions the splicer imposes on those source files, both learned by breaking them: the
 delimited **CSS** source carries no leading indentation (the splicer indents it into place, and a
 source that arrives pre-indented drifts from its copies by exactly that), and a **function** source
-starts at `function` with no docblock above it (the splicer matches the function, so a docblock
-outside it is not copied and the two files then differ).
+starts at `function` with no docblock above it — put the docblock INSIDE the function, as
+`stabilise-scrollbar.js` and `emit.js` do.
+
+The second one is worse than "the two files then differ", which is what this used to say. The
+splicer matches from the `function` keyword, so a docblock above it is never *replaced*: it is
+**prepended again on every sync**, and `sync:views:check` cannot see it because every carrier
+accumulates identically and so never drifts from any other. Four stale copies of the week grid's
+docblock reached the shipped archive that way, each contradicting the real one inside the function.
+`test/unit/pair-view-styles.test.ts` now fails if any spliced helper has a comment block above it.
 
 `views/shared/` sits OUTSIDE `drivers/` because the CLI treats every directory under `drivers/` as a
 driver and fails pre-processing with `ENOENT: … driver.compose.json`; `.homeyignore` keeps it out of

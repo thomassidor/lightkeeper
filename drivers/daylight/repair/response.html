@@ -670,6 +670,24 @@ function __lkBootRs(Homey) {
   })();
 
   function emit(event, data) {
+    /**
+     * Homey.emit, as a promise that always settles.
+     *
+     * GENERATED. Spliced into every pair view by `npm run sync:views` from
+     * views/shared/emit.js. **Edit that file, not this one.**
+     *
+     * Both call styles are handled because the pairing bridge has used a
+     * callback and a promise at different times, and the 20 s timeout is what
+     * keeps a dropped callback from leaving the screen spinning with no message
+     * forever.
+     *
+     * Inside the function, like `stabiliseScrollbar()`'s, and that is not a
+     * style choice: `spliceFunction` matches from the `function` keyword, so a
+     * docblock above one is never replaced — it is prepended again on every
+     * sync. Four stale copies of the week grid's reached the shipped archive
+     * that way. It also means this explanation now appears in all 56 views
+     * rather than in the two credential screens that happened to carry it.
+     */
     return new Promise(function (resolve, reject) {
       var settled = false;
       var finish = function (err, result) {
@@ -689,78 +707,6 @@ function __lkBootRs(Homey) {
     });
   }
 
-    /**
-   * A sensor's own last week, drawn into an element.
-   *
-   * GENERATED. Spliced into every carrier by `npm run sync:views` from
-   * views/shared/week-grid.js. **Edit that file, not this one.**
-   *
-   * It takes NO arguments beyond the element and the payload: everything it
-   * needs is in the payload, and everything it renders it renders itself — so
-   * the body can be byte-identical on the response screen and on the detail
-   * screen, whose surroundings have nothing else in common.
-   *
-   * The grid IS the argument for the two lux thresholds. Nobody can judge
-   * "under 8 lx" in the abstract; anybody can judge it against a week that
-   * visibly has a night and a day in it. It is also what makes the two refusals
-   * honest — a cupboard sensor that reports faithfully and says nothing, and a
-   * sensor that stopped on Saturday — because the picture shows both in a glance
-   * and no wording has to be trusted.
-   */
-    /**
-   * A sensor's own last week, drawn into an element.
-   *
-   * GENERATED. Spliced into every carrier by `npm run sync:views` from
-   * views/shared/week-grid.js. **Edit that file, not this one.**
-   *
-   * It takes NO arguments beyond the element and the payload: everything it
-   * needs is in the payload, and everything it renders it renders itself — so
-   * the body can be byte-identical on the response screen and on the detail
-   * screen, whose surroundings have nothing else in common.
-   *
-   * The grid IS the argument for the two lux thresholds. Nobody can judge
-   * "under 8 lx" in the abstract; anybody can judge it against a week that
-   * visibly has a night and a day in it. It is also what makes the two refusals
-   * honest — a cupboard sensor that reports faithfully and says nothing, and a
-   * sensor that stopped on Saturday — because the picture shows both in a glance
-   * and no wording has to be trusted.
-   */
-    /**
-   * A sensor's own last week, drawn into an element.
-   *
-   * GENERATED. Spliced into every carrier by `npm run sync:views` from
-   * views/shared/week-grid.js. **Edit that file, not this one.**
-   *
-   * It takes NO arguments beyond the element and the payload: everything it
-   * needs is in the payload, and everything it renders it renders itself — so
-   * the body can be byte-identical on the response screen and on the detail
-   * screen, whose surroundings have nothing else in common.
-   *
-   * The grid IS the argument for the two lux thresholds. Nobody can judge
-   * "under 8 lx" in the abstract; anybody can judge it against a week that
-   * visibly has a night and a day in it. It is also what makes the two refusals
-   * honest — a cupboard sensor that reports faithfully and says nothing, and a
-   * sensor that stopped on Saturday — because the picture shows both in a glance
-   * and no wording has to be trusted.
-   */
-    /**
-   * A sensor's own last week, drawn into an element.
-   *
-   * GENERATED. Spliced into every carrier by `npm run sync:views` from
-   * views/shared/week-grid.js. **Edit that file, not this one.**
-   *
-   * It takes NO arguments beyond the element and the payload: everything it
-   * needs is in the payload, and everything it renders it renders itself — so
-   * the body can be byte-identical on the response screen and on the detail
-   * screen, whose surroundings have nothing else in common.
-   *
-   * The grid IS the argument for the two lux thresholds. Nobody can judge
-   * "under 8 lx" in the abstract; anybody can judge it against a week that
-   * visibly has a night and a day in it. It is also what makes the two refusals
-   * honest — a cupboard sensor that reports faithfully and says nothing, and a
-   * sensor that stopped on Saturday — because the picture shows both in a glance
-   * and no wording has to be trusted.
-   */
   function weekGrid(host, payload) {
     /**
      * A sensor's own last week, drawn into an element.

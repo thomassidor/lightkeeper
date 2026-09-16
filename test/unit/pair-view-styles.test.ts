@@ -582,4 +582,39 @@ describe('pair view script helpers', () => {
       assert.ok(helper(view, 'emit'), `${view} has no emit() helper`);
     }
   });
+
+  /**
+   * A spliced function carries no docblock ABOVE it, in any carrier.
+   *
+   * `spliceFunction` in scripts/sync-views.mjs matches from the `function`
+   * keyword to its closing brace, so anything above that point is outside the
+   * region it replaces. When a shared source had its own docblock above
+   * `function`, every `npm run sync:views` therefore PREPENDED another copy
+   * instead of replacing one — and `sync:views:check` could not see it, because
+   * all the carriers accumulated identically and so never drifted from each
+   * other. Four copies of a stale week-grid docblock reached the shipped archive
+   * that way, each contradicting the real one inside the function.
+   *
+   * `stabiliseScrollbar()` is the example to copy: its docblock is inside. This
+   * asserts the convention CLAUDE.md states at the only place it can be checked
+   * — the carriers — and over every spliced helper, so a fifth shared source
+   * cannot reintroduce it.
+   */
+  test('no spliced helper has a docblock above it, which is how copies accumulate', () => {
+    for (const view of Object.keys(VIEWS)) {
+      const text = read(view);
+      for (const name of ['emit', 'weekGrid', 'stabiliseScrollbar']) {
+        const at = text.indexOf(`function ${name}(`);
+        if (at === -1) continue;
+
+        assert.ok(
+          !text.slice(0, at).trimEnd().endsWith('*/'),
+          `${view}: ${name}() is preceded by a comment block. `
+          + 'scripts/sync-views.mjs splices from the `function` keyword, so a docblock above it '
+          + 'is never replaced — it is prepended again on every sync. Put it inside the function, '
+          + 'in views/shared/.',
+        );
+      }
+    }
+  });
 });
