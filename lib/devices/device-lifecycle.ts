@@ -110,6 +110,13 @@ export interface DeviceOwner<
   translate(key: string, tokens?: Record<string, string | number>): string;
   /** The app's flow bridge, for the delete path that runs with no runtime. */
   removeFlows(refs: ManagedFlowReference[]): Promise<number>;
+  /**
+   * Drop this device's flow journal. Called on delete, after the Flows are gone.
+   *
+   * A no-op for the three device types that own no Flows, which is why it sits
+   * beside `removeFlows` rather than behind a check: neither ever wrote one.
+   */
+  forgetFlowJournal(): void;
 
   // ---- what differs between device types ----------------------------------
   /** The device-store key this type's plan is filed under. */
@@ -509,6 +516,9 @@ export class DeviceLifecycle<
       const refs = validManagedFlowRefs(this.owner.rawFlowRefs());
       if (refs.length > 0) await this.owner.removeFlows(refs);
     }
+    // After the Flows, and on BOTH branches — the journal outlives the device
+    // either way, and it is keyed on a device id that will never come back.
+    this.owner.forgetFlowJournal();
     this.owner.log('Deleted and its Flows cleaned up');
   }
 

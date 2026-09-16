@@ -212,8 +212,16 @@ export function toDiscoveredCard(card: any): DiscoveredTriggerCard {
     uri: String(card?.uri ?? ''),
     title: titleTextOf(card?.title) ?? shortId,
     args: ((card?.args ?? []) as any[]).map((a): CardArgument => ({
-      name: a?.name,
-      type: a?.type,
+      // Coerced, like every sibling field here and like the tokens below.
+      // `CardArgument.name` is declared `string`, and this assigned whatever the
+      // card had — `undefined` for an argument with no name. The fingerprint
+      // builder sorts on it (`a.name.localeCompare(b.name)` in
+      // source-discovery-service.ts), so one third-party trigger card with two
+      // arguments and a nameless one threw a TypeError inside `discover()` — the
+      // remote picker, the re-attach scan and the reconcile path, for the whole
+      // Homey.
+      name: String(a?.name ?? ''),
+      type: String(a?.type ?? ''),
       values: (a?.values as any[] | undefined)?.map(v => ({
         id: String(v?.id),
         title: titleTextOf(v?.title) ?? undefined,

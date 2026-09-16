@@ -295,6 +295,24 @@ export class FlowBridgeManager {
     this.journals.set(owner, journal);
   }
 
+  /**
+   * Drop a deleted device's journal, from memory and from settings.
+   *
+   * There was no counterpart to `saveJournal` at all: `flowJournal:<id>` was
+   * written and read and never removed, so every controller and schedule ever
+   * paired left a permanent `homey.settings` key holding its full reference
+   * list, and `journals` grew for the life of the app alongside it.
+   * `DeviceLifecycle.deleted()` removed the Flows and the runtime and had
+   * nothing to call for this.
+   *
+   * Safe for the three device types that own no Flows (platform §12): they never
+   * wrote one, and unsetting a key that was never set is what `unset` does.
+   */
+  forgetOwner(owner: string): void {
+    this.journals.delete(owner);
+    this.journalStore?.unset(`flowJournal:${owner}`);
+  }
+
   private cardRefs: BridgeCardRefs | null = null;
   private readonly folders: FlowFolderManager;
 
@@ -328,7 +346,11 @@ export class FlowBridgeManager {
     private readonly appId: string,
     private readonly log: (...args: unknown[]) => void,
     cards?: FlowCardCatalogue,
-    private readonly journalStore?: { get(key: string): unknown; set(key: string, value: unknown): void },
+    private readonly journalStore?: {
+      get(key: string): unknown;
+      set(key: string, value: unknown): void;
+      unset(key: string): void;
+    },
   ) {
     this.folders = new FlowFolderManager(api, log, this.folderMutex);
     this.cards = cards ?? new FlowCardCatalogue(api);

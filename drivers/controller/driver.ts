@@ -716,7 +716,14 @@ module.exports = class ControllerDriver extends Homey.Driver {
       return {
         created: true,
         device: {
-          name: name || await this.deriveName(state),
+          // `.trim()` before the `||`, which the shared `registerSaveHandler`
+          // in lib/pairing/pair-session.ts has and this copy did not: a
+          // whitespace-only name is truthy, so it was accepted verbatim and
+          // produced a device whose tile appears to have no name at all. The
+          // derivation is the answer to "the user gave us nothing", and a name
+          // of spaces IS nothing. This is the one driver that does not use the
+          // shared handler, which is exactly why it still carried the old line.
+          name: name?.trim() || await this.deriveName(state),
           // `lk-ctrl-`, matching the schedule driver's `lk-sched-`. The old
           // `ll-` was Light Link, the name before this one.
           //

@@ -166,6 +166,13 @@ class FakeOwner implements DeviceOwner<Plan, FakeRuntime> {
     return refs.length;
   }
 
+  /** Recorded, because the delete path is what has to call it. */
+  forgotJournal = 0;
+
+  forgetFlowJournal(): void {
+    this.forgotJournal += 1;
+  }
+
   migrate(raw: unknown): PlanMigration<Plan> {
     if (this.migrateResult instanceof Error) throw this.migrateResult;
     if (this.migrateResult) return this.migrateResult;
@@ -672,6 +679,36 @@ describe('pause, rename and delete', () => {
     assert.equal(runtime.stopped, true);
     assert.equal(registry.get('lk-test-1'), undefined);
     assert.deepEqual(owner.removedFlows, [], 'the runtime owns its own cleanup');
+  });
+
+  /**
+   * The flow journal is dropped too, on both branches.
+   *
+   * `flowJournal:<id>` had a `get` and a `set` and no counterpart at all, so
+   * every controller and schedule ever paired left a permanent `homey.settings`
+   * key holding its full reference list — and the manager's in-memory `journals`
+   * map grew beside it for the life of the app. Deleting the device removed the
+   * Flows and the runtime and left that behind, keyed on a device id that can
+   * never come back.
+   */
+  test('deleting a running device forgets its flow journal', async () => {
+    const { owner, lifecycle } = harness();
+    await lifecycle.apply({ enabled: true, value: 'v' });
+
+    await lifecycle.deleted();
+
+    assert.equal(owner.forgotJournal, 1);
+  });
+
+  test('deleting a never-registered device forgets its flow journal too', async () => {
+    // The branch that matters most: a device whose runtime never started is
+    // exactly the one whose journal nothing else would ever touch again.
+    const { owner, lifecycle } = harness();
+    owner.store.set('plan', { enabled: true, value: 'v', refs: [REF] });
+
+    await lifecycle.deleted();
+
+    assert.equal(owner.forgotJournal, 1);
   });
 });
 

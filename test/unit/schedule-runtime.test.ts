@@ -379,6 +379,34 @@ describe('refusing an event', () => {
     assert.ok(h.synced.length > before, 'a retimed boundary must trigger a reconcile');
   });
 
+  /**
+   * And every OTHER refusal does not, which is the half that was missing.
+   *
+   * `validate()` computed `retimed` and returned it; `handleEvent` reconciled
+   * unconditionally and never read it. A paused schedule's Flows still fire —
+   * pausing keeps them, deliberately, because the tile carries the switch that
+   * un-pauses it — so they were refused twice a day and each refusal ran a full
+   * `bridge.sync()`: every managed Flow re-read, compared and possibly
+   * rewritten, forever, for a device asked to do nothing. A wrong-day boundary
+   * and an unresolved clock did the same.
+   */
+  test('a refusal that is NOT about a retimed Flow reconciles nothing', async () => {
+    const h = harness({
+      plan: plan({ days: [3] }),
+      now: TUESDAY_2215,
+    });
+    await h.runtime.startWithoutFlows();
+    const before = h.synced.length;
+
+    // Tuesday, on a Wednesday-only schedule: the Flow is fine, the moment is not.
+    const outcome = h.runtime.handleEvent(eventKeyFor('a', 'on'));
+    await settle();
+
+    assert.equal(outcome.accepted, false);
+    assert.match(outcome.reason!, /not one of this schedule's days/);
+    assert.equal(h.synced.length, before, 'the Flow is fine; there is nothing to reconcile');
+  });
+
   test('a boundary a minute early is still accepted, because clocks are clocks', async () => {
     // The Flow engine fires on the minute and our clock is read separately, so
     // a refusal must be about a Flow that was RETIMED, never about a second of

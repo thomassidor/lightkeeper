@@ -663,6 +663,25 @@ describe('drivers keep no per-session state on the driver', () => {
   });
 
   for (const driverId of DRIVERS) {
+    /**
+     * A whitespace-only name is nothing, and has to be treated as nothing.
+     *
+     * The shared `registerSaveHandler` in lib/pairing/pair-session.ts writes
+     * `name?.trim() || …` with a comment explaining why: a name of spaces is
+     * truthy, so it was accepted verbatim and produced a device whose tile
+     * appears to have no name at all. The controller driver is the one that does
+     * not use the shared handler, and it still carried the pre-fix `name || …`.
+     */
+    test(`${driverId} does not accept a whitespace-only device name`, () => {
+      const source = readFileSync(join(ROOT, 'drivers', driverId, 'driver.ts'), 'utf8');
+
+      assert.ok(
+        !/name \|\|/.test(source),
+        `${driverId}/driver.ts falls back on \`name || …\`, which accepts a name of spaces. `
+        + 'Trim it first, as lib/pairing/pair-session.ts does.',
+      );
+    });
+
     test(`${driverId} assigns to no instance field`, () => {
       const source = readFileSync(join(ROOT, 'drivers', driverId, 'driver.ts'), 'utf8');
 

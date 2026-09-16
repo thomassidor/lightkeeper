@@ -538,8 +538,18 @@ export class ScheduleRuntime {
        *
        * Fired and forgotten, because `handleEvent` is synchronous by contract
        * and the answer to THIS event is already decided: no.
+       *
+       * **The gate is the point, and it was missing.** `outcome.retimed` was
+       * computed, returned and read by nothing — grep found no site in `lib/` or
+       * the suite — so every refusal above reconciled. A paused schedule fires
+       * its Flows twice a day and is refused twice a day, and each of those was
+       * a full `bridge.sync()`: every managed Flow re-read, compared and
+       * possibly rewritten, for a device deliberately doing nothing. Same for a
+       * wrong-day boundary and for a Homey whose timezone has not resolved.
        */
-      fireAndForget(this.reconcileFlows(), this.deps.log, 'Reconcile after a retimed boundary');
+      if (outcome.retimed) {
+        fireAndForget(this.reconcileFlows(), this.deps.log, 'Reconcile after a retimed boundary');
+      }
       return { accepted: false, reason: outcome.reason };
     }
 

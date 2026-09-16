@@ -79,6 +79,10 @@ export abstract class LightkeeperDevice<
     return this.app.bridge.removeAll(refs);
   }
 
+  forgetFlowJournal(): void {
+    this.app.bridge.forgetOwner(this.deviceId);
+  }
+
   // ---- SDK entry points ----------------------------------------------------
 
   override async onInit(): Promise<void> {

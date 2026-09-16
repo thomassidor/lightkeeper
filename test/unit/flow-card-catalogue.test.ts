@@ -250,5 +250,39 @@ describe('flow card catalogue', () => {
         id: 'x', shortId: 'x', uri: '', title: 'x', args: [], tokens: [],
       });
     });
+
+    /**
+     * An argument's `name` and `type` are STRINGS, whatever the card said.
+     *
+     * `CardArgument` declares both as `string` and this assigned them raw, so a
+     * card with a nameless argument produced `name: undefined` behind a type
+     * that promised otherwise. `buildFingerprint` in source-discovery-service.ts
+     * then sorts a card's arguments with `a.name.localeCompare(b.name)` — which
+     * throws `TypeError` on `undefined`, inside `discover()`, i.e. inside the
+     * remote picker, the health check's re-attach scan and the reconcile path,
+     * for every device on the Homey rather than just the offending one.
+     *
+     * Two arguments, because a one-element sort never calls its comparator and
+     * the bug would hide.
+     */
+    test('an argument with no name projects to a string, not undefined', () => {
+      const card = toDiscoveredCard({
+        id: 'x',
+        args: [{ type: 'dropdown' }, { name: 'zone', type: 'autocomplete' }],
+      });
+
+      assert.equal(card.args[0]!.name, '');
+      assert.equal(card.args[0]!.type, 'dropdown');
+      assert.equal(typeof card.args[1]!.name, 'string');
+
+      // The sort the fingerprint does, which is what used to throw.
+      assert.doesNotThrow(() => [...card.args].sort((a, b) => a.name.localeCompare(b.name)));
+    });
+
+    test('a non-string name is coerced rather than carried', () => {
+      const card = toDiscoveredCard({ id: 'x', args: [{ name: 7, type: null }] });
+      assert.equal(card.args[0]!.name, '7');
+      assert.equal(card.args[0]!.type, '');
+    });
   });
 });
