@@ -422,3 +422,71 @@ describe('the shared migration runner', () => {
     }
   });
 });
+
+/**
+ * Pre-staging defaults ON for a new device as of 0.6.1, and that reversal has
+ * exactly one boundary: a device that already exists must not be changed under
+ * its household's feet.
+ *
+ * The two halves are enforced in different places, which is why they are tested
+ * together — the DEFAULT is a constant the pairing session seeds from, and the
+ * STORE's gate is `preStage === true` in the validator. Flip the gate to match
+ * the default and every device paired before this silently starts writing to
+ * lamps that are off.
+ */
+describe('pre-staging is on by default without changing devices that exist', () => {
+  test('a new device starts with it on', async () => {
+    const { DEFAULT_SIMPLE_PLAN } = await import('../../lib/circadian/simple-curve');
+    assert.equal(DEFAULT_SIMPLE_PLAN.preStage, true);
+  });
+
+  test('a stored plan that never had the key stays off', () => {
+    const plan = validateCircadianPlan({
+      schemaVersion: 1,
+      enabled: true,
+      target: { kind: 'devices', deviceIds: ['l1'] },
+      points: DEFAULT_POINTS,
+      adjustBrightness: false,
+      // No `preStage`: written by a version that had no such thing.
+    });
+    assert.equal(plan.preStage, false, 'an absent key is not consent');
+  });
+
+  test('a stored plan that says false stays false', () => {
+    const plan = validateCircadianPlan({
+      schemaVersion: 1,
+      enabled: true,
+      target: { kind: 'devices', deviceIds: ['l1'] },
+      points: DEFAULT_POINTS,
+      adjustBrightness: false,
+      preStage: false,
+    });
+    assert.equal(plan.preStage, false);
+  });
+
+  test('a stored plan that says true is honoured', () => {
+    const plan = validateCircadianPlan({
+      schemaVersion: 1,
+      enabled: true,
+      target: { kind: 'devices', deviceIds: ['l1'] },
+      points: DEFAULT_POINTS,
+      adjustBrightness: false,
+      preStage: true,
+    });
+    assert.equal(plan.preStage, true);
+  });
+
+  test('anything other than a real true is a no', () => {
+    for (const value of ['true', 1, {}, [], 'yes']) {
+      const plan = validateCircadianPlan({
+        schemaVersion: 1,
+        enabled: true,
+        target: { kind: 'devices', deviceIds: ['l1'] },
+        points: DEFAULT_POINTS,
+        adjustBrightness: false,
+        preStage: value,
+      });
+      assert.equal(plan.preStage, false, `${JSON.stringify(value)} is not consent either`);
+    }
+  });
+});

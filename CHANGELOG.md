@@ -14,6 +14,83 @@ and stayed green through it, so none of this was visible to anything already run
 ships with the test that would have caught it, and the ones that could be were run against the old
 code first to confirm they fail on it.
 
+This release also answers a report from a real household: lights coming on in their old colour and
+being corrected a second later. That turned out to be true, by design, and to be hiding something
+worse underneath it.
+
+### Lights come on already right, instead of correcting themselves a second later
+
+A circadian light and a Colour Curve Light can only react to a lamp once it reports itself on, and by
+then it is on and somebody is looking at it. Measured on the reference Homey, five lamps on one wall
+switch: the app reacts within 70 ms, and the colour lands 1.3 to 1.9 s later. Every light in the
+house visibly changed colour after it came on, every time.
+
+Setting the colour in advance is the fix and has existed since 0.4 — the plan carried the setting,
+both drivers answered a `testPreStage` handler, the runtime had the probe and the self-disable, and
+the FAQ promised it was "provable from the pairing screen against your own lamps before you commit".
+**No screen ever drew a control for it.** A setting nobody can reach is off, and every one of these
+devices had it off.
+
+Both setup screens now carry it, with the test the FAQ promised: it picks one of your own lights that
+is off, sends it a colour, and tells you what happened — it stayed off, it came on, or your bridge
+declined. Which of those you get depends on your own integrations and nothing else can answer it.
+
+It is **on by default for newly added devices**, which is a reversal. It was opt-in because a colour
+sent to an off lamp switches it on through some integrations, and a light coming on by itself is a
+worse failure than a moment of the wrong white. That is still true; what was wrong was the idea that
+opting out cost only a moment. It cost every switch-on, permanently. The protection is unchanged and
+does not depend on anyone opting in: 1.5 s after the first such write the app checks whether the lamp
+came on and, if it did, turns the whole thing off for that device for good. The exposure is one lamp
+coming on once, on an integration that does this. **Devices you already have are not changed** — they
+were set up under the old promise, and the setting stays exactly where you left it.
+
+Brightness is still never set in advance, because a brightness write turns an off lamp on. Only the
+colour is, and the screens now say so.
+
+### A lamp that ignores us is no longer mistaken for a person
+
+The worse thing underneath. When a lamp reports a value far from the one we asked for, that was read
+as somebody reaching for the vendor app, and the device stood down for four hours. A lamp that
+accepts a write, acknowledges it and then does nothing looks exactly the same — and is the opposite
+situation, where standing down is precisely wrong.
+
+What tells them apart is where the lamp ended up. A person moves it somewhere new; a lamp that
+ignored us is still exactly where it was before we wrote. The app now remembers that, and a report of
+an unchanged value is recorded as a write the lamp did not act on rather than as a person. It is not
+a widened tolerance: an unchanged value is forgiven at any distance, and nothing else is forgiven at
+all, so a real nudge is still honoured immediately. A write that demonstrably landed clears the
+record, so somebody who moves a lamp back near where it started is still a person.
+
+In the capture this came from, four lamps in one room were sent a colour temperature of 0.82,
+reported 0.87 — which they had never left — and stood their device down; four more were sent a
+brightness of 0.05 and reported 0.10. Both gaps are 0.05, comfortably outside the tolerance, so
+nothing could ever have forgiven them.
+
+Two smaller faults on the same path:
+
+- **The settle window shut while the writes it caused were still in flight.** A lamp being switched
+  on makes the app write to it, so the lamp's answer necessarily arrives after the transition — but
+  the window that says "this is still us" was anchored at the transition and closed three seconds
+  later, between our write and its answer. It now follows the writes instead. It is not simply made
+  longer: somebody who switches a light on and immediately dims it is doing exactly what the override
+  machinery exists to honour.
+- **The four-hour release never arrived.** Every fresh report restamped the deadline, so a lamp that
+  kept talking pushed it out indefinitely — which is exactly what a stuck lamp does. The deadline now
+  runs from the first report.
+
+A lamp that genuinely cannot be driven is no longer silently written to for ever, either: the count
+of writes it has ignored is on each target in diagnostics.
+
+### The switch-on delay itself was measured, and left alone
+
+Worth recording because it looks like the obvious thing to fix and is not. The remaining 1.3–1.9 s is
+the bridge's own acknowledgement time — 213 ms to 1191 ms per write, rising as more lamps answer at
+once. Writes already go out per device and in parallel, so there is no queue to shorten. The one
+write that could be dropped is `light_mode`, and dropping it on the switch-on pass is the worst place
+to do it: the lamp has just restored its own state, which is precisely when the mode may be wrong and
+the colour would be silently discarded. Setting the colour in advance is the fix; shaving the
+correction is not.
+
 ### A Colour Curve Light could stop for good, and take the settings page with it
 
 A point that followed sunrise or sunset was accepted when saved and could never be evaluated. The

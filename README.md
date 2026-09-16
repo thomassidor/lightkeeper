@@ -282,19 +282,22 @@ reads, what it stores, and for how long.
 
 ## Changelog
 
-**0.6.1** — the current release. A general review of the whole app, and the eleven things it found:
+**0.6.1** — the current release. Lights that come on already right, a lamp that ignores us no longer
+mistaken for a person, and a general review of the whole app:
 
+- **Lights come on already the right colour**, rather than coming on as they were and changing a
+  second later. Setting the colour in advance has existed since 0.4 and no setup screen ever drew the
+  switch for it — so nobody could turn it on. Both screens now have it, with a button that tries it
+  on one of your own lights. On for newly added devices; devices you already have are untouched.
+- **A light that ignores an instruction is no longer read as somebody changing it by hand.** That
+  mistake left the light alone for four hours, and on some lights it repeated indefinitely — so a
+  room could sit unattended all evening with everything reporting itself as working.
 - **A Colour Curve Light could stop for good**, if one of its points was set to follow sunrise or
-  sunset — and it took the Lightkeeper settings page down with it, so the screen you would open to
-  find out why showed you nothing at all.
-- **The Flow cleanup could delete without being asked.** It shows you the exact list and you approve
-  it; a request that skipped that step used to go ahead anyway.
-- **"Put them back" could put the wrong lights back** — the next light you set up restored the
-  previous session's lamps if you had closed that screen without pressing it.
-- Six more, and four problems closed before they could happen to anyone.
+  sunset — and it took the Lightkeeper settings page down with it.
+- **The Flow cleanup could delete without being asked**, and ten more fixes from the review.
 
-None of it was visible to the tests, the type-checks or the linter, which were green throughout, so
-every fix ships with the test that would have caught it.
+None of the review's findings were visible to the tests, the type-checks or the linter, which were
+green throughout, so every fix ships with the test that would have caught it.
 
 Earlier releases, one line each:
 

@@ -322,6 +322,17 @@ export interface CircadianDiagnostics extends ReturnType<ControlHistory<Circadia
      * only surviving record of why.
      */
     preStageDeclined?: { at: number; count: number; reason: string };
+    /**
+     * Writes this lamp acknowledged and did not act on, per capability, most
+     * recent run only. Absent when there are none, which is the normal case.
+     *
+     * Here because `ineffectiveWrite` in the target-state cache turns a lamp
+     * that ignores us from a LOUD wrong answer into a quiet right one: it no
+     * longer stands the device down claiming somebody took the lamp over. The
+     * failure it leaves behind is silence, and a lamp nothing can move has to be
+     * legible as exactly that rather than as a runtime with nothing to do.
+     */
+    ignoredWrites?: Record<string, number>;
   }>;
   lastAction: CircadianAction | null;
   recentFailures: readonly unknown[];
@@ -652,7 +663,7 @@ export class CircadianRuntime {
      */
     const ignored = capability === 'dim' && (value === 0 || this.cache.state(deviceId).actualOn !== true)
       ? (value === 0 ? 'dim_zero' : 'lamp_off')
-      : this.cache.overrideSuppression(deviceId, capability);
+      : this.cache.overrideSuppression(deviceId, capability, value);
     if (ignored) {
       this.history.events.add({ at: this.now(), type: 'report_ignored', deviceId, capability,
         ...(typeof value === 'number' ? { value } : {}), reason: ignored });
@@ -697,9 +708,20 @@ export class CircadianRuntime {
         + 'alone until it is switched off and on again, or for four hours',
       );
     }
-    const record: OverrideRecord = { at: this.now(), capability: 'light_hue', value: reported, expected: ours?.hue ?? null, source: 'external_report' };
+    /**
+     * The FIRST report's time, not this one's. `OVERRIDE_EXPIRY_MS` is the only
+     * way out of an override that does not need somebody to walk to a switch,
+     * and re-stamping on every report pushes it out for as long as the lamp
+     * keeps talking — which is exactly what a stuck lamp does. Seen on the
+     * reference Homey: four lamps reporting a value we never wrote, every
+     * minute, each report renewing the four hours that were supposed to end it.
+     * The history event below keeps the real arrival time; only the deadline is
+     * anchored to the start.
+     */
+    const startedAt = this.overrides.get(deviceId)?.at ?? this.now();
+    const record: OverrideRecord = { at: startedAt, capability: 'light_hue', value: reported, expected: ours?.hue ?? null, source: 'external_report' };
     this.overrides.set(deviceId, record);
-    this.history.events.add({ ...record, type: 'override', deviceId });
+    this.history.events.add({ ...record, at: this.now(), type: 'override', deviceId });
   }
 
   /**
@@ -755,9 +777,11 @@ export class CircadianRuntime {
         + 'until it is switched off and on again, or for four hours',
       );
     }
-    const record: OverrideRecord = { at: this.now(), capability: field === 'warmth' ? 'light_temperature' : 'dim', value: reported, expected: last?.[field] ?? null, source: 'external_report' };
+    // The first report's time, not this one's — see noteColorOverride.
+    const startedAt = this.overrides.get(deviceId)?.at ?? this.now();
+    const record: OverrideRecord = { at: startedAt, capability: field === 'warmth' ? 'light_temperature' : 'dim', value: reported, expected: last?.[field] ?? null, source: 'external_report' };
     this.overrides.set(deviceId, record);
-    this.history.events.add({ ...record, type: 'override', deviceId });
+    this.history.events.add({ ...record, at: this.now(), type: 'override', deviceId });
   }
 
   /** Once a minute, from the manager's single shared timer. */
@@ -1305,6 +1329,21 @@ export class CircadianRuntime {
    * what makes each one's presence meaningful — so joining them is the
    * projection's job rather than theirs.
    */
+  /**
+   * Per capability, how many consecutive writes this lamp has acknowledged and
+   * not acted on. Only the capabilities this device type actually writes, so a
+   * reader is never left wondering why a colour count exists on a lamp that has
+   * only ever been given a temperature.
+   */
+  private ignoredWritesFor(deviceId: string): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const capability of ['dim', 'light_temperature', 'light_hue', 'light_saturation'] as const) {
+      const count = this.cache.ignoredCount(deviceId, capability);
+      if (count > 0) counts[capability] = count;
+    }
+    return counts;
+  }
+
   private lastWrittenFor(deviceId: string): {
     at: number;
     dim?: number;
@@ -1826,6 +1865,9 @@ export class CircadianRuntime {
         lastWritten: this.lastWrittenFor(id),
         ...(this.preStageDeclines.has(id)
           ? { preStageDeclined: this.preStageDeclines.get(id)! }
+          : {}),
+        ...(Object.keys(this.ignoredWritesFor(id)).length > 0
+          ? { ignoredWrites: this.ignoredWritesFor(id) }
           : {}),
       })),
       lastAction: this.lastAction,

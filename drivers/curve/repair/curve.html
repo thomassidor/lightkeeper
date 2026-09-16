@@ -587,6 +587,36 @@
   <div class="others" id="cv-others"></div>
   <button class="add" id="cv-add" data-i18n="curve.add"></button>
 
+  <!--
+    Pre-staging is DEVICE-wide, so it sits outside the point card above: that
+    card edits one point, and this is one fact about every light on the device.
+
+    It is here at all because the setting existed with no way to reach it. The
+    plan carried `preStage`, both drivers registered a `testPreStage` handler,
+    the runtime had the probe and the self-disable, and FAQ.md had promised
+    since 0.4 that it is "provable from the pairing screen against your own
+    lamps before you commit" — and no screen ever drew a control. A setting
+    nobody can turn on is off, which is why every light in the house came on
+    showing its old colour and corrected itself a second or two later.
+
+    The test button is not a nicety. Platform §6 measured three outcomes for a
+    colour written to an off lamp, and which one a household gets depends on
+    its own integrations: it stays off, it comes on, or the bridge declines.
+    Only the household's own lamps can answer, which is why the answer is
+    offered here rather than assumed.
+  -->
+  <button class="toggle" id="cv-preToggle" type="button" aria-checked="false">
+    <span class="label" data-i18n="preStage.toggle"></span>
+    <span class="track"><span class="knob"></span></span>
+  </button>
+  <div class="tip" data-i18n="preStage.tip"></div>
+  <div id="cv-preBlock" style="display:none;">
+    <div class="msg warn" data-i18n="preStage.warning"></div>
+    <button class="morelink" id="cv-preTest" type="button" data-i18n="preStage.test"></button>
+    <div id="cv-preResult" class="msg" style="display:none;"></div>
+    <div class="tip" data-i18n="preStage.brightnessNote"></div>
+  </div>
+
 </div>
 
 <script type="text/javascript">
@@ -726,7 +756,11 @@ function __lkBootCv(Homey) {
     brightKnob: document.getElementById('cv-brightKnob'),
     remove: document.getElementById('cv-remove'),
     others: document.getElementById('cv-others'),
-    add: document.getElementById('cv-add')
+    add: document.getElementById('cv-add'),
+    preToggle: document.getElementById('cv-preToggle'),
+    preBlock: document.getElementById('cv-preBlock'),
+    preTest: document.getElementById('cv-preTest'),
+    preResult: document.getElementById('cv-preResult')
   };
 
   var state = {
@@ -1051,7 +1085,28 @@ function __lkBootCv(Homey) {
     renderChart();
     renderEditor();
     renderOthers();
+    renderPreStage();
     el.add.style.display = state.points.length < state.maxPoints ? '' : 'none';
+  }
+
+  function renderPreStage() {
+    el.preToggle.setAttribute('aria-checked', state.preStage ? 'true' : 'false');
+    el.preBlock.style.display = state.preStage ? '' : 'none';
+  }
+
+  /**
+   * One line saying what this household's own lamps did, which is the only
+   * authority there is on the question (platform §6).
+   *
+   * Built as nodes and set through textContent like every other view: nothing
+   * here assigns innerHTML, and the integration's own sentence is the one piece
+   * of text on this screen that did not come from our locale file.
+   */
+  function showPreStageResult(className, text) {
+    clear(el.preResult);
+    el.preResult.className = 'msg ' + className;
+    el.preResult.appendChild(node('span', null, text));
+    el.preResult.style.display = '';
   }
 
   function stepTime(delta) {
@@ -1101,6 +1156,53 @@ function __lkBootCv(Homey) {
     }
     render();
     push();
+  });
+
+  el.preToggle.addEventListener('click', function () {
+    state.preStage = !state.preStage;
+    // The last answer described the setting as it was, and it is no longer
+    // that. Leaving it up under a toggle that has moved is how a screen comes
+    // to assert something it never tested.
+    el.preResult.style.display = 'none';
+    render();
+    push();
+  });
+
+  el.preTest.addEventListener('click', function () {
+    el.preTest.disabled = true;
+    showPreStageResult('muted', Homey.__('preStage.testing'));
+    /**
+     * Whatever this returns, the setting is NOT changed for the user. A test
+     * that switched pre-staging off on their behalf would be the screen making
+     * a decision from one lamp out of five, and platform §6 measured that a
+     * household's lamps differ from each other — roughly half a Hue household
+     * declines while the rest stage happily. The runtime's own self-disable is
+     * the thing allowed to act on evidence, because it watches every lamp on
+     * every pass rather than one lamp once.
+     */
+    emit('testPreStage').then(function (outcome) {
+      el.preTest.disabled = false;
+      if (!outcome || outcome.deviceId === null) {
+        showPreStageResult('muted', Homey.__('preStage.nothingOff'));
+        return;
+      }
+      var name = outcome.name || '';
+      if (outcome.stayedOff) {
+        showPreStageResult('ok', Homey.__('preStage.worksHere', { name: name }));
+      } else if (outcome.restored) {
+        showPreStageResult('bad', Homey.__('preStage.cameOn', { name: name }));
+      } else if (outcome.reason) {
+        // The integration's own words, kept rather than replaced: "soft off" is
+        // what a Hue Bridge says, and a reader searching for that sentence finds
+        // the same one in the diagnostics dump.
+        showPreStageResult('bad', Homey.__('preStage.declined', { name: name }) + ' ' + outcome.reason);
+      } else {
+        showPreStageResult('bad', Homey.__('preStage.cameOnStuck', { name: name }));
+      }
+    }, function () {
+      el.preTest.disabled = false;
+      showPreStageResult('bad', Homey.__('preStage.failed'));
+    });
   });
 
   (function () {

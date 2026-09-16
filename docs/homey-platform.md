@@ -405,6 +405,38 @@ A `setCapabilityValue` write to a Hue Bridge light acks in roughly 275 ms. That 
 only; radio time and flow-engine dispatch upstream of the bridge card are not observable from
 inside an app.
 
+### A lamp switched on at the wall: what the timings actually are
+
+Measured 16 September 2026, firmware 13.5.0, app 0.6.1, two rooms of five and four lamps each
+switched on at the wall. The whole sequence, from one `/diagnostics` capture:
+
+| Moment | Elapsed from the `onoff` report |
+|---|---|
+| App fires a forced control pass | 0–70 ms |
+| First write of the burst acked (`light_mode`) | ~220 ms |
+| Last write of the burst acked (`light_hue`/`light_temperature`) | **1.31–1.91 s** |
+| Lamps report their own settled state | **4.0 s, 7.5 s, 13 s** — and one at 73 s |
+
+Three things follow, and all three cost a bug to learn.
+
+**An app cannot beat the lamp to it.** The earliest an app hears about a switch-on is the `onoff`
+report, and by then the lamp is on and showing whatever it held. Nothing in the SDK announces an
+impending power change. Writing the colour ahead of time (§12) is the only mechanism that makes a
+lamp come on correct; reacting faster cannot, however fast.
+
+**Per-write ack time rises with concurrency, and the queue is not the bottleneck.** Across five
+lamps written in parallel the same `light_hue` write acked at 785, 882, 989, 1080 and 1191 ms —
+roughly 100 ms per additional lamp, from the bridge rather than from anything in the app. Writes
+already go out on per-device queues (`DeviceQueue` in `command-scheduler.ts`, `minWriteIntervalMs`
+paced per device), so there is no serialisation to remove. Do not go looking for one.
+
+**The lamp's own settling arrives well after the writes it is answering.** This is what breaks a
+settle window anchored at the power transition: three seconds shuts it at 3.0 s, between our last
+write at 1.91 s and the lamp's answer at 4.0 s, and every one of those answers is then read as a
+person reaching for the vendor app. The window has to follow the writes. Reports later than that
+cannot be handled by any clock — the 73 s one was a lamp sitting on a value it had never left — and
+are told apart by comparing against where the lamp was BEFORE the write instead.
+
 ## 7. Reference device event surfaces
 
 The four remotes the fixtures in `test/fixtures/reference-devices.ts` are transcribed from. Note
@@ -916,7 +948,8 @@ by hand went unnoticed and the next tick took it back.
   write. Cleared by either edge of `onoff`, because "switch it off and on again" is the gesture
   people already have for putting a light back to how it ought to be. Never persisted: a restart is a
   clean slate, which is the right bias for a feature whose job is to be correct by default.
-- **Pre-staging is opt-in because a colour write can switch a lamp ON.** §6 measured that for `dim`
+- **Pre-staging is ON by default as of 0.6.1, and was opt-in before it, because a colour write can
+  switch a lamp ON.** §6 measured that for `dim`
   on Hue. `light_temperature` was measured on 3 September 2026 and does **not**: written to an off
   Hue bulb it was *staged* on three lamps — the lamp took the value and stayed off, which is exactly
   the outcome pre-staging needs — and *declined* as "soft off" on a fourth, §6's third outcome.
@@ -926,11 +959,21 @@ by hand went unnoticed and the next tick took it back.
   `OFF_TEMP_TURNS_ON` still did not fire once — so the premise holds for two lamps in three, and the
   third outcome is common rather than exotic.
   So writing to
-  lights that are off is off by default, provable from the pairing screen against the household's own
-  lamps, and self-disabling: `verifyStayedOff()` turns it off for the whole device and persists that
-  the first time a lamp comes on from one. It does NOT switch the lamp back off — by then our doing
-  and somebody walking in are indistinguishable, and switching off a room a person has just lit is
-  the worse failure. The screen's own probe does restore it, because there the user asked.
+  lights that are off is provable from the pairing screen against the household's own lamps, and
+  self-disabling: `verifyStayedOff()` turns it off for the whole device and persists that the first
+  time a lamp comes on from one. It does NOT switch the lamp back off — by then our doing and
+  somebody walking in are indistinguishable, and switching off a room a person has just lit is the
+  worse failure. The screen's own probe does restore it, because there the user asked.
+  **What moved in 0.6.1 is the default for a NEW device, and only that.** The opt-in was argued on
+  "a light coming on by itself is worse than a half-second of the wrong white", and the second half
+  of that turned out to be wrong: §6's switch-on timings put the colour 1.3–1.9 s behind the lamp,
+  on every switch-on, for as long as the device exists — not a half-second, and not once. Against
+  that, the exposure is one lamp coming on once before the device disables itself for good. A device
+  that already exists is untouched: the store's gate is still `preStage === true`, so an absent or
+  false key keeps meaning no, and only `DEFAULT_SIMPLE_PLAN` and the curve driver's session seed
+  changed. Worth knowing WHY every device in the field had it off regardless of the default: the
+  setting shipped in 0.4 with no control on any screen, so nothing could turn it on until the
+  toggle and its test button were added to `curve.html` and `day.html`.
 - **A REFUSAL is handled per lamp, and neither opt-in nor self-disabling covers it.** A lamp that
   comes on is a surprise about the INTEGRATION, so `verifyStayedOff()` answers it device-wide and
   persists that. A lamp that refuses is a fact about that LAMP — measured four refusing against nine

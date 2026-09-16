@@ -89,10 +89,40 @@ Nothing in either block can be checked by the script, and that is the point: `ve
 drives pair sessions over the Web API (platform §14), so it proves the HANDLERS answer. It cannot
 see a screen. Every line here needs a phone.
 
-### 0.6.1 — the code review's three
+### 0.6.1 — the switch-on work, and the code review's three
 
-The fixes whose evidence is not in the suite. Everything else that review changed is covered by a
-unit test, and the ones that could be were run against the old code first to confirm they fail on it.
+The fixes whose evidence is not in the suite. Everything else is covered by a unit test, and the ones
+that could be were run against the old code first to confirm they fail on it.
+
+T138–T141 are the switch-on work and need a room whose lights are OFF to begin with. T140 is the one
+that cannot be faked in a test: it asks what YOUR integrations do, and platform §6 measured that the
+answer differs between lamps behind one bridge.
+
+- [ ] **T138** Colour on arrival. Add a Colour Curve Light over a room's lamps with the new **Set the
+      colour before lights come on** switch left ON (it is the default for a new device), finish
+      pairing, and switch the room off. Wait for a tick, then switch it on at the wall. The lamps must
+      come on **already** at the curve's colour — no visible change a second or two afterwards. Then
+      pair a second one with the switch OFF and repeat: that one must show the old behaviour, coming
+      on as it was and correcting itself. The contrast is the assertion; one room alone proves little.
+- [ ] **T139** Brightness is still late, and that is correct. On the T138 device, turn **Set
+      brightness too** on as well and repeat. The colour must be right on arrival and the brightness
+      must NOT be — a brightness write turns an off lamp on, so it can only follow. If brightness is
+      also right on arrival, something is pre-staging `dim` and that is a defect, not an improvement.
+- [ ] **T140** The test button, on your own lamps. On the curve or day screen, with at least one
+      target lamp OFF, press **Test it on my lights**. It must name one of your own lamps and say one
+      of three things: it stayed off, it came on (and was put back), or your bridge declined with the
+      integration's own sentence. All three are passes — the failure is a raw error string, a silent
+      button, or a lamp that comes on and is NOT put back. Press it again with every target lamp ON:
+      it must say there is nothing to test rather than doing anything.
+- [ ] **T141** A lamp that ignores a write is not read as a person. Needs a lamp that snaps to a
+      coarser step than it declares — on the reference Homey the Garage lamps take `dim` in tenths
+      while declaring hundredths. Drive one to a level that quantises away (a Room-sensing Light at
+      its dark end will), leave it an hour, then read `/diagnostics`: the target must show
+      `overridden: false` and an `ignoredWrites` count, and `recentControlEvents` must carry
+      `report_ignored` with reason `write_ignored` rather than an `override`. Before this release the
+      same lamp reported `overridden: true` and its device stopped writing for four hours at a time.
+      Then nudge that lamp by hand in the vendor app to somewhere it has NOT been, and confirm an
+      `override` IS raised within a tick — forgiving a stuck lamp must not have cost a real one.
 
 - [ ] **T135** A rejected API key, twice. Paste a key with **read-only** permissions into Homey
       settings → Lightkeeper. It must be refused with "does not have permission to manage Flows",

@@ -179,6 +179,21 @@ registry, not for `available`) was right; the list under it was incomplete.
 
 ## What the script still cannot answer
 
+**Pre-staging and the switch-on timings (T138–T141), because the answer is per-household.**
+
+Platform §6 measured three outcomes for a colour written to an off lamp — it stays off, it comes on,
+or the bridge declines — and which one a given lamp gives is a fact about that integration and that
+bulb, not about this app. Nine staged and four declined behind ONE Hue Bridge on 4 September 2026, so
+a household's own lamps disagree with each other and no script run on one Homey generalises. T140 is
+a person pressing the screen's own probe, which is the only instrument there is.
+
+The timings are the same kind of gap from the other end. The suite proves that a report arriving
+after a power transition is classified correctly, against an injected clock that does exactly what
+the test says; it cannot prove that a real bridge's settled report lands where the window still
+covers it. T138 and T141 are that measurement. T141 in particular needs a lamp that snaps to a
+coarser step than it declares — no test double will discover one, because the discovery IS that the
+declaration was wrong.
+
 **The daylight feature's three genuine gaps, and each is a different KIND of gap.**
 
 - **A real permission.** `homey:manager:geolocation` either resolves on a Homey or it does not, and

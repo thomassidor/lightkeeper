@@ -213,9 +213,15 @@ never remembered across a restart.
 
 It also lapses on its own after **four hours**, which is the shorter answer to a different question:
 some lights quietly go back to their own settings a minute or two after being changed, and
-Lightkeeper cannot tell that apart from you reaching for a dimmer. Left to itself that made one light
-mute its whole device for days at a time. If four hours is too soon for you, switching the light off
-and on again is still the instant way to say either thing.
+Lightkeeper cannot always tell that apart from you reaching for a dimmer. Left to itself that made one
+light mute its whole device for days at a time. If four hours is too soon for you, switching the light
+off and on again is still the instant way to say either thing.
+
+One case it *can* tell apart, since 0.6.1: a light that accepts an instruction, acknowledges it and
+then sits exactly where it already was has not been changed by anybody — it ignored us. That is
+recorded as an instruction the light did not act on, and the device carries on driving it rather than
+standing down. Only an *unchanged* value is read this way, so a real change of yours is still honoured
+straight away, however small.
 
 ---
 
@@ -339,9 +345,12 @@ Stated plainly, because a limit you find out about later is worse than one you w
 - **A circadian or Colour Curve Light never switches a light on or off.** It only changes the colour
   of lights that are already on and — if you ask it to — sets the colour of lights that are off so
   they are right the moment they come on.
-- **Setting the colour of a light that is off is opt-in**, because on some integrations a colour write
-  switches the lamp on. It is provable from the pairing screen against your own lamps before you
-  commit, and it disables itself for the whole device the first time a lamp comes on from one.
+- **Setting the colour of a light that is off is on for new devices, and a switch on the setup
+  screen.** Without it a light comes on as it was and changes a second or two later, which is what it
+  did for every release up to 0.6.0 — the setting existed and no screen ever drew the switch. Devices
+  added before 0.6.1 keep whatever they were set up with. It is provable from the setup screen against
+  your own lamps before you commit, and it disables itself for the whole device the first time a lamp
+  comes on from one, because on some integrations a colour write switches the lamp on.
 - **Brightness is never pre-staged**, only colour. A brightness write turns an off lamp on; that is
   measured, not suspected.
 - **A circadian light and a schedule pointed at the same lights will disagree.** Use one or the other

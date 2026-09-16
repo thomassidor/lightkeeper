@@ -116,6 +116,17 @@ export interface DaylightDiagnostics extends ReturnType<ControlHistory<DaylightA
     reported: ReturnType<TargetStateCache['reportedValues']>;
     /** Perceptual level this lamp is being held at. */
     aim: number | null;
+    /**
+     * Consecutive `dim` writes this lamp acknowledged and did not act on.
+     * Absent when there are none. One number rather than the circadian light's
+     * map, because brightness is the only axis this device type writes.
+     *
+     * Here for the reason its twin is: `ineffectiveWrite` stops a lamp that
+     * ignores us from reading as a person, and what it leaves behind is a lamp
+     * being written to for ever with nothing to show for it. That has to be
+     * visible.
+     */
+    ignoredWrites?: number;
   }>;
   lastAction: DaylightAction | null;
   recentFailures: ReturnType<LightTargetAdapter['failures']>;
@@ -418,7 +429,7 @@ export class DaylightRuntime {
      */
     const ignored = capability === 'dim' && (value === 0 || this.cache.state(deviceId).actualOn !== true)
       ? (value === 0 ? 'dim_zero' : 'lamp_off')
-      : this.cache.overrideSuppression(deviceId, capability);
+      : this.cache.overrideSuppression(deviceId, capability, value);
     if (ignored) {
       this.history.events.add({ at: this.now(), type: 'report_ignored', deviceId, capability,
         ...(typeof value === 'number' ? { value } : {}), reason: ignored });
@@ -480,9 +491,20 @@ export class DaylightRuntime {
         + 'until it is switched off and on again, or for four hours',
       );
     }
-    const record: OverrideRecord = { at: this.now(), capability: 'dim', value: reported, expected: last?.device ?? null, source: 'external_report' };
+    /**
+     * The FIRST report's time, not this one's. `OVERRIDE_EXPIRY_MS` is the only
+     * way out of an override that does not need somebody to walk to a switch,
+     * and re-stamping on every report pushes it out for as long as the lamp
+     * keeps talking — which is exactly what a stuck lamp does. Seen on the
+     * reference Homey: four lamps reporting a value we never wrote, every
+     * minute, each report renewing the four hours that were supposed to end it.
+     * The history event below keeps the real arrival time; only the deadline is
+     * anchored to the start.
+     */
+    const startedAt = this.overrides.get(deviceId)?.at ?? this.now();
+    const record: OverrideRecord = { at: startedAt, capability: 'dim', value: reported, expected: last?.device ?? null, source: 'external_report' };
     this.overrides.set(deviceId, record);
-    this.history.events.add({ ...record, type: 'override', deviceId });
+    this.history.events.add({ ...record, at: this.now(), type: 'override', deviceId });
   }
 
   /** Once a minute, from the manager's single shared timer. */
@@ -1053,6 +1075,9 @@ export class DaylightRuntime {
         override: this.overrides.get(id) ?? null,
         reported: this.cache.reportedValues(id),
         aim: this.aim.get(id) ?? null,
+        ...(this.cache.ignoredCount(id, 'dim') > 0
+          ? { ignoredWrites: this.cache.ignoredCount(id, 'dim') }
+          : {}),
       })),
       lastAction: this.lastAction,
       recentFailures: this.adapter.failures(),

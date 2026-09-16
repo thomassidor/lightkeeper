@@ -115,7 +115,10 @@ module.exports = class CurveDriver extends Homey.Driver {
 
   private async bindSession(session: any, initial: Partial<SessionState>, device?: any) {
     const state: SessionState = {
-      points: [...DEFAULT_POINTS], adjustBrightness: false, preStage: false, ...initial,
+      // `preStage` on for a NEW device, off for one being repaired: `initial`
+      // carries the stored plan's own value and overwrites this. The reversal
+      // and what makes it safe are argued at DEFAULT_SIMPLE_PLAN.
+      points: [...DEFAULT_POINTS], adjustBrightness: false, preStage: true, ...initial,
     };
 
     const host = this.pairHost();

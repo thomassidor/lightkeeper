@@ -114,11 +114,40 @@ export const DEFAULT_ZONES: CircadianZones = {
   eveningStart: -60,
 };
 
+/**
+ * `preStage: true` is what a NEW device starts with, and that is a reversal.
+ *
+ * It was `false` because a colour written to an off lamp switches it on through
+ * some integrations (platform §6), and "lights coming on by themselves at night
+ * is a far worse failure than a half-second of the wrong white". That reasoning
+ * is still right about the failure; what it got wrong was the alternative,
+ * because the half-second is not what opting out actually bought. Measured on
+ * the reference Homey: a lamp switched on at the wall reports itself on, the
+ * runtime fires within 70 ms, and the colour lands 1.3 to 1.9 s later. Every
+ * light in the house visibly changed colour after somebody had already looked
+ * at it, every time, for as long as the app has existed.
+ *
+ * What makes the reversal safe is that the protection is unchanged and does not
+ * depend on anybody opting in: `verifyStayedOff` probes 1.5 s after the first
+ * pre-stage write and, if the lamp came on, turns pre-staging off for the whole
+ * device and PERSISTS that. The exposure is therefore one lamp coming on once,
+ * on an integration that does this, before the device stops doing it for good.
+ *
+ * It is one lamp coming ON, not one staying on unnoticed: the probe does not
+ * switch it back, because by then our doing it and somebody walking into the
+ * room are indistinguishable (platform §12). That is the cost, it is bounded,
+ * and the pairing screen now carries a test that answers the question against
+ * the household's own lamps before any of it happens.
+ *
+ * Deliberately NOT applied to devices that already exist. They were paired
+ * under the opt-in promise, and the store's own gate still reads
+ * `preStage === true`, so an absent key stays off. See lib/validation/plans.ts.
+ */
 export const DEFAULT_SIMPLE_PLAN: Omit<SimpleCircadianPlan, 'target' | 'schemaVersion'> = {
   enabled: true,
   zones: DEFAULT_ZONES,
   adjustBrightness: false,
-  preStage: false,
+  preStage: true,
 };
 
 /** The two boundaries as minutes of the local day, in an order the curve can use. */

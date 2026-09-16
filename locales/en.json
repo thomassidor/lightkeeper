@@ -558,5 +558,19 @@
     "nd": "nd",
     "rd": "rd",
     "th": "th"
+  },
+  "preStage": {
+    "toggle": "Set the colour before lights come on",
+    "tip": "Lights that are off are given their colour in advance, so they are already right the moment somebody switches them on. Without this they come on as they were and change a second or two later.",
+    "warning": "On some lights a colour sent while they are off switches them on. Test it on your own lights below. If one ever does come on by itself, this turns itself off.",
+    "brightnessNote": "Brightness is never set in advance, because that would switch the light on. Only the colour is.",
+    "test": "Test it on my lights",
+    "testing": "Testing…",
+    "worksHere": "__name__ stayed off, so setting the colour in advance works on your lights.",
+    "cameOn": "__name__ came on, so the colour cannot be set in advance here. It has been switched back off.",
+    "cameOnStuck": "__name__ came on and could not be switched back off.",
+    "declined": "__name__ would not take a colour while it was off, so its colour cannot be set in advance.",
+    "nothingOff": "Every one of these lights is already on, so there is nothing to test. Switch one off and try again.",
+    "failed": "The test could not be run."
   }
 }

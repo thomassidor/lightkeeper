@@ -709,6 +709,35 @@ Load-bearing product guarantees, not implementation details:
   `ready`. `expireOverrides()` also drops `committed`/`lastWritten` for that lamp: without it the
   override lapses, the plan is unchanged, the no-op filter drops the write, and the lamp stays where
   it was put. Both halves ship together or neither does anything.
+  **The deadline runs from the FIRST report, never the latest.** `noteOverride` used to restamp
+  `record.at` on every arriving report, so the one thing that ends an override could be postponed
+  indefinitely by the one thing that cannot stop reporting — a stuck lamp. Measured: four lamps
+  reporting a value we never wrote, once a minute, each report renewing the four hours meant to
+  release them. The history event keeps its real arrival time; only the deadline is anchored.
+- **A lamp that ignored our write is not a person, and is told apart by where it ENDED UP.**
+  `ineffectiveWrite()` in the target-state cache. The override rules ask "is the report far from what
+  we asked for" and answer yes identically for somebody reaching for the vendor app and for a lamp
+  that acked a write and did nothing — opposite situations, and standing down is right for one of
+  them. A person moves the lamp somewhere new; a lamp that ignored us is still exactly where it was
+  before we wrote, which `preWrite` snapshots at dispatch. Measured on the reference Homey: four
+  lamps sent `light_temperature` 0.82 reported 0.87, and four sent `dim` 0.05 reported 0.10 — both
+  gaps 0.05, outside `OVERRIDE_TOLERANCE`, each standing its device down for four hours at a time.
+  **Not a widened tolerance**, deliberately: 0.03 sits above `light_temperature`'s own 0.01
+  resolution (platform §6) and raising it to swallow 0.05 forgives a real nudge on every well-behaved
+  lamp in the house. An unchanged value is forgiven at any distance and nothing else is forgiven at
+  all. A write that demonstrably LANDED clears the snapshot, so somebody who later moves the lamp back
+  near where it started is still read as a person. The cost of being wrong is bounded and the right
+  way round — we keep driving rather than stand down — and `ignoredCount` is what stops that being
+  silent: it is on every target in diagnostics, because a lamp nothing can move must not read as a
+  runtime with nothing to do.
+- **The power-settle window follows the WRITES, not the transition.** Same 3 s as everything else,
+  but `finishWrite` pushes it out while it is open. A power transition makes the runtime fire a forced
+  pass, so the writes it provokes go out inside the window and the lamp's answer necessarily arrives
+  after it: measured, the burst's last ack at 1.91 s and the lamps' own settled reports from 4.0 s, so
+  a window anchored at the transition shut at 3.0 s — between our write and its answer, the one place
+  it must not shut. It is NOT lengthened instead: somebody who switches a light on and immediately
+  dims it is doing exactly what the override machinery exists to honour. Bounded because only an
+  already-open window is extended.
 - **A reported `dim` of 0 is never an override.** Neither curve-driven nor daylight-driven writes can
   produce a 0 (`MINIMUM_BRIGHTNESS` plus `litDim()`), so a reported 0 is always the lamp's own. The
   `actualOn` guard was not enough because an integration can report `dim 0` a median of **29.9 s**
@@ -867,6 +896,20 @@ Load-bearing product guarantees, not implementation details:
   responding all night; without the second, we asked six hundred times a night and never listened.
   Both halves ship together: suppression alone would freeze the streak at exactly the tripping value
   and remove the only writes that could clear it.
+- **Pre-staging is ON for a new curve-driven device, and OFF for every device that predates 0.6.1.**
+  Two different gates, and conflating them is the whole risk: `DEFAULT_SIMPLE_PLAN.preStage` (and the
+  curve driver's session seed) is what a NEW device starts with, while `preStage: plan.preStage ===
+  true` in `lib/validation/plans.ts` is the STORE's gate, where an absent key must keep meaning "no".
+  Flip the second to match the first and every device paired before this silently starts writing to
+  lamps that are off. The reversal is argued at `DEFAULT_SIMPLE_PLAN`: opting out never cost "a
+  half-second of the wrong white", it cost every switch-on permanently — measured at 1.3–1.9 s from
+  the lamp reporting itself on to the colour landing — and `verifyStayedOff()` disables the whole
+  thing device-wide, persistently, 1.5 s after the first write that brings a lamp on. It does not
+  switch that lamp back off (platform §12), so the exposure is one lamp coming on once.
+  **The setting had no control for two releases**, which is why every device in the field had it off:
+  the plan carried it, both drivers registered `testPreStage`, the runtime had the probe, and
+  `FAQ.md` promised it was "provable from the pairing screen" — and no screen drew a switch. It is on
+  `curve.html` and `day.html` now, test button included. A setting nobody can reach is off.
 - **A Room-sensing Light never switches a lamp on or off, and has no pre-stage option at all.** A
   `dim` write turns an off lamp on — measured, not suspected — so pre-staging is a colour-only idea
   and a brightness-only device type has nothing to pre-stage. It writes to lamps that are already

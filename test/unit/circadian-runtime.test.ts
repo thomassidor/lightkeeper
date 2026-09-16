@@ -1440,3 +1440,72 @@ describe('what the week-long recording found', () => {
     await h.runtime.stop();
   });
 });
+
+/**
+ * What a capture on the reference Homey found, switching two rooms on at the
+ * wall, and the two rules that came out of it.
+ *
+ * Both are the same mistake the week-long recording found, arriving by a
+ * different road: a lamp that comes on holding what it held last is not a
+ * person, and a lamp that keeps saying so must not be able to postpone the only
+ * way out of the verdict for ever.
+ */
+describe('what the switch-on capture found', () => {
+  test('a lamp that comes on holding its old value has not been taken over', async () => {
+    const h = harness({
+      now: MORNING,
+      devices: [light('l1', undefined, { onoff: false, light_temperature: 0.05 })],
+    });
+    await h.runtime.start();
+    await settle();
+
+    h.advance(10_000);
+    h.report('l1', 'onoff', true);
+    await applied(h);
+    const written = h.writes.filter(w => w.capability === 'light_temperature').at(-1);
+    assert.ok(written, 'coming on provokes a forced pass');
+    assert.notEqual(written.value, 0.05, 'and it asks for something other than what the lamp held');
+
+    // Well past every settle window: this is the lamp's own answer, minutes
+    // later, and it is the value it never left.
+    h.advance(60_000);
+    h.report('l1', 'light_temperature', 0.05);
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].overridden, false, 'a lamp that ignored us is not a person');
+    assert.equal(d.targets[0].override, null);
+    assert.ok(
+      d.recentControlEvents.some(e => e.type === 'report_ignored' && e.reason === 'write_ignored'),
+      'and the report is recorded under its own reason rather than swallowed',
+    );
+    await h.runtime.stop();
+  });
+
+  test('a lamp that keeps talking cannot postpone its own override expiry', async () => {
+    const h = harness({ now: MORNING });
+    await h.runtime.start();
+    await settle();
+
+    // A genuine override: somewhere the lamp has never been.
+    h.advance(10_000);
+    h.report('l1', 'light_temperature', 0.05);
+    assert.equal(h.runtime.diagnostics().targets[0].overridden, true);
+
+    // Three hours later it says something new. Re-stamping here is what kept
+    // four lamps stood down indefinitely in the capture.
+    h.advance(3 * 60 * 60_000);
+    h.report('l1', 'light_temperature', 0.07);
+    assert.equal(h.runtime.diagnostics().targets[0].overridden, true, 'still inside the four hours');
+
+    // Four hours and a minute after the FIRST report, though only one hour and
+    // a minute after the most recent one.
+    h.advance(60 * 60_000 + 60_000);
+    await h.runtime.tick();
+    await applied(h);
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].overridden, false, 'the deadline runs from the first report');
+    assert.ok(d.recentControlEvents.some(e => e.type === 'override_cleared' && e.reason === 'expired'));
+    await h.runtime.stop();
+  });
+});

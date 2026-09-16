@@ -353,7 +353,7 @@ export const RENDER_REPLIES = {
       zones: ZONES,
       // On, so the render shows the brightness slider as well as the switch.
       adjustBrightness: true,
-      preStage: false,
+      preStage: true,
       sun: { sunriseMinute: 381, sunsetMinute: 1188 },
       boundaries: BOUNDARIES,
       nextView: 'review',
@@ -395,7 +395,7 @@ export const RENDER_REPLIES = {
       palette: PALETTE,
       featuredColors: 8,
       adjustBrightness: true,
-      preStage: false,
+      preStage: true,
       minPoints: 2,
       maxPoints: 8,
       timezone: TIMEZONE,

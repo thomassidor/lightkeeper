@@ -224,9 +224,44 @@ export class TargetStateCache {
   private nextWriteSeq = 0;
   /** Per device: when `onoff` last moved, from any cause. See lastOnOffChangeAt. */
   private readonly onOffObservedAt = new Map<string, number>();
-  private readonly powerTransitionAt = new Map<string, number>();
+  /**
+   * Per device: the instant its power-settle window SHUTS, not the instant the
+   * transition happened.
+   *
+   * The window is `OVERRIDE_SETTLE_MS` like the others; what differs is that it
+   * is measured from a moving point, because three seconds is the right length
+   * and the wrong ORIGIN. A power transition is not like our own write: it makes
+   * the runtime fire a forced pass, so the writes it provokes are still going
+   * out inside the window and the lamp's answer to them necessarily arrives
+   * after it. From a capture on the reference Homey, five lamps on one wall
+   * switch, the burst's last ack landed 1.91 s after the `onoff` report and the
+   * lamps reported their own settled state from 4.0 s. A window anchored at the
+   * transition shut at 3.0 s, between our write and its answer, which is the one
+   * place it must not shut, and those reports were booked as a person reaching
+   * for the vendor app, standing the device down.
+   *
+   * So `finishWrite` pushes the deadline out while it is open, and it covers the
+   * whole burst plus a settle. It is NOT simply lengthened instead: somebody who
+   * switches a light on and immediately dims it is doing exactly what the
+   * override machinery exists to honour, and a long window would eat that. The
+   * reports that arrive later than this are `ineffectiveWrite`'s problem, and it
+   * answers them on evidence rather than on a clock.
+   *
+   * It cannot grow without bound: only an already-open window is extended, so a
+   * lamp's window shuts a settle after the last write of its burst and a later
+   * tick reopens nothing.
+   */
+  private readonly powerSettleUntil = new Map<string, number>();
   private readonly dispatchedAt = new Map<string, number>();
   private readonly pendingWrites = new Map<string, number>();
+  /**
+   * Per (device, capability): what the lamp was last REPORTING when we
+   * dispatched a write to it, and the sequence of that write. See
+   * `ineffectiveWrite`.
+   */
+  private readonly preWrite = new Map<string, { value: unknown; written: unknown; seq: number }>();
+  /** Per (device, capability): consecutive writes the lamp did not act on. */
+  private readonly ignoredWrites = new Map<string, { count: number; countedSeq: number }>();
 
   constructor(private readonly now: () => number = () => Date.now()) {}
 
@@ -305,7 +340,7 @@ export class TargetStateCache {
     const state = this.state(deviceId);
     switch (capability) {
       case 'onoff':
-        if (state.actualOn !== value) this.powerTransitionAt.set(deviceId, at);
+        if (state.actualOn !== value) this.powerSettleUntil.set(deviceId, at + OVERRIDE_SETTLE_MS);
         state.actualOn = value as boolean;
         // The implied-on probe must honour every power report, including an
         // off report repeating the cached value. Override settling, however,
@@ -372,6 +407,11 @@ export class TargetStateCache {
     this.dispatchedAt.set(key, this.now());
     this.recentEchoes.set(key, { value, at: this.now() });
     const seq = ++this.nextWriteSeq;
+    // Snapshot what the lamp was showing BEFORE this write, while the echo of
+    // the write itself has not yet moved it. `ineffectiveWrite` compares the
+    // lamp's eventual answer against this, and the snapshot is only truthful
+    // here — one statement later the echo may already have landed.
+    this.preWrite.set(key, { value: actualOf(this.state(deviceId), capability), written: value, seq });
     this.writeSeq.set(key, seq);
     this.pendingWrites.set(key, seq);
     return seq;
@@ -381,7 +421,17 @@ export class TargetStateCache {
     const key = `${deviceId}:${capability}`;
     if (this.pendingWrites.get(key) !== seq) return;
     this.pendingWrites.delete(key);
-    this.dispatchedAt.set(key, this.now());
+    const at = this.now();
+    this.dispatchedAt.set(key, at);
+    // A write that completed while the lamp was still settling from a power
+    // transition is one of the writes that transition CAUSED, so the window has
+    // to outlive it — otherwise the burst lands inside the window and the
+    // lamp's answer to it lands outside. Only an open window is extended, which
+    // is what keeps this bounded (see the power-settle note above).
+    const settleUntil = this.powerSettleUntil.get(deviceId);
+    if (settleUntil !== undefined && at < settleUntil) {
+      this.powerSettleUntil.set(deviceId, at + OVERRIDE_SETTLE_MS);
+    }
   }
 
   /**
@@ -443,15 +493,97 @@ export class TargetStateCache {
     return this.onOffObservedAt.get(deviceId);
   }
 
-  /** Startup restoration and in-flight writes precede successful bookkeeping.
-   * Their intermediate reports are not evidence of an external override. */
-  overrideSuppression(deviceId: string, capability: Capability): string | null {
+  /**
+   * Startup restoration and in-flight writes precede successful bookkeeping.
+   * Their intermediate reports are not evidence of an external override.
+   *
+   * Call this ONCE per report. It is a question with a side effect: the
+   * `write_ignored` arm counts what it finds, so asking twice about one report
+   * would count it twice. `ineffectiveWrite` guards the count by write sequence
+   * rather than by call, so the damage is bounded, but the contract is one call
+   * per arriving report and both runtimes honour it.
+   */
+  overrideSuppression(deviceId: string, capability: Capability, value: unknown): string | null {
     if (this.pendingWrites.has(`${deviceId}:${capability}`)) return 'write_pending';
-    const powerAt = this.powerTransitionAt.get(deviceId);
-    if (powerAt !== undefined && this.now() - powerAt < OVERRIDE_SETTLE_MS) return 'power_settling';
+    const settleUntil = this.powerSettleUntil.get(deviceId);
+    if (settleUntil !== undefined && this.now() < settleUntil) return 'power_settling';
     const writeAt = this.dispatchedAt.get(`${deviceId}:${capability}`);
     if (writeAt !== undefined && this.now() - writeAt < OVERRIDE_SETTLE_MS) return 'write_settling';
+    if (this.ineffectiveWrite(deviceId, capability, value)) return 'write_ignored';
     return null;
+  }
+
+  /**
+   * Is this report the lamp telling us it did not take our write?
+   *
+   * The override rules ask "is the reported value far from what we asked for",
+   * and answer "yes" identically for a person reaching for the vendor app and
+   * for a lamp that acknowledged our write and then did nothing. Those are
+   * opposite situations and the same verdict — standing the runtime down — is
+   * right for only one of them.
+   *
+   * What tells them apart is where the lamp ENDED UP. A person moves the lamp
+   * somewhere new. A lamp that ignored us is still exactly where it was before
+   * we wrote, and `preWrite` is that value, snapshotted at dispatch.
+   *
+   * From the capture this was written against: four lamps sent
+   * `light_temperature` 0.82 reported 0.87 back — which is what they had been
+   * showing all along — and four sent `dim` 0.05 reported 0.10, likewise
+   * unchanged. Both deltas are 0.05, comfortably outside `OVERRIDE_TOLERANCE`,
+   * so all four stood their devices down for four hours at a time while sitting
+   * on precisely the value they had never left.
+   *
+   * Deliberately NOT a widening of `OVERRIDE_TOLERANCE`: 0.03 is above
+   * `light_temperature`'s own 0.01 resolution (platform §6) and raising it to
+   * swallow a 0.05 would forgive a real nudge on every well-behaved lamp in the
+   * house. This forgives an unchanged value at any distance, and forgives
+   * nothing else.
+   *
+   * The cost of being wrong is bounded and the right way round: if a person
+   * really did put the lamp back exactly where it started, we keep driving it
+   * instead of standing down. `ignoredCount` is what stops that being silent.
+   */
+  private ineffectiveWrite(deviceId: string, capability: Capability, value: unknown): boolean {
+    const key = `${deviceId}:${capability}`;
+    const before = this.preWrite.get(key);
+    if (before === undefined) return false;
+    // Nothing has been dispatched since this snapshot was taken, so the lamp is
+    // not answering a write of ours and this says nothing either way.
+    if (this.writeSeq.get(key) !== before.seq) return false;
+    // The lamp reached what we asked for. Whatever it reports after that is
+    // news about the lamp, not about the write — so drop the snapshot and let
+    // the ordinary override rules have it. Without this a person who happens to
+    // land within a tolerance of where the lamp started would be read as the
+    // lamp ignoring us, which is the same mistake in the opposite direction.
+    if (sameReportedValue(capability, before.written, value)) {
+      this.preWrite.delete(key);
+      this.ignoredWrites.delete(key);
+      return false;
+    }
+    if (!sameReportedValue(capability, before.value, value)) {
+      this.ignoredWrites.delete(key);
+      return false;
+    }
+    const seen = this.ignoredWrites.get(key);
+    if (seen === undefined) {
+      this.ignoredWrites.set(key, { count: 1, countedSeq: before.seq });
+    } else if (seen.countedSeq !== before.seq) {
+      // One write, one count, however many times the lamp repeats itself.
+      this.ignoredWrites.set(key, { count: seen.count + 1, countedSeq: before.seq });
+    }
+    return true;
+  }
+
+  /**
+   * Consecutive writes this lamp acknowledged and did not act on.
+   *
+   * Reported rather than inferred, because `ineffectiveWrite` above turns a
+   * stuck lamp from a loud wrong answer ("somebody took it over") into a quiet
+   * right one, and a quiet wrong answer is the failure mode that replaces it.
+   * A lamp nothing can move needs to be visible in diagnostics as exactly that.
+   */
+  ignoredCount(deviceId: string, capability: Capability): number {
+    return this.ignoredWrites.get(`${deviceId}:${capability}`)?.count ?? 0;
   }
 
   /** Forget everything about one device. Used when it stops being a target. */
@@ -459,7 +591,7 @@ export class TargetStateCache {
     this.states.delete(deviceId);
     this.capabilities.delete(deviceId);
     this.onOffObservedAt.delete(deviceId);
-    this.powerTransitionAt.delete(deviceId);
+    this.powerSettleUntil.delete(deviceId);
     for (const key of [...this.recentEchoes.keys()]) {
       if (key.startsWith(`${deviceId}:`)) this.recentEchoes.delete(key);
     }
@@ -471,6 +603,12 @@ export class TargetStateCache {
     }
     for (const key of this.pendingWrites.keys()) {
       if (key.startsWith(`${deviceId}:`)) this.pendingWrites.delete(key);
+    }
+    for (const key of [...this.preWrite.keys()]) {
+      if (key.startsWith(`${deviceId}:`)) this.preWrite.delete(key);
+    }
+    for (const key of [...this.ignoredWrites.keys()]) {
+      if (key.startsWith(`${deviceId}:`)) this.ignoredWrites.delete(key);
     }
   }
 
@@ -496,10 +634,46 @@ export class TargetStateCache {
     this.recentEchoes.clear();
     this.writeSeq.clear();
     this.onOffObservedAt.clear();
-    this.powerTransitionAt.clear();
+    this.powerSettleUntil.clear();
+    this.preWrite.clear();
+    this.ignoredWrites.clear();
     this.dispatchedAt.clear();
     this.pendingWrites.clear();
   }
+}
+
+/**
+ * The last REPORTED value for one capability, or undefined where none is
+ * tracked. The mirror of `desiredOf` below, and written out the same way for
+ * the same reason: a nested ternary here would silently compare a hue against a
+ * colour temperature the day a sixth capability arrived.
+ */
+function actualOf(state: TargetRuntimeState, capability: Capability): unknown {
+  switch (capability) {
+    case 'onoff': return state.actualOn;
+    case 'dim': return state.actualDim;
+    case 'light_temperature': return state.actualTemperature;
+    case 'light_hue': return state.actualHue;
+    case 'light_saturation': return state.actualSaturation;
+    // Never reported back by a lamp, so there is nothing to have moved.
+    case 'light_mode': return undefined;
+  }
+}
+
+/**
+ * Are these two reports the same value, as far as a lamp can express?
+ *
+ * `OVERRIDE_TOLERANCE` rather than equality because the question is "did this
+ * lamp move", and a bridge re-reporting an unchanged level as 0.869 instead of
+ * 0.87 has not moved. Hue is measured the short way round the wheel, where the
+ * distance from 0.99 to 0.01 is two hundredths rather than ninety-eight.
+ */
+function sameReportedValue(capability: Capability, a: unknown, b: unknown): boolean {
+  if (a === undefined || b === undefined) return false;
+  if (typeof a !== 'number' || typeof b !== 'number') return a === b;
+  let delta = Math.abs(a - b);
+  if (capability === 'light_hue' && delta > 0.5) delta = 1 - delta;
+  return withinOverrideTolerance(delta);
 }
 
 /**
