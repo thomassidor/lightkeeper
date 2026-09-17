@@ -12,6 +12,7 @@ import {
 } from '../../lib/devices/device-lifecycle';
 import type { ControllerState, ManagedFlowReference, StateDetail } from '../../lib/profiles/controller-profile';
 import { deferred, settle } from '../support/deferred';
+import { ValueBoard, VALUE_CAPABILITIES, type PublishedValues } from '../../lib/runtime/published-values';
 
 /**
  * The device layer's transactions.
@@ -39,6 +40,8 @@ interface FakeRuntime extends DeviceRuntime {
   plan: Plan;
   stopped: boolean;
   reconciles: number;
+  /** Publish values as a real runtime does from inside a tick. */
+  publish(values: PublishedValues): void;
 }
 
 const REF: ManagedFlowReference = {
@@ -79,6 +82,7 @@ class FakeRegistry implements DeviceRegistry<Plan, FakeRuntime> {
       throw error;
     }
 
+    const board = new ValueBoard();
     const runtime: FakeRuntime = {
       plan,
       stopped: false,
@@ -88,6 +92,10 @@ class FakeRegistry implements DeviceRegistry<Plan, FakeRuntime> {
       destroy: async () => { runtime.stopped = true; },
       updatePlan: async (next: Plan) => { runtime.plan = next; },
       reconcileFlows: async () => { runtime.reconciles += 1; },
+      // The real board, not a stub: the gate it applies is half of what the
+      // device layer's behaviour depends on.
+      watchValues: (onValues) => board.watch(onValues),
+      publish: (values) => board.set(values),
     };
     // Only what is running goes into the map — the managers' own rule.
     this.live.set(id, runtime);
@@ -126,6 +134,16 @@ class FakeOwner implements DeviceOwner<Plan, FakeRuntime> {
   readonly missingKey = 'state.noConfiguration';
   availableWhenDisabled = false;
   withPauseSwitch = true;
+  valueCapabilities: readonly string[] = [];
+
+  /** What the device currently carries. A real one starts from its manifest. */
+  readonly capabilities = new Set<string>(['onoff']);
+  readonly addedCapabilities: string[] = [];
+  readonly removedCapabilities: string[] = [];
+  /** Set to make the NEXT addCapability fail. */
+  failAddCapability: Error | null = null;
+  /** Every value write, by capability — `capability` alone cannot see two. */
+  readonly capabilityValues = new Map<string, unknown>();
 
   constructor(readonly registryImpl: FakeRegistry) {}
 
@@ -153,8 +171,26 @@ class FakeOwner implements DeviceOwner<Plan, FakeRuntime> {
     this.unavailableText = message ?? null;
   }
 
-  async setCapabilityValue(_id: string, value: unknown): Promise<void> {
+  async setCapabilityValue(id: string, value: unknown): Promise<void> {
     this.capability = value;
+    this.capabilityValues.set(id, value);
+  }
+
+  hasCapability(id: string): boolean { return this.capabilities.has(id); }
+
+  async addCapability(id: string): Promise<void> {
+    if (this.failAddCapability) {
+      const error = this.failAddCapability;
+      this.failAddCapability = null;
+      throw error;
+    }
+    this.capabilities.add(id);
+    this.addedCapabilities.push(id);
+  }
+
+  async removeCapability(id: string): Promise<void> {
+    this.capabilities.delete(id);
+    this.removedCapabilities.push(id);
   }
 
   log(...args: unknown[]): void { this.logs.push(args.join(' ')); }
@@ -815,4 +851,126 @@ test('rollback snapshots storage after an incumbent write already in flight', as
   await learning; await failed;
   assert.equal(h.lifecycle.storedPlan()?.value, 'old with learned refs');
   assert.equal(h.registry.get('lk-test-1')?.plan.value, 'old with learned refs');
+});
+
+/**
+ * The capability rows, and the values that land in them.
+ *
+ * Two things this covers that nothing else can. Homey applies a driver's
+ * `capabilities` array when it PAIRS a device and never again (platform §18), so
+ * every already-paired device depends on `addCapability` at init — a path with
+ * no other test and no way to notice it had broken except a user reporting an
+ * empty tile. And a value published by a runtime that has since been replaced
+ * describes a plan the device no longer has, which is the same staleness the
+ * verdict path carries a sequence number for.
+ */
+describe('capability rows', () => {
+  test('an already-paired device gains the capabilities its type declares', async () => {
+    const h = harness();
+    h.owner.valueCapabilities = [VALUE_CAPABILITIES.brightness, VALUE_CAPABILITIES.temperature];
+    h.owner.store.set('plan', { enabled: true, value: 'v' });
+
+    await h.lifecycle.init();
+
+    assert.deepEqual(h.owner.addedCapabilities, [
+      VALUE_CAPABILITIES.brightness,
+      VALUE_CAPABILITIES.temperature,
+    ]);
+    // onoff is the pause switch and was never ours to add or remove.
+    assert.deepEqual(h.owner.removedCapabilities, []);
+  });
+
+  test('one this type no longer declares is taken off the tile', async () => {
+    const h = harness();
+    h.owner.capabilities.add(VALUE_CAPABILITIES.colour);
+    h.owner.valueCapabilities = [VALUE_CAPABILITIES.brightness];
+    h.owner.store.set('plan', { enabled: true, value: 'v' });
+
+    await h.lifecycle.init();
+
+    assert.deepEqual(h.owner.addedCapabilities, [VALUE_CAPABILITIES.brightness]);
+    assert.deepEqual(h.owner.removedCapabilities, [VALUE_CAPABILITIES.colour]);
+  });
+
+  test('a capability that cannot be added does not stop the device running', async () => {
+    const h = harness();
+    h.owner.valueCapabilities = [VALUE_CAPABILITIES.brightness];
+    h.owner.failAddCapability = new Error('Homey said no');
+    h.owner.store.set('plan', { enabled: true, value: 'v' });
+
+    await h.lifecycle.init();
+
+    // The row is missing and the failure is logged — and the runtime is running,
+    // which is the device's actual job.
+    assert.equal(h.owner.hasCapability(VALUE_CAPABILITIES.brightness), false);
+    assert.ok(h.owner.logs.some(line => line.includes('Homey said no')));
+    assert.equal(h.registry.get('lk-test-1')?.plan.value, 'v');
+    assert.equal(h.owner.unavailableText, null);
+  });
+
+  test('a published value reaches the capability it names', async () => {
+    const h = harness();
+    h.owner.valueCapabilities = [VALUE_CAPABILITIES.brightness, VALUE_CAPABILITIES.temperature];
+    h.owner.store.set('plan', { enabled: true, value: 'v' });
+    await h.lifecycle.init();
+
+    h.registry.get('lk-test-1')!.publish({
+      [VALUE_CAPABILITIES.brightness]: 0.26,
+      [VALUE_CAPABILITIES.temperature]: 0.78,
+    });
+    await h.drain();
+
+    assert.equal(h.owner.capabilityValues.get(VALUE_CAPABILITIES.brightness), 0.26);
+    assert.equal(h.owner.capabilityValues.get(VALUE_CAPABILITIES.temperature), 0.78);
+  });
+
+  test('a value for a capability this device does not carry is dropped', async () => {
+    const h = harness();
+    // One runtime serves two device types; only one of them has a colour.
+    h.owner.valueCapabilities = [VALUE_CAPABILITIES.brightness];
+    h.owner.store.set('plan', { enabled: true, value: 'v' });
+    await h.lifecycle.init();
+
+    h.registry.get('lk-test-1')!.publish({
+      [VALUE_CAPABILITIES.brightness]: 0.26,
+      [VALUE_CAPABILITIES.colour]: { keys: ['palette.amber'] },
+    });
+    await h.drain();
+
+    assert.equal(h.owner.capabilityValues.has(VALUE_CAPABILITIES.colour), false);
+  });
+
+  test('locale keys are resolved, and a blend names both ends', async () => {
+    const h = harness();
+    h.owner.valueCapabilities = [VALUE_CAPABILITIES.colour];
+    h.owner.store.set('plan', { enabled: true, value: 'v' });
+    await h.lifecycle.init();
+    const runtime = h.registry.get('lk-test-1')!;
+
+    runtime.publish({ [VALUE_CAPABILITIES.colour]: { keys: ['palette.amber'] } });
+    await h.drain();
+    assert.equal(h.owner.capabilityValues.get(VALUE_CAPABILITIES.colour), 'palette.amber');
+
+    runtime.publish({ [VALUE_CAPABILITIES.colour]: { keys: ['palette.amber', 'palette.rose'] } });
+    await h.drain();
+    // FakeOwner.translate echoes the key, so this is the blend key plus tokens.
+    assert.equal(h.owner.capabilityValues.get(VALUE_CAPABILITIES.colour), 'curve.colourBlend');
+  });
+
+  test('a replaced runtime cannot publish over the device that replaced it', async () => {
+    const h = harness();
+    h.owner.valueCapabilities = [VALUE_CAPABILITIES.brightness];
+    h.owner.store.set('plan', { enabled: true, value: 'old' });
+    await h.lifecycle.init();
+    const stale = h.registry.get('lk-test-1')!;
+
+    await h.lifecycle.apply({ enabled: true, value: 'new' });
+    h.registry.get('lk-test-1')!.publish({ [VALUE_CAPABILITIES.brightness]: 0.5 });
+    await h.drain();
+
+    stale.publish({ [VALUE_CAPABILITIES.brightness]: 0.1 });
+    await h.drain();
+
+    assert.equal(h.owner.capabilityValues.get(VALUE_CAPABILITIES.brightness), 0.5);
+  });
 });

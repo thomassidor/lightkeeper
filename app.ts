@@ -25,8 +25,12 @@ import { fireAndForget } from './lib/support/async';
 import { BoundedLog } from './lib/support/bounded-log';
 import type { WriteRecord } from './lib/outputs/light-target-adapter';
 import { messageOf } from './lib/support/homey-errors';
-import { markPhase } from './lib/support/heap-report';
+import { markPhase, sampleHeap } from './lib/support/heap-report';
 import { timezoneOf } from './lib/time/local-clock';
+import { FlowLightWriter } from './lib/flow/light-writer';
+import { isPowerChoice, planSetLights, LEAVE_ALONE, type ColourSource, type ValueSource } from './lib/flow/set-lights';
+import { lightChoices, matching, parseTargetChoice, sourceChoices } from './lib/flow/flow-arguments';
+import { isDarkEnough } from './lib/flow/darkness-condition';
 
 /**
  * The first mark, and it has to be HERE rather than in `onInit`.
@@ -36,6 +40,9 @@ import { timezoneOf } from './lib/time/local-clock';
  * before a single line of its own logic executes. `onInit` cannot see it, which
  * is exactly why "the app uses N MB" was never attributable.
  */
+/** How often the heap trend is sampled. See where it is started, in `onInit`. */
+const HEAP_SAMPLE_MS = 30 * 60_000;
+
 markPhase('modules-loaded');
 
 /**
@@ -93,12 +100,22 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
    * pairing screens, which show what it currently reads.
    *
    * `daylights` is the registry of live Room-sensing Lights, and owns the second
-   * `setInterval` in this app.
+   * `setInterval` in this app. (There is a third, in `onInit`, which samples the
+   * heap and belongs to no device.)
    */
   luminance!: LuminanceSource;
   daylight!: DaylightEvaluator;
   daylights!: DaylightRuntimeManager;
   health!: HealthMonitor;
+
+  /**
+   * The write path behind the `set_lights` Flow card.
+   *
+   * One for the app rather than one per invocation, and it belongs to no device:
+   * the card can be pointed at any lights in the house, including lights no
+   * Lightkeeper device owns. See its own header.
+   */
+  lights!: FlowLightWriter;
 
   /**
    * Last received events. A generated Flow that fires but produces no
@@ -302,17 +319,27 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       catalog: this.catalog,
       daylight: this.daylight,
       luminance: this.luminance,
-      // The SDK's disposal-safe aliases, as above. The SECOND interval in this
-      // app, and deliberately not shared with the curve one: see the manager's
-      // header for why these are two registries rather than one.
+      // The SDK's disposal-safe aliases, as above. The second of the two DEVICE
+      // intervals in this app, and deliberately not shared with the curve one:
+      // see the manager's header for why these are two registries rather than
+      // one.
       setInterval: (fn, ms) => this.homey.setInterval(fn, ms),
       clearInterval: handle => this.homey.clearInterval(handle as any),
+      log: (...args) => this.log(...args),
+    });
+
+    this.lights = new FlowLightWriter({
+      api: this.api,
+      catalog: this.catalog,
+      onWriteResult,
       log: (...args) => this.log(...args),
     });
 
     this.registerBridgeCard('bridge_event');
     this.registerBridgeCard('bridge_numeric_event', args => Number(args.value));
     this.registerBridgeCard('bridge_token_event', args => Number(args.droptoken));
+    this.registerSetLightsCard();
+    this.registerDarknessCondition();
 
     // Zones and devices change under us; targets must follow. Every registry is
     // notified: watch() takes a single consumer, so the fan-out lives here.
@@ -333,6 +360,30 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     // a key the user has already given. Deliberately not awaited: a slow or
     // unreachable Homey must not delay app start.
     fireAndForget(this.revalidateCredential(), (...args) => this.log(...args), 'Stored-key revalidation');
+
+    /**
+     * The THIRD interval in this app, and the only one that is not about a
+     * device.
+     *
+     * `heapReport()` answers "how much memory is this app using" and cannot
+     * answer "is that number going anywhere", which is the only form of the
+     * question worth asking — a single reading cannot tell steady state from a
+     * slow climb. Answering it used to need two `/diagnostics` pulls hours apart,
+     * by hand, on a real Homey, which is a thing nobody remembers to do.
+     *
+     * Half an hour, and a 48-entry ring, so `/diagnostics` always carries a
+     * day of slope. It is NOT hung off the curve or daylight interval, which
+     * were the two candidates that would have cost no timer: both stop when the
+     * last device of their kind is removed, and an app with no devices at all is
+     * exactly the baseline a climb has to be measured against (platform §15's
+     * control-app method is the same argument). It costs one
+     * `v8.getHeapStatistics()` call per half hour, which does not read `/proc`.
+     *
+     * `homey.setInterval`, like the other two: disposal-safe, so a reloaded app
+     * cannot leave it behind.
+     */
+    this.homey.setInterval(() => sampleHeap(), HEAP_SAMPLE_MS);
+    sampleHeap();
 
     this.evidence.startTimer();
     markPhase('onInit-end');
@@ -361,6 +412,102 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
    * is one of CLAUDE.md's stated safety properties and it had no test at all
    * while it lived here.
    */
+  /**
+   * The `set_lights` card. The SHELL only, exactly like the bridge cards above.
+   *
+   * Every decision is in `lib/flow/` — what the three pickers offer
+   * (`flow-arguments.ts`), what a chosen pair of devices asks for
+   * (`set-lights.ts`), and how it reaches the lamps (`light-writer.ts`) — for
+   * the same reason: this class `extends Homey.App` and no test can import it
+   * (platform §13).
+   */
+  private registerSetLightsCard(): void {
+    const card = this.homey.flow.getActionCard('set_lights');
+    const labels = () => ({
+      leaveAlone: this.homey.__('flow.leaveAlone'),
+      leaveAloneHint: this.homey.__('flow.leaveAloneHint'),
+    });
+
+    card.registerArgumentAutocompleteListener('lights', async (query: string) =>
+      matching(await lightChoices(this.catalog, { room: this.homey.__('flow.room') }), query));
+
+    card.registerArgumentAutocompleteListener('colour', async (query: string) =>
+      matching(sourceChoices(this.namedRuntimes(this.curves.all()), labels()), query));
+
+    card.registerArgumentAutocompleteListener('brightness', async (query: string) =>
+      matching(sourceChoices(this.namedRuntimes([
+        ...this.daylights.all(), ...this.curves.all(), ...this.schedules.all(),
+      ]), labels()), query));
+
+    card.registerRunListener(async (args: any) => {
+      const spec = parseTargetChoice(args?.lights?.id);
+      if (!spec) {
+        this.log('Ignoring set_lights: the chosen lights are not a target this app can read');
+        return false;
+      }
+
+      // An unreadable dropdown falls to the cautious half, not the one that can
+      // switch a household's lights on.
+      const power = isPowerChoice(args?.power) ? args.power : 'only_on';
+
+      const missing: string[] = [];
+      const colour = this.colourSourceFor(args?.colour?.id, missing);
+      const brightness = this.brightnessSourceFor(args?.brightness?.id, missing);
+
+      const result = await this.lights.apply(
+        spec, planSetLights({ colour, brightness, missing }, power), power,
+      );
+      if (result.refused) {
+        this.log(`Ignoring set_lights: ${result.refused}`);
+        return false;
+      }
+      this.log(`set_lights: ${result.writes} write(s), ${result.skipped} skipped`);
+      return true;
+    });
+  }
+
+  /** A Room-sensing Light's own reading, offered to anybody else's Flow. */
+  private registerDarknessCondition(): void {
+    const card = this.homey.flow.getConditionCard('daylight_is_dark');
+
+    card.registerRunListener(async (args: any) => {
+      const deviceId = args?.device?.getData?.()?.id;
+      const runtime = typeof deviceId === 'string' ? this.daylights.get(deviceId) : undefined;
+      // Fail closed, for the reason `isDarkEnough` gives: a device that is not
+      // running cannot say it is dark, and "not true" leaves the lights alone.
+      if (!runtime) return false;
+      return isDarkEnough(runtime.publishedValues(), args?.level);
+    });
+  }
+
+  private namedRuntimes(
+    runtimes: readonly { controllerId: string; deviceName: string }[],
+  ): { id: string; name: string }[] {
+    return runtimes.map(runtime => ({ id: runtime.controllerId, name: runtime.deviceName }));
+  }
+
+  /**
+   * The curve-driven runtime a chosen id names, or null.
+   *
+   * A chosen id that no live runtime answers to is pushed onto `missing` rather
+   * than quietly treated as "leave alone": half a set of settings written to a
+   * room, because the device holding the other half was deleted, is the outcome
+   * `planSetLights` refuses outright.
+   */
+  private colourSourceFor(id: unknown, missing: string[]): ColourSource | null {
+    if (typeof id !== 'string' || id === LEAVE_ALONE) return null;
+    const runtime = this.curves.get(id);
+    if (!runtime) { missing.push(id); return null; }
+    return runtime;
+  }
+
+  private brightnessSourceFor(id: unknown, missing: string[]): ValueSource | null {
+    if (typeof id !== 'string' || id === LEAVE_ALONE) return null;
+    const runtime = this.daylights.get(id) ?? this.curves.get(id) ?? this.schedules.get(id);
+    if (!runtime) { missing.push(id); return null; }
+    return runtime;
+  }
+
   private registerBridgeCard(cardId: string, magnitudeOf?: MagnitudeReader) {
     const card = this.homey.flow.getActionCard(cardId);
 
@@ -461,6 +608,7 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     await this.daylights?.destroyAll();
     // After the runtimes, so their own release() calls have already run and this
     // is only the backstop for anything a pairing session left behind.
+    await this.lights?.destroy();
     await this.luminance?.destroy();
     await this.api?.destroy();
     // Whatever the catalogue is still holding from the last read. Small by

@@ -1,4 +1,5 @@
 import { LightkeeperDevice, type DeviceRegistry, type PlanMigration } from '../../lib/devices/lightkeeper-device';
+import { VALUE_CAPABILITIES } from '../../lib/runtime/published-values';
 import { migrateDaylightPlan } from '../../lib/daylight/daylight-migrations';
 import type { DaylightPlan } from '../../lib/daylight/daylight-types';
 import type { DaylightRuntime } from '../../lib/daylight/daylight-runtime';
@@ -39,6 +40,8 @@ module.exports = class DaylightDevice extends LightkeeperDevice<DaylightPlan, Da
   readonly missingKey = 'state.noDaylight';
   override readonly availableWhenDisabled = true;
   override readonly withPauseSwitch = true;
+  /** No colour temperature: this device type only ever decides a brightness. */
+  override readonly valueCapabilities = [VALUE_CAPABILITIES.brightness, VALUE_CAPABILITIES.daylight];
 
   migrate(raw: unknown): PlanMigration<DaylightPlan> {
     return migrateDaylightPlan(raw);

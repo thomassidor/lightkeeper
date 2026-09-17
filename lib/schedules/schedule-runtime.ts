@@ -35,6 +35,7 @@ import {
 } from './schedule-types';
 import { messageOf } from '../support/homey-errors';
 import { VisibleState } from '../runtime/visible-state';
+import { ValueBoard, VALUE_CAPABILITIES, type PublishedValues } from '../runtime/published-values';
 
 /**
  * One light schedule, live.
@@ -214,6 +215,60 @@ export class ScheduleRuntime {
   get currentDetail(): StateDetail | undefined { return this.visible.currentDetail; }
   get currentPlan(): SchedulePlan { return this.plan; }
 
+  /** What the running window asks for, for the capability rows (platform §18). */
+  private readonly values = new ValueBoard();
+
+  watchValues(onValues: (values: PublishedValues) => void): void {
+    this.values.watch(onValues);
+  }
+
+  /**
+   * What this runtime has published, for the Flow cards that compose it.
+   *
+   * The BOARD rather than a fresh computation, deliberately: the `set_lights`
+   * card and a hand-built Flow using the same device's tag must not be able to
+   * disagree about what "now" means, and the board is what the tag holds.
+   */
+  publishedValues(): PublishedValues {
+    return this.values.current;
+  }
+
+  /** The device's own name, for the Flow cards' pickers. */
+  get deviceName(): string {
+    return this.deps.displayName();
+  }
+
+  /**
+   * Publish the values of the window that is running right now.
+   *
+   * Computed from the clock rather than from `lastAction`, and those are not the
+   * same thing: an overlapping pair leaves the latest-STARTED window showing,
+   * which is what `activeEntries` sorts for and what both catch-up and the
+   * surviving-window rule already pick. Reading the last thing written would
+   * report the window that fired most recently instead, which after an off
+   * boundary is the one that just stopped.
+   *
+   * Both are null between windows, and both are null while the timezone is
+   * unresolved — a schedule is blocked outright in that case (see `clock`), so
+   * claiming a value would be claiming one it is refusing to act on.
+   *
+   * This device type has no tick, so the call sites are the three moments the
+   * answer can change: start, a boundary Flow firing, and a plan change through
+   * `updatePlan` — which restarts. A boundary the app was down for is missed
+   * here exactly as it is missed everywhere else, and for the same reason.
+   */
+  private publishValues(): void {
+    const { clock, resolved } = this.clock();
+    const entry = resolved
+      ? activeEntries(this.plan.entries, this.plan.days, clock)[0]?.entry
+      : undefined;
+
+    this.values.set({
+      [VALUE_CAPABILITIES.brightness]: entry?.brightness !== undefined ? toDevice(entry.brightness) : null,
+      [VALUE_CAPABILITIES.temperature]: entry?.temperature ?? null,
+    });
+  }
+
   private now(): number {
     return this.deps.now ? this.deps.now() : Date.now();
   }
@@ -246,6 +301,7 @@ export class ScheduleRuntime {
       if (!current()) return;
       await this.catchUp();
       if (!current()) return;
+      this.publishValues();
     });
   }
 
@@ -555,6 +611,10 @@ export class ScheduleRuntime {
 
     const { entry, boundary } = outcome;
     fireAndForget(this.apply(entry, boundary), this.deps.log, `Schedule boundary ${eventKey}`);
+    // Published from here rather than from inside `apply`, which has five exits
+    // and is fire-and-forget: the clock is the same at both, and this is the one
+    // place a boundary is known to have been accepted.
+    this.publishValues();
     return { accepted: true };
   }
 

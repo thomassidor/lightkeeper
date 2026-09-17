@@ -793,6 +793,168 @@ describe('pre-staging that turns out to be unsafe', () => {
   });
 
   /**
+   * But not for ever, and this is the half that was missing.
+   *
+   * "Each off-period re-tests once" is sound in a room somebody enters twice an
+   * evening and worthless in one on a motion sensor. Measured on the reference
+   * Homey, 17 September 2026: an Activity Room switching every ~112 s, five
+   * lamps, every one of them refusing every colour it was ever offered — about
+   * 326 deterministic failures a day, HALF that device's whole write volume, for
+   * a fact re-derived from scratch every two minutes.
+   */
+  test('a lamp that refuses off-period after off-period stops being re-tested', async () => {
+    const h = harness({
+      plan: plan({ preStage: true, target: { kind: 'devices', deviceIds: ['l1'] } }),
+      devices: [light('l1', undefined, { onoff: false })],
+      refuseWrite: {
+        capability: 'light_temperature',
+        message: 'device (light) abc is "soft off", command (.color_temperature.mirek) '
+          + 'may not have effect',
+        when: device => device.capabilitiesObj.onoff?.value !== true,
+      },
+    });
+
+    await h.runtime.start();
+    await applied(h);
+
+    // Three off-periods, each one refusing everything it is offered. The third
+    // is what trips the outer bound.
+    const offPeriod = async () => {
+      for (let i = 0; i < 3; i += 1) {
+        h.advance(60_000);
+        await h.runtime.tick();
+        await applied(h);
+      }
+      h.report('l1', 'onoff', true);
+      await applied(h);
+      h.report('l1', 'onoff', false);
+      await applied(h);
+    };
+    await offPeriod();
+    await offPeriod();
+    await offPeriod();
+
+    const backoff = h.runtime.diagnostics().targets.find(t => t.id === 'l1')!.preStageBackoff;
+    assert.equal(backoff?.periods, 3, 'three fully-declined off-periods in a row');
+    assert.ok(typeof backoff?.retestAt === 'number', 'and a moment it is next looked at again');
+
+    // Somebody uses the room again. The rising edge still writes — a lamp that is
+    // ON is this device type's whole job, and none of this is about that — so
+    // the count is taken after it, and what must not move is the OFF-period.
+    h.report('l1', 'onoff', true);
+    await applied(h);
+    h.report('l1', 'onoff', false);
+    await applied(h);
+    const before = h.attempts.filter(a => a.capability === 'light_temperature').length;
+
+    for (let i = 0; i < 5; i += 1) {
+      h.advance(60_000);
+      await h.runtime.tick();
+      await applied(h);
+    }
+    assert.equal(h.attempts.filter(a => a.capability === 'light_temperature').length, before,
+      'switching it on no longer re-arms the three futile writes');
+    await h.runtime.stop();
+  });
+
+  /**
+   * The re-test deadline runs from when the backoff was set, and a switch-on
+   * must not postpone it — the same trap `noteOverride` fell into, where the one
+   * thing that ends a state could be deferred for ever by the one thing that
+   * cannot stop happening.
+   */
+  test('a day later the lamp is offered a colour again', async () => {
+    const h = harness({
+      plan: plan({ preStage: true, target: { kind: 'devices', deviceIds: ['l1'] } }),
+      devices: [light('l1', undefined, { onoff: false })],
+      refuseWrite: {
+        capability: 'light_temperature',
+        message: 'device (light) abc is "soft off", command (.color_temperature.mirek) '
+          + 'may not have effect',
+        when: device => device.capabilitiesObj.onoff?.value !== true,
+      },
+    });
+
+    await h.runtime.start();
+    await applied(h);
+    for (let period = 0; period < 3; period += 1) {
+      for (let i = 0; i < 3; i += 1) {
+        h.advance(60_000);
+        await h.runtime.tick();
+        await applied(h);
+      }
+      h.report('l1', 'onoff', true);
+      await applied(h);
+      h.report('l1', 'onoff', false);
+      await applied(h);
+    }
+    assert.ok(h.runtime.diagnostics().targets.find(t => t.id === 'l1')!.preStageBackoff);
+
+    // A whole day of the room being used, which must neither re-test it early
+    // nor push the deadline out.
+    h.advance(25 * 60 * 60_000);
+    const before = h.attempts.filter(a => a.capability === 'light_temperature').length;
+    h.report('l1', 'onoff', true);
+    await applied(h);
+    h.report('l1', 'onoff', false);
+    await applied(h);
+
+    assert.equal(h.runtime.diagnostics().targets.find(t => t.id === 'l1')!.preStageBackoff,
+      undefined, 'the backoff is dropped, so the lamp starts from nothing again');
+    h.advance(60_000);
+    await h.runtime.tick();
+    await applied(h);
+    assert.ok(h.attempts.filter(a => a.capability === 'light_temperature').length > before,
+      'and it is offered a colour once more');
+    await h.runtime.stop();
+  });
+
+  /**
+   * One success is proof, and it has to clear BOTH counts. Leaving the outer one
+   * would stand a lamp down tomorrow on the strength of periods it has just
+   * disproved.
+   */
+  test('taking a colour clears the run of refusing off-periods', async () => {
+    let refusing = true;
+    const h = harness({
+      plan: plan({ preStage: true, target: { kind: 'devices', deviceIds: ['l1'] } }),
+      devices: [light('l1', undefined, { onoff: false })],
+      refuseWrite: {
+        capability: 'light_temperature',
+        message: 'device (light) abc is "soft off", command (.color_temperature.mirek) '
+          + 'may not have effect',
+        when: () => refusing,
+      },
+    });
+
+    await h.runtime.start();
+    await applied(h);
+    for (let period = 0; period < 2; period += 1) {
+      for (let i = 0; i < 3; i += 1) {
+        h.advance(60_000);
+        await h.runtime.tick();
+        await applied(h);
+      }
+      h.report('l1', 'onoff', true);
+      await applied(h);
+      h.report('l1', 'onoff', false);
+      await applied(h);
+    }
+    assert.equal(h.runtime.diagnostics().targets.find(t => t.id === 'l1')!.preStageBackoff?.periods, 2);
+
+    // The bulb is replaced, and takes the next colour it is offered.
+    refusing = false;
+    h.advance(60_000);
+    await h.runtime.tick();
+    await applied(h);
+
+    const target = h.runtime.diagnostics().targets.find(t => t.id === 'l1')!;
+    assert.equal(target.preStageBackoff, undefined, 'the run is broken');
+    assert.equal(target.preStageDeclined, undefined, 'and so is the within-period streak');
+    await h.runtime.stop();
+  });
+
+  /**
    * The probe wrote `light_temperature` straight through the adapter with no
    * `light_mode` first, unlike every production pre-stage write. Platform §6
    * measured that a lamp sitting in colour mode refuses a temperature "from
@@ -1385,6 +1547,38 @@ describe('what the week-long recording found', () => {
     assert.equal(d.targets[0].override, null);
     assert.ok(d.recentControlEvents.some(e => e.type === 'override_cleared' && e.reason === 'expired'));
     assert.ok(h.writes.slice(before).some(w => w.deviceId === 'l1'), 'control resumes on the very same pass');
+    await h.runtime.stop();
+  });
+
+  /**
+   * `resolveSnapshot` seeds every capability in WATCHED_CAPABILITIES, but this
+   * runtime only SUBSCRIBES to what it plans from — so an unwatched field keeps
+   * its boot value and never moves again.
+   *
+   * Measured on the reference Homey, 17 September 2026: five lamps drawn as
+   * `dim: 0` while on, 22.7 hours after the snapshot that said so, with the
+   * Room-sensing Light pointed at the same five reading 0.03 in the same
+   * capture. Diagnostics is the field's only audience.
+   */
+  test('reported values leave out the capabilities this device does not follow', async () => {
+    const h = harness({ plan: plan({ adjustBrightness: false }) });
+    await h.runtime.start();
+    await settle();
+
+    const reported = h.runtime.diagnostics().targets[0]!.reported;
+    assert.equal('dim' in reported, false,
+      'a curve that does not touch brightness must not quote a stale one');
+    assert.ok('onoff' in reported && 'light_temperature' in reported,
+      'what it does follow is still there');
+    await h.runtime.stop();
+  });
+
+  test('and keeps them when the plan does adjust brightness', async () => {
+    const h = harness({ plan: plan({ adjustBrightness: true }) });
+    await h.runtime.start();
+    await settle();
+
+    assert.ok('dim' in h.runtime.diagnostics().targets[0]!.reported);
     await h.runtime.stop();
   });
 

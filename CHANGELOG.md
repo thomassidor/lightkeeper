@@ -6,7 +6,50 @@ release in a few bullets and one line for each older one; this is where the deta
 Newest first. Pre-1.0, so there are no major bumps for breaking changes: a change that would break
 something says so in its own entry instead.
 
-## 0.6.1
+## 0.6.5
+
+### What each device wants your lights to be, readable from your own Flows
+
+Four device types spend all day working out exactly what a light ought to be — a colour temperature
+from the curve, a colour from the palette, a brightness from how light the room already is, a
+brightness and a white from the schedule window that is running. None of it left the app. It was on
+the settings page and in a diagnostics export, and nowhere a Flow could reach.
+
+It is now four read-only rows on each device's own tile, and Homey turns every device capability into
+a Flow tag on its own, so they are in the tag picker with no further setup. *When motion is detected →
+dim the hall to «Hall daylight: Brightness now»* is a Flow anybody can build, and it stays right as
+the day moves. They go into Insights too.
+
+**The brightness is what a lamp is sent, not what the slider says.** Those are different numbers:
+brightness is stored the way it is perceived and sent the way a lamp is addressed, so 55% on the
+setup screen is 26% to the lamp. The tag carries the second one, deliberately, because the whole
+point is that dropping it into Homey's own *Dim to* gives the light Lightkeeper itself would give. A
+paused device still answers — pausing stops it touching your lights, not describing what it wants.
+
+**Set lights the Lightkeeper way** is the card beside them, and it does the one thing the tags
+cannot. Three Homey cards are three writes, so a lamp comes on as it was, changes colour, then
+changes level. This is one: a room or a light, a device to take the colour from, a device to take the
+brightness from — two different devices is the point — and whether to switch them on. It never
+switches a lamp on unless you asked it to: choose *only lights already on* and a lamp that is off is
+left alone entirely, because there is no way to set a lamp's brightness without switching it on. A
+card whose source device has been deleted writes nothing at all rather than half the settings.
+
+**It is dark enough** is a condition on a Room-sensing Light, which has already decided how light the
+room is from its own sensor or from the sun. Any Flow can now ask it, instead of keeping a second lux
+threshold in step with the one you tuned on a screen showing that sensor's own week. If it cannot
+tell how light it is, the condition is never true.
+
+None of this replaces setting the colour of lights that are off. A Flow only covers the switch-ons
+that go through that Flow; that setting is what covers the wall switch and the lamp's own app.
+
+Under it: four custom capabilities, because every brightness and colour capability Homey ships is
+writable and would have drawn a slider nothing honours; a value gate at the capability's own
+resolution, so a curve moving 0.003 a minute does not write sixty indistinguishable points an hour
+into Insights; and a capability sync at device start, because a driver's capability list only ever
+reaches devices paired after the change — everything already installed would otherwise have shown
+nothing. All of it is written up as section 18 of the platform reference.
+
+### The review
 
 A general review of the whole app for bugs, at every severity, ranked — and the eleven things it
 found. The suite, the two type-checks, the linter and the view-sync check were all green before it
@@ -130,6 +173,43 @@ schedule device without a registered runtime would have read as unattributable, 
 computed from the same shrunken set, would have agreed with the mistake rather than caught it. Both
 now refuse, in words that match the reason: "no device is running" sends you to look at your
 devices, "I could not read my own driver" tells you to wait and reload.
+
+### Six things a day of real diagnostics showed, that no test could
+
+A `/diagnostics` capture from the reference Homey after nearly a day of uptime — six devices,
+fourteen lamps, everything reporting healthy. Nothing in it was broken, which is the point: what it
+showed was guards that cannot reach their own threshold, a bounded log spending itself on one
+expected failure, and a fact being re-derived from scratch every two minutes.
+
+- **A room can now tell you its lights are chasing their own sensor, before it is certain.** A
+  Room-sensing Light whose sensor sits in the room it lights can push itself brighter and brighter,
+  and Lightkeeper already watched for the signature — but it only said anything after seeing it five
+  times, and it was seeing it about twice a day. Worse, the count was thrown away whenever the
+  device was edited at all, even for a rename, and on every app restart. It now survives anything
+  that did not change the response itself, and the settings page shows both the standing risk and
+  the running count instead of nothing until the fifth.
+- **A light that refuses to be set up in advance is no longer asked forever.** Some lights decline a
+  colour while they are switched off — harmlessly, but every time. Lightkeeper stopped asking after
+  three tries and then started again the moment the light came on, which is sensible in a room
+  somebody enters twice an evening and pointless in one on a motion sensor: in a room switching every
+  two minutes that was hundreds of refused writes a day, half of that device's entire traffic. After
+  three switch-ons in a row where it refused everything, it is now left alone and tried again the
+  next day. One success clears it immediately.
+- **A light sensor that stops reporting now says so.** Its readings are still used — deliberately,
+  because a quiet sensor in a still room is telling the truth — but after half a day of silence the
+  device says on its tile that the sensor has stopped and its lights are being held where they are.
+  That warning existed only during setup, which is the one moment the sensor is working by
+  definition.
+- **The failure list is no longer filled with the one failure that is expected.** Both affected
+  devices were at 50 of 50 entries, every single one a light declining a colour while off — so
+  anything genuinely new was pushed out within minutes. That refusal has its own place in
+  diagnostics, and keeps it; the list is free again for something that matters.
+- **Diagnostics no longer quotes a brightness it stopped following.** A device set up not to touch
+  brightness still reported one, frozen at whatever it was when the app started — nearly a day stale
+  in the capture, and contradicting the device standing next to it.
+- **Diagnostics now shows memory over time, not just now.** One reading cannot tell a settled app
+  from a slowly growing one, which is the only question worth asking about it, and answering it used
+  to need two captures hours apart by hand. A day of readings is now always in the report.
 
 ### The other nine
 

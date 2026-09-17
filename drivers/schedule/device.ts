@@ -1,4 +1,5 @@
 import { LightkeeperDevice, type DeviceRegistry, type PlanMigration } from '../../lib/devices/lightkeeper-device';
+import { VALUE_CAPABILITIES } from '../../lib/runtime/published-values';
 import { migrateSchedulePlan } from '../../lib/schedules/schedule-migrations';
 import type { SchedulePlan } from '../../lib/schedules/schedule-types';
 import type { ScheduleRuntime } from '../../lib/schedules/schedule-runtime';
@@ -25,6 +26,8 @@ module.exports = class ScheduleDevice extends LightkeeperDevice<SchedulePlan, Sc
   readonly missingKey = 'state.noSchedule';
   override readonly availableWhenDisabled = true;
   override readonly withPauseSwitch = true;
+  /** Whatever the window running right now sets; both null between windows. */
+  override readonly valueCapabilities = [VALUE_CAPABILITIES.brightness, VALUE_CAPABILITIES.temperature];
 
   migrate(raw: unknown): PlanMigration<SchedulePlan> {
     return migrateSchedulePlan(raw);

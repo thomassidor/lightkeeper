@@ -23,5 +23,6 @@
 /.views
 /views.zip
 /.probe
+/temp
 /.designexports
 /.dev-build

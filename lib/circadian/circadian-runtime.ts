@@ -37,6 +37,7 @@ import { nextPointAfter, resolvePoints, valueAt, type CurveValue } from './circa
 import { formatMinutes, type CircadianPlan, type CircadianPoint } from './circadian-types';
 import { messageOf } from '../support/homey-errors';
 import { VisibleState } from '../runtime/visible-state';
+import { ValueBoard, VALUE_CAPABILITIES, type PublishedValues } from '../runtime/published-values';
 
 /**
  * One circadian light, live.
@@ -220,6 +221,50 @@ const PRE_STAGE_CAPABILITIES: readonly Capability[] = ['light_temperature', 'lig
 const PRE_STAGE_DECLINES_BEFORE_SKIP = 3;
 
 /**
+ * How many off-periods in a row a lamp may refuse EVERYTHING it is offered
+ * before this runtime stops re-testing it on every switch-on.
+ *
+ * `PRE_STAGE_DECLINES_BEFORE_SKIP` above bounds one off-period; this bounds the
+ * sequence of them, and without it the first bound is worth much less than it
+ * looks. The inner streak is cleared by the rising edge of `onoff`, on the
+ * argument that each off-period should re-test once — which is sound in a room
+ * somebody enters twice an evening and worthless in one on a motion sensor.
+ * Measured on the reference Homey, 17 September 2026: an Activity Room with 100
+ * power transitions in 11 071 s, one every ~112 s, five lamps, every one of them
+ * answering `is "soft off"` to every colour it was ever offered. The inner bound
+ * held each off-period to three futile writes and the room's duty cycle then
+ * bought about 326 of them a day — HALF of that device's entire write volume,
+ * failing deterministically, for a fact re-derived from scratch every two
+ * minutes.
+ *
+ * Three rather than one because a single fully-declined off-period can be a
+ * transient bridge state, and parking a healthy lamp for a day on that evidence
+ * is the worse error of the two. Three consecutive is roughly five minutes of
+ * proof at that duty cycle and still removes ~95% of the waste.
+ *
+ * This is the counterpart `verifyStayedOff()` never had. That one learns
+ * "pre-staging switches THIS lamp on" and disables the feature device-wide and
+ * persistently; nothing learned "pre-staging never works on this lamp", so the
+ * one failure that is both deterministic and harmless was the one re-tested
+ * forever.
+ */
+const PRE_STAGE_DECLINED_PERIODS_BEFORE_BACKOFF = 3;
+
+/**
+ * How long a lamp stands down before it is offered a colour while off again.
+ *
+ * A day, because the facts that would change the answer move on that scale or
+ * slower: a bulb replaced under the same id, bridge firmware, a lamp that is now
+ * merely off rather than "soft off". Cheap to be wrong in either direction — too
+ * long costs one switch-on's worth of late colour, too short costs three writes.
+ *
+ * Not a timer: there is nothing to fire. It is read on the rising edge of
+ * `onoff`, which is the only moment the answer is used, so a lamp nobody touches
+ * for a week costs nothing at all while it waits.
+ */
+const PRE_STAGE_RETEST_MS = 24 * 60 * 60_000;
+
+/**
  * What `diagnostics()` returns. See ControllerDiagnostics for why it is typed.
  *
  * No `credential` field, and its absence is the feature: this device type
@@ -323,6 +368,21 @@ export interface CircadianDiagnostics extends ReturnType<ControlHistory<Circadia
      */
     preStageDeclined?: { at: number; count: number; reason: string };
     /**
+     * And how many off-periods IN A ROW it has done that for, with the moment it
+     * is next re-tested. See PRE_STAGE_DECLINED_PERIODS_BEFORE_BACKOFF.
+     *
+     * Beside `preStageDeclined` rather than folded into it, because they answer
+     * different questions and a reader needs both: that one says what this lamp
+     * did while it was last off, this one says whether the runtime has stopped
+     * asking. Without it, "no writes, and a decline record that is now hours
+     * old" reads as a runtime that has forgotten about the lamp — which is what
+     * the suppression looks like from the outside when it is working.
+     *
+     * `retestAt: null` means the run is still being counted and the lamp is
+     * still being offered a colour every off-period.
+     */
+    preStageBackoff?: { periods: number; retestAt: number | null };
+    /**
      * Writes this lamp acknowledged and did not act on, per capability, most
      * recent run only. Absent when there are none, which is the normal case.
      *
@@ -395,6 +455,21 @@ export class CircadianRuntime {
     new Map<string, { at: number; count: number; reason: string }>();
 
   /**
+   * The outer half of the same question: how many off-periods IN A ROW this lamp
+   * has refused everything it was offered, and until when it stands down.
+   *
+   * `retestAt: null` means still counting; a number means standing down until
+   * then. One map rather than two because the two states are one lamp's
+   * progress through one decision, and splitting them is how they drift.
+   *
+   * In memory, like `preStageDeclines` and for the same reason — the fact costs
+   * three writes to re-derive and can go stale invisibly. See
+   * PRE_STAGE_DECLINED_PERIODS_BEFORE_BACKOFF for the measurement that put it
+   * here.
+   */
+  private readonly preStageBackoff = new Map<string, { periods: number; retestAt: number | null }>();
+
+  /**
    * Pre-stage probes, keyed BY DEVICE and carrying the write generation that
    * started each one.
    *
@@ -448,6 +523,63 @@ export class CircadianRuntime {
   /** The reason for that state, so the device layer can report it verbatim. */
   get currentDetail(): StateDetail | undefined { return this.visible.currentDetail; }
   get currentPlan(): CircadianPlan { return this.plan; }
+
+  /**
+   * What the curve wants, for the device's own capability rows — and so for the
+   * Flow tags Homey makes of them (platform §18).
+   *
+   * One board for both device types this runtime serves. A circadian light
+   * declares no colour capability and a Colour Curve Light does, and the device
+   * layer drops a value for a capability its device does not carry — so the
+   * runtime publishes the same three either way rather than branching on `kind`
+   * and giving the two types two things to keep in step.
+   */
+  private readonly values = new ValueBoard();
+
+  watchValues(onValues: (values: PublishedValues) => void): void {
+    this.values.watch(onValues);
+  }
+
+  /**
+   * What this runtime has published, for the Flow cards that compose it.
+   *
+   * The BOARD rather than a fresh computation, deliberately: the `set_lights`
+   * card and a hand-built Flow using the same device's tag must not be able to
+   * disagree about what "now" means, and the board is what the tag holds.
+   */
+  publishedValues(): PublishedValues {
+    return this.values.current;
+  }
+
+  /** The device's own name, for the Flow cards' pickers. */
+  get deviceName(): string {
+    return this.deps.displayName();
+  }
+
+  /**
+   * Publish where the curve is, whatever else this pass decides to do.
+   *
+   * Called at the TOP of `applyNow` rather than at the end, because every
+   * interesting early return is above the writes: a paused device, a curve with
+   * no points, a device whose lights are all overridden. What the curve says is
+   * true in all of those, and a paused device that stopped answering "what would
+   * you do" would silently break a Flow that borrows its colour — the capability
+   * is titled "now", not "last written".
+   */
+  private publishValues(): void {
+    const value = this.currentValue();
+    const brightness = this.plan.adjustBrightness && value?.brightness !== undefined
+      ? toDevice(value.brightness)
+      : null;
+
+    this.values.set({
+      [VALUE_CAPABILITIES.brightness]: brightness,
+      [VALUE_CAPABILITIES.temperature]: value ? value.warmth : null,
+      [VALUE_CAPABILITIES.colour]: value?.colorLabelKeys?.length
+        ? { keys: value.colorLabelKeys }
+        : null,
+    });
+  }
 
   /**
    * One resolved set of timers, filled in by `withDefaults`.
@@ -549,7 +681,21 @@ export class CircadianRuntime {
     if (!current()) return;
   }
 
-  private async subscribeAll(): Promise<void> {
+  /**
+   * The capabilities this runtime actually subscribes to, which is fewer than
+   * the lamp has and fewer than the boot snapshot seeds.
+   *
+   * Its own method because `diagnostics()` needs the same answer. `resolveSnapshot`
+   * seeds every capability in `WATCHED_CAPABILITIES`, `dim` and `light_saturation`
+   * included, but this runtime only subscribes to what it plans from — so an
+   * unsubscribed field in the cache keeps the value it had at boot and never moves
+   * again. Reported verbatim, that is a number contradicting the rest of the
+   * report: measured on the reference Homey, five lamps drawn as `dim: 0` while
+   * on, 22.7 hours after the snapshot that said so, with the Room-sensing Light
+   * pointed at the same five reading 0.03. Diagnostics is the field's only
+   * audience, so a stale one is all cost.
+   */
+  private watchedCapabilities(): Capability[] {
     const capabilities: Capability[] = ['onoff', 'light_temperature'];
     if (this.plan.adjustBrightness) capabilities.push('dim');
     /**
@@ -568,7 +714,11 @@ export class CircadianRuntime {
     if (this.plan.points.some(point => point.color !== undefined)) {
       capabilities.push('light_hue');
     }
+    return capabilities;
+  }
 
+  private async subscribeAll(): Promise<void> {
+    const capabilities = this.watchedCapabilities();
     for (const deviceId of this.targetIds) {
       await this.adapter.subscribe(deviceId, capabilities, (id, capability, value, external) =>
         this.onCapabilityChange(id, capability, value, external));
@@ -606,15 +756,7 @@ export class CircadianRuntime {
       }
 
       if (value === true) {
-        /**
-         * A lamp that is on can be asked again next time it is off.
-         *
-         * This is what keeps the suppression from being sticky until a
-         * restart. Each off-period re-tests once, at three futile writes, so a
-         * replaced bulb or a firmware fix recovers by itself — and a lamp that
-         * still refuses costs three writes an evening instead of six hundred.
-         */
-        this.preStageDeclines.delete(deviceId);
+        this.rearmPreStage(deviceId);
 
         // The whole point of the feature. Forced past the "has the curve moved"
         // gate: the lamp has just restored whatever colour it was last at, so
@@ -890,6 +1032,8 @@ export class CircadianRuntime {
     reason: string,
     options: { deviceIds?: string[]; force?: boolean; waitForResults?: boolean } = {},
   ): Promise<{ writes: number; skipped: number }> {
+    this.publishValues();
+
     if (!this.plan.enabled) return this.noteNothingToDo(reason, 'the plan is switched off');
     if (this.plan.points.length === 0) return this.noteNothingToDo(reason, 'the curve has no points');
 
@@ -1039,8 +1183,11 @@ export class CircadianRuntime {
           if (generation === undefined) continue;
 
           if (outcome.status === 'succeeded') {
-            // It took the colour, so whatever it refused before is history.
+            // It took the colour, so whatever it refused before is history —
+            // both halves of it. Leaving the outer count would stand a lamp down
+            // tomorrow on the strength of periods it has just disproved.
             this.preStageDeclines.delete(outcome.deviceId);
+            this.preStageBackoff.delete(outcome.deviceId);
             this.verifyStayedOff(outcome.deviceId, generation);
             continue;
           }
@@ -1323,18 +1470,32 @@ export class CircadianRuntime {
   }
 
   /**
-   * What we last sent one lamp, gathered from the two maps that hold it.
-   *
-   * The maps stay separate — they void each other, deliberately, and that is
-   * what makes each one's presence meaningful — so joining them is the
-   * projection's job rather than theirs.
-   */
-  /**
    * Per capability, how many consecutive writes this lamp has acknowledged and
    * not acted on. Only the capabilities this device type actually writes, so a
    * reader is never left wondering why a colour count exists on a lamp that has
    * only ever been given a temperature.
    */
+  /**
+   * What this lamp has REPORTED, narrowed to the capabilities we listen to.
+   *
+   * An unwatched field would otherwise be drawn from the boot snapshot forever —
+   * see `watchedCapabilities()` for the measurement. Omitted rather than nulled:
+   * `LiveValues` is all-optional already, and an absent field reads as "this
+   * runtime does not follow that" where a `null` would read as "the lamp has not
+   * said".
+   */
+  private watchedValues(deviceId: string): ReturnType<TargetStateCache['reportedValues']> {
+    const watched = new Set(this.watchedCapabilities());
+    const reported = this.cache.reportedValues(deviceId);
+    return {
+      ...(watched.has('onoff') ? { onoff: reported.onoff } : {}),
+      ...(watched.has('dim') ? { dim: reported.dim } : {}),
+      ...(watched.has('light_temperature') ? { light_temperature: reported.light_temperature } : {}),
+      ...(watched.has('light_hue') ? { light_hue: reported.light_hue } : {}),
+      ...(watched.has('light_saturation') ? { light_saturation: reported.light_saturation } : {}),
+    };
+  }
+
   private ignoredWritesFor(deviceId: string): Record<string, number> {
     const counts: Record<string, number> = {};
     for (const capability of ['dim', 'light_temperature', 'light_hue', 'light_saturation'] as const) {
@@ -1344,6 +1505,13 @@ export class CircadianRuntime {
     return counts;
   }
 
+  /**
+   * What we last sent one lamp, gathered from the two maps that hold it.
+   *
+   * The maps stay separate — they void each other, deliberately, and that is
+   * what makes each one's presence meaningful — so joining them is the
+   * projection's job rather than theirs.
+   */
   private lastWrittenFor(deviceId: string): {
     at: number;
     dim?: number;
@@ -1405,7 +1573,64 @@ export class CircadianRuntime {
    * second piece of state to keep in step.
    */
   private preStageRefused(deviceId: string): boolean {
+    // Standing down after a run of fully-declined off-periods outranks the
+    // within-period streak, and is not merely a longer version of it: a lamp can
+    // reach the outer bound at one decline per period, where the inner count
+    // never gets near three. Reading only the inner one would let exactly that
+    // lamp go on being asked forever.
+    if (this.preStageBackoff.get(deviceId)?.retestAt != null) return true;
     return (this.preStageDeclines.get(deviceId)?.count ?? 0) >= PRE_STAGE_DECLINES_BEFORE_SKIP;
+  }
+
+  /**
+   * A lamp came on. Decide whether it is offered a colour again next time it is
+   * off, and record what that off-period proved.
+   *
+   * This used to be one line — clear the streak, re-test next time — and the
+   * argument for it is still right as far as it goes: a replaced bulb or a
+   * firmware fix has to be able to recover by itself. What it missed is that the
+   * rising edge is not a rare event in every house. See
+   * PRE_STAGE_DECLINED_PERIODS_BEFORE_BACKOFF.
+   */
+  private rearmPreStage(deviceId: string): void {
+    const backoff = this.preStageBackoff.get(deviceId);
+
+    if (backoff !== undefined && backoff.retestAt !== null) {
+      // Standing down. Nothing was offered while it was off, so that off-period
+      // proved nothing and must not count either way — counting it is how the
+      // re-test deadline would be pushed out forever by the one thing that
+      // cannot stop happening, which is the same trap `noteOverride` fell into.
+      if (this.now() < backoff.retestAt) return;
+      this.preStageBackoff.delete(deviceId);
+      this.preStageDeclines.delete(deviceId);
+      this.deps.log(`${deviceId} is due a pre-stage re-test after standing down for `
+        + `${backoff.periods} off-periods, so it will be offered a colour while off again`);
+      return;
+    }
+
+    /**
+     * A surviving decline record means everything offered during that
+     * off-period was refused: a pre-stage SUCCESS deletes it (see the batch
+     * completion handler), so its presence here is the proof. An absent one
+     * means the lamp took a colour, or was never offered one at all — either
+     * way the run is broken and starts again from nothing.
+     */
+    if (!this.preStageDeclines.has(deviceId)) {
+      this.preStageBackoff.delete(deviceId);
+      return;
+    }
+
+    const periods = (backoff?.periods ?? 0) + 1;
+    if (periods >= PRE_STAGE_DECLINED_PERIODS_BEFORE_BACKOFF) {
+      this.preStageBackoff.set(deviceId, { periods, retestAt: this.now() + PRE_STAGE_RETEST_MS });
+      this.deps.log(`${deviceId} has refused a colour while off for ${periods} off-periods running, `
+        + 'so it will not be offered one again until it is re-tested tomorrow');
+      // The inner streak is deliberately left standing, so the reason survives
+      // in diagnostics with the integration's own words.
+      return;
+    }
+    this.preStageBackoff.set(deviceId, { periods, retestAt: null });
+    this.preStageDeclines.delete(deviceId);
   }
 
   /**
@@ -1735,8 +1960,20 @@ export class CircadianRuntime {
         // must not be gated against what we wrote to it while it was ours.
         this.lastColorWritten.delete(deviceId);
         this.preStageDeclines.delete(deviceId);
+        this.preStageBackoff.delete(deviceId);
         this.cancelProbe(deviceId);
       }
+
+      /**
+       * The fingerprint moved, so every standing pre-stage backoff is re-tested.
+       *
+       * The fingerprint covers each target's capabilities and ranges, and the
+       * thing it catches — a lamp re-paired or replaced under the same id — is
+       * exactly the fact that would make a refuser start accepting. Cheaper than
+       * being precise about which lamp changed, and wrong in the harmless
+       * direction: at worst three more off-periods of re-testing.
+       */
+      this.preStageBackoff.clear();
 
       this.snapshot = next;
       this.targetNames = next.names;
@@ -1784,6 +2021,7 @@ export class CircadianRuntime {
       // from the old one — and declining the first write.
       this.lastColorWritten.clear();
       this.preStageDeclines.clear();
+      this.preStageBackoff.clear();
       this.targetIds = [];
       this.targetNames = [];
       // Or the next refresh diffs the new plan's targets against the old plan's.
@@ -1861,10 +2099,13 @@ export class CircadianRuntime {
         canColor: this.cache.supports(id, 'light_hue'),
         overridden: this.overrides.has(id),
         override: this.overrides.get(id) ?? null,
-        reported: this.cache.reportedValues(id),
+        reported: this.watchedValues(id),
         lastWritten: this.lastWrittenFor(id),
         ...(this.preStageDeclines.has(id)
           ? { preStageDeclined: this.preStageDeclines.get(id)! }
+          : {}),
+        ...(this.preStageBackoff.has(id)
+          ? { preStageBackoff: this.preStageBackoff.get(id)! }
           : {}),
         ...(Object.keys(this.ignoredWritesFor(id)).length > 0
           ? { ignoredWrites: this.ignoredWritesFor(id) }

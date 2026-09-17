@@ -22,6 +22,8 @@
  * tried on the same reasoning — but it is tried, not assumed.
  */
 
+import { BoundedLog } from './bounded-log';
+
 /** Every field null-able, because each is read behind its own guard. */
 export interface HeapReport {
   /** V8's own accounting, in bytes. The signal that separates retention from peak. */
@@ -79,23 +81,64 @@ export interface HeapReport {
    * move it; one that climbs during `onInit` is ours to attribute.
    */
   marks: Array<{ phase: string; atMs: number; heapUsed: number | null; rss: number | null }>;
+  /**
+   * The same `heapUsed` over time, newest first — the difference between a
+   * point and a trend.
+   *
+   * A single reading cannot distinguish steady state from a slow climb, and that
+   * is the only question worth asking about this app's memory. Measured on the
+   * reference Homey, 17 September 2026: 27.5 MB against a 70 MB limit, 22.7 h
+   * after an `onInit-end` of 12.8 MB. A sweep of every long-lived structure
+   * found nothing unbounded, so +14.7 MB is most likely steady state plus V8 not
+   * having compacted — but nothing in the app could say so, because the answer
+   * needed two captures hours apart and a second `/diagnostics` pull is a thing
+   * somebody has to remember to do.
+   *
+   * Sampled on the health monitor's existing tick: no new timer, and bounded, so
+   * the trend costs a fixed and small amount of the heap it is watching.
+   */
+  trend: Array<{ atMs: number; heapUsed: number | null; heapTotal: number | null }>;
 }
 
 /**
  * Boot marks, module-level because they must outlive any one request.
  *
- * Bounded by the number of `markPhase` call sites, which is three — this is a
- * fixed set of named points, never a log. Anything that appends per event
- * belongs in a `BoundedLog`, not here.
+ * A fixed set of named points, never a log: three call sites today, one of them
+ * at module scope. It used to be a bare array with an uncapped `push`, bounded
+ * only by that being true — and its own comment said "anything that appends per
+ * event belongs in a `BoundedLog`, not here", which is an instruction the array
+ * could not enforce. Now it is one, generously sized so the boot marks cannot
+ * evict each other, and a `markPhase` added to a per-event path costs a bounded
+ * ring rather than unbounded growth plus a whole-array copy on every
+ * `/diagnostics` call.
  */
-const marks: HeapReport['marks'] = [];
+const marks = new BoundedLog<HeapReport['marks'][number]>(16);
+
+/**
+ * Periodic readings of `heapUsed`, so `/diagnostics` shows a slope.
+ *
+ * 48 at the health monitor's cadence is comfortably more than a day, which is
+ * the scale the question is asked on. See `HeapReport['trend']`.
+ */
+const trend = new BoundedLog<HeapReport['trend'][number]>(48);
 
 /** Record where memory stood at a named point in boot. Never throws. */
 export function markPhase(phase: string): void {
   try {
     const reading = heapReport();
-    marks.push({ phase, atMs: Date.now(), heapUsed: reading.heapUsed, rss: reading.rss });
+    marks.add({ phase, atMs: Date.now(), heapUsed: reading.heapUsed, rss: reading.rss });
   } catch { /* a mark is diagnostics; it must never be able to fail a boot */ }
+}
+
+/**
+ * Take one trend sample. Never throws, for `markPhase`'s reason: this is called
+ * from a periodic health pass, and a diagnostic must not be able to fail one.
+ */
+export function sampleHeap(): void {
+  try {
+    const reading = heapReport();
+    trend.add({ atMs: Date.now(), heapUsed: reading.heapUsed, heapTotal: reading.heapTotal });
+  } catch { /* see markPhase */ }
 }
 
 /**
@@ -151,7 +194,10 @@ export function heapReport(): HeapReport {
     maxRss: rusage?.maxRSS === undefined ? null : finite(rusage.maxRSS * 1024),
     uptimeSeconds: uptime === undefined ? null : finite(Math.round(uptime)),
     unavailable,
-    marks: [...marks],
+    // Oldest first, unlike every other log in the app: these two are read as a
+    // SEQUENCE — boot order, and a slope — and newest-first inverts both.
+    marks: [...marks.entries()].reverse(),
+    trend: [...trend.entries()].reverse(),
   };
 }
 

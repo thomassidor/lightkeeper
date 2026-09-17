@@ -143,9 +143,44 @@ and there, so you know it works before you save anything.
 The **Light Remote** and the **light schedule** do their work by writing Homey Flows behind the
 scenes, and Lightkeeper looks after those Flows for you. You can point either one at a whole room
 instead of at named lamps, and a lamp you add to that room later is picked up on its own. Delete the
-device and its Flows are deleted with it — its own, and nothing else. **You never open the Flow
-editor.** The **circadian light** and the **Colour Curve Light** write no Flows at all: they watch
-your lights and adjust them directly, which is why neither needs a key.
+device and its Flows are deleted with it — its own, and nothing else. **You never have to open the
+Flow editor.** The **circadian light** and the **Colour Curve Light** write no Flows at all: they
+watch your lights and adjust them directly, which is why neither needs a key.
+
+---
+
+## Using Lightkeeper in your own Flows
+
+You never have to. But if you already build Flows, every Lightkeeper device now tells you what it
+wants your lights to be right now, and you can use that.
+
+**As a tag.** A circadian light, a Colour Curve Light, a light schedule and a Room-sensing Light each
+show what they are asking for on their own tile — a brightness, a colour temperature, the colour, how
+light it is outside — and each of those is available in the Flow editor's tag picker. So *when motion
+is detected → dim the hall to «Hall daylight: Brightness now»* is a Flow you can build in a minute,
+and it keeps working as the day moves. They go into Insights too, so you can see what a device has
+been asking for over the week.
+
+**In one go, with the card.** Three separate Homey cards mean three separate writes, so the lamp
+comes on as it was, then changes colour, then changes level. **Set lights the Lightkeeper way** does
+all of it at once, and the colour and the brightness can come from two different Lightkeeper devices:
+
+> **When** motion is detected
+> **Then** set *the hall* — colour from *Circadian Light*, brightness from *Hall daylight*, switch
+> them on
+
+It will only switch lights on if you ask it to. Choose *only lights already on* and a lamp that is
+off is left alone entirely, because there is no way to change a lamp's brightness without switching
+it on.
+
+**As a condition.** A Room-sensing Light has already worked out how light the room is, from its own
+sensor or from the sun. **It is dark enough** lets any Flow ask it, so you are not keeping a second
+lux threshold in step with the one you tuned. If it cannot tell how light it is, the condition is
+never true — it leaves your lights alone rather than guessing.
+
+This is an addition, not a replacement. A Flow only covers the switch-ons that go through that Flow;
+a circadian light setting the colour of lights that are off is what covers the wall switch and the
+lamp's own app.
 
 ---
 
@@ -282,9 +317,13 @@ reads, what it stores, and for how long.
 
 ## Changelog
 
-**0.6.1** — the current release. Lights that come on already right, a lamp that ignores us no longer
-mistaken for a person, and a general review of the whole app:
+**0.6.5** — the current release. Lightkeeper's own devices readable from your Flows, lights that come
+on already right, a lamp that ignores us no longer mistaken for a person, a general review of the
+whole app, and six things a day of real diagnostics showed:
 
+- **What each device wants your lights to be is now readable from your own Flows** — as a tag, as a
+  new card that sets a room from two devices at once, and as a condition that asks a Room-sensing
+  Light whether it is dark enough. [What that looks like](#using-lightkeeper-in-your-own-flows).
 - **Lights come on already the right colour**, rather than coming on as they were and changing a
   second later. Setting the colour in advance has existed since 0.4 and no setup screen ever drew the
   switch for it — so nobody could turn it on. Both screens now have it, with a button that tries it
@@ -295,6 +334,10 @@ mistaken for a person, and a general review of the whole app:
 - **A Colour Curve Light could stop for good**, if one of its points was set to follow sunrise or
   sunset — and it took the Lightkeeper settings page down with it.
 - **The Flow cleanup could delete without being asked**, and ten more fixes from the review.
+- **A room can say its lights are chasing their own sensor before it is certain**, a light that
+  declines a colour while off is no longer re-tried every time it comes on, and a light sensor that
+  stops reporting now says so — the three things a day of diagnostics from a real household showed,
+  with three diagnostics improvements beside them.
 
 None of the review's findings were visible to the tests, the type-checks or the linter, which were
 green throughout, so every fix ships with the test that would have caught it.

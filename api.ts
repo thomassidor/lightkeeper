@@ -287,6 +287,23 @@ module.exports = {
           // that has stopped by accident.
           overridden: diagnostics.targets.filter(target => target.overridden).length,
           sensors: diagnostics.sensors,
+          /**
+           * The feedback loop, both halves, BEFORE the threshold is crossed.
+           *
+           * `feedbackRisk` is a statement about the configuration — a sensor
+           * named, and a response that rises with the reading — and it lived only
+           * on the pairing screen, read once, at the moment nobody has evidence
+           * either way. `feedbackObservations` is the evidence, and it lived only
+           * in the /diagnostics JSON.
+           *
+           * So the household's only signal was the device state at five
+           * observations, which on the reference Homey was accumulating at two
+           * per day. Someone watching a room pulse deserves to see 2 of 5 and the
+           * standing risk beside it, rather than nothing until a threshold that
+           * an app restart resets.
+           */
+          feedbackRisk: diagnostics.feedbackRisk,
+          feedbackObservations: diagnostics.feedbackObservations,
         };
       }),
       /**

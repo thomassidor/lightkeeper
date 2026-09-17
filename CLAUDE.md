@@ -2,7 +2,7 @@
 
 Guidance for Claude Code (and any other agent) working in this repository. This file holds the
 architecture, the conventions and the release process. **The Homey platform reference — how the
-platform actually behaves, seventeen numbered sections established against real hardware — lives in
+platform actually behaves, eighteen numbered sections established against real hardware — lives in
 [`docs/homey-platform.md`](docs/homey-platform.md), and the code cites it as `platform §n`.** Read
 it before changing anything that talks to Homey; [the map is below](#the-homey-platform-reference-lives-in-docshomey-platformmd).
 
@@ -32,6 +32,17 @@ window, a circadian end and a curve point could each say `fromDaylight` and borr
 inline, which put the same sensor picker and lux range on four different pairing screens and gave
 two device types two different daylight behaviours to explain. It is gone: a brightness is a
 number, and a brightness that follows the room is what a Room-sensing Light is for.
+
+**What the four engines decide is now readable from outside, and the app OFFERS two Flow cards as
+well as generating three.** Each engine publishes what it wants the lights to be into read-only
+capabilities on its own device — a brightness, a colour temperature, a colour, how light it is
+outside — and Homey registers every device capability as a global Flow tag with no further code
+(platform §18). So "when motion is detected, dim to «Room-sensing Light: Brightness now»" is a Flow
+anybody can build. Beside that sit the two cards in `lib/flow/`: **`set_lights`**, which takes the
+colour from one Lightkeeper device and the brightness from another and puts a room where both want
+it in ONE ordered write, and **`daylight_is_dark`**, which lets any Flow gate on the darkness
+threshold a Room-sensing Light was already tuned to. Neither replaces pre-staging — a Flow only
+covers switch-ons that go through it, and pre-staging is what covers the wall switch.
 
 ## Commands
 
@@ -109,12 +120,23 @@ lib/
   outputs/                      intents, perceptual curve, planner, scheduler, ramp engine,
                                 target resolver, target-state cache
   bridge/                       binding compiler, flow bridge manager, flow folders
+  flow/                         the two Flow cards this app OFFERS, as opposed to the three it
+                                generates: what `set_lights` decides (set-lights.ts), what its
+                                three pickers offer (flow-arguments.ts), how it reaches the
+                                lamps (light-writer.ts, its own resolver, cache and queue
+                                because the card may name lights no device owns), and the
+                                Room-sensing Light's condition (darkness-condition.ts).
+                                app.ts holds the shells only, as it does for the bridge cards
   runtime/                      controller runtime, manager, health monitor, shared target
                                 health, and the visible-state holder all four runtimes compose.
                                 verdict.ts is the RANKING that composes what reconciliation
                                 learned with what the lights say — worst wins, ties to the one
                                 that names an action; control-diagnostics.ts is the bounded
-                                per-runtime history of control passes and power events
+                                per-runtime history of control passes and power events.
+                                published-values.ts is visible-state.ts's sibling for NUMBERS:
+                                what each engine wants the lights to be, gated at the
+                                capability's own resolution, on its way to the capability rows
+                                and the Flow tags Homey makes of them (platform §18)
   profiles/                     profile schema, migrations
   schedules/                    types, window maths, local clock, bindings, runtime, manager,
                                 time-card discovery, migrations
@@ -186,7 +208,8 @@ drivers/curve/                  the FULL one: every point, and a colour per poin
   pair/                         intro, 1 lights, 2 curve, 3 review. curve.html is its own
   repair/                       exact copies of pair/, generated — see platform §8
 drivers/daylight/               brightness from the room, and the ONLY device type that reads a
-                                sensor. NO credential screen
+                                sensor. NO credential screen. driver.flow.compose.json is the
+                                one per-driver Flow card in the app: "it is dark enough" 
   pair/                         intro, 1 lights, 2 sensor, 3 response, 4 review, plus the pushed
                                 sensordetail. Three of its own; the rest are the controller's
   repair/                       exact copies of pair/, generated — see platform §8
@@ -249,6 +272,11 @@ views/shared/                   NOT bundled. The one authored copy of each block
 settings/index.html             app settings page
 locales/en.json                 all user-facing strings
 .homeycompose/                  the manifest's SOURCE; app.json is generated from it
+  capabilities/                 the four READ-ONLY capabilities the engines publish into. Custom
+                                because every `dim` and `light_*` in homey-lib is setable, which
+                                would draw a slider nothing honours (platform §18)
+  flow/actions/                 the three internal bridge cards, plus set_lights — the one card
+                                this app offers rather than writes
 assets/                         the app's own icon and store images, all generated
 README.txt                      the App Store long description — not README.md
 test/                           unit tests and hand-transcribed fixtures
@@ -278,7 +306,7 @@ README.md  FAQ.md  CHANGELOG.md  CONTRIBUTING.md
 
 # The Homey platform reference lives in `docs/homey-platform.md`
 
-Seventeen numbered sections on how Homey actually behaves — every one established against real
+Eighteen numbered sections on how Homey actually behaves — every one established against real
 hardware (Homey Pro 2023, firmware 13.4.0, homey-api 3.19.2) and documented nowhere else. **Read it
 before changing anything that talks to Homey.** It used to be the middle of this file; it moved out
 so that a human developer could find it under a name that says what it is.
@@ -306,6 +334,7 @@ tests carry one — `(platform §6)` means section 6 of that file. Keep writing 
 | [15](docs/homey-platform.md#15-homey-api-caches-every-getall-result-forever) | `homey-api` caches every `getAll` result forever — which is where 30 MB of a 48 MB footprint went |
 | [16](docs/homey-platform.md#16-geolocation-and-the-sun-the-sdk-will-not-compute-for-you) | Geolocation, and the sun the SDK will not compute for you — plus why a lux sensor must not go through the light seams |
 | [17](docs/homey-platform.md#17-the-app-sandbox-no-rss-and-onuninit-does-not-finish) | The app sandbox: `process.memoryUsage()` throws, `onUninit`'s `await` never finishes, and `/userdata` is served without authentication |
+| [18](docs/homey-platform.md#18-a-device-capability-is-a-flow-tag-and-a-custom-one-is-the-only-read-only-number) | A device capability IS a Flow tag; a custom one is the only read-only number, and a driver's capability list never reaches a device already paired |
 
 # Working on this codebase
 
@@ -896,7 +925,7 @@ Load-bearing product guarantees, not implementation details:
   responding all night; without the second, we asked six hundred times a night and never listened.
   Both halves ship together: suppression alone would freeze the streak at exactly the tripping value
   and remove the only writes that could clear it.
-- **Pre-staging is ON for a new curve-driven device, and OFF for every device that predates 0.6.1.**
+- **Pre-staging is ON for a new curve-driven device, and OFF for every device that predates 0.6.5.**
   Two different gates, and conflating them is the whole risk: `DEFAULT_SIMPLE_PLAN.preStage` (and the
   curve driver's session seed) is what a NEW device starts with, while `preStage: plan.preStage ===
   true` in `lib/validation/plans.ts` is the STORE's gate, where an absent key must keep meaning "no".
@@ -944,6 +973,30 @@ Load-bearing product guarantees, not implementation details:
   precisely then. Unusable means gone, unavailable, or never having reported a finite number. A
   FROZEN sensor is made visible instead: every reading's age is on the settings page and in
   diagnostics, which is the only thing that can reveal one.
+- **The `set_lights` card writes to a lamp that is off only when "switch them on" was chosen.**
+  Enforced on the TARGETS (`eligibleTargets`), never on the writes, because the write that would
+  break it is a `dim` — which carries no `onoff` and turns the lamp on anyway (platform §12). A lamp
+  whose state is unknown counts as off, and the pass refreshes live values first for the same reason
+  `ScheduleRuntime.apply()` does: the catalogue is cached, so a lamp switched off by hand a minute
+  ago can still read as on. There is deliberately no third "leave the switch alone" option — it
+  would be the same behaviour under a name that promised something it could not do.
+- **A Flow card whose source device is gone writes nothing at all.** `planSetLights` refuses the
+  whole pass and names the id. Half a set of settings — the right brightness in last week's colour —
+  is what an untrusted Flow argument can produce and nothing would report. Same rule as the bridge
+  cards: fail closed, log, never execute heuristically.
+- **"It is dark enough" is false when the device cannot tell how light it is**, never true. The
+  condition almost always guards switching lights on, and the two ways to be wrong are a room that
+  stays dark and a room that lights itself in daylight, repeatedly, with nothing explaining why.
+  False is the same answer the device itself gives in that state.
+- **A capability that cannot be added never stops a device running.** A driver's capability array
+  reaches only devices paired after the change (platform §18), so `reconcileCapabilities()` adds the
+  missing ones on every init — each call in its own try/catch. A tile missing a row is cosmetic; a
+  device that refused to start over one has stopped doing its job.
+- **A published value is gated at the capability's own resolution.** `ValueBoard` rounds to
+  `PUBLISHED_DECIMALS` before deciding anything moved, which is the same argument the curve's write
+  gate rests on: the curve moves about 0.003 a minute, and an ungated board would write sixty
+  indistinguishable points an hour into a user's Insights and wake the device layer sixty times to do
+  it. `test/unit/compose-manifest.test.ts` ties that constant to what the manifests declare.
 
 ## Built with AI
 

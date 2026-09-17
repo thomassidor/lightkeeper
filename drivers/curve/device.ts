@@ -1,4 +1,5 @@
 import { LightkeeperDevice, type DeviceRegistry, type PlanMigration } from '../../lib/devices/lightkeeper-device';
+import { VALUE_CAPABILITIES } from '../../lib/runtime/published-values';
 import { migrateCurvePlan } from '../../lib/circadian/curve-migrations';
 import type { CircadianPlan } from '../../lib/circadian/circadian-types';
 import type { CircadianRuntime } from '../../lib/circadian/circadian-runtime';
@@ -30,6 +31,12 @@ module.exports = class CurveDevice extends LightkeeperDevice<CircadianPlan, Circ
   readonly missingKey = 'state.noCurve';
   override readonly availableWhenDisabled = true;
   override readonly withPauseSwitch = true;
+  /** The only device type with a colour to publish; see `CircadianRuntime.values`. */
+  override readonly valueCapabilities = [
+    VALUE_CAPABILITIES.brightness,
+    VALUE_CAPABILITIES.temperature,
+    VALUE_CAPABILITIES.colour,
+  ];
 
   migrate(raw: unknown): PlanMigration<CircadianPlan> {
     return migrateCurvePlan(raw);

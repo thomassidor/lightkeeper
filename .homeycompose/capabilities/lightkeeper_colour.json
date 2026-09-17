@@ -1,0 +1,12 @@
+{
+  "type": "string",
+  "title": {
+    "en": "Colour now"
+  },
+  "desc": {
+    "en": "The colour this device wants its colour-capable lights at right now, by name. Empty on a stretch of the curve that sets a colour temperature instead."
+  },
+  "getable": true,
+  "setable": false,
+  "uiComponent": "sensor"
+}

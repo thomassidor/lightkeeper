@@ -424,7 +424,7 @@ describe('the shared migration runner', () => {
 });
 
 /**
- * Pre-staging defaults ON for a new device as of 0.6.1, and that reversal has
+ * Pre-staging defaults ON for a new device as of 0.6.5, and that reversal has
  * exactly one boundary: a device that already exists must not be changed under
  * its household's feet.
  *

@@ -13,7 +13,7 @@ import {
 import { listSensorsPayload } from '../../lib/pairing/sensor-picker';
 import { CURRENT_DAYLIGHT_SCHEMA_VERSION } from '../../lib/daylight/daylight-migrations';
 import {
-  DEFAULT_RESPONSE, LUMINANCE_CAPABILITY, sanitiseResponse, usableLocation,
+  DEFAULT_RESPONSE, LUMINANCE_CAPABILITY, SENSOR_STALE_MS, sanitiseResponse, usableLocation,
   type DaylightPlan, type DaylightResponse,
 } from '../../lib/daylight/daylight-types';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
@@ -513,15 +513,15 @@ module.exports = class DaylightDriver extends Homey.Driver {
   /**
    * How many hours a sensor has been silent, or null if that is not a worry.
    *
-   * Half a day, not an hour: a still room legitimately goes quiet for hours,
-   * because many Zigbee sensors report only on change (platform §16). But a
-   * stopped sensor holds the lights at one brightness for ever, which makes the
-   * whole device a no-op — the one warning worth keeping inside pairing.
+   * The threshold is `SENSOR_STALE_MS`, shared with the runtime's own health
+   * leg — see the constant for why it is half a day and why there is only one
+   * of it. What is local here is the SHAPE of the answer: whole hours, because
+   * that is what the screen's sentence takes.
    */
   private staleHours(at: number | null): number | null {
     if (at === null) return null;
-    const hours = Math.floor((Date.now() - at) / 3_600_000);
-    return hours >= 12 ? hours : null;
+    const elapsed = Date.now() - at;
+    return elapsed >= SENSOR_STALE_MS ? Math.floor(elapsed / 3_600_000) : null;
   }
 
   private buildPlan(state: SessionState): DaylightPlan {

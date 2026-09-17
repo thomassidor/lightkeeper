@@ -194,6 +194,44 @@ covers it. T138 and T141 are that measurement. T141 in particular needs a lamp t
 coarser step than it declares — no test double will discover one, because the discovery IS that the
 declaration was wrong.
 
+**The cadences that only a house has (T142–T145), because the gap is TIME rather than behaviour.**
+
+Four lines from the 17 September 2026 diagnostics capture, and what they have in common is that the
+suite already asserts every one of them — with an injected clock, in milliseconds. What it cannot
+manufacture is the rate at which a real household supplies the input.
+
+The pre-stage backoff (T142, T143) needs a room that switches every couple of minutes, which is what
+made the old per-off-period bound worth so little; a test can produce three off-periods in one
+`await`, and can say nothing about whether the rooms people actually have do that. The feedback
+count (T144) is the same in the opposite direction: it accrues about twice a day, so the five it
+needs is two and a half days of a real room, and a test that advances a fake clock proves the
+arithmetic rather than the reachability. T145 is a battery, and there is no double for a battery.
+
+Each of these was a guard that passed every test and could not fire in the field. That is the class
+of defect this whole section exists for, and it is why the capture is worth taking again.
+
+**The Flow surface (T146–T151), because none of it is a surface the script can reach.**
+
+Six lines, and they split into two different reasons.
+
+**Three are about Homey, not about this app.** That a capability becomes a Flow tag with no further
+code is Athom's behaviour (platform §18), and nothing in this repo can demonstrate it — T147 and
+T148 are what confirm the tags exist, are grouped under the right device, and carry the number the
+FAQ promises. T149 is the same again for the ordering: the suite proves one submit produces one
+burst with `onoff` ahead of `dim`, and only a room can show that this reads as a single change
+rather than three. The script drives pair sessions over the Web API; it has no Flow editor.
+
+**One is about upgrade, and it is the only line here that cannot be recovered later.** T146 needs a
+Homey that already holds the four device types from a build BEFORE this one, because a driver's
+capability list reaches nothing already paired. Re-pair those devices and the evidence is gone until
+the next release, so this is the line to run first and the one to run on a real installation rather
+than a fresh one. The suite covers the reconciliation itself — adding, removing, and surviving a
+failure — against a fake owner; what it cannot supply is a device Homey actually built last month.
+
+T150 and T151 are the two safety promises, and both are asserted in the suite. They are here anyway
+because each is a claim about something NOT happening — a dark lamp staying dark, a condition
+staying false — and the failure mode is a household noticing before anybody else does.
+
 **The daylight feature's three genuine gaps, and each is a different KIND of gap.**
 
 - **A real permission.** `homey:manager:geolocation` either resolves on a Homey or it does not, and

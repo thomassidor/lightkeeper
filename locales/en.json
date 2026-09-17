@@ -63,7 +63,8 @@
     "full": "Full",
     "remove": "Remove this time",
     "add": "Add a time",
-    "dropped": "One point could not be kept: __reason__"
+    "dropped": "One point could not be kept: __reason__",
+    "colourBlend": "__from__ → __to__"
   },
   "palette": {
     "amber": "Warm amber",
@@ -124,6 +125,7 @@
     "noDaylight": "This light has no configuration. Repair it to set it up again.",
     "noDimTargets": "None of this device's lights can change their brightness, so there is nothing for it to do.",
     "daylightFeedback": "These lamps are brightening the sensor this device reads, so they keep raising their own brightness. Move the sensor away from their light, or lower the brightness at the bright end.",
+    "daylightSensorStale": "__name__ has not reported for __hours__ hours, so these lights are held where they are. A few quiet hours are normal, but a sensor silent this long has probably stopped — check its battery, or repair this device to pick another sensor.",
     "noDaylightSource": "Lightkeeper cannot tell how light it is: no light sensor is reporting, and this Homey has not told it where it is. Add a light sensor in Repair, or set your Homey's location.",
     "persistFailed": "Lightkeeper could not save what it learned about its Flows. Open repair to try again.",
     "invalidConfiguration": "This device's stored configuration is not one Lightkeeper can read. Repair it to set it up again.",
@@ -232,6 +234,8 @@
     "daylightUnknown": "It cannot tell how light it is, so it is leaving these lights alone.",
     "daylightUsing": "Reading __names__.",
     "daylightUsingSky": "Following the sun; no light sensors chosen.",
+    "daylightFeedbackPossible": "These lights can brighten the sensor they read, so watch for them creeping up. If they do, move the sensor out of their light or lower the brightness at the bright end.",
+    "daylightFeedbackSeen": "Seen __count__ of 5 times: the reading rose just after these lights did. At 5 this device will say so on its tile. Move the sensor out of their light, or lower the brightness at the bright end.",
     "noCircadian": "No circadian or Colour Curve Lights yet. Add one from Devices.",
     "circadianNow": "Now at __warmth__% warmth, next point at __next__",
     "circadianNowColour": "Now showing __colour__, next point at __next__",
@@ -572,5 +576,10 @@
     "declined": "__name__ would not take a colour while it was off, so its colour cannot be set in advance.",
     "nothingOff": "Every one of these lights is already on, so there is nothing to test. Switch one off and try again.",
     "failed": "The test could not be run."
+  },
+  "flow": {
+    "room": "Every light in this room",
+    "leaveAlone": "Leave it alone",
+    "leaveAloneHint": "Do not set this at all"
   }
 }

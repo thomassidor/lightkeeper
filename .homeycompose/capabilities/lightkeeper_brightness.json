@@ -1,0 +1,17 @@
+{
+  "type": "number",
+  "title": {
+    "en": "Brightness now"
+  },
+  "desc": {
+    "en": "The brightness this device wants its lights at right now, as a light is addressed: 0 to 1, the same scale Homey's \"Dim to\" card takes."
+  },
+  "getable": true,
+  "setable": false,
+  "uiComponent": "sensor",
+  "insights": true,
+  "chartType": "stepLine",
+  "min": 0,
+  "max": 1,
+  "decimals": 2
+}

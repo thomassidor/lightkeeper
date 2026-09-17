@@ -216,6 +216,53 @@ describe('refresh reads live values, not a cached snapshot', () => {
 });
 
 
+/**
+ * The failure ring is 50 entries and is the only place a NEW failure can be
+ * seen. Measured on the reference Homey, 17 September 2026: both curve-driven
+ * devices that had any failures at all were at 50 of 50 retained, and every
+ * single entry was a lamp declining a colour while it was off — so anything
+ * genuinely new was evicted within minutes of arriving.
+ *
+ * That one failure has somewhere better to live: `preStageDeclined` on the
+ * target, with the integration's own sentence, plus one log line on the tick
+ * that crosses the threshold. The write itself stays in `recentWrites` with its
+ * error, so nothing is hidden.
+ */
+describe('a refused pre-stage write does not spend the failure ring', () => {
+  function refusing() {
+    const cache = new TargetStateCache();
+    const api = { read: async () => ({ devices: { getDevice: async () => ({
+      setCapabilityValue: async () => { throw new Error('device (light) abc is "soft off"'); },
+    }) } }) } as unknown as HomeyApiService;
+    const logged: string[] = [];
+    return { logged, adapter: new LightTargetAdapter(api, cache, (...a) => logged.push(a.join(' '))) };
+  }
+
+  test('an ordinary failure is still logged and kept', async () => {
+    const h = refusing();
+    await assert.rejects(h.adapter.write('lamp', 'light_temperature', 0.5));
+    assert.equal(h.adapter.failures().length, 1);
+    assert.equal(h.logged.length, 1);
+  });
+
+  test('a pre-stage refusal is kept out of both', async () => {
+    const h = refusing();
+    await assert.rejects(h.adapter.write('lamp', 'light_temperature', 0.5, { preStage: true }));
+    assert.equal(h.adapter.failures().length, 0, 'the ring stays free for something new');
+    assert.equal(h.logged.length, 0, 'and the log is not written once a minute all night');
+  });
+
+  test('but the write itself is still on the record, error and all', async () => {
+    const h = refusing();
+    await assert.rejects(h.adapter.write('lamp', 'light_temperature', 0.5, { preStage: true }));
+    const written = h.adapter.writes()[0]!;
+    assert.equal(written.ok, false);
+    assert.equal(written.preStage, true);
+    assert.match(written.error ?? '', /soft off/);
+  });
+});
+
+
 describe('late work after adapter teardown', () => {
   test('an in-flight completion cannot repopulate cache or arm an implied-on probe', async () => {
     const gate = deferred();

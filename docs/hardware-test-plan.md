@@ -78,18 +78,18 @@ The script cannot do these. Report each by its number.
 
 ## 4. This release
 
-**0.6.1 — a general code review, on top of an 0.6.0 pass that is still owed.**
+**0.6.5 — the Flow surface and a general code review, on top of an 0.6.0 pass that is still owed.**
 
 Normally the previous release's lines are deleted here rather than carried, because they have been
 run. **These have not**: nothing has been published, and the 0.6.0 block below was only partly
-worked through. So both are live, and they are kept apart rather than merged — 0.6.1's three are
+worked through. So both are live, and they are kept apart rather than merged — 0.6.5's three are
 specific and take a few minutes, while 0.6.0's is a full pass with a phone.
 
 Nothing in either block can be checked by the script, and that is the point: `verify-hardware.mjs`
 drives pair sessions over the Web API (platform §14), so it proves the HANDLERS answer. It cannot
 see a screen. Every line here needs a phone.
 
-### 0.6.1 — the switch-on work, and the code review's three
+### 0.6.5 — the Flow surface, the switch-on work, and the code review's three
 
 The fixes whose evidence is not in the suite. Everything else is covered by a unit test, and the ones
 that could be were run against the old code first to confirm they fail on it.
@@ -144,6 +144,82 @@ answer differs between lamps behind one bridge.
       describe itself used to blank the whole page, so "it loaded at all" is the assertion. Then
       open **Flows → Delete orphaned Flows** and confirm it names a count and a list before
       offering the button, and that pressing it with nothing orphaned offers no button at all.
+
+T142–T145 are the diagnostics findings. Each one is a fact the suite now asserts in the abstract and
+that only a real house can show at its real cadence — the capture they came from is a day of six
+devices over fourteen lamps, and none of these lines takes more than reading `/diagnostics` twice.
+
+- [ ] **T142** The pre-stage backoff, in a room that actually switches. Needs a room on a motion
+      sensor whose lamps decline a colour while off — `recentFailures` naming `soft off` is how you
+      find one. Pair a circadian light or Colour Curve Light over it with pre-staging ON and leave it
+      a few hours. In `/diagnostics`, the refusing target must carry `preStageBackoff` with
+      `periods: 3` and a `retestAt` about a day out, and `recentFailures` must no longer be wall to
+      wall with that one message. Then confirm `recentWrites` still shows those writes with
+      `ok: false` and `preStage: true` — the evidence moves, it does not disappear. Before this
+      release the same room produced roughly 326 refused writes a day and a failure ring 50 of 50
+      full of them.
+- [ ] **T143** And that it is per LAMP, not per device. On the same device, a target that stages
+      correctly must have no `preStageBackoff` at all and must go on being written to. Four of
+      thirteen Hue bulbs behind one bridge refuse while nine take it, so a mixed room is the normal
+      case rather than a contrived one — a device-wide stand-down would be the defect.
+- [ ] **T144** The feedback count survives a rename. On a Room-sensing Light whose `/diagnostics`
+      shows `feedbackRisk: "increasing_sensor_response"` and a non-zero `feedbackObservations`, open
+      Homey settings → Lightkeeper and confirm the device's card carries the running count in
+      words. Then RENAME the device, or add a lamp to it, and read `/diagnostics` again: the count
+      must be unchanged. Then edit the response's bright end and read it once more: now it must be
+      zero. Before this release any edit at all cleared it, and it accrues about twice a day — so
+      the five it needs was rarely reachable.
+- [ ] **T145** A sensor that stops, and one that is merely quiet. Take the battery out of a lux
+      sensor a Room-sensing Light reads, and leave it more than twelve hours. The device must go
+      **partial** naming the sensor and the hours, its lights must stay where they were rather than
+      going dark, and `/diagnostics` must still show `source: "sensors"` — the reading is still
+      used, which is the point. Put the battery back and confirm it returns to ready. Separately,
+      confirm a sensor in a still room that has simply not reported for a few hours is NOT flagged.
+
+T146–T151 are the Flow surface, and every one of them needs the Flow editor as well as a phone.
+T146 is the one that cannot be skipped whatever else is: a driver's capability list only ever reaches
+devices paired AFTER the change (platform §18), so the whole feature rests on a sync at device start
+that nothing already installed has ever exercised.
+
+- [ ] **T146** The rows arrive on a device you already have. Install this build over a Homey that
+      already has a circadian light, a Colour Curve Light, a light schedule and a Room-sensing Light —
+      **without** re-pairing any of them. Within a minute each tile must carry its new rows:
+      brightness and colour temperature on the circadian light and the schedule, those plus the
+      colour on the Colour Curve Light, brightness and daylight on the Room-sensing Light. A device
+      showing none of them means the sync did not run; a device showing one it should not carry means
+      `valueCapabilities` disagrees with its `driver.compose.json`. Check the app log for
+      `Added the lightkeeper_… capability` lines, one per row per device.
+- [ ] **T147** The values are right, and they move. Read a circadian light's colour-temperature row
+      against the same device's **now** block in `/diagnostics`: they must agree to two decimals.
+      Leave it an hour and confirm the row has moved and the device's Insights chart has points —
+      roughly one every three minutes, not one a minute. Sixty a minute means the gate is not
+      working. On a Colour Curve Light sitting in a coloured stretch, the colour row must read the
+      palette name, and while it blends between two it must read both with an arrow between them.
+      On a schedule, both rows must be empty between windows and fill when one starts.
+- [ ] **T148** The tag gives the same light Lightkeeper gives. Build a Flow: *when a button is
+      pressed → dim a lamp to «Room-sensing Light: Brightness now»*. Run it, then let the
+      Room-sensing Light drive that same lamp itself. The two levels must be indistinguishable. This
+      is the whole argument for publishing the device value rather than the perceptual one, and the
+      number will NOT match the percentage on the setup screen — that is expected, and the FAQ says
+      so.
+- [ ] **T149** Two devices, one change. Build *when motion is detected → set lights the Lightkeeper
+      way*, pointed at a room, colour from a Circadian Light, brightness from a Room-sensing Light,
+      **switch them on**. With the room off, trigger it. The lamps must come on **already** at both
+      the right colour and the right level — one visible change, not three. Do the same thing with
+      three built-in Homey cards for contrast: that is the stepping this card exists to remove.
+- [ ] **T150** The switch is never touched unless you ask. Same card, set to **only lights already
+      on**, with one lamp in the room on and the rest off. Only the lit lamp may change, and every
+      dark lamp must still be dark afterwards. Then delete one of the two source devices and run the
+      Flow again: **nothing at all** may be written — not the half that survived — and the app log
+      must carry `Ignoring set_lights:` naming the missing device.
+- [ ] **T151** Dark enough, and unknowable. **The card is registered per DEVICE** — it appears in the
+      Flow editor once you have picked a Room-sensing Light, not in a global card list, and platform
+      §18 has why looking for it anywhere else finds nothing. Build *when a button is pressed and «Room-sensing Light»
+      is dark enough (25%) → turn a lamp on*. Confirm it fires after dark and does not in daylight.
+      Then take that device's sensor away — remove the battery, or repair it onto a sensor and take
+      that one away — so `/diagnostics` shows `source: "none"`, and run the Flow again in the dark.
+      The condition must be **false**: the lamp stays off. True here would mean a room lighting
+      itself in daylight on a flat battery, repeatedly, with nothing on screen explaining it.
 
 ### 0.6.0 — every pairing screen redrawn, and four engines reshaped under them
 

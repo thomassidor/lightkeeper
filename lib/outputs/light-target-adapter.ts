@@ -331,8 +331,10 @@ export class LightTargetAdapter {
    * reporting `onoff: true`) is treated as lit and gets ordinary writes, and
    * because accounting resumes in full the moment anything real is written to
    * it. Nothing is hidden either way: the failure is still in `recentWrites`,
-   * still in `recentFailures`, and still logged by the scheduler's `onError`.
-   * Only the verdict changes.
+   * carrying its error and its `preStage` flag, and still logged by the
+   * scheduler's `onError`. Only the verdict changes. (It is no longer in
+   * `recentFailures` — see `recordFailure` for why that ring is the one place
+   * it does not belong.)
    */
   private noteWriteHealth(
     deviceId: string,
@@ -444,7 +446,7 @@ export class LightTargetAdapter {
       });
       // A stale handle (device re-paired, app restarted) must not wedge writes.
       this.handles.delete(deviceId);
-      this.recordFailure(deviceId, capability, error);
+      this.recordFailure(deviceId, capability, error, options.preStage === true);
       throw error;
     } finally {
       if (seq !== undefined) this.cache.finishWrite(deviceId, capability, seq);
@@ -769,7 +771,35 @@ export class LightTargetAdapter {
     }
   }
 
-  private recordFailure(deviceId: string, capability: Capability, error: unknown): void {
+  /**
+   * `preStage` keeps a refused write OUT of this log, and that is a third
+   * discount on top of the two `noteWriteHealth` already applies.
+   *
+   * A lamp declining a colour while it is off is the one failure this app both
+   * expects and has somewhere better to put it: the runtime carries
+   * `preStageDeclined` on the target, with the integration's own sentence, and
+   * says so once in the log on the tick that crosses the threshold. The write
+   * itself is still in `recentWrites` with `ok: false`, its error and
+   * `preStage: true`, so nothing is hidden — what changes is that it stops
+   * spending a 50-entry ring on a fact already recorded twice.
+   *
+   * Measured on the reference Homey, 17 September 2026: both curve-driven
+   * devices that had any failures at all were at 50 of 50 retained, every single
+   * entry a soft-off decline, so a genuinely new failure was evicted within
+   * minutes of arriving. A bounded log full of the one thing nobody needs to
+   * read is a bounded log that cannot do its job.
+   *
+   * Safe only alongside the outer backoff in the circadian runtime: suppressing
+   * the lines is defensible because the state they described is on the target
+   * and stays there. Ship the two together or neither.
+   */
+  private recordFailure(
+    deviceId: string,
+    capability: Capability,
+    error: unknown,
+    preStage = false,
+  ): void {
+    if (preStage) return;
     const message = messageOf(error);
     // Newest first, like every other diagnostic log — this one was the odd
     // one out (push/shift), so the settings page rendered it backwards.

@@ -1,4 +1,5 @@
 import { LightkeeperDevice, type DeviceRegistry, type PlanMigration } from '../../lib/devices/lightkeeper-device';
+import { VALUE_CAPABILITIES } from '../../lib/runtime/published-values';
 import { migrateCircadianPlan } from '../../lib/circadian/circadian-migrations';
 import { expandSimplePlan, foldBackSimplePlan, type SimpleCircadianPlan } from '../../lib/circadian/simple-curve';
 import type { CircadianPlan } from '../../lib/circadian/circadian-types';
@@ -47,6 +48,8 @@ module.exports = class CircadianDevice
   readonly missingKey = 'state.noCurve';
   override readonly availableWhenDisabled = true;
   override readonly withPauseSwitch = true;
+  /** Three zones of the day are a colour TEMPERATURE each — never a colour. */
+  override readonly valueCapabilities = [VALUE_CAPABILITIES.brightness, VALUE_CAPABILITIES.temperature];
 
   migrate(raw: unknown): PlanMigration<SimpleCircadianPlan> {
     return migrateCircadianPlan(raw);

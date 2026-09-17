@@ -18,7 +18,7 @@ Every document in this repository, and who it is for. None of `docs/` is bundled
 | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | **Start here.** Setup, the house rules, and what must pass before a PR |
 | [`commands.md`](commands.md) | **Every command in one place** — test, typecheck, sync the views, render them, install on a Homey, run the hardware pass, record a week at home, probe the lights, release. With each one's traps |
 | [`../CLAUDE.md`](../CLAUDE.md) | The architecture, the conventions, the release checklist, and why each dependency is pinned. Written for agents and maintainers alike |
-| [`homey-platform.md`](homey-platform.md) | **Seventeen sections on how Homey actually behaves**, established against real hardware and documented nowhere else. The code cites it as `platform §n`. §15 is also where the memory number lives — an empty Homey app is 30.6 MB, so read it before optimising for memory |
+| [`homey-platform.md`](homey-platform.md) | **Eighteen sections on how Homey actually behaves**, established against real hardware and documented nowhere else. The code cites it as `platform §n`. §15 is also where the memory number lives — an empty Homey app is 30.6 MB, so read it before optimising for memory |
 | [`hardware-test-plan.md`](hardware-test-plan.md) | **The standing pass on a real Homey, run before every release.** What to do and how to report it, and nothing else |
 | [`hardware-test-coverage.md`](hardware-test-coverage.md) | What the script covers, what the suite covers instead, and which old test-plan lines were retired |
 | [`localisation.md`](localisation.md) | The app is English-only on purpose; how to add a language back, and the glossary kept from the removed Danish |

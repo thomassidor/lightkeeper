@@ -1,0 +1,17 @@
+{
+  "type": "number",
+  "title": {
+    "en": "Daylight outside"
+  },
+  "desc": {
+    "en": "How light it is outside, as this device reads it: 0 is fully dark, 1 is fully bright. Empty when it cannot tell."
+  },
+  "getable": true,
+  "setable": false,
+  "uiComponent": "sensor",
+  "insights": true,
+  "chartType": "spline",
+  "min": 0,
+  "max": 1,
+  "decimals": 2
+}

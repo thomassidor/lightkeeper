@@ -114,6 +114,10 @@
     .entry-error { color: var(--lk-bad-ink); margin-top: 3px; }
     .entry-meta { margin: 6px 0 0; }
     .entry-sub { margin: 4px 0 0; color: var(--lk-muted); }
+    /* A sub-line that is advice rather than fact: the same shape as its
+       neighbours so it cannot be mistaken for a state badge, in the warn ink
+       so it is not read past. */
+    .entry-warn { color: var(--lk-warn-ink); }
     /* First child of a card, so the card's own padding is the only spacing. */
     .tight { margin: 0; }
 
@@ -637,6 +641,21 @@
       el.appendChild(node('p', 'entry-sub', mine.length
         ? t('daylightUsing', { names: mine.map(function (s) { return s.name; }).join(', ') })
         : t('daylightUsingSky')));
+
+      /**
+       * The feedback loop, said out loud before the device state says it.
+       *
+       * The state only speaks at five observations, and the count is slow — two
+       * a day on the reference Homey — so the standing risk and the running
+       * count are what a person actually has to go on. Drawn only when the
+       * configuration can feed back at all: on a response that falls with the
+       * reading the loop is self-damping and there is nothing to say.
+       */
+      if (device.feedbackRisk) {
+        el.appendChild(node('p', 'entry-sub entry-warn', device.feedbackObservations
+          ? t('daylightFeedbackSeen', { count: device.feedbackObservations })
+          : t('daylightFeedbackPossible')));
+      }
     }, function (list) {
       renderSky(list, sky, sensors);
     });

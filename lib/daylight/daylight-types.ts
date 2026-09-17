@@ -85,6 +85,24 @@ export function isSunPeak(value: unknown): value is SunPeak {
   return typeof value === 'string' && (SUN_PEAKS as readonly string[]).includes(value);
 }
 
+/**
+ * How long a sensor may stay quiet before its silence is worth reporting.
+ *
+ * Half a day, not an hour: a still room legitimately goes quiet for hours,
+ * because many Zigbee sensors report only on change (platform §16). But a
+ * STOPPED sensor holds the lights at one brightness for ever, and the reading it
+ * froze on goes on being used — deliberately, because a timeout that fell back
+ * to the sky would do so precisely when the room is most stable. So the honest
+ * answer is to keep using it and say out loud that it is old.
+ *
+ * ONE constant because two readers need the same answer and used to have their
+ * own: the pairing screen's `staleHours()` warns at 12 h, and until now the
+ * runtime had no opinion at all — so a sensor that died after pairing kept the
+ * device on 'ready' for as long as the app ran. Two numbers here would mean a
+ * device that warns during repair and not during use, or the reverse.
+ */
+export const SENSOR_STALE_MS = 12 * 60 * 60_000;
+
 export interface DaylightResponse {
   /**
    * The `measure_luminance` device to read, or `null` for the sun alone.

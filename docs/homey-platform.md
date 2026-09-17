@@ -407,7 +407,7 @@ inside an app.
 
 ### A lamp switched on at the wall: what the timings actually are
 
-Measured 16 September 2026, firmware 13.5.0, app 0.6.1, two rooms of five and four lamps each
+Measured 16 September 2026, firmware 13.5.0, app 0.6.5, two rooms of five and four lamps each
 switched on at the wall. The whole sequence, from one `/diagnostics` capture:
 
 | Moment | Elapsed from the `onoff` report |
@@ -948,7 +948,7 @@ by hand went unnoticed and the next tick took it back.
   write. Cleared by either edge of `onoff`, because "switch it off and on again" is the gesture
   people already have for putting a light back to how it ought to be. Never persisted: a restart is a
   clean slate, which is the right bias for a feature whose job is to be correct by default.
-- **Pre-staging is ON by default as of 0.6.1, and was opt-in before it, because a colour write can
+- **Pre-staging is ON by default as of 0.6.5, and was opt-in before it, because a colour write can
   switch a lamp ON.** §6 measured that for `dim`
   on Hue. `light_temperature` was measured on 3 September 2026 and does **not**: written to an off
   Hue bulb it was *staged* on three lamps — the lamp took the value and stayed off, which is exactly
@@ -964,7 +964,7 @@ by hand went unnoticed and the next tick took it back.
   time a lamp comes on from one. It does NOT switch the lamp back off — by then our doing and
   somebody walking in are indistinguishable, and switching off a room a person has just lit is the
   worse failure. The screen's own probe does restore it, because there the user asked.
-  **What moved in 0.6.1 is the default for a NEW device, and only that.** The opt-in was argued on
+  **What moved in 0.6.5 is the default for a NEW device, and only that.** The opt-in was argued on
   "a light coming on by itself is worse than a half-second of the wrong white", and the second half
   of that turned out to be wrong: §6's switch-on timings put the colour 1.3–1.9 s behind the lamp,
   on every switch-on, for as long as the device exists — not a half-second, and not once. Against
@@ -1799,3 +1799,117 @@ So the encryption on that file is **load-bearing, not defence in depth**. The ke
 `homey.settings`, which does require authentication — but anyone on the network can take the file, and
 whether they can read it depends entirely on the cipher. Any future feature that writes to `/userdata`
 inherits this and must assume its files are public.
+
+---
+
+## 18. A device capability is a Flow tag, and a custom one is the only read-only number
+
+Established 17 September 2026, against `homey@4.4.3`'s bundled `homey-lib` and Athom's SDK
+documentation, while making the four engines' arithmetic usable from somebody else's Flow.
+
+**Every capability on every device is already a global Flow token.** Athom's own words: *"By default
+a device's capability are registered as global tokens."* So a value put on a Lightkeeper device is,
+with no further code, a tag in the Flow editor's picker — droppable into Homey's built-in "Dim to",
+"Set a temperature", a Logic card or a notification. That is the whole reason this app publishes
+capabilities at all rather than inventing a token API: `homey.flow.createToken()` exists and would
+have produced a flat list of app-wide tags with no device to group them under.
+
+**A `.homeycompose/capabilities/<id>.json` is the only way to publish a read-only number.** Every
+`dim` and `light_*` capability in `homey-lib` is `setable: true` — checked one by one — and there is
+no generic `measure_number` or read-only percentage. The consequences of borrowing `dim` instead:
+
+- Homey draws a **draggable slider**, and a driver with no `registerCapabilityListener` behind it
+  rejects the write the user just made.
+- Homey **auto-generates Flow cards** from the capability's own `$flow` block in `homey-lib` — `dim`
+  carries a "Dim to" action and a "The dim level changed" trigger — so the card picker would offer a
+  "Dim to" on a virtual device that cannot dim.
+- The device starts **looking like a lamp** to everything else in the house, including other apps'
+  light pickers.
+
+A custom capability has none of that: it generates no Flow cards at all, which is a cost as well
+(there is no automatic "changed" trigger; one has to be authored), and it renders as whatever
+`uiComponent` says.
+
+**A `units` string is appended verbatim.** For a `uiComponent: "sensor"` row Homey prints the value
+and then the units, so `units: "%"` on a 0..1 number reads `0.26 %`. `dim` gets away with declaring
+both because Homey's own frontend special-cases it. A value meant to be dropped into "Dim to" has to
+stay on the 0..1 axis — that is what the built-in card takes — so the honest choice is to keep the
+axis and drop the units, and say what the number is in the title.
+
+**`titleShort` needs `compatibility >=13.2.1`**, which is above this app's floor of `>=12.9.0`. It
+fails `validate` at publish level with `capabilities.<id>.titleShort requires a compatibility of at
+least >=13.2.1` — one of the few places the validator is stricter than the schema.
+
+### A driver's `capabilities` array applies at PAIRING and never again
+
+The list in `driver.compose.json` is what a device is built with. Changing it in a release does
+nothing to a device the user already owns: no capability appears, none disappears, and there is no
+warning anywhere. `Device.addCapability()` / `removeCapability()` / `hasCapability()` are the only
+way, and they have to run on every init — so a device layer that adds a capability needs a
+reconciliation step, and it needs to survive one failing, because a tile missing a row is worth far
+less than a device that refused to start.
+
+### The compose paths, and what the CLI does to them
+
+`node_modules/homey/lib/HomeyCompose.js` documents the full set. The three that matter here:
+
+| Path | What it produces |
+|---|---|
+| `.homeycompose/capabilities/<id>.json` | one entry in `app.json`'s top-level `capabilities`, keyed by the filename |
+| `.homeycompose/flow/<triggers\|conditions\|actions>/<id>.json` | an app-level card, id from the filename |
+| `drivers/<id>/driver.flow.compose.json` | `{ triggers, conditions, actions }`, each an ARRAY of cards that each need their own `id` |
+
+A driver-composed card lands in the **app-level** `flow` block, not on the driver — the app schema
+has no `flow` property on a driver at all. On the way the CLI `unshift`s
+`{ type: 'device', name: 'device', filter: 'driver_id=<driver>' }` onto the card's `args`, and
+`removeDollarPropertiesRecursive()` strips every `$`-prefixed key (`$flow`, `$extends`, `$filter`,
+`$id`, `$deviceName`) before `app.json` is written. That last one is why a driver entry in `app.json`
+is still exactly its `driver.compose.json` plus an `id`.
+
+Card ids are **global**, so two drivers declaring the same `id` collide silently in one array. Name
+them for the driver.
+
+**`[[device]]` is refused in a device-scoped card's `titleFormatted`.** The device is implied and
+Homey renders it itself; writing the placeholder fails validate with
+`Invalid [[device]] in flow.conditions['<id>'].titleFormatted.en.titleFormatted`. It is refused
+whether the device argument was added by the CLI or declared by hand. Older apps on the same Homey
+do ship it — `com.mi.flora`'s conditions read `The plant [[device]] !{{has not|has}} …` — so this is
+a rule the validator gained after they were published, not a rule about what the runtime accepts.
+
+### A device-scoped card is registered per DEVICE, and looking for it under the app finds nothing
+
+Measured 17 September 2026, and it cost four reinstalls and a bisect of a card that was working the
+whole time. A card with a `device` argument does **not** appear under `homey:app:<appId>:<cardId>`.
+Homey scopes it to each matching device and registers one card per device instance:
+
+```
+homey:app:com.thomassidor.lightkeeper:set_lights              <- no device arg, app-scoped
+homey:device:85b5c52b-…:daylight_is_dark                      <- device arg, one per device
+homey:device:a9000f3c-…:daylight_is_dark
+homey:device:bdc19572-…:daylight_is_dark
+```
+
+Three consequences, and the second is what makes this expensive to diagnose:
+
+- **`ownerUri` is the DEVICE**, not the app. Filtering `GET /api/manager/flow/flowcardcondition/`
+  by an app id returns nothing for such a card, however healthy it is.
+- **Creating a Flow with the app-scoped URI fails with a message that reads like the card does not
+  exist**: `404 Not Found: FlowCardCondition with ID homey:app:<appId>:<cardId>`. That is the
+  message a missing card gives too, so the obvious reading of it is wrong.
+- **The `device` argument is consumed by the scoping** and is gone from the registered card's `args`,
+  which is left holding only the card's own arguments.
+
+The app side is unchanged by any of this: `homey.flow.getConditionCard('<cardId>')` takes the bare
+id, and the run listener receives the chosen device as `args.device`. Only the READ side differs.
+
+What this looks like when it really has failed, for next time: the card is absent from a listing
+keyed on `homey:device:*:<cardId>` as well, and `onInit` still completes — `getConditionCard` reads
+the app's OWN manifest, so it succeeds whatever the Homey's index holds, and is no evidence either
+way.
+
+### What an action card can hand back, and where it cannot
+
+Any card may declare `tokens`, and an action's run listener returning an object fills them — but
+Athom's documentation is explicit that such a card *"won't display in standard Flows, only in
+Advanced Flow mode."* So returning tokens is not a substitute for publishing capabilities: the
+capability route works in an ordinary Flow, and the token route does not.

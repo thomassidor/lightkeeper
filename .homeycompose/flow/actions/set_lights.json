@@ -1,0 +1,34 @@
+{
+  "title": { "en": "Set lights the Lightkeeper way" },
+  "titleFormatted": { "en": "Set [[lights]] — colour from [[colour]], brightness from [[brightness]], [[power]]" },
+  "hint": { "en": "Puts lights where your Lightkeeper devices want them right now, in one go. Use it when something else decides the moment — motion, a door, a button — and you want Lightkeeper to decide the light. The colour and the brightness can come from two different Lightkeeper devices, so a Room-sensing Light can set the level while a Circadian Light sets the white." },
+  "args": [
+    {
+      "type": "autocomplete",
+      "name": "lights",
+      "title": { "en": "Lights" },
+      "placeholder": { "en": "A room, or one light" }
+    },
+    {
+      "type": "autocomplete",
+      "name": "colour",
+      "title": { "en": "Colour from" },
+      "placeholder": { "en": "A circadian or Colour Curve Light" }
+    },
+    {
+      "type": "autocomplete",
+      "name": "brightness",
+      "title": { "en": "Brightness from" },
+      "placeholder": { "en": "A Room-sensing Light, schedule or curve" }
+    },
+    {
+      "type": "dropdown",
+      "name": "power",
+      "title": { "en": "The switch" },
+      "values": [
+        { "id": "on", "title": { "en": "Switch them on" } },
+        { "id": "only_on", "title": { "en": "Only lights already on" } }
+      ]
+    }
+  ]
+}

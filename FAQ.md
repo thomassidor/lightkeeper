@@ -164,6 +164,34 @@ You can look at them, and you can move them. If you **edit** one, Lightkeeper no
 maintaining it rather than overwriting your work: the device marks itself for repair and asks you
 what you want.
 
+### Can I use Lightkeeper's devices in my own Flows?
+
+Yes, in three ways, and you never have to use any of them.
+
+**As tags.** Every circadian light, Colour Curve Light, light schedule and Room-sensing Light shows
+what it wants your lights to be right now on its own tile — a brightness, a colour temperature, the
+name of the colour, how light it is outside. All of those are in the Flow editor's tag picker, so
+*dim the hall to «Hall daylight: Brightness now»* works. They are in Insights too.
+
+**A card that does the lot at once.** *Set lights the Lightkeeper way* takes a room or a light, a
+device to take the colour from, a device to take the brightness from, and whether to switch the
+lights on. Two different devices is the point: a Room-sensing Light can set the level while a
+Circadian Light sets the white, and it all happens in one go rather than as three visible steps.
+
+**A condition.** *It is dark enough* asks a Room-sensing Light, using the thresholds you already set
+up on it rather than a lux number you would have to keep in step.
+
+### Will the brightness tag give me the same light my Lightkeeper device gives?
+
+Yes — that is why it is the number it is. The brightness tag is what Lightkeeper actually sends a
+lamp, so dropping it into Homey's own *Dim to* card puts the lamp exactly where Lightkeeper would
+put it.
+
+It will not match the percentage on the setup screen, and it is not meant to. Lightkeeper stores
+brightness the way it is *perceived* and sends it the way a lamp is *addressed*, and those are
+different numbers: a lamp set to 55% on the slider is sent 26%. The setup screens speak the first
+language and your Flows speak the second.
+
 ### Can I move or rename the generated Flows?
 
 Yes. A Flow you filed somewhere yourself stays there — Lightkeeper only ever moves a Flow *out of*
@@ -217,7 +245,7 @@ Lightkeeper cannot always tell that apart from you reaching for a dimmer. Left t
 light mute its whole device for days at a time. If four hours is too soon for you, switching the light
 off and on again is still the instant way to say either thing.
 
-One case it *can* tell apart, since 0.6.1: a light that accepts an instruction, acknowledges it and
+One case it *can* tell apart, since 0.6.5: a light that accepts an instruction, acknowledges it and
 then sits exactly where it already was has not been changed by anybody — it ignored us. That is
 recorded as an instruction the light did not act on, and the device carries on driving it rather than
 standing down. Only an *unchanged* value is read this way, so a real change of yours is still honoured
@@ -348,7 +376,7 @@ Stated plainly, because a limit you find out about later is worse than one you w
 - **Setting the colour of a light that is off is on for new devices, and a switch on the setup
   screen.** Without it a light comes on as it was and changes a second or two later, which is what it
   did for every release up to 0.6.0 — the setting existed and no screen ever drew the switch. Devices
-  added before 0.6.1 keep whatever they were set up with. It is provable from the setup screen against
+  added before 0.6.5 keep whatever they were set up with. It is provable from the setup screen against
   your own lamps before you commit, and it disables itself for the whole device the first time a lamp
   comes on from one, because on some integrations a colour write switches the lamp on.
 - **Brightness is never pre-staged**, only colour. A brightness write turns an off lamp on; that is
@@ -388,6 +416,20 @@ Stated plainly, because a limit you find out about later is worse than one you w
   devices.
 - **Two schedule blocks may overlap, and the later one wins** while they do. The setup screen
   outlines the overlap and says so rather than refusing to let you draw it.
+- **The brightness tag is what a lamp is sent, not what the slider says.** They are different
+  numbers on purpose — see [the question above](#will-the-brightness-tag-give-me-the-same-light-my-lightkeeper-device-gives).
+- **A paused device still says what it would do.** Pausing stops it touching your lights; it does not
+  stop it answering. A Flow borrowing a paused device's colour still gets today's colour.
+- **A schedule's brightness and colour tags are empty between windows**, and so is a circadian
+  light's brightness unless you asked it to set one. Empty means "this device is not asking for
+  anything right now", and a card given nothing writes nothing.
+- **The Lightkeeper card only switches lights on if you ask it to.** Choosing *only lights already
+  on* leaves a lamp that is off completely alone — there is no way to set a lamp's brightness without
+  switching it on, so the honest choice is not to write to it.
+- **A card whose source device has been deleted does nothing at all**, and says so in the app's
+  diagnostics. It will not write half the settings.
+- **"It is dark enough" is never true when the device cannot tell how light it is** — no sensor
+  reporting and no location for the sun. It leaves your lights alone rather than guessing.
 - **The dimmest brightness you can set is 10%.** Below that there is nothing left to send a lamp:
   brightness is stored the way it is perceived rather than the way a lamp is addressed, and under
   about 9% the conversion rounds to zero, which most lamps read as off.

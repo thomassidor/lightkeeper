@@ -86,6 +86,8 @@ function harness(options: {
   /** What the evaluator reports. Mutable, because a cloud passing is the point. */
   verdict?: Partial<DaylightVerdict>;
   reading?: { lux: number; deviceIds: string[] } | null;
+  /** When the watched sensor last reported. Defaults to the moving `now`. */
+  sensorAt?: () => number | null;
 } = {}) {
   /**
    * Which lamps refuse every write, settable after start.
@@ -121,7 +123,13 @@ function harness(options: {
   const daylight = {
     evaluate: () => verdict,
     sky: () => ({ elevation: verdict.elevation, level: verdict.level, location: null }),
-    sensors: () => [{ deviceId: 's1', name: 'Hall', lux: 42, at: now, available: true }],
+    // `at` defaults to "just now", so a sensor is fresh unless a test freezes
+    // it. Its own hook because `now` moves and the reading's timestamp must be
+    // able not to — a frozen sensor is the one thing a live clock cannot fake.
+    sensors: () => [{
+      deviceId: 's1', name: 'Hall', lux: 42, available: true,
+      at: options.sensorAt === undefined ? now : options.sensorAt(),
+    }],
   } as unknown as DaylightEvaluator;
 
   const deviceHandle = (id: string) => {
@@ -1022,6 +1030,56 @@ describe('what the week-long recording found', () => {
     await h.runtime.stop();
   });
 
+  /**
+   * A sensor that stopped is INVISIBLE without this: the reading it froze on
+   * goes on being used — deliberately, because many Zigbee sensors report only
+   * on change and a timeout would fall back to the sky precisely when the room
+   * is most stable — so the device holds the room at one brightness and reports
+   * 'ready' for as long as the app runs.
+   *
+   * The 12-hour warning existed only on the pairing screen, which is the one
+   * moment the sensor is working by definition.
+   */
+  test('a sensor that has stopped reporting is said out loud', async () => {
+    const frozen = Date.UTC(2026, 5, 21, 10, 0);
+    const h = harness({ plan: plan({ sensor: 's1' }), sensorAt: () => frozen });
+    await h.runtime.start();
+    await sharedSettle(12);
+    assert.equal(h.runtime.diagnostics().state, 'ready', 'fresh at the start');
+
+    h.advance(13 * 60 * 60_000);
+    await h.runtime.assessHealth();
+
+    assert.equal(h.runtime.diagnostics().state, 'partial',
+      'partial, not needs_repair: the lamps are still being driven somewhere defensible');
+    assert.equal((h.states.at(-1)?.detail as { key?: string })?.key, 'state.daylightSensorStale');
+    await h.runtime.stop();
+  });
+
+  test('a quiet sensor in a still room is not stale', async () => {
+    const h = harness({ plan: plan({ sensor: 's1' }) });
+    await h.runtime.start();
+    await sharedSettle(12);
+
+    // Eleven hours of silence. Normal on a report-on-change sensor, and the one
+    // thing that must not be called a fault.
+    h.advance(11 * 60 * 60_000);
+    await h.runtime.assessHealth();
+    assert.equal(h.runtime.diagnostics().state, 'ready');
+    await h.runtime.stop();
+  });
+
+  test('a device following the sun alone has no sensor to go quiet', async () => {
+    const h = harness({ plan: plan({ sensor: null }) });
+    await h.runtime.start();
+    await sharedSettle(12);
+
+    h.advance(48 * 60 * 60_000);
+    await h.runtime.assessHealth();
+    assert.equal(h.runtime.diagnostics().state, 'ready');
+    await h.runtime.stop();
+  });
+
   test('a loop watched running away marks the device, and a well-placed sensor never does', async () => {
     // Lamps that start near the bottom, so every pass of the slew raises them:
     // seeded from a lit lamp the aim would spend its first passes coming DOWN,
@@ -1059,6 +1117,67 @@ describe('what the week-long recording found', () => {
         text: 'Its lamps are brightening their own sensor. Move the sensor, or lower the bright end.',
       },
     });
+    await h.runtime.stop();
+  });
+
+  /**
+   * The evidence is slow by construction — five raise-then-rise passes, and on
+   * the reference Homey two had accumulated in 22.7 hours — so anything that
+   * resets it more often than that is not a reset, it is a cap.
+   *
+   * `updatePlan()` is stop-then-start, and the count used to be cleared in
+   * `stop()` alongside `aim` and `committed`. Those two belong there: both
+   * describe the OLD plan and would gate the new plan's first write. The count
+   * describes the ROOM, so renaming the device threw away the only record that
+   * its lamps light their own sensor.
+   */
+  test('evidence of a loop survives a plan edit that left the response alone', async () => {
+    const h = harness({
+      plan: plan({ sensor: 's1', dark: 0.25, bright: 0.9 }),
+      devices: [light('l1', undefined, { dim: 0.01 }), light('l2', undefined, { dim: 0.01 })],
+      verdict: { level: 0.2, brightness: 0.3 },
+    });
+    await h.runtime.start();
+    await sharedSettle(12);
+    for (let pass = 1; pass <= 3; pass += 1) {
+      h.advance(60_000);
+      h.setVerdict({ level: 0.2 + pass * 0.1, brightness: 0.9 });
+      await tick(h);
+    }
+    const observed = h.runtime.diagnostics().feedbackObservations;
+    assert.ok(observed > 0, `something has to have been observed; saw ${observed}`);
+
+    // The lights change, the response does not.
+    await h.runtime.updatePlan({
+      ...plan({ sensor: 's1', dark: 0.25, bright: 0.9 }),
+      target: { kind: 'zone', zoneId: 'z1', includeSubzones: true },
+    });
+    await sharedSettle(12);
+    assert.equal(h.runtime.diagnostics().feedbackObservations, observed,
+      'the room did not change, so what was watched happening in it still stands');
+    await h.runtime.stop();
+  });
+
+  test('and is dropped when the response itself is edited', async () => {
+    const h = harness({
+      plan: plan({ sensor: 's1', dark: 0.25, bright: 0.9 }),
+      devices: [light('l1', undefined, { dim: 0.01 }), light('l2', undefined, { dim: 0.01 })],
+      verdict: { level: 0.2, brightness: 0.3 },
+    });
+    await h.runtime.start();
+    await sharedSettle(12);
+    for (let pass = 1; pass <= 3; pass += 1) {
+      h.advance(60_000);
+      h.setVerdict({ level: 0.2 + pass * 0.1, brightness: 0.9 });
+      await tick(h);
+    }
+    assert.ok(h.runtime.diagnostics().feedbackObservations > 0);
+
+    // Lowering the bright end is the advice the warning gives, so the evidence
+    // for it has to start again from nothing.
+    await h.runtime.updatePlan(plan({ sensor: 's1', dark: 0.25, bright: 0.5 }));
+    await sharedSettle(12);
+    assert.equal(h.runtime.diagnostics().feedbackObservations, 0);
     await h.runtime.stop();
   });
 

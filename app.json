@@ -1,7 +1,7 @@
 {
   "_comment": "This file is generated. Please edit .homeycompose/app.json instead.",
   "id": "com.thomassidor.lightkeeper",
-  "version": "0.6.1",
+  "version": "0.6.5",
   "compatibility": ">=12.9.0",
   "runtime": "nodejs",
   "sdk": 3,
@@ -238,6 +238,106 @@
           }
         ],
         "id": "bridge_token_event"
+      },
+      {
+        "title": {
+          "en": "Set lights the Lightkeeper way"
+        },
+        "titleFormatted": {
+          "en": "Set [[lights]] — colour from [[colour]], brightness from [[brightness]], [[power]]"
+        },
+        "hint": {
+          "en": "Puts lights where your Lightkeeper devices want them right now, in one go. Use it when something else decides the moment — motion, a door, a button — and you want Lightkeeper to decide the light. The colour and the brightness can come from two different Lightkeeper devices, so a Room-sensing Light can set the level while a Circadian Light sets the white."
+        },
+        "args": [
+          {
+            "type": "autocomplete",
+            "name": "lights",
+            "title": {
+              "en": "Lights"
+            },
+            "placeholder": {
+              "en": "A room, or one light"
+            }
+          },
+          {
+            "type": "autocomplete",
+            "name": "colour",
+            "title": {
+              "en": "Colour from"
+            },
+            "placeholder": {
+              "en": "A circadian or Colour Curve Light"
+            }
+          },
+          {
+            "type": "autocomplete",
+            "name": "brightness",
+            "title": {
+              "en": "Brightness from"
+            },
+            "placeholder": {
+              "en": "A Room-sensing Light, schedule or curve"
+            }
+          },
+          {
+            "type": "dropdown",
+            "name": "power",
+            "title": {
+              "en": "The switch"
+            },
+            "values": [
+              {
+                "id": "on",
+                "title": {
+                  "en": "Switch them on"
+                }
+              },
+              {
+                "id": "only_on",
+                "title": {
+                  "en": "Only lights already on"
+                }
+              }
+            ]
+          }
+        ],
+        "id": "set_lights"
+      }
+    ],
+    "conditions": [
+      {
+        "id": "daylight_is_dark",
+        "title": {
+          "en": "It !{{is|is not}} dark enough"
+        },
+        "titleFormatted": {
+          "en": "It !{{is|is not}} at [[level]] daylight or less"
+        },
+        "hint": {
+          "en": "Compares against what this Room-sensing Light already reads — from its own light sensor, or from the sun where it has no sensor. 0% is fully dark outside and 100% fully bright, on that device's own thresholds, so the number you set here means the same thing as the brightness it chooses. If it cannot tell how light it is, this is never true."
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=daylight"
+          },
+          {
+            "type": "range",
+            "name": "level",
+            "title": {
+              "en": "Daylight at or below"
+            },
+            "min": 0,
+            "max": 1,
+            "step": 0.05,
+            "value": 0.25,
+            "label": "%",
+            "labelMultiplier": 100,
+            "labelDecimals": 0
+          }
+        ]
       }
     ]
   },
@@ -248,7 +348,9 @@
       },
       "class": "service",
       "capabilities": [
-        "onoff"
+        "onoff",
+        "lightkeeper_brightness",
+        "lightkeeper_temperature"
       ],
       "capabilitiesOptions": {
         "onoff": {
@@ -469,7 +571,10 @@
       },
       "class": "service",
       "capabilities": [
-        "onoff"
+        "onoff",
+        "lightkeeper_brightness",
+        "lightkeeper_temperature",
+        "lightkeeper_colour"
       ],
       "capabilitiesOptions": {
         "onoff": {
@@ -553,7 +658,9 @@
       },
       "class": "service",
       "capabilities": [
-        "onoff"
+        "onoff",
+        "lightkeeper_brightness",
+        "lightkeeper_daylight"
       ],
       "capabilitiesOptions": {
         "onoff": {
@@ -663,7 +770,9 @@
       },
       "class": "service",
       "capabilities": [
-        "onoff"
+        "onoff",
+        "lightkeeper_brightness",
+        "lightkeeper_temperature"
       ],
       "capabilitiesOptions": {
         "onoff": {
@@ -753,5 +862,70 @@
       ],
       "id": "schedule"
     }
-  ]
+  ],
+  "capabilities": {
+    "lightkeeper_brightness": {
+      "type": "number",
+      "title": {
+        "en": "Brightness now"
+      },
+      "desc": {
+        "en": "The brightness this device wants its lights at right now, as a light is addressed: 0 to 1, the same scale Homey's \"Dim to\" card takes."
+      },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "insights": true,
+      "chartType": "stepLine",
+      "min": 0,
+      "max": 1,
+      "decimals": 2
+    },
+    "lightkeeper_colour": {
+      "type": "string",
+      "title": {
+        "en": "Colour now"
+      },
+      "desc": {
+        "en": "The colour this device wants its colour-capable lights at right now, by name. Empty on a stretch of the curve that sets a colour temperature instead."
+      },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor"
+    },
+    "lightkeeper_daylight": {
+      "type": "number",
+      "title": {
+        "en": "Daylight outside"
+      },
+      "desc": {
+        "en": "How light it is outside, as this device reads it: 0 is fully dark, 1 is fully bright. Empty when it cannot tell."
+      },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "insights": true,
+      "chartType": "spline",
+      "min": 0,
+      "max": 1,
+      "decimals": 2
+    },
+    "lightkeeper_temperature": {
+      "type": "number",
+      "title": {
+        "en": "Colour temperature now"
+      },
+      "desc": {
+        "en": "The colour temperature this device wants its lights at right now: 0 to 1, where 1 is the warmest, the same scale Homey's \"Set a temperature\" card takes."
+      },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "insights": true,
+      "chartType": "stepLine",
+      "min": 0,
+      "max": 1,
+      "decimals": 2
+    }
+  }
 }

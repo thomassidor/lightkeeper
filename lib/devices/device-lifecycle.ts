@@ -3,6 +3,8 @@ import { fireAndForget } from '../support/async';
 import { validManagedFlowRefs } from '../validation/plans';
 import type { ControllerState, StateDetail, ManagedFlowReference } from '../profiles/controller-profile';
 import { messageOf } from '../support/homey-errors';
+import { ALL_VALUE_CAPABILITIES, isTranslatable } from '../runtime/published-values';
+import type { PublishedValue, PublishedValues } from '../runtime/published-values';
 
 /**
  * Everything a Lightkeeper virtual device does that is not the SDK.
@@ -68,6 +70,22 @@ export interface DeviceRuntime<TRuntimePlan = unknown> {
   destroy(): Promise<void>;
   reconcileFlows?(): Promise<void>;
   updatePlan?(plan: TRuntimePlan): Promise<void>;
+  /**
+   * Start receiving what this runtime wants the lights to be, for the capability
+   * rows and the Flow tags behind them (platform §18).
+   *
+   * A SETTER rather than a sixth argument to `register()`, and optional rather
+   * than required, and both halves are what keep this change small: the four
+   * managers' `register(id, plan, onStateChange, onPlanChange, displayName, kind?)`
+   * signatures are untouched, and so is the registry adapter in
+   * `drivers/circadian/device.ts` that wraps one of them. A controller does not
+   * implement it at all — a remote has no desired state to publish, only the
+   * last thing somebody pressed.
+   *
+   * Synchronous by contract, exactly like `onStateChange`: it is called from
+   * inside a tick that cannot await the device layer.
+   */
+  watchValues?(onValues: (values: PublishedValues) => void): void;
 }
 
 /** The slice of an app-level manager this layer touches. */
@@ -104,6 +122,9 @@ export interface DeviceOwner<
   setAvailable(): Promise<void>;
   setUnavailable(message?: string): Promise<void>;
   setCapabilityValue(capabilityId: string, value: unknown): Promise<void>;
+  hasCapability(capabilityId: string): boolean;
+  addCapability(capabilityId: string): Promise<void>;
+  removeCapability(capabilityId: string): Promise<void>;
   log(...args: unknown[]): void;
   error(...args: unknown[]): void;
   /** `homey.__`, which `lib/` cannot reach on its own. */
@@ -133,6 +154,18 @@ export interface DeviceOwner<
   readonly availableWhenDisabled: boolean;
   /** Whether the tile carries an onoff pause switch. */
   readonly withPauseSwitch: boolean;
+  /**
+   * The value capabilities this device type carries, as declared in its
+   * `driver.compose.json`.
+   *
+   * Declared twice on purpose, and the second copy is the load-bearing one: a
+   * driver's `capabilities` array reaches a device Homey pairs AFTER the change
+   * and no other (platform §18), so every already-paired device needs
+   * `addCapability` at init. This list is what `reconcileCapabilities` adds
+   * from — and what it removes against, so a capability withdrawn from a
+   * manifest also leaves the tiles it is already on.
+   */
+  readonly valueCapabilities: readonly string[];
 
   migrate(raw: unknown): PlanMigration<TPlan>;
   registry(): DeviceRegistry<TPlan, TRuntime>;
@@ -188,9 +221,18 @@ export interface DeviceOwner<
   prepareApply(previous: TPlan | null, incoming: TPlan): Promise<TPlan>;
 }
 
-/** Serialised work: user-facing operations on one key, verdicts on the other. */
+/**
+ * Serialised work: user-facing operations on one key, verdicts on another, and
+ * published values on a third.
+ *
+ * Values get their OWN key rather than sharing the verdict one, because they
+ * arrive far more often and a capability write that is slow to answer must not
+ * be able to delay the sentence on a device's tile — availability is the thing
+ * a user is waiting to see change.
+ */
 const OPS = 'ops';
 const STATE = 'state';
+const VALUES = 'values';
 
 /**
  * Which locale key a failed load deserves. Module-level and pure, so it is
@@ -234,6 +276,8 @@ export class DeviceLifecycle<
   // ---------------------------------------------------------------- lifecycle
 
   async init(): Promise<void> {
+    await this.reconcileCapabilities();
+
     const plan = await this.loadPlan();
     if (!plan) {
       await this.owner.setUnavailable(this.owner.translate(this.quarantineKey));
@@ -327,7 +371,7 @@ export class DeviceLifecycle<
 
   private async registerPlan(plan: TPlan): Promise<TRuntime> {
     const generation = ++this.planGeneration;
-    return this.owner.registry().register(
+    const runtime = await this.owner.registry().register(
       this.deviceId,
       plan,
       (state: ControllerState, detail?: StateDetail) => {
@@ -340,6 +384,15 @@ export class DeviceLifecycle<
       },
       () => this.owner.getName(),
     );
+
+    // Generation-guarded exactly like the state callback above, and for the same
+    // reason: a replaced runtime can still be mid-tick, and a value it publishes
+    // afterwards describes a plan this device no longer has.
+    runtime.watchValues?.((values: PublishedValues) => {
+      if (generation === this.planGeneration) this.onRuntimeValues(values);
+    });
+
+    return runtime;
   }
 
   /**
@@ -619,6 +672,105 @@ export class DeviceLifecycle<
         return;
       }
       await this.owner.setUnavailable(this.describe(detail, fallbackKeyFor(state)));
+    });
+  }
+
+  // ------------------------------------------------------------------- values
+
+  /**
+   * Make the device's capability rows match what this device type declares.
+   *
+   * Homey applies a driver's `capabilities` array when it PAIRS a device and
+   * never again, so a capability added in a release reaches nobody who already
+   * owns the device unless it is added here (platform §18). The removal half is
+   * the same promise in reverse: a capability withdrawn from a manifest has to
+   * leave the tiles it is already on, or it sits there forever holding the last
+   * value anything ever wrote to it.
+   *
+   * Every call is in its own try/catch and NONE of them can fail init. A device
+   * whose tile is missing a row is a cosmetic problem; a device that refused to
+   * start because of one would stop driving the lights, which is its whole job.
+   */
+  private async reconcileCapabilities(): Promise<void> {
+    const wanted = new Set(this.owner.valueCapabilities);
+
+    for (const capabilityId of wanted) {
+      if (this.owner.hasCapability(capabilityId)) continue;
+      try {
+        await this.owner.addCapability(capabilityId);
+        this.owner.log(`Added the ${capabilityId} capability`);
+      } catch (error) {
+        this.owner.error(`Could not add the ${capabilityId} capability:`, messageOf(error));
+      }
+    }
+
+    for (const capabilityId of ALL_VALUE_CAPABILITIES) {
+      if (wanted.has(capabilityId) || !this.owner.hasCapability(capabilityId)) continue;
+      try {
+        await this.owner.removeCapability(capabilityId);
+        this.owner.log(`Removed the ${capabilityId} capability`);
+      } catch (error) {
+        this.owner.error(`Could not remove the ${capabilityId} capability:`, messageOf(error));
+      }
+    }
+  }
+
+  /**
+   * A runtime published what it wants the lights to be.
+   *
+   * Called synchronously from inside a tick, like `onRuntimeState`, so it is
+   * queued rather than awaited — on its own mutex key, so a capability write
+   * that is slow to answer cannot hold up an availability verdict.
+   *
+   * No sequence number, unlike a verdict: `ValueBoard` only calls this when a
+   * value actually moved, and one FIFO key means the writes land in the order
+   * the moves happened. The staleness a verdict guards against — an old
+   * runtime's callback overtaking a newer one — is answered by the generation
+   * check at the `watchValues` call site instead.
+   */
+  onRuntimeValues(values: PublishedValues): void {
+    fireAndForget(
+      this.publishValues(values),
+      (...args: unknown[]) => this.owner.error(...args),
+      'Publishing runtime values',
+    );
+  }
+
+  private async publishValues(values: PublishedValues): Promise<void> {
+    const generation = this.planGeneration;
+    return this.operations.run(VALUES, async () => {
+      if (generation !== this.planGeneration) return;
+      for (const [capabilityId, value] of Object.entries(values)) {
+        // A device type that does not declare a capability is not a bug worth
+        // logging: one runtime serves two device types, and the Colour Curve
+        // Light is the only one of them with a colour to publish.
+        if (!this.owner.hasCapability(capabilityId)) continue;
+        try {
+          await this.owner.setCapabilityValue(capabilityId, this.resolveValue(value));
+        } catch (error) {
+          this.owner.error(`Could not publish ${capabilityId}:`, messageOf(error));
+        }
+      }
+    });
+  }
+
+  /**
+   * Turn what `lib/` could produce into what a user reads.
+   *
+   * Only the colour needs it, and only because `lib/` has no `homey.__`: the
+   * curve hands up one `palette.<id>` key on a flat coloured stretch and two
+   * while it blends between them, and the blend is rendered through a locale key
+   * of its own so the arrow is not a string hardcoded where nobody could
+   * translate it.
+   */
+  private resolveValue(value: PublishedValue): unknown {
+    if (!isTranslatable(value)) return value;
+    const [from, to] = value.keys;
+    if (!from) return null;
+    if (!to || to === from) return this.owner.translate(from);
+    return this.owner.translate('curve.colourBlend', {
+      from: this.owner.translate(from),
+      to: this.owner.translate(to),
     });
   }
 }

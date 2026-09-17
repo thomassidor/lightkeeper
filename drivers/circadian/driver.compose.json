@@ -4,7 +4,9 @@
   },
   "class": "service",
   "capabilities": [
-    "onoff"
+    "onoff",
+    "lightkeeper_brightness",
+    "lightkeeper_temperature"
   ],
   "capabilitiesOptions": {
     "onoff": {

@@ -23,12 +23,14 @@ import {
   diffTargets, releaseTarget, resolveSnapshot, type TargetSnapshot,
 } from '../outputs/target-snapshot';
 import { fireAndForget } from '../support/async';
+import { canonical } from '../support/same';
 import { withDefaults, type Timers } from '../support/timers';
-import type { DaylightPlan } from './daylight-types';
+import { SENSOR_STALE_MS, type DaylightPlan } from './daylight-types';
 import type { DaylightEvaluator, DaylightVerdict } from './daylight-evaluator';
 import type { LuminanceSource, WatchedSensor } from './luminance-source';
 import { messageOf } from '../support/homey-errors';
 import { VisibleState } from '../runtime/visible-state';
+import { ValueBoard, VALUE_CAPABILITIES, type PublishedValues } from '../runtime/published-values';
 
 /**
  * One Room-sensing Light, live.
@@ -282,6 +284,48 @@ export class DaylightRuntime {
   get currentState(): ControllerState { return this.visible.current; }
   get currentDetail(): StateDetail | undefined { return this.visible.currentDetail; }
   get currentPlan(): DaylightPlan { return this.plan; }
+
+  /** What the room's light asks for, for the capability rows (platform §18). */
+  private readonly values = new ValueBoard();
+
+  watchValues(onValues: (values: PublishedValues) => void): void {
+    this.values.watch(onValues);
+  }
+
+  /**
+   * What this runtime has published, for the Flow cards that compose it.
+   *
+   * The BOARD rather than a fresh computation, deliberately: the `set_lights`
+   * card and a hand-built Flow using the same device's tag must not be able to
+   * disagree about what "now" means, and the board is what the tag holds.
+   */
+  publishedValues(): PublishedValues {
+    return this.values.current;
+  }
+
+  /** The device's own name, for the Flow cards' pickers. */
+  get deviceName(): string {
+    return this.deps.displayName();
+  }
+
+  /**
+   * Publish how light it is and what that asks of the lamps.
+   *
+   * `level` is `null` rather than `0` when there is nothing to read it from — no
+   * sun position and no usable sensor. Zero is a real reading on that axis and
+   * means pitch dark, so publishing it for "I cannot tell" would let a Flow
+   * gating on darkness fire all day with a flat sensor battery. The brightness
+   * beside it is NOT nulled: `brightnessFor` returns the response's own stored
+   * dark end verbatim at level 0, which is the documented fallback — a room that
+   * went dark because a sensor did is the worse surprise.
+   */
+  private publishValues(): void {
+    const verdict = this.currentValue();
+    this.values.set({
+      [VALUE_CAPABILITIES.brightness]: toDevice(verdict.brightness),
+      [VALUE_CAPABILITIES.daylight]: verdict.source === 'none' ? null : verdict.level,
+    });
+  }
 
   private now(): number { return this.timers.now(); }
 
@@ -544,6 +588,9 @@ export class DaylightRuntime {
     reason: string,
     options: { deviceIds?: string[]; force?: boolean; waitForResults?: boolean } = {},
   ): Promise<{ writes: number; skipped: number }> {
+    // Before every early return below, for the reason `publishValues` gives.
+    this.publishValues();
+
     if (!this.plan.enabled) return this.noteNothingToDo(reason, 'the plan is switched off');
 
     const verdict = this.currentValue();
@@ -680,6 +727,25 @@ export class DaylightRuntime {
   private feedbackRisk(): 'increasing_sensor_response' | null {
     return this.plan.response.sensor !== null && this.plan.response.bright > this.plan.response.dark
       ? 'increasing_sensor_response' : null;
+  }
+
+  /**
+   * This device's own sensor, if it has one and it has gone quiet for longer
+   * than `SENSOR_STALE_MS`.
+   *
+   * `null` covers three different healthy cases and one that is somebody else's
+   * leg: no sensor named (the sun is a complete answer), a sensor that is
+   * talking, and a sensor that has never reported at all — that last one leaves
+   * `source` as 'sky' or 'none', which the legs above already report better than
+   * "it went quiet" would.
+   */
+  private staleSensor(): { name: string; ageMs: number } | null {
+    const wanted = this.plan.response.sensor;
+    if (wanted === null) return null;
+    const sensor = this.deps.daylight.sensors().find(candidate => candidate.deviceId === wanted);
+    if (sensor === undefined || sensor.at === null) return null;
+    const ageMs = this.now() - sensor.at;
+    return ageMs >= SENSOR_STALE_MS ? { name: sensor.name, ageMs } : null;
   }
 
   /** Observed often enough to be worth telling the household about. */
@@ -855,7 +921,11 @@ export class DaylightRuntime {
    */
   private healthInputs(): string {
     const unwritable = [...this.adapter.unwritableTargets()].sort().join(',');
-    return `${this.currentValue().source}|${unwritable}|${this.feedbackObserved()}`;
+    // Whether it is stale, not how stale: the age moves every second, and an
+    // input that always differs would re-assess — and so re-`retrySubscriptions`
+    // — on every tick, which is the one thing this string exists to prevent.
+    return `${this.currentValue().source}|${unwritable}|${this.feedbackObserved()}`
+      + `|${this.staleSensor() !== null}`;
   }
 
   /**
@@ -917,6 +987,37 @@ export class DaylightRuntime {
       this.setState('needs_repair', {
         key: 'state.noDaylightSource',
         text: 'It cannot tell how light it is: no light sensor, and no location.',
+      });
+      return;
+    }
+
+    /**
+     * The sensor stopped talking.
+     *
+     * Not a control decision — the reading goes on being used, and that is
+     * deliberate: many Zigbee sensors report only on change, so a quiet sensor in
+     * a stable room is telling the truth and a timeout would fall back to the sky
+     * precisely then (see `luminance-source.ts`). This leg changes nothing about
+     * what is written. It only says out loud what the app already knows, because
+     * a frozen sensor is otherwise INVISIBLE: the device holds the room at one
+     * brightness and goes on reporting 'ready' for as long as the app runs.
+     *
+     * The 12-hour warning existed only on the pairing screen, which is the one
+     * moment the sensor is working by definition. This is the same threshold at
+     * the only other moment that matters.
+     *
+     * 'partial', not 'needs_repair': the lamps are still being driven to a
+     * defensible level, and the sensor may simply come back. Ranked after the
+     * target and source legs for the usual reason — "your lamps are gone" is the
+     * more actionable sentence — and before the feedback leg, because a sensor
+     * that stopped reporting cannot be feeding anything back.
+     */
+    const stale = this.staleSensor();
+    if (assessment.state === 'ready' && stale !== null) {
+      this.setState('partial', {
+        key: 'state.daylightSensorStale',
+        text: 'Its light sensor has stopped reporting, so its lights are held where they are.',
+        tokens: { name: stale.name, hours: Math.floor(stale.ageMs / 3_600_000) },
       });
       return;
     }
@@ -992,9 +1093,38 @@ export class DaylightRuntime {
   }
 
   async updatePlan(plan: DaylightPlan): Promise<void> {
+    /**
+     * Evidence of a feedback loop survives a plan edit that did not change the
+     * response, and it has to.
+     *
+     * It used to be cleared in `stop()`, alongside `aim` and `committed` — which
+     * belong there, because both describe the OLD plan and would gate the new
+     * plan's first write. The observation count describes the ROOM, and
+     * `updatePlan()` is stop-then-start, so renaming the device or adding a lamp
+     * threw away the only record that its lamps light their own sensor.
+     *
+     * That mattered because the count is slow by construction. It needs five
+     * raise-then-rise passes, and on the reference Homey two had accumulated in
+     * 22.7 hours — call it two and a half days of uninterrupted uptime to reach
+     * the threshold that puts the warning on the tile. Anything that resets it
+     * more often than that is not a reset, it is a cap.
+     *
+     * `canonical()` rather than a field-wise comparison, and this is the one
+     * place that argument runs the other way: a field added to `DaylightResponse`
+     * later is a field that could change how the loop behaves, so the safe answer
+     * for an unknown field is "the evidence is void". Field-wise would keep it.
+     */
+    const responseChanged = canonical(plan.response) !== canonical(this.plan.response);
     this.plan = plan;
     await this.stop();
+    if (responseChanged) this.forgetFeedback();
     await startRuntime(this, () => this.start(), this.deps.log);
+  }
+
+  /** Both halves of the raise-then-rise test, dropped together. */
+  private forgetFeedback(): void {
+    this.feedbackProbe = null;
+    this.feedbackObservations = 0;
   }
 
   async stop(): Promise<void> {
@@ -1019,8 +1149,14 @@ export class DaylightRuntime {
       // plan's first write.
       this.aim.clear();
       this.committed.clear();
+      /**
+       * The OPEN probe goes, the count stays. A probe is a half-finished
+       * measurement against a reading from before the runtime stopped, and
+       * resolving it afterwards would compare across the gap. The count is
+       * finished measurements, and nothing about stopping makes them untrue —
+       * see `updatePlan`, which is the only thing entitled to drop them.
+       */
       this.feedbackProbe = null;
-      this.feedbackObservations = 0;
       this.targetIds = [];
       this.targetNames = [];
       // Or the next refresh diffs the new plan's targets against the old plan's.

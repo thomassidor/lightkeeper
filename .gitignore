@@ -54,5 +54,10 @@ __pycache__/
 # Private week-long home-test exports.
 /.evidence/
 
+# Scratch space for diagnostics captures pulled off a real Homey. Those carry
+# device and zone names, the owner's display name and Athom user id, and the
+# text of existing Flows — the same reason /test/fixtures/raw/ is ignored.
+/temp/
+
 # Present = build the seven-day evidence recorder in. See scripts/build.mjs.
 .dev-build

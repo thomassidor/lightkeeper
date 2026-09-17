@@ -36,6 +36,14 @@ export abstract class LightkeeperDevice<
   abstract readonly missingKey: string;
   readonly availableWhenDisabled: boolean = false;
   readonly withPauseSwitch: boolean = false;
+  /**
+   * Empty here and overridden by the four device types that compute something.
+   *
+   * A Light Remote is the one that keeps the default: it has no desired state to
+   * publish, only the last thing somebody pressed. See `DeviceOwner` for why the
+   * list exists at all when `driver.compose.json` already names them.
+   */
+  readonly valueCapabilities: readonly string[] = [];
 
   abstract migrate(raw: unknown): PlanMigration<TPlan>;
   abstract registry(): DeviceRegistry<TPlan, TRuntime>;

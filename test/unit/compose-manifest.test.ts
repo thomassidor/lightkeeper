@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { ALL_VALUE_CAPABILITIES, PUBLISHED_DECIMALS } from '../../lib/runtime/published-values';
+
 /**
  * `app.json` is GENERATED from `.homeycompose/` and must never be hand-edited.
  *
@@ -25,6 +27,30 @@ const readJson = (...parts: string[]) =>
   JSON.parse(readFileSync(join(ROOT, ...parts), 'utf8'));
 
 const manifest = readJson('app.json') as Record<string, any>;
+
+/** Cards declared app-wide, by id. */
+function composedCards(dir: string): Map<string, Record<string, unknown>> {
+  const full = join(ROOT, dir);
+  if (!existsSync(full)) return new Map();
+  return new Map(readdirSync(full)
+    .filter(f => f.endsWith('.json'))
+    .map(f => [f.replace(/\.json$/, ''), readJson(dir, f) as Record<string, unknown>]));
+}
+
+/** Cards declared by a driver, by id, with the driver that owns them. */
+function driverCards(
+  type: 'conditions' | 'triggers' | 'actions',
+): Map<string, { driverId: string; source: Record<string, unknown> }> {
+  const found = new Map<string, { driverId: string; source: Record<string, unknown> }>();
+  for (const entry of readdirSync(join(ROOT, 'drivers'), { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const path = join(ROOT, 'drivers', entry.name, 'driver.flow.compose.json');
+    if (!existsSync(path)) continue;
+    const cards = (readJson('drivers', entry.name, 'driver.flow.compose.json')[type] ?? []) as Array<Record<string, unknown>>;
+    for (const card of cards) found.set(String(card.id), { driverId: entry.name, source: card });
+  }
+  return found;
+}
 
 describe('app.json is generated from .homeycompose/', () => {
   test('every app-level field matches its compose source', () => {
@@ -82,6 +108,109 @@ describe('app.json is generated from .homeycompose/', () => {
         actions.find(a => a.id === id)?.deprecated, true,
         `${id} must stay hidden from the card picker`,
       );
+    }
+  });
+
+  /**
+   * The conditions and triggers, which come from a DIFFERENT place.
+   *
+   * A driver's own `driver.flow.compose.json` is merged into the app-level
+   * `flow` block, not into the driver (the app schema has no `flow` on a
+   * driver), and the CLI unshifts a `device` argument onto every card on the
+   * way — so a card declared per driver arrives beside the app-level ones with
+   * one more argument than its source has. Checked here because the actions
+   * test above would otherwise be the only parity check there is, and it looks
+   * from its name like it covers all three types.
+   *
+   * The `$`-prefixed keys a compose source may carry (`$extends`, `$filter`,
+   * `$id`) are stripped recursively before `app.json` is written, which is also
+   * why the per-driver `deepEqual` below still holds with this file present.
+   */
+  test('the conditions and triggers match their compose sources', () => {
+    for (const type of ['conditions', 'triggers'] as const) {
+      const fromApp = composedCards(join('.homeycompose', 'flow', type));
+      const fromDrivers = driverCards(type);
+      const expected = [...fromApp.keys(), ...fromDrivers.keys()].sort();
+
+      const generated = ((manifest.flow?.[type] ?? []) as Array<Record<string, any>>);
+      assert.deepEqual(
+        generated.map(card => String(card.id)).sort(), expected,
+        `app.json's flow ${type} are not the cards declared in .homeycompose/ and drivers/`,
+      );
+
+      for (const [id, source] of fromApp) {
+        assert.deepEqual(generated.find(c => c.id === id), { ...source, id }, `flow ${type} "${id}" drifted`);
+      }
+
+      for (const [id, { driverId, source }] of fromDrivers) {
+        const card = generated.find(c => c.id === id) as Record<string, any> | undefined;
+        assert.ok(card, `flow ${type} "${id}" is missing from app.json`);
+        // The device argument the CLI adds, and nothing else about it.
+        assert.deepEqual(card.args?.[0], {
+          type: 'device', name: 'device', filter: `driver_id=${driverId}`,
+        }, `flow ${type} "${id}" lost its device argument`);
+        assert.deepEqual(
+          { ...card, args: (card.args as unknown[]).slice(1) }, { ...source, id },
+          `flow ${type} "${id}" drifted`,
+        );
+      }
+    }
+  });
+
+  /**
+   * The custom capabilities, which nothing else guards.
+   *
+   * They are a name map twice over: a capability the manifest defines but no
+   * driver declares is invisible, and one a driver declares but the manifest
+   * does not define fails validation with a message about the driver rather
+   * than about the missing file. The runtime half — that the ids the app
+   * publishes under are these ids — is `VALUE_CAPABILITIES` in
+   * `lib/runtime/published-values.ts`, tied to this set below.
+   */
+  test('the capabilities match the files in .homeycompose/capabilities/', () => {
+    const dir = join(ROOT, '.homeycompose', 'capabilities');
+    const ids = readdirSync(dir)
+      .filter(f => f.endsWith('.json'))
+      .map(f => f.replace(/\.json$/, ''))
+      .sort();
+
+    assert.deepEqual(Object.keys(manifest.capabilities ?? {}).sort(), ids);
+    for (const id of ids) {
+      assert.deepEqual(
+        manifest.capabilities[id], readJson('.homeycompose', 'capabilities', `${id}.json`),
+        `capability "${id}" drifted`,
+      );
+    }
+
+    // Every id the runtimes publish under is one of these, and every one of
+    // these is carried by at least one driver. Either half failing means a
+    // value computed every minute that lands nowhere.
+    assert.deepEqual([...ALL_VALUE_CAPABILITIES].sort(), ids);
+
+    const carried = new Set(
+      (manifest.drivers as Array<Record<string, any>>).flatMap(d => d.capabilities as string[]),
+    );
+    for (const id of ids) assert.ok(carried.has(id), `no driver carries "${id}"`);
+  });
+
+  /**
+   * A read-only capability stays read-only, and keeps the resolution its gate
+   * assumes.
+   *
+   * `setable: false` is what makes these rows a reading rather than a control:
+   * Homey draws a slider for a setable number, and a driver with no capability
+   * listener behind it rejects the write. And `decimals` is half of a contract
+   * with `PUBLISHED_DECIMALS` — the board rounds to it before deciding whether
+   * anything moved, so a capability that declared more would publish changes
+   * Homey then rounded away, once a minute, forever.
+   */
+  test('every value capability is read-only, at the resolution the gate assumes', () => {
+    for (const [id, capability] of Object.entries(manifest.capabilities ?? {}) as Array<[string, any]>) {
+      assert.equal(capability.setable, false, `${id} must not be setable`);
+      assert.equal(capability.getable, true, `${id} must be getable`);
+      if (capability.type === 'number') {
+        assert.equal(capability.decimals, PUBLISHED_DECIMALS, `${id} must match PUBLISHED_DECIMALS`);
+      }
     }
   });
 
