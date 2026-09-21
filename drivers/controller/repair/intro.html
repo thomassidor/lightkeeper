@@ -49,7 +49,6 @@
        beside it rather than support it. */
     --lk-accent-soft: #e2dbf6;
     --lk-accent-tint: #f3eefc;
-    --lk-accent-wash: #fbf9fe;
     --lk-accent-line: #d9cbf5;
     /* Between the accent and its line. The middle of the three listening dots,
        and the only place a mid-tone is needed: the logo has none. */
@@ -109,12 +108,27 @@
        and claiming it would flatten every card against it. */
     --lk-page: transparent;
     --lk-surface: #ffffff;
+
+    /* THREE BORDER ROLES, and they do not overlap. This is the rule the design
+       system is strictest about, and the one this app had most wrong: --lk-line
+       was drawing card edges AND the dividers inside them, so a card's outline
+       and the hairlines between its rows were the same weight of grey and the
+       card had no edge at all at arm's length.
+
+         --lk-edge  every card and control BOX, at 1px or 1.5px
+         --lk-line  ONLY a 1px divider inside a card — never a box
+         --lk-box   ONLY the 22px checkbox and radio
+
+       --lk-edge also serves as the disabled fill, which is what the system's
+       own Disabled specimen draws — see .btn:disabled. */
+    --lk-edge: #dfe3e9;
     --lk-line: #eceef2;
-    --lk-field: #e3e6ec;
     /* The edge of an UNTICKED box or radio, and only that. A shade darker than
-       --lk-field because an empty checkbox has to read as a control somebody
-       has not used yet; at the field grey it reads as a gap in the row. */
+       --lk-edge because an empty checkbox has to read as a control somebody
+       has not used yet; at the card-edge grey it reads as a gap in the row. */
     --lk-box: #d4d8e0;
+    /* Dashed only: "nothing here yet, and that is expected" — empty states and
+       add-slots. It is never a solid edge and never mixed with one. */
     --lk-hover: #c9d2e0;
     /* A chevron is an affordance, not a value: lighter than the text it sits
        beside, so a list of rows reads as labels rather than as arrows.
@@ -124,11 +138,6 @@
        still one somebody has to SEE. The canvas's #8f97a3 is 3.2:1 and is
        still visibly lighter than every ink in the ladder above. */
     --lk-chev: #8f97a3;
-    /* The circled "i" on a .tip. Its own grey rather than the chevron's,
-       because it is a ring drawn around a LETTER: the ring may sit at the
-       chevron's weight, the letter inside it may not (it is text, and owes
-       4.5:1), so the two are named separately and only the ring is light. */
-    --lk-tip-edge: #8a919e;
     --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
 
     /* The pairing primitives' own colours, here for the same reason every
@@ -148,16 +157,20 @@
     --lk-warm-ramp: linear-gradient(90deg, #e8892c, #efa658, #f4c68a,
                                     #f2e6d6, #eaf0fb, #dbe8fb);
     --lk-bright-ramp: linear-gradient(90deg, #221a3d, #43318a, #7a5fc4,
-                                      #b9a6e4, #ece5f9);
+                                      #b9a6e4, #f3eefc);
     /* How light it is OUTSIDE, pale to deep — the third axis this app draws,
        and the only one that runs dark at the TOP of its range rather than the
        bottom. It is the week grid's scale, and its six stops are the same six
        the cells are quantised to: `SHADES` in views/shared/week-grid.js, which
        cannot read a custom property and so carries them again. Change one and
-       change the other; `pair-view-styles.test.ts` checks that they agree. */
+       change the other; `pair-view-styles.test.ts` checks that they agree.
+
+       FIVE steps, not six. The sixth was --lk-accent-strong, one step past the
+       point where two cells could be told apart at 11px tall, and the design
+       system fixes the heatmap at five. */
     --lk-lux-ramp: linear-gradient(90deg, #f4f2fa, #e0d6f6, #c4b0ec,
-                                   #9f81dc, #6b48bc, #3b2279);
-    /* The same six stops, the other way round, for the sun's own height.
+                                   #9f81dc, #6b48bc);
+    /* The same stops the other way round, for the sun's own height.
        Reversed on purpose: the lux ramp measures HOW MUCH LIGHT there is, so
        more light is more ink, while this one is a picture of the DAY — and the
        dark end of a day is the night. The two never meet on screen, because a
@@ -184,9 +197,6 @@
     --lk-lamp-lit: #f4c24a;
     --lk-lamp-glow: rgba(244, 194, 74, .32);
     --lk-handle-shadow: 0 2px 6px rgba(16, 24, 40, .2);
-    /* A small mark lifted off whatever it is drawn ON — the curve chart's
-       selected point, which sits on top of a bar of any colour. */
-    --lk-mark-shadow: 0 1px 4px rgba(16, 24, 40, .3);
     /* The halo round a SELECTED block on the schedule timeline, and round a
        selected swatch. Softer than --lk-ring is used for elsewhere, because it
        is drawn against the accent itself rather than against white. */
@@ -208,7 +218,11 @@
     --lk-curve-mark: rgba(42, 25, 88, .55);
     --lk-day-tag-bg: rgba(255, 255, 255, .86);
 
-    --lk-ok-bg: #eaf7ef;   --lk-ok-ink: #10633a;
+    /* Success is a DOT, never a ground. There is no green banner in this
+       system: a tinted block is for a finding somebody has to act on, and
+       "that worked" is not one. The green appears at 8px beside the sentence
+       and nowhere else. */
+    --lk-ok-dot: #5aa86b;
     --lk-bad-bg: #fdeceb;  --lk-bad-ink: #8f1d18;
     /* Not an error. The one thing that reads this way is a schedule overlap,
        which is allowed, resolved deterministically, and worth pointing at. */
@@ -219,7 +233,7 @@
        1.5px border round a white field read as damage, and the message beside
        it says the key itself is fine. */
     --lk-reject: #c05a3e;
-    --lk-flat-bg: #f4f5f7; --lk-flat-ink: #5b616e;
+    --lk-flat-bg: #f4f5f7;
 
     background: var(--lk-page);
     padding: 18px 16px 24px;
@@ -245,41 +259,44 @@
      nothing, and a browser without it wraps exactly as before. */
   #in-root h2 { margin: 0 0 16px; font-size: 20px; font-weight: 700; letter-spacing: -.01em;
              text-wrap: balance; }
-  #in-root .sub { font-size: 14px; line-height: 1.5; color: var(--lk-body); margin: 0 0 18px; }
+  #in-root .sub { font-size: 15px; line-height: 1.5; color: var(--lk-body); margin: 0 0 18px; }
   /* A blurb belongs TO its heading — 6px between them, not 16. Written as a
      pull on the blurb rather than as `h2:has(+ .sub)` on the heading because
      the pairing container's webview is not somewhere to find out whether
      `:has()` landed. */
   #in-root h2 + .sub { margin-top: -10px; }
-  #in-root p { font-size: 14px; line-height: 1.55; color: var(--lk-body); }
+  #in-root p { font-size: 15px; line-height: 1.5; color: var(--lk-body); }
 
-  #in-root .card { background: var(--lk-surface); border: 1px solid var(--lk-line);
-              border-radius: 14px; box-shadow: var(--lk-shadow); padding: 14px;
+  #in-root .card { background: var(--lk-surface); border: 1px solid var(--lk-edge);
+              border-radius: 16px; box-shadow: var(--lk-shadow); padding: 14px;
               margin-bottom: 10px; }
 
   #in-root .section { margin-bottom: 18px; }
   /* The label over a group — "Does", "To", "When does this room get its sun?".
-     It is a .control-title with nothing on its right: the same 13.5px/600 ink,
+     It is a .control-title with nothing on its right: the same 16/600 ink,
      sentence case. It used to be 12px uppercase small-caps in the faintest
      grey, which made the two words holding the job screen's sentence together
-     read as filing-cabinet labels rather than as the sentence's own verbs. */
-  #in-root .section-title { font-size: 13.5px; font-weight: 600; line-height: 1.2;
+     read as filing-cabinet labels rather than as the sentence's own verbs.
+
+     16 is the CONTROL size — group headings and every button share it, which is
+     why it sits so close to body 15. */
+  #in-root .section-title { font-size: 16px; font-weight: 600; line-height: 1.2;
                        color: var(--lk-ink); margin: 0 0 9px; }
 
   /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
   #in-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
-              border: 1.5px solid var(--lk-line); border-radius: 12px; padding: 13px 14px;
+              border: 1.5px solid var(--lk-edge); border-radius: 12px; padding: 13px 14px;
               margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
               color: var(--lk-ink);
               transition: border-color .12s ease, background .12s ease; }
   #in-root .tile:hover { border-color: var(--lk-hover); }
   #in-root .tile.sel { border-color: var(--lk-accent); background: var(--lk-accent-tint); }
   #in-root .tile .name { font-size: 15px; font-weight: 500; line-height: 1.3; }
-  #in-root .tile .meta { font-size: 12.5px; color: var(--lk-muted); margin-top: 3px; line-height: 1.35; }
+  #in-root .tile .meta { font-size: 13px; color: var(--lk-muted); margin-top: 3px; line-height: 1.35; }
 
   #in-root input[type=text], #in-root input[type=password], #in-root select {
     width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
-    border: 1.5px solid var(--lk-field); border-radius: 12px; background: var(--lk-surface);
+    border: 1.5px solid var(--lk-edge); border-radius: 12px; background: var(--lk-surface);
     color: var(--lk-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
   /* The chevron's fill stays a literal: #6a7180 is --lk-muted, and a data URI
      cannot read a custom property. So this is the one place a token's value is
@@ -290,50 +307,106 @@
   #in-root input:focus, #in-root select:focus { outline: none; border-color: var(--lk-accent);
                                       box-shadow: 0 0 0 3px var(--lk-ring); }
 
-  #in-root .btn { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
-             border-radius: 10px; border: 1.5px solid var(--lk-field);
+  /* EVERY in-app button is the same shape: 16/600, 48px, radius 12, full
+     width. Three variants and nothing else — solid accent to commit, accent
+     outline for a reversible action, edge outline to dismiss. The blue pill in
+     the pairing footer is Homey's own chrome and is never ours to draw.
+
+     This used to be four shapes at three sizes (14/500 at 40px here, 16/600 at
+     50px on `.wide`, 15/500 at 48px on `.wide.accent`), which is how a set of
+     buttons stops reading as a set. */
+  #in-root .btn { font-family: inherit; font-size: 16px; font-weight: 600; padding: 14px;
+             border-radius: 12px; border: 1.5px solid var(--lk-edge);
              background: var(--lk-surface); color: var(--lk-ink); cursor: pointer;
-             min-height: 40px; }
+             min-height: 48px; box-sizing: border-box; }
   #in-root .btn:hover { border-color: var(--lk-hover); }
-  #in-root .btn:disabled { opacity: .45; cursor: not-allowed; }
+  /* Disabled is a COLOUR change, never an opacity change. Dropping opacity
+     takes the label under 4.5:1 and fades the button's own edge with it, so the
+     control stops reading as a control at all rather than as an unavailable
+     one. Fill goes to the divider grey, ink and border to the furniture grey. */
+  #in-root .btn:disabled { border-color: var(--lk-line); color: var(--lk-chev);
+                        cursor: not-allowed; }
   /* The same button across the width of the screen. What a secondary action
      looks like when it is the only one on a pushed screen — "Close" — where a
      primary button would claim the choice was made. */
-  #in-root .btn.wide { display: block; width: 100%; font-size: 16px; font-weight: 600;
-                    padding: 14px; border-radius: 12px; min-height: 50px;
-                    box-sizing: border-box; margin-top: 16px; }
+  #in-root .btn.wide { display: block; width: 100%; margin-top: 16px; }
   /* And the same button when it is the SECOND of two, under a primary — "Put
      them back". It borrows the primary's outline rather than the field grey,
      because the pair is one decision offered twice ("show me" / "undo that")
      and a grey partner reads as the disabled twin of the button above it.
      Lighter than the primary in weight and height, never in hue. */
-  #in-root .btn.wide.accent { border-color: var(--lk-accent); color: var(--lk-accent);
-                           font-size: 15px; font-weight: 500; padding: 13px;
-                           min-height: 48px; }
-  #in-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
+  #in-root .btn.wide.accent { border-color: var(--lk-accent); color: var(--lk-accent); }
+  #in-root .btn-primary { display: block; width: 100%; font-size: 16px; font-weight: 600;
+                     padding: 14px; box-sizing: border-box;
                      border-radius: 12px; border: none; background: var(--lk-accent);
-                     color: var(--lk-accent-ink); cursor: pointer; min-height: 50px;
+                     color: var(--lk-accent-ink); cursor: pointer; min-height: 48px;
                      margin-top: 16px; font-family: inherit; }
-  #in-root .btn-primary:disabled { opacity: .5; cursor: progress; }
+  /* A button in flight keeps its exact size and takes the disabled fill; its
+     LABEL is what says it is working, swapped to the present participle of its
+     own verb by the view. There is no spinner in this system because there is
+     no icon set. */
+  #in-root .btn-primary:disabled { background: var(--lk-line); color: var(--lk-chev);
+                                cursor: progress; }
+
+  /* An inline text action inside a card — "Show more colours", "Test it on my
+     lights". Not a button shape: it is a link that happens to be a <button>,
+     because it changes what is on the screen rather than committing anything.
+
+     SHARED because it was defined four times, and the fourth had drifted to
+     13px in the wrong violet and left-aligned as a block — which is how a
+     control that should be one thing becomes two. */
+  #in-root .morelink { display: flex; align-items: center; min-height: 44px;
+                    box-sizing: border-box; margin-top: 9px; padding: 0;
+                    background: none; border: none; font-family: inherit;
+                    font-size: 15px; font-weight: 500;
+                    color: var(--lk-accent-strong); cursor: pointer; }
+  #in-root .morelink:disabled { color: var(--lk-chev); cursor: progress; }
+
+  /* An add-slot: a dashed frame where a thing is not yet. The dashed edge means
+     "nothing here yet, and that is expected" — the same edge the empty states
+     use, and never mixed with a solid one on the same element. */
+  #in-root .add { display: flex; align-items: center; justify-content: center;
+               width: 100%; min-height: 48px; box-sizing: border-box;
+               margin-bottom: 16px; padding: 13px; border-radius: 12px;
+               border: 1.5px dashed var(--lk-hover); background: none;
+               font-family: inherit; font-size: 15px; font-weight: 500;
+               line-height: 1; color: var(--lk-accent-strong); cursor: pointer; }
+
+  /* And the destructive text row that closes an editing card. Centred under a
+     rule, because it acts on the card it sits in rather than on the screen —
+     and in the one colour this system reserves for damage. */
+  #in-root .remove { display: flex; align-items: center; justify-content: center;
+                  width: 100%; min-height: 44px; box-sizing: border-box;
+                  margin-top: 13px; padding: 13px 0 0;
+                  background: none; border: none;
+                  border-top: 1px solid var(--lk-line);
+                  font-family: inherit; font-size: 15px; font-weight: 500;
+                  line-height: 1; color: var(--lk-bad-ink); cursor: pointer; }
 
   /* A default ground, so a .msg shown before any state class lands on it is
      still a message rather than bare text on the page. */
-  #in-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 12px; font-size: 13.5px;
-             line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
-  #in-root .ok { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
+  #in-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 12px; font-size: 13px;
+             line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-ink); }
+  /* SUCCESS IS A DOT, NOT A GROUND. A tinted block is for a finding somebody
+     has to act on; "that worked" is not one, and a green panel gave the same
+     weight to "Key accepted." as to a sensor that has stopped reporting. The
+     ground stays neutral and an 8px dot carries the good news. */
+  #in-root .ok { display: flex; align-items: baseline; gap: 8px; }
+  #in-root .ok::before { content: ''; flex: none; width: 8px; height: 8px;
+                      border-radius: 50%; background: var(--lk-ok-dot); }
   #in-root .bad { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
-  #in-root .muted { background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+  #in-root .muted { background: var(--lk-flat-bg); color: var(--lk-ink); }
   #in-root .warn { background: var(--lk-warn-bg); color: var(--lk-warn-ink); }
   /* A message whose first line is what happened and whose second is what it
      means. Both belong in one block: split across two, the second reads as
      unrelated body copy. */
   #in-root .msg .lead { font-weight: 600; margin-bottom: 3px; }
 
-  #in-root ol { font-size: 14px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+  #in-root ol { font-size: 15px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
            color: var(--lk-body); }
   #in-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
   @media (max-width: 380px) { #in-root .grid { grid-template-columns: 1fr; } }
-  #in-root .empty { font-size: 14px; color: var(--lk-muted); padding: 12px 0; }
+  #in-root .empty { font-size: 15px; color: var(--lk-muted); padding: 12px 0; }
   /* ---- the pairing paradigm --------------------------------------------
      Every screen the redesign draws is built from these six, so a change to
      any of them is one edit rather than fifteen. They live in the shared base
@@ -344,13 +417,13 @@
      that carry a dot — so a view renders as many as its own flow has. */
   #in-root .steps { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
   #in-root .steps i { width: 22px; height: 4px; border-radius: 999px;
-                   background: var(--lk-field); }
+                   background: var(--lk-edge); }
   /* Four steps, narrower dots: the run keeps the same overall width whether a
      flow has three or four, so the header does not visibly grow between two
      device types. */
   #in-root .steps.tight i { width: 16px; }
   #in-root .steps i.on { background: var(--lk-accent); }
-  #in-root .steps span { margin-left: 4px; font-size: 12px; color: var(--lk-muted); }
+  #in-root .steps span { margin-left: 4px; font-size: 13px; color: var(--lk-muted); }
 
   /* `label · value · chevron`. The one shape everything secondary takes:
      a row that says what it is, what it is set to, and that it can be opened.
@@ -364,10 +437,10 @@
                background: none; border: none; font: inherit; color: inherit;
                text-align: left; cursor: pointer; }
   #in-root .row + .row { border-top: 1px solid var(--lk-line); }
-  #in-root .row .label { flex: 1; font-size: 14.5px; }
-  #in-root .row .value { font-size: 14px; color: var(--lk-muted); text-align: right; }
-  #in-root .row .chev { flex: none; font-size: 15px; color: var(--lk-chev); }
-  #in-root .row .sub { font-size: 12.5px; color: var(--lk-muted); margin: 2px 0 0; }
+  #in-root .row .label { flex: 1; font-size: 15px; }
+  #in-root .row .value { font-size: 15px; color: var(--lk-muted); text-align: right; }
+  #in-root .row .chev { flex: none; font-size: 16px; color: var(--lk-chev); }
+  #in-root .row .sub { font-size: 13px; color: var(--lk-muted); margin: 2px 0 0; }
   /* The card a list of rows lives in. 4px top and bottom rather than 14:
      a row's own 13px is already the space above the first label, and adding
      the card's to it put a visible step between the card's edge and its
@@ -385,9 +458,9 @@
                   background: none; border-left: none; border-right: none;
                   border-bottom: none; font: inherit; color: inherit;
                   text-align: left; cursor: pointer; }
-  #in-root .toggle .label { flex: 1; font-size: 14.5px; }
+  #in-root .toggle .label { flex: 1; font-size: 15px; }
   #in-root .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
-                         position: relative; background: var(--lk-field);
+                         position: relative; background: var(--lk-line);
                          transition: background .15s ease; }
   #in-root .toggle[aria-checked="true"] .track { background: var(--lk-accent); }
   #in-root .toggle .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
@@ -402,7 +475,7 @@
      heading over a group of unrelated things. */
   #in-root .control-title { display: flex; align-items: baseline;
                          justify-content: space-between; gap: 10px;
-                         font-size: 13.5px; font-weight: 600; line-height: 1.2;
+                         font-size: 16px; font-weight: 600; line-height: 1.2;
                          color: var(--lk-ink); margin: 0 0 9px; }
 
   /* A value slider with its two end captions.
@@ -414,7 +487,7 @@
      scrolls the pairing sheet underneath and the control cannot be used on a
      phone at all. */
   #in-root .slider { position: relative; height: 28px; border-radius: 8px;
-                  background: var(--lk-field); margin: 0;
+                  background: var(--lk-line); margin: 0;
                   box-shadow: var(--lk-slider-inset);
                   touch-action: none; cursor: pointer; }
   /* Candlelight to daylight, left to right — the order the slider reads in,
@@ -422,7 +495,7 @@
   #in-root .slider.warm { background: var(--lk-warm-ramp); box-shadow: none; }
   #in-root .slider.bright { background: var(--lk-bright-ramp); }
   #in-root .slider .knob { position: absolute; top: -4px; bottom: -4px; width: 6px;
-                        margin-left: -3px; border-radius: 4px;
+                        margin-left: -3px; border-radius: 999px;
                         background: var(--lk-surface);
                         box-shadow: var(--lk-slider-knob-shadow); }
   /* The two ramps take OPPOSITE knobs, and that is not a slip: the warmth ramp
@@ -437,34 +510,20 @@
   /* An aside under a control: "there is a device type that does this for you".
      Deliberately NOT a .msg — a message has a coloured ground and is about
      something that just happened, and this is a pointer nobody has to read to
-     finish the screen. So no ground, the faint ink, italic, and one mark in
-     front of every one of them so they read as the same kind of thing on four
-     different screens.
+     finish the screen. So no ground, the muted ink, italic, and nothing else.
+
+     It USED to carry a drawn circled "i". That mark is gone: it was the only
+     serif and the only drawn icon in the whole product, and this system has no
+     icon set at all — five text glyphs and nothing more. The italic is what
+     marks these lines as an aside, on all four screens that carry one.
 
      It sits directly under the control it qualifies rather than at the foot of
      the card, because three of the four screens carry a second control below
      it and an aside that floated to the bottom would read as belonging to
      that one instead. */
   #in-root .tip { display: flex; align-items: flex-start; gap: 7px;
-               margin: 13px 0 0; font-size: 12px; line-height: 1.45;
+               margin: 13px 0 0; font-size: 13px; line-height: 1.45;
                font-style: italic; color: var(--lk-muted); }
-  /* The circled i, DRAWN rather than set. A glyph that the phone's font does
-     not carry renders as a box, which is why the one other mark this design
-     puts inside text — the row chevron — is an entity rather than an icon; a
-     circle and a letter need no font at all. Upright inside the italic line,
-     because a sloped circle reads as a smudge at 15px. `line-height` is the
-     content box (15px less two 1.2px borders), which is what centres the
-     letter without a second flex container.
-
-     A pseudo-element rather than a span, so a view's whole tip is one element
-     whose text `data-i18n` fills: Homey's own i18n pass writes the element's
-     text, and a mark written as a child would be written over. */
-  #in-root .tip::before { content: "i"; flex: none; box-sizing: border-box;
-                       width: 15px; height: 15px; margin-top: 1px;
-                       border: 1.2px solid var(--lk-tip-edge); border-radius: 50%;
-                       font-size: 10px; font-weight: 700; font-style: normal;
-                       line-height: 12.6px; text-align: center;
-                       color: var(--lk-muted); }
 
   /* The swatches a colour is chosen from, four across.
      Not one row of eight: at 390px that is 34px a swatch, under the touch
@@ -475,7 +534,7 @@
   /* min-height as well as height: the container's own stylesheet is not ours
      to read, and a swatch whose height is overridden away is a coloured line
      rather than a colour anybody can judge. */
-  #in-root .swatch { height: 34px; min-height: 34px; border-radius: 9px; padding: 0;
+  #in-root .swatch { height: 34px; min-height: 34px; border-radius: 8px; padding: 0;
                   box-sizing: border-box;
                   border: 1px solid var(--lk-hairline); cursor: pointer; }
   /* The chosen colour, and it has to survive being ON a colour: a ring drawn
@@ -492,7 +551,7 @@
      still the same palette, so nothing stronger than space is wanted. */
   #in-root .swatches.more { grid-template-columns: repeat(8, 1fr); gap: 6px;
                          margin: 18px 0 0; }
-  #in-root .swatches.more .swatch { height: 28px; min-height: 28px; border-radius: 7px; }
+  #in-root .swatches.more .swatch { height: 28px; min-height: 28px; border-radius: 8px; }
 
   /* The day strip: a picture of the whole day, drawn once and reused. */
   #in-root .day { position: relative; height: 104px; border-radius: 12px;
@@ -501,8 +560,8 @@
                      border-left: 1.5px dashed var(--lk-day-mark); }
   #in-root .day .tag { position: absolute; top: 6px; transform: translateX(-50%);
                     background: var(--lk-day-tag-bg); color: var(--lk-body);
-                    font-size: 9.5px; font-weight: 600; letter-spacing: .05em;
-                    text-transform: uppercase; padding: 3px 5px; border-radius: 4px; }
+                    font-size: 11px; font-weight: 600; letter-spacing: .08em;
+                    text-transform: uppercase; padding: 3px 5px; border-radius: 8px; }
   #in-root .day .handle { position: absolute; top: 50%; width: 26px; height: 26px;
                        margin: -13px 0 0 -13px; border-radius: 50%;
                        background: var(--lk-surface); box-sizing: border-box;
@@ -533,7 +592,7 @@
                        border: 1.5px solid var(--lk-accent-line);
                        font-size: 13px; font-weight: 700;
                        display: flex; align-items: center; justify-content: center; }
-  #in-root .decision .what { font-size: 15px; font-weight: 600; line-height: 26px; }
+  #in-root .decision .what { font-size: 16px; font-weight: 600; line-height: 26px; }
   #in-root .decision .why { font-size: 13px; color: var(--lk-muted); margin-top: 2px;
                          line-height: 1.45; }
 
@@ -549,7 +608,7 @@
      panel behind them put a box round a picture that had not asked for one. The one
      that does need a ground is the schedule's timeline, where the blocks are
      read AGAINST the rest of the day, and it declares it itself. */
-  #in-root .hero { height: 66px; border-radius: 11px; overflow: hidden;
+  #in-root .hero { height: 66px; border-radius: 12px; overflow: hidden;
                    margin: 0 0 20px; display: flex; align-items: flex-end; gap: 2px;
                    padding: 0; }
   #in-root .hero.strip { display: block; }
@@ -571,7 +630,7 @@
   #in-root .hero.gestures { display: flex; height: auto; gap: 8px;
                             align-items: stretch; border-radius: 0; }
   #in-root .gesture { flex: 1; box-sizing: border-box;
-                      background: var(--lk-surface); border: 1px solid var(--lk-line);
+                      background: var(--lk-surface); border: 1px solid var(--lk-edge);
                       border-radius: 12px; padding: 13px 0 11px;
                       display: flex; flex-direction: column; align-items: center; gap: 9px; }
   /* A cap, not an icon: the same accent ring every control on these screens is
@@ -601,8 +660,8 @@
   #in-root .cap.turn b { transform: rotate(38deg); }
   #in-root .cap.turn b::after { content: ''; position: absolute; left: 50%; top: 3px;
                                 width: 2px; height: 7px; margin-left: -1px;
-                                border-radius: 1px; background: var(--lk-accent-ink); }
-  #in-root .gesture .lab { font-size: 12px; font-weight: 600; color: var(--lk-ink);
+                                border-radius: 2px; background: var(--lk-accent-ink); }
+  #in-root .gesture .lab { font-size: 13px; font-weight: 600; color: var(--lk-ink);
                            line-height: 1; }
 
   /* `.plan` and `.decision` are in the shared base: the credential gate draws
@@ -782,7 +841,7 @@ function __lkBootIn(Homey) {
     for (var i = 0; i < colours.length; i++) {
       var bar = node('i');
       bar.style.background = colours[i];
-      bar.style.borderRadius = '3px 3px 0 0';
+      bar.style.borderRadius = '2px 2px 0 0';
       bar.style.height = heights[i] + '%';
       el.hero.appendChild(bar);
     }

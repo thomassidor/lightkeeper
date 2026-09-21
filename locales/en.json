@@ -10,6 +10,7 @@
     "step4Why": "It is shown only once",
     "placeholder": "Paste your API key",
     "save": "Save and continue",
+    "saving": "Saving…",
     "checking": "Checking the key…",
     "accepted": "Key accepted.",
     "pasteFirst": "Paste the key first.",
@@ -17,8 +18,7 @@
     "malformed": "That does not look like a complete API key. Copy the whole key shown when you create it.",
     "expired": "The API key is no longer valid. Create a new one in the Homey Web App and enter it here.",
     "noScope": "This key works, but it cannot create Flows. Make a new one with the Flow permissions ticked — permissions cannot be added to a key afterwards.",
-    "unreachable": "Could not reach Homey to check the API key. Try again in a moment.",
-    "openAgain": "Open my.homey.app again"
+    "unreachable": "Could not reach Homey to check the API key. Try again in a moment."
   },
   "source": {
     "reattach": "__name__ looks like the same remote, re-added. Re-attaching keeps every mapping and target exactly as they were.",
@@ -265,8 +265,6 @@
     "unavailable": "Not responding",
     "emptyBody": "Lightkeeper uses lights already in Homey. Add a bulb or a lamp first, then come back.",
     "emptyTitle": "No lights yet",
-    "lookAgain": "Look again",
-    "addALight": "Add a light to Homey",
     "close": "Close"
   },
   "intro": {
@@ -305,6 +303,7 @@
   "review": {
     "title": "Ready to add",
     "add": "Add device",
+    "adding": "Adding…",
     "step": "Step __index__ of __count__",
     "lights": "Lights",
     "remote": "Remote",
@@ -389,6 +388,7 @@
     "found": "__name__ · __buttons__ buttons, __events__ events",
     "unusable": "Nothing can be read from __name__, so it cannot drive anything. Pick another.",
     "reattach": "Use this one instead",
+    "reattaching": "Using this one…",
     "reattachText": "The remote this device used has gone. __name__ looks like the same kind of device."
   },
   "blocks": {
@@ -431,7 +431,9 @@
     "noon": "noon",
     "help": "Drag to a time, then show it on the lamps.",
     "showAt": "Show __time__ on my lights",
+    "showing": "Showing…",
     "putBack": "Put them back",
+    "puttingBack": "Putting them back…",
     "set": "Set",
     "leftAlone": "Off, left alone"
   },
@@ -524,7 +526,9 @@
     "stopped": "Reported normally, then stopped.",
     "stoppedDetail": "Nothing since __when__.",
     "nothing": "Nothing reported in the last seven days.",
-    "nothingReported": "Nothing reported"
+    "nothingReported": "Nothing reported",
+    "less": "Less",
+    "more": "More"
   },
   "buttons": {
     "title": "What should each button do?",

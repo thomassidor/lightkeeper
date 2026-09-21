@@ -11,6 +11,42 @@ answer.
 
 ## 0.6.5
 
+### Every screen on one design system
+
+A design system has been ratified — five type sizes, four radii, three border roles, two button
+shapes — and every pairing screen plus the app settings page has been brought onto it.
+[`docs/design/`](docs/design/README.md) holds it, the flows it is applied to, and the seven places the
+app still departs on purpose.
+
+Most of this is invisible one screen at a time and obvious across a flow. Half-pixel type sizes are
+gone: 12.5, 13.5 and 14.5 accounted for 65 declarations between them, nothing told them apart at a
+glance, and every new screen had to guess which of the three it wanted. Cards are one radius rather
+than six. And **a card has an edge again** — the border around a card and the hairlines between its
+rows were the same grey, so at arm's length a card had no outline at all.
+
+**Disabled controls change colour rather than fading.** Dropping opacity took the label under the
+contrast floor and faded the card edge with it, so an unavailable button stopped reading as a button.
+
+**A button that is working says so on its own face.** Add device becomes Adding…, Save and continue
+becomes Saving… — the present participle of the button's own verb, so the word never jumps to
+something unrelated. Related: the API-key button could be tapped again while the key it had was still
+being checked, and cannot any more.
+
+**There is no green banner.** "Key accepted." and the other success lines carry a small green dot on
+the ordinary grey ground instead. A tinted panel is for something you have to act on, and six healthy
+devices painting the settings page green buried the one that was not.
+
+**The activity grid reads better.** Five shades rather than six — the sixth was past the point where
+two cells could be told apart at 11px — with the day names back at full width and a Less…More key
+under it.
+
+**Smaller things.** A folded room in the light picker shows "0 of 9" rather than "9", so you can see
+what is already picked without opening it. The italic hint lines lose the drawn "i" that was the only
+serif and the only icon in the app. And three controls are gone: "Look again" and "Add a light to
+Homey" on the no-lights screen, which now states the situation and offers Close, and "Open
+my.homey.app again" on the rejected-key screen.
+
+
 ### The setup screens, redrawn against the design
 
 Every pairing screen in all five device types has been put beside the design canvas and brought into

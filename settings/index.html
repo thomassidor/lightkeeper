@@ -23,30 +23,37 @@
       --lk-accent-strong: #3b2279;
       --lk-ring: rgba(42, 25, 88, .16);
 
-      /* The ink ladder, kept in step with the pair views' shared base — and for
-         the same reason: every step clears WCAG AA (4.5:1) against
-         --lk-surface, because all five are used at small sizes and the two
-         lightest carry the section titles and the row meta. */
+      /* The ink ladder, and it really is in step with views/shared/base.css
+         now. It used to SAY so while declaring five greys against that file's
+         three — --lk-sub and --lk-faint had been left behind when the pair
+         views collapsed the ladder, so the one screen outside pairing was
+         drifting under a comment claiming it could not.
+
+         Four, as the design system ratifies: ink, body, metadata, furniture.
+         Every one clears WCAG AA (4.5:1) against --lk-surface. */
       --lk-ink: #16181d;
-      --lk-sub: #5f6672;
       --lk-body: #4b5563;
       --lk-muted: #6a7180;
-      --lk-faint: #6f7683;
+      --lk-chev: #8f97a3;
 
       /* transparent, so the Homey settings frame keeps painting the page
          behind us. */
       --lk-page: transparent;
       --lk-surface: #ffffff;
-      --lk-raised: #f7f8fa;
+      /* The same three border roles the pair views use, and the same rule:
+         --lk-edge is every box, --lk-line is only ever a divider inside one. */
+      --lk-edge: #dfe3e9;
       --lk-line: #eceef2;
-      --lk-field: #e3e6ec;
       --lk-hover: #c9d2e0;
       --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
 
-      --lk-ok-bg: #eaf7ef;   --lk-ok-ink: #10633a;
-      --lk-warn-bg: #fef3c7; --lk-warn-ink: #92400e;
+      /* Success is a dot, never a ground — there is no green banner in this
+         system. The state pills are the one place a status colour fills a
+         shape, and a pill is not a banner. */
+      --lk-ok-dot: #5aa86b;
+      --lk-warn-bg: #fdf3e7; --lk-warn-ink: #7a4a10;
       --lk-bad-bg: #fdeceb;  --lk-bad-ink: #8f1d18;
-      --lk-flat-bg: #f4f5f7; --lk-flat-ink: #5b616e;
+      --lk-flat-bg: #f4f5f7;
 
       --lk-code-bg: #f4f5f7; --lk-code-ink: #16181d;
     }
@@ -56,14 +63,14 @@
            background: var(--lk-page); color: var(--lk-ink); padding: 16px;
            -webkit-font-smoothing: antialiased; }
 
-    /* Eyebrow labels, as in the pair views, rather than small bold headings. */
-    h2 { font-size: 12px; font-weight: 600; text-transform: uppercase;
-         letter-spacing: .06em; color: var(--lk-faint); margin: 24px 0 8px 2px; }
+    /* The 11px eyebrow, which is the one place positive tracking is allowed. */
+    h2 { font-size: 11px; font-weight: 600; text-transform: uppercase;
+         letter-spacing: .08em; color: var(--lk-muted); margin: 24px 0 8px 2px; }
     h2:first-of-type { margin-top: 0; }
-    p { font-size: 13px; line-height: 1.55; color: var(--lk-body); }
+    p { font-size: 15px; line-height: 1.5; color: var(--lk-body); }
 
-    .card { background: var(--lk-surface); border: 1px solid var(--lk-line);
-            border-radius: 14px; box-shadow: var(--lk-shadow); padding: 14px;
+    .card { background: var(--lk-surface); border: 1px solid var(--lk-edge);
+            border-radius: 16px; box-shadow: var(--lk-shadow); padding: 14px;
             margin-bottom: 10px; }
 
     /* A default ground, so a message shown before a state class lands on it is
@@ -73,33 +80,46 @@
        same, so whichever is declared last wins — with .msg last, every
        `className = 'msg ready'` painted flat grey and the whole page reported
        success, failure and progress in one indistinguishable colour. */
-    .msg { margin-top: 10px; padding: 11px 13px; border-radius: 11px; font-size: 13px;
-           line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+    .msg { margin-top: 10px; padding: 11px 13px; border-radius: 12px; font-size: 13px;
+           line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-ink); }
 
     /* Shared by the state pills and by .msg blocks: geometry comes from .state
        or .msg, the colour pair from here. */
     .state { display: inline-block; padding: 3px 9px; border-radius: 999px;
              font-size: 11px; font-weight: 600; }
-    .ready { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
+    /* Ready is the only state with no ground of its own: a green banner does
+       not exist in this system, so "working" is carried by a dot rather than by
+       a panel — which also stops six healthy devices painting the page green
+       and burying the one that is not. */
+    .ready { background: var(--lk-flat-bg); color: var(--lk-ink); }
+    .ready::before { content: ''; display: inline-block; width: 8px; height: 8px;
+                     margin-right: 6px; border-radius: 50%;
+                     background: var(--lk-ok-dot); vertical-align: middle; }
     .partial { background: var(--lk-warn-bg); color: var(--lk-warn-ink); }
     .broken { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
-    .flat { background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+    .flat { background: var(--lk-flat-bg); color: var(--lk-ink); }
 
-    input { width: 100%; padding: 12px 13px; border: 1.5px solid var(--lk-field);
-            border-radius: 11px; box-sizing: border-box; background: var(--lk-surface);
+    input { width: 100%; padding: 12px 13px; border: 1.5px solid var(--lk-edge);
+            border-radius: 12px; box-sizing: border-box; background: var(--lk-surface);
             color: var(--lk-ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-            font-size: 12px; }
+            font-size: 13px; }
     input:focus { outline: none; border-color: var(--lk-accent);
                   box-shadow: 0 0 0 3px var(--lk-ring); }
 
-    button { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
-             border-radius: 10px; border: 1.5px solid var(--lk-field);
+    /* The same button the pair views draw: 16/600 at 48px, radius 12. */
+    button { font-family: inherit; font-size: 16px; font-weight: 600; padding: 14px;
+             border-radius: 12px; border: 1.5px solid var(--lk-edge);
              background: var(--lk-surface); color: var(--lk-ink); cursor: pointer;
-             min-height: 40px; }
+             min-height: 48px; box-sizing: border-box; }
     button:hover { border-color: var(--lk-hover); }
-    button:disabled { opacity: .45; cursor: not-allowed; }
+    /* Disabled is a colour change, never an opacity change: dropping opacity
+       takes the label under 4.5:1 and fades the button's own edge with it. */
+    button:disabled { border-color: var(--lk-line); color: var(--lk-chev);
+                      cursor: not-allowed; }
     .primary { background: var(--lk-accent); color: var(--lk-accent-ink);
-               border-color: var(--lk-accent); font-weight: 600; }
+               border-color: var(--lk-accent); }
+    .primary:disabled { background: var(--lk-line); border-color: var(--lk-line);
+                        color: var(--lk-chev); }
 
     .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 
@@ -107,7 +127,7 @@
        row.style.cssText in the render loop, which put the styling of the two
        busiest lists in the file out of reach of both the token palette and
        anyone reading the CSS. */
-    .entry { padding: 7px 0; border-bottom: 1px solid var(--lk-line); font-size: 12px; }
+    .entry { padding: 7px 0; border-bottom: 1px solid var(--lk-line); font-size: 13px; }
     .entry:last-child { border-bottom: none; }
     .entry code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
                   color: var(--lk-body); }
@@ -122,7 +142,7 @@
     .tight { margin: 0; }
 
     pre { margin-top: 14px; background: var(--lk-code-bg); color: var(--lk-code-ink);
-          padding: 12px; border-radius: 11px; font-size: 11px; max-height: 320px;
+          padding: 12px; border-radius: 12px; font-size: 11px; max-height: 320px;
           overflow: auto; white-space: pre-wrap; word-break: break-word;
           font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   </style>

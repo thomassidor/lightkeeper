@@ -222,6 +222,29 @@ that nothing already installed has ever exercised.
       The condition must be **false**: the lamp stays off. True here would mean a room lighting
       itself in daylight on a flat battery, repeatedly, with nothing on screen explaining it.
 
+### 0.6.5 — every screen on one design system
+
+T163–T165 are the design-system pass. Almost all of it is colour, type and shape, which a render
+already proves — `npm run render:views` and `docs/design/` side by side — so these three are only the
+states a render cannot enter.
+
+- [ ] **T163** Disabled and in-flight, on the phone. Open a Light Remote's review and tap **Add
+      device**: the label must become **Adding…** and the button must go grey-on-grey WITHOUT fading —
+      the old opacity drop took the label under a readable contrast and faded the button's own edge
+      with it. Do the same on the API-key screen (**Saving…**) and confirm a second tap during the
+      round trip does nothing; that button could previously be tapped repeatedly while the first key
+      was still being checked. On a circadian light's day screen, push a boundary to its limit and
+      check the spent − or + greys rather than fades.
+- [ ] **T164** Success is a dot. Paste a valid API key: the accepted message must be ordinary grey
+      with a small green dot, not a green panel. Same on a Room-sensing Light's **Try it now**. Then
+      open the Lightkeeper settings page with at least one healthy device and confirm the **ready**
+      pill reads as a dot beside plain text, and that a device in trouble is the only coloured thing
+      on the page.
+- [ ] **T165** The settings page, which no render covers at all. Open it on the phone and check the
+      whole page against `docs/design/`: card edges, the 16px corners, the button at 48px, and the
+      warning colour — it carried its own amber pair until this release and now shares the pairing
+      screens'.
+
 ### 0.6.5 — the setup screens redrawn, and a schedule block's colour
 
 T157–T162 are the pairing pass for this release. Most of the redraw is colour and spacing, which a

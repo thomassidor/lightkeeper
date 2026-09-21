@@ -987,6 +987,24 @@ describe('the review screen', () => {
     assert.equal(view.finished, true);
   });
 
+  test('a save in flight says so on the button itself', async () => {
+    /**
+     * The present participle of the button's own verb, and the same button —
+     * it keeps its size and takes the disabled fill rather than growing a
+     * spinner, because this system has no icon set at all.
+     */
+    const view = run();
+    await view.settle();
+
+    // The resting label comes from `data-i18n`, which Homey's own i18n pass
+    // fills at injection — the harness does not run it, so only the in-flight
+    // label is assertable here.
+    const save = view.byId('rv-save')!;
+    view.fire(save, 'click');
+    assert.equal(save.textContent, 'review.adding', 'the label is the verb, continuing');
+    assert.equal(save.disabled, true);
+  });
+
   test('a save that fails leaves the button usable and says why', async () => {
     const view = runPairView(read('controller/review.html'), {
       respond: { getReview: { stepIndex: 3, stepCount: 3, rows: [], promise: '' } },

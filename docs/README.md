@@ -53,7 +53,7 @@ Nothing shipped is hand-edited: `python artwork/export-assets.py` builds every i
 
 | Document | What is in it |
 |---|---|
-| [`design/`](design) | **The Claude Design canvas every pairing screen is compared against** — all five device flows, one row each, happy path plus the special cases. Its README says what the canvas is the authority on, the seven places the shipped app deliberately departs from it, and the one question still open. `npm run render:views` draws the artefact to put beside it |
+| [`design/`](design) | **The design system and the flows it is applied to** — five type sizes, four radii, three border roles, two button shapes, and all 34 pairing screens drawn against them. Its README says what they are the authority on, where the two canvases disagree, the seven places the shipped app deliberately departs, and the one question still open. `npm run render:views` draws the artefact to put beside it |
 
 `npm run render:views` draws every screen to `.views/` and is the other half of that comparison:
 the canvas says what it should look like, the render says what it does. Neither runs in CI — both

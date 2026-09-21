@@ -301,6 +301,69 @@ describe('pair view styles', () => {
     }
   });
 
+  test('every type size is one of the five the design system allows', () => {
+    /**
+     * Five sizes, and the system is explicit that there is no sixth: 20 for a
+     * screen title, 16 for group headings and every button, 15 for row titles
+     * and body, 13 for metadata, 11 for the eyebrow and the chart axes.
+     *
+     * 32 is the one addition, and it is not a sixth step: it is the display
+     * numeral on two screens — the try-it clock and the room-sensing hero —
+     * which the canvas draws at 32 and nothing else uses.
+     *
+     * What this replaces is 12.5, 13.5 and 14.5, which between them accounted
+     * for 65 declarations. Nothing told them apart at a glance and every new
+     * screen had to guess which of the three it wanted, so they had started to
+     * be picked by whichever neighbouring rule was copied first.
+     */
+    const ALLOWED_SIZES = new Set(['11', '13', '15', '16', '20', '32']);
+
+    for (const view of Object.keys(VIEWS)) {
+      const bad = [...styleBlock(view).matchAll(/font-size:\s*([0-9.]+)px/g)]
+        .map(match => match[1]!)
+        .filter(size => !ALLOWED_SIZES.has(size));
+
+      assert.deepEqual(
+        [...new Set(bad)], [],
+        `${view}: font-size(s) outside the scale — 20/16/15/13/11, plus 32 for `
+        + 'the two display numerals',
+      );
+    }
+  });
+
+  test('every radius is one of the four the design system allows', () => {
+    /**
+     * A doubling scale: 8 for controls and swatches, 12 for fills, banners and
+     * buttons, 16 for cards and screens, and a pill for the wizard CTA and the
+     * progress pips.
+     *
+     * Two exceptions, both non-interactive: 50% for radio marks and numbered
+     * medallions, and 2px on chart bars — including the `2px 2px 0 0` form a
+     * bar drawn from the bottom up takes.
+     *
+     * The old 6, 7, 9, 10, 11 and 14 are all folded in. 14 was the card radius
+     * on all 24 cards, which is why this one is worth a test rather than a
+     * find-and-replace: a card added later would have copied it.
+     */
+    const ALLOWED_RADII = new Set(['8', '12', '16', '999', '2', '50%']);
+
+    for (const view of Object.keys(VIEWS)) {
+      // A compound value is one corner each — a chart bar, or a block that
+      // runs off the edge of a timeline — so every corner is checked on its own.
+      const bad = [...styleBlock(view).matchAll(/border-radius:\s*([^;}]+)/g)]
+        .flatMap(match => match[1]!.trim().split(/\s+/))
+        .map(value => value.replace(/px$/, ''))
+        .filter(value => value !== '0')
+        .filter(value => !ALLOWED_RADII.has(value));
+
+      assert.deepEqual(
+        [...new Set(bad)], [],
+        `${view}: border-radius outside the scale — 8, 12, 16 or a pill, with `
+        + '50% for round marks and 2px for chart bars',
+      );
+    }
+  });
+
   test('colours outside the token declarations go through a token', () => {
     // A token is where a colour is CHANGED — one declaration block per view,
     // all of them byte-identical, so a palette edit is one find-and-replace

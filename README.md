@@ -358,12 +358,13 @@ app, and six things a day of real diagnostics showed:
 - **What each device wants your lights to be is now readable from your own Flows** — as a tag, as a
   new card that sets a room from two devices at once, and as a condition that asks a Room-sensing
   Light whether it is dark enough. [What that looks like](#using-lightkeeper-in-your-own-flows).
-- **The setup screens have been redrawn against the design**, across all five device types. A
-  schedule block is given a *colour* now rather than a warmth, from the same set a Colour Curve Light
-  uses — and lamps that cannot do colour get the matching warmth, so a block does one thing to the
-  whole room. Two overlapping blocks can be merged from the warning itself; a schedule's last screen
-  shows the day it just described; following the sun shows where the sun actually is today; and
-  "no lights yet" is a screen with a way out rather than one grey line.
+- **Every screen is on one design system** — five type sizes, four radii, three border roles, two
+  button shapes — across all five setup flows and the settings page. Cards have a visible edge again,
+  disabled buttons change colour rather than fading below a readable contrast, a button that is
+  working says so on its own face (*Adding…*, *Saving…*), and success is a green dot rather than a
+  green panel. A schedule block is also given a *colour* now rather than a warmth, two overlapping
+  blocks can be merged from the warning itself, and following the sun shows where the sun actually is
+  today.
 - **A light that ignores an instruction — or takes its time obeying one — is no longer read as
   somebody changing it by hand.** That mistake left the light alone for four hours, and on some
   lights it repeated indefinitely, so a room could sit unattended all evening with everything

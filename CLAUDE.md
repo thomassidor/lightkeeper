@@ -314,10 +314,12 @@ docs/                           NOT bundled. `docs/README.md` indexes it
   commands.md                   every command in one place, with the trap that goes with each
                                 — including the seven-day recorder: how to start one, its limits,
                                 and reading `malformed` before believing a timeline
-  design/                       the Claude Design canvas every pairing screen is compared
-                                against, its runtime, and a README that is itself a decision
-                                record: what the canvas is the authority on, the seven places
-                                the app departs from it on purpose, and the one still open.
+  design/                       TWO canvases and a decision record. The design SYSTEM —
+                                five type sizes, four radii, three border roles, two button
+                                shapes — and the flows file that applies it to all 34
+                                screens. The README says what they are the authority on,
+                                where the two disagree (the flows file wins), the seven
+                                places the app departs on purpose, and the one still open.
                                 `npm run render:views` draws the artefact to put beside it
 artwork/                        NOT bundled. Every graphic's source, and its own two docs
   masters/                      every graphic's source
@@ -596,6 +598,13 @@ obvious tidying, which is why they keep coming back:
 
 **Comments explain why.** Module headers give the rationale, and inline comments record which bug a
 guard prevents. Match that density — it is the main reason this code is navigable.
+
+**Every pairing screen is on a ratified design system, and two tests enforce it.** Five type sizes
+(20 / 16 / 15 / 13 / 11, plus 32 for two display numerals), four radii (8 / 12 / 16 / pill, with 50%
+for round marks and 2px for chart bars), and three border roles that do not overlap: `--lk-edge`
+draws every card and control BOX, `--lk-line` is only ever a 1px divider inside one, `--lk-box` is
+only the 22px checkbox and radio. Disabled is a colour change, never an opacity change. Success is a
+dot, never a ground — there is no green banner. `docs/design/` holds the canvases and the departures.
 
 **Every Homey entry point uses `module.exports`.** `app.ts`, `api.ts` and every `driver.ts` and
 `device.ts` are loaded by the Homey runtime with `require()`, and it reads the module's export

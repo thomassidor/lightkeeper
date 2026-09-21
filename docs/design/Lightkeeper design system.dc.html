@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<title>Lightkeeper — design system</title>
+<style>
+  body { margin: 0; background: #eceef1; }
+  a { color: #3b2279; text-decoration: underline; text-underline-offset: 2px; }
+  a:hover { color: #2a1958; }
+  @keyframes lk-indeterminate { 0% { left: -38%; } 100% { left: 100%; } }
+</style>
+</helmet>
+
+<section style="display:flex;flex-direction:column;gap:28px;padding:34px 44px 60px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;color:#16181d;max-width:1560px">
+
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <div style="font-weight:600;font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#6a7180">Ratified from Lightkeeper pairing flows</div>
+    <h1 style="margin:0;font-size:32px;font-weight:700;letter-spacing:-.02em">Design system</h1>
+    <p style="margin:0;font-size:15px;line-height:1.5;color:#4b5563;max-width:760px">Five type sizes, four radii, three border roles, two button shapes. Everything here is in use in the flows file — where a value was ambiguous it has been collapsed to one, and the rule for choosing is stated. Anything not on this page is not in the system.</p>
+  </div>
+
+  <!-- ============ COLOUR ============ -->
+  <div style="background:#f4f5f7;border:1px solid #dfe3e9;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:20px">
+    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <h2 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-.01em">Colour</h2>
+      <div style="font-size:15px;color:#4b5563">Purple is the product. Blue is the Homey platform. Grey is everything else.</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;align-items:start">
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Brand purple</div>
+        <div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px">
+          <span style="height:44px;border-radius:8px;background:#2a1958"></span>
+          <span style="height:44px;border-radius:8px;background:#3b2279"></span>
+          <span style="height:44px;border-radius:8px;background:#6b48bc"></span>
+          <span style="height:44px;border-radius:8px;background:#9f81dc"></span>
+          <span style="height:44px;border-radius:8px;background:#c4b0ec"></span>
+          <span style="height:44px;border-radius:8px;background:#e0d6f6"></span>
+        </div>
+        <sc-if value="{{ showHex }}" hint-placeholder-val="{{ true }}">
+          <div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;font-weight:600;font-size:11px;line-height:1.4;text-transform:uppercase;color:#6a7180;text-align:center">
+            <span>2A1958</span><span>3B2279</span><span>6B48BC</span><span>9F81DC</span><span>C4B0EC</span><span>E0D6F6</span>
+          </div>
+        </sc-if>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">The first carries all the weight: selection, filled controls, progress fill, in-app buttons, 1.5px selected borders. The second is text-only — links and inline actions like “Select all”. Steps three to six exist only as the heatmap ramp.</div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Purple tints</div>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px">
+          <span style="height:44px;border-radius:8px;background:#d9cbf5;box-shadow:inset 0 0 0 1px rgba(22,24,29,.06)"></span>
+          <span style="height:44px;border-radius:8px;background:#e0d6f6;box-shadow:inset 0 0 0 1px rgba(22,24,29,.06)"></span>
+          <span style="height:44px;border-radius:8px;background:#f3eefc;box-shadow:inset 0 0 0 1px rgba(22,24,29,.06)"></span>
+          <span style="height:44px;border-radius:8px;background:#f4f2fa;box-shadow:inset 0 0 0 1px rgba(22,24,29,.06)"></span>
+        </div>
+        <sc-if value="{{ showHex }}" hint-placeholder-val="{{ true }}">
+          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;font-weight:600;font-size:11px;line-height:1.4;text-transform:uppercase;color:#6a7180;text-align:center">
+            <span>D9CBF5</span><span>E0D6F6</span><span>F3EEFC</span><span>F4F2FA</span>
+          </div>
+        </sc-if>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Four tints, down from six — the two that were dropped were indistinguishable from their neighbours. Tints are backgrounds only, never text. The third with a 1.5px ring of the first is the numbered-step medallion; the fourth is the empty heatmap cell and doubles as the ramp’s lightest step.</div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Ink</div>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px">
+          <span style="height:44px;border-radius:8px;background:#16181d"></span>
+          <span style="height:44px;border-radius:8px;background:#4b5563"></span>
+          <span style="height:44px;border-radius:8px;background:#6a7180"></span>
+          <span style="height:44px;border-radius:8px;background:#8f97a3"></span>
+        </div>
+        <sc-if value="{{ showHex }}" hint-placeholder-val="{{ true }}">
+          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;font-weight:600;font-size:11px;line-height:1.4;text-transform:uppercase;color:#6a7180;text-align:center">
+            <span>16181D</span><span>4B5563</span><span>6A7180</span><span>8F97A3</span>
+          </div>
+        </sc-if>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;font-size:13px;line-height:1.3;color:#4b5563;text-align:center">
+          <span>Headings, row titles</span><span>Body, nav, “Previous”</span><span>Metadata, counts</span><span>Furniture, disabled</span>
+        </div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">The fourth is the only grey allowed on chevrons, the close ×, and disabled text — a near-identical second furniture grey has been removed.</div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Surfaces</div>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px">
+          <span style="height:44px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1px #dfe3e9"></span>
+          <span style="height:44px;border-radius:8px;background:#f4f5f7;box-shadow:inset 0 0 0 1px rgba(22,24,29,.06)"></span>
+          <span style="height:44px;border-radius:8px;background:#eceef1;box-shadow:inset 0 0 0 1px rgba(22,24,29,.06)"></span>
+        </div>
+        <sc-if value="{{ showHex }}" hint-placeholder-val="{{ true }}">
+          <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;font-weight:600;font-size:11px;line-height:1.4;text-transform:uppercase;color:#6a7180;text-align:center">
+            <span>FFFFFF</span><span>F4F5F7</span><span>ECEEF1</span>
+          </div>
+        </sc-if>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;font-size:13px;line-height:1.3;color:#4b5563;text-align:center">
+          <span>Card</span><span>Neutral fill</span><span>Canvas</span>
+        </div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Neutral fill is the search field, inset panels and code-like blocks. There is no third surface — anything that needs to sit above a card gets a border, not a tint.</div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Borders</div>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px">
+          <span style="height:44px;border-radius:8px;background:#fff;border:1px solid #dfe3e9;box-sizing:border-box"></span>
+          <span style="height:44px;border-radius:8px;background:#fff;border-top:1px solid #eceef2;box-sizing:border-box"></span>
+          <span style="height:44px;border-radius:8px;background:#fff;border:1.5px solid #d4d8e0;box-sizing:border-box"></span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;font-weight:600;font-size:11px;line-height:1.4;text-transform:uppercase;color:#6a7180;text-align:center">
+          <span>DFE3E9</span><span>ECEEF2</span><span>D4D8E0</span>
+        </div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Three roles, no overlap. <b style="color:#16181d;font-weight:600">DFE3E9</b> draws every card and control edge, at 1px or 1.5px. <b style="color:#16181d;font-weight:600">ECEEF2</b> is only ever a 1px divider inside a card — never a box. <b style="color:#16181d;font-weight:600">D4D8E0</b> is reserved for the 22px checkbox and radio, which need the extra contrast at that size.</div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Status</div>
+        <div style="background:#fdeceb;border-radius:12px;padding:13px 14px;font-size:13px;line-height:1.5;color:#8f1d18">
+          <div style="font-weight:600;margin-bottom:3px">Hall motion has not reported for 9 hours</div>
+          <div>Brightness will not follow the room until it does.</div>
+        </div>
+        <sc-if value="{{ showHex }}" hint-placeholder-val="{{ true }}">
+          <div style="font-weight:600;font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#6a7180">Error — FDECEB on 8F1D18</div>
+        </sc-if>
+        <div style="background:#fdf3e7;border-radius:12px;padding:13px 14px;font-size:13px;line-height:1.5;color:#7a4a10">
+          <div style="font-weight:600;margin-bottom:3px">Two blocks overlap between 21:00 and 23:30</div>
+          <div>The later one wins where they meet.</div>
+        </div>
+        <sc-if value="{{ showHex }}" hint-placeholder-val="{{ true }}">
+          <div style="font-weight:600;font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#6a7180">Warning — FDF3E7 on 7A4A10</div>
+        </sc-if>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Tinted blocks, no border, no icon: first line is the finding, second is the consequence. Success is only ever a dot in 5AA86B — there is no green banner.</div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Light temperature ramp</div>
+        <div style="height:28px;border-radius:8px;background:linear-gradient(90deg,#e8892c,#efa658,#f4c68a,#f2e6d6,#eaf0fb,#dbe8fb)"></div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:#4b5563">
+          <span>Candlelight</span><span>Daylight</span>
+        </div>
+        <sc-if value="{{ showHex }}" hint-placeholder-val="{{ true }}">
+          <div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;font-weight:600;font-size:11px;line-height:1.4;text-transform:uppercase;color:#6a7180;text-align:center">
+            <span>E8892C</span><span>EFA658</span><span>F4C68A</span><span>F2E6D6</span><span>EAF0FB</span><span>DBE8FB</span>
+          </div>
+        </sc-if>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Shown at its shipping height of 28px. Six fixed stops, used for the colour slider and — laid out across 24 hours — for the circadian preview strip. Never restyled or re-ordered.</div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Bulb colour swatches</div>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px">
+          <span style="height:34px;border-radius:8px;background:#f2e6d6;border:1px solid rgba(22,24,29,.1)"></span>
+          <span style="height:34px;border-radius:8px;background:#dbe8fb;border:2.5px solid #2a1958;box-shadow:0 0 0 3px rgba(42,25,88,.16);box-sizing:border-box"></span>
+          <span style="height:34px;border-radius:8px;background:#e0533f;border:1px solid rgba(22,24,29,.1)"></span>
+          <span style="height:34px;border-radius:8px;background:#a763b8;border:1px solid rgba(22,24,29,.1)"></span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px">
+          <span style="height:28px;border-radius:8px;background:#b8342c;border:1px solid rgba(22,24,29,.1)"></span>
+          <span style="height:28px;border-radius:8px;background:#e8a33c;border:1px solid rgba(22,24,29,.1)"></span>
+          <span style="height:28px;border-radius:8px;background:#9fc45a;border:1px solid rgba(22,24,29,.1)"></span>
+          <span style="height:28px;border-radius:8px;background:#4f9e6a;border:1px solid rgba(22,24,29,.1)"></span>
+          <span style="height:28px;border-radius:8px;background:#3f86b8;border:1px solid rgba(22,24,29,.1)"></span>
+          <span style="height:28px;border-radius:8px;background:#5b52c4;border:1px solid rgba(22,24,29,.1)"></span>
+          <span style="height:28px;border-radius:8px;background:#c25fa0;border:1px solid rgba(22,24,29,.1)"></span>
+          <span style="height:28px;border-radius:8px;background:#f5b8b0;border:1px solid rgba(22,24,29,.1)"></span>
+        </div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Eight named colours at 34px, sixteen more at 28px behind “Show more colours”. Both rows now share radius 8 — they used to differ. Hairline at 10% black so pale swatches still read; selection is a 2.5px border plus a halo, the one place a border heavier than 1.5px is allowed.</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============ TYPE ============ -->
+  <div style="background:#f4f5f7;border:1px solid #dfe3e9;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:20px">
+    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <h2 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-.01em">Type</h2>
+      <div style="font-size:15px;color:#4b5563">Five sizes, whole pixels, one family</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;align-items:start">
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Scale</div>
+        <div style="display:flex;align-items:baseline;gap:14px">
+          <div style="flex:1;font-size:20px;font-weight:700;letter-spacing:-.01em">Which lights?</div>
+          <div style="font-weight:600;font-size:11px;line-height:1.4;text-transform:uppercase;color:#6a7180;flex:none">20 / 700</div>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:14px">
+          <div style="flex:1;font-weight:600;font-size:16px;line-height:1.2">Living room — group heading</div>
+          <div style="font-weight:600;font-size:11px;line-height:1.4;text-transform:uppercase;color:#6a7180;flex:none">16 / 600</div>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:14px">
+          <div style="flex:1;font-size:15px;font-weight:500">Floor lamp — row title</div>
+          <div style="font-weight:600;font-size:11px;line-height:1.4;text-transform:uppercase;color:#6a7180;flex:none">15 / 500</div>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:14px">
+          <div style="flex:1;font-size:15px;line-height:1.5;color:#4b5563">Body copy sits at 15 with 1.5 line-height in secondary ink.</div>
+          <div style="font-weight:600;font-size:11px;line-height:1.4;text-transform:uppercase;color:#6a7180;flex:none">15 / 1.5</div>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:14px">
+          <div style="flex:1;font-size:13px;color:#6a7180">41 lx · just now — metadata</div>
+          <div style="font-weight:600;font-size:11px;line-height:1.4;text-transform:uppercase;color:#6a7180;flex:none">13 / 400</div>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:14px">
+          <div style="flex:1;font-weight:600;font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#6a7180">Step 1 · lights.html</div>
+          <div style="font-weight:600;font-size:11px;line-height:1.4;text-transform:uppercase;color:#6a7180;flex:none">11 / 600</div>
+        </div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:12px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Rules</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">One family, no webfont and no display face:</div>
+        <div style="background:#f4f5f7;border-radius:12px;padding:11px 13px;font-size:13px;line-height:1.5;color:#16181d">-apple-system, BlinkMacSystemFont, ‘Segoe UI’, Roboto, ‘Helvetica Neue’, sans-serif</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">The old half-pixel sizes — 12.5, 13.5, 14.5 — are gone. Nothing distinguished them at a glance and every new screen had to guess between them.</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">16 is the control size: group headings and every button share it, which is why it sits so close to body 15.</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Two weights do real work — 500 for row titles, 600 for headings and controls. 700 is only for screen titles.</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Never write the <span style="color:#16181d;font-weight:600">font</span> shorthand with <span style="color:#16181d;font-weight:600">inherit</span> as the family. It is invalid, the whole declaration is dropped, and the text silently falls back to 16px/400 — this was live in 89 places. Use longhands.</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Negative tracking only at 20px and above; positive tracking only on the 11px eyebrow. Row metadata sits 2px below its title, never beside it.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SHAPE ============ -->
+  <div style="background:#f4f5f7;border:1px solid #dfe3e9;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:20px">
+    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <h2 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-.01em">Shape, elevation, spacing</h2>
+      <div style="font-size:15px;color:#4b5563">A doubling scale: 8, 12, 16, pill</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;align-items:start">
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Radii</div>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px">
+          <span style="height:44px;border-radius:8px;background:#f4f5f7;box-shadow:inset 0 0 0 1px #dfe3e9"></span>
+          <span style="height:44px;border-radius:12px;background:#f4f5f7;box-shadow:inset 0 0 0 1px #dfe3e9"></span>
+          <span style="height:44px;border-radius:16px;background:#f4f5f7;box-shadow:inset 0 0 0 1px #dfe3e9"></span>
+          <span style="height:44px;border-radius:999px;background:#f4f5f7;box-shadow:inset 0 0 0 1px #dfe3e9"></span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;font-weight:600;font-size:11px;line-height:1.4;text-transform:uppercase;color:#6a7180;text-align:center">
+          <span>8</span><span>12</span><span>16</span><span>Pill</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;font-size:13px;line-height:1.3;color:#4b5563;text-align:center">
+          <span>Controls, swatches</span><span>Fills, banners, buttons</span><span>Cards, screens</span><span>Wizard CTA, pips</span>
+        </div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Two exceptions, both non-interactive: circles at 50% for radio marks and medallions, and 2px on chart bars. The old 6, 7, 9, 14, 18 and 20 have all been folded in.</div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Elevation</div>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px">
+          <span style="height:44px;border-radius:16px;background:#fff;border:1px solid #dfe3e9;box-shadow:0 6px 24px rgba(16,24,40,.06);box-sizing:border-box"></span>
+          <span style="height:44px;border-radius:16px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.05)"></span>
+          <span style="height:44px;border-radius:16px;background:#fff;box-shadow:inset 0 0 0 1px #dfe3e9"></span>
+          <span style="height:44px;border-radius:16px;background:#fff;border:1.5px solid #2a1958;box-shadow:0 0 0 3px rgba(42,25,88,.16);box-sizing:border-box"></span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;font-weight:600;font-size:11px;line-height:1.4;text-transform:uppercase;color:#6a7180;text-align:center">
+          <span>Screen</span><span>Raised</span><span>Hairline</span><span>Selected</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:7px">
+          <div style="background:#f4f5f7;border-radius:12px;padding:9px 12px;font-size:13px;line-height:1.4;color:#16181d">0 6px 24px rgba(16,24,40,.06)</div>
+          <div style="background:#f4f5f7;border-radius:12px;padding:9px 12px;font-size:13px;line-height:1.4;color:#16181d">0 1px 2px rgba(16,24,40,.05)</div>
+          <div style="background:#f4f5f7;border-radius:12px;padding:9px 12px;font-size:13px;line-height:1.4;color:#16181d">inset 0 0 0 1px #dfe3e9</div>
+          <div style="background:#f4f5f7;border-radius:12px;padding:9px 12px;font-size:13px;line-height:1.4;color:#16181d">0 0 0 3px rgba(42,25,88,.16)</div>
+        </div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">The last is the only selection and focus halo. No shadow signals state on its own — the border does that.</div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:12px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Spacing &amp; metrics</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Phone screen width 390px. Screen body padding 18px 16px 24px; top and bottom chrome 13–15px.</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Every tappable row is at least 44px tall with border-box sizing. Every button is 48px.</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Row padding is 12px 0 inside a 0 14px gutter, so the divider runs to the text edge rather than the card edge.</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Gaps: 6 between pips, 10–12 between a control and its label, 14 between stacked blocks, 20–22 between screens on the canvas.</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Cards stacked outside a group sit 7px apart; grouped cards sit 10px apart.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ COMPONENTS ============ -->
+  <div style="background:#f4f5f7;border:1px solid #dfe3e9;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:20px">
+    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <h2 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-.01em">Components</h2>
+      <div style="font-size:15px;color:#4b5563">Live specimens at the size they ship</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;align-items:start">
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Buttons — two shapes by context</div>
+        <div style="display:flex;align-items:center;gap:9px;background:linear-gradient(135deg,#2f7cf6,#3fa9f5);color:#fff;font-weight:600;font-size:16px;border-radius:999px;padding:13px 26px;min-height:48px;box-sizing:border-box;width:fit-content">Start<span style="font-size:16px;line-height:1">→</span></div>
+        <div style="font-weight:600;font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#6a7180">Pill · pairing wizard only · Homey platform blue</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;justify-content:center;background:#2a1958;color:#fff;font-weight:600;font-size:16px;border-radius:12px;padding:14px;min-height:48px;box-sizing:border-box">Save</div>
+          <div style="display:flex;align-items:center;justify-content:center;background:#fff;color:#2a1958;border:1.5px solid #2a1958;font-weight:600;font-size:16px;border-radius:12px;padding:14px;min-height:48px;box-sizing:border-box">Test this colour</div>
+          <div style="display:flex;align-items:center;justify-content:center;background:#fff;color:#16181d;border:1.5px solid #dfe3e9;font-weight:600;font-size:16px;border-radius:12px;padding:14px;min-height:48px;box-sizing:border-box">Close</div>
+        </div>
+        <div style="font-weight:600;font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#6a7180">Rect 12 · full width · in-app</div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:16px;font-weight:500;color:#4b5563"><span style="font-size:16px;line-height:1">←</span>Previous</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">The blue gradient is inherited Homey platform chrome and stays inside the pairing wizard — it is the only gradient and the only blue in the product. Everything inside the app is a full-width rounded rectangle: solid purple to commit, purple outline for a reversible action, grey outline to dismiss. All four are 16/600 at 48px. Back is text only.</div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Disabled</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;justify-content:center;background:#eceef2;color:#8f97a3;font-weight:600;font-size:16px;border-radius:12px;padding:14px;min-height:48px;box-sizing:border-box">Save</div>
+          <div style="display:flex;align-items:center;justify-content:center;background:#fff;color:#8f97a3;border:1.5px solid #eceef2;font-weight:600;font-size:16px;border-radius:12px;padding:14px;min-height:48px;box-sizing:border-box">Test this colour</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #eceef2;min-height:44px;box-sizing:border-box">
+          <div style="flex:none;width:22px;height:22px;border-radius:8px;border:1.5px solid #eceef2;box-sizing:border-box"></div>
+          <div style="flex:1"><div style="font-size:15px;font-weight:500;color:#8f97a3">Porch lamp</div><div style="font-size:13px;color:#8f97a3;margin-top:2px">Not reachable</div></div>
+        </div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Disabled is a colour change, never an opacity change — dropping opacity takes the text below 4.5:1 and fades the card edge with it. Fills go to the divider grey, all text and marks go to furniture grey, borders go to the divider grey. A disabled row always says why in its metadata line.</div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Loading</div>
+        <div style="display:flex;align-items:center;justify-content:center;background:#eceef2;color:#8f97a3;font-weight:600;font-size:16px;border-radius:12px;padding:14px;min-height:48px;box-sizing:border-box">Saving…</div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #eceef2;min-height:44px;box-sizing:border-box">
+          <div style="flex:none;width:22px;height:22px;border-radius:8px;border:1.5px solid #d4d8e0;box-sizing:border-box"></div>
+          <div style="flex:1"><div style="font-size:15px;font-weight:500">Kitchen motion</div><div style="font-size:13px;color:#6a7180;margin-top:2px">Checking…</div></div>
+        </div>
+        <div style="position:relative;height:4px;border-radius:999px;background:#eceef2;overflow:hidden">
+          <div style="position:absolute;top:0;bottom:0;width:38%;border-radius:999px;background:#2a1958;animation:lk-indeterminate 1.4s ease-in-out infinite"></div>
+        </div>
+        <div style="font-weight:600;font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#6a7180">Screen-level wait · 4px, the progress-pip track</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">There is no spinner, because there is no icon set. A button in flight keeps its exact size and swaps its label to the present participle while taking the disabled fill; a row in flight swaps its metadata line to “Checking…”. Only a whole-screen wait gets the bar, which reuses the progress-pip track at 4px — the single piece of motion in the system, 1.4s ease-in-out.</div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Empty &amp; unresolved</div>
+        <div style="background:#f4f5f7;border:1.5px dashed #c9d2e0;border-radius:16px;padding:20px 16px">
+          <p style="margin:0;font-size:15px;line-height:1.5;color:#4b5563">Lightkeeper uses lights already in Homey. Add a bulb or a lamp first, then come back.</p>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:8px;border:1.5px dashed #c9d2e0;border-radius:12px;padding:13px;font-size:15px;font-weight:500;color:#3b2279;min-height:48px;box-sizing:border-box">Add a schedule block</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">A dashed 1.5px edge in C9D2E0 means “nothing here yet, and that is expected” — empty states, add-slots, and the placeholder frames on the canvas. It is never used for errors, which are tinted blocks, and never mixed with a solid border on the same element.</div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Selection marks</div>
+        <div style="display:flex;gap:26px;flex-wrap:wrap">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div style="flex:none;width:22px;height:22px;border-radius:8px;background:#2a1958;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700">✓</div>
+              <div style="flex:none;width:22px;height:22px;border-radius:8px;border:1.5px solid #d4d8e0;box-sizing:border-box"></div>
+            </div>
+            <div style="font-weight:600;font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#6a7180">Multi</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div style="flex:none;width:22px;height:22px;border-radius:50%;background:#2a1958;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700">✓</div>
+              <div style="flex:none;width:22px;height:22px;border-radius:50%;border:1.5px solid #d4d8e0;box-sizing:border-box"></div>
+            </div>
+            <div style="font-weight:600;font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#6a7180">Single</div>
+          </div>
+        </div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Square means you may pick several; circle means picking one replaces the last. 22px, a 1.5px control-grey outline when off, solid purple with a white tick when on. The shape is load-bearing — never swap one for the other to fit a layout.</div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Progress</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="width:22px;height:4px;border-radius:999px;background:#2a1958"></span>
+          <span style="width:22px;height:4px;border-radius:999px;background:#dfe3e9"></span>
+          <span style="width:22px;height:4px;border-radius:999px;background:#dfe3e9"></span>
+          <span style="margin-left:4px;font-size:13px;color:#6a7180">Step 1 of 3</span>
+        </div>
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <div style="flex:none;width:26px;height:26px;border-radius:50%;background:#f3eefc;border:1.5px solid #d9cbf5;color:#3b2279;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;box-sizing:border-box">1</div>
+          <div style="flex:1"><div style="font-weight:600;font-size:16px;line-height:26px">Which lights</div><div style="font-size:13px;color:#6a7180;margin-top:2px;line-height:1.45">Pick them by room</div></div>
+        </div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Pips are 4px tall and 22px wide at three steps, 16px at four — they shrink rather than wrap, and the count is always spelled out beside them. Numbered medallions appear only on intro screens, never mid-flow.</div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Room picker</div>
+        <div style="background:#fff;border:1.5px solid #2a1958;border-radius:16px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;padding:13px 14px;min-height:44px;box-sizing:border-box">
+            <span style="flex:1;font-weight:600;font-size:16px;line-height:1.2">Living room</span>
+            <span style="font-size:13px;color:#6a7180">2 of 6</span>
+            <span style="font-size:13px;font-weight:600;color:#3b2279">Select all</span>
+            <span style="font-size:16px;color:#8f97a3;transform:rotate(90deg)">›</span>
+          </div>
+          <div style="border-top:1px solid #eceef2"></div>
+          <div style="padding:0 14px">
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #eceef2;min-height:44px;box-sizing:border-box">
+              <div style="flex:none;width:22px;height:22px;border-radius:8px;background:#2a1958;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700">✓</div>
+              <div style="flex:1"><div style="font-size:15px;font-weight:500">Floor lamp</div><div style="font-size:13px;color:#6a7180;margin-top:2px">Colour temperature</div></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 0;min-height:44px;box-sizing:border-box">
+              <div style="flex:none;width:22px;height:22px;border-radius:8px;border:1.5px solid #d4d8e0;box-sizing:border-box"></div>
+              <div style="flex:1"><div style="font-size:15px;font-weight:500">Reading light</div><div style="font-size:13px;color:#6a7180;margin-top:2px">Dimmable</div></div>
+            </div>
+          </div>
+        </div>
+        <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;padding:13px 14px;min-height:44px;box-sizing:border-box">
+            <span style="flex:1;font-weight:600;font-size:16px;line-height:1.2">Kitchen</span>
+            <span style="font-size:13px;color:#6a7180">0 of 9</span>
+            <span style="font-size:16px;color:#8f97a3">›</span>
+          </div>
+          <div style="border-top:1px solid #eceef2"></div>
+          <div style="display:flex;align-items:center;gap:10px;padding:13px 14px;min-height:44px;box-sizing:border-box">
+            <span style="flex:1;font-weight:600;font-size:16px;line-height:1.2">Hallway</span>
+            <span style="font-size:13px;color:#6a7180">0 of 4</span>
+            <span style="font-size:16px;color:#8f97a3">›</span>
+          </div>
+        </div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">One room is open at a time, bordered 1.5px in brand purple. Closed rooms collect below in a single 1px card divided by hairlines, chevrons pointing right; the open one points down. “Select all” appears only on the open room. The count is always n of m, shown even at zero.</div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">List rows &amp; fills</div>
+        <div style="display:flex;align-items:center;background:#f4f5f7;border-radius:12px;padding:11px 13px;min-height:44px;box-sizing:border-box">
+          <span style="flex:1;font-size:15px;color:#6a7180">Search 54 lights</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:11px;background:#fff;border:1.5px solid #dfe3e9;border-radius:12px;padding:11px 14px;min-height:44px;box-sizing:border-box">
+          <span style="position:relative;flex:none;display:flex;align-items:center;justify-content:center;width:24px;height:24px"><span style="width:16px;height:16px;border-radius:50%;background:#f4c24a"></span><span style="position:absolute;inset:0;border-radius:50%;border:2px solid #2a1958;border-right-color:transparent;border-bottom-color:transparent;transform:rotate(45deg)"></span></span>
+          <div style="flex:1"><div style="font-size:15px;font-weight:500">Warm white</div><div style="font-size:13px;color:#6a7180;margin-top:2px">2700 K · 60%</div></div>
+          <span style="font-size:16px;color:#8f97a3">›</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #eceef2;min-height:44px;box-sizing:border-box">
+          <div style="flex:none;width:22px;height:22px;border-radius:50%;border:1.5px solid #d4d8e0;box-sizing:border-box"></div>
+          <div style="flex:1"><div style="font-size:15px;font-weight:500">Window sensor</div><div style="font-size:13px;color:#6a7180;margin-top:2px">1400 lx · just now</div></div>
+          <span style="font-size:16px;color:#8f97a3">›</span>
+        </div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">A row carries at most a mark, a title, one metadata line and a chevron. Metadata is middle-dot separated and always ends with recency. Search is a filled neutral block with no border and no magnifier — the placeholder states the count.</div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Activity heatmap</div>
+        <div style="display:flex;flex-direction:column;gap:3px">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="flex:none;width:26px;font-size:11px;color:#4b5563">Mon</span>
+            <span style="flex:1;height:11px;border-radius:2px;background:#f4f2fa"></span><span style="flex:1;height:11px;border-radius:2px;background:#f4f2fa"></span><span style="flex:1;height:11px;border-radius:2px;background:#e0d6f6"></span><span style="flex:1;height:11px;border-radius:2px;background:#c4b0ec"></span><span style="flex:1;height:11px;border-radius:2px;background:#9f81dc"></span><span style="flex:1;height:11px;border-radius:2px;background:#6b48bc"></span><span style="flex:1;height:11px;border-radius:2px;background:#9f81dc"></span><span style="flex:1;height:11px;border-radius:2px;background:#c4b0ec"></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="flex:none;width:26px;font-size:11px;color:#4b5563">Tue</span>
+            <span style="flex:1;height:11px;border-radius:2px;background:#f4f2fa"></span><span style="flex:1;height:11px;border-radius:2px;background:#e0d6f6"></span><span style="flex:1;height:11px;border-radius:2px;background:#c4b0ec"></span><span style="flex:1;height:11px;border-radius:2px;background:#9f81dc"></span><span style="flex:1;height:11px;border-radius:2px;background:#c4b0ec"></span><span style="flex:1;height:11px;border-radius:2px;background:#e0d6f6"></span><span style="flex:1;height:11px;border-radius:2px;background:#f4f2fa"></span><span style="flex:1;height:11px;border-radius:2px;background:#f4f2fa"></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="flex:none;width:26px;font-size:11px;color:#4b5563">Wed</span>
+            <span style="flex:1;height:11px;border-radius:2px;background:#e0d6f6"></span><span style="flex:1;height:11px;border-radius:2px;background:#c4b0ec"></span><span style="flex:1;height:11px;border-radius:2px;background:#6b48bc"></span><span style="flex:1;height:11px;border-radius:2px;background:#9f81dc"></span><span style="flex:1;height:11px;border-radius:2px;background:#f4f2fa"></span><span style="flex:1;height:11px;border-radius:2px;background:#f4f2fa"></span><span style="flex:1;height:11px;border-radius:2px;background:#e0d6f6"></span><span style="flex:1;height:11px;border-radius:2px;background:#c4b0ec"></span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-weight:600;font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#6a7180">Less</span>
+          <span style="width:22px;height:11px;border-radius:2px;background:#f4f2fa"></span>
+          <span style="width:22px;height:11px;border-radius:2px;background:#e0d6f6"></span>
+          <span style="width:22px;height:11px;border-radius:2px;background:#c4b0ec"></span>
+          <span style="width:22px;height:11px;border-radius:2px;background:#9f81dc"></span>
+          <span style="width:22px;height:11px;border-radius:2px;background:#6b48bc"></span>
+          <span style="font-weight:600;font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#6a7180">More</span>
+        </div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Five purple steps, 11px tall at radius 2 with a 3px row gap — the one place radius 2 is allowed. Day labels are 11px in a fixed 26px column so the grid stays aligned.</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============ VOICE ============ -->
+  <div style="background:#f4f5f7;border:1px solid #dfe3e9;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:20px">
+    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <h2 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-.01em">Voice</h2>
+      <div style="font-size:15px;color:#4b5563">Plain, British, second person, no exclamation marks</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;align-items:start">
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:12px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Rules</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Titles are questions or plain statements of outcome — “Which lights?”, “Warm at night, cool at noon”. Sentence case throughout; no title case anywhere.</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">British spelling: colour, not color.</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Subtitles explain the benefit, not the mechanism: “Your lights follow the sun instead of sitting at one colour all day.”</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Errors name the fact first, then what follows from it. No apology, no “oops”, no emoji.</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">In-flight labels are the present participle of the button’s own verb — Save becomes Saving…, Test becomes Testing… — so the label never jumps to an unrelated word.</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Numbers are concrete and unit-suffixed — 41 lx, 2700 K, 2 of 6, Step 1 of 3 — and times are 24-hour, as in 21:00.</div>
+      </div>
+      <div style="background:#fff;border:1px solid #dfe3e9;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:12px">
+        <div style="font-weight:600;font-size:16px;line-height:1.2">Iconography</div>
+        <div style="display:flex;gap:18px;align-items:center;background:#f4f5f7;border-radius:12px;padding:13px 14px;font-size:16px;color:#4b5563">
+          <span>←</span><span>→</span><span style="color:#8f97a3">›</span><span style="color:#8f97a3">×</span><span style="color:#2a1958">✓</span>
+        </div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">There is no icon set. The interface uses five text glyphs at the ambient font size, and a chevron is rotated 90° to open rather than swapped for another glyph.</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">The serif italic “i” badge that used to mark hints has been removed — it was the only serif in the product and the only drawn icon.</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">Colour, shape and the 24-hour ramp carry meaning instead of icons. If something needs an icon to be understood, the label is wrong.</div>
+        <div style="font-size:15px;line-height:1.5;color:#4b5563">No emoji, ever.</div>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showHex&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}"></script>
+</body>
+</html>

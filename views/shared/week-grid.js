@@ -65,7 +65,7 @@ function weekGrid(host, payload) {
      * legible where 84 nearly-identical ones do not. Light is bright and dark
      * is dark, which is the way round somebody expects a picture of light.
      */
-    var SHADES = ['#3b2279', '#6b48bc', '#9f81dc', '#c4b0ec', '#e0d6f6', '#f4f2fa'];
+    var SHADES = ['#6b48bc', '#9f81dc', '#c4b0ec', '#e0d6f6', '#f4f2fa'];
     function cellColour(value) {
       return SHADES[Math.min(SHADES.length - 1, Math.floor((1 - value) * SHADES.length))];
     }
@@ -118,6 +118,23 @@ function weekGrid(host, payload) {
      * pattern. So it gets a line, on the weeks that have a gap in them, and no
      * line at all on the ones that do not.
      */
+    /**
+     * The scale, as five chips between two words.
+     *
+     * Drawn from the same array the cells are, reversed, so the key cannot
+     * disagree with the grid above it — which is the one thing a legend must
+     * never do.
+     */
+    var key = node('div', 'week-key');
+    key.appendChild(node('span', null, Homey.__('week.less')));
+    for (var k = SHADES.length - 1; k >= 0; k--) {
+      var chip = node('i');
+      chip.style.background = SHADES[k];
+      key.appendChild(chip);
+    }
+    key.appendChild(node('span', null, Homey.__('week.more')));
+    host.appendChild(key);
+
     if (anyGap) {
       var legend = node('div', 'week-legend');
       legend.appendChild(node('i'));

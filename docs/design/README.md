@@ -1,26 +1,44 @@
-# The design canvas, and where the app departs from it
+# The design system, the flows, and where the app departs from them
 
-[`Lightkeeper pairing flows.dc.html`](Lightkeeper%20pairing%20flows.dc.html) is a Claude Design
-canvas: thirty-four screens at 390px, covering all five device types plus the credential gate, with
-the happy path on one row and the special cases on a second. `support.js` is its runtime — open the
-HTML file in a browser and it renders.
+Two Claude Design canvases. Open either in a browser and it renders; `support.js` is their runtime.
 
-**It is the durable visual reference, and the shipped views are compared against it screen by
-screen.** `npm run render:views` draws every pair view inside Homey's own sheet to `.views/`, which
-is the artefact to put beside this canvas.
+- **[`Lightkeeper design system.dc.html`](Lightkeeper%20design%20system.dc.html)** is the rulebook.
+  Five type sizes, four radii, three border roles, two button shapes, and live specimens of every
+  recurring component at the size it ships. Its own first line is the governing one: *"Anything not on
+  this page is not in the system."*
+- **[`Lightkeeper pairing flows.dc.html`](Lightkeeper%20pairing%20flows.dc.html)** is that system
+  applied: thirty-four screens at 390px, all five device types plus the credential gate, happy path on
+  one row and the special cases on a second.
 
-It is not a spec. It is a drawing made before the code existed, and in seven places the code knows
-something the drawing does not. Those seven are below, with the reason, so that the next person to
-put the two side by side does not spend an afternoon re-deciding them.
+**They are the durable visual reference, and the shipped views are compared against them screen by
+screen.** `npm run render:views` draws every pair view inside Homey's own sheet to `.views/`, which is
+the artefact to put beside the flows file.
 
-## What the canvas is the authority on
+## What they are the authority on
 
-Everything not listed below: the colour tokens, the type ladder, every radius and gutter, the step
-dots, the row shape, the card shape, the numbered intro rows, the swatch grids, the week grid, the
-day strip, the nine job tiles, and all the copy. When a view and the canvas disagree about one of
-those, the view is wrong.
+Everything not listed below. The type scale (20 / 16 / 15 / 13 / 11, plus 32 for the two display
+numerals), the four radii (8, 12, 16, pill — with 50% for round marks and 2px for chart bars), the
+three border roles, the four inks, the three surfaces, the button shapes, the status colours, the
+swatch grids, the heatmap, the day strip, and all the copy. When a view and the canvases disagree about
+one of those, the view is wrong — and two tests in `pair-view-styles.test.ts` now say so for the type
+scale and the radii, so it fails rather than drifts.
 
-## Where the app departs from it, on purpose
+## Where the system page and the flows file disagree
+
+The flows file wins. It is the shipping artefact, and the system page says everything on it *"is in use
+in the flows file"*. Three known conflicts:
+
+1. **`700` is legal on the numbered medallion and the checkbox tick.** The system says 700 is screen
+   titles only, while its own specimens draw both of those at 13/700.
+2. **The hatch keeps `#f7f8fa`.** The system says there is no third surface; the missing-reading cell
+   in the flows file is drawn with one.
+3. **Card gaps follow the flows file's per-screen values**, not the system's blanket 7px / 10px.
+
+One warning on the system page is about the canvas rather than the code: `font: 600 13px/1.2 inherit`
+is invalid and silently computes to 16px/400, *"live in 89 places"*. That was the canvas's own markup —
+this repo hit the same bug in seven places, fixed it, and has guarded it ever since.
+
+## Where the app departs from them, on purpose
 
 1. **A Colour Curve Light pairs with "Set brightness too" switched ON.** The canvas says the default
    is off and the chart is purely a day of colour. A flat chart is a picture of one axis: every bar
@@ -51,9 +69,13 @@ those, the view is wrong.
    (−120…+240 in the morning, −240…+120 in the evening). `MAX_OFFSET` and `OFFSET_STEP` in
    `lib/circadian/simple-curve.ts` carry the reasoning for the symmetric range.
 
+**Three things stopped being departures**, because the flows file deleted them rather than omitting
+them: "Look again" and "Add a light to Homey" on the no-lights screen, and "Open my.homey.app again"
+on the rejected-key screen. All three are gone from the app too.
+
 ## Open, not departed
 
-**Pre-staging has no control on any screen, and the canvas has none either — but that is a question
+**Pre-staging has no control on any screen, and neither canvas has one either — but that is a question
 rather than an answer.** The setting exists, a new device still pairs with it on, and every guard
 around it is intact; what is gone is the switch and the "Test it on my lights" button that let a
 household prove it against their own lamps, which platform §6 says only their own lamps can prove.
