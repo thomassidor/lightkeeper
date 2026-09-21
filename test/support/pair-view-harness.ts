@@ -29,6 +29,12 @@ export interface FakeNode {
   checked: boolean;
   disabled: boolean;
   selected: boolean;
+  /**
+   * How far this element is scrolled. Only the container's scroller is ever
+   * given one on a real Homey, and a view sets it to put a newly opened room in
+   * front of somebody — so it is here to be asserted rather than to be read.
+   */
+  scrollTop: number;
   /** `<details>`. The mapping screen opens a collapsed section to show a note. */
   open: boolean;
   /**
@@ -112,6 +118,7 @@ function makeNode(tagName: string): FakeNode {
     checked: false,
     disabled: false,
     selected: false,
+    scrollTop: 0,
     open: false,
     hidden: false,
     min: '',
@@ -395,6 +402,15 @@ function applyAttrs(node: FakeNode, attrs: string): void {
 export interface ViewRun {
   /** The view's root element, after its script has run. */
   root: FakeNode;
+  /**
+   * The pairing container's scrolling element — the root's parent here, and a
+   * real ancestor on a Homey, which is why every view finds it by walking up.
+   *
+   * Exposed so `scrollTop` can be asserted: a picker that opens a room renders
+   * that room ABOVE the list it was tapped in, so the scroll is the only thing
+   * that puts it in front of anybody.
+   */
+  scroller: FakeNode;
   /** Every `emit()` the view made, in order. */
   emitted: Array<{ event: string; data: unknown }>;
   /**
@@ -502,6 +518,15 @@ export function runPairView(html: string, options: ViewOptions = {}): ViewRun {
     },
   };
 
+  /**
+   * The pairing container's scroller, which a view finds by walking up from its
+   * own root — so the harness has to give the root a parent that reports itself
+   * as scrolling, or the two things views do with it (reserving the scrollbar
+   * gutter, scrolling a newly opened room into view) are untestable.
+   */
+  const scroller = makeNode('div');
+  scroller.appendChild(root);
+
   const document = {
     getElementById: byId,
     createElement: makeNode,
@@ -553,7 +578,7 @@ export function runPairView(html: string, options: ViewOptions = {}): ViewRun {
     );
     run(
       document, window, homey, css,
-      () => ({ overflowY: 'visible' }),
+      (node: FakeNode) => ({ overflowY: node === scroller ? 'auto' : 'visible' }),
       // Timers are inert: `emit()` arms a 20 s timeout it always clears, and a
       // real one would keep the test process alive.
       () => 0,
@@ -566,6 +591,8 @@ export function runPairView(html: string, options: ViewOptions = {}): ViewRun {
 
   return {
     root,
+    /** The pairing container's scrolling element, for `scrollTop`. */
+    scroller,
     emitted,
     shown,
     created,

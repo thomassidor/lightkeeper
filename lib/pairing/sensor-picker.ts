@@ -56,9 +56,9 @@ export async function listSensorsPayload(
    * list saying so. Listing only the rooms that have one showed two cards and
    * left a house of eleven rooms looking like a house of two.
    */
-  const byZone = new Map<string, { zoneName: string; sensors: PickerSensor[] }>();
+  const byZone = new Map<string, { zoneId: string; zoneName: string; sensors: PickerSensor[] }>();
   for (const zone of zones as Array<{ id: string; name: string }>) {
-    byZone.set(zone.id, { zoneName: zone.name, sensors: [] });
+    byZone.set(zone.id, { zoneId: zone.id, zoneName: zone.name, sensors: [] });
   }
 
   for (const device of devices) {
@@ -69,7 +69,7 @@ export async function listSensorsPayload(
       // A zone the zone list did not carry, which is the roomless bucket. The
       // VIEW names it, for the reason target-picker.ts gives: a label built in
       // `lib/` could never be translated.
-      byZone.set(key, { zoneName: '', sensors: [] });
+      byZone.set(key, { zoneId: key, zoneName: '', sensors: [] });
     }
     byZone.get(key)!.sensors.push({
       id: device.id,
@@ -88,6 +88,16 @@ export async function listSensorsPayload(
       .sort((a, b) => (a.zoneName === '' ? 1 : b.zoneName === '' ? -1
         : a.zoneName.localeCompare(b.zoneName)))
       .map(room => ({
+        /**
+         * The room's own id, and the screen needs it rather than wanting it:
+         * one room is open at a time and the open one is remembered by id. It
+         * used to be absent, so every room compared `undefined === undefined`
+         * and the picker opened all of them at once.
+         *
+         * Never the NAME — two zones may share one, and a room called after the
+         * roomless bucket's label would then open it.
+         */
+        zoneId: room.zoneId,
         zoneName: room.zoneName,
         unzoned: room.zoneName === '',
         sensors: [...room.sensors].sort((a, b) => a.name.localeCompare(b.name)),

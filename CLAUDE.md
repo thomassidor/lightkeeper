@@ -61,6 +61,8 @@ npm run render:views           # draw every pairing screen, inside Homey's own s
                                # — needs Chrome, not CI
 npm run render:icons           # draw every icon at the App Store's 24px box. Chrome, not CI
 python artwork/export-assets.py   # re-export every shipped icon, image and the banner
+node scripts/diagnostics.mjs            # what every device is doing right now, digested. Read-only
+node scripts/diagnostics.mjs --save     # the same, plus the whole document into temp/
 node scripts/evidence.mjs status        # is a seven-day recording running, and how big?
 node scripts/evidence.mjs export        # pull the archive down and decrypt it locally
 node scripts/verify-hardware.mjs spike       # can the script reach a real Homey at all?
@@ -118,7 +120,10 @@ lib/
   inputs/                       input contract, normalizer, magnitude collapse
   mapping/                      mapping engine, supersede gate, behaviour types
   outputs/                      intents, perceptual curve, planner, scheduler, ramp engine,
-                                target resolver, target-state cache
+                                target resolver, target-state cache, and
+                                lightkeeper-settings.ts — what two OTHER Lightkeeper devices want
+                                the lights to be, shared by the `set_lights` Flow card and by a
+                                remote's `lightkeeper_on` button
   bridge/                       binding compiler, flow bridge manager, flow folders
   flow/                         the two Flow cards this app OFFERS, as opposed to the three it
                                 generates: what `set_lights` decides (set-lights.ts), what its
@@ -139,7 +144,10 @@ lib/
                                 and the Flow tags Homey makes of them (platform §18)
   profiles/                     profile schema, migrations
   schedules/                    types, window maths, local clock, bindings, runtime, manager,
-                                time-card discovery, migrations
+                                time-card discovery, migrations. A block carries a palette `color`
+                                as of 0.6.5, and its `temperature` is DERIVED from that colour by the
+                                sanitiser — the fallback for a lamp that cannot take one, exactly as
+                                `warmth` is on a CircadianPoint
   circadian/                    the curve ENGINE, shared by two device types: curve types and
                                 cyclic interpolation, the 24-colour palette, the three-zone
                                 simple plan and its sun-anchored boundaries, runtime, manager,
@@ -160,8 +168,14 @@ lib/
                                 (platform §13). flow-screens.ts answers the two views every
                                 driver shares — the intro and the review — from a payload the
                                 driver supplies, so the step count and the review rows are the
-                                only thing a driver writes. press-listener.ts is press-to-find:
-                                a bounded live subscription on every remote in the house.
+                                only thing a driver writes. mapping-screen.ts also holds
+                                storedRuleFrom(), the ONE conversion from a validated row to the
+                                rule a profile stores — it was two, and only one of them carried
+                                the preset.
+                                source-picker.ts is what the two "take it from" screens offer:
+                                which devices answer which question, the live swatch or level on
+                                each row, and why a level is drawn perceptually when the board
+                                publishes a device value.
                                 pair-session.ts is the same lift for the MECHANICS: the handler
                                 wrapper, the sensor retain/release ref-count, the light picker's
                                 two handlers, save-and-name, the credential pair and the curve
@@ -194,10 +208,13 @@ lib/
   homey-api-types.ts            the DEVICE and ZONE shapes homey-api returns, at the one
                                 seam that normalises them. The flow and card seams read `any`
 drivers/controller/             virtual device, driver, and the LONGEST flow: intro, credential,
-                                1 remote, 2 lights, 3 buttons, 4 review, plus two pushed screens
-                                (job, listen). It owns the authored copy of all four SHARED views
+                                1 remote, 2 lights, 3 buttons, 4 review, plus TWO pushed screens
+                                (job, and source pushed from job). It owns the authored copy of
+                                all four SHARED views
   pair/                         eight views. intro/lights/review/credential are the shared four,
-                                edited HERE and copied into the other drivers by sync:views
+                                edited HERE and copied into the other drivers by sync:views.
+                                source.html is the SECOND pushed screen — one file, two questions,
+                                behind the `lightkeeper_on` job's two rows
   repair/                       exact copies of pair/, generated — see platform §8
 drivers/circadian/              three zones of the day, anchored to the sun. NO credential screen
   pair/                         intro, 1 lights, 2 day, 3 review, plus the pushed tryit. day.html
@@ -251,6 +268,13 @@ scripts/render-views.mjs        every pairing screen to a PNG, plus a contact sh
 scripts/render-icons.mjs        every icon at the size the App Store draws it — 24px of ink in a
                                 40px circle (platform §10). The contact sheet that catches an icon
                                 too fine or too busy to read there
+scripts/diagnostics.mjs         one GET of the app's own /diagnostics on a REAL Homey, digested to
+                                a page a person can read: state, last pass and the handful of
+                                fields a capture has ever turned on — ignored writes, slow writes,
+                                overrides, pre-stage backoff, a quiet sensor. `--raw` and `--save`
+                                give the unabridged document, which is ~1 MB and mostly identical
+                                ticks. Same key and address as the two below. Writes NOTHING to the
+                                Homey; `--save` writes to temp/ (gitignored, and a capture)
 scripts/evidence.mjs            start | stop | status | export | note | clear | analyze against a
                                 REAL Homey's recorder. Needs a Personal API Key; use the SECOND
                                 one to export while a run continues (platform §2). Reports to
@@ -266,7 +290,7 @@ scripts/hardware-env.json       GITIGNORED. A Homey address and two Personal API
                                 verify-hardware.mjs when the env vars are not set
 views/shared/                   NOT bundled. The one authored copy of each block that appears
                                 in more than one pair view — the CSS base, emit() and
-                                stabiliseScrollbar() in all 56, the week grid's CSS and weekGrid()
+                                stabiliseScrollbar() in all 54, the week grid's CSS and weekGrid()
                                 in the two daylight screens that draw it. `npm run sync:views`
                                 splices them in
 settings/index.html             app settings page
@@ -290,9 +314,11 @@ docs/                           NOT bundled. `docs/README.md` indexes it
   commands.md                   every command in one place, with the trap that goes with each
                                 — including the seven-day recorder: how to start one, its limits,
                                 and reading `malformed` before believing a timeline
-  design/                       the Claude Design canvas the 0.6.0 pairing rewrite was built
-                                from, its runtime, and a README that is itself a decision
-                                record: the four turns, and six deliberate departures
+  design/                       the Claude Design canvas every pairing screen is compared
+                                against, its runtime, and a README that is itself a decision
+                                record: what the canvas is the authority on, the seven places
+                                the app departs from it on purpose, and the one still open.
+                                `npm run render:views` draws the artefact to put beside it
 artwork/                        NOT bundled. Every graphic's source, and its own two docs
   masters/                      every graphic's source
   export-assets.py              builds every shipped icon and image from those
@@ -416,6 +442,14 @@ The version lives in **four** places and a release is only coherent when all of 
 | `package.json` | must match it |
 | `package-lock.json` | must match it too, in BOTH the top-level `version` and the `""` package entry. `npm install` updates it; a hand-edited `package.json` alone leaves it behind |
 | `app.json` | **generated** — never hand-edit; the CLI rewrites it from `.homeycompose/` on every `validate`, `build` and `install` |
+
+**The app is documented as early access, and that is a promise to keep rather than a hedge.**
+`README.md`, `README.txt` (the store listing), `FAQ.md` ("Is this finished?"), `CHANGELOG.md`,
+`CONTRIBUTING.md` and `docs/README.md` all say that this is a 0.x app in early development and that
+an update can change or break a setup somebody already made. So a change that reshapes a stored
+shape is allowed — but it ships with a migration wherever one is possible, and it is named in plain
+user language in the changelog, because there are no major bumps before 1.0 and the entry is the
+only warning anybody gets.
 
 Every user-visible change ships a changelog entry, in **three** places with three different
 audiences. Three is deliberate rather than sloppy: the store entry, the full record and the front
@@ -638,7 +672,7 @@ driver and fails pre-processing with `ENOENT: … driver.compose.json`; `.homeyi
 the archive, since nothing on a Homey reads it.
 
 On-disk duplication is unchanged and has to be — Homey needs a real file per folder and will not
-follow a reference (platform §8). What changed is that a human edits one file instead of 56.
+follow a reference (platform §8). What changed is that a human edits one file instead of 54.
 A real `<link>`/`<script src>` may yet be possible: the Homey does serve a sibling file next to a
 pair view (measured, platform §8). What is unmeasured is whether an injected view's own external
 reference loads once the pairing container has placed it in the shared document.
@@ -772,6 +806,38 @@ Load-bearing product guarantees, not implementation details:
   `actualOn` guard was not enough because an integration can report `dim 0` a median of **29.9 s**
   before its own `onoff: false` — 296 of 327 overrides in a real week were exactly that, each one a
   false badge and a junk entry evicting real history from a 120-entry log.
+  **That guard is a value test, and a lamp that fades out through a NONZERO level walks past it.**
+  A day-long capture a year later: five lamps in one room, all five of its overrides a `dim` report
+  29.0-29.9 s before that lamp's own `onoff: false` — the same phenomenon, reported as 0.07, 0.08,
+  0.11. `FADE_OUT_MIN_MS`..`FADE_OUT_GRACE_MS` (20-60 s) is the answer — a BAND, because the ceiling
+  alone was shipped first and filed five human dim-then-switch-off gestures (0.5-2.1 s from override
+  to off) as fading lamps, which is this same error pointing the other way. It deliberately changes
+  no behaviour: the
+  override is still raised, because the evidence arrives half a minute later and holding judgement
+  for it would mean driving a lamp against somebody who had just dimmed it down. Only the RECORD is
+  corrected — `override_cleared` says `power_fade_out`, and `fadeOutOverrides` counts it per target.
+- **The first thing a lamp says after coming on is the lamp, not a person.** `POWER_RESTORE_MS`
+  (15 s) in the target-state cache, one report per capability per power-on edge. The power-settle
+  window above cannot cover this on its own: its length is coupled to OUR write burst, because
+  `finishWrite` extends only an already-open window, so a pass with little to write leaves it
+  shutting early. Measured: four lamps on one bridge came on together, reported the levels they had
+  been left at 4.4 s later and within 0.4 s of each other, 80 ms after the window had shut — and the
+  Room-sensing Light driving them stood all four down for the entire 29 minutes they were on.
+  **Not a longer `OVERRIDE_SETTLE_MS`**, for the reason that constant's own docblock gives: a longer
+  window forgives everything for longer, and somebody who switches a light on and then dims it is
+  doing exactly what the override machinery exists to honour. The allowance is spent by the first
+  report whether or not it needed spending — a restore landing inside the settle window consumes it
+  there — so it can never be saved up and handed to a person arriving later.
+- **The control-event log must not fill with the app's own voice.** `BoundedLog.addRepeat()` and
+  `ControlHistory.ignored()`: a run of identical `report_ignored` entries is one row carrying
+  `count` and `lastAt`, and `at` stays the first occurrence. It scans a window of recent rows rather
+  than the newest alone, because the repeats interleave — five lamps in a room echo one write each,
+  in turn, and a newest-only test would match none of them. The same argument retires the per-report
+  `override` row: one override is one row, and a lamp restating it bumps `repeats` on the
+  `OverrideRecord` instead. Measured before: one curve device dropped 341 events in 4.8 h with 108
+  of its 120 slots holding `write_pending`, and one daylight device spent 28 of 32 slots re-logging
+  four overrides. The 120 slots are the only place an exception surfaces, and `scripts/diagnostics.mjs`
+  reads them — which is why its `countBy()` sums `count` rather than rows.
 - **A tolerance is compared with an epsilon, never with a bare `<=`.** `withinOverrideTolerance()`
   exists because `Math.abs(0.83 - 0.86)` is `0.030000000000000027`: the same three hundredths was
   forgiven at one end of the axis and prosecuted at the other, which under the rule above meant
@@ -935,10 +1001,16 @@ Load-bearing product guarantees, not implementation details:
   the lamp reporting itself on to the colour landing — and `verifyStayedOff()` disables the whole
   thing device-wide, persistently, 1.5 s after the first write that brings a lamp on. It does not
   switch that lamp back off (platform §12), so the exposure is one lamp coming on once.
-  **The setting had no control for two releases**, which is why every device in the field had it off:
-  the plan carried it, both drivers registered `testPreStage`, the runtime had the probe, and
-  `FAQ.md` promised it was "provable from the pairing screen" — and no screen drew a switch. It is on
-  `curve.html` and `day.html` now, test button included. A setting nobody can reach is off.
+  **The control is HIDDEN again, behind `SHOW_PRE_STAGE` in `day.html` and `curve.html`.** It had no
+  control at all for two releases — the plan carried it, both drivers registered `testPreStage`, the
+  runtime had the probe, and `FAQ.md` promised it was "provable from the pairing screen" while no
+  screen drew a switch — so 0.6.5 drew one on both, test button included. The design canvas has no
+  pre-staging control anywhere, and where it belongs is an open question, so the markup and every
+  `preStage.*` string stay in place behind one `false` rather than being deleted. **Nothing else
+  changed**: both gates above are untouched, a new device still pairs with it on, and
+  `verifyStayedOff()` still disables it device-wide the first time a lamp comes on. What a household
+  loses meanwhile is the only instrument that can answer the question for their own lamps, which is
+  why it is a flag and not a deletion. See `docs/design/README.md`.
 - **A Room-sensing Light never switches a lamp on or off, and has no pre-stage option at all.** A
   `dim` write turns an off lamp on — measured, not suspected — so pre-staging is a colour-only idea
   and a brightness-only device type has nothing to pre-stage. It writes to lamps that are already

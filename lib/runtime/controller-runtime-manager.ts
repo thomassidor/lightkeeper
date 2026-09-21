@@ -5,6 +5,7 @@ import type { DeviceCatalog } from '../device-catalog';
 import type { SourceDiscoveryService } from '../source-discovery-service';
 import type { FlowBridgeManager } from '../bridge/flow-bridge-manager';
 import type { HealthMonitor } from './health-monitor';
+import type { SourceRegistry } from '../outputs/lightkeeper-settings';
 import type { ControllerProfile, ControllerState, StateDetail } from '../profiles/controller-profile';
 import type { InputEvent } from '../inputs/input-event';
 import { RuntimeRegistry } from './runtime-registry';
@@ -27,6 +28,15 @@ export interface RuntimeManagerDeps {
   bridge: FlowBridgeManager;
   /** Health assessment, handed to every registered runtime. */
   health?: HealthMonitor;
+  /**
+   * Where a `lightkeeper_on` button looks up the two devices it composes.
+   *
+   * Optional, and absent means every such press degrades to plain "on" — which
+   * is the same thing that happens when the chosen devices are not running, so
+   * a caller that leaves it out gets a defined behaviour rather than a crash.
+   * Every test rig in the suite leaves it out.
+   */
+  sources?: SourceRegistry;
   log: (...args: unknown[]) => void;
 }
 
@@ -132,7 +142,8 @@ export class ControllerRuntimeManager {
    * for exactly this reason, and this is the third copy of that idea.
    */
   private baseDeps(): Pick<
-    ControllerRuntimeDeps, 'api' | 'catalog' | 'discovery' | 'bridge' | 'log' | 'onWriteResult'
+    ControllerRuntimeDeps,
+    'api' | 'catalog' | 'discovery' | 'bridge' | 'log' | 'onWriteResult' | 'sources'
   > {
     return {
       api: this.deps.api,
@@ -141,6 +152,11 @@ export class ControllerRuntimeManager {
       bridge: this.deps.bridge,
       log: this.deps.log,
       ...(this.deps.onWriteResult ? { onWriteResult: this.deps.onWriteResult } : {}),
+      // Here rather than in `register()` alone, so the EPHEMERAL runtime has it
+      // too: "Try it now" on the buttons screen is the only evidence anybody
+      // gets that this job works before they save, and a Test that resolved no
+      // sources would prove the degradation instead of the job.
+      ...(this.deps.sources ? { sources: this.deps.sources } : {}),
     };
   }
 

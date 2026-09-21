@@ -28,7 +28,8 @@ import { messageOf } from './lib/support/homey-errors';
 import { markPhase, sampleHeap } from './lib/support/heap-report';
 import { timezoneOf } from './lib/time/local-clock';
 import { FlowLightWriter } from './lib/flow/light-writer';
-import { isPowerChoice, planSetLights, LEAVE_ALONE, type ColourSource, type ValueSource } from './lib/flow/set-lights';
+import { isPowerChoice, planSetLights } from './lib/flow/set-lights';
+import { resolveSources, type SourceRegistry } from './lib/outputs/lightkeeper-settings';
 import { lightChoices, matching, parseTargetChoice, sourceChoices } from './lib/flow/flow-arguments';
 import { isDarkEnough } from './lib/flow/darkness-condition';
 
@@ -273,6 +274,16 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       api: this.api,
       onWriteResult,
       catalog: this.catalog,
+      /**
+       * How a Light Remote's `lightkeeper_on` button reaches the OTHER devices.
+       *
+       * It has to be this object of closures rather than the three managers
+       * themselves, and the ordering below is why: `this.controllers` is built
+       * first, before `this.schedules`, `this.curves` and `this.daylights`
+       * exist. Reading them at press time is what makes that harmless — and a
+       * press cannot happen before `onInit` has finished building all four.
+       */
+      sources: this.sourceRegistry(),
       discovery: this.discovery,
       bridge: this.bridge,
       // Without this the health checks never run outside the tests,
@@ -450,13 +461,11 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       // switch a household's lights on.
       const power = isPowerChoice(args?.power) ? args.power : 'only_on';
 
-      const missing: string[] = [];
-      const colour = this.colourSourceFor(args?.colour?.id, missing);
-      const brightness = this.brightnessSourceFor(args?.brightness?.id, missing);
-
-      const result = await this.lights.apply(
-        spec, planSetLights({ colour, brightness, missing }, power), power,
+      const sources = resolveSources(
+        this.sourceRegistry(), args?.colour?.id, args?.brightness?.id,
       );
+
+      const result = await this.lights.apply(spec, planSetLights(sources, power), power);
       if (result.refused) {
         this.log(`Ignoring set_lights: ${result.refused}`);
         return false;
@@ -487,25 +496,29 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
   }
 
   /**
-   * The curve-driven runtime a chosen id names, or null.
+   * Which registry answers each of the two questions a composed pass asks.
    *
-   * A chosen id that no live runtime answers to is pushed onto `missing` rather
-   * than quietly treated as "leave alone": half a set of settings written to a
-   * room, because the device holding the other half was deleted, is the outcome
-   * `planSetLights` refuses outright.
+   * The rule, in one place for the two callers that ask it — the `set_lights`
+   * Flow card and a Light Remote's `lightkeeper_on` button: a COLOUR comes only
+   * from a curve-driven device, because only those two device types compute a
+   * hue and only they publish a warmth they are actively driving; a BRIGHTNESS
+   * comes from any of the three types that publish one. A Room-sensing Light is
+   * in the second list and can never be in the first, which is the whole of why
+   * they are two lists and not one.
+   *
+   * Every method reads its manager LAZILY, and `onInit` is the reason: this is
+   * handed to `ControllerRuntimeManager` at construction, which happens before
+   * the other three managers exist.
+   *
+   * The reading itself — what `LEAVE_ALONE` means, and what happens to an id no
+   * live runtime answers to — is `resolveSources` in `lib/`, where a test can
+   * reach it (platform §13).
    */
-  private colourSourceFor(id: unknown, missing: string[]): ColourSource | null {
-    if (typeof id !== 'string' || id === LEAVE_ALONE) return null;
-    const runtime = this.curves.get(id);
-    if (!runtime) { missing.push(id); return null; }
-    return runtime;
-  }
-
-  private brightnessSourceFor(id: unknown, missing: string[]): ValueSource | null {
-    if (typeof id !== 'string' || id === LEAVE_ALONE) return null;
-    const runtime = this.daylights.get(id) ?? this.curves.get(id) ?? this.schedules.get(id);
-    if (!runtime) { missing.push(id); return null; }
-    return runtime;
+  private sourceRegistry(): SourceRegistry {
+    return {
+      colour: id => this.curves.get(id),
+      brightness: id => this.daylights.get(id) ?? this.curves.get(id) ?? this.schedules.get(id),
+    };
   }
 
   private registerBridgeCard(cardId: string, magnitudeOf?: MagnitudeReader) {

@@ -174,9 +174,11 @@ const FIRST_CALL: Record<string, { event: string; reply: unknown }> = {
       chosen: null, needsPreset: false, preset: null,
     },
   },
-  'listen.html': {
-    event: 'startListening',
-    reply: { listening: true },
+  'source.html': {
+    event: 'getSource',
+    // Deliberately minimal, like every reply here: this file proves a view
+    // BOOTS. `pair-view-render-fixtures.ts` is where the list has content.
+    reply: { kind: 'brightness', title: '', blurb: '', note: '', chosen: 'none', sources: [] },
   },
 };
 

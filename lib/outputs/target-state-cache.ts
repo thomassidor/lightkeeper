@@ -176,6 +176,74 @@ export const OVERRIDE_SETTLE_MS = 3000;
 export const OVERRIDE_EXPIRY_MS = 4 * 60 * 60 * 1000;
 
 /**
+ * How long after a lamp comes on its FIRST word on each capability is read as
+ * the lamp announcing what it restored to, rather than as a person.
+ *
+ * A lamp that is switched on comes up at whatever it was last showing and says
+ * so, and that report is not news — it is the starting position the runtime is
+ * about to correct. The power-settle window above was supposed to cover it and
+ * does not reliably, because its length is coupled to OUR write burst:
+ * `finishWrite` pushes the deadline out only while it is already open, so a
+ * pass with little to write leaves the window shutting early. Measured on the
+ * reference Homey: four lamps on one bridge switched on together and reported
+ * their restored levels 4.4 s after the `onoff` edge, within 0.4 s of each
+ * other — 80 ms after the window had shut. All four were booked as somebody
+ * reaching for the vendor app, and the Room-sensing Light driving them stood
+ * down for the entire 29 minutes they were on.
+ *
+ * This is deliberately NOT a longer `OVERRIDE_SETTLE_MS`. A longer window
+ * forgives EVERY report for longer, and somebody who switches a light on and
+ * then dims it is doing exactly what the override machinery exists to honour.
+ * This forgives one report per capability, and judges the next one normally —
+ * so the person's dim is still an override, because the lamp's own restore
+ * report came first and used the allowance up.
+ *
+ * Fifteen seconds is well clear of the 4.4 s measured and still short of any
+ * plausible walk-to-the-dimmer, and the allowance is spent by the first report
+ * whether or not it needed spending: a restore that lands inside the settle
+ * window consumes it there (see `overrideSuppression`), so it cannot be saved
+ * up and handed to a person arriving later.
+ */
+const POWER_RESTORE_MS = 15_000;
+
+/**
+ * How long after an override a lamp's own `onoff: false` still explains it.
+ *
+ * The sibling of the `dim_zero` guard in both runtimes, for the integrations
+ * that do not report a clean zero on the way out. That guard rests on a value
+ * test — neither runtime can write a `dim` of 0, so a reported 0 is the lamp's
+ * own — and a lamp that fades out through 0.11 defeats it while doing exactly
+ * the same thing. Measured on the reference Homey: five lamps in one room, all
+ * five of the overrides in a 19.8-hour capture, each a `dim` report 29.0-29.9 s
+ * before that lamp's own `onoff: false`. The documented median for this
+ * integration is 29.9 s.
+ *
+ * It does NOT delay the override, and that restraint is the point. The evidence
+ * arrives half a minute later, so holding judgement for it would mean driving a
+ * lamp against somebody who had just dimmed it down — the one gesture the
+ * override machinery exists to honour. The override is raised as before and the
+ * power edge clears it as before; only the RECORD is corrected, so a reader
+ * sees a lamp that went off rather than a household that keeps taking its
+ * lights back.
+ *
+ * It is a BAND, not a ceiling, and that was learned by shipping the ceiling.
+ * The fade report is not merely somewhere within a minute of the off — it is
+ * about half a minute ahead of it, every time: 29.9 s median and 29.2 s minimum
+ * over 232 pairs, 29.0-29.9 s over the five in the later capture. A rule with no
+ * floor also swallows the commonest gesture in the house. Measured on the first
+ * build that carried one: somebody pressed dim-down on a remote and switched the
+ * room off a second later, and all five lamps — 0.5 s, 1.0 s, 1.0 s, 1.6 s and
+ * 2.1 s from the override to the off — were filed as lamps fading out. That is
+ * the same error this exists to prevent, pointing the other way.
+ *
+ * So: no sooner than `FADE_OUT_MIN_MS`, which a person acting on a lamp
+ * comfortably beats, and no later than `FADE_OUT_GRACE_MS`, which is twice the
+ * measured gap.
+ */
+export const FADE_OUT_MIN_MS = 20_000;
+export const FADE_OUT_GRACE_MS = 60_000;
+
+/**
  * Is a reported value within the tolerance of the one we wrote?
  *
  * A function rather than three open-coded `Math.abs(a - b) <= OVERRIDE_TOLERANCE`
@@ -198,6 +266,27 @@ export const OVERRIDE_EXPIRY_MS = 4 * 60 * 60 * 1000;
  * boundary landing on which side of a double's last bit the subtraction fell.
  */
 const TOLERANCE_EPSILON = 1e-9;
+
+/**
+ * The most of its journey a lamp may cover in one report and still be called
+ * fading rather than jumping. See `approachingWrite`.
+ *
+ * A quarter, which is to say: a fade has to arrive in at least four observable
+ * steps before it is forgiven as one. The argument is what the arm is FOR.
+ * Everything that reaches the lamp promptly is already covered by
+ * `OVERRIDE_SETTLE_MS` — the only transition that arm cannot see is one so slow
+ * it outlives three seconds by minutes, and a transition that slow necessarily
+ * arrives in many small steps. The Garage capture it was written against moved
+ * a fortieth of its distance per report.
+ *
+ * Without it the arm forgives a JUMP that happens to land between where the
+ * lamp was and where we sent it — which is most of the axis when the two are
+ * far apart. Caught by an existing daylight test, and rightly: a lamp that came
+ * on at 0.9 and was sent to 0.3, reporting 0.7 ten seconds later, is somebody
+ * dimming it to 0.7. The point of this arm is a lamp inching, not a lamp that
+ * arrives somewhere else in one move.
+ */
+const APPROACH_MAX_STEP_FRACTION = 0.25;
 export function withinOverrideTolerance(delta: number): boolean {
   return Math.abs(delta) <= OVERRIDE_TOLERANCE + TOLERANCE_EPSILON;
 }
@@ -252,6 +341,10 @@ export class TargetStateCache {
    * tick reopens nothing.
    */
   private readonly powerSettleUntil = new Map<string, number>();
+  /** Per device: when it last came ON, cleared when it goes off. See POWER_RESTORE_MS. */
+  private readonly poweredOnAt = new Map<string, number>();
+  /** Per device: which capabilities have spoken since that edge. */
+  private readonly restoreSeen = new Map<string, Set<Capability>>();
   private readonly dispatchedAt = new Map<string, number>();
   private readonly pendingWrites = new Map<string, number>();
   /**
@@ -259,9 +352,11 @@ export class TargetStateCache {
    * dispatched a write to it, and the sequence of that write. See
    * `ineffectiveWrite`.
    */
-  private readonly preWrite = new Map<string, { value: unknown; written: unknown; seq: number }>();
+  private readonly preWrite = new Map<string, { value: unknown; written: unknown; seq: number; closest?: number }>();
   /** Per (device, capability): consecutive writes the lamp did not act on. */
   private readonly ignoredWrites = new Map<string, { count: number; countedSeq: number }>();
+  /** Per (device, capability): writes the lamp answered gradually. See `approachingWrite`. */
+  private readonly approachingWrites = new Map<string, { count: number; countedSeq: number }>();
 
   constructor(private readonly now: () => number = () => Date.now()) {}
 
@@ -340,7 +435,14 @@ export class TargetStateCache {
     const state = this.state(deviceId);
     switch (capability) {
       case 'onoff':
-        if (state.actualOn !== value) this.powerSettleUntil.set(deviceId, at + OVERRIDE_SETTLE_MS);
+        if (state.actualOn !== value) {
+          this.powerSettleUntil.set(deviceId, at + OVERRIDE_SETTLE_MS);
+          // Either edge starts a fresh set: what a lamp says after coming on is
+          // about this power-on, and what it said before is spent.
+          this.restoreSeen.set(deviceId, new Set());
+          if (value === true) this.poweredOnAt.set(deviceId, at);
+          else this.poweredOnAt.delete(deviceId);
+        }
         state.actualOn = value as boolean;
         // The implied-on probe must honour every power report, including an
         // off report repeating the cached value. Override settling, however,
@@ -504,13 +606,36 @@ export class TargetStateCache {
    * per arriving report and both runtimes honour it.
    */
   overrideSuppression(deviceId: string, capability: Capability, value: unknown): string | null {
+    // Spent FIRST, before any other reason can return: the allowance belongs to
+    // whichever report arrives first after the lamp came on, and a restore that
+    // lands inside the settle window has still had it. Otherwise the window
+    // would hold the allowance in reserve for whoever turned up next.
+    const restoring = this.spendRestoreAllowance(deviceId, capability);
     if (this.pendingWrites.has(`${deviceId}:${capability}`)) return 'write_pending';
     const settleUntil = this.powerSettleUntil.get(deviceId);
     if (settleUntil !== undefined && this.now() < settleUntil) return 'power_settling';
+    if (restoring) return 'power_restore';
     const writeAt = this.dispatchedAt.get(`${deviceId}:${capability}`);
     if (writeAt !== undefined && this.now() - writeAt < OVERRIDE_SETTLE_MS) return 'write_settling';
     if (this.ineffectiveWrite(deviceId, capability, value)) return 'write_ignored';
+    if (this.approachingWrite(deviceId, capability, value)) return 'write_approaching';
     return null;
+  }
+
+  /**
+   * Is this the first thing this capability has said since the lamp came on,
+   * and soon enough after it to be the restore? Marks it spent either way.
+   *
+   * Called once per arriving report, from `overrideSuppression` alone, which
+   * already carries that contract.
+   */
+  private spendRestoreAllowance(deviceId: string, capability: Capability): boolean {
+    const onAt = this.poweredOnAt.get(deviceId);
+    if (onAt === undefined) return false;
+    const seen = this.restoreSeen.get(deviceId);
+    if (seen === undefined || seen.has(capability)) return false;
+    seen.add(capability);
+    return this.now() - onAt < POWER_RESTORE_MS;
   }
 
   /**
@@ -575,6 +700,92 @@ export class TargetStateCache {
   }
 
   /**
+   * Is this report the lamp still on its way to what we wrote?
+   *
+   * `ineffectiveWrite` above forgives a lamp that has not moved AT ALL. Between
+   * that and a person there is a third case it does not cover: a lamp that took
+   * the write and is fading to it slowly, whose every intermediate report is
+   * both far from what we asked for and different from where it started.
+   *
+   * From the capture this was written against — four Garage lamps, 17:32: all
+   * four acked `light_temperature` 0.82, then reported 0.57 and crawled +0.01
+   * every four minutes towards it. The first three steps sat within
+   * `OVERRIDE_TOLERANCE` of the pre-write 0.57 and were forgiven as
+   * `write_ignored`; the fourth, 0.61, was 0.04 from it, cleared the tolerance,
+   * and was booked as somebody reaching for the vendor app — `expected: 0.82,
+   * value: 0.61`, while the lamp was doing nothing but obeying. All four
+   * devices then skipped every pass for 90 minutes and were released only by
+   * the lamps being switched off at the wall.
+   *
+   * What tells this apart from a person is the DIRECTION, which nothing else
+   * here looks at. A report that is strictly closer to the value we wrote than
+   * any report since we wrote it is this write landing late. A person is not
+   * ruled out — they might nudge the lamp the way we were already sending it —
+   * but then they and the app agree about where the lamp should go, so the cost
+   * of being wrong is nil, which is the same trade `ineffectiveWrite` makes.
+   *
+   * It terminates on a STALL rather than on a clock, deliberately. A lamp that
+   * gives up half way reports the same value twice; the second is not closer,
+   * so it falls through to the override rules and the person (or the fault) is
+   * seen. A clock is what `OVERRIDE_SETTLE_MS` already is, and three seconds
+   * against a hundred-minute fade is precisely the answer that was wrong.
+   *
+   * `light_hue` is excluded because "closer" has no single meaning on a wheel:
+   * the short way round (see `sameReportedValue`) makes every value between the
+   * two arcs, so a lamp moving away would read as approaching half the time.
+   */
+  private approachingWrite(deviceId: string, capability: Capability, value: unknown): boolean {
+    if (capability === 'light_hue') return false;
+    const key = `${deviceId}:${capability}`;
+    const before = this.preWrite.get(key);
+    if (before === undefined) return false;
+    // Same guard as `ineffectiveWrite`: a newer write means this report is not
+    // answering the one the snapshot describes.
+    if (this.writeSeq.get(key) !== before.seq) return false;
+    if (typeof value !== 'number'
+      || typeof before.value !== 'number'
+      || typeof before.written !== 'number') return false;
+
+    // Between where the lamp was and where we sent it. A report outside that
+    // interval overshot or went the other way, and neither is this write.
+    if (value < Math.min(before.value, before.written)) return false;
+    if (value > Math.max(before.value, before.written)) return false;
+
+    const journey = Math.abs(before.written - before.value);
+    const distance = Math.abs(before.written - value);
+    const closest = before.closest ?? journey;
+    // Strictly closer, with the epsilon every other tolerance comparison in
+    // this file carries: `0.82 - 0.61` and `0.82 - 0.62` differ by a hair more
+    // or less than 0.01 depending on where on the axis they land.
+    if (distance > closest - TOLERANCE_EPSILON) return false;
+    // And gradually. A lamp that closes most of the gap in one report has not
+    // been fading for minutes; it has been moved.
+    if (closest - distance > journey * APPROACH_MAX_STEP_FRACTION + TOLERANCE_EPSILON) return false;
+
+    before.closest = distance;
+    const seen = this.approachingWrites.get(key);
+    if (seen === undefined) {
+      this.approachingWrites.set(key, { count: 1, countedSeq: before.seq });
+    } else if (seen.countedSeq !== before.seq) {
+      // One write, one count, however many reports it takes to arrive.
+      this.approachingWrites.set(key, { count: seen.count + 1, countedSeq: before.seq });
+    }
+    return true;
+  }
+
+  /**
+   * Writes this lamp acknowledged and then took more than one report to reach.
+   *
+   * The sibling of `ignoredCount`, and here for the same reason: the arm above
+   * turns a loud wrong answer ("somebody took it over") into a quiet right one,
+   * and a lamp that needs ninety minutes to accept a colour temperature is
+   * worth seeing as exactly that rather than as a runtime with nothing to do.
+   */
+  approachingCount(deviceId: string, capability: Capability): number {
+    return this.approachingWrites.get(`${deviceId}:${capability}`)?.count ?? 0;
+  }
+
+  /**
    * Consecutive writes this lamp acknowledged and did not act on.
    *
    * Reported rather than inferred, because `ineffectiveWrite` above turns a
@@ -592,6 +803,8 @@ export class TargetStateCache {
     this.capabilities.delete(deviceId);
     this.onOffObservedAt.delete(deviceId);
     this.powerSettleUntil.delete(deviceId);
+    this.poweredOnAt.delete(deviceId);
+    this.restoreSeen.delete(deviceId);
     for (const key of [...this.recentEchoes.keys()]) {
       if (key.startsWith(`${deviceId}:`)) this.recentEchoes.delete(key);
     }
@@ -609,6 +822,9 @@ export class TargetStateCache {
     }
     for (const key of [...this.ignoredWrites.keys()]) {
       if (key.startsWith(`${deviceId}:`)) this.ignoredWrites.delete(key);
+    }
+    for (const key of [...this.approachingWrites.keys()]) {
+      if (key.startsWith(`${deviceId}:`)) this.approachingWrites.delete(key);
     }
   }
 
@@ -635,8 +851,11 @@ export class TargetStateCache {
     this.writeSeq.clear();
     this.onOffObservedAt.clear();
     this.powerSettleUntil.clear();
+    this.poweredOnAt.clear();
+    this.restoreSeen.clear();
     this.preWrite.clear();
     this.ignoredWrites.clear();
+    this.approachingWrites.clear();
     this.dispatchedAt.clear();
     this.pendingWrites.clear();
   }

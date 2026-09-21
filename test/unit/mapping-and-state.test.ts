@@ -12,6 +12,7 @@ const LIGHT_FUNCTIONS: readonly LightFunction[] = [
   'toggle', 'on', 'off',
   'brightness_up', 'brightness_down', 'brightness_set',
   'warmer', 'colder', 'temperature_cycle',
+  'lightkeeper_on',
 ];
 import { TargetStateCache } from '../../lib/outputs/target-state-cache';
 import { paletteColor } from '../../lib/circadian/palette';
@@ -111,14 +112,34 @@ describe('available functions', () => {
     // third column setting a value in each. A screen laying them out in columns
     // and a list yielding them in some other order would drift the first time a
     // function was added, so the order is the engine's.
+    // `lightkeeper_on` trails the nine because it is NOT a cell of the grid —
+    // the screen draws it as a full-width card above, and finds it by its
+    // preset kind. Inserting it anywhere among them would shift a column.
     assert.deepEqual(availableFunctions({ onoff: 3, dim: 0, light_temperature: 0, light_hue: 0 }),
-      ['on', 'off', 'toggle']);
+      ['on', 'off', 'toggle', 'lightkeeper_on']);
     assert.deepEqual(availableFunctions({ onoff: 3, dim: 3, light_temperature: 2, light_hue: 2 }), [
       'on', 'off', 'toggle',
       'brightness_up', 'brightness_down', 'brightness_set',
       'warmer', 'colder',
       'color_set',
+      'lightkeeper_on',
     ]);
+    assert.deepEqual(
+      availableFunctions({ onoff: 3, dim: 3, light_temperature: 2, light_hue: 2 }).slice(0, 9),
+      ['on', 'off', 'toggle', 'brightness_up', 'brightness_down', 'brightness_set',
+        'warmer', 'colder', 'color_set'],
+      'the nine grid cells keep their order whatever is appended after them',
+    );
+  });
+
+  test('the composed job is offered wherever a lamp can be switched on', () => {
+    // On the power gate rather than `dim`, so a plain switched lamp in the same
+    // room keeps the job. Whether the HOUSE has a device to take a colour from
+    // is a different question, and `getGesture` — not this — is what asks it.
+    assert.ok(availableFunctions({ onoff: 1, dim: 0, light_temperature: 0, light_hue: 0 })
+      .includes('lightkeeper_on'));
+    assert.ok(!availableFunctions({ onoff: 0, dim: 3, light_temperature: 3, light_hue: 3 })
+      .includes('lightkeeper_on'));
   });
 
   test('a retired job is offered to nobody and honoured for everybody', () => {

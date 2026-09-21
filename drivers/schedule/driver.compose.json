@@ -6,7 +6,8 @@
   "capabilities": [
     "onoff",
     "lightkeeper_brightness",
-    "lightkeeper_temperature"
+    "lightkeeper_temperature",
+    "lightkeeper_colour"
   ],
   "capabilitiesOptions": {
     "onoff": {

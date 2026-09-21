@@ -12,6 +12,25 @@ export interface CatalogDevice {
   zoneName: string;
   /** e.g. homey:app:com.ikea.tradfri:remote_control_n2 */
   driverId: string | null;
+  /**
+   * The id the OWNING app minted for this device, as against Homey's own uuid.
+   *
+   * For Lightkeeper's own devices that is the `lk-…` string in `data.id`, which
+   * is what every runtime is keyed on — so this is the only join between a live
+   * runtime and the row describing it here. Without it a Room-sensing Light's
+   * runtime and its zone and driver name are two facts about one device with
+   * nothing in common, and the source picker cannot say which room a chosen
+   * setup lives in.
+   *
+   * Optional rather than `string | null`, and that is about the FIXTURES rather
+   * than about Homey: every test that hand-builds a `CatalogDevice` builds one
+   * for the write path, where this is never read, and making them all carry a
+   * null would have said the field mattered to them. A device whose integration
+   * sets no id, and every device this app has no business joining, simply has
+   * none — `lightCandidates()` excludes our own devices, so nothing in the
+   * write path reads this at all.
+   */
+  dataId?: string | null;
   /** e.g. homey:app:com.ikea.tradfri */
   ownerUri: string | null;
   ownerName: string;
@@ -328,6 +347,7 @@ export class DeviceCatalog {
         // Device.driverUri and Device.zoneName are deprecated in homey-api 3.19
         // and log a warning on every access — resolve both ourselves instead.
         driverId: typeof d.driverId === 'string' ? d.driverId : null,
+        dataId: readDataId(d.data),
         ownerUri,
         ownerName: this.appNameFor(ownerUri),
         available: d.available !== false,
@@ -377,6 +397,21 @@ export class DeviceCatalog {
     if (!ownerUri) return 'Homey';
     return this.appNames.get(ownerUri) ?? ownerUri.replace(/^homey:app:/, '');
   }
+}
+
+/**
+ * The owning app's own id for a device, out of the opaque `data` blob.
+ *
+ * `data` is whatever the integration put there and is typed as `unknown` at
+ * this seam for that reason — a string id is the convention every Homey app
+ * follows and none is obliged to. Anything else reads as absent rather than
+ * being coerced, because a number stringified into an id space that contains
+ * `lk-curve-…` would join nothing and look like a bug in the join instead.
+ */
+function readDataId(raw: unknown): string | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const id = (raw as { id?: unknown }).id;
+  return typeof id === 'string' && id.length > 0 ? id : null;
 }
 
 function normaliseCapabilities(raw: unknown): Record<string, CatalogCapability> {

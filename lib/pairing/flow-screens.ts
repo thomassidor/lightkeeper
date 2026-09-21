@@ -91,7 +91,15 @@ export type ReviewHero =
   /** One bar per hour, height for brightness and colour for colour. */
   | { kind: 'bars'; bars: Array<{ color: string; height: number }> }
   /** What the device would do RIGHT NOW, which is checkable against the room. */
-  | { kind: 'now'; percent: string; detail: string };
+  | { kind: 'now'; percent: string; detail: string }
+  /**
+   * The day, with this schedule's blocks on it. Percentages of the 24 hours,
+   * so the view needs no clock arithmetic of its own — and a block crossing
+   * midnight arrives as TWO entries, for the same reason `blocks.html` draws it
+   * as two bars: a bar that wrapped would have to be drawn from the right edge
+   * backwards, which is not a thing CSS does.
+   */
+  | { kind: 'timeline'; blocks: Array<{ left: number; width: number }> };
 
 /**
  * The six stops the day strip is painted from, coolest to warmest.
@@ -212,4 +220,36 @@ export function warmthKey(value: number): string {
   if (value >= 0.44) return 'warmth.softWarm';
   if (value >= 0.24) return 'warmth.softWhite';
   return 'warmth.coolWhite';
+}
+
+/**
+ * What the review's Lights row reads back — and WHICH of the two shapes the
+ * picker stored.
+ *
+ * "4 in Kitchen" and "4 picked" behave differently the next time somebody adds
+ * a lamp to that room, and this line is the only place that difference is ever
+ * visible. `lights.html` deliberately does not show it: making the picker
+ * explain its own storage would be a control nobody asked for, on the screen
+ * least able to afford one.
+ *
+ * Here rather than in each driver because it was in ALL FIVE of them, character
+ * for character — so a wording change was five edits, and the count that the
+ * room shape now carries would have been five more.
+ */
+export async function lightsSummary(
+  host: PairSessionHost,
+  target: { kind: string; zoneId?: string },
+  summary: { count: number },
+  allZones: () => Promise<Array<{ id: string; name?: string }>>,
+): Promise<string> {
+  if (target.kind === 'zone') {
+    const zones = await allZones();
+    const zone = zones.find(candidate => candidate.id === target.zoneId);
+    // The count belongs on this line as much as the room does: "Everything in
+    // Garden" is a rule and says nothing about tonight, whereas "4 in Garden"
+    // is the rule AND how many lamps it currently reaches — which is the number
+    // the promise sentence below it counts.
+    return host.translate('review.wholeRoom', { count: summary.count, room: zone?.name ?? '?' });
+  }
+  return host.translate('review.someLights', { count: summary.count });
 }

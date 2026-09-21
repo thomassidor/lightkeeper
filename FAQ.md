@@ -3,6 +3,10 @@
 Everything that did not belong on the front page. [README.md](README.md) is the short version;
 this is where the answers live.
 
+> [!WARNING]
+> **Early access.** Lightkeeper is in early development, and an update can change or break a setup
+> you have already made — see [Is this finished?](#is-this-finished) below.
+
 - [Getting started](#getting-started)
 - [Everyday use](#everyday-use)
 - [When something is wrong](#when-something-is-wrong)
@@ -13,6 +17,28 @@ this is where the answers live.
 ---
 
 ## Getting started
+
+### Is this finished?
+
+**No — it is in early development, and you should expect updates to break things.** Lightkeeper is a
+0.x app. What is here works and is covered by tests, and the four remotes, the schedules and the
+write path have all been verified on a real Homey Pro ([how well tested is this?](#how-well-tested-is-this)),
+but the app is still being shaped and nothing about its stored settings is frozen yet.
+
+In practice that means an update can:
+
+- **change what a device stores**, so a device you already added may need Homey's **Repair** run on
+  it, or in the worst case deleting and adding again;
+- **rename, move or drop a setting**, so a choice you made on a setup screen may not survive;
+- **change what a setup screen asks**, so the path you remember is not the path you get.
+
+Migrations are written wherever a stored setting can be carried forward, and they have carried every
+release so far — but they are written per change, not guaranteed in advance. Every change that
+affects an existing device is stated in [CHANGELOG.md](CHANGELOG.md) and in what Homey shows you
+when it updates the app, so read that before updating rather than after.
+
+There are no major version bumps before 1.0, so a breaking change arrives as an ordinary-looking
+minor or patch version. The version number is not the warning; the changelog entry is.
 
 ### Why does it need a Personal API Key?
 
@@ -181,6 +207,9 @@ Circadian Light sets the white, and it all happens in one go rather than as thre
 **A condition.** *It is dark enough* asks a Room-sensing Light, using the thresholds you already set
 up on it rather than a lux number you would have to keep in step.
 
+A remote button can do the same composing without a Flow at all — see
+[*What does "On – with Lightkeeper" on a remote button do?*](#what-does-on--with-lightkeeper-on-a-remote-button-do).
+
 ### Will the brightness tag give me the same light my Lightkeeper device gives?
 
 Yes — that is why it is the number it is. The brightness tag is what Lightkeeper actually sends a
@@ -191,6 +220,32 @@ It will not match the percentage on the setup screen, and it is not meant to. Li
 brightness the way it is *perceived* and sends it the way a lamp is *addressed*, and those are
 different numbers: a lamp set to 55% on the slider is sent 26%. The setup screens speak the first
 language and your Flows speak the second.
+
+### What does "On – with Lightkeeper" on a remote button do?
+
+It turns your lights on the way the rest of your house already knows they should look. You choose
+which of your other Lightkeeper devices the button takes the colour and warmth from, and which one
+it takes the brightness from — a circadian light for the white and a Room-sensing Light for the
+level is the usual pair — and it reads both **at the moment you press**, not when you set it up. A
+button configured in February is still right in June.
+
+The two pickers show what each setup is producing right now, a swatch or a level, because a house
+with three curves in it is told apart by what each one is doing rather than by what you called it.
+
+*Press again to turn off* is a switch on the same screen, on to begin with. With it on, one button is
+a whole light switch: if any of its lights is on, the press turns them all off; otherwise they come
+on with the values. It is the same rule the *On and off* job follows.
+
+It is not the same as pointing the lights at that device. The button reads the setup once, on the
+press — it does not keep following it afterwards. Following a colour through the evening is what a
+circadian light or a Colour Curve Light is for, and there is nothing to stop a button and a device
+driving the same lamps.
+
+If the setup a button follows is deleted, the button still turns the lights on. It simply cannot say
+what colour, so they come on as they were.
+
+The job only appears once you own at least one circadian light, Colour Curve Light, light schedule or
+Room-sensing Light. Before that there is nothing for it to follow.
 
 ### Can I move or rename the generated Flows?
 
@@ -354,6 +409,8 @@ Open repair on the device (Devices → the device → Repair):
 
 Stated plainly, because a limit you find out about later is worse than one you were told.
 
+- **It is early access, and an update can break a setup you already made.** See
+  [Is this finished?](#is-this-finished) — there is no compatibility promise before 1.0.
 - **"Any remote" means any remote Homey exposes something usable for**, and the same hardware can
   expose different things through different pairing paths. See
   [Will my remote work?](#will-my-remote-work) above.
@@ -373,12 +430,13 @@ Stated plainly, because a limit you find out about later is worse than one you w
 - **A circadian or Colour Curve Light never switches a light on or off.** It only changes the colour
   of lights that are already on and — if you ask it to — sets the colour of lights that are off so
   they are right the moment they come on.
-- **Setting the colour of a light that is off is on for new devices, and a switch on the setup
-  screen.** Without it a light comes on as it was and changes a second or two later, which is what it
-  did for every release up to 0.6.0 — the setting existed and no screen ever drew the switch. Devices
-  added before 0.6.5 keep whatever they were set up with. It is provable from the setup screen against
-  your own lamps before you commit, and it disables itself for the whole device the first time a lamp
-  comes on from one, because on some integrations a colour write switches the lamp on.
+- **Setting the colour of a light that is off is on for new devices, and there is currently no
+  switch for it.** Without it a light comes on as it was and changes a second or two later, which is
+  what it did for every release up to 0.6.0. Devices added before 0.6.5 keep whatever they were set
+  up with; devices added since do it. The switch and the button that tried it on your own lamps
+  appeared in 0.6.5 and are hidden again while where they belong is settled — the behaviour is
+  unchanged either way, and it still disables itself for the whole device the first time a lamp comes
+  on from one, because on some integrations a colour write switches the lamp on.
 - **Brightness is never pre-staged**, only colour. A brightness write turns an off lamp on; that is
   measured, not suspected.
 - **A circadian light and a schedule pointed at the same lights will disagree.** Use one or the other
@@ -505,6 +563,6 @@ including the segment that wraps midnight — and every rule about when a write 
 covered by unit tests, and the pairing screen's **Try it now** proves the whole write path against
 your own lamps before you save.
 
-Over 1500 unit tests, type-clean, validated at `publish` level. The test fixtures are transcribed verbatim
+Over 1700 unit tests, type-clean, validated at `publish` level. The test fixtures are transcribed verbatim
 from the four real remotes above, and the expected results are written by hand beside them, so the
 tests prove the code rather than the fixture.

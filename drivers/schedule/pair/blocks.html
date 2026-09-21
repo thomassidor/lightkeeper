@@ -54,30 +54,61 @@
     /* Between the accent and its line. The middle of the three listening dots,
        and the only place a mid-tone is needed: the logo has none. */
     --lk-accent-mid: #9f81dc;
+    /* A block on the schedule timeline that is not the one being edited. It
+       borrowed --lk-accent-line, which is the edge of a numbered badge and a
+       step too pale to hold a 52px bar: four of them across a grey track read
+       as a smudge rather than as the day's other windows. */
+    --lk-block: #b9a6e4;
+    /* And a block on a timeline where NOTHING is selected — the review's
+       picture of the finished day. Deeper than the one above because the pale
+       violet only exists to recede behind a selected block, and on a review
+       there is nothing for it to recede behind: four faint bars on a grey
+       track read as a chart that had failed to load. */
+    --lk-block-settled: #7a57c8;
     --lk-accent-strong: #3b2279;
+    /* Two more steps down the same violet, for the three-bar level picture: it
+       is a LEVEL rather than a direction, so only the tallest bar is at full
+       strength and the two under it fall away. Derived from the accent the same
+       way the tints are — the logo has no mid-tones to read them out of. */
+    --lk-level-mid: #7a62c0;
+    --lk-level-low: #c4b8e4;
+
+    /* Drawn ON the accent tint rather than on white, and that is the whole
+       reason these three exist. A grey hairline on #f3eefc is the one place in
+       this palette where a neutral reads as dirty, and --lk-muted on it reads
+       as faded rather than as secondary. So the tint gets its own edge, its own
+       rule and its own second ink, all violet-shifted to match the ground they
+       sit on. */
+    --lk-tint-line: #e2d8f6;
+    --lk-tint-rule: #f0ecfa;
+    --lk-tint-ink: #5a4d80;
     --lk-ring: rgba(42, 25, 88, .16);
     /* The edge of a handle nobody has selected. It is NOT --lk-ring: at .16 a
        26px circle on an orange strip had no edge at all, and the second
        boundary looked like a smudge rather than something to drag. */
     --lk-handle-edge: rgba(42, 25, 88, .45);
 
-    /* The ink ladder. Every one of these clears WCAG AA (4.5:1) against
-       --lk-surface, because all five are used between 11px and 15px — and the
-       two lightest carry the section titles, the tile meta and the help text.
-       They were 3.1:1 (--lk-muted) and 2.6:1 (--lk-faint): grey on white that
-       is legible on a desk monitor and not on a phone in daylight. What
-       separates the steps now is weight, size and caps as much as tone. */
+    /* The ink ladder: THREE greys, and the design canvas has no fourth.
+
+       It had five. --lk-sub (#5f6672) and --lk-faint (#6f7683) sat either side
+       of --lk-muted and were never a step anybody could see — #6f7683 against
+       #6a7180 is a difference of five in one channel, which is not a decision,
+       it is a drift. Both are gone and their consumers took the neighbour the
+       canvas actually draws: an end-caption and the midnight/noon line are
+       --lk-body, everything else that was faint is --lk-muted.
+
+       All three clear WCAG AA (4.5:1) against --lk-surface, because all three
+       are used between 10.5px and 15px. Collapsing --lk-faint RAISED the
+       contrast of every caption that used it, from 4.6:1 to 4.9:1. What
+       separates the steps is weight, size and caps as much as tone. */
     --lk-ink: #16181d;
-    --lk-sub: #5f6672;
     --lk-body: #4b5563;
     --lk-muted: #6a7180;
-    --lk-faint: #6f7683;
 
     /* transparent, not white: the pairing container paints the page behind us,
        and claiming it would flatten every card against it. */
     --lk-page: transparent;
     --lk-surface: #ffffff;
-    --lk-raised: #f7f8fa;
     --lk-line: #eceef2;
     --lk-field: #e3e6ec;
     /* The edge of an UNTICKED box or radio, and only that. A shade darker than
@@ -86,8 +117,18 @@
     --lk-box: #d4d8e0;
     --lk-hover: #c9d2e0;
     /* A chevron is an affordance, not a value: lighter than the text it sits
-       beside, so a list of rows reads as labels rather than as arrows. */
-    --lk-chev: #a8aeb9;
+       beside, so a list of rows reads as labels rather than as arrows.
+
+       #a8aeb9 took that too far. A non-text UI component still owes 3:1, and
+       at #a8aeb9 the chevron was 2.4:1 — an affordance nobody has to read is
+       still one somebody has to SEE. The canvas's #8f97a3 is 3.2:1 and is
+       still visibly lighter than every ink in the ladder above. */
+    --lk-chev: #8f97a3;
+    /* The circled "i" on a .tip. Its own grey rather than the chevron's,
+       because it is a ring drawn around a LETTER: the ring may sit at the
+       chevron's weight, the letter inside it may not (it is text, and owes
+       4.5:1), so the two are named separately and only the ring is light. */
+    --lk-tip-edge: #8a919e;
     --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
 
     /* The pairing primitives' own colours, here for the same reason every
@@ -97,6 +138,10 @@
     --lk-slider-knob-shadow: 0 0 0 2px rgba(22, 24, 29, .6), 0 1px 4px rgba(16, 24, 40, .35);
     --lk-slider-knob-shadow-warm: 0 0 0 2.5px #ffffff, 0 1px 4px rgba(16, 24, 40, .35);
     --lk-slider-inset: inset 0 0 0 1px rgba(22, 24, 29, .1);
+    /* The ring around a knob drawn at icon scale, where the full
+       --lk-slider-knob-shadow is two shadows on a 4px mark and comes out as a
+       smudge. One ring, half a pixel thinner than the real control's. */
+    --lk-knob-edge: rgba(22, 24, 29, .5);
     /* The two axes a slider can carry, as whole gradients rather than as a
        list of stops: a ramp is one decision about what the axis LOOKS like,
        and splitting it into six tokens would invite five of them to change. */
@@ -104,6 +149,25 @@
                                     #f2e6d6, #eaf0fb, #dbe8fb);
     --lk-bright-ramp: linear-gradient(90deg, #221a3d, #43318a, #7a5fc4,
                                       #b9a6e4, #ece5f9);
+    /* How light it is OUTSIDE, pale to deep — the third axis this app draws,
+       and the only one that runs dark at the TOP of its range rather than the
+       bottom. It is the week grid's scale, and its six stops are the same six
+       the cells are quantised to: `SHADES` in views/shared/week-grid.js, which
+       cannot read a custom property and so carries them again. Change one and
+       change the other; `pair-view-styles.test.ts` checks that they agree. */
+    --lk-lux-ramp: linear-gradient(90deg, #f4f2fa, #e0d6f6, #c4b0ec,
+                                   #9f81dc, #6b48bc, #3b2279);
+    /* The same six stops, the other way round, for the sun's own height.
+       Reversed on purpose: the lux ramp measures HOW MUCH LIGHT there is, so
+       more light is more ink, while this one is a picture of the DAY — and the
+       dark end of a day is the night. The two never meet on screen, because a
+       Room-sensing Light has a sensor or it has the sun. */
+    --lk-sun-ramp: linear-gradient(90deg, #3b2279, #6b48bc, #9f81dc,
+                                   #c4b0ec, #f4f2fa);
+    /* The hours of a "when does this room get its sun?" tile: the ones that
+       ARE this room's sun, and the ones that are the day going on around it. */
+    --lk-peak-on: #4b2ea0;
+    --lk-peak-off: #dfd4f4;
     /* The two ENDS of the warmth axis, for the two tiles that nudge along it
        rather than setting it. The whole ramp draws the same picture on both,
        which is no picture at all, so each of these runs from the middle of
@@ -112,13 +176,13 @@
        the real end of the axis is a chip with no edge, so the tile that said
        "cooler" showed nothing at all. Deepened to where it reads, and no
        further — it is a picture of a direction, not a colour to match. */
-    --lk-warmer-ramp: linear-gradient(90deg, #f7efe3, #e8892c);
-    --lk-cooler-ramp: linear-gradient(90deg, #f7efe3, #7ba7e0);
+    --lk-warmer-ramp: linear-gradient(90deg, #f2e6d6, #e8892c);
+    --lk-cooler-ramp: linear-gradient(90deg, #f2e6d6, #9fc0f0);
     /* A lamp that is ON, drawn rather than named: the one warm accent in an
        interface that is otherwise entirely violet, because "on" is a picture of
        light and the brand colour is a picture of the app. */
-    --lk-lamp-lit: #f0b429;
-    --lk-lamp-glow: rgba(240, 180, 41, .22);
+    --lk-lamp-lit: #f4c24a;
+    --lk-lamp-glow: rgba(244, 194, 74, .32);
     --lk-handle-shadow: 0 2px 6px rgba(16, 24, 40, .2);
     /* A small mark lifted off whatever it is drawn ON — the curve chart's
        selected point, which sits on top of a bar of any colour. */
@@ -129,6 +193,14 @@
     --lk-select-halo: 0 0 0 3px rgba(42, 25, 88, .18);
     --lk-handle-shadow-sel: 0 0 0 4px var(--lk-ring), 0 2px 8px rgba(16, 24, 40, .28);
     --lk-hairline: rgba(22, 24, 29, .1);
+    /* The two-hour cell a sensor reported NOTHING in, drawn as a hatch. Its own
+       two colours because nothing else in the app is a hatch: the pale stripe
+       has to sit above --lk-line without becoming white (a white stripe made
+       the cell read as missing from the grid rather than as empty in it), and
+       the edge has to hold the cell's rectangle at 11px tall, which the stripes
+       alone do not. */
+    --lk-hatch-pale: #f7f8fa;
+    --lk-hatch-edge: #dfe3e9;
     --lk-day-mark: rgba(22, 24, 29, .4);
     /* The curve chart's own "you are editing this point" line. Accent rather
        than ink, because on that chart it marks a SELECTION; on the day strip
@@ -141,6 +213,12 @@
     /* Not an error. The one thing that reads this way is a schedule overlap,
        which is allowed, resolved deterministically, and worth pointing at. */
     --lk-warn-bg: #fdf3e7; --lk-warn-ink: #7a4a10;
+    /* A key the Homey accepted and then refused to build a Flow with. Its own
+       colour rather than --lk-bad-ink, and a full step lighter, because it is
+       drawn as an EDGE round a field and as a 16px badge — at #8f1d18 a
+       1.5px border round a white field read as damage, and the message beside
+       it says the key itself is fine. */
+    --lk-reject: #c05a3e;
     --lk-flat-bg: #f4f5f7; --lk-flat-ink: #5b616e;
 
     background: var(--lk-page);
@@ -180,8 +258,13 @@
               margin-bottom: 10px; }
 
   #bl-root .section { margin-bottom: 18px; }
-  #bl-root .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase;
-                       letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 8px 2px; }
+  /* The label over a group — "Does", "To", "When does this room get its sun?".
+     It is a .control-title with nothing on its right: the same 13.5px/600 ink,
+     sentence case. It used to be 12px uppercase small-caps in the faintest
+     grey, which made the two words holding the job screen's sentence together
+     read as filing-cabinet labels rather than as the sentence's own verbs. */
+  #bl-root .section-title { font-size: 13.5px; font-weight: 600; line-height: 1.2;
+                       color: var(--lk-ink); margin: 0 0 9px; }
 
   /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
   #bl-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
@@ -196,7 +279,7 @@
 
   #bl-root input[type=text], #bl-root input[type=password], #bl-root select {
     width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
-    border: 1.5px solid var(--lk-field); border-radius: 11px; background: var(--lk-surface);
+    border: 1.5px solid var(--lk-field); border-radius: 12px; background: var(--lk-surface);
     color: var(--lk-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
   /* The chevron's fill stays a literal: #6a7180 is --lk-muted, and a data URI
      cannot read a custom property. So this is the one place a token's value is
@@ -214,11 +297,19 @@
   #bl-root .btn:hover { border-color: var(--lk-hover); }
   #bl-root .btn:disabled { opacity: .45; cursor: not-allowed; }
   /* The same button across the width of the screen. What a secondary action
-     looks like when it is the only one on a pushed screen — "Stop listening",
-     "Close" — where a primary button would claim the choice was made. */
+     looks like when it is the only one on a pushed screen — "Close" — where a
+     primary button would claim the choice was made. */
   #bl-root .btn.wide { display: block; width: 100%; font-size: 16px; font-weight: 600;
                     padding: 14px; border-radius: 12px; min-height: 50px;
                     box-sizing: border-box; margin-top: 16px; }
+  /* And the same button when it is the SECOND of two, under a primary — "Put
+     them back". It borrows the primary's outline rather than the field grey,
+     because the pair is one decision offered twice ("show me" / "undo that")
+     and a grey partner reads as the disabled twin of the button above it.
+     Lighter than the primary in weight and height, never in hue. */
+  #bl-root .btn.wide.accent { border-color: var(--lk-accent); color: var(--lk-accent);
+                           font-size: 15px; font-weight: 500; padding: 13px;
+                           min-height: 48px; }
   #bl-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
                      border-radius: 12px; border: none; background: var(--lk-accent);
                      color: var(--lk-accent-ink); cursor: pointer; min-height: 50px;
@@ -227,7 +318,7 @@
 
   /* A default ground, so a .msg shown before any state class lands on it is
      still a message rather than bare text on the page. */
-  #bl-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 11px; font-size: 13.5px;
+  #bl-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 12px; font-size: 13.5px;
              line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
   #bl-root .ok { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
   #bl-root .bad { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
@@ -259,7 +350,7 @@
      device types. */
   #bl-root .steps.tight i { width: 16px; }
   #bl-root .steps i.on { background: var(--lk-accent); }
-  #bl-root .steps span { margin-left: 4px; font-size: 12px; color: var(--lk-faint); }
+  #bl-root .steps span { margin-left: 4px; font-size: 12px; color: var(--lk-muted); }
 
   /* `label · value · chevron`. The one shape everything secondary takes:
      a row that says what it is, what it is set to, and that it can be opened.
@@ -341,7 +432,7 @@
   #bl-root .slider.warm .knob { background: var(--lk-ink);
                              box-shadow: var(--lk-slider-knob-shadow-warm); }
   #bl-root .ends { display: flex; justify-content: space-between;
-                font-size: 11px; color: var(--lk-faint); margin: 9px 0 0; }
+                font-size: 11px; color: var(--lk-body); margin: 9px 0 0; }
 
   /* An aside under a control: "there is a device type that does this for you".
      Deliberately NOT a .msg — a message has a coloured ground and is about
@@ -356,7 +447,7 @@
      that one instead. */
   #bl-root .tip { display: flex; align-items: flex-start; gap: 7px;
                margin: 13px 0 0; font-size: 12px; line-height: 1.45;
-               font-style: italic; color: var(--lk-faint); }
+               font-style: italic; color: var(--lk-muted); }
   /* The circled i, DRAWN rather than set. A glyph that the phone's font does
      not carry renders as a box, which is why the one other mark this design
      puts inside text — the row chevron — is an entity rather than an icon; a
@@ -370,10 +461,10 @@
      text, and a mark written as a child would be written over. */
   #bl-root .tip::before { content: "i"; flex: none; box-sizing: border-box;
                        width: 15px; height: 15px; margin-top: 1px;
-                       border: 1.2px solid var(--lk-chev); border-radius: 50%;
+                       border: 1.2px solid var(--lk-tip-edge); border-radius: 50%;
                        font-size: 10px; font-weight: 700; font-style: normal;
                        line-height: 12.6px; text-align: center;
-                       color: var(--lk-chev); }
+                       color: var(--lk-muted); }
 
   /* The swatches a colour is chosen from, four across.
      Not one row of eight: at 390px that is 34px a swatch, under the touch
@@ -421,7 +512,30 @@
                            border: 3px solid var(--lk-accent); z-index: 2;
                            box-shadow: var(--lk-handle-shadow-sel); }
   #bl-root .clockline { display: flex; justify-content: space-between;
-                     font-size: 11px; color: var(--lk-faint); margin: 8px 2px 4px; }
+                     font-size: 11px; color: var(--lk-body); margin: 8px 2px 4px; }
+
+  /* The three or four decisions a flow is about to ask for, numbered.
+
+     SHARED rather than intro-only: the credential gate draws the same rows for
+     the four steps of minting a key, and it used to draw an <ol> instead — a
+     browser list with a browser's numerals, inside a screen where every other
+     number is a filled circle. Two places, one shape.
+
+     Spaced, not ruled. A hairline between two decisions turns a promise about
+     what is coming into a settings list, and the numbers already say these are
+     three of one thing. */
+  #bl-root .plan { display: flex; flex-direction: column; gap: 14px;
+                margin: 0 0 22px; }
+  #bl-root .decision { display: flex; align-items: flex-start; gap: 12px; }
+  #bl-root .decision .n { flex: none; width: 26px; height: 26px; border-radius: 50%;
+                       box-sizing: border-box;
+                       background: var(--lk-accent-tint); color: var(--lk-accent-strong);
+                       border: 1.5px solid var(--lk-accent-line);
+                       font-size: 13px; font-weight: 700;
+                       display: flex; align-items: center; justify-content: center; }
+  #bl-root .decision .what { font-size: 15px; font-weight: 600; line-height: 26px; }
+  #bl-root .decision .why { font-size: 13px; color: var(--lk-muted); margin-top: 2px;
+                         line-height: 1.45; }
 
   /* ==== end shared base ==== */
 
@@ -434,7 +548,7 @@
   #bl-root .timeline { position: relative; height: 76px; border-radius: 12px;
                        background: var(--lk-flat-bg); overflow: hidden; }
   #bl-root .timeline .blk { position: absolute; top: 12px; bottom: 12px;
-                            border-radius: 8px; background: var(--lk-accent-line); }
+                            border-radius: 8px; background: var(--lk-block); }
   /* The block being edited: darker, TALLER and haloed. Colour alone did not
      carry it on a strip where every block is the same lavender and the one in
      the card below is the only one that matters. */
@@ -475,17 +589,17 @@
                    font-size: 13.5px; font-weight: 600; line-height: 1.2;
                    color: var(--lk-ink); margin: 0 0 8px; }
   #bl-root .clocks { display: flex; gap: 8px; margin-bottom: 12px; }
-  #bl-root .unit { flex: 1; background: var(--lk-raised); border-radius: 11px;
+  #bl-root .unit { flex: 1; background: var(--lk-flat-bg); border-radius: 12px;
                    padding: 9px 11px; }
   #bl-root .unit .cap { font-size: 10.5px; font-weight: 600; text-transform: uppercase;
-                        letter-spacing: .05em; color: var(--lk-faint);
+                        letter-spacing: .05em; color: var(--lk-muted);
                         margin-bottom: 7px; }
   #bl-root .unit .set { display: flex; align-items: center; gap: 6px; }
   #bl-root .unit .set span { flex: 1; text-align: center; font-size: 17px; font-weight: 600; }
   #bl-root .unit button { width: 20px; height: 30px; flex: none; border: none;
                           background: none; padding: 0;
                           font-size: 18px; line-height: 30px; color: var(--lk-muted); cursor: pointer; }
-  #bl-root .length { font-size: 12.5px; color: var(--lk-muted); margin: -2px 0 0; }
+  #bl-root .length { font-size: 13px; color: var(--lk-body); margin: -2px 0 0; }
 
   /* Centred under a rule: it is the last thing in the card and it is not one of
      the card's settings. */
@@ -502,6 +616,17 @@
   #bl-root .others .text .at-time { font-size: 14.5px; }
   #bl-root .others .row { gap: 11px; padding: 12px 0; }
   #bl-root .others .row .sub { font-size: 12px; }
+  /* Fold-out link under the swatches, the same one the curve screen draws. */
+  #bl-root .morelink { display: flex; align-items: center; background: none;
+                       border: none; padding: 0; margin-top: 9px; min-height: 44px;
+                       font: inherit; font-size: 14px; font-weight: 500;
+                       color: var(--lk-accent-strong); cursor: pointer; }
+  /* What to do about two blocks that overlap, under the banner that explains
+     it. Rows rather than buttons: neither answer is the right one, the app has
+     a deterministic behaviour either way, and Next was never blocked. */
+  #bl-root .fix { background: var(--lk-surface); border: 1px solid var(--lk-line);
+                  border-radius: 14px; box-shadow: var(--lk-shadow);
+                  padding: 4px 14px; margin: 0 0 16px; }
   #bl-root .add { width: 100%; min-height: 44px; border-radius: 12px; margin-bottom: 16px;
                   padding: 13px; box-sizing: border-box;
                   border: 1.5px dashed var(--lk-hover); background: none;
@@ -524,6 +649,16 @@
   </div>
 
   <div id="bl-overlap" class="msg warn" style="display:none;"></div>
+  <div class="fix" id="bl-fix" style="display:none;">
+    <button class="row" id="bl-merge" type="button">
+      <span class="label" data-i18n="blocks.merge"></span>
+      <span class="chev">&rsaquo;</span>
+    </button>
+    <button class="row" id="bl-keep" type="button">
+      <span class="label" data-i18n="blocks.leaveAsIs"></span>
+      <span class="chev">&rsaquo;</span>
+    </button>
+  </div>
 
   <!--
     The days belong to the SCHEDULE, not to each block: one row above the list.
@@ -599,15 +734,17 @@
       <span class="label" data-i18n="blocks.alsoWarmth"></span>
       <span class="track"><span class="knob"></span></span>
     </button>
+    <!--
+      The palette, not a warmth slider. A block's colour is a DECISION that runs
+      unattended for months, and the three reasons at the top of
+      lib/circadian/palette.ts apply here exactly as they do to a curve point.
+      The lamps that cannot take a colour still get one: the sanitiser derives a
+      colour temperature from whichever swatch is chosen.
+    -->
     <div id="bl-warmBlock" style="display:none;">
-      <div class="when" data-i18n="blocks.warmth"></div>
-      <div class="slider warm" id="bl-warm">
-        <div class="knob" id="bl-warmKnob"></div>
-      </div>
-      <div class="ends">
-        <span data-i18n="blocks.candlelight"></span>
-        <span data-i18n="blocks.daylight"></span>
-      </div>
+      <div class="swatches" id="bl-featured"></div>
+      <div class="swatches more" id="bl-rest" style="display:none;"></div>
+      <button class="morelink" id="bl-more" type="button"></button>
     </div>
 
     <button class="remove" id="bl-remove" data-i18n="blocks.remove"></button>
@@ -749,8 +886,12 @@ function __lkBootBl(Homey) {
     brightKnob: document.getElementById('bl-brightKnob'),
     warmToggle: document.getElementById('bl-warmToggle'),
     warmBlock: document.getElementById('bl-warmBlock'),
-    warm: document.getElementById('bl-warm'),
-    warmKnob: document.getElementById('bl-warmKnob'),
+    featured: document.getElementById('bl-featured'),
+    rest: document.getElementById('bl-rest'),
+    more: document.getElementById('bl-more'),
+    fix: document.getElementById('bl-fix'),
+    merge: document.getElementById('bl-merge'),
+    keep: document.getElementById('bl-keep'),
     remove: document.getElementById('bl-remove'),
     others: document.getElementById('bl-others'),
     add: document.getElementById('bl-add')
@@ -765,6 +906,13 @@ function __lkBootBl(Homey) {
     selected: 0,
     maxEntries: 12,
     overlaps: [],
+    palette: [],
+    featuredColors: 8,
+    showMore: false,
+    // Set once the user has answered the overlap question, so the two rows do
+    // not come back on every render of a schedule they have already decided
+    // about. Not sent anywhere: the overlap itself is what is stored.
+    overlapAnswered: false,
     support: {}
   };
 
@@ -890,10 +1038,61 @@ function __lkBootBl(Homey) {
       setSlider(el.brightKnob, entry.brightness);
     }
 
-    var hasWarmth = entry.temperature !== undefined;
-    el.warmToggle.setAttribute('aria-checked', hasWarmth ? 'true' : 'false');
-    el.warmBlock.style.display = hasWarmth ? '' : 'none';
-    if (hasWarmth) setSlider(el.warmKnob, warmthToSlider(entry.temperature));
+    var hasColour = entry.color !== undefined;
+    el.warmToggle.setAttribute('aria-checked', hasColour ? 'true' : 'false');
+    el.warmBlock.style.display = hasColour ? '' : 'none';
+    if (hasColour) renderSwatches(entry);
+  }
+
+  /**
+   * The eight, and the sixteen behind the fold — the curve screen's grid, on
+   * the curve screen's own palette, because it is the same closed set answering
+   * the same question.
+   */
+  function renderSwatches(entry) {
+    clear(el.featured);
+    clear(el.rest);
+    for (var i = 0; i < state.palette.length; i++) {
+      var colour = state.palette[i];
+      var host = i < state.featuredColors ? el.featured : el.rest;
+      host.appendChild(swatchFor(colour, entry));
+    }
+    el.rest.style.display = state.showMore ? '' : 'none';
+    el.more.style.display = state.palette.length > state.featuredColors ? '' : 'none';
+    el.more.textContent = Homey.__(state.showMore ? 'blocks.fewerColours' : 'blocks.moreColours');
+  }
+
+  function swatchFor(colour, entry) {
+    var swatch = node('button', 'swatch');
+    swatch.type = 'button';
+    swatch.style.background = css(colour);
+    swatch.title = colour.label;
+    swatch.setAttribute('aria-pressed', entry.color === colour.id ? 'true' : 'false');
+    swatch.addEventListener('click', function () {
+      var open = current();
+      if (!open) return;
+      open.color = colour.id;
+      render();
+      push();
+    });
+    return swatch;
+  }
+
+  /**
+   * A palette colour as something a browser will paint.
+   *
+   * DUPLICATED from `css()` in drivers/curve/pair/curve.html, which is itself a
+   * copy of `colourSwatch()` in lib/pairing/flow-screens.ts. A pair view cannot
+   * import anything, and both curves and blocks repaint on every tap — so there
+   * are three copies of this and they have to move together. The two curves are
+   * why: lightness falls as saturation rises so a saturated hue reads as a
+   * colour rather than a pastel, and saturation is lifted off zero because
+   * Homey's near-whites are 0.05 and `hsl(36, 5%, ...)` is grey.
+   */
+  function css(colour) {
+    var saturation = Math.round((0.25 + colour.saturation * 0.55) * 100);
+    var lightness = Math.round(86 - colour.saturation * 36);
+    return 'hsl(' + Math.round(colour.hue * 360) + ',' + saturation + '%,' + lightness + '%)';
   }
 
   function setUnit(which, minutes) {
@@ -922,8 +1121,23 @@ function __lkBootBl(Homey) {
     text.appendChild(node('div', 'at-time', clock(entry.onAt) + ' → ' + clock(offMinutes(entry))));
 
     var bits = [];
-    if (entry.brightness !== undefined) bits.push(Math.round(entry.brightness * 100) + '%');
-    if (entry.temperature !== undefined) bits.push(Homey.__('blocks.withWarmth'));
+    /**
+     * What this block DOES, or how long it lasts when it does nothing but
+     * switch the lights on.
+     *
+     * A block with no brightness and no colour has nothing to read back, and
+     * the old sub-line was then empty — a row whose second line was a blank
+     * 12px gap. Its length is the thing there is to say about it.
+     */
+    if (entry.brightness !== undefined || entry.color !== undefined) {
+      if (entry.brightness !== undefined) bits.push(Math.round(entry.brightness * 100) + '%');
+      if (entry.color !== undefined) bits.push(colourName(entry.color));
+    } else {
+      var span = lengthOf(entry);
+      bits.push(Homey.__('blocks.offAfter', {
+        hours: Math.floor(span / 60), minutes: span % 60
+      }));
+    }
     if (entry.onAt + lengthOf(entry) > 1440) bits.push(Homey.__('blocks.crossesMidnight'));
     text.appendChild(node('div', 'sub', bits.join(' · ')));
     row.appendChild(text);
@@ -937,7 +1151,11 @@ function __lkBootBl(Homey) {
   }
 
   function renderOverlap() {
-    if (state.overlaps.length === 0) { el.overlap.style.display = 'none'; return; }
+    if (state.overlaps.length === 0) {
+      el.overlap.style.display = 'none';
+      el.fix.style.display = 'none';
+      return;
+    }
     var pair = state.overlaps[0];
     var a = byId(pair.a);
     var b = byId(pair.b);
@@ -950,6 +1168,14 @@ function __lkBootBl(Homey) {
     })));
     el.overlap.appendChild(node('div', null, Homey.__('blocks.overlapMeans')));
     el.overlap.style.display = '';
+    el.fix.style.display = state.overlapAnswered ? 'none' : '';
+  }
+
+  function colourName(id) {
+    for (var i = 0; i < state.palette.length; i++) {
+      if (state.palette[i].id === id) return state.palette[i].label;
+    }
+    return id;
   }
 
   function render() {
@@ -1000,9 +1226,51 @@ function __lkBootBl(Homey) {
   el.warmToggle.addEventListener('click', function () {
     var entry = current();
     if (!entry) return;
-    entry.temperature = entry.temperature === undefined ? 0.8 : undefined;
+    // The first swatch is the warmest of the featured eight, which is the one
+    // most people want from a schedule — and any colour is a better opening bid
+    // than none, because a switched-on control with nothing chosen is a control
+    // that looks configured and does nothing.
+    entry.color = entry.color === undefined
+      ? (state.palette[0] ? state.palette[0].id : undefined)
+      : undefined;
     render();
     push();
+  });
+
+  el.more.addEventListener('click', function () {
+    state.showMore = !state.showMore;
+    render();
+  });
+
+  /**
+   * Two overlapping blocks become one, spanning both.
+   *
+   * The later block's own settings are dropped rather than merged: two windows
+   * that overlap are one period of light as far as the lamps are concerned, and
+   * inventing a brightness between the two would be the app choosing a value
+   * nobody asked for. The EARLIER block keeps its own, because it is the one
+   * that will already have been running when the second was due to start.
+   */
+  el.merge.addEventListener('click', function () {
+    var pair = state.overlaps[0];
+    if (!pair) return;
+    var a = byId(pair.a);
+    var b = byId(pair.b);
+    if (!a || !b) return;
+    var first = a.onAt <= b.onAt ? a : b;
+    var second = first === a ? b : a;
+    var end = Math.max(first.onAt + lengthOf(first), second.onAt + lengthOf(second));
+    first.end = { kind: 'time', at: end % 1440 };
+    state.entries = state.entries.filter(function (entry) { return entry.id !== second.id; });
+    state.selected = state.entries.indexOf(first);
+    state.overlapAnswered = false;
+    render();
+    push();
+  });
+
+  el.keep.addEventListener('click', function () {
+    state.overlapAnswered = true;
+    render();
   });
 
   function draggable(element, apply) {
@@ -1040,13 +1308,6 @@ function __lkBootBl(Homey) {
    * the same seam the circadian day screen uses, and for the same reason.
    * Inverting anywhere further in is how "Warmest" came to write 0.
    */
-  function warmthToSlider(warmth) { return 1 - warmth; }
-  function sliderToWarmth(fraction) { return 1 - fraction; }
-
-  draggable(el.warm, function (fraction) {
-    var entry = current();
-    if (entry) entry.temperature = sliderToWarmth(fraction);
-  });
 
   el.remove.addEventListener('click', function () {
     state.entries.splice(state.selected, 1);
@@ -1088,6 +1349,8 @@ function __lkBootBl(Homey) {
     state.maxEntries = payload.maxEntries || 12;
     state.overlaps = payload.overlaps || [];
     state.support = payload.support || {};
+    state.palette = payload.palette || [];
+    state.featuredColors = payload.featuredColors || 8;
 
     if (state.entries.length === 0) {
       state.entries.push({

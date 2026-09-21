@@ -19,7 +19,7 @@ import { usableLocation } from '../../lib/daylight/daylight-types';
 import type { AnchorContext } from '../../lib/circadian/circadian-curve';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
 import {
-  registerIntroHandler, registerReviewHandler, warmthKey, warmthSwatch,
+  lightsSummary, registerIntroHandler, registerReviewHandler, warmthKey, warmthSwatch,
 } from '../../lib/pairing/flow-screens';
 import {
   handlerRegistrar,
@@ -554,13 +554,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
     target: TargetSpec,
     summary: { count: number },
   ): Promise<string> {
-    const host = this.pairHost();
-    if (target.kind === 'zone') {
-      const zones = await this.app.catalog.allZones();
-      const zone = zones.find((candidate: { id: string }) => candidate.id === target.zoneId);
-      return host.translate('review.wholeRoom', { room: zone?.name ?? '?' });
-    }
-    return host.translate('review.someLights', { count: summary.count });
+    return lightsSummary(this.pairHost(), target, summary, () => this.app.catalog.allZones());
   }
 
   /**

@@ -1,10 +1,14 @@
 import type { LightkeeperApp } from '../../lib/app-contract';
 import { mintDeviceId } from '../../lib/bridge/flow-bridge-manager';
 import Homey from 'homey';
-import { PressListener } from '../../lib/pairing/press-listener';
 import {
-  colourSwatch, registerIntroHandler, registerReviewHandler,
+  colourSwatch, lightsSummary, registerIntroHandler, registerReviewHandler,
 } from '../../lib/pairing/flow-screens';
+import {
+  isSourceKind, sourceRows, type SourceDevice, type SourceKind,
+} from '../../lib/pairing/source-picker';
+import { LEAVE_ALONE } from '../../lib/outputs/lightkeeper-settings';
+import { isLightkeeperPreset, type LightkeeperPreset } from '../../lib/mapping/mapping-types';
 
 import {
   DEFAULT_BEHAVIOR, FUNCTION_CAPABILITY, FUNCTION_PRESET,
@@ -25,7 +29,7 @@ import {
 } from '../../lib/pairing/target-picker';
 import { buildSourceList } from '../../lib/pairing/source-list';
 import {
-  mappingGroups, mappingRuleRows, ruleTargetFrom,
+  mappingGroups, mappingRuleRows, ruleTargetFrom, storedRuleFrom,
 } from '../../lib/pairing/mapping-screen';
 import { deriveControllerName } from '../../lib/pairing/derive-name';
 import {
@@ -64,6 +68,15 @@ interface SessionState {
    * One source of truth, and the editor cannot open on the wrong row.
    */
   editing?: string;
+  /**
+   * Which of the two source pickers is open, when one is.
+   *
+   * The same reason `editing` is here rather than in a query string: `job.html`
+   * pushes ONE view for two questions, so the driver is told which before
+   * `showView('source')` and the view asks it back. One source of truth, and a
+   * reload cannot land on the wrong picker.
+   */
+  editingSource?: SourceKind;
 }
 
 module.exports = class ControllerDriver extends Homey.Driver {
@@ -134,11 +147,6 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
     const host = this.pairHost();
     const handler = handlerRegistrar(host, session);
-    /**
-     * One per SESSION, so abandoning the screen cannot leave a subscription on
-     * every remote in the house for as long as the app runs.
-     */
-    const listener = new PressListener({ api: this.app.api, log: (...args) => this.log(...args) });
 
     // ---------------------------------------------------------- credentials
 
@@ -443,6 +451,28 @@ module.exports = class ControllerDriver extends Homey.Driver {
       const lights = await targetLights(this.app.catalog, state.target);
       const aimed = rule?.target ? await targetDeviceIds(this.app.catalog, rule.target) : null;
 
+      /**
+       * "On – with Lightkeeper" is withdrawn when there is nothing to take
+       * anything FROM.
+       *
+       * `availableFunctions` answers what the chosen LAMPS can do, which for
+       * this job is every lamp that switches on. Whether the house owns a
+       * circadian light, a curve, a schedule or a Room-sensing Light is a
+       * different question and only the driver can ask it — and a card that
+       * opens two pickers onto two empty lists is a dead end somebody has to
+       * back out of.
+       *
+       * Kept for a button that already uses it, exactly as a retired job is
+       * kept above: the device may have been configured while a curve existed
+       * and be repaired after it was deleted, and taking the row away would
+       * read as "this button does nothing" about a button that still does
+       * something — it degrades to plain "on".
+       */
+      const composable = this.sourceCount() > 0;
+      const offerable = composable || rule?.function === 'lightkeeper_on'
+        ? tiles
+        : tiles.filter(fn => fn !== 'lightkeeper_on');
+
       return {
         title: input ? input.label.split(' — ').join(' · ') : '',
         /**
@@ -453,10 +483,15 @@ module.exports = class ControllerDriver extends Homey.Driver {
          * a tenth kind of job inside it. The screen draws the separation; this
          * list is only the grid's own contents.
          */
-        jobs: tiles.map(fn => ({
+        jobs: offerable.map(fn => ({
           id: fn,
           label: this.homey.__(`functions.${fn}`),
-          /** 'none' | 'brightness' | 'colour' — which editor the tile opens. */
+          /**
+           * 'none' | 'brightness' | 'colour' | 'lightkeeper' — which editor the
+           * tile opens, AND how the screen tells a grid cell from the card
+           * above it. `lightkeeper` is drawn full width with two rows and a
+           * switch, which is why it is found by this rather than by position.
+           */
           preset: FUNCTION_PRESET[fn],
         })),
         chosen: rule?.function ?? null,
@@ -500,6 +535,15 @@ module.exports = class ControllerDriver extends Homey.Driver {
         allLabel: this.homey.__('job.allLights', { count: this.countWord(lights.length) }),
         /** null means all of them, and keeps meaning that as the room changes. */
         chosenLights: aimed,
+        /**
+         * What the two chosen setups are CALLED, for the hero card's two rows.
+         *
+         * Resolved here because neither half of the answer is reachable from
+         * the view: `lib/` cannot translate "Leave it alone", and a webview
+         * cannot look a runtime up by id. The row would otherwise have to print
+         * the stored `lk-curve-…` at somebody.
+         */
+        sourceNames: this.sourceNames(rule?.preset),
       };
     });
 
@@ -511,9 +555,10 @@ module.exports = class ControllerDriver extends Homey.Driver {
      * and it is safe because a gesture is a row, so there is exactly one rule to
      * replace.
      */
-    handler('setGesture', async (payload: unknown) => {
+    const applyGesture = async (
+      asked: { job?: unknown; preset?: unknown; lights?: unknown } | undefined,
+    ) => {
       if (!state.editing) throw new Error('No button is being edited.');
-      const asked = payload as { job?: unknown; preset?: unknown; lights?: unknown } | undefined;
       const job = typeof asked?.job === 'string' ? asked.job : null;
 
       const kept = state.mappings.filter(rule => rule.inputKey !== state.editing);
@@ -555,42 +600,105 @@ module.exports = class ControllerDriver extends Homey.Driver {
         throw new Error(dropped[0]?.reason ?? 'That job cannot be used here.');
       }
 
-      state.mappings = [...kept, {
-        id: rules[0]!.id,
-        function: rules[0]!.function,
-        inputKey: rules[0]!.inputKey,
-        target: ruleTargetFrom(rules[0]!.deviceIds),
-        ...(rules[0]!.preset !== undefined ? { preset: rules[0]!.preset } : {}),
-      }];
+      state.mappings = [...kept, storedRuleFrom(rules[0]!)];
       return { set: true };
+    };
+
+    handler('setGesture', async (payload: unknown) => applyGesture(
+      payload as { job?: unknown; preset?: unknown; lights?: unknown } | undefined,
+    ));
+
+    // -------------------------------------------------- the two source pickers
+
+    /** Which of the two questions the pushed picker is about to ask. */
+    handler('editSource', async (kind: unknown) => {
+      if (!state.editing) throw new Error('No button is being edited.');
+      // Checked against the two literals for the same reason `editGesture`
+      // checks its key: a pair session is a scriptable Web API surface
+      // (platform §14), and a third kind would open a screen for a question
+      // this app does not ask.
+      if (!isSourceKind(kind)) throw new Error('That is not a source this button takes.');
+      state.editingSource = kind;
+      return { editing: kind };
     });
 
-    // ------------------------------------------------------- press to find
+    handler('getSource', async () => {
+      const kind = state.editingSource;
+      if (!kind) throw new Error('No source is being chosen.');
+
+      const rule = state.mappings.find(candidate => candidate.inputKey === state.editing);
+      const preset = rule?.preset;
+      const chosen = preset !== undefined && isLightkeeperPreset(preset)
+        ? (kind === 'colour' ? preset.colourSource : preset.brightnessSource)
+        : LEAVE_ALONE;
+
+      return {
+        kind,
+        title: this.homey.__(kind === 'colour' ? 'job.takeColourTitle' : 'job.takeBrightnessTitle'),
+        blurb: this.homey.__('job.takeBlurb'),
+        /**
+         * What the swatches and the levels ARE, under the list rather than over
+         * it. Both say the same thing in different words — these are live
+         * readings, not the values this button will be fixed at — and the
+         * screen's own subtitle has already said the important half.
+         */
+        note: this.homey.__(kind === 'colour' ? 'job.swatchNote' : 'job.levelNote'),
+        empty: this.homey.__('job.noSources'),
+        chosen,
+        sources: sourceRows(kind, await this.sourceDevices(kind), {
+          name: this.homey.__('flow.leaveAlone'),
+          subtitle: this.homey.__('flow.leaveAloneHint'),
+        }),
+      };
+    });
 
     /**
-     * Listen for a real press, bounded and escapable.
+     * One source chosen, through the same validation and the same conversion
+     * `setGesture` uses.
      *
-     * A convenience, never the only path: capability-based events are
-     * observable directly, but a card-only remote cannot be heard at all
-     * (platform §4) — so the list stays one tap away on both screens that offer
-     * this, and a silent battery remote is never a dead end.
+     * Not a hand-built rule written into `state.mappings`: that is exactly the
+     * second conversion `storedRuleFrom`'s docblock records the cost of, and it
+     * would be free to store a preset this build cannot read back.
      */
-    handler('startListening', async () => {
-      const candidates = await this.app.catalog.allDevices();
-      await listener.start(candidates as any[], heard => {
-        // Two different screens listen, and they want different halves: the
-        // remote picker wants the DEVICE, the buttons screen wants the gesture.
-        // Both are emitted and each screen takes the one it asked about, which
-        // is cheaper than two listeners over the same subscriptions.
-        session.emit('heardSource', { id: heard.deviceId, name: heard.name });
-        session.emit('heard', heard.key);
-      });
-      return { listening: true };
-    });
+    handler('setSource', async (payload: unknown) => {
+      const kind = state.editingSource;
+      if (!kind) throw new Error('No source is being chosen.');
+      const asked = payload as { id?: unknown } | undefined;
+      const id = typeof asked?.id === 'string' && asked.id.length > 0 ? asked.id : LEAVE_ALONE;
 
-    handler('stopListening', async () => {
-      await listener.stop();
-      return { listening: false };
+      const rule = state.mappings.find(candidate => candidate.inputKey === state.editing);
+      const existing = rule?.preset;
+      const base: LightkeeperPreset = existing !== undefined && isLightkeeperPreset(existing)
+        ? existing
+        // What a button starts with the moment the job is chosen. Both sources
+        // unanswered, and `pressAgainOff` ON — see the note in job.html: the
+        // second press is what makes one button a whole light switch.
+        : { colourSource: LEAVE_ALONE, brightnessSource: LEAVE_ALONE, pressAgainOff: true };
+
+      const preset: LightkeeperPreset = kind === 'colour'
+        ? { ...base, colourSource: id }
+        : { ...base, brightnessSource: id };
+
+      /**
+       * Clearing the LAST source is refused, with a sentence rather than with
+       * the validator's own message.
+       *
+       * `readMappingPreset` refuses the same shape and would throw here anyway
+       * — but as "preset names no Lightkeeper device to take a colour or a
+       * brightness from", printed at somebody who has just tapped "Leave it
+       * alone". The refusal is right (a button that names neither is plain
+       * "On" wearing a name that promises more); only the wording was not.
+       */
+      if (preset.colourSource === LEAVE_ALONE && preset.brightnessSource === LEAVE_ALONE) {
+        throw new Error(this.homey.__('job.needASource'));
+      }
+
+      await applyGesture({
+        job: 'lightkeeper_on',
+        preset,
+        lights: rule?.target?.kind === 'devices' ? rule.target.deviceIds : null,
+      });
+      return { chosen: id };
     });
 
     // -------------------------------------------------------------- mapping
@@ -675,15 +783,21 @@ module.exports = class ControllerDriver extends Homey.Driver {
         this.log(`Dropped duplicate assignment of "${dropped.inputKey}" to ${dropped.function}`);
       }
 
-      state.mappings = unique
-        .filter(r => r.inputKey)
-        .map(r => ({
-          id: r.id,
-          function: r.function,
-          inputKey: r.inputKey,
-          // null inherits the controller's own targets.
-          target: ruleTargetFrom(r.deviceIds),
-        }));
+      /**
+       * `storedRuleFrom`, not a rebuild here.
+       *
+       * This path used to write the rule out field by field and drop the
+       * preset, while `setGesture` — the one the buttons screen actually uses —
+       * carried it. A `brightness_set` or a `color_set` saved through here was
+       * stored as a job that says "set a value" and names none, which is the one
+       * shape `validateControllerProfile` quarantines: the device paired, wrote
+       * its store, and came up unavailable on the next `onInit`.
+       *
+       * Not reachable from today's screens — but a pair session is a scriptable
+       * Web API surface (platform §14), so this path is somebody's script, and
+       * one shared conversion is what stops the two answers drifting again.
+       */
+      state.mappings = unique.filter(r => r.inputKey).map(storedRuleFrom);
       return { count: state.mappings.length };
     });
 
@@ -826,6 +940,119 @@ module.exports = class ControllerDriver extends Homey.Driver {
   }
 
   /**
+   * How many Lightkeeper devices this house has that publish anything.
+   *
+   * The question behind offering "On – with Lightkeeper" at all. Controllers
+   * are deliberately absent: a remote has no desired state to publish, only the
+   * last thing somebody pressed, so counting them would offer a job whose two
+   * pickers were still empty.
+   */
+  private sourceCount(): number {
+    return this.app.curves.all().length
+      + this.app.schedules.all().length
+      + this.app.daylights.all().length;
+  }
+
+  /**
+   * The two chosen setups, as the words the hero card's rows print.
+   *
+   * "Leave it alone" for an unset one, and for a set one that no live runtime
+   * answers to — which is what a deleted curve looks like from here. Printing
+   * the stored id instead would be honest about the store and useless to the
+   * person reading it, and the press degrades to plain "on" anyway.
+   */
+  private sourceNames(preset: MappingRule['preset']): { colour: string; brightness: string } {
+    const leaveAlone = this.homey.__('flow.leaveAlone');
+    if (preset === undefined || !isLightkeeperPreset(preset)) {
+      return { colour: leaveAlone, brightness: leaveAlone };
+    }
+    return {
+      colour: this.app.curves.get(preset.colourSource)?.deviceName ?? leaveAlone,
+      brightness: (this.app.daylights.get(preset.brightnessSource)
+        ?? this.app.curves.get(preset.brightnessSource)
+        ?? this.app.schedules.get(preset.brightnessSource))?.deviceName ?? leaveAlone,
+    };
+  }
+
+  /**
+   * Every device that can answer one of the two questions, with what it is
+   * showing right now.
+   *
+   * The two lists differ and the difference is the rule: a COLOUR comes only
+   * from a curve-driven device, because only those two device types compute a
+   * hue and only they publish a warmth they are actively driving; a BRIGHTNESS
+   * comes from any of the three types that publish one. It is the same split
+   * `app.ts`'s `sourceRegistry()` makes for the Flow card and for the press
+   * itself, and all three have to agree or a screen offers a device the press
+   * will then call missing.
+   */
+  private async sourceDevices(kind: SourceKind): Promise<SourceDevice[]> {
+    const subtitles = await this.ownDeviceSubtitles();
+    const describe = (id: string, name: string) => ({
+      id, name, subtitle: subtitles.get(id) ?? '',
+    });
+
+    if (kind === 'colour') {
+      return this.app.curves.all().map(runtime => ({
+        ...describe(runtime.controllerId, runtime.deviceName),
+        values: runtime.publishedValues(),
+        // The live value, not the board: the board publishes the colour as a
+        // NAME and a swatch needs the two axes. Same read `set_lights` makes.
+        current: runtime.currentValue(),
+      }));
+    }
+
+    return [
+      ...this.app.daylights.all(), ...this.app.curves.all(), ...this.app.schedules.all(),
+    ].map(runtime => ({
+      ...describe(runtime.controllerId, runtime.deviceName),
+      values: runtime.publishedValues(),
+    }));
+  }
+
+  /**
+   * "Colour Curve Light · Living room", per Lightkeeper device id.
+   *
+   * The join is `data.id`, because a runtime is keyed on the `lk-…` string this
+   * app minted and the catalogue is keyed on Homey's own uuid — see
+   * `CatalogDevice.dataId`, which exists for this and for nothing else.
+   *
+   * The device TYPE is the driver's own manifest name rather than a locale key
+   * of ours, so a driver renamed in `driver.compose.json` renames itself here
+   * too and cannot be renamed in one place only. A row that does not join gets
+   * an empty subtitle rather than a guess.
+   */
+  private async ownDeviceSubtitles(): Promise<Map<string, string>> {
+    const devices = await this.app.catalog.allDevices();
+    const subtitles = new Map<string, string>();
+
+    for (const device of devices) {
+      if (!device.dataId || !this.app.catalog.isOwnDevice(device)) continue;
+      const parts = [this.driverNameOf(device.driverId), device.zoneName].filter(part => part !== '');
+      subtitles.set(device.dataId, parts.join(' · '));
+    }
+    return subtitles;
+  }
+
+  /** One of this app's own driver names, from the manifest that declares it. */
+  private driverNameOf(driverId: string | null): string {
+    const id = driverId?.split(':').pop() ?? '';
+    const drivers = (this.homey.manifest as { drivers?: unknown })?.drivers;
+    const found = Array.isArray(drivers)
+      ? drivers.find((driver: { id?: unknown }) => driver?.id === id)
+      : undefined;
+    const name = (found as { name?: unknown } | undefined)?.name;
+
+    // The manifest field is `{ "en": … }` — the object form every user-facing
+    // string in this app keeps so a language stays a sibling key. The CLI is
+    // free to resolve it to a plain string for the running locale, so both
+    // shapes are read rather than one assumed.
+    if (typeof name === 'string') return name;
+    const english = (name as { en?: unknown } | undefined)?.en;
+    return typeof english === 'string' ? english : '';
+  }
+
+  /**
    * A small count as a word, because "all three" is a phrase and "all 3" is a
    * field. Past twelve the digits read better than the words do.
    */
@@ -842,13 +1069,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
     target: TargetSpec,
     summary: { count: number },
   ): Promise<string> {
-    const host = this.pairHost();
-    if (target.kind === 'zone') {
-      const zones = await this.app.catalog.allZones();
-      const zone = zones.find((candidate: { id: string }) => candidate.id === target.zoneId);
-      return host.translate('review.wholeRoom', { room: zone?.name ?? '?' });
-    }
-    return host.translate('review.someLights', { count: summary.count });
+    return lightsSummary(this.pairHost(), target, summary, () => this.app.catalog.allZones());
   }
 
   private async deriveName(state: SessionState): Promise<string> {

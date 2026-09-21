@@ -1599,6 +1599,35 @@ describe('what the week-long recording found', () => {
     await h.runtime.stop();
   });
 
+  test('the colour a lamp comes back on at does not stand its runtime down', async () => {
+    const h = harness({ now: MORNING });
+    await h.runtime.start();
+    await settle();
+
+    /**
+     * The other half of the day-long capture's finding, on the axis this
+     * runtime drives. A lamp restores whatever it was last showing and says so
+     * — measured at 4.4 s after the `onoff` edge, past a settle window whose
+     * length is coupled to OUR write burst rather than to the bridge's.
+     */
+    h.advance(10_000);
+    h.report('l1', 'onoff', false);
+    h.report('l1', 'onoff', true);
+    await settle();
+    h.advance(4_400);
+    h.report('l1', 'light_temperature', 0.95);
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].overridden, false);
+    assert.ok(d.recentControlEvents.some(e => e.type === 'report_ignored' && e.reason === 'power_restore'));
+
+    // And the person who then reaches for the dimmer is still a person.
+    h.advance(5_000);
+    h.report('l1', 'light_temperature', 0.05);
+    assert.equal(h.runtime.diagnostics().targets[0].overridden, true);
+    await h.runtime.stop();
+  });
+
   test('a bridge exactly one tolerance away is forgiven wherever it sits on the axis', async () => {
     const h = harness({ now: MORNING });
     await h.runtime.start();
@@ -1700,6 +1729,132 @@ describe('what the switch-on capture found', () => {
     const d = h.runtime.diagnostics();
     assert.equal(d.targets[0].overridden, false, 'the deadline runs from the first report');
     assert.ok(d.recentControlEvents.some(e => e.type === 'override_cleared' && e.reason === 'expired'));
+    await h.runtime.stop();
+  });
+});
+
+/**
+ * What the Garage capture found: a lamp can take an hour and a half to arrive.
+ *
+ * Four lamps acked `light_temperature` 0.82, reported 0.57, and then crawled
+ * +0.01 every four minutes towards it. The first three steps sat within
+ * `OVERRIDE_TOLERANCE` of 0.57 and were forgiven as an ignored write; the
+ * fourth cleared the tolerance and was booked as a person, standing all four
+ * devices down for the ninety minutes it took the lamps to finish obeying.
+ *
+ * The rule that came out of it is in `approachingWrite`: a report strictly
+ * closer to what we wrote than anything since we wrote it is our write landing
+ * late, whatever the distance still left to run.
+ */
+describe('what the slow-fade capture found', () => {
+  /** As a bridge reports it: `light_temperature` declares `decimals: 2`. */
+  const asReported = (value: number) => Math.round(value * 100) / 100;
+
+  test('a lamp fading towards what we wrote is not a person', async () => {
+    const h = harness({
+      now: MORNING,
+      devices: [light('l1', undefined, { light_temperature: 0.05 })],
+    });
+    await h.runtime.start();
+    await settle();
+    const written = temperatures(h.writes)[0].value as number;
+    assert.ok(written - 0.05 > 0.1, 'the plan asks for somewhere the lamp is nowhere near');
+
+    // Four steps of the fade, a minute apart: every one of them well outside
+    // every settle window, well outside the tolerance around where the lamp
+    // started, and still a long way from what we asked for.
+    for (const step of [1, 2, 3, 4]) {
+      h.advance(60_000);
+      h.report('l1', 'light_temperature', asReported(0.05 + (written - 0.05) * step / 5));
+    }
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].overridden, false, 'a lamp on its way is not a person');
+    assert.equal(d.targets[0].override, null);
+    assert.ok(
+      d.recentControlEvents.some(e => e.type === 'report_ignored' && e.reason === 'write_approaching'),
+      'and each report is recorded under its own reason rather than swallowed',
+    );
+    assert.equal(
+      d.targets[0].approachingWrites?.light_temperature, 1,
+      'one write, one count, however many reports it took to arrive',
+    );
+    await h.runtime.stop();
+  });
+
+  test('a lamp that turns back is a person again', async () => {
+    const h = harness({
+      now: MORNING,
+      devices: [light('l1', undefined, { light_temperature: 0.05 })],
+    });
+    await h.runtime.start();
+    await settle();
+    const written = temperatures(h.writes)[0].value as number;
+
+    // A fifth of the way per report, and far enough that turning back below is
+    // a real move rather than a bridge rounding around where the lamp started —
+    // one step has to clear `OVERRIDE_TOLERANCE` or the turn-back reads as a
+    // lamp that never left, which is `ineffectiveWrite`'s case and not this one.
+    assert.ok((written - 0.05) / 5 > 0.03, `one step clears the tolerance (${written})`);
+    for (const step of [1, 2, 3]) {
+      h.advance(60_000);
+      h.report('l1', 'light_temperature', asReported(0.05 + (written - 0.05) * step / 5));
+    }
+    assert.equal(h.runtime.diagnostics().targets[0].overridden, false, 'still on its way');
+
+    // Somebody takes the lamp the other way. Nothing about this report is our
+    // write arriving: it is further from what we asked for than the lamp has
+    // already been.
+    h.advance(60_000);
+    h.report('l1', 'light_temperature', asReported(0.05 + (written - 0.05) / 5));
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].overridden, true, 'moving away from our write is a person');
+    assert.equal(d.targets[0].override?.capability, 'light_temperature');
+    await h.runtime.stop();
+  });
+
+  test('a lamp that arrives somewhere else in one move is a person again', async () => {
+    const h = harness({
+      now: MORNING,
+      devices: [light('l1', undefined, { light_temperature: 0.05 })],
+    });
+    await h.runtime.start();
+    await settle();
+    const written = temperatures(h.writes)[0].value as number;
+
+    // Between where the lamp was and where we sent it, and closer to us than it
+    // started — but most of the way there in a single report, which is not a
+    // fade. Somebody set this lamp to roughly half of what we asked for.
+    h.advance(60_000);
+    h.report('l1', 'light_temperature', asReported(0.05 + (written - 0.05) * 0.5));
+
+    assert.equal(
+      h.runtime.diagnostics().targets[0].overridden, true,
+      'a jump that happens to land on the way is still a jump',
+    );
+    await h.runtime.stop();
+  });
+
+  test('a lamp that sails past what we wrote is a person again', async () => {
+    const h = harness({
+      now: MORNING,
+      devices: [light('l1', undefined, { light_temperature: 0.05 })],
+    });
+    await h.runtime.start();
+    await settle();
+    const written = temperatures(h.writes)[0].value as number;
+
+    for (const step of [1, 2]) {
+      h.advance(60_000);
+      h.report('l1', 'light_temperature', asReported(0.05 + (written - 0.05) * step / 5));
+    }
+    // Past the value we asked for, by more than a bridge rounds: the fade is
+    // over and this is something else moving the lamp.
+    h.advance(60_000);
+    h.report('l1', 'light_temperature', asReported(Math.min(1, written + 0.1)));
+
+    assert.equal(h.runtime.diagnostics().targets[0].overridden, true, 'an overshoot is not our write');
     await h.runtime.stop();
   });
 });

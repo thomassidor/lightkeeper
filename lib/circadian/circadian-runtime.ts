@@ -13,6 +13,8 @@ import { LightTargetAdapter, type WriteRecord } from '../outputs/light-target-ad
 import { TargetResolver } from '../outputs/target-resolver';
 import {
   validCapabilityValue,
+  FADE_OUT_GRACE_MS,
+  FADE_OUT_MIN_MS,
   OVERRIDE_EXPIRY_MS,
   OVERRIDE_SETTLE_MS,
   withinOverrideTolerance,
@@ -393,6 +395,26 @@ export interface CircadianDiagnostics extends ReturnType<ControlHistory<Circadia
      * legible as exactly that rather than as a runtime with nothing to do.
      */
     ignoredWrites?: Record<string, number>;
+    /**
+     * And writes it acknowledged and then took more than one report to reach,
+     * per capability. Absent when there are none.
+     *
+     * The same argument as `ignoredWrites` one axis over: `approachingWrite`
+     * stops a slow fade reading as a person, and a lamp that needs ninety
+     * minutes to accept a colour temperature must not become invisible in the
+     * process. Read the two together — ignored means it never moved, and
+     * approaching means it moved, eventually.
+     */
+    approachingWrites?: Record<string, number>;
+    /**
+     * And reports of a lamp on its way OFF — part-way down, a median of half a
+     * minute before it says so. Absent when there are none.
+     *
+     * One number rather than a map, unlike the two above: switching off is not
+     * an axis, it is the lamp leaving. The daylight runtime carries its twin
+     * for the same reason and under the same name.
+     */
+    fadeOutOverrides?: number;
   }>;
   lastAction: CircadianAction | null;
   recentFailures: readonly unknown[];
@@ -426,6 +448,8 @@ export class CircadianRuntime {
    * for the four days of evidence that put it there.
    */
   private readonly overrides = new Map<string, OverrideRecord>();
+  /** Per device: overrides that turned out to be the lamp fading out. See FADE_OUT_GRACE_MS. */
+  private readonly fadeOuts = new Map<string, number>();
 
   /** What we last sent each light, in DEVICE values, and when. */
   private readonly lastWritten = new Map<string, { warmth?: number; brightness?: number; at: number }>();
@@ -738,7 +762,7 @@ export class CircadianRuntime {
     external: boolean,
   ): void {
     if (!validCapabilityValue(capability, value)) {
-      this.history.events.add({ at: this.now(), type: 'report_ignored', deviceId, capability, reason: 'invalid_value' });
+      this.history.ignored({ at: this.now(), type: 'report_ignored', deviceId, capability, reason: 'invalid_value' });
       return;
     }
     this.deps.onEvidence?.('target_report', { controllerId: this.controllerId, deviceId, capability, value, external });
@@ -750,9 +774,28 @@ export class CircadianRuntime {
 
     if (capability === 'onoff') {
       if (value === false) this.scheduler?.cancelTarget(deviceId);
-      if (this.overrides.delete(deviceId)) {
-        this.history.events.add({ at: this.now(), type: 'override_cleared', deviceId, reason: 'power_changed' });
-        this.deps.log(`${deviceId} was power-cycled; circadian control resumes`);
+      const cleared = this.overrides.get(deviceId);
+      if (cleared !== undefined) {
+        this.overrides.delete(deviceId);
+        // Was that "override" this lamp beginning to fade out? See
+        // FADE_OUT_GRACE_MS: a dim report below what we wanted, followed by the
+        // lamp's own off within the minute, is the lamp leaving rather than
+        // somebody arriving. Recorded as what it was instead of as a person.
+        const sinceRaised = this.now() - cleared.at;
+        const fadingOut = value === false
+          && cleared.capability === 'dim'
+          && sinceRaised >= FADE_OUT_MIN_MS
+          && sinceRaised < FADE_OUT_GRACE_MS
+          && cleared.expected !== null
+          && cleared.value < cleared.expected;
+        if (fadingOut) this.fadeOuts.set(deviceId, (this.fadeOuts.get(deviceId) ?? 0) + 1);
+        this.history.events.add({
+          at: this.now(), type: 'override_cleared', deviceId,
+          reason: fadingOut ? 'power_fade_out' : 'power_changed',
+        });
+        this.deps.log(fadingOut
+          ? `${deviceId} was switching off, not overridden; circadian control resumes`
+          : `${deviceId} was power-cycled; circadian control resumes`);
       }
 
       if (value === true) {
@@ -807,7 +850,7 @@ export class CircadianRuntime {
       ? (value === 0 ? 'dim_zero' : 'lamp_off')
       : this.cache.overrideSuppression(deviceId, capability, value);
     if (ignored) {
-      this.history.events.add({ at: this.now(), type: 'report_ignored', deviceId, capability,
+      this.history.ignored({ at: this.now(), type: 'report_ignored', deviceId, capability,
         ...(typeof value === 'number' ? { value } : {}), reason: ignored });
       return;
     }
@@ -862,8 +905,19 @@ export class CircadianRuntime {
      */
     const startedAt = this.overrides.get(deviceId)?.at ?? this.now();
     const record: OverrideRecord = { at: startedAt, capability: 'light_hue', value: reported, expected: ours?.hue ?? null, source: 'external_report' };
+    // One override, one row. A lamp that keeps restating it — a stuck bulb
+    // reporting once a minute — is counted on the record instead of pushing a
+    // row per report: 28 of one device's 32 event slots were four overrides
+    // said over and over, which is how the evidence for everything else was
+    // lost. `repeats` carries the same information in one slot, and the tile
+    // and the settings page read the record rather than the log.
+    const previous = this.overrides.get(deviceId);
+    if (previous !== undefined) {
+      record.repeats = (previous.repeats ?? 1) + 1;
+      record.lastAt = this.now();
+    }
     this.overrides.set(deviceId, record);
-    this.history.events.add({ ...record, at: this.now(), type: 'override', deviceId });
+    if (previous === undefined) this.history.events.add({ ...record, at: this.now(), type: 'override', deviceId });
   }
 
   /**
@@ -922,8 +976,19 @@ export class CircadianRuntime {
     // The first report's time, not this one's — see noteColorOverride.
     const startedAt = this.overrides.get(deviceId)?.at ?? this.now();
     const record: OverrideRecord = { at: startedAt, capability: field === 'warmth' ? 'light_temperature' : 'dim', value: reported, expected: last?.[field] ?? null, source: 'external_report' };
+    // One override, one row. A lamp that keeps restating it — a stuck bulb
+    // reporting once a minute — is counted on the record instead of pushing a
+    // row per report: 28 of one device's 32 event slots were four overrides
+    // said over and over, which is how the evidence for everything else was
+    // lost. `repeats` carries the same information in one slot, and the tile
+    // and the settings page read the record rather than the log.
+    const previous = this.overrides.get(deviceId);
+    if (previous !== undefined) {
+      record.repeats = (previous.repeats ?? 1) + 1;
+      record.lastAt = this.now();
+    }
     this.overrides.set(deviceId, record);
-    this.history.events.add({ ...record, at: this.now(), type: 'override', deviceId });
+    if (previous === undefined) this.history.events.add({ ...record, at: this.now(), type: 'override', deviceId });
   }
 
   /** Once a minute, from the manager's single shared timer. */
@@ -1497,10 +1562,28 @@ export class CircadianRuntime {
   }
 
   private ignoredWritesFor(deviceId: string): Record<string, number> {
+    return this.writeCounts(capability => this.cache.ignoredCount(deviceId, capability));
+  }
+
+  private approachingWritesFor(deviceId: string): Record<string, number> {
+    return this.writeCounts(capability => this.cache.approachingCount(deviceId, capability));
+  }
+
+  /**
+   * The non-zero counts across the four capabilities this device type writes.
+   *
+   * One walk shared by the two counters above rather than two, because they
+   * differ only in which number they ask the cache for, and the capability list
+   * is the thing that would drift: the day a fifth capability is written, a
+   * second copy of it is a count that silently stops being reported.
+   */
+  private writeCounts(
+    count: (capability: 'dim' | 'light_temperature' | 'light_hue' | 'light_saturation') => number,
+  ): Record<string, number> {
     const counts: Record<string, number> = {};
     for (const capability of ['dim', 'light_temperature', 'light_hue', 'light_saturation'] as const) {
-      const count = this.cache.ignoredCount(deviceId, capability);
-      if (count > 0) counts[capability] = count;
+      const seen = count(capability);
+      if (seen > 0) counts[capability] = seen;
     }
     return counts;
   }
@@ -1952,6 +2035,7 @@ export class CircadianRuntime {
           cache: this.cache,
         });
         if (!current()) return;
+        this.fadeOuts.delete(deviceId);
         if (this.overrides.delete(deviceId)) {
           this.history.events.add({ at: this.now(), type: 'override_cleared', deviceId, reason: 'target_removed' });
         }
@@ -2013,6 +2097,7 @@ export class CircadianRuntime {
         this.history.events.add({ at: this.now(), type: 'override_cleared', deviceId, reason: 'runtime_stopped' });
       }
       this.overrides.clear();
+      this.fadeOuts.clear();
       this.lastWritten.clear();
       // The colour side of the same bookkeeping, and it used to be left standing
       // here while its temperature counterpart was cleared. `updatePlan()` is
@@ -2110,6 +2195,12 @@ export class CircadianRuntime {
         ...(Object.keys(this.ignoredWritesFor(id)).length > 0
           ? { ignoredWrites: this.ignoredWritesFor(id) }
           : {}),
+        ...(Object.keys(this.approachingWritesFor(id)).length > 0
+          ? { approachingWrites: this.approachingWritesFor(id) }
+          : {}),
+        // Only when it has happened: a row of zeroes on every target would bury
+        // the fields that mean something.
+        ...(this.fadeOuts.has(id) ? { fadeOutOverrides: this.fadeOuts.get(id)! } : {}),
       })),
       lastAction: this.lastAction,
       recentFailures: this.adapter.failures(),

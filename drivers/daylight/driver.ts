@@ -4,7 +4,7 @@ import { formatMinutes } from '../../lib/time/wall-clock';
 import { localNow } from '../../lib/time/local-clock';
 import { solarElevation, sunTimes } from '../../lib/daylight/solar-elevation';
 import type { WatchedSensor } from '../../lib/daylight/luminance-source';
-import { registerIntroHandler, registerReviewHandler } from '../../lib/pairing/flow-screens';
+import { lightsSummary, registerIntroHandler, registerReviewHandler } from '../../lib/pairing/flow-screens';
 import { validateSensorsAgainstCatalog } from '../../lib/validation/pairing-dto';
 
 import {
@@ -291,6 +291,13 @@ module.exports = class DaylightDriver extends Homey.Driver {
         /** Half a day of silence, which is the one warning that stays in pairing. */
         staleFor: this.staleHours(reading?.at ?? null),
         ...this.elevationTimes(state.response),
+        /**
+         * Where today's sun is, for the card that replaces the sensor's week
+         * when there is no sensor. Only sent on that path: with a sensor it is
+         * the week that carries the argument, and this would be a second
+         * picture of something the sensor already measures directly.
+         */
+        sun: sensor === null ? this.sunNow() : null,
       };
     });
 
@@ -439,13 +446,7 @@ module.exports = class DaylightDriver extends Homey.Driver {
     target: TargetSpec,
     summary: { count: number },
   ): Promise<string> {
-    const host = this.pairHost();
-    if (target.kind === 'zone') {
-      const zones = await this.app.catalog.allZones();
-      const zone = zones.find((candidate: { id: string }) => candidate.id === target.zoneId);
-      return host.translate('review.wholeRoom', { room: zone?.name ?? '?' });
-    }
-    return host.translate('review.someLights', { count: summary.count });
+    return lightsSummary(this.pairHost(), target, summary, () => this.app.catalog.allZones());
   }
 
   /**
@@ -479,6 +480,46 @@ module.exports = class DaylightDriver extends Homey.Driver {
    * reaches the bright end), and a search says so by finding nothing where an
    * inversion would have to invent an answer.
    */
+  /**
+   * Today's sun, as the three numbers the response screen draws it from.
+   *
+   * `peak` is the highest the sun gets TODAY rather than a constant, because
+   * that is what makes the tick mean anything: 20° in December is most of the
+   * day's range and in June it is barely morning, and a scale fixed at the
+   * solstice would put every winter reading in the same left-hand inch.
+   *
+   * Walked in ten-minute steps like `elevationTimes`, and for the same reason —
+   * a closed form for "the maximum" exists, and one that also survives a polar
+   * day and a Homey that has never been told where it is does not.
+   */
+  private sunNow(): { elevation: number; peak: number; sunset: string | null; now: string } | null {
+    const location = usableLocation(this.app.daylight.sky().location);
+    if (!location) return null;
+
+    const timezone = this.timezone() ?? undefined;
+    const at = Date.now();
+    const minutesOfDay = localNow(timezone, at).minutesOfDay;
+    const startOfDay = at - minutesOfDay * 60_000;
+
+    let peak = -90;
+    for (let minute = 0; minute < 1440; minute += 10) {
+      const elevation = solarElevation(
+        location.latitude, location.longitude, startOfDay + minute * 60_000,
+      );
+      if (elevation > peak) peak = elevation;
+    }
+
+    const times = sunTimes(location.latitude, location.longitude, at);
+    return {
+      elevation: solarElevation(location.latitude, location.longitude, at),
+      peak,
+      sunset: times.sunsetMs === null ? null : formatMinutes(
+        localNow(timezone, times.sunsetMs).minutesOfDay,
+      ),
+      now: formatMinutes(minutesOfDay),
+    };
+  }
+
   private elevationTimes(response: DaylightResponse): { atDark: string | null; atBright: string | null } {
     const location = usableLocation(this.app.daylight.sky().location);
     if (!location) return { atDark: null, atBright: null };

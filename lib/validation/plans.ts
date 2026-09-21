@@ -7,7 +7,7 @@ import { MINUTES_PER_DAY } from '../time/wall-clock';
 import { isPaletteColor } from '../circadian/palette';
 import type { TargetSpec } from '../outputs/light-intent';
 import {
-  FUNCTION_PRESET,
+  FUNCTION_PRESET, namesASource,
   type ControllerBehavior, type LightFunction, type MappingPreset, type MappingRule,
   type PresetKind,
 } from '../mapping/mapping-types';
@@ -95,12 +95,26 @@ const MAX_TARGET_DEVICES = 256;
  * adding a function is a deliberate two-line change here as well: this list is
  * what decides whether a profile written by a NEWER build is quarantined, and
  * deriving it would silently accept a function this build cannot plan.
+ *
+ * `color_set` was the cost of that deliberateness going unpaid. It was added to
+ * `LightFunction`, to `FUNCTION_CAPABILITY`, to `FUNCTION_PRESET` and to
+ * `availableFunctions()` — so the buttons screen offered "Set colour" on any
+ * lamp with `light_hue` and stored it happily — and never to this line. The
+ * profile then failed THIS validator on the very next load, so a Light Remote
+ * with a colour button paired cleanly and came up unavailable before the user
+ * had touched it, saying only that its configuration could not be read.
+ *
+ * `plan-validation.test.ts` is what makes the next addition deliberate rather
+ * than merely intended: it fails when this list and `FUNCTION_PRESET` disagree,
+ * which keeps the allow-list hand-written and still catches an omission at
+ * `npm test` instead of on somebody's tile.
  */
 const LIGHT_FUNCTIONS: readonly LightFunction[] = [
   'toggle', 'on', 'off',
   'brightness_up', 'brightness_down',
   'warmer', 'colder',
-  'brightness_set', 'temperature_cycle',
+  'brightness_set', 'color_set', 'temperature_cycle',
+  'lightkeeper_on',
 ];
 
 const INPUT_ACTIONS: readonly InputAction[] = [
@@ -299,6 +313,37 @@ function validateMappingRule(raw: unknown, path: string): MappingRule {
 export function readMappingPreset(raw: unknown, path: string, kind: PresetKind): MappingPreset {
   const preset = requireRecord(raw, path);
 
+  /**
+   * Two device ids and a switch — and the one refusal worth spelling out.
+   *
+   * A preset naming NEITHER source is refused rather than stored, because it is
+   * plain "On" wearing a name that promises the level and the warmth as well.
+   * Stored, it would be a row that reads as configured on every screen and puts
+   * the lamps wherever they were last left, which is the exact failure this app
+   * exists to prevent. The buttons screen cannot send one — choosing the job
+   * leaves both rows saying "Leave it alone" until one is answered, and the
+   * screen will not push until it is — but a pair session is a scriptable Web
+   * API surface (platform §14), so the screen is not the only way in.
+   *
+   * The ids themselves are NOT checked against the live registries here. A
+   * validator runs on a stored plan at `onInit`, where a curve device that has
+   * not registered yet would look deleted — and quarantining a whole remote
+   * because one of its buttons names a device that is merely still starting is
+   * far worse than the press degrading to "on" for a moment. The live check
+   * belongs where the press happens, and `resolveSources` is it.
+   */
+  if (kind === 'lightkeeper') {
+    const lightkeeper = {
+      colourSource: requireString(preset.colourSource, `${path}.colourSource`),
+      brightnessSource: requireString(preset.brightnessSource, `${path}.brightnessSource`),
+      pressAgainOff: requireBoolean(preset.pressAgainOff, `${path}.pressAgainOff`),
+    };
+    if (!namesASource(lightkeeper)) {
+      fail(path, 'names no Lightkeeper device to take a colour or a brightness from');
+    }
+    return lightkeeper;
+  }
+
   if (kind === 'colour') {
     const color = requireString(preset.color, `${path}.color`);
     if (!isPaletteColor(color)) fail(`${path}.color`, 'is not a colour in the palette');
@@ -460,6 +505,20 @@ function validateScheduleEntry(raw: unknown, path: string): ScheduleEntry {
     fail(`${path}.end.at`, 'is the same as the on-time, which is not a window');
   }
 
+  /**
+   * A palette colour, and the same refusal the curve point path makes: an id
+   * this version does not know fails the PLAN rather than being dropped to a
+   * default. The sanitiser drops the block on the way in; by the time a plan is
+   * stored, a colour nobody can resolve means the store is not one we can vouch
+   * for, and DeviceLifecycle quarantines the device with a reason.
+   */
+  let color: string | undefined;
+  if (entry.color !== undefined) {
+    const id = requireString(entry.color, `${path}.color`);
+    if (!isPaletteColor(id)) fail(`${path}.color`, 'is not a colour this version offers');
+    color = id;
+  }
+
   return {
     id,
     onAt,
@@ -469,6 +528,7 @@ function validateScheduleEntry(raw: unknown, path: string): ScheduleEntry {
       : {}),
     ...(entry.temperature !== undefined
       ? { temperature: requireUnitInterval(entry.temperature, `${path}.temperature`) } : {}),
+    ...(color !== undefined ? { color } : {}),
   };
 }
 

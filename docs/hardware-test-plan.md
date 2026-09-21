@@ -78,12 +78,13 @@ The script cannot do these. Report each by its number.
 
 ## 4. This release
 
-**0.6.5 — the Flow surface and a general code review, on top of an 0.6.0 pass that is still owed.**
+**0.6.5 — the Flow surface, a tenth job on a remote button, and a general code review, on top of an
+0.6.0 pass that is still owed.**
 
 Normally the previous release's lines are deleted here rather than carried, because they have been
 run. **These have not**: nothing has been published, and the 0.6.0 block below was only partly
-worked through. So both are live, and they are kept apart rather than merged — 0.6.5's three are
-specific and take a few minutes, while 0.6.0's is a full pass with a phone.
+worked through. So both are live, and they are kept apart rather than merged — 0.6.5's are
+specific and take a few minutes each, while 0.6.0's is a full pass with a phone.
 
 Nothing in either block can be checked by the script, and that is the point: `verify-hardware.mjs`
 drives pair sessions over the Web API (platform §14), so it proves the HANDLERS answer. It cannot
@@ -221,6 +222,86 @@ that nothing already installed has ever exercised.
       The condition must be **false**: the lamp stays off. True here would mean a room lighting
       itself in daylight on a flat battery, repeatedly, with nothing on screen explaining it.
 
+### 0.6.5 — the setup screens redrawn, and a schedule block's colour
+
+T157–T162 are the pairing pass for this release. Most of the redraw is colour and spacing, which a
+render already proves — `npm run render:views` and the design canvas side by side — so these are
+only the things a render cannot answer: what a real lamp does, what Homey's own sheet does around the
+screen, and what a device that already exists does after the change.
+
+- [ ] **T157** A block with a colour, on a lamp that can take one AND one that cannot. Add a light
+      schedule over at least one colour bulb and one temperature-only bulb. On the blocks screen turn
+      **Set colour too** on, pick a strongly non-white swatch (Forest or Violet), set the block to
+      start a minute from now, and save. When it fires, the colour bulb must show that colour and the
+      temperature-only bulb must show a plausible warmth rather than nothing at all — the derived
+      fallback is the whole point, and "one lamp changed and the other did not" is the failure.
+- [ ] **T158** An existing schedule is untouched. Before installing, note what a schedule paired on
+      0.6.5 or earlier does at its next boundary — including any warmth it was set to. After
+      installing, it must fire identically. Its blocks screen will now show the palette instead of the
+      warmth slider, with **Set colour too** OFF for a block that only ever carried a warmth; that is
+      correct, and turning it on is a new decision rather than a recovery of the old one.
+- [ ] **T159** The schedule's colour reaches a Flow. With T157's device running inside its block,
+      check **Insights** and the device tile for a colour row, and build a Flow using the schedule's
+      colour tag. A device paired before this release must gain the row on first start without being
+      repaired (platform §18).
+- [ ] **T160** Merging two overlapping blocks. Draw two blocks that overlap, confirm the banner names
+      the overlapping hours and the timeline outlines the region, then tap **Merge them into one**.
+      One block must remain, spanning both, keeping the EARLIER block's brightness and colour — and
+      **Next must never have been blocked** at any point. Tap **Leave them as they are** on a fresh
+      overlap and confirm the two rows go away and the banner stays.
+- [ ] **T161** One room open at a time, on the phone. In the light picker, open a room, then open a
+      second: the first must close, and exactly ONE card may ever carry the violet border. Every
+      other room must be one line with its light count. Do the same on a Room-sensing Light's sensor
+      screen — one room open, the rest one line each showing a sensor count or **none**, and the
+      rooms with none not tappable. Then type in the light picker's search box: while a search is
+      running several rooms may open, and NONE of them may wear the border.
+
+      **Scroll down to a room near the bottom of the list before opening it.** The screen must jump
+      back to the top, because the room that opens renders ABOVE the list it was tapped in — without
+      the jump the only visible change is the row vanishing from under the finger, which reads as
+      having closed something. Closing a room must NOT move the page.
+- [ ] **T162** Following the sun, on the phone. Add a Room-sensing Light and choose **The sun**. Step
+      3 must draw the four shapes AND, under them, a card naming when this room gets its light, with a
+      tick showing where the sun is right now and the current time on it. Check it at two different
+      times of day: the tick must move. On a Homey that has never been told where it is, that card
+      must be absent rather than empty.
+
+### 0.6.5 — the tenth job on a remote button
+
+T152–T156 are all the same new screen pair, and every one of them needs a phone AND at least one
+other Lightkeeper device to take a value from. Pair a circadian light and a Room-sensing Light first
+if you do not already have them; the job does not appear at all before that, which is T152.
+
+- [ ] **T152** The job appears, and only when it can. On a Homey with **no** circadian light, Colour
+      Curve Light, schedule or Room-sensing Light, add a Light Remote and open any button: the
+      **On – with Lightkeeper** card must be absent and the grid must show its usual nine. Add a
+      circadian light, then open the button again — the card is there now, above the grid, full
+      width. A card offering two pickers onto two empty lists is the thing this withholding exists
+      to prevent, so seeing it early is the failure.
+- [ ] **T153** The two pickers, and what they show. Tap the card: it tints, and three rows unfold —
+      colour and warmth, brightness, and the press-again switch, which starts ON. Tap **Colour and
+      warmth**: the list must offer only your circadian lights and Colour Curve Lights, each with a
+      **swatch of what it is producing at this moment** and a subtitle naming its device type and
+      room. Tap **Brightness**: the list must be longer — schedules and Room-sensing Lights as well
+      — with a bar and a percentage each. A Room-sensing Light appearing in the COLOUR list is a
+      defect: it publishes no colour and no warmth at all.
+- [ ] **T154** The percentage is the one the setup screen used. Note what a curve's own brightness
+      slider says, then read that curve's row on the brightness picker. They must agree. Lightkeeper
+      stores brightness perceptually and sends it the way a lamp is addressed, and the two differ by
+      a lot — 55% on the slider is sent as 26% — so a picker drawing the sent number would put two
+      irreconcilable percentages two screens apart.
+- [ ] **T155** One press, one change. Finish the button with a curve for the colour and a
+      Room-sensing Light for the brightness, switch the room OFF, and press the real button. The
+      lamps must come on **already** at both values — no visible arrival-then-correction, which is
+      the whole difference between this and three built-in Flow cards. Press again: they must go
+      off. Turn the press-again switch off, repair, and confirm a second press now re-applies the
+      values instead.
+- [ ] **T156** A setup that is gone. With the button working, DELETE the circadian light it takes
+      its colour from, then press the button. The lamps must still come on — at whatever they were,
+      with no colour — and `npx homey app log` must name the missing device id. Nothing at all
+      happening is the failure: a press that does nothing is indistinguishable from a broken remote,
+      which is why this degrades rather than refusing the way the Flow card does.
+
 ### 0.6.0 — every pairing screen redrawn, and four engines reshaped under them
 
 - [ ] **T112** Pair one of each of the five device types by hand, end to end, on the phone. Each
@@ -248,11 +329,6 @@ that nothing already installed has ever exercised.
       you know to be **frozen** as well — it must say so and name the date it stopped. If the grid
       is empty for a sensor that plainly has history, the Insights manager did not connect; the app
       log says so and the screen falls back to the defaults rather than failing.
-- [ ] **T117** Press-to-find, on a real remote. Open the controller's listen screen and press a
-      button within the thirty seconds: it must hear it and move on. Then open it again and press
-      **nothing** — it must give up on its own, say so, and leave "pick from the list instead"
-      reachable throughout. Last, try it with a card-only remote (platform §4): it will hear
-      nothing, which is correct, and the list escape is the whole reason it is there.
 - [ ] **T118** Two overlapping schedule blocks over the same lights. The screen must draw the
       overlap and say the later block wins, and must **not** refuse the second block or block
       Next. Then leave the device running across both boundaries and confirm the lamps do what the

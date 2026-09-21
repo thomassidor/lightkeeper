@@ -238,6 +238,34 @@ A finger on a remote (T9-T11), and eyes on a screen (T3, T53, T54). The first pa
 [`hardware-test-plan.md`](hardware-test-plan.md) is what is left for a person: mint the keys, press
 the remote three ways, look at the contact sheet.
 
+## Reading the app's diagnostics
+
+`node scripts/diagnostics.mjs` fetches the app's own `/diagnostics` from a real Homey and prints a
+digest — one block per device, then a list of anything worth a second look. It is read-only: one GET,
+nothing written to the Homey. Address and key come from `HOMEY_ADDRESS` + `HOMEY_API_KEY` or
+`scripts/hardware-env.json`, exactly as `evidence.mjs` and `verify-hardware.mjs` do.
+
+```bash
+node scripts/diagnostics.mjs                     # the digest
+node scripts/diagnostics.mjs --raw               # the whole document to stdout
+node scripts/diagnostics.mjs --save              # whole document into temp/, digest to stdout
+node scripts/diagnostics.mjs --save report.json  # …or to a path you name
+```
+
+**The digest is the default on purpose.** The raw document from a six-device house is around a
+megabyte: sixty recorded actions and up to a hundred and twenty control events per runtime, nearly
+all of them identical ticks. The digest keeps the fields that a real capture has ever turned on —
+a lamp's `ignoredWrites` and `approachingWrites`, an override and how old it is, a pre-stage backoff
+and when it lifts, a sensor that has gone quiet, a device that is not `ready`, a credential that has
+stopped working. If none of them are set it says so in one line.
+
+**The trap:** what `--save` writes is a capture from a real Homey — device names, zone names, the
+owner's display name — so `temp/` is gitignored for the same reason `/test/fixtures/raw/` is. Do not
+move one out of there without reading it first.
+
+Counters reset when the app restarts, which `npm run build`, `homey app install` and a Homey reboot
+all do. A dump taken a minute after an install says nothing about the night before it.
+
 ## Recording a week at home
 
 `node scripts/evidence.mjs <command…>` drives the opt-in evidence recorder on a real Homey:

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { MINIMUM_BRIGHTNESS } from '../outputs/light-intent';
+import { isPaletteColor, paletteColor, warmthForColor } from '../circadian/palette';
 
 import type { TargetSpec } from '../outputs/light-intent';
 import type { ManagedFlowReference } from '../profiles/controller-profile';
@@ -59,8 +60,26 @@ export interface ScheduleEntry {
    * Absent = leave brightness alone and only switch on.
    */
   brightness?: number;
-  /** Normalised colour temperature 0–1, where 1 is the WARMEST end (platform §6). */
+  /**
+   * Normalised colour temperature 0–1, where 1 is the WARMEST end (platform §6).
+   *
+   * Present whenever `color` is — DERIVED from it, never set independently any
+   * more. The screen used to offer a Candlelight-to-Daylight slider and this was
+   * what it wrote; it offers the palette now, and this is the value a lamp with
+   * no colour capability is given instead. Same arrangement, and the same
+   * argument, as `warmth` on a CircadianPoint.
+   */
   temperature?: number;
+  /**
+   * A palette colour id, for the lamps that can take one.
+   *
+   * The closed palette from lib/circadian/palette.ts rather than a picker, for
+   * the three reasons written at the top of that file. A colour this version
+   * does not know DROPS the block rather than being written as some default: a
+   * block at the wrong colour is worse than a block that is visibly missing,
+   * which is the rule `sanitiseCurve` already applies to a curve point.
+   */
+  color?: string;
 }
 
 export interface SchedulePlan {
@@ -128,7 +147,35 @@ export function sanitiseEntries(
     if (entries.some(e => e.id === id)) return drop(`duplicate schedule id "${id}"`);
 
     const brightness = sanitiseUnit(source.brightness);
-    const temperature = sanitiseUnit(source.temperature);
+
+    /**
+     * A colour, or nothing. Never a fallback.
+     *
+     * Same policy as `sanitiseCurve`: an id this version does not know drops
+     * the BLOCK, because a schedule that silently reverted one window to white
+     * would look like it was working and finding out why means noticing a
+     * colour that is subtly not the one you chose.
+     */
+    let color: string | undefined;
+    if (source.color !== undefined && source.color !== null && source.color !== '') {
+      if (!isPaletteColor(source.color)) return drop('that colour is not one this version offers');
+      color = String(source.color);
+    }
+
+    /**
+     * The temperature is DERIVED from the colour, and only taken from the
+     * screen when there is no colour to derive it from.
+     *
+     * Not trust in the screen: a pair session is a scriptable Web API surface
+     * (platform §14), so a block could arrive carrying a violet and a warmth
+     * that has nothing to do with it — and the lamps that cannot do colour
+     * would then be the only ones showing it. One colour, one fallback, decided
+     * in one place.
+     */
+    const sentTemperature = sanitiseUnit(source.temperature);
+    const temperature = color !== undefined
+      ? warmthForColor(paletteColor(color)!)
+      : sentTemperature;
 
     const lit = brightness !== null && brightness > 0;
 
@@ -141,7 +188,8 @@ export function sanitiseEntries(
       // floored, because 5% quantises to `dim` 0.00 at the lamp and a window
       // that stored 5% would read as configured and come on dark.
       ...(lit ? { brightness: Math.max(MINIMUM_BRIGHTNESS, brightness!) } : {}),
-      ...(temperature !== null ? { temperature } : {}),
+      ...(temperature !== null && temperature !== undefined ? { temperature } : {}),
+      ...(color !== undefined ? { color } : {}),
     };
 
     entries.push(entry);

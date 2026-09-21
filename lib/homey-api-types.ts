@@ -40,6 +40,17 @@ export interface RawDevice {
    * resolved by us instead.
    */
   driverId?: unknown;
+  /**
+   * The owning app's own identifier, `{ id }` by convention.
+   *
+   * Read for one purpose: joining a Lightkeeper runtime — keyed on the `lk-…`
+   * id this app minted — to the catalogue row that knows its zone and driver.
+   * `scripts/verify-hardware.mjs` has read `device.data.id` off a live Homey
+   * since the hardware pass was written, so the field is established rather
+   * than assumed; it is still optional here, and a device without one simply
+   * does not join.
+   */
+  data?: unknown;
   ownerUri?: unknown;
   available?: unknown;
   capabilities?: unknown;

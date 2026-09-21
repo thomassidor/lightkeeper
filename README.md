@@ -15,6 +15,17 @@ instead, then writes those Flows for you and keeps them correct as your home cha
 end with AI, directed and verified on real hardware by a human — [the full story is
 below](#built-with-ai).
 
+> [!WARNING]
+> **Early access — this app is in early development, and an update can break a setup you already
+> made.** Lightkeeper is a 0.x app. It is tested on real hardware and every promise on this page is
+> covered by a test, but the shape of the thing is still moving: a device type can change what it
+> stores, a setting can be renamed or dropped, and a screen can start asking a different question.
+> When that happens an existing device may need repairing in Homey, or deleting and adding again.
+> Nothing is broken on purpose, migrations are written wherever they are possible, and anything that
+> does change is called out in [the changelog](CHANGELOG.md) — but there is no
+> compatibility promise before 1.0. Please treat it accordingly before you build a household's
+> lighting on it.
+
 ## Contents
 
 - [What it does](#what-it-does)
@@ -50,6 +61,11 @@ you choose. Pick the remote, pick the lights, say what each press, hold or turn 
 brighter, dimmer, warmer, cooler, a set brightness, or a colour. Each button can drive **all** the
 lights or **just some of them**, so one remote can dim the floor lamp with one button and the whole
 room with another.
+
+A button can also turn the lights on **the way the rest of your house already knows they should
+look**: choose which of your other Lightkeeper devices it takes the colour and warmth from, and
+which one it takes the brightness from, and it reads both at the moment you press rather than being
+fixed when you set it up. A switch on the same screen makes a second press turn them off again.
 
 *Needs a Personal API Key: a token you generate on your own Homey, which is what lets Lightkeeper
 write Flows on your behalf. [Step 2 below](#2-give-it-an-api-key--if-you-need-one) walks through
@@ -238,7 +254,7 @@ review jumps back to the step it came from.
 
 | Device | The steps |
 |---|---|
-| Light Remote | API key → **1** choose a remote (listed by room, or press a button and let Lightkeeper find it) → **2** choose lights → **3** one row per button, each saying what it does and to which lights → **4** review |
+| Light Remote | API key → **1** choose a remote, listed by room → **2** choose lights → **3** one row per button, each saying what it does and to which lights → **4** review |
 | Light schedule | API key → **1** choose lights → **2** draw the blocks on a day → **3** review |
 | Circadian light | **1** choose lights → **2** morning, midday and evening → **3** review |
 | Colour Curve Light | **1** choose lights → **2** build the curve point by point → **3** review |
@@ -317,20 +333,42 @@ reads, what it stores, and for how long.
 
 ## Changelog
 
-**0.6.5** — the current release. Lightkeeper's own devices readable from your Flows, lights that come
-on already right, a lamp that ignores us no longer mistaken for a person, a general review of the
-whole app, and six things a day of real diagnostics showed:
+**0.6.5** — the current release. Switching a light on or off no longer mistaken for a person, a
+remote button that follows the rest of the house, a Light Remote that arrived broken, press-to-find
+withdrawn, Lightkeeper's own devices readable from your Flows, a lamp that ignores us no longer
+mistaken for a person, the setup screens redrawn against the design, a general review of the whole
+app, and six things a day of real diagnostics showed:
 
+- **Switching a light on, or off, is no longer read as somebody taking it over.** A light that comes
+  back on reports the level it was last at, and one that fades out reports itself part-way down on
+  the way — both used to leave the light alone for hours. One room's lights went unattended for a
+  whole twenty-nine-minute evening because of the first.
+- **A remote button can turn the lights on the way the house already knows they should look.** A
+  tenth job, *On – with Lightkeeper*: pick which of your other Lightkeeper devices it takes the
+  colour from and which one it takes the brightness from, and it reads both at the moment you press.
+  A switch on the same card makes a second press turn them off, so one button is a whole light
+  switch.
+- **A Light Remote with a colour button was unavailable the moment it was added** — the check that
+  reads a configuration back on every start had never been told about that one job. Nothing was
+  lost: any remote sitting unavailable for this reason comes back with every button intact.
+- **Press-to-find is gone** — the remote list's *"Or press a button to find it"*, the screen it
+  opened, and the indicator that followed a real press. It was never reliable enough to be the way
+  you would do it, and some remotes cannot be heard at all, so the list was always the path that
+  works.
 - **What each device wants your lights to be is now readable from your own Flows** — as a tag, as a
   new card that sets a room from two devices at once, and as a condition that asks a Room-sensing
   Light whether it is dark enough. [What that looks like](#using-lightkeeper-in-your-own-flows).
-- **Lights come on already the right colour**, rather than coming on as they were and changing a
-  second later. Setting the colour in advance has existed since 0.4 and no setup screen ever drew the
-  switch for it — so nobody could turn it on. Both screens now have it, with a button that tries it
-  on one of your own lights. On for newly added devices; devices you already have are untouched.
-- **A light that ignores an instruction is no longer read as somebody changing it by hand.** That
-  mistake left the light alone for four hours, and on some lights it repeated indefinitely — so a
-  room could sit unattended all evening with everything reporting itself as working.
+- **The setup screens have been redrawn against the design**, across all five device types. A
+  schedule block is given a *colour* now rather than a warmth, from the same set a Colour Curve Light
+  uses — and lamps that cannot do colour get the matching warmth, so a block does one thing to the
+  whole room. Two overlapping blocks can be merged from the warning itself; a schedule's last screen
+  shows the day it just described; following the sun shows where the sun actually is today; and
+  "no lights yet" is a screen with a way out rather than one grey line.
+- **A light that ignores an instruction — or takes its time obeying one — is no longer read as
+  somebody changing it by hand.** That mistake left the light alone for four hours, and on some
+  lights it repeated indefinitely, so a room could sit unattended all evening with everything
+  reporting itself as working. Lamps that fade to a new setting over minutes rather than jumping to
+  it are now recognised as still on their way.
 - **A Colour Curve Light could stop for good**, if one of its points was set to follow sunrise or
   sunset — and it took the Lightkeeper settings page down with it.
 - **The Flow cleanup could delete without being asked**, and ten more fixes from the review.
@@ -372,7 +410,7 @@ If it changes how carefully you want to review the code before trusting it with 
 the code is right here.
 
 It has been verified end to end on a Homey Pro 2023 across four remotes and three transports, with
-Over 1500 unit tests covering the logic — [how well tested is this?](FAQ.md#how-well-tested-is-this) has
+Over 1700 unit tests covering the logic — [how well tested is this?](FAQ.md#how-well-tested-is-this) has
 the detail, including what has *not* run on hardware yet.
 
 ## Contributing

@@ -7,13 +7,17 @@ import type { DeviceCatalog } from '../device-catalog';
 import type { SourceDiscoveryService } from '../source-discovery-service';
 import { FlowBridgeManager } from '../bridge/flow-bridge-manager';
 import { MappingEngine, intentForLightFunction } from '../mapping/mapping-engine';
-import type { MappingPreset } from '../mapping/mapping-types';
+import { isLightkeeperPreset, type LightkeeperPreset, type MappingPreset }
+  from '../mapping/mapping-types';
+import {
+  intentsFor, resolveSources, settingsFrom, type SourceRegistry,
+} from '../outputs/lightkeeper-settings';
 import { SupersedeGate, contestedControls, type GatedInput } from '../mapping/supersede-gate';
 import { CommandScheduler } from '../outputs/command-scheduler';
 import { LightTargetAdapter, type WriteRecord } from '../outputs/light-target-adapter';
 import { TargetResolver } from '../outputs/target-resolver';
 import { TargetStateCache } from '../outputs/target-state-cache';
-import { planIntent, type Capability } from '../outputs/intent-planner';
+import { planIntent, type Capability, type PlannedWrite, type SkippedTarget } from '../outputs/intent-planner';
 import { RampEngine, canRamp } from '../outputs/ramp-engine';
 import {
   diffTargets, releaseTarget, resolveSnapshot, type TargetSnapshot,
@@ -85,6 +89,16 @@ export interface ControllerRuntimeDeps {
    * any time. Mirrors ScheduleRuntimeDeps.displayName.
    */
   displayName: () => string;
+  /**
+   * Where a `lightkeeper_on` button looks up the two devices it composes.
+   *
+   * Optional, and that is deliberate rather than lazy: a runtime with no
+   * registry behind it degrades every such press to plain "on", which is
+   * exactly what it does when the chosen devices have been deleted. One
+   * behaviour, two causes, and no arrangement of this dependency can produce a
+   * button that does nothing at all.
+   */
+  sources?: SourceRegistry;
   log: (...args: unknown[]) => void;
   onStateChange: (state: ControllerState, detail?: StateDetail) => void;
   /**
@@ -418,7 +432,29 @@ export class ControllerRuntime {
     // about the one function whose name is not enough — in a control whose
     // entire purpose is to prove they agree.
     const rule = this.profile.mappings.find(mapping => mapping.function === func);
-    const intent = intentForFunction(func, this.profile.behavior, rule?.preset);
+
+    /**
+     * The composed job takes the same branch `execute()` does, for the reason
+     * this control exists at all.
+     *
+     * A Test that translated `lightkeeper_on` through the pure switch would
+     * demonstrate the DEGRADATION — the lights coming on at whatever they were
+     * — in a control whose entire purpose is to prove that the row does what
+     * the screen says it does. That is worse than no Test, because it looks
+     * like the job working badly rather than like the Test being wrong.
+     */
+    const preset = rule?.preset;
+    if (preset !== undefined && isLightkeeperPreset(preset)) {
+      // `waitForResults` for the same reason `runIntentNow` passes it: the
+      // number this control reports is the one the user reads as proof, and a
+      // planned-write count would say "3 writes" about three writes a lamp
+      // refused.
+      const result = await this.runLightkeeperOn(preset, targets, { waitForResults: true });
+      await this.scheduler?.drain();
+      return { ...result, targets: targets.length };
+    }
+
+    const intent = intentForFunction(func, this.profile.behavior, preset);
     const result = await this.runIntentNow(intent, targets);
     return { ...result, targets: targets.length };
   }
@@ -741,7 +777,100 @@ export class ControllerRuntime {
       }
     }
 
+    /**
+     * The one job whose answer is not in the resolved intent — branched on the
+     * PRESET rather than on the function name.
+     *
+     * The preset is the data that needs resolving: two device ids, read at the
+     * moment of the press. Keying on `rule.function` would work today and would
+     * be a second list of function names to keep in step with
+     * `intentForLightFunction`'s switch, which is precisely the drift
+     * `intentForFunction` above was collapsed to stop. A rule carrying a
+     * `LightkeeperPreset` is exactly the set of rules this path is for, and the
+     * validators guarantee only `lightkeeper_on` can carry one.
+     */
+    const preset = resolved.rule.preset;
+    if (preset !== undefined && isLightkeeperPreset(preset)) {
+      await this.runLightkeeperOn(preset, targets);
+      return;
+    }
+
     await this.runIntent(resolved.intent, targets);
+  }
+
+  /**
+   * "On – with Lightkeeper": whatever two other Lightkeeper devices want, now.
+   *
+   * Everything this decides is somewhere a test can reach —
+   * `lib/outputs/lightkeeper-settings.ts` for what the two sources mean and
+   * what a pass is made of, and it is the SAME file the `set_lights` Flow card
+   * goes through, so a button and a card pointed at the same two devices cannot
+   * put a room in two different places.
+   */
+  private async runLightkeeperOn(
+    preset: LightkeeperPreset,
+    targetIds: string[],
+    options: { waitForResults?: boolean } = {},
+  ): Promise<{ writes: number; skipped: number }> {
+    /**
+     * A second press turns them off, by the SAME group rule `planGroupToggle`
+     * uses: if any target is on, they all go off.
+     *
+     * Off the cache rather than a fresh read, and that is the point of doing it
+     * here rather than inventing a new intent: `cache.currentOn()` is
+     * `desiredOn ?? actualOn`, kept truthful by the live `onoff` subscription,
+     * and it is what every toggle in this app has always asked. A refresh here
+     * would make this button subtly different from the toggle tile two rows up
+     * — slower, and right in a case where the toggle is wrong. If the
+     * subscription is what needs fixing, it needs fixing for both.
+     */
+    if (preset.pressAgainOff && targetIds.some(id => this.cache.currentOn(id) === true)) {
+      return this.runIntent({ type: 'power', value: false }, targetIds, options);
+    }
+
+    /**
+     * No registry at all is the same finding as a registry that answers
+     * nothing, and it is reported the same way — through `resolveSources`
+     * rather than by hand, so `LEAVE_ALONE` is still not a missing device. A
+     * hand-built list here named `none` as a device nobody could find.
+     */
+    const sources = resolveSources(
+      this.deps.sources ?? { colour: () => undefined, brightness: () => undefined },
+      preset.colourSource, preset.brightnessSource,
+    );
+
+    /**
+     * A chosen device that is not running degrades the WHOLE press to "on".
+     *
+     * The opposite of what the Flow card does with the same finding, and both
+     * are right for where they are. A card reports `false` into a Flow, where
+     * somebody can see it; a button press reports nothing anywhere, so refusing
+     * is indistinguishable from a broken remote — and the lamps coming on is
+     * what the button was for. It is also the degradation `brightness_set` and
+     * `color_set` already make, so the three preset-carrying jobs fail the same
+     * way.
+     *
+     * All or nothing, never the half that survived: the right brightness in
+     * last week's colour is the outcome `planSetLights` refuses outright, and it
+     * is no better arrived at from a button.
+     */
+    if (sources.missing.length > 0) {
+      this.deps.log(
+        `lightkeeper_on: no running Lightkeeper device answers to ${sources.missing.join(', ')}`
+        + ' — switching on without it',
+      );
+      return this.runIntent({ type: 'power', value: true }, targetIds, options);
+    }
+
+    /**
+     * `'on'`, always — this job has no "only lights already on" half.
+     *
+     * The Flow card offers that choice and enforces it on the TARGETS, because
+     * a Flow may well want to re-colour a room without lighting it. A button
+     * called "On" that declined to switch a lamp on would be a button that does
+     * nothing in the one situation anybody presses it in.
+     */
+    return this.runIntents(intentsFor(settingsFrom(sources), 'on'), targetIds, options);
   }
 
   /** Shared by live events and the Test control, which needs no flow. */
@@ -750,7 +879,49 @@ export class ControllerRuntime {
     targetIds: string[] = this.targetIds,
     options: { modeAlreadySet?: boolean; waitForResults?: boolean } = {},
   ): Promise<{ writes: number; skipped: number }> {
-    const plan = planIntent(intent, targetIds, this.cache, this.profile.behavior);
+    return this.runIntents([intent], targetIds, options);
+  }
+
+  /**
+   * Several intents as ONE ordered burst, which is the only way to send them.
+   *
+   * `WRITE_ORDER` inside the queue is what puts `light_mode` ahead of the hue it
+   * enables and `onoff` ahead of the level, and it can only order writes it is
+   * given at once. Calling `runIntent` three times would submit three batches
+   * and reproduce, inside one button press, exactly the stepping that three
+   * built-in Flow cards produce and that `set_lights` exists to avoid — a lamp
+   * coming on as it was, then changing colour, then changing level.
+   * `FlowLightWriter.apply()` accumulates for the same reason and says so at
+   * greater length.
+   *
+   * `runIntent` is now a one-element call into this, so there is one submit
+   * path rather than two that could drift about the scheduler, the
+   * `modeAlreadySet` filter or what `lastIntent` records.
+   */
+  async runIntents(
+    intents: LightIntent[],
+    targetIds: string[] = this.targetIds,
+    options: { modeAlreadySet?: boolean; waitForResults?: boolean } = {},
+  ): Promise<{ writes: number; skipped: number }> {
+    const plan = { writes: [] as PlannedWrite[], skipped: [] as SkippedTarget[] };
+    for (const intent of intents) {
+      const planned = planIntent(intent, targetIds, this.cache, this.profile.behavior);
+      plan.writes.push(...planned.writes);
+      plan.skipped.push(...planned.skipped);
+    }
+
+    /**
+     * The intent `lastIntent` and the diagnostics are ABOUT, where a pass has
+     * more than one.
+     *
+     * The first, because `intentsFor` puts the switch first and the switch is
+     * what a person pressed the button for. An empty list cannot happen from
+     * any live path — every caller either passes one intent or passes a pass
+     * that starts with `power` — but a composed pass whose sources all read
+     * null would be one, and recording a toggle nobody asked for would be worse
+     * than recording the no-op it was.
+     */
+    const intent: LightIntent = intents[0] ?? { type: 'power', value: true };
 
     /**
      * Drop the `light_mode` write when the caller has already established the

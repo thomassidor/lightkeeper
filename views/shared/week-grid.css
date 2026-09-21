@@ -18,13 +18,13 @@
 #ROOT .week-head .span { display: block; font-size: 12.5px; color: var(--lk-muted);
                          margin-top: 2px; }
 
-#ROOT .week-row { display: flex; align-items: center; gap: 3px; margin-bottom: 3px; }
+#ROOT .week-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
 /* `week-day`, not `day`. The shared base already styles `.day` as the day STRIP
    — 104px tall with its own overflow — and a label that borrowed the name
    inherited all of it: the first render put every weekday in a 104px block and
    pushed its own row off to the side. Scoping protects one view from another;
    inside a view, only the name does. */
-#ROOT .week-row .week-day { flex: none; width: 26px; font-size: 10px; color: var(--lk-faint); }
+#ROOT .week-row .week-day { flex: none; width: 18px; font-size: 10.5px; color: var(--lk-body); }
 #ROOT .week-row i { flex: 1; height: 11px; border-radius: 2px; }
 
 /* A cell with no reading is HATCHED, never dark. A gap has to read as "no
@@ -32,29 +32,50 @@
    lunchtime is the case this exists for, and drawing it black would argue for
    a dark threshold the room never actually met. */
 #ROOT .week-row i.gap {
-  background: repeating-linear-gradient(45deg,
-    var(--lk-line) 0, var(--lk-line) 2px,
-    var(--lk-surface) 2px, var(--lk-surface) 4px);
+  background: repeating-linear-gradient(135deg,
+    var(--lk-line) 0 3px,
+    var(--lk-hatch-pale) 3px 6px);
+  box-shadow: inset 0 0 0 1px var(--lk-hatch-edge);
 }
 
+/* What the hatch MEANS, said once, and only when there is a hatched cell to
+   explain. A legend on every week would be a line of furniture on the screen
+   whose whole job is the two lux numbers; a legend that appears exactly when a
+   sensor has stopped reporting is the sentence that screen is missing. */
+#ROOT .week-legend { display: flex; align-items: center; gap: 8px; margin-top: 10px;
+                     font-size: 12px; color: var(--lk-body); }
+#ROOT .week-legend i { flex: none; width: 22px; height: 11px; border-radius: 2px;
+  background: repeating-linear-gradient(135deg,
+    var(--lk-line) 0 3px,
+    var(--lk-hatch-pale) 3px 6px);
+  box-shadow: inset 0 0 0 1px var(--lk-hatch-edge); }
+
 #ROOT .week-hours { display: flex; justify-content: space-between;
-                    font-size: 11px; color: var(--lk-muted);
-                    margin: 6px 0 0 29px; }
+                    font-size: 10.5px; color: var(--lk-body);
+                    margin: 7px 0 0 24px; }
 
 /* The live reading, ticked on the same scale the cells are drawn on, so the
    two lux numbers below are never abstract. */
-#ROOT .week-scale { display: flex; align-items: center; gap: 8px;
-                    margin-top: 12px; font-size: 11.5px; color: var(--lk-muted); }
+/* 28px of air above it, not 12: the tick's own label is drawn ABOVE the bar
+   (`top: -20px`), so at 12px it collided with the hours line and the live
+   reading overprinted the axis it was being read against. */
+#ROOT .week-scale { display: flex; align-items: center; gap: 7px;
+                    margin-top: 28px; font-size: 11.5px; color: var(--lk-body); }
+/* The scale runs PALE to DEEP, the same direction the cells do. It used to run
+   the other way — accent at 0 lx fading to the accent line at the top — which
+   drew a dark left end under a grid whose dark cells were the bright hours, so
+   the one picture argued against the other. */
 #ROOT .week-scale .bar { flex: 1; position: relative; height: 8px; border-radius: 999px;
-                         background: linear-gradient(90deg,
-                           var(--lk-accent) 0%, var(--lk-accent-line) 100%); }
-#ROOT .week-scale .tick { position: absolute; top: -5px; bottom: -5px; width: 2px;
-                          margin-left: -1px; background: var(--lk-ink); }
+                         background: var(--lk-lux-ramp); }
+#ROOT .week-scale .tick { position: absolute; top: -5px; bottom: -5px; width: 4px;
+                          margin-left: -2px; border-radius: 3px;
+                          background: var(--lk-ink);
+                          box-shadow: 0 0 0 2px var(--lk-surface); }
 #ROOT .week-scale .tickLabel { position: absolute; top: -20px; transform: translateX(-50%);
                                font-size: 11px; font-weight: 600; color: var(--lk-ink);
                                white-space: nowrap; }
 
-#ROOT .week-verdict { font-size: 13px; line-height: 1.5; color: var(--lk-body);
-                      margin-top: 14px; }
+#ROOT .week-verdict { font-size: 12.5px; line-height: 1.45; color: var(--lk-ink);
+                      margin-top: 11px; }
 #ROOT .week-verdict b { color: var(--lk-ink); }
 /* ==== end shared week grid ==== */

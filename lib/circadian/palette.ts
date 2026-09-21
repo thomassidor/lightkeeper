@@ -95,6 +95,30 @@ export const PALETTE: readonly PaletteColor[] = [
 
 const BY_ID = new Map(PALETTE.map(color => [color.id, color]));
 
+/**
+ * The warmth a palette colour stands in for, on a lamp that cannot take one.
+ *
+ * Hue 0 to 0.15 is the warm end of the spectrum and 0.5 to 0.7 the cool end, so
+ * this is that mapping and nothing cleverer. A near-white lands near the middle,
+ * which is what a white should be.
+ *
+ * It is here rather than in a screen because TWO stored shapes now carry a
+ * colour and each needs the same fallback beside it: a curve point (`warmth` is
+ * required alongside `color`) and a schedule block (`temperature`, same idea).
+ * Without the fallback, what a block does would depend on which of the
+ * household's lamps happen to do colour — the colour ones would go amber and
+ * the temperature-only ones would go nowhere at all.
+ *
+ * `warmthFor()` in drivers/curve/pair/curve.html is the same function again,
+ * for the same reason `css()` and `blend()` are: that screen recomputes on
+ * every tap and cannot ask the driver. Change one and change the other.
+ */
+export function warmthForColor(color: { hue: number; saturation: number }): number {
+  const warmish = color.hue < 0.2 || color.hue > 0.9;
+  const base = warmish ? 0.9 : 0.25;
+  return base * color.saturation + 0.5 * (1 - color.saturation);
+}
+
 /** A palette colour by id, or undefined for one this version does not know. */
 export function paletteColor(id: string): PaletteColor | undefined {
   return BY_ID.get(id);

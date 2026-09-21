@@ -8,6 +8,13 @@ reconstructed each submission.
 `homey app validate` says as much itself: *"using the homey:manager:api permission
 will require a more thorough review"*.
 
+One more thing worth knowing up front: **this app is submitted as early access.** It is
+pre-1.0 and still being shaped, which is stated at the top of `README.md`, in the
+store description (`README.txt`), in the FAQ and in every changelog entry, so that a
+user who installs it knows an update may require re-pairing or repairing a device. The
+"what is still untested" section at the end of this document is the honest version of
+the same statement.
+
 ---
 
 ## Why `homey:manager:api`

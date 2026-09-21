@@ -131,7 +131,6 @@ These were hardware steps. They are tests now, and they fail. Where a line survi
 | `curve-colour.test.ts`, `circadian-curve.test.ts` | the shade between two coloured points |
 | `solar-elevation.test.ts` | where the sun is, against values astronomy fixes independently of any implementation — declination at the poles, `90 −` the latitude gap at noon, hemispheric mirroring at an equinox, an hour per 15° of longitude |
 | `sensor-history.test.ts` | the week grid's arithmetic — seven days of buckets from a raw Insights series, the four verdicts and the order they are decided in, and the two roundings. The dark end rounds UP and the bright end down, because snapping the dark threshold down deletes the margin it exists to carry |
-| `press-listener.test.ts` | that press-to-find STOPS — on the first press, on the timeout, and on the screen closing — because a leaked listener holds a subscription on somebody's battery-powered remote for as long as the app runs |
 | `daylight-runtime.test.ts` | that the daylight loop TERMINATES, and the slew limit's shape. Neither is watchable in less than ten minutes on hardware, which is why T83 and T84 still exist for the parts a real sensor decides |
 | `luminance-source.test.ts` | one subscription per sensor however many devices name it, and what makes a reading unusable |
 | `api-trying.test.ts` | the seven "try it now" routes the script drives |

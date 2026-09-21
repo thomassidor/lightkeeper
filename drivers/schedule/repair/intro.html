@@ -54,30 +54,61 @@
     /* Between the accent and its line. The middle of the three listening dots,
        and the only place a mid-tone is needed: the logo has none. */
     --lk-accent-mid: #9f81dc;
+    /* A block on the schedule timeline that is not the one being edited. It
+       borrowed --lk-accent-line, which is the edge of a numbered badge and a
+       step too pale to hold a 52px bar: four of them across a grey track read
+       as a smudge rather than as the day's other windows. */
+    --lk-block: #b9a6e4;
+    /* And a block on a timeline where NOTHING is selected — the review's
+       picture of the finished day. Deeper than the one above because the pale
+       violet only exists to recede behind a selected block, and on a review
+       there is nothing for it to recede behind: four faint bars on a grey
+       track read as a chart that had failed to load. */
+    --lk-block-settled: #7a57c8;
     --lk-accent-strong: #3b2279;
+    /* Two more steps down the same violet, for the three-bar level picture: it
+       is a LEVEL rather than a direction, so only the tallest bar is at full
+       strength and the two under it fall away. Derived from the accent the same
+       way the tints are — the logo has no mid-tones to read them out of. */
+    --lk-level-mid: #7a62c0;
+    --lk-level-low: #c4b8e4;
+
+    /* Drawn ON the accent tint rather than on white, and that is the whole
+       reason these three exist. A grey hairline on #f3eefc is the one place in
+       this palette where a neutral reads as dirty, and --lk-muted on it reads
+       as faded rather than as secondary. So the tint gets its own edge, its own
+       rule and its own second ink, all violet-shifted to match the ground they
+       sit on. */
+    --lk-tint-line: #e2d8f6;
+    --lk-tint-rule: #f0ecfa;
+    --lk-tint-ink: #5a4d80;
     --lk-ring: rgba(42, 25, 88, .16);
     /* The edge of a handle nobody has selected. It is NOT --lk-ring: at .16 a
        26px circle on an orange strip had no edge at all, and the second
        boundary looked like a smudge rather than something to drag. */
     --lk-handle-edge: rgba(42, 25, 88, .45);
 
-    /* The ink ladder. Every one of these clears WCAG AA (4.5:1) against
-       --lk-surface, because all five are used between 11px and 15px — and the
-       two lightest carry the section titles, the tile meta and the help text.
-       They were 3.1:1 (--lk-muted) and 2.6:1 (--lk-faint): grey on white that
-       is legible on a desk monitor and not on a phone in daylight. What
-       separates the steps now is weight, size and caps as much as tone. */
+    /* The ink ladder: THREE greys, and the design canvas has no fourth.
+
+       It had five. --lk-sub (#5f6672) and --lk-faint (#6f7683) sat either side
+       of --lk-muted and were never a step anybody could see — #6f7683 against
+       #6a7180 is a difference of five in one channel, which is not a decision,
+       it is a drift. Both are gone and their consumers took the neighbour the
+       canvas actually draws: an end-caption and the midnight/noon line are
+       --lk-body, everything else that was faint is --lk-muted.
+
+       All three clear WCAG AA (4.5:1) against --lk-surface, because all three
+       are used between 10.5px and 15px. Collapsing --lk-faint RAISED the
+       contrast of every caption that used it, from 4.6:1 to 4.9:1. What
+       separates the steps is weight, size and caps as much as tone. */
     --lk-ink: #16181d;
-    --lk-sub: #5f6672;
     --lk-body: #4b5563;
     --lk-muted: #6a7180;
-    --lk-faint: #6f7683;
 
     /* transparent, not white: the pairing container paints the page behind us,
        and claiming it would flatten every card against it. */
     --lk-page: transparent;
     --lk-surface: #ffffff;
-    --lk-raised: #f7f8fa;
     --lk-line: #eceef2;
     --lk-field: #e3e6ec;
     /* The edge of an UNTICKED box or radio, and only that. A shade darker than
@@ -86,8 +117,18 @@
     --lk-box: #d4d8e0;
     --lk-hover: #c9d2e0;
     /* A chevron is an affordance, not a value: lighter than the text it sits
-       beside, so a list of rows reads as labels rather than as arrows. */
-    --lk-chev: #a8aeb9;
+       beside, so a list of rows reads as labels rather than as arrows.
+
+       #a8aeb9 took that too far. A non-text UI component still owes 3:1, and
+       at #a8aeb9 the chevron was 2.4:1 — an affordance nobody has to read is
+       still one somebody has to SEE. The canvas's #8f97a3 is 3.2:1 and is
+       still visibly lighter than every ink in the ladder above. */
+    --lk-chev: #8f97a3;
+    /* The circled "i" on a .tip. Its own grey rather than the chevron's,
+       because it is a ring drawn around a LETTER: the ring may sit at the
+       chevron's weight, the letter inside it may not (it is text, and owes
+       4.5:1), so the two are named separately and only the ring is light. */
+    --lk-tip-edge: #8a919e;
     --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
 
     /* The pairing primitives' own colours, here for the same reason every
@@ -97,6 +138,10 @@
     --lk-slider-knob-shadow: 0 0 0 2px rgba(22, 24, 29, .6), 0 1px 4px rgba(16, 24, 40, .35);
     --lk-slider-knob-shadow-warm: 0 0 0 2.5px #ffffff, 0 1px 4px rgba(16, 24, 40, .35);
     --lk-slider-inset: inset 0 0 0 1px rgba(22, 24, 29, .1);
+    /* The ring around a knob drawn at icon scale, where the full
+       --lk-slider-knob-shadow is two shadows on a 4px mark and comes out as a
+       smudge. One ring, half a pixel thinner than the real control's. */
+    --lk-knob-edge: rgba(22, 24, 29, .5);
     /* The two axes a slider can carry, as whole gradients rather than as a
        list of stops: a ramp is one decision about what the axis LOOKS like,
        and splitting it into six tokens would invite five of them to change. */
@@ -104,6 +149,25 @@
                                     #f2e6d6, #eaf0fb, #dbe8fb);
     --lk-bright-ramp: linear-gradient(90deg, #221a3d, #43318a, #7a5fc4,
                                       #b9a6e4, #ece5f9);
+    /* How light it is OUTSIDE, pale to deep — the third axis this app draws,
+       and the only one that runs dark at the TOP of its range rather than the
+       bottom. It is the week grid's scale, and its six stops are the same six
+       the cells are quantised to: `SHADES` in views/shared/week-grid.js, which
+       cannot read a custom property and so carries them again. Change one and
+       change the other; `pair-view-styles.test.ts` checks that they agree. */
+    --lk-lux-ramp: linear-gradient(90deg, #f4f2fa, #e0d6f6, #c4b0ec,
+                                   #9f81dc, #6b48bc, #3b2279);
+    /* The same six stops, the other way round, for the sun's own height.
+       Reversed on purpose: the lux ramp measures HOW MUCH LIGHT there is, so
+       more light is more ink, while this one is a picture of the DAY — and the
+       dark end of a day is the night. The two never meet on screen, because a
+       Room-sensing Light has a sensor or it has the sun. */
+    --lk-sun-ramp: linear-gradient(90deg, #3b2279, #6b48bc, #9f81dc,
+                                   #c4b0ec, #f4f2fa);
+    /* The hours of a "when does this room get its sun?" tile: the ones that
+       ARE this room's sun, and the ones that are the day going on around it. */
+    --lk-peak-on: #4b2ea0;
+    --lk-peak-off: #dfd4f4;
     /* The two ENDS of the warmth axis, for the two tiles that nudge along it
        rather than setting it. The whole ramp draws the same picture on both,
        which is no picture at all, so each of these runs from the middle of
@@ -112,13 +176,13 @@
        the real end of the axis is a chip with no edge, so the tile that said
        "cooler" showed nothing at all. Deepened to where it reads, and no
        further — it is a picture of a direction, not a colour to match. */
-    --lk-warmer-ramp: linear-gradient(90deg, #f7efe3, #e8892c);
-    --lk-cooler-ramp: linear-gradient(90deg, #f7efe3, #7ba7e0);
+    --lk-warmer-ramp: linear-gradient(90deg, #f2e6d6, #e8892c);
+    --lk-cooler-ramp: linear-gradient(90deg, #f2e6d6, #9fc0f0);
     /* A lamp that is ON, drawn rather than named: the one warm accent in an
        interface that is otherwise entirely violet, because "on" is a picture of
        light and the brand colour is a picture of the app. */
-    --lk-lamp-lit: #f0b429;
-    --lk-lamp-glow: rgba(240, 180, 41, .22);
+    --lk-lamp-lit: #f4c24a;
+    --lk-lamp-glow: rgba(244, 194, 74, .32);
     --lk-handle-shadow: 0 2px 6px rgba(16, 24, 40, .2);
     /* A small mark lifted off whatever it is drawn ON — the curve chart's
        selected point, which sits on top of a bar of any colour. */
@@ -129,6 +193,14 @@
     --lk-select-halo: 0 0 0 3px rgba(42, 25, 88, .18);
     --lk-handle-shadow-sel: 0 0 0 4px var(--lk-ring), 0 2px 8px rgba(16, 24, 40, .28);
     --lk-hairline: rgba(22, 24, 29, .1);
+    /* The two-hour cell a sensor reported NOTHING in, drawn as a hatch. Its own
+       two colours because nothing else in the app is a hatch: the pale stripe
+       has to sit above --lk-line without becoming white (a white stripe made
+       the cell read as missing from the grid rather than as empty in it), and
+       the edge has to hold the cell's rectangle at 11px tall, which the stripes
+       alone do not. */
+    --lk-hatch-pale: #f7f8fa;
+    --lk-hatch-edge: #dfe3e9;
     --lk-day-mark: rgba(22, 24, 29, .4);
     /* The curve chart's own "you are editing this point" line. Accent rather
        than ink, because on that chart it marks a SELECTION; on the day strip
@@ -141,6 +213,12 @@
     /* Not an error. The one thing that reads this way is a schedule overlap,
        which is allowed, resolved deterministically, and worth pointing at. */
     --lk-warn-bg: #fdf3e7; --lk-warn-ink: #7a4a10;
+    /* A key the Homey accepted and then refused to build a Flow with. Its own
+       colour rather than --lk-bad-ink, and a full step lighter, because it is
+       drawn as an EDGE round a field and as a 16px badge — at #8f1d18 a
+       1.5px border round a white field read as damage, and the message beside
+       it says the key itself is fine. */
+    --lk-reject: #c05a3e;
     --lk-flat-bg: #f4f5f7; --lk-flat-ink: #5b616e;
 
     background: var(--lk-page);
@@ -180,8 +258,13 @@
               margin-bottom: 10px; }
 
   #in-root .section { margin-bottom: 18px; }
-  #in-root .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase;
-                       letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 8px 2px; }
+  /* The label over a group — "Does", "To", "When does this room get its sun?".
+     It is a .control-title with nothing on its right: the same 13.5px/600 ink,
+     sentence case. It used to be 12px uppercase small-caps in the faintest
+     grey, which made the two words holding the job screen's sentence together
+     read as filing-cabinet labels rather than as the sentence's own verbs. */
+  #in-root .section-title { font-size: 13.5px; font-weight: 600; line-height: 1.2;
+                       color: var(--lk-ink); margin: 0 0 9px; }
 
   /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
   #in-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
@@ -196,7 +279,7 @@
 
   #in-root input[type=text], #in-root input[type=password], #in-root select {
     width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
-    border: 1.5px solid var(--lk-field); border-radius: 11px; background: var(--lk-surface);
+    border: 1.5px solid var(--lk-field); border-radius: 12px; background: var(--lk-surface);
     color: var(--lk-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
   /* The chevron's fill stays a literal: #6a7180 is --lk-muted, and a data URI
      cannot read a custom property. So this is the one place a token's value is
@@ -214,11 +297,19 @@
   #in-root .btn:hover { border-color: var(--lk-hover); }
   #in-root .btn:disabled { opacity: .45; cursor: not-allowed; }
   /* The same button across the width of the screen. What a secondary action
-     looks like when it is the only one on a pushed screen — "Stop listening",
-     "Close" — where a primary button would claim the choice was made. */
+     looks like when it is the only one on a pushed screen — "Close" — where a
+     primary button would claim the choice was made. */
   #in-root .btn.wide { display: block; width: 100%; font-size: 16px; font-weight: 600;
                     padding: 14px; border-radius: 12px; min-height: 50px;
                     box-sizing: border-box; margin-top: 16px; }
+  /* And the same button when it is the SECOND of two, under a primary — "Put
+     them back". It borrows the primary's outline rather than the field grey,
+     because the pair is one decision offered twice ("show me" / "undo that")
+     and a grey partner reads as the disabled twin of the button above it.
+     Lighter than the primary in weight and height, never in hue. */
+  #in-root .btn.wide.accent { border-color: var(--lk-accent); color: var(--lk-accent);
+                           font-size: 15px; font-weight: 500; padding: 13px;
+                           min-height: 48px; }
   #in-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
                      border-radius: 12px; border: none; background: var(--lk-accent);
                      color: var(--lk-accent-ink); cursor: pointer; min-height: 50px;
@@ -227,7 +318,7 @@
 
   /* A default ground, so a .msg shown before any state class lands on it is
      still a message rather than bare text on the page. */
-  #in-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 11px; font-size: 13.5px;
+  #in-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 12px; font-size: 13.5px;
              line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
   #in-root .ok { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
   #in-root .bad { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
@@ -259,7 +350,7 @@
      device types. */
   #in-root .steps.tight i { width: 16px; }
   #in-root .steps i.on { background: var(--lk-accent); }
-  #in-root .steps span { margin-left: 4px; font-size: 12px; color: var(--lk-faint); }
+  #in-root .steps span { margin-left: 4px; font-size: 12px; color: var(--lk-muted); }
 
   /* `label · value · chevron`. The one shape everything secondary takes:
      a row that says what it is, what it is set to, and that it can be opened.
@@ -341,7 +432,7 @@
   #in-root .slider.warm .knob { background: var(--lk-ink);
                              box-shadow: var(--lk-slider-knob-shadow-warm); }
   #in-root .ends { display: flex; justify-content: space-between;
-                font-size: 11px; color: var(--lk-faint); margin: 9px 0 0; }
+                font-size: 11px; color: var(--lk-body); margin: 9px 0 0; }
 
   /* An aside under a control: "there is a device type that does this for you".
      Deliberately NOT a .msg — a message has a coloured ground and is about
@@ -356,7 +447,7 @@
      that one instead. */
   #in-root .tip { display: flex; align-items: flex-start; gap: 7px;
                margin: 13px 0 0; font-size: 12px; line-height: 1.45;
-               font-style: italic; color: var(--lk-faint); }
+               font-style: italic; color: var(--lk-muted); }
   /* The circled i, DRAWN rather than set. A glyph that the phone's font does
      not carry renders as a box, which is why the one other mark this design
      puts inside text — the row chevron — is an entity rather than an icon; a
@@ -370,10 +461,10 @@
      text, and a mark written as a child would be written over. */
   #in-root .tip::before { content: "i"; flex: none; box-sizing: border-box;
                        width: 15px; height: 15px; margin-top: 1px;
-                       border: 1.2px solid var(--lk-chev); border-radius: 50%;
+                       border: 1.2px solid var(--lk-tip-edge); border-radius: 50%;
                        font-size: 10px; font-weight: 700; font-style: normal;
                        line-height: 12.6px; text-align: center;
-                       color: var(--lk-chev); }
+                       color: var(--lk-muted); }
 
   /* The swatches a colour is chosen from, four across.
      Not one row of eight: at 390px that is 34px a swatch, under the touch
@@ -421,7 +512,30 @@
                            border: 3px solid var(--lk-accent); z-index: 2;
                            box-shadow: var(--lk-handle-shadow-sel); }
   #in-root .clockline { display: flex; justify-content: space-between;
-                     font-size: 11px; color: var(--lk-faint); margin: 8px 2px 4px; }
+                     font-size: 11px; color: var(--lk-body); margin: 8px 2px 4px; }
+
+  /* The three or four decisions a flow is about to ask for, numbered.
+
+     SHARED rather than intro-only: the credential gate draws the same rows for
+     the four steps of minting a key, and it used to draw an <ol> instead — a
+     browser list with a browser's numerals, inside a screen where every other
+     number is a filled circle. Two places, one shape.
+
+     Spaced, not ruled. A hairline between two decisions turns a promise about
+     what is coming into a settings list, and the numbers already say these are
+     three of one thing. */
+  #in-root .plan { display: flex; flex-direction: column; gap: 14px;
+                margin: 0 0 22px; }
+  #in-root .decision { display: flex; align-items: flex-start; gap: 12px; }
+  #in-root .decision .n { flex: none; width: 26px; height: 26px; border-radius: 50%;
+                       box-sizing: border-box;
+                       background: var(--lk-accent-tint); color: var(--lk-accent-strong);
+                       border: 1.5px solid var(--lk-accent-line);
+                       font-size: 13px; font-weight: 700;
+                       display: flex; align-items: center; justify-content: center; }
+  #in-root .decision .what { font-size: 15px; font-weight: 600; line-height: 26px; }
+  #in-root .decision .why { font-size: 13px; color: var(--lk-muted); margin-top: 2px;
+                         line-height: 1.45; }
 
   /* ==== end shared base ==== */
 
@@ -488,27 +602,13 @@
   #in-root .cap.turn b::after { content: ''; position: absolute; left: 50%; top: 3px;
                                 width: 2px; height: 7px; margin-left: -1px;
                                 border-radius: 1px; background: var(--lk-accent-ink); }
-  #in-root .gesture .lab { font-size: 12px; font-weight: 500; color: var(--lk-sub);
+  #in-root .gesture .lab { font-size: 12px; font-weight: 600; color: var(--lk-ink);
                            line-height: 1; }
 
-  /* The three or four decisions the flow is about to ask for. Naming them up
-     front is the whole job of this screen: a user who knows what is coming can
+  /* `.plan` and `.decision` are in the shared base: the credential gate draws
+     the same numbered rows for minting a key. Naming the decisions up front is
+     still the whole job of THIS screen — a user who knows what is coming can
      press Next through the defaults, and one who does not cannot. */
-  /* Spaced, not ruled. A hairline between two decisions turns a promise about
-     what is coming into a settings list, and the numbers already say these are
-     three of one thing. */
-  #in-root .plan { display: flex; flex-direction: column; gap: 14px;
-                   margin: 0 0 22px; }
-  #in-root .decision { display: flex; align-items: flex-start; gap: 12px; }
-  #in-root .decision .n { flex: none; width: 26px; height: 26px; border-radius: 50%;
-                          box-sizing: border-box;
-                          background: var(--lk-accent-tint); color: var(--lk-accent-strong);
-                          border: 1.5px solid var(--lk-accent-line);
-                          font-size: 13px; font-weight: 700;
-                          display: flex; align-items: center; justify-content: center; }
-  #in-root .decision .what { font-size: 15px; font-weight: 600; }
-  #in-root .decision .why { font-size: 13px; color: var(--lk-muted); margin-top: 2px;
-                            line-height: 1.45; }
 </style>
 
 <div class="wrap" id="in-root">

@@ -11,6 +11,7 @@ import { TargetResolver } from '../outputs/target-resolver';
 import { TargetStateCache } from '../outputs/target-state-cache';
 import { planIntent, type PlannedWrite } from '../outputs/intent-planner';
 import { toDevice } from '../outputs/light-intent';
+import { paletteColor } from '../circadian/palette';
 import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
 import { assessTargets } from '../runtime/target-health';
@@ -263,9 +264,16 @@ export class ScheduleRuntime {
       ? activeEntries(this.plan.entries, this.plan.days, clock)[0]?.entry
       : undefined;
 
+    const colour = entry?.color !== undefined ? paletteColor(entry.color) : undefined;
+
     this.values.set({
       [VALUE_CAPABILITIES.brightness]: entry?.brightness !== undefined ? toDevice(entry.brightness) : null,
       [VALUE_CAPABILITIES.temperature]: entry?.temperature ?? null,
+      // A locale KEY, not a word: `lib/` has no access to `homey.__`, and the
+      // device layer resolves it on the way to the capability row and the Flow
+      // tag Homey makes of it (platform §18). Shaped as the curve runtime's
+      // because both answer the same question about the same palette.
+      [VALUE_CAPABILITIES.colour]: colour ? { keys: [colour.labelKey] } : null,
     });
   }
 
@@ -791,10 +799,39 @@ export class ScheduleRuntime {
         this.targetIds, this.cache, DEFAULT_BEHAVIOR,
       ));
     }
-    if (entry.temperature !== undefined) {
+    /**
+     * Colour and colour temperature are the SAME leg, split by what each lamp
+     * can do — the arrangement the curve runtime already uses, and for the same
+     * reason.
+     *
+     * A block may declare a palette colour. A lamp that can take one gets hue
+     * and saturation; a lamp that cannot gets the block's `temperature`, which
+     * is derived from that colour by the sanitiser and is why `temperature` is
+     * present whenever `color` is. So what a block does is the same decision on
+     * every lamp in the room, rather than one thing on the colour bulbs and
+     * nothing on the rest.
+     *
+     * Split per DEVICE, never per write (platform §6): `planColor` and
+     * `planTemperature` each emit `light_mode` ahead of the value it enables,
+     * and filtering the individual writes would drop the mode — a string — on
+     * any numeric comparison and leave the lamp on the colour it last held.
+     */
+    const colorful = entry.color !== undefined ? paletteColor(entry.color) : undefined;
+    const colorCapable = colorful
+      ? this.targetIds.filter(id => this.cache.supports(id, 'light_hue'))
+      : [];
+    const temperatureOnly = this.targetIds.filter(id => !colorCapable.includes(id));
+
+    if (colorful && colorCapable.length > 0) {
+      plans.push(planIntent(
+        { type: 'color_absolute', hue: colorful.hue, saturation: colorful.saturation },
+        colorCapable, this.cache, DEFAULT_BEHAVIOR,
+      ));
+    }
+    if (entry.temperature !== undefined && temperatureOnly.length > 0) {
       plans.push(planIntent(
         { type: 'temperature_absolute', value: entry.temperature },
-        this.targetIds, this.cache, DEFAULT_BEHAVIOR,
+        temperatureOnly, this.cache, DEFAULT_BEHAVIOR,
       ));
     }
 

@@ -98,6 +98,29 @@ export function intentForLightFunction(
         ? { type: 'power', value: true }
         : { type: 'color_absolute', hue: colour.hue, saturation: colour.saturation };
     }
+
+    /**
+     * The one function this translator cannot finish, and the arm is its
+     * DEGRADATION rather than its behaviour.
+     *
+     * "On – with Lightkeeper" takes its level and its warmth from two other
+     * Lightkeeper devices, read at the moment of the press — so it resolves to
+     * several intents, and only somewhere that can reach the other runtimes can
+     * say which. This file is pure and reaches nothing, by design.
+     * `ControllerRuntime.runLightkeeperOn()` is where that happens, and it
+     * branches on the PRESET before this switch is consulted.
+     *
+     * So what is left here is exactly what the runtime itself falls back to
+     * when neither chosen device is running: turn the lights on. The button was
+     * meant to produce light and it does, at whatever the lamps were last set
+     * to — the same honest degradation `brightness_set` and `color_set` make
+     * two arms up. Keeping it truthful matters because the Test control, the
+     * app's HTTP test route and any future caller all reach this function, and a
+     * `throw` or an `undefined` here would turn "the curve is not running" into
+     * a dead button.
+     */
+    case 'lightkeeper_on':
+      return { type: 'power', value: true };
   }
   // No default arm: the switch covers every LightFunction, and an added member
   // must fail to compile here rather than silently resolve to undefined.
@@ -155,6 +178,22 @@ export function availableFunctions(
   if (support.dim > 0) available.push('brightness_up', 'brightness_down', 'brightness_set');
   if (support.light_temperature > 0) available.push('warmer', 'colder');
   if ((support.light_hue ?? 0) > 0) available.push('color_set');
+  /**
+   * After the nine, not among them, because it is not a cell of the grid.
+   *
+   * `lightkeeper_on` is drawn as a full-width card ABOVE the 3x3 — it carries
+   * two rows and a switch, which no 100px tile could hold — and the screen
+   * finds it by its preset kind rather than by its position. Appending is what
+   * keeps the nine in the order the docblock above describes; inserting it
+   * first would have shifted every tile by one and broken the columns that are
+   * the grid's whole meaning.
+   *
+   * Offered on the same `onoff` gate as the power row, for the reason
+   * FUNCTION_CAPABILITY gives. Whether the house HAS a Lightkeeper device to
+   * take a colour or a level from is a different question, and one this pure
+   * function cannot answer — `getGesture` drops the job when the answer is no.
+   */
+  if (support.onoff > 0) available.push('lightkeeper_on');
   return available;
 }
 

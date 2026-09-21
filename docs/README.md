@@ -2,6 +2,12 @@
 
 Every document in this repository, and who it is for. None of `docs/` is bundled into the app.
 
+> [!WARNING]
+> **Lightkeeper is in early development (0.x), and an update can break a setup somebody already
+> made.** Nothing below is frozen — stored shapes, settings and pairing screens all still move. See
+> [`../FAQ.md` → Is this finished?](../FAQ.md#is-this-finished) for what that means for a user, and
+> [`../CHANGELOG.md`](../CHANGELOG.md) for what actually changed.
+
 ## If you use the app
 
 | Document | What is in it |
@@ -47,7 +53,7 @@ Nothing shipped is hand-edited: `python artwork/export-assets.py` builds every i
 
 | Document | What is in it |
 |---|---|
-| [`design/`](design) | **The Claude Design canvas the 0.6.0 pairing rewrite was built from** — all five device flows, one row each, happy path plus the special cases. Its README carries the four turns that arrived at it and the six places the shipped app deliberately departs from it. The durable visual reference the views are compared against |
+| [`design/`](design) | **The Claude Design canvas every pairing screen is compared against** — all five device flows, one row each, happy path plus the special cases. Its README says what the canvas is the authority on, the seven places the shipped app deliberately departs from it, and the one question still open. `npm run render:views` draws the artefact to put beside it |
 
 `npm run render:views` draws every screen to `.views/` and is the other half of that comparison:
 the canvas says what it should look like, the render says what it does. Neither runs in CI — both

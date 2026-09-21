@@ -74,13 +74,15 @@ function weekGrid(host, payload) {
       return lux >= 10 ? Math.round(lux) : Math.round(lux * 10) / 10;
     }
 
+    var anyGap = false;
     for (var row = 0; row < week.cells.length; row++) {
       var line = node('div', 'week-row');
       line.appendChild(node('span', 'week-day', Homey.__(DAY_KEYS[(week.days[row] || 1) - 1])));
       for (var column = 0; column < week.cells[row].length; column++) {
         var value = shade(week.cells[row][column]);
         var cell = node('i', value === null ? 'gap' : null);
-        if (value !== null) cell.style.background = cellColour(value);
+        if (value === null) anyGap = true;
+        else cell.style.background = cellColour(value);
         line.appendChild(cell);
       }
       host.appendChild(line);
@@ -106,6 +108,22 @@ function weekGrid(host, payload) {
     scale.appendChild(bar);
     scale.appendChild(node('span', null, Homey.__('week.lux', { lux: round(high) })));
     host.appendChild(scale);
+
+    /**
+     * What the hatch means, and only when there is one.
+     *
+     * A hatched cell is the difference between "pitch dark" and "nothing
+     * arrived", and that difference is the whole argument of the stopped-sensor
+     * screen — but it is a distinction nobody can be expected to read out of a
+     * pattern. So it gets a line, on the weeks that have a gap in them, and no
+     * line at all on the ones that do not.
+     */
+    if (anyGap) {
+      var legend = node('div', 'week-legend');
+      legend.appendChild(node('i'));
+      legend.appendChild(node('span', null, Homey.__('week.nothingReported')));
+      host.appendChild(legend);
+    }
 
     /**
      * What this week is worth, in a sentence with the numbers in it.

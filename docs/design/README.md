@@ -1,96 +1,61 @@
-# The pairing redesign canvas
+# The design canvas, and where the app departs from it
 
-`Lightkeeper pairing flows.dc.html` is the Claude Design canvas the pairing rewrite was built from:
-all five device types, one row each, the happy flow left to right and the special cases to the right
-of the divider. It is not bundled into the app — `docs/` never is — and no script reads it. It is
-here so the reasoning behind a screen survives the session it was designed in.
+[`Lightkeeper pairing flows.dc.html`](Lightkeeper%20pairing%20flows.dc.html) is a Claude Design
+canvas: thirty-four screens at 390px, covering all five device types plus the credential gate, with
+the happy path on one row and the special cases on a second. `support.js` is its runtime — open the
+HTML file in a browser and it renders.
 
-Open it in a browser; `support.js` beside it is the canvas runtime and has to stay where it is.
+**It is the durable visual reference, and the shipped views are compared against it screen by
+screen.** `npm run render:views` draws every pair view inside Homey's own sheet to `.views/`, which
+is the artefact to put beside this canvas.
 
-## How it was arrived at
+It is not a spec. It is a drawing made before the code existed, and in seven places the code knows
+something the drawing does not. Those seven are below, with the reason, so that the next person to
+put the two side by side does not spend an afternoon re-deciding them.
 
-A second canvas held the iteration — four turns and the seven day-editor options — and has been
-deleted, because the settled file supersedes it wherever they disagree and the rest is a picture of
-paths not taken. `git log --diff-filter=D -- docs/design` finds it. The argument worth keeping:
+## What the canvas is the authority on
 
-- **Turn 1** offered two directions on one axis — lead with recognisable presets and hide the
-  machinery until asked, or make the setting directly manipulable so you drag the thing you are
-  describing.
-- **Turn 2** rejected both as still doing three jobs at once: set the thing, teach the model, and
-  warn about the edges. One decision per screen; every explanation either becomes the control's own
-  behaviour or leaves pairing entirely for the device's settings page, where it is read when it
-  matters rather than when somebody is trying to finish.
-- **Turn 3** stretched that over the whole circadian driver — an intro and three steps — on the
-  test that the skeleton then fits curve, daylight, schedule and controller unchanged.
-- **Turn 4** is the one that changed the product. The day handle in turn 3 *"lies by omission:
-  'warmest' is a single value the day passes through twice — once before the morning and once after
-  the evening — but a single dot at 21:00 reads as one moment."* Seven ways out were drawn; **4g,
-  round handles with the times inside their own group**, is what shipped.
+Everything not listed below: the colour tokens, the type ladder, every radius and gutter, the step
+dots, the row shape, the card shape, the numbered intro rows, the swatch grids, the week grid, the
+day strip, the nine job tiles, and all the copy. When a view and the canvas disagree about one of
+those, the view is wrong.
 
-The screenshots of the OLD screens that were pasted into the review are not kept, for the same
-reason the contact sheet uploaded beside them was not: `npm run render:views` produces the
-equivalent for whatever is on disk today, and a picture of a screen that no longer exists is only a
-way to be wrong about it.
+## Where the app departs from it, on purpose
 
-The plan that turned this into code has been deleted along with the rest of the archive; the
-decisions it recorded are in `CHANGELOG.md`'s 0.6.0 entry, and `git log --diff-filter=D --
-docs/history` finds the plan itself.
+1. **A Colour Curve Light pairs with "Set brightness too" switched ON.** The canvas says the default
+   is off and the chart is purely a day of colour. A flat chart is a picture of one axis: every bar
+   is full height, the Off-to-Full gutter is hidden, and nothing on the first screen shows that the
+   second axis exists. The argument is written out at `DEFAULT_POINTS` in
+   `lib/circadian/circadian-types.ts`, and the default five points carry a real day — 44% at 06:30
+   rising to 94% at 19:00 and falling to 36% at 22:30.
 
-## `.designexports/`, and what a re-export changed
+2. **"Which remote?" keeps its search field, its room grouping and its "Show every other device"
+   fold.** The canvas draws a flat card of three. The fold is the answer to "my remote is not in the
+   list" for a device whose events arrive by a route the app cannot count — rare, real, and
+   otherwise a dead end — and search matters in a house with 54 devices.
 
-`.designexports/` (gitignored, same reason as `.views/`) holds PNG exports of
-the canvas taken on 14 September 2026, **with Homey's own chrome switched on** —
-the sheet header and the `← Previous` / `Next →` footer the container draws. That
-is the difference that mattered: the artboards in the `.dc.html` files here each
-end with a full-width dark primary button, and the re-export has none, because
-with the chrome drawn it is obvious that Homey already supplies one.
+3. **`curve.html` keeps "Remove this time".** The canvas draws "Add a time" and no way to take one
+   away.
 
-So the app dropped its own `Start` / `Next` from every step whose
-`driver.compose.json` declares a `navigation.next` — nine screens, each of which
-had been drawing a second Next below the fold.
+4. **`source.html` keeps its "Leave it alone" row.** The canvas lists only the devices. One of the
+   two questions has to be answerable with "not this one", because `job.needASource` requires at
+   least one of them to be answered with something.
 
-Two screens keep a button of their own, and both stopped declaring a `next` so
-that Homey draws none beside it. They are the two that DO something rather than
-collect something: `review.html` creates the device, and `credential.html`
-validates the key against the Homey before anything moves on. The key screen's
-`next` was worse than a duplicate — Homey's own button walked straight past an
-empty field, and the flow carried on keyless until the review failed to save.
+5. **`job.html` keeps "Set a warmth too" under the brightness preset**, and keeps the
+   `temperature_cycle` tile for rules that already use it — it is never offered to a new one.
 
-`scripts/render-views.mjs` now reproduces that chrome for the same reason, from
-each driver's own compose. A render without it cannot show a duplicate, which is
-how this survived the first pass.
+6. **`tryit.html` keeps its per-lamp result list** ("Set" / "Off, left alone"). The canvas ends at
+   the two buttons. Reporting which lamps answered is the only evidence the preview gives.
 
-## What was compared, and where it departs
+7. **A circadian boundary steps ±150 minutes.** The canvas's prototype clamps asymmetrically
+   (−120…+240 in the morning, −240…+120 in the evening). `MAX_OFFSET` and `OFFSET_STEP` in
+   `lib/circadian/simple-curve.ts` carry the reasoning for the symmetric range.
 
-Every screen was rendered with `npm run render:views` and held against these
-canvas on 13 September 2026, and against `.designexports/` on 14 September. The
-renders live in `.views/` (gitignored) and are regenerated rather than committed
-— a PNG of a screen goes stale the moment the screen changes, and the canvas plus
-the live render is the pair worth keeping.
+## Open, not departed
 
-Six deliberate departures, all recorded here rather than left to be
-rediscovered as bugs:
-
-- **The API-key screen comes near the START, not at the end.** The canvas puts it
-  behind the work, on the reasoning that the key only gates Flow writes at save.
-  That is true and it is the wrong trade: somebody who reaches a four-step review
-  and cannot produce a key loses everything they just filled in.
-- **The light picker keeps a one-line subtitle** under its heading, which the
-  canvas does not draw. It is the only thing that distinguishes an identical
-  screen across five device types, and the canvas's own rule allows one sentence.
-- **The remote picker groups by room.** The canvas draws one flat list; the light
-  picker and the sensor picker both group, and a house with 54 lights has enough
-  remotes to want the same treatment.
-- **The light picker keeps its "N chosen" line.** The canvas has no such line,
-  and while the app drew its own Next it did not need one — the button was
-  disabled and that said it. With the button gone, nothing else on the screen
-  reports an empty selection, and Homey's own Next cannot be blocked.
-- **A schedule block's colour is a warmth slider, not swatches.** The canvas
-  folds the curve's palette out under "Set colour too". A schedule block stores a
-  colour TEMPERATURE — its own list rows in the same canvas say "20%, warmest" —
-  so the swatches would be a picker for a value the device does not hold.
-- **A frozen sensor does not take the response screen over.** The canvas replaces
-  the whole screen with the warning and three ways out. The app shows the same
-  warning above the same controls: the sensor may well start reporting again, and
-  a screen that refuses to let somebody finish is a worse answer than one that
-  tells them what is wrong.
+**Pre-staging has no control on any screen, and the canvas has none either — but that is a question
+rather than an answer.** The setting exists, a new device still pairs with it on, and every guard
+around it is intact; what is gone is the switch and the "Test it on my lights" button that let a
+household prove it against their own lamps, which platform §6 says only their own lamps can prove.
+It is behind `SHOW_PRE_STAGE` in `drivers/circadian/pair/day.html` and
+`drivers/curve/pair/curve.html` — one line each — pending a decision about where it belongs.

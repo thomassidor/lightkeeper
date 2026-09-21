@@ -62,9 +62,9 @@
       }
     },
     {
-      "id": "listen",
+      "id": "source",
       "navigation": {
-        "prev": "remote"
+        "prev": "job"
       }
     }
   ],
@@ -115,9 +115,9 @@
       }
     },
     {
-      "id": "listen",
+      "id": "source",
       "navigation": {
-        "prev": "remote"
+        "prev": "job"
       }
     }
   ]

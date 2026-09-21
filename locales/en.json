@@ -2,10 +2,12 @@
   "credential": {
     "title": "One-time setup",
     "why": "Homey does not let an app create Flows on its own, so Lightkeeper needs an API key from you. It uses the key only to build and maintain the Flows behind this device — nothing else.",
-    "step1": "Open my.homey.app and pick this Homey",
-    "step2": "Go to Settings → API Keys → New API Key",
+    "step1": "Open my.homey.app",
+    "step1Why": "Pick this Homey",
+    "step2": "Settings → API Keys → New API Key",
     "step3": "Tick the Flow permissions, then create it",
-    "step4": "Copy the key — it is shown only once — and paste it here",
+    "step4": "Copy the key and paste it here",
+    "step4Why": "It is shown only once",
     "placeholder": "Paste your API key",
     "save": "Save and continue",
     "checking": "Checking the key…",
@@ -14,8 +16,9 @@
     "failed": "That key did not work.",
     "malformed": "That does not look like a complete API key. Copy the whole key shown when you create it.",
     "expired": "The API key is no longer valid. Create a new one in the Homey Web App and enter it here.",
-    "noScope": "The API key does not have permission to manage Flows. Create a new one with Flow permissions.",
-    "unreachable": "Could not reach Homey to check the API key. Try again in a moment."
+    "noScope": "This key works, but it cannot create Flows. Make a new one with the Flow permissions ticked — permissions cannot be added to a key afterwards.",
+    "unreachable": "Could not reach Homey to check the API key. Try again in a moment.",
+    "openAgain": "Open my.homey.app again"
   },
   "source": {
     "reattach": "__name__ looks like the same remote, re-added. Re-attaching keeps every mapping and target exactly as they were.",
@@ -93,7 +96,7 @@
     "magenta": "Magenta"
   },
   "functions": {
-    "toggle": "On and off",
+    "toggle": "Toggle on/off",
     "on": "On",
     "off": "Off",
     "brightness_up": "Brighter",
@@ -102,7 +105,8 @@
     "colder": "Cooler",
     "brightness_set": "A set brightness",
     "color_set": "Set colour",
-    "temperature_cycle": "Step through warm and cool"
+    "temperature_cycle": "Step through warm and cool",
+    "lightkeeper_on": "On – with Lightkeeper"
   },
   "state": {
     "noConfiguration": "This Light Remote has no configuration. Repair it to set it up again.",
@@ -260,7 +264,10 @@
     "notALight": "not a light",
     "unavailable": "Not responding",
     "emptyBody": "Lightkeeper uses lights already in Homey. Add a bulb or a lamp first, then come back.",
-    "lookAgain": "Look again"
+    "emptyTitle": "No lights yet",
+    "lookAgain": "Look again",
+    "addALight": "Add a light to Homey",
+    "close": "Close"
   },
   "intro": {
     "remotePress": "Press",
@@ -289,7 +296,7 @@
     "theBlocks": "When they are on",
     "theBlocksWhy": "Set the hours they switch on and off",
     "theRemote": "Which remote",
-    "theRemoteWhy": "Press a button and we will find it",
+    "theRemoteWhy": "Pick it from the list",
     "theButtons": "What each button does",
     "theButtonsWhy": "The usual jobs are filled in already",
     "checkIt": "Check it over",
@@ -311,7 +318,7 @@
     "timeBlocks": "Time blocks",
     "onTheseDays": "On these days",
     "buttonsWithAJob": "Buttons with a job",
-    "wholeRoom": "Everything in __room__",
+    "wholeRoom": "__count__ in __room__",
     "someLights": "__count__ picked",
     "promiseCircadian": "Lightkeeper sets these __count__ lights whenever they are on, starting now.",
     "promiseCurve": "Lightkeeper sets these __count__ lights whenever they are on, fading between your points, starting now.",
@@ -332,7 +339,7 @@
     "rightNow": "Right now"
   },
   "tip": {
-    "daylight": "Want this to follow the room instead? A Room-sensing Light sets brightness from how light it already is."
+    "daylight": "Want more control? Use the Room-sensing light from Lightkeeper."
   },
   "warmth": {
     "deepAmber": "Deep amber",
@@ -379,7 +386,6 @@
     "unavailable": "Not responding",
     "events": "__count__ separate presses",
     "noEvents": "Nothing heard from it yet",
-    "pressToFind": "Or press a button to find it",
     "found": "__name__ · __buttons__ buttons, __events__ events",
     "unusable": "Nothing can be read from __name__, so it cannot drive anything. Pick another.",
     "reattach": "Use this one instead",
@@ -403,20 +409,21 @@
     "hour": "Hour",
     "minute": "Minute",
     "length": "On for __hours__ h __minutes__ m",
+    "offAfter": "Off after __hours__ h __minutes__ m",
     "crossesMidnight": "crosses midnight",
     "alsoBrightness": "Set brightness too",
     "brightness": "Brightness",
     "alsoWarmth": "Set colour too",
-    "warmth": "Warmth",
-    "candlelight": "Candlelight",
-    "daylight": "Daylight",
+    "moreColours": "Show more colours",
+    "fewerColours": "Show fewer colours",
     "off": "Off",
     "full": "Full",
-    "withWarmth": "with a colour",
     "remove": "Remove this block",
     "add": "Add a block",
     "overlap": "Two blocks overlap between __from__ and __until__",
-    "overlapMeans": "The later one wins while they overlap. Nothing breaks — the lights simply stay on through both."
+    "overlapMeans": "The later one wins while they overlap. Nothing breaks — the lights simply stay on through both.",
+    "merge": "Merge them into one",
+    "leaveAsIs": "Leave them as they are"
   },
   "tryit": {
     "title": "See any time of day",
@@ -470,11 +477,21 @@
     "off": "Off",
     "full": "Full",
     "whenSun": "When does this room get its sun?",
-    "whenSunWhy": "Pick the part of the day when direct light reaches it. A north-facing room and a west-facing one share the same sun and receive nothing like the same light.",
+    "whenSunWhy": "Pick the part of the day when direct light reaches it.",
     "peakMorning": "Morning",
     "peakMidday": "Midday",
     "peakAfternoon": "Afternoon",
     "peakFlat": "Hardly any",
+    "peaksMorning": "Peaks in the morning",
+    "peaksMidday": "Peaks around midday",
+    "peaksAfternoon": "Peaks in the afternoon",
+    "peaksFlat": "Never gets direct sun",
+    "andSunset": "sunset __time__ today",
+    "followingSun": "Following the sun",
+    "followingSunMeans": "The lamps ease off as this room’s own light arrives, and it shifts with the season on its own.",
+    "scaleNight": "night",
+    "scaleMidday": "midday",
+    "nowAt": "Now, __time__",
     "sixAm": "6am",
     "sixPm": "6pm",
     "tryIt": "Try it now",
@@ -506,14 +523,14 @@
     "flatDetail": "__low__ to __high__ lx — nothing to act on.",
     "stopped": "Reported normally, then stopped.",
     "stoppedDetail": "Nothing since __when__.",
-    "nothing": "Nothing reported in the last seven days."
+    "nothing": "Nothing reported in the last seven days.",
+    "nothingReported": "Nothing reported"
   },
   "buttons": {
     "title": "What should each button do?",
     "step": "Step __index__ of __count__",
     "notSet": "Not set",
-    "detail": "__job__ · __lights__",
-    "pressToJump": "Press a button on the remote to jump to its row"
+    "detail": "__job__ · __lights__"
   },
   "count": {
     "zero": "zero",
@@ -546,16 +563,18 @@
     "candlelight": "Candlelight",
     "daylight": "Daylight",
     "tryIt": "Try it now",
-    "tried": "Sent __writes__ write(s) to your lights."
-  },
-  "listen": {
-    "title": "Press a button on the remote",
-    "countdown": "Listening for __seconds__ seconds",
-    "nothingYet": "Heard nothing yet",
-    "nothing": "Heard nothing. Some remotes only speak through Flow cards and cannot be heard here — pick it from the list instead.",
-    "heard": "Heard __name__",
-    "pickFromList": "Pick from the list instead",
-    "stop": "Stop listening"
+    "tried": "Sent __writes__ write(s) to your lights.",
+    "lightkeeperBlurb": "Turn on with level and warmth from other Lightkeeper devices.",
+    "lightkeeperChosen": "Reads these setups at the moment of the press",
+    "colourAndWarmth": "Colour and warmth",
+    "pressAgainOff": "Press again to turn off",
+    "takeColourTitle": "Take colour and warmth from",
+    "takeBrightnessTitle": "Take brightness from",
+    "takeBlurb": "Read at the moment of the press, not fixed now.",
+    "swatchNote": "Swatches show what each setup is producing right now.",
+    "levelNote": "Levels are what each setup is calling for right now.",
+    "noSources": "No other Lightkeeper devices yet. Add a circadian light, a Colour Curve Light, a schedule or a Room-sensing Light, and this button can follow it.",
+    "needASource": "Choose at least one setup to take a colour or a brightness from."
   },
   "ordinal": {
     "st": "st",

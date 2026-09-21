@@ -6,7 +6,8 @@ import {
   validateDaylightPlan, validManagedFlowRefs,
 } from '../../lib/validation/plans';
 import { runMigrationChain } from '../../lib/support/migrations';
-import { DEFAULT_BEHAVIOR } from '../../lib/mapping/mapping-types';
+import { DEFAULT_BEHAVIOR, FUNCTION_PRESET } from '../../lib/mapping/mapping-types';
+import { availableFunctions } from '../../lib/mapping/mapping-engine';
 import { DEFAULT_POINTS } from '../../lib/circadian/circadian-types';
 import { DEFAULT_RESPONSE } from '../../lib/daylight/daylight-types';
 
@@ -488,5 +489,72 @@ describe('pre-staging is on by default without changing devices that exist', () 
       });
       assert.equal(plan.preStage, false, `${JSON.stringify(value)} is not consent either`);
     }
+  });
+});
+
+
+/**
+ * The allow-list a stored rule's `function` is checked against, held to the
+ * union it is supposed to mirror.
+ *
+ * `LIGHT_FUNCTIONS` in `lib/validation/plans.ts` is hand-written on purpose —
+ * its own docblock argues why — and that is exactly how `color_set` came to be
+ * missing from it. It reached `LightFunction`, `FUNCTION_CAPABILITY`,
+ * `FUNCTION_PRESET` and `availableFunctions()`, so the buttons screen offered
+ * "Set colour" on any lamp with `light_hue` and `validateMappingRules` accepted
+ * it; only this validator did not know it. A Light Remote with a colour button
+ * therefore paired cleanly, wrote its store, and came up unavailable on the very
+ * next `onInit` saying its configuration could not be read — with the button
+ * that caused it named nowhere.
+ *
+ * Not a derivation, which would defeat the point of the list: an assertion that
+ * the hand-written one is complete.
+ */
+describe('the stored-plan allow-list covers every function the app offers', () => {
+  const rule = (fn: string, preset?: unknown) => ({
+    ...validProfile(),
+    mappings: [{
+      id: 'r1', function: fn, inputKey: 'n2_on|press', target: null,
+      ...(preset !== undefined ? { preset } : {}),
+    }],
+  });
+
+  /**
+   * A valid value of each kind, so the loop below tests the allow-list rather
+   * than the preset rules. Every `PresetKind` must appear: an unhandled kind
+   * yields `undefined`, and the rule is then refused for having no preset —
+   * which fails this test for the wrong reason and hides whether the function
+   * is on the list at all.
+   */
+  const presetFor = (kind: string) => ({
+    colour: { color: 'amber' },
+    brightness: { brightness: 0.5 },
+    lightkeeper: { colourSource: 'lk-curve-1', brightnessSource: 'none', pressAgainOff: true },
+    none: undefined,
+  } as Record<string, unknown>)[kind];
+
+  for (const [fn, kind] of Object.entries(FUNCTION_PRESET)) {
+    test(`a stored "${fn}" rule is readable`, () => {
+      const profile = validateControllerProfile(rule(fn, presetFor(kind)));
+      assert.equal(profile.mappings[0]!.function, fn);
+    });
+  }
+
+  test('every function the buttons screen can offer survives a round trip', () => {
+    const offered = availableFunctions({ onoff: 2, dim: 2, light_temperature: 2, light_hue: 2 });
+    assert.ok(offered.includes('color_set'), 'the screen still offers a colour');
+    for (const fn of offered) {
+      assert.doesNotThrow(
+        () => validateControllerProfile(rule(fn, presetFor(FUNCTION_PRESET[fn]))),
+        `"${fn}" can be chosen but not stored`,
+      );
+    }
+  });
+
+  test('a function the app does not know is still refused', () => {
+    assert.throws(
+      () => validateControllerProfile(rule('set_the_house_on_fire')),
+      /mappings\[0\].function/,
+    );
   });
 });

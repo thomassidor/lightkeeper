@@ -91,7 +91,7 @@ describe('render fixtures', () => {
       'remote.html': 'listSources',
       'buttons.html': 'getButtons',
       'job.html': 'getGesture',
-      'listen.html': 'startListening',
+      'source.html': 'getSource',
     };
 
     for (const file of files) {
@@ -185,7 +185,14 @@ describe('render fixtures', () => {
     // draws, and a light subset, so the checklist is not nine ticks and a
     // question nobody can see the point of.
     const gesture = replies['job.html'].getGesture;
-    assert.equal(gesture.jobs.length, 9, 'nine tiles, or the grid is not a grid');
+    assert.equal(
+      gesture.jobs.filter((job: any) => job.preset !== 'lightkeeper').length, 9,
+      'nine tiles, or the grid is not a grid',
+    );
+    assert.ok(gesture.jobs.some((job: any) => job.preset === 'lightkeeper'),
+      'and the composed job, which is drawn as the card above the grid rather than in it');
+    assert.ok(gesture.sourceNames?.colour && gesture.sourceNames?.brightness,
+      'with both of its rows answered, or the card renders half-filled');
     assert.ok(gesture.jobs.every((job: any) => job.id !== null),
       'do nothing is the tile below the grid, so it must not be in the grid itself');
     assert.notEqual(gesture.presetKind, 'none',
@@ -197,5 +204,22 @@ describe('render fixtures', () => {
       gesture.chosenLights && gesture.chosenLights.length < gesture.lights.length,
       'and a subset chosen, because per-button lights is the thing this screen gained',
     );
+
+    /**
+     * The source picker: the BRIGHTNESS question, because it is the richer of
+     * the two — a bar and a percentage on every row against one swatch — and
+     * because a row at each end of the axis is what shows the bar is a bar.
+     */
+    const source = replies['source.html'].getSource;
+    assert.ok(source.sources.length >= 4, 'enough setups that the list is a list');
+    assert.equal(source.sources[0].id, 'none',
+      '"leave it alone" is the first row, where the Flow card also puts it');
+    assert.ok(source.sources.some((row: any) => row.subtitle),
+      'and a subtitle, or the line that says which room a setup lives in never draws');
+    const levels = source.sources.map((row: any) => row.level).filter((l: any) => l !== undefined);
+    assert.ok(Math.max(...levels) - Math.min(...levels) > 0.5,
+      'levels far enough apart that the bars are visibly different lengths');
+    assert.ok(source.chosen !== 'none',
+      'something chosen, or the ticked state — the thing this screen is for — is never drawn');
   });
 });

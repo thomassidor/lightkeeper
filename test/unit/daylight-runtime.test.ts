@@ -1206,3 +1206,147 @@ describe('what the week-long recording found', () => {
     await h.runtime.stop();
   });
 });
+
+/**
+ * What a 19.8-hour capture on the reference Homey found, a year on from the
+ * recording above. Both are the same mistake again — a LAMP read as a PERSON —
+ * surviving in the two shapes the guards written for it do not cover: a lamp
+ * that fades out through a NONZERO level, and a lamp announcing what it came
+ * back on at.
+ */
+describe('what the day-long capture found', () => {
+  test('a lamp fading out is recorded as one, not as a household taking its lights back', async () => {
+    const h = harness({ devices: [light('l1', undefined, { dim: 0.61 })], verdict: { brightness: 0.8 } });
+    await h.runtime.start();
+    await sharedSettle(12);
+
+    /**
+     * The Activity Room, where all five overrides in the capture were this: a
+     * `dim` report below what we wanted, 29.0-29.9 s before that lamp's own
+     * `onoff: false`. `dim_zero` cannot catch it — the value is 0.11, not 0 —
+     * and `lamp_off` cannot either, because `actualOn` is still true.
+     */
+    h.advance(SETTLE_PAST);
+    h.report('l1', 'dim', 0.11);
+    assert.equal(h.runtime.diagnostics().targets[0].overridden, true,
+      'raised as before: the evidence that explains it has not arrived yet');
+
+    h.advance(29_000);
+    h.report('l1', 'onoff', false);
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].override, null);
+    assert.equal(d.targets[0].fadeOutOverrides, 1);
+    assert.ok(d.recentControlEvents.some(e => e.type === 'override_cleared' && e.reason === 'power_fade_out'));
+    await h.runtime.stop();
+  });
+
+  test('dimming a room and switching it off a second later is a person, not a fade', async () => {
+    const h = harness({ devices: [light('l1', undefined, { dim: 0.61 })], verdict: { brightness: 0.8 } });
+    await h.runtime.start();
+    await sharedSettle(12);
+
+    /**
+     * What the first build carrying this rule got wrong, caught on hardware
+     * within the hour: somebody pressed dim-down on a Light Remote and switched
+     * the room off a second afterwards, and all five lamps — 0.5 s to 2.1 s from
+     * the override to the off — were filed as lamps fading out. The fade report
+     * is not merely within a minute of the off, it is about half a minute ahead
+     * of it (29.2 s minimum over 232 measured pairs), so the rule has a floor.
+     */
+    h.advance(SETTLE_PAST);
+    h.report('l1', 'dim', 0.32);
+    h.advance(2_000);
+    h.report('l1', 'onoff', false);
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].fadeOutOverrides, undefined,
+      'a lamp cannot begin fading out two seconds before it reports itself off');
+    assert.ok(d.recentControlEvents.some(e => e.type === 'override_cleared' && e.reason === 'power_changed'));
+    await h.runtime.stop();
+  });
+
+  test('a lamp switched off long after being dimmed is still a person who dimmed it', async () => {
+    const h = harness({ devices: [light('l1', undefined, { dim: 0.61 })], verdict: { brightness: 0.8 } });
+    await h.runtime.start();
+    await sharedSettle(12);
+
+    h.advance(SETTLE_PAST);
+    h.report('l1', 'dim', 0.11);
+    h.advance(10 * 60_000);
+    h.report('l1', 'onoff', false);
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].fadeOutOverrides, undefined);
+    assert.ok(d.recentControlEvents.some(e => e.type === 'override_cleared' && e.reason === 'power_changed'));
+    await h.runtime.stop();
+  });
+
+  test('a lamp raised ABOVE what we wanted and then switched off is not a fade-out', async () => {
+    const h = harness({ devices: [light('l1', undefined, { dim: 0.03 })], verdict: { brightness: 0.2 } });
+    await h.runtime.start();
+    await sharedSettle(12);
+
+    h.advance(SETTLE_PAST);
+    h.report('l1', 'dim', 0.9);
+    h.advance(20_000);
+    h.report('l1', 'onoff', false);
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].fadeOutOverrides, undefined,
+      'somebody turned it up and then off, which is two decisions and neither is a fade');
+    await h.runtime.stop();
+  });
+
+  test('one override is one row, however many times the lamp restates it', async () => {
+    const h = harness({ devices: [light('l1', undefined, { dim: 0.03 })], verdict: { brightness: 0.2 } });
+    await h.runtime.start();
+    await sharedSettle(12);
+
+    h.advance(SETTLE_PAST);
+    h.report('l1', 'dim', 0.8);
+    const raisedAt = h.runtime.diagnostics().targets[0].override?.at;
+
+    /**
+     * The Garage lamps from the capture: creeping a hundredth every couple of
+     * minutes, under something outside this app, each new value re-noting the
+     * override that was already standing. An IDENTICAL repeat never gets this
+     * far — `applyExternalChange` reports no change and the runtime is not
+     * called — so a drift is the shape this actually takes.
+     */
+    for (let step = 1; step <= 19; step++) {
+      h.advance(120_000);
+      h.report('l1', 'dim', Number((0.8 + step * 0.01).toFixed(2)));
+    }
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.recentControlEvents.filter(e => e.type === 'override').length, 1,
+      'twenty reports, one override, one row — where twenty rows used to evict the history');
+    assert.equal(d.targets[0].override?.repeats, 20);
+    assert.equal(d.targets[0].override?.value, 0.99, 'the record follows the lamp');
+    assert.equal(d.targets[0].override?.at, raisedAt,
+      'and the four-hour deadline is still anchored to the first report');
+    await h.runtime.stop();
+  });
+
+  test('the level a lamp comes back on at does not stand its runtime down', async () => {
+    const h = harness({ devices: [light('l1', undefined, { onoff: false, dim: 0.30 })], verdict: { brightness: 0.05 } });
+    await h.runtime.start();
+    await sharedSettle(12);
+
+    // The Garage: four lamps on one bridge, reporting the levels they had been
+    // left at 4.4 s after the `onoff` edge — past the settle window, because the
+    // pass had little to write and only an OPEN window is pushed out.
+    h.advance(SETTLE_PAST);
+    h.report('l1', 'onoff', true);
+    await sharedSettle(12);
+    h.advance(4_400);
+    h.report('l1', 'dim', 0.30);
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].overridden, false,
+      'a whole ON period of doing nothing began exactly here');
+    assert.ok(d.recentControlEvents.some(e => e.type === 'report_ignored' && e.reason === 'power_restore'));
+    await h.runtime.stop();
+  });
+});

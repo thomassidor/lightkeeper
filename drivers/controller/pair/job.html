@@ -54,30 +54,61 @@
     /* Between the accent and its line. The middle of the three listening dots,
        and the only place a mid-tone is needed: the logo has none. */
     --lk-accent-mid: #9f81dc;
+    /* A block on the schedule timeline that is not the one being edited. It
+       borrowed --lk-accent-line, which is the edge of a numbered badge and a
+       step too pale to hold a 52px bar: four of them across a grey track read
+       as a smudge rather than as the day's other windows. */
+    --lk-block: #b9a6e4;
+    /* And a block on a timeline where NOTHING is selected — the review's
+       picture of the finished day. Deeper than the one above because the pale
+       violet only exists to recede behind a selected block, and on a review
+       there is nothing for it to recede behind: four faint bars on a grey
+       track read as a chart that had failed to load. */
+    --lk-block-settled: #7a57c8;
     --lk-accent-strong: #3b2279;
+    /* Two more steps down the same violet, for the three-bar level picture: it
+       is a LEVEL rather than a direction, so only the tallest bar is at full
+       strength and the two under it fall away. Derived from the accent the same
+       way the tints are — the logo has no mid-tones to read them out of. */
+    --lk-level-mid: #7a62c0;
+    --lk-level-low: #c4b8e4;
+
+    /* Drawn ON the accent tint rather than on white, and that is the whole
+       reason these three exist. A grey hairline on #f3eefc is the one place in
+       this palette where a neutral reads as dirty, and --lk-muted on it reads
+       as faded rather than as secondary. So the tint gets its own edge, its own
+       rule and its own second ink, all violet-shifted to match the ground they
+       sit on. */
+    --lk-tint-line: #e2d8f6;
+    --lk-tint-rule: #f0ecfa;
+    --lk-tint-ink: #5a4d80;
     --lk-ring: rgba(42, 25, 88, .16);
     /* The edge of a handle nobody has selected. It is NOT --lk-ring: at .16 a
        26px circle on an orange strip had no edge at all, and the second
        boundary looked like a smudge rather than something to drag. */
     --lk-handle-edge: rgba(42, 25, 88, .45);
 
-    /* The ink ladder. Every one of these clears WCAG AA (4.5:1) against
-       --lk-surface, because all five are used between 11px and 15px — and the
-       two lightest carry the section titles, the tile meta and the help text.
-       They were 3.1:1 (--lk-muted) and 2.6:1 (--lk-faint): grey on white that
-       is legible on a desk monitor and not on a phone in daylight. What
-       separates the steps now is weight, size and caps as much as tone. */
+    /* The ink ladder: THREE greys, and the design canvas has no fourth.
+
+       It had five. --lk-sub (#5f6672) and --lk-faint (#6f7683) sat either side
+       of --lk-muted and were never a step anybody could see — #6f7683 against
+       #6a7180 is a difference of five in one channel, which is not a decision,
+       it is a drift. Both are gone and their consumers took the neighbour the
+       canvas actually draws: an end-caption and the midnight/noon line are
+       --lk-body, everything else that was faint is --lk-muted.
+
+       All three clear WCAG AA (4.5:1) against --lk-surface, because all three
+       are used between 10.5px and 15px. Collapsing --lk-faint RAISED the
+       contrast of every caption that used it, from 4.6:1 to 4.9:1. What
+       separates the steps is weight, size and caps as much as tone. */
     --lk-ink: #16181d;
-    --lk-sub: #5f6672;
     --lk-body: #4b5563;
     --lk-muted: #6a7180;
-    --lk-faint: #6f7683;
 
     /* transparent, not white: the pairing container paints the page behind us,
        and claiming it would flatten every card against it. */
     --lk-page: transparent;
     --lk-surface: #ffffff;
-    --lk-raised: #f7f8fa;
     --lk-line: #eceef2;
     --lk-field: #e3e6ec;
     /* The edge of an UNTICKED box or radio, and only that. A shade darker than
@@ -86,8 +117,18 @@
     --lk-box: #d4d8e0;
     --lk-hover: #c9d2e0;
     /* A chevron is an affordance, not a value: lighter than the text it sits
-       beside, so a list of rows reads as labels rather than as arrows. */
-    --lk-chev: #a8aeb9;
+       beside, so a list of rows reads as labels rather than as arrows.
+
+       #a8aeb9 took that too far. A non-text UI component still owes 3:1, and
+       at #a8aeb9 the chevron was 2.4:1 — an affordance nobody has to read is
+       still one somebody has to SEE. The canvas's #8f97a3 is 3.2:1 and is
+       still visibly lighter than every ink in the ladder above. */
+    --lk-chev: #8f97a3;
+    /* The circled "i" on a .tip. Its own grey rather than the chevron's,
+       because it is a ring drawn around a LETTER: the ring may sit at the
+       chevron's weight, the letter inside it may not (it is text, and owes
+       4.5:1), so the two are named separately and only the ring is light. */
+    --lk-tip-edge: #8a919e;
     --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
 
     /* The pairing primitives' own colours, here for the same reason every
@@ -97,6 +138,10 @@
     --lk-slider-knob-shadow: 0 0 0 2px rgba(22, 24, 29, .6), 0 1px 4px rgba(16, 24, 40, .35);
     --lk-slider-knob-shadow-warm: 0 0 0 2.5px #ffffff, 0 1px 4px rgba(16, 24, 40, .35);
     --lk-slider-inset: inset 0 0 0 1px rgba(22, 24, 29, .1);
+    /* The ring around a knob drawn at icon scale, where the full
+       --lk-slider-knob-shadow is two shadows on a 4px mark and comes out as a
+       smudge. One ring, half a pixel thinner than the real control's. */
+    --lk-knob-edge: rgba(22, 24, 29, .5);
     /* The two axes a slider can carry, as whole gradients rather than as a
        list of stops: a ramp is one decision about what the axis LOOKS like,
        and splitting it into six tokens would invite five of them to change. */
@@ -104,6 +149,25 @@
                                     #f2e6d6, #eaf0fb, #dbe8fb);
     --lk-bright-ramp: linear-gradient(90deg, #221a3d, #43318a, #7a5fc4,
                                       #b9a6e4, #ece5f9);
+    /* How light it is OUTSIDE, pale to deep — the third axis this app draws,
+       and the only one that runs dark at the TOP of its range rather than the
+       bottom. It is the week grid's scale, and its six stops are the same six
+       the cells are quantised to: `SHADES` in views/shared/week-grid.js, which
+       cannot read a custom property and so carries them again. Change one and
+       change the other; `pair-view-styles.test.ts` checks that they agree. */
+    --lk-lux-ramp: linear-gradient(90deg, #f4f2fa, #e0d6f6, #c4b0ec,
+                                   #9f81dc, #6b48bc, #3b2279);
+    /* The same six stops, the other way round, for the sun's own height.
+       Reversed on purpose: the lux ramp measures HOW MUCH LIGHT there is, so
+       more light is more ink, while this one is a picture of the DAY — and the
+       dark end of a day is the night. The two never meet on screen, because a
+       Room-sensing Light has a sensor or it has the sun. */
+    --lk-sun-ramp: linear-gradient(90deg, #3b2279, #6b48bc, #9f81dc,
+                                   #c4b0ec, #f4f2fa);
+    /* The hours of a "when does this room get its sun?" tile: the ones that
+       ARE this room's sun, and the ones that are the day going on around it. */
+    --lk-peak-on: #4b2ea0;
+    --lk-peak-off: #dfd4f4;
     /* The two ENDS of the warmth axis, for the two tiles that nudge along it
        rather than setting it. The whole ramp draws the same picture on both,
        which is no picture at all, so each of these runs from the middle of
@@ -112,13 +176,13 @@
        the real end of the axis is a chip with no edge, so the tile that said
        "cooler" showed nothing at all. Deepened to where it reads, and no
        further — it is a picture of a direction, not a colour to match. */
-    --lk-warmer-ramp: linear-gradient(90deg, #f7efe3, #e8892c);
-    --lk-cooler-ramp: linear-gradient(90deg, #f7efe3, #7ba7e0);
+    --lk-warmer-ramp: linear-gradient(90deg, #f2e6d6, #e8892c);
+    --lk-cooler-ramp: linear-gradient(90deg, #f2e6d6, #9fc0f0);
     /* A lamp that is ON, drawn rather than named: the one warm accent in an
        interface that is otherwise entirely violet, because "on" is a picture of
        light and the brand colour is a picture of the app. */
-    --lk-lamp-lit: #f0b429;
-    --lk-lamp-glow: rgba(240, 180, 41, .22);
+    --lk-lamp-lit: #f4c24a;
+    --lk-lamp-glow: rgba(244, 194, 74, .32);
     --lk-handle-shadow: 0 2px 6px rgba(16, 24, 40, .2);
     /* A small mark lifted off whatever it is drawn ON — the curve chart's
        selected point, which sits on top of a bar of any colour. */
@@ -129,6 +193,14 @@
     --lk-select-halo: 0 0 0 3px rgba(42, 25, 88, .18);
     --lk-handle-shadow-sel: 0 0 0 4px var(--lk-ring), 0 2px 8px rgba(16, 24, 40, .28);
     --lk-hairline: rgba(22, 24, 29, .1);
+    /* The two-hour cell a sensor reported NOTHING in, drawn as a hatch. Its own
+       two colours because nothing else in the app is a hatch: the pale stripe
+       has to sit above --lk-line without becoming white (a white stripe made
+       the cell read as missing from the grid rather than as empty in it), and
+       the edge has to hold the cell's rectangle at 11px tall, which the stripes
+       alone do not. */
+    --lk-hatch-pale: #f7f8fa;
+    --lk-hatch-edge: #dfe3e9;
     --lk-day-mark: rgba(22, 24, 29, .4);
     /* The curve chart's own "you are editing this point" line. Accent rather
        than ink, because on that chart it marks a SELECTION; on the day strip
@@ -141,6 +213,12 @@
     /* Not an error. The one thing that reads this way is a schedule overlap,
        which is allowed, resolved deterministically, and worth pointing at. */
     --lk-warn-bg: #fdf3e7; --lk-warn-ink: #7a4a10;
+    /* A key the Homey accepted and then refused to build a Flow with. Its own
+       colour rather than --lk-bad-ink, and a full step lighter, because it is
+       drawn as an EDGE round a field and as a 16px badge — at #8f1d18 a
+       1.5px border round a white field read as damage, and the message beside
+       it says the key itself is fine. */
+    --lk-reject: #c05a3e;
     --lk-flat-bg: #f4f5f7; --lk-flat-ink: #5b616e;
 
     background: var(--lk-page);
@@ -180,8 +258,13 @@
               margin-bottom: 10px; }
 
   #jb-root .section { margin-bottom: 18px; }
-  #jb-root .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase;
-                       letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 8px 2px; }
+  /* The label over a group — "Does", "To", "When does this room get its sun?".
+     It is a .control-title with nothing on its right: the same 13.5px/600 ink,
+     sentence case. It used to be 12px uppercase small-caps in the faintest
+     grey, which made the two words holding the job screen's sentence together
+     read as filing-cabinet labels rather than as the sentence's own verbs. */
+  #jb-root .section-title { font-size: 13.5px; font-weight: 600; line-height: 1.2;
+                       color: var(--lk-ink); margin: 0 0 9px; }
 
   /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
   #jb-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
@@ -196,7 +279,7 @@
 
   #jb-root input[type=text], #jb-root input[type=password], #jb-root select {
     width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
-    border: 1.5px solid var(--lk-field); border-radius: 11px; background: var(--lk-surface);
+    border: 1.5px solid var(--lk-field); border-radius: 12px; background: var(--lk-surface);
     color: var(--lk-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
   /* The chevron's fill stays a literal: #6a7180 is --lk-muted, and a data URI
      cannot read a custom property. So this is the one place a token's value is
@@ -214,11 +297,19 @@
   #jb-root .btn:hover { border-color: var(--lk-hover); }
   #jb-root .btn:disabled { opacity: .45; cursor: not-allowed; }
   /* The same button across the width of the screen. What a secondary action
-     looks like when it is the only one on a pushed screen — "Stop listening",
-     "Close" — where a primary button would claim the choice was made. */
+     looks like when it is the only one on a pushed screen — "Close" — where a
+     primary button would claim the choice was made. */
   #jb-root .btn.wide { display: block; width: 100%; font-size: 16px; font-weight: 600;
                     padding: 14px; border-radius: 12px; min-height: 50px;
                     box-sizing: border-box; margin-top: 16px; }
+  /* And the same button when it is the SECOND of two, under a primary — "Put
+     them back". It borrows the primary's outline rather than the field grey,
+     because the pair is one decision offered twice ("show me" / "undo that")
+     and a grey partner reads as the disabled twin of the button above it.
+     Lighter than the primary in weight and height, never in hue. */
+  #jb-root .btn.wide.accent { border-color: var(--lk-accent); color: var(--lk-accent);
+                           font-size: 15px; font-weight: 500; padding: 13px;
+                           min-height: 48px; }
   #jb-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
                      border-radius: 12px; border: none; background: var(--lk-accent);
                      color: var(--lk-accent-ink); cursor: pointer; min-height: 50px;
@@ -227,7 +318,7 @@
 
   /* A default ground, so a .msg shown before any state class lands on it is
      still a message rather than bare text on the page. */
-  #jb-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 11px; font-size: 13.5px;
+  #jb-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 12px; font-size: 13.5px;
              line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
   #jb-root .ok { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
   #jb-root .bad { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
@@ -259,7 +350,7 @@
      device types. */
   #jb-root .steps.tight i { width: 16px; }
   #jb-root .steps i.on { background: var(--lk-accent); }
-  #jb-root .steps span { margin-left: 4px; font-size: 12px; color: var(--lk-faint); }
+  #jb-root .steps span { margin-left: 4px; font-size: 12px; color: var(--lk-muted); }
 
   /* `label · value · chevron`. The one shape everything secondary takes:
      a row that says what it is, what it is set to, and that it can be opened.
@@ -341,7 +432,7 @@
   #jb-root .slider.warm .knob { background: var(--lk-ink);
                              box-shadow: var(--lk-slider-knob-shadow-warm); }
   #jb-root .ends { display: flex; justify-content: space-between;
-                font-size: 11px; color: var(--lk-faint); margin: 9px 0 0; }
+                font-size: 11px; color: var(--lk-body); margin: 9px 0 0; }
 
   /* An aside under a control: "there is a device type that does this for you".
      Deliberately NOT a .msg — a message has a coloured ground and is about
@@ -356,7 +447,7 @@
      that one instead. */
   #jb-root .tip { display: flex; align-items: flex-start; gap: 7px;
                margin: 13px 0 0; font-size: 12px; line-height: 1.45;
-               font-style: italic; color: var(--lk-faint); }
+               font-style: italic; color: var(--lk-muted); }
   /* The circled i, DRAWN rather than set. A glyph that the phone's font does
      not carry renders as a box, which is why the one other mark this design
      puts inside text — the row chevron — is an entity rather than an icon; a
@@ -370,10 +461,10 @@
      text, and a mark written as a child would be written over. */
   #jb-root .tip::before { content: "i"; flex: none; box-sizing: border-box;
                        width: 15px; height: 15px; margin-top: 1px;
-                       border: 1.2px solid var(--lk-chev); border-radius: 50%;
+                       border: 1.2px solid var(--lk-tip-edge); border-radius: 50%;
                        font-size: 10px; font-weight: 700; font-style: normal;
                        line-height: 12.6px; text-align: center;
-                       color: var(--lk-chev); }
+                       color: var(--lk-muted); }
 
   /* The swatches a colour is chosen from, four across.
      Not one row of eight: at 390px that is 34px a swatch, under the touch
@@ -421,11 +512,97 @@
                            border: 3px solid var(--lk-accent); z-index: 2;
                            box-shadow: var(--lk-handle-shadow-sel); }
   #jb-root .clockline { display: flex; justify-content: space-between;
-                     font-size: 11px; color: var(--lk-faint); margin: 8px 2px 4px; }
+                     font-size: 11px; color: var(--lk-body); margin: 8px 2px 4px; }
+
+  /* The three or four decisions a flow is about to ask for, numbered.
+
+     SHARED rather than intro-only: the credential gate draws the same rows for
+     the four steps of minting a key, and it used to draw an <ol> instead — a
+     browser list with a browser's numerals, inside a screen where every other
+     number is a filled circle. Two places, one shape.
+
+     Spaced, not ruled. A hairline between two decisions turns a promise about
+     what is coming into a settings list, and the numbers already say these are
+     three of one thing. */
+  #jb-root .plan { display: flex; flex-direction: column; gap: 14px;
+                margin: 0 0 22px; }
+  #jb-root .decision { display: flex; align-items: flex-start; gap: 12px; }
+  #jb-root .decision .n { flex: none; width: 26px; height: 26px; border-radius: 50%;
+                       box-sizing: border-box;
+                       background: var(--lk-accent-tint); color: var(--lk-accent-strong);
+                       border: 1.5px solid var(--lk-accent-line);
+                       font-size: 13px; font-weight: 700;
+                       display: flex; align-items: center; justify-content: center; }
+  #jb-root .decision .what { font-size: 15px; font-weight: 600; line-height: 26px; }
+  #jb-root .decision .why { font-size: 13px; color: var(--lk-muted); margin-top: 2px;
+                         line-height: 1.45; }
 
   /* ==== end shared base ==== */
 
   /* ---- this view only ---------------------------------------------------- */
+
+  /* ON - WITH LIGHTKEEPER: a card, above the grid, and not a tenth tile.
+
+     It is the only job that carries three further decisions — where the colour
+     comes from, where the level comes from, and what a second press does — and
+     a 100px grid cell cannot hold any of them. Above the nine rather than below
+     because it is the job most of these buttons want and the grid is what you
+     fall back to; "Do nothing" is below for the mirror-image reason.
+
+     It is the base's `.tile`, so its chosen state is the same border and the
+     same tint as every other "this is the one you picked" in the app, and
+     `renderGrid` finds it by its preset kind rather than by position. */
+  #jb-root .lk { padding: 0; overflow: hidden; margin-bottom: 7px; }
+  #jb-root .lk .head { display: flex; align-items: flex-start; gap: 11px;
+                       width: 100%; padding: 13px 14px; box-sizing: border-box;
+                       background: none; border: none; font: inherit; color: inherit;
+                       text-align: left; cursor: pointer; }
+  #jb-root .lk .head .what { flex: 1; }
+  #jb-root .lk .head .sub { display: block; font-size: 12.5px; color: var(--lk-muted);
+                            margin-top: 3px; line-height: 1.35; }
+  /* Chosen, the head sits on the accent tint, so its two lines take the inks
+     that were mixed for that ground rather than the neutrals that were mixed
+     for white. */
+  #jb-root .lk.sel .head .name { font-weight: 600; }
+  #jb-root .lk.sel .head .sub { color: var(--lk-tint-ink); }
+
+  /* The three decisions, revealed under the head once the job is chosen. They
+     are INSIDE the card rather than under it — a `.preset` block below the grid
+     would put them past nine tiles from the thing they belong to.
+
+     And on a white card of their own, inside the tinted one. Laid straight on
+     the tint they were three rules drawn across a coloured panel, which read as
+     the tile still going rather than as a second thing beginning; a surface
+     under them says these are settings ON the job above. Its edge and its own
+     hairlines are a violet-tinted pair rather than the app's greys, because a
+     grey line on the accent tint is the one place in the palette where a
+     neutral looks dirty. */
+  #jb-root .lk .rows { background: var(--lk-surface); border: 1px solid var(--lk-tint-line);
+                       border-radius: 12px; padding: 2px 12px; margin: 0 14px 14px; }
+  #jb-root .lk .row { display: flex; align-items: center; gap: 10px; width: 100%;
+                      padding: 11px 0; min-height: 44px; box-sizing: border-box;
+                      background: none; border: none; border-top: 1px solid var(--lk-tint-rule);
+                      font: inherit; color: inherit; text-align: left; cursor: pointer; }
+  #jb-root .lk .rows > :first-child { border-top: none; }
+  #jb-root .lk .row .label { flex: none; font-size: 13.5px; }
+  /* The chosen setup's NAME, at the end of the line and in the accent, because
+     it is the answer rather than a caption. Truncated rather than wrapped: a
+     device called "Evening curve, upstairs landing" must not make this row two
+     lines taller than the one below it. */
+  #jb-root .lk .row .value { flex: 1; text-align: right; font-size: 13.5px;
+                             font-weight: 500;
+                             color: var(--lk-accent-strong); overflow: hidden;
+                             text-overflow: ellipsis; white-space: nowrap; }
+  #jb-root .lk .row .chev { flex: none; color: var(--lk-chev); font-size: 17px; }
+  /* The base's own switch, minus the rule it draws above itself — this row
+     already has one of its own, and two hairlines read as a gap. */
+  #jb-root .lk .toggle { margin-top: 0; padding: 11px 0; gap: 10px;
+                         border-top: 1px solid var(--lk-tint-rule); }
+
+  /* Icons here lead their line rather than centring over a label, exactly as
+     they do on the "Do nothing" row. */
+  #jb-root .lk .ico { margin: 0; flex: none; width: 22px; }
+
 
   /* NINE JOBS AS A GRID, and the grid is the grouping.
 
@@ -455,6 +632,11 @@
   /* The grid centres its own icons with `margin: auto`, which in a row pushes
      the label to the far end. Here the icon leads the line. */
   #jb-root .none .ico { margin: 0; }
+  /* Dashed, where the Off TILE's identical ring is solid. Off is a job: it
+     switches the lights off. This is the absence of one, and it is marked the
+     way "Add a time" and the empty-lights panel are — an outline round
+     something that is not there. */
+  #jb-root .none .ico-off .lamp { border-style: dashed; }
   #jb-root .none .name { flex: 1; font-size: 14.5px; font-weight: 500; }
 
   /* ---- the picture on each tile ------------------------------------------
@@ -471,35 +653,88 @@
 
   /* Power. A lit lamp, an unlit one, and the two of them side by side. */
   #jb-root .ico-on, #jb-root .ico-off, #jb-root .ico-toggle { align-items: center; }
-  #jb-root .ico-on .lamp { width: 18px; height: 18px; border-radius: 50%;
+  #jb-root .ico-on .lamp { width: 20px; height: 20px; border-radius: 50%;
                            background: var(--lk-lamp-lit);
                            box-shadow: 0 0 0 3px var(--lk-lamp-glow); }
-  #jb-root .ico-off .lamp { width: 18px; height: 18px; border-radius: 50%;
-                            border: 2px solid var(--lk-box); box-sizing: border-box; }
+  #jb-root .ico-off .lamp { width: 20px; height: 20px; border-radius: 50%;
+                            border: 2px solid var(--lk-hover); box-sizing: border-box; }
   #jb-root .ico-toggle .lamp { width: 14px; height: 14px; border-radius: 50%;
                                background: var(--lk-lamp-lit); }
   #jb-root .ico-toggle .lamp.out { background: none;
-                                   border: 2px solid var(--lk-box); box-sizing: border-box; }
+                                   border: 2px solid var(--lk-hover); box-sizing: border-box; }
 
   /* Brightness. Three bars, climbing — and the same three reversed for down,
      because a dimmer is not a different picture, it is the same one read the
      other way. */
   #jb-root .ico-up .bar, #jb-root .ico-down .bar { width: 4px; border-radius: 2px;
                                                    background: var(--lk-accent); }
-  #jb-root .ico-up .bar:nth-child(1), #jb-root .ico-down .bar:nth-child(3) { height: 8px; }
-  #jb-root .ico-up .bar:nth-child(2), #jb-root .ico-down .bar:nth-child(2) { height: 14px; }
+  #jb-root .ico-up .bar:nth-child(1), #jb-root .ico-down .bar:nth-child(3) { height: 7px; }
+  #jb-root .ico-up .bar:nth-child(2), #jb-root .ico-down .bar:nth-child(2) { height: 13px; }
   #jb-root .ico-up .bar:nth-child(3), #jb-root .ico-down .bar:nth-child(1) { height: 20px; }
 
   /* The three that SET a value are tracks, not steps: the whole axis, with the
      value living somewhere along it. */
-  #jb-root .ico-level .track { width: 30px; height: 12px; border-radius: 6px;
+  /* Pill-shaped and wider than they were: at 30px a track with a knob on it
+     was a grey lozenge, and the two warmth tiles — which are a track and
+     NOTHING else — had no room to show a direction at all. The level track
+     carries a knob, so it is the shorter of the two heights. */
+  #jb-root .ico-level .track { position: relative; width: 38px; height: 12px;
+                               border-radius: 999px; box-sizing: border-box;
+                               border: 1px solid var(--lk-hairline);
                                background: var(--lk-bright-ramp); }
-  #jb-root .ico-warm .track { width: 30px; height: 12px; border-radius: 6px;
-                              background: var(--lk-warmer-ramp); }
-  #jb-root .ico-cool .track { width: 30px; height: 12px; border-radius: 6px;
-                              background: var(--lk-cooler-ramp); }
-  #jb-root .ico-colour { gap: 4px; align-items: center; }
-  #jb-root .ico-colour .dot { width: 9px; height: 9px; border-radius: 50%; }
+  #jb-root .ico-level .track::after { content: ''; position: absolute; left: 58%;
+                                      top: -3px; bottom: -3px; width: 4px;
+                                      margin-left: -2px; border-radius: 3px;
+                                      background: var(--lk-surface);
+                                      box-shadow: 0 0 0 1.5px var(--lk-knob-edge); }
+  #jb-root .ico-warm .track, #jb-root .ico-cool .track { width: 38px; height: 14px;
+                              border-radius: 999px; box-sizing: border-box;
+                              border: 1px solid var(--lk-hairline); }
+  #jb-root .ico-warm .track { background: var(--lk-warmer-ramp); }
+  #jb-root .ico-cool .track { background: var(--lk-cooler-ramp); }
+  #jb-root .ico-colour { gap: 3px; align-items: center; }
+  #jb-root .ico-colour .dot { width: 12px; height: 12px; border-radius: 50%; }
+
+  /* The composed job: the ON dot, inside a Lightkeeper arc.
+
+     It was a lamp lit down one side, which is a picture of "half on" — the
+     wrong idea entirely, since this job turns the light fully on and takes only
+     its VALUES from elsewhere. The arc is the qualifier: the same switching
+     family as the On tile, with something of ours drawn around it. Two of the
+     four borders are transparent and the square is rotated, which is how a
+     quarter of a circle is drawn without an SVG. */
+  #jb-root .ico-lk { align-items: center; position: relative; }
+  #jb-root .ico-lk .lamp { width: 16px; height: 16px; border-radius: 50%;
+                           background: var(--lk-lamp-lit); }
+  #jb-root .ico-lk::after { content: ''; position: absolute; width: 24px; height: 24px;
+                            left: 50%; top: 50%; margin: -12px 0 0 -12px;
+                            box-sizing: border-box; border-radius: 50%;
+                            border: 2px solid var(--lk-accent);
+                            border-right-color: transparent;
+                            border-bottom-color: transparent;
+                            transform: rotate(45deg); }
+  /* Press-again-to-turn-off: the same two dots the Toggle tile carries, at row
+     scale. The row had no picture at all while the two above it did, which read
+     as a setting that had wandered in from somewhere else rather than as the
+     third of three decisions. */
+  #jb-root .ico-pair { align-items: center; gap: 3px; }
+  #jb-root .ico-pair .lamp { width: 7px; height: 7px; border-radius: 50%;
+                             background: var(--lk-lamp-lit); }
+  #jb-root .ico-pair .lamp.out { background: none; box-sizing: border-box;
+                                 border: 1.5px solid var(--lk-hover); }
+  #jb-root .ico-swatch { align-items: center; }
+  #jb-root .ico-swatch .chip { width: 18px; height: 18px; border-radius: 5px;
+                               background: var(--lk-warmer-ramp); }
+  /* The level picture at row scale, and its two lower bars are PALER than the
+     top one — the same three-step climb the Brighter tile draws, read here as a
+     level rather than as a direction, so the tallest bar is the only one at
+     full strength. */
+  #jb-root .ico-level-row { align-items: flex-end; gap: 2px; height: 17px; }
+  #jb-root .ico-level-row .bar { width: 3.5px; border-radius: 1px;
+                                 background: var(--lk-accent); }
+  #jb-root .ico-level-row .bar:nth-child(1) { height: 6px; background: var(--lk-level-low); }
+  #jb-root .ico-level-row .bar:nth-child(2) { height: 11px; background: var(--lk-level-mid); }
+  #jb-root .ico-level-row .bar:nth-child(3) { height: 17px; }
 
   /* ---- what a job is set to ---------------------------------------------- */
 
@@ -532,7 +767,7 @@
                    background: none; border: none; border-bottom: 1px solid var(--lk-line);
                    font: inherit; color: inherit; text-align: left; cursor: pointer; }
   #jb-root .pick:last-child { border-bottom: none; }
-  #jb-root .pick .box { flex: none; width: 22px; height: 22px; border-radius: 6px;
+  #jb-root .pick .box { flex: none; width: 20px; height: 20px; border-radius: 6px;
                         border: 1.5px solid var(--lk-box); box-sizing: border-box;
                         display: flex; align-items: center; justify-content: center;
                         font-size: 13px; font-weight: 700; color: transparent; }
@@ -555,6 +790,44 @@
     in the middle of that sentence.
   -->
   <div class="section-title" data-i18n="job.does"></div>
+
+  <!--
+    Drawn only where the payload offers it: the driver withdraws this job when
+    the house owns no circadian light, curve, schedule or Room-sensing Light,
+    because the two rows below would then push a screen with nothing on it.
+  -->
+  <div class="tile lk" id="jb-lk" style="display:none;">
+    <button class="head" id="jb-lkHead" type="button" aria-pressed="false">
+      <span class="ico ico-lk"><span class="lamp"></span></span>
+      <span class="what">
+        <span class="name" id="jb-lkName"></span>
+        <span class="sub" id="jb-lkSub"></span>
+      </span>
+    </button>
+
+    <div class="rows" id="jb-lkRows" style="display:none;">
+      <button class="row" id="jb-lkColour" type="button">
+        <span class="ico ico-swatch"><span class="chip"></span></span>
+        <span class="label" data-i18n="job.colourAndWarmth"></span>
+        <span class="value" id="jb-lkColourValue"></span>
+        <span class="chev">&rsaquo;</span>
+      </button>
+      <button class="row" id="jb-lkBright" type="button">
+        <span class="ico ico-level-row">
+          <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+        </span>
+        <span class="label" data-i18n="job.brightness"></span>
+        <span class="value" id="jb-lkBrightValue"></span>
+        <span class="chev">&rsaquo;</span>
+      </button>
+      <button class="toggle" id="jb-lkAgain" type="button" aria-checked="true">
+        <span class="ico ico-pair"><span class="lamp"></span><span class="lamp out"></span></span>
+        <span class="label" data-i18n="job.pressAgainOff"></span>
+        <span class="track"><span class="knob"></span></span>
+      </button>
+    </div>
+  </div>
+
   <div class="grid" id="jb-grid"></div>
 
   <button class="tile none" id="jb-none" type="button" aria-pressed="false">
@@ -754,6 +1027,16 @@ function __lkBootJb(Homey) {
     rest: document.getElementById('jb-rest'),
     more: document.getElementById('jb-more'),
     colourName: document.getElementById('jb-colourName'),
+    lk: document.getElementById('jb-lk'),
+    lkHead: document.getElementById('jb-lkHead'),
+    lkName: document.getElementById('jb-lkName'),
+    lkSub: document.getElementById('jb-lkSub'),
+    lkRows: document.getElementById('jb-lkRows'),
+    lkColour: document.getElementById('jb-lkColour'),
+    lkColourValue: document.getElementById('jb-lkColourValue'),
+    lkBright: document.getElementById('jb-lkBright'),
+    lkBrightValue: document.getElementById('jb-lkBrightValue'),
+    lkAgain: document.getElementById('jb-lkAgain'),
     toTitle: document.getElementById('jb-toTitle'),
     lights: document.getElementById('jb-lights'),
     tryCard: document.getElementById('jb-tryCard'),
@@ -768,6 +1051,20 @@ function __lkBootJb(Homey) {
     presetKind: 'none',
     brightness: { brightness: 0.6, temperature: undefined },
     colour: null,
+    /**
+     * The composed job's own answer: two device ids and a switch.
+     *
+     * `'none'` is LEAVE_ALONE, the same spelling the store and the Flow card
+     * use, so the value this screen holds is the value that is saved rather
+     * than a translation of it. `pressAgainOff` starts true because one button
+     * that both lights a room and darkens it is what most people reach for —
+     * two buttons is the special case, and that is what turning it off is for.
+     */
+    lightkeeper: { colourSource: 'none', brightnessSource: 'none', pressAgainOff: true },
+    /** What those two ids are CALLED. Resolved by the driver; `lib/` cannot translate. */
+    sourceNames: { colour: '', brightness: '' },
+    /** The composed job itself, or null where the driver withdrew it. */
+    lkJob: null,
     colors: [],
     featuredColors: 8,
     showAllColours: false,
@@ -874,6 +1171,63 @@ function __lkBootJb(Homey) {
     renderColours();
   });
 
+  /**
+   * The card: chosen or not, and the three decisions under it when it is.
+   *
+   * Its blurb CHANGES when it is chosen — "turn on with level and warmth from
+   * other Lightkeeper devices" is what the job is for, and once somebody has
+   * picked it the useful sentence is the one about when the values are read.
+   * The unchosen line would otherwise sit above two rows that had already
+   * answered it.
+   */
+  function renderLightkeeper() {
+    var job = state.lkJob;
+    el.lk.style.display = job ? '' : 'none';
+    if (!job) return;
+
+    var chosen = state.chosen === job.id;
+    el.lk.className = chosen ? 'tile lk sel' : 'tile lk';
+    el.lkHead.setAttribute('aria-pressed', chosen ? 'true' : 'false');
+    el.lkName.textContent = job.label;
+    el.lkSub.textContent = Homey.__(chosen ? 'job.lightkeeperChosen' : 'job.lightkeeperBlurb');
+
+    el.lkRows.style.display = chosen ? '' : 'none';
+    if (!chosen) return;
+
+    el.lkColourValue.textContent = state.sourceNames.colour;
+    el.lkBrightValue.textContent = state.sourceNames.brightness;
+    el.lkAgain.setAttribute('aria-checked', state.lightkeeper.pressAgainOff ? 'true' : 'false');
+  }
+
+  /**
+   * A row taps straight through to the picker.
+   *
+   * Nothing is pushed on the way, and that is deliberate rather than an
+   * omission: `setSource` creates the rule itself when there is none, so the
+   * picker does not need one to exist first — and the rule CANNOT exist yet
+   * where neither source is chosen, because a composed job naming neither is
+   * refused. The same pattern the buttons screen uses to reach this one: the
+   * driver is told which question is open, then the view is shown.
+   */
+  function openSource(kind) {
+    emit('editSource', kind).then(function () {
+      Homey.showView('source');
+    }).catch(fail);
+  }
+
+  el.lkColour.addEventListener('click', function () { openSource('colour'); });
+  el.lkBright.addEventListener('click', function () { openSource('brightness'); });
+
+  el.lkAgain.addEventListener('click', function () {
+    state.lightkeeper.pressAgainOff = !state.lightkeeper.pressAgainOff;
+    renderLightkeeper();
+    push();
+  });
+
+  el.lkHead.addEventListener('click', function () {
+    choose(state.chosen === (state.lkJob && state.lkJob.id) ? null : state.lkJob);
+  });
+
   function renderPreset() {
     el.preset.style.display = state.presetKind === 'brightness' ? '' : 'none';
     el.colours.style.display = state.presetKind === 'colour' ? '' : 'none';
@@ -929,17 +1283,36 @@ function __lkBootJb(Homey) {
   }
 
   function render() {
+    renderLightkeeper();
     renderGrid();
     renderPreset();
     renderLights();
-    // Nothing to try when the answer is "do nothing", and a Test that ran the
-    // absence of a job would be a control with nothing to prove.
-    el.tryCard.style.display = state.chosen === null ? 'none' : '';
+    /**
+     * Nothing to try when the answer is "do nothing", and a Test that ran the
+     * absence of a job would be a control with nothing to prove.
+     *
+     * The composed job counts as unanswered until a source is chosen, for the
+     * same reason: nothing has been saved yet, so a Test would demonstrate the
+     * DEGRADATION — the lamps coming on at whatever they were — under a card
+     * that promises the level and the warmth.
+     */
+    el.tryCard.style.display = state.chosen === null
+      || (state.presetKind === 'lightkeeper' && !lightkeeperAnswered()) ? 'none' : '';
   }
 
+  /**
+   * The nine, and ONLY the nine.
+   *
+   * `state.jobs` is what the driver offers, in the order `availableFunctions`
+   * yields — and the composed job trails it rather than sitting in it, because
+   * it is drawn as the card above. Filtered on the preset KIND rather than on
+   * the id, so the screen never carries a second list of function names to keep
+   * in step with the engine's.
+   */
   function renderGrid() {
     clear(el.grid);
     for (var i = 0; i < state.jobs.length; i++) {
+      if (state.jobs[i].preset === 'lightkeeper') continue;
       el.grid.appendChild(renderJob(state.jobs[i]));
     }
     el.none.setAttribute('aria-pressed', state.chosen === null ? 'true' : 'false');
@@ -998,6 +1371,25 @@ function __lkBootJb(Homey) {
     }
     render();
     push();
+  }
+
+  /**
+   * Whether the composed job has been answered at all.
+   *
+   * A `lightkeeper_on` naming NEITHER source is refused by the driver and by
+   * the stored-plan validator alike — it is plain "On" wearing a name that
+   * promises the level and the warmth as well. So the screen does not send one:
+   * tapping the card opens the two rows, and the job is saved by the first
+   * source that answers one of them.
+   *
+   * The colour job is seeded instead of waited on, and the difference is where
+   * the answer lives: a palette is on this screen, so the first swatch is a
+   * defensible guess. Which of somebody's Lightkeeper devices a button should
+   * follow is not something this screen may guess at.
+   */
+  function lightkeeperAnswered() {
+    return state.lightkeeper.colourSource !== 'none'
+      || state.lightkeeper.brightnessSource !== 'none';
   }
 
   el.none.addEventListener('click', function () { choose(null); });
@@ -1095,6 +1487,13 @@ function __lkBootJb(Homey) {
       return preset;
     }
     if (state.presetKind === 'colour' && state.colour) return { color: state.colour };
+    if (state.presetKind === 'lightkeeper') {
+      return {
+        colourSource: state.lightkeeper.colourSource,
+        brightnessSource: state.lightkeeper.brightnessSource,
+        pressAgainOff: state.lightkeeper.pressAgainOff,
+      };
+    }
     return null;
   }
 
@@ -1118,6 +1517,12 @@ function __lkBootJb(Homey) {
    */
   var pushing = 0;
   function push() {
+    // See `lightkeeperAnswered`: an unanswered composed job is not yet a job,
+    // and sending one would put the driver's refusal under a card the user has
+    // just this moment tapped.
+    if (state.presetKind === 'lightkeeper' && !lightkeeperAnswered()) {
+      return Promise.resolve(true);
+    }
     var mine = ++pushing;
     return emit('setGesture', {
       job: state.chosen,
@@ -1138,7 +1543,26 @@ function __lkBootJb(Homey) {
     state.lights = payload.lights || [];
     state.allLabel = payload.allLabel || '';
     state.chosenLights = payload.chosenLights || null;
-    if (payload.preset && payload.preset.color) state.colour = payload.preset.color;
+    state.sourceNames = payload.sourceNames || { colour: '', brightness: '' };
+    state.lkJob = null;
+    for (var j = 0; j < state.jobs.length; j++) {
+      if (state.jobs[j].preset === 'lightkeeper') state.lkJob = state.jobs[j];
+    }
+    /**
+     * Which stored preset this is, by the field only that kind has.
+     *
+     * Three kinds now, so the old two-arm `color ? … : …` would have read a
+     * composed preset as a brightness and put its two device ids on the
+     * brightness slider. Discriminated in the same order and on the same fields
+     * as `isLightkeeperPreset`/`isColorPreset` do one layer down.
+     */
+    if (payload.preset && payload.preset.colourSource !== undefined) {
+      state.lightkeeper = {
+        colourSource: payload.preset.colourSource,
+        brightnessSource: payload.preset.brightnessSource,
+        pressAgainOff: payload.preset.pressAgainOff !== false
+      };
+    } else if (payload.preset && payload.preset.color) state.colour = payload.preset.color;
     else if (payload.preset) state.brightness = payload.preset;
     render();
   }).catch(fail);

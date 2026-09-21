@@ -6,7 +6,7 @@ import type { DeviceCatalog } from '../device-catalog';
 import type { TargetSpec } from '../outputs/light-intent';
 import type { LightFunction } from '../mapping/mapping-types';
 import {
-  FUNCTION_CAPABILITY, FUNCTION_PRESET, type MappingPreset,
+  FUNCTION_CAPABILITY, FUNCTION_PRESET, type MappingPreset, type PresetKind,
 } from '../mapping/mapping-types';
 import { LUMINANCE_CAPABILITY } from '../daylight/daylight-types';
 
@@ -36,6 +36,22 @@ const MAX_RULES = 64;
  * and "the view sent it" is not permission to allocate against it.
  */
 const MAX_RULE_LIGHTS = 64;
+
+/**
+ * What a row is missing, as the half-sentence the screen prints after "has no".
+ *
+ * A record keyed on `PresetKind` rather than a ternary, because the ternary it
+ * replaced said "brightness" for everything that was not a colour — which was
+ * true while there were two kinds and became a lie the moment there was a
+ * third. A `lightkeeper_on` row with neither source chosen reported that it had
+ * "no brightness to set", which is not something that row has ever been about.
+ */
+const MISSING_VALUE: Record<PresetKind, string> = {
+  none: 'value to set',
+  brightness: 'brightness to set',
+  colour: 'colour to set',
+  lightkeeper: 'Lightkeeper device to take a colour or a brightness from',
+};
 
 /** A target's shape, before anything is asked of the catalogue. */
 function validateTargetDto(raw: unknown): TargetSpec {
@@ -311,7 +327,7 @@ export function validateMappingRules(
       : readMappingPreset(rule.preset, `${path}.preset`, kind);
 
     if (kind !== 'none' && preset === undefined) {
-      dropped.push({ index: i, reason: `has no ${kind === 'colour' ? 'colour' : 'brightness'} to set` });
+      dropped.push({ index: i, reason: `has no ${MISSING_VALUE[kind]}` });
       return;
     }
     if (kind === 'none' && preset !== undefined) {

@@ -9,6 +9,8 @@ import { LightTargetAdapter, type WriteRecord } from '../outputs/light-target-ad
 import { TargetResolver } from '../outputs/target-resolver';
 import {
   validCapabilityValue,
+  FADE_OUT_GRACE_MS,
+  FADE_OUT_MIN_MS,
   OVERRIDE_EXPIRY_MS,
   OVERRIDE_SETTLE_MS,
   withinOverrideTolerance,
@@ -129,6 +131,25 @@ export interface DaylightDiagnostics extends ReturnType<ControlHistory<DaylightA
      * visible.
      */
     ignoredWrites?: number;
+    /**
+     * And `dim` writes it acknowledged and then took more than one report to
+     * reach. Absent when there are none.
+     *
+     * The same argument as `ignoredWrites` above: `approachingWrite` stops a
+     * slow fade reading as a person, and a lamp that fades for minutes has to
+     * stay legible rather than quietly becoming the normal case.
+     */
+    approachingWrites?: number;
+    /**
+     * And reports of a lamp on its way OFF — part-way down, a median of half a
+     * minute before it says so. Absent when there are none.
+     *
+     * The third of the same family: each one is a lamp doing something ordinary
+     * that used to read as a person, and each has to stay countable afterwards,
+     * because "nothing here looks like an override any more" is only reassuring
+     * if you can see how often it nearly did.
+     */
+    fadeOutOverrides?: number;
   }>;
   lastAction: DaylightAction | null;
   recentFailures: ReturnType<LightTargetAdapter['failures']>;
@@ -225,6 +246,8 @@ export class DaylightRuntime {
    * for the four days of evidence that put it there.
    */
   private readonly overrides = new Map<string, OverrideRecord>();
+  /** Per device: overrides that turned out to be the lamp fading out. See FADE_OUT_GRACE_MS. */
+  private readonly fadeOuts = new Map<string, number>();
 
   /**
    * Where each lamp is currently AIMED, on the perceptual axis.
@@ -408,7 +431,7 @@ export class DaylightRuntime {
     external: boolean,
   ): void {
     if (!validCapabilityValue(capability, value)) {
-      this.history.events.add({ at: this.now(), type: 'report_ignored', deviceId, capability, reason: 'invalid_value' });
+      this.history.ignored({ at: this.now(), type: 'report_ignored', deviceId, capability, reason: 'invalid_value' });
       return;
     }
     this.deps.onEvidence?.('target_report', { controllerId: this.controllerId, deviceId, capability, value, external });
@@ -420,9 +443,28 @@ export class DaylightRuntime {
 
     if (capability === 'onoff') {
       if (value === false) this.scheduler?.cancelTarget(deviceId);
-      if (this.overrides.delete(deviceId)) {
-        this.history.events.add({ at: this.now(), type: 'override_cleared', deviceId, reason: 'power_changed' });
-        this.deps.log(`${deviceId} was power-cycled; daylight control resumes`);
+      const cleared = this.overrides.get(deviceId);
+      if (cleared !== undefined) {
+        this.overrides.delete(deviceId);
+        // Was that "override" this lamp beginning to fade out? See
+        // FADE_OUT_GRACE_MS: a dim report below what we wanted, followed by the
+        // lamp's own off within the minute, is the lamp leaving rather than
+        // somebody arriving. Recorded as what it was instead of as a person.
+        const sinceRaised = this.now() - cleared.at;
+        const fadingOut = value === false
+          && cleared.capability === 'dim'
+          && sinceRaised >= FADE_OUT_MIN_MS
+          && sinceRaised < FADE_OUT_GRACE_MS
+          && cleared.expected !== null
+          && cleared.value < cleared.expected;
+        if (fadingOut) this.fadeOuts.set(deviceId, (this.fadeOuts.get(deviceId) ?? 0) + 1);
+        this.history.events.add({
+          at: this.now(), type: 'override_cleared', deviceId,
+          reason: fadingOut ? 'power_fade_out' : 'power_changed',
+        });
+        this.deps.log(fadingOut
+          ? `${deviceId} was switching off, not overridden; daylight control resumes`
+          : `${deviceId} was power-cycled; daylight control resumes`);
       }
 
       if (value === true) {
@@ -475,7 +517,7 @@ export class DaylightRuntime {
       ? (value === 0 ? 'dim_zero' : 'lamp_off')
       : this.cache.overrideSuppression(deviceId, capability, value);
     if (ignored) {
-      this.history.events.add({ at: this.now(), type: 'report_ignored', deviceId, capability,
+      this.history.ignored({ at: this.now(), type: 'report_ignored', deviceId, capability,
         ...(typeof value === 'number' ? { value } : {}), reason: ignored });
       return;
     }
@@ -547,8 +589,19 @@ export class DaylightRuntime {
      */
     const startedAt = this.overrides.get(deviceId)?.at ?? this.now();
     const record: OverrideRecord = { at: startedAt, capability: 'dim', value: reported, expected: last?.device ?? null, source: 'external_report' };
+    // One override, one row. A lamp that keeps restating it — a stuck bulb
+    // reporting once a minute — is counted on the record instead of pushing a
+    // row per report: 28 of one device's 32 event slots were four overrides
+    // said over and over, which is how the evidence for everything else was
+    // lost. `repeats` carries the same information in one slot, and the tile
+    // and the settings page read the record rather than the log.
+    const previous = this.overrides.get(deviceId);
+    if (previous !== undefined) {
+      record.repeats = (previous.repeats ?? 1) + 1;
+      record.lastAt = this.now();
+    }
     this.overrides.set(deviceId, record);
-    this.history.events.add({ ...record, at: this.now(), type: 'override', deviceId });
+    if (previous === undefined) this.history.events.add({ ...record, at: this.now(), type: 'override', deviceId });
   }
 
   /** Once a minute, from the manager's single shared timer. */
@@ -1071,6 +1124,7 @@ export class DaylightRuntime {
           cache: this.cache,
         });
         if (!current()) return;
+        this.fadeOuts.delete(deviceId);
         if (this.overrides.delete(deviceId)) {
           this.history.events.add({ at: this.now(), type: 'override_cleared', deviceId, reason: 'target_removed' });
         }
@@ -1143,6 +1197,7 @@ export class DaylightRuntime {
         this.history.events.add({ at: this.now(), type: 'override_cleared', deviceId, reason: 'runtime_stopped' });
       }
       this.overrides.clear();
+      this.fadeOuts.clear();
       // Cleared for the reason the circadian runtime's colour record had to be:
       // `updatePlan()` is stop-then-start and `start()`'s own apply is NOT forced,
       // so a record from the old plan would have the deadband decline the new
@@ -1214,6 +1269,12 @@ export class DaylightRuntime {
         ...(this.cache.ignoredCount(id, 'dim') > 0
           ? { ignoredWrites: this.cache.ignoredCount(id, 'dim') }
           : {}),
+        ...(this.cache.approachingCount(id, 'dim') > 0
+          ? { approachingWrites: this.cache.approachingCount(id, 'dim') }
+          : {}),
+        // Only when it has happened: a row of zeroes on every target would bury
+        // the fields that mean something.
+        ...(this.fadeOuts.has(id) ? { fadeOutOverrides: this.fadeOuts.get(id)! } : {}),
       })),
       lastAction: this.lastAction,
       recentFailures: this.adapter.failures(),

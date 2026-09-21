@@ -157,12 +157,43 @@ describe('the light picker', () => {
     },
   });
 
-  test('rooms with nothing chosen are folded, so a house of 54 lights fits', async () => {
+  test('ONE room is open, and the rest are one line each', async () => {
+    /**
+     * One at a time, and the first by default.
+     *
+     * It used to be a per-room map with nothing open until something was
+     * ticked, which meant two things that both read as broken on a real Homey:
+     * the picker opened as a list of room names with no lights in it, and
+     * opening a second room left the first one open — so a house of eleven
+     * rooms could be unfolded into eleven bordered cards, each claiming to be
+     * the one being worked in.
+     */
     const view = run();
     await view.settle();
 
-    assert.equal(view.byId('lt-open')?.children.length, 0, 'nothing is open yet');
-    assert.equal(view.byId('lt-folded')?.children.length, 2, 'both rooms are one line each');
+    assert.equal(view.byId('lt-open')?.children.length, 1, 'exactly one room is open');
+    assert.equal(view.byId('lt-folded')?.children.length, 1, 'and the other is one line');
+    assert.ok(
+      view.byId('lt-open')!.children[0]!.className.includes('solo'),
+      'the open one wears the accent border, because it is the only one',
+    );
+  });
+
+  test('opening a second room closes the first', async () => {
+    const view = run();
+    await view.settle();
+
+    // Kitchen is the folded one; opening it must not leave Living room open.
+    view.fire(view.byId('lt-folded')!.children[0]!, 'click');
+    await view.settle();
+
+    assert.equal(view.byId('lt-open')?.children.length, 1, 'still exactly one');
+    assert.equal(
+      view.byId('lt-open')!.children[0]!.descendants()
+        .find(node => node.className === 'name')?.textContent,
+      'Kitchen',
+      'and it is the one just tapped',
+    );
   });
 
   test('an empty selection says so, because the view no longer owns Next', async () => {
@@ -180,6 +211,43 @@ describe('the light picker', () => {
     assert.equal(view.byId('lt-next'), null, 'and no second Next is drawn');
   });
 
+  test('opening a room scrolls it into view', async () => {
+    /**
+     * The open room renders ABOVE the folded list, so tapping a room at the
+     * bottom of a long house opens a card nobody is looking at: the page does
+     * not move and the only visible change is the row vanishing from under the
+     * finger, which reads as the tap having closed something.
+     *
+     * Asserted on the CONTAINER's scroller rather than on the window, because
+     * that is the element a pair view actually has to move — it is found by
+     * walking up from the view's own root, and getting that walk wrong is
+     * silent.
+     */
+    const view = run();
+    await view.settle();
+
+    view.scroller.scrollTop = 900;
+    view.fire(view.byId('lt-folded')!.children[0]!, 'click');
+    await view.settle();
+
+    assert.equal(view.scroller.scrollTop, 0);
+  });
+
+  test('closing a room leaves the scroll alone', async () => {
+    // The card that just closed is already where the eye is; yanking the page
+    // to the top would move the thing somebody was looking at.
+    const view = run();
+    await view.settle();
+
+    view.scroller.scrollTop = 900;
+    const header = view.byId('lt-open')!.children[0]!
+      .descendants().find(node => node.className === 'toggle')!;
+    view.fire(header, 'click');
+    await view.settle();
+
+    assert.equal(view.scroller.scrollTop, 900);
+  });
+
   test('ticking every light in ONE room stores a zone target', async () => {
     /**
      * The one piece of judgement on this screen, and it is invisible here on
@@ -192,7 +260,7 @@ describe('the light picker', () => {
     const view = run();
     await view.settle();
 
-    view.fire(view.byId('lt-folded')!.children[1]!, 'click');
+    view.fire(view.byId('lt-folded')!.children[0]!, 'click');
     const kitchen = view.byId('lt-open')!.children[0]!;
     view.fire(kitchen.descendants().find(node => node.className === 'light')!, 'click');
     await view.settle();
@@ -205,7 +273,7 @@ describe('the light picker', () => {
     const view = run();
     await view.settle();
 
-    view.fire(view.byId('lt-folded')!.children[0]!, 'click');
+    // Living room is the one that opens by default, so there is nothing to tap.
     const living = view.byId('lt-open')!.children[0]!;
     view.fire(living.descendants().filter(node => node.className === 'light')[0]!, 'click');
     await view.settle();
@@ -666,6 +734,7 @@ describe('the daylight sensor screen', () => {
     respond: {
       listSensors: {
         rooms: [{
+          zoneId: 'z1',
           zoneName: 'Kitchen',
           sensors: [
             { id: 's1', name: 'Kitchen motion', lux: 41, at: Date.now(), available: true, selected: true },
@@ -707,6 +776,74 @@ describe('the daylight sensor screen', () => {
 
     assert.notEqual(view.byId('sn-none')?.style.display, 'none');
     assert.equal(view.byId('sn-useSensor')?.disabled, true);
+  });
+
+  test('one room is open, and every other room is a line with its count', async () => {
+    /**
+     * Both halves matter, and this screen has been wrong in both directions.
+     * Opening every room that had a sensor made a house into a stack of cards
+     * each bordered as the one being worked in; folding them with nothing but a
+     * heading hid the sensors behind rooms nobody had a reason to tap. A count
+     * on every folded row is what makes one-at-a-time honest.
+     */
+    const view = run({
+      rooms: [
+        { zoneId: 'z1', zoneName: 'Kitchen', sensors: [
+          { id: 's1', name: 'Kitchen motion', lux: 41, at: Date.now(), available: true, selected: false },
+        ] },
+        { zoneId: 'z2', zoneName: 'Hall', sensors: [
+          { id: 's3', name: 'Hall motion', lux: 12, at: Date.now(), available: true, selected: false },
+          { id: 's4', name: 'Porch', lux: 9, at: Date.now(), available: true, selected: false },
+        ] },
+        { zoneId: 'z3', zoneName: 'Dining', sensors: [] },
+      ],
+      selected: [],
+    });
+    await view.settle();
+
+    assert.equal(view.byId('sn-list')?.children.length, 1, 'exactly one room is open');
+
+    const folded = view.byId('sn-folded')!.children;
+    assert.equal(folded.length, 2, 'and the other two are one line each');
+    assert.equal(
+      folded[0]!.descendants().find(node => node.className === 'value')?.textContent,
+      '2',
+      'a folded room that HAS sensors says how many',
+    );
+    assert.equal(folded[0]!.disabled, false, 'and can be opened');
+    assert.equal(
+      folded[1]!.descendants().find(node => node.className === 'value')?.textContent,
+      'sensor.noneHere',
+      'a room with none says so',
+    );
+    assert.equal(folded[1]!.disabled, true, 'and there is nothing to open');
+  });
+
+  test('opening a sensor room scrolls it into view', async () => {
+    const view = run({
+      rooms: [
+        { zoneId: 'z1', zoneName: 'Kitchen', sensors: [
+          { id: 's1', name: 'Kitchen motion', lux: 41, at: Date.now(), available: true, selected: false },
+        ] },
+        { zoneId: 'z2', zoneName: 'Hall', sensors: [
+          { id: 's3', name: 'Hall motion', lux: 12, at: Date.now(), available: true, selected: false },
+        ] },
+      ],
+      selected: [],
+    });
+    await view.settle();
+
+    view.scroller.scrollTop = 900;
+    view.fire(view.byId('sn-folded')!.children[0]!, 'click');
+    await view.settle();
+
+    assert.equal(view.scroller.scrollTop, 0);
+    assert.equal(
+      view.byId('sn-list')!.children[0]!.descendants()
+        .find(node => node.className === 'room-title')?.textContent,
+      'Hall',
+      'and the room that opened is the one that was tapped',
+    );
   });
 
   test('tapping a sensor opens its week rather than choosing it', async () => {
@@ -1169,14 +1306,6 @@ describe('the controller buttons screen', () => {
       'button.left|true',
     );
     assert.deepEqual(view.shown, ['job']);
-  });
-
-  test('a real press highlights its own row', async () => {
-    const view = run();
-    await view.settle();
-
-    view.push('heard', 'button.left|true');
-    assert.match(view.byId('bt-list')!.children[1]!.className, /sel/);
   });
 });
 // ------------------------------------------------------- the job editor

@@ -1,6 +1,6 @@
 import Homey from 'homey';
 import {
-  colourSwatch, registerIntroHandler, registerReviewHandler, warmthSwatch,
+  colourSwatch, lightsSummary, registerIntroHandler, registerReviewHandler, warmthSwatch,
 } from '../../lib/pairing/flow-screens';
 
 import {
@@ -300,13 +300,7 @@ module.exports = class CurveDriver extends Homey.Driver {
     target: TargetSpec,
     summary: { count: number },
   ): Promise<string> {
-    const host = this.pairHost();
-    if (target.kind === 'zone') {
-      const zones = await this.app.catalog.allZones();
-      const zone = zones.find((candidate: { id: string }) => candidate.id === target.zoneId);
-      return host.translate('review.wholeRoom', { room: zone?.name ?? '?' });
-    }
-    return host.translate('review.someLights', { count: summary.count });
+    return lightsSummary(this.pairHost(), target, summary, () => this.app.catalog.allZones());
   }
 
   private timezone(): string | null {

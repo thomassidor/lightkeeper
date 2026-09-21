@@ -1,4 +1,5 @@
-/* ==== shared base: identical in every pair view ====
+<style>
+  /* ==== shared base: identical in every pair view ====
      Scoped to this view's root because all views of a session share ONE
      document, so unscoped class names bleed between screens (see the script
      header).
@@ -34,7 +35,7 @@
      — so a view that followed the OS scheme went dark inside a white sheet. A
      colour written as a literal anywhere past this block is a token that is
      missing. */
-  #ROOT {
+  #sr-root {
     /* Brand. The violet is the manifest brandColor: the logo's ground — 93% of
        its pixels — lightened so it reads as violet rather than black in the
        circle Homey paints behind an icon (platform §10). The lavender is the
@@ -242,63 +243,63 @@
      line at phone width without shrinking every other title in the app by an
      eighth. A one-line title is unaffected, so this costs the other screens
      nothing, and a browser without it wraps exactly as before. */
-  #ROOT h2 { margin: 0 0 16px; font-size: 20px; font-weight: 700; letter-spacing: -.01em;
+  #sr-root h2 { margin: 0 0 16px; font-size: 20px; font-weight: 700; letter-spacing: -.01em;
              text-wrap: balance; }
-  #ROOT .sub { font-size: 14px; line-height: 1.5; color: var(--lk-body); margin: 0 0 18px; }
+  #sr-root .sub { font-size: 14px; line-height: 1.5; color: var(--lk-body); margin: 0 0 18px; }
   /* A blurb belongs TO its heading — 6px between them, not 16. Written as a
      pull on the blurb rather than as `h2:has(+ .sub)` on the heading because
      the pairing container's webview is not somewhere to find out whether
      `:has()` landed. */
-  #ROOT h2 + .sub { margin-top: -10px; }
-  #ROOT p { font-size: 14px; line-height: 1.55; color: var(--lk-body); }
+  #sr-root h2 + .sub { margin-top: -10px; }
+  #sr-root p { font-size: 14px; line-height: 1.55; color: var(--lk-body); }
 
-  #ROOT .card { background: var(--lk-surface); border: 1px solid var(--lk-line);
+  #sr-root .card { background: var(--lk-surface); border: 1px solid var(--lk-line);
               border-radius: 14px; box-shadow: var(--lk-shadow); padding: 14px;
               margin-bottom: 10px; }
 
-  #ROOT .section { margin-bottom: 18px; }
+  #sr-root .section { margin-bottom: 18px; }
   /* The label over a group — "Does", "To", "When does this room get its sun?".
      It is a .control-title with nothing on its right: the same 13.5px/600 ink,
      sentence case. It used to be 12px uppercase small-caps in the faintest
      grey, which made the two words holding the job screen's sentence together
      read as filing-cabinet labels rather than as the sentence's own verbs. */
-  #ROOT .section-title { font-size: 13.5px; font-weight: 600; line-height: 1.2;
+  #sr-root .section-title { font-size: 13.5px; font-weight: 600; line-height: 1.2;
                        color: var(--lk-ink); margin: 0 0 9px; }
 
   /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
-  #ROOT .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+  #sr-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
               border: 1.5px solid var(--lk-line); border-radius: 12px; padding: 13px 14px;
               margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
               color: var(--lk-ink);
               transition: border-color .12s ease, background .12s ease; }
-  #ROOT .tile:hover { border-color: var(--lk-hover); }
-  #ROOT .tile.sel { border-color: var(--lk-accent); background: var(--lk-accent-tint); }
-  #ROOT .tile .name { font-size: 15px; font-weight: 500; line-height: 1.3; }
-  #ROOT .tile .meta { font-size: 12.5px; color: var(--lk-muted); margin-top: 3px; line-height: 1.35; }
+  #sr-root .tile:hover { border-color: var(--lk-hover); }
+  #sr-root .tile.sel { border-color: var(--lk-accent); background: var(--lk-accent-tint); }
+  #sr-root .tile .name { font-size: 15px; font-weight: 500; line-height: 1.3; }
+  #sr-root .tile .meta { font-size: 12.5px; color: var(--lk-muted); margin-top: 3px; line-height: 1.35; }
 
-  #ROOT input[type=text], #ROOT input[type=password], #ROOT select {
+  #sr-root input[type=text], #sr-root input[type=password], #sr-root select {
     width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
     border: 1.5px solid var(--lk-field); border-radius: 12px; background: var(--lk-surface);
     color: var(--lk-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
   /* The chevron's fill stays a literal: #6a7180 is --lk-muted, and a data URI
      cannot read a custom property. So this is the one place a token's value is
      written twice, and the two copies have to move together. */
-  #ROOT select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+  #sr-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
                background-repeat: no-repeat; background-position: right 13px center;
                background-size: 11px; padding-right: 34px; }
-  #ROOT input:focus, #ROOT select:focus { outline: none; border-color: var(--lk-accent);
+  #sr-root input:focus, #sr-root select:focus { outline: none; border-color: var(--lk-accent);
                                       box-shadow: 0 0 0 3px var(--lk-ring); }
 
-  #ROOT .btn { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
+  #sr-root .btn { font-family: inherit; font-size: 14px; font-weight: 500; padding: 10px 15px;
              border-radius: 10px; border: 1.5px solid var(--lk-field);
              background: var(--lk-surface); color: var(--lk-ink); cursor: pointer;
              min-height: 40px; }
-  #ROOT .btn:hover { border-color: var(--lk-hover); }
-  #ROOT .btn:disabled { opacity: .45; cursor: not-allowed; }
+  #sr-root .btn:hover { border-color: var(--lk-hover); }
+  #sr-root .btn:disabled { opacity: .45; cursor: not-allowed; }
   /* The same button across the width of the screen. What a secondary action
      looks like when it is the only one on a pushed screen — "Close" — where a
      primary button would claim the choice was made. */
-  #ROOT .btn.wide { display: block; width: 100%; font-size: 16px; font-weight: 600;
+  #sr-root .btn.wide { display: block; width: 100%; font-size: 16px; font-weight: 600;
                     padding: 14px; border-radius: 12px; min-height: 50px;
                     box-sizing: border-box; margin-top: 16px; }
   /* And the same button when it is the SECOND of two, under a primary — "Put
@@ -306,33 +307,33 @@
      because the pair is one decision offered twice ("show me" / "undo that")
      and a grey partner reads as the disabled twin of the button above it.
      Lighter than the primary in weight and height, never in hue. */
-  #ROOT .btn.wide.accent { border-color: var(--lk-accent); color: var(--lk-accent);
+  #sr-root .btn.wide.accent { border-color: var(--lk-accent); color: var(--lk-accent);
                            font-size: 15px; font-weight: 500; padding: 13px;
                            min-height: 48px; }
-  #ROOT .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
+  #sr-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
                      border-radius: 12px; border: none; background: var(--lk-accent);
                      color: var(--lk-accent-ink); cursor: pointer; min-height: 50px;
                      margin-top: 16px; font-family: inherit; }
-  #ROOT .btn-primary:disabled { opacity: .5; cursor: progress; }
+  #sr-root .btn-primary:disabled { opacity: .5; cursor: progress; }
 
   /* A default ground, so a .msg shown before any state class lands on it is
      still a message rather than bare text on the page. */
-  #ROOT .msg { margin-top: 14px; padding: 12px 13px; border-radius: 12px; font-size: 13.5px;
+  #sr-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 12px; font-size: 13.5px;
              line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
-  #ROOT .ok { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
-  #ROOT .bad { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
-  #ROOT .muted { background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
-  #ROOT .warn { background: var(--lk-warn-bg); color: var(--lk-warn-ink); }
+  #sr-root .ok { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
+  #sr-root .bad { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
+  #sr-root .muted { background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
+  #sr-root .warn { background: var(--lk-warn-bg); color: var(--lk-warn-ink); }
   /* A message whose first line is what happened and whose second is what it
      means. Both belong in one block: split across two, the second reads as
      unrelated body copy. */
-  #ROOT .msg .lead { font-weight: 600; margin-bottom: 3px; }
+  #sr-root .msg .lead { font-weight: 600; margin-bottom: 3px; }
 
-  #ROOT ol { font-size: 14px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+  #sr-root ol { font-size: 14px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
            color: var(--lk-body); }
-  #ROOT .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
-  @media (max-width: 380px) { #ROOT .grid { grid-template-columns: 1fr; } }
-  #ROOT .empty { font-size: 14px; color: var(--lk-muted); padding: 12px 0; }
+  #sr-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  @media (max-width: 380px) { #sr-root .grid { grid-template-columns: 1fr; } }
+  #sr-root .empty { font-size: 14px; color: var(--lk-muted); padding: 12px 0; }
   /* ---- the pairing paradigm --------------------------------------------
      Every screen the redesign draws is built from these six, so a change to
      any of them is one edit rather than fifteen. They live in the shared base
@@ -341,15 +342,15 @@
 
   /* Step dots. The intro is unnumbered — the steps it promises are the ones
      that carry a dot — so a view renders as many as its own flow has. */
-  #ROOT .steps { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
-  #ROOT .steps i { width: 22px; height: 4px; border-radius: 999px;
+  #sr-root .steps { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
+  #sr-root .steps i { width: 22px; height: 4px; border-radius: 999px;
                    background: var(--lk-field); }
   /* Four steps, narrower dots: the run keeps the same overall width whether a
      flow has three or four, so the header does not visibly grow between two
      device types. */
-  #ROOT .steps.tight i { width: 16px; }
-  #ROOT .steps i.on { background: var(--lk-accent); }
-  #ROOT .steps span { margin-left: 4px; font-size: 12px; color: var(--lk-muted); }
+  #sr-root .steps.tight i { width: 16px; }
+  #sr-root .steps i.on { background: var(--lk-accent); }
+  #sr-root .steps span { margin-left: 4px; font-size: 12px; color: var(--lk-muted); }
 
   /* `label · value · chevron`. The one shape everything secondary takes:
      a row that says what it is, what it is set to, and that it can be opened.
@@ -358,48 +359,48 @@
      (`.card.rows` below). That is what insets the hairline between two rows
      from the card's own edge — a rule that runs corner to corner reads as the
      card being cut in half, and every list the design draws insets it. */
-  #ROOT .row { display: flex; align-items: center; gap: 10px; width: 100%;
+  #sr-root .row { display: flex; align-items: center; gap: 10px; width: 100%;
                padding: 13px 0; min-height: 44px; box-sizing: border-box;
                background: none; border: none; font: inherit; color: inherit;
                text-align: left; cursor: pointer; }
-  #ROOT .row + .row { border-top: 1px solid var(--lk-line); }
-  #ROOT .row .label { flex: 1; font-size: 14.5px; }
-  #ROOT .row .value { font-size: 14px; color: var(--lk-muted); text-align: right; }
-  #ROOT .row .chev { flex: none; font-size: 15px; color: var(--lk-chev); }
-  #ROOT .row .sub { font-size: 12.5px; color: var(--lk-muted); margin: 2px 0 0; }
+  #sr-root .row + .row { border-top: 1px solid var(--lk-line); }
+  #sr-root .row .label { flex: 1; font-size: 14.5px; }
+  #sr-root .row .value { font-size: 14px; color: var(--lk-muted); text-align: right; }
+  #sr-root .row .chev { flex: none; font-size: 15px; color: var(--lk-chev); }
+  #sr-root .row .sub { font-size: 12.5px; color: var(--lk-muted); margin: 2px 0 0; }
   /* The card a list of rows lives in. 4px top and bottom rather than 14:
      a row's own 13px is already the space above the first label, and adding
      the card's to it put a visible step between the card's edge and its
      first line that no other card has. */
-  #ROOT .card.rows { padding: 4px 14px; }
+  #sr-root .card.rows { padding: 4px 14px; }
 
   /* The pill switch behind every "Set … too".
      It carries a rule above it, always: a toggle is a new decision inside a
      card that was until then about one thing, and without the rule it read as
      the last line of the control above it. */
-  #ROOT .toggle { display: flex; align-items: center; gap: 10px; width: 100%;
+  #sr-root .toggle { display: flex; align-items: center; gap: 10px; width: 100%;
                   border-top: 1px solid var(--lk-line);
                   margin-top: 14px; padding: 13px 0 0;
                   min-height: 44px; box-sizing: border-box;
                   background: none; border-left: none; border-right: none;
                   border-bottom: none; font: inherit; color: inherit;
                   text-align: left; cursor: pointer; }
-  #ROOT .toggle .label { flex: 1; font-size: 14.5px; }
-  #ROOT .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
+  #sr-root .toggle .label { flex: 1; font-size: 14.5px; }
+  #sr-root .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
                          position: relative; background: var(--lk-field);
                          transition: background .15s ease; }
-  #ROOT .toggle[aria-checked="true"] .track { background: var(--lk-accent); }
-  #ROOT .toggle .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+  #sr-root .toggle[aria-checked="true"] .track { background: var(--lk-accent); }
+  #sr-root .toggle .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
                         border-radius: 50%; background: var(--lk-surface);
                         box-shadow: var(--lk-knob-shadow);
                         transition: left .15s ease; }
-  #ROOT .toggle[aria-checked="true"] .knob { left: 21px; }
+  #sr-root .toggle[aria-checked="true"] .knob { left: 21px; }
 
   /* The title above a control, with its value on the right of the same line.
      Sentence case and body-coloured rather than a small-caps section label:
      "Brightness 80%" is a reading of the control directly below it, not a
      heading over a group of unrelated things. */
-  #ROOT .control-title { display: flex; align-items: baseline;
+  #sr-root .control-title { display: flex; align-items: baseline;
                          justify-content: space-between; gap: 10px;
                          font-size: 13.5px; font-weight: 600; line-height: 1.2;
                          color: var(--lk-ink); margin: 0 0 9px; }
@@ -412,15 +413,15 @@
      `touch-action: none` is not decoration: without it a horizontal drag
      scrolls the pairing sheet underneath and the control cannot be used on a
      phone at all. */
-  #ROOT .slider { position: relative; height: 28px; border-radius: 8px;
+  #sr-root .slider { position: relative; height: 28px; border-radius: 8px;
                   background: var(--lk-field); margin: 0;
                   box-shadow: var(--lk-slider-inset);
                   touch-action: none; cursor: pointer; }
   /* Candlelight to daylight, left to right — the order the slider reads in,
      which is the REVERSE of the way a warmth is stored (platform §6). */
-  #ROOT .slider.warm { background: var(--lk-warm-ramp); box-shadow: none; }
-  #ROOT .slider.bright { background: var(--lk-bright-ramp); }
-  #ROOT .slider .knob { position: absolute; top: -4px; bottom: -4px; width: 6px;
+  #sr-root .slider.warm { background: var(--lk-warm-ramp); box-shadow: none; }
+  #sr-root .slider.bright { background: var(--lk-bright-ramp); }
+  #sr-root .slider .knob { position: absolute; top: -4px; bottom: -4px; width: 6px;
                         margin-left: -3px; border-radius: 4px;
                         background: var(--lk-surface);
                         box-shadow: var(--lk-slider-knob-shadow); }
@@ -428,9 +429,9 @@
      is light from end to end, so a white knob on it is invisible; the
      brightness ramp starts at near-black, so a dark one is. Each knob is the
      colour its own track is not. */
-  #ROOT .slider.warm .knob { background: var(--lk-ink);
+  #sr-root .slider.warm .knob { background: var(--lk-ink);
                              box-shadow: var(--lk-slider-knob-shadow-warm); }
-  #ROOT .ends { display: flex; justify-content: space-between;
+  #sr-root .ends { display: flex; justify-content: space-between;
                 font-size: 11px; color: var(--lk-body); margin: 9px 0 0; }
 
   /* An aside under a control: "there is a device type that does this for you".
@@ -444,7 +445,7 @@
      the card, because three of the four screens carry a second control below
      it and an aside that floated to the bottom would read as belonging to
      that one instead. */
-  #ROOT .tip { display: flex; align-items: flex-start; gap: 7px;
+  #sr-root .tip { display: flex; align-items: flex-start; gap: 7px;
                margin: 13px 0 0; font-size: 12px; line-height: 1.45;
                font-style: italic; color: var(--lk-muted); }
   /* The circled i, DRAWN rather than set. A glyph that the phone's font does
@@ -458,7 +459,7 @@
      A pseudo-element rather than a span, so a view's whole tip is one element
      whose text `data-i18n` fills: Homey's own i18n pass writes the element's
      text, and a mark written as a child would be written over. */
-  #ROOT .tip::before { content: "i"; flex: none; box-sizing: border-box;
+  #sr-root .tip::before { content: "i"; flex: none; box-sizing: border-box;
                        width: 15px; height: 15px; margin-top: 1px;
                        border: 1.2px solid var(--lk-tip-edge); border-radius: 50%;
                        font-size: 10px; font-weight: 700; font-style: normal;
@@ -469,18 +470,18 @@
      Not one row of eight: at 390px that is 34px a swatch, under the touch
      minimum and too small to judge a colour by. Two rows of four is the same
      set of eight, legibly, and the sixteen that fold out below continue it. */
-  #ROOT .swatches { display: grid; grid-template-columns: repeat(4, 1fr);
+  #sr-root .swatches { display: grid; grid-template-columns: repeat(4, 1fr);
                     gap: 7px; margin: 0 0 11px; }
   /* min-height as well as height: the container's own stylesheet is not ours
      to read, and a swatch whose height is overridden away is a coloured line
      rather than a colour anybody can judge. */
-  #ROOT .swatch { height: 34px; min-height: 34px; border-radius: 9px; padding: 0;
+  #sr-root .swatch { height: 34px; min-height: 34px; border-radius: 9px; padding: 0;
                   box-sizing: border-box;
                   border: 1px solid var(--lk-hairline); cursor: pointer; }
   /* The chosen colour, and it has to survive being ON a colour: a ring drawn
      in the accent with a soft halo outside it reads against every swatch in
      the palette, which a white gap did not against the pale ones. */
-  #ROOT .swatch[aria-pressed="true"] { border: 2.5px solid var(--lk-accent);
+  #sr-root .swatch[aria-pressed="true"] { border: 2.5px solid var(--lk-accent);
                                        box-shadow: 0 0 0 3px var(--lk-ring); }
   /* The sixteen that fold out: same set, half the size, eight across.
 
@@ -489,28 +490,28 @@
      that had just been opened, and the eye had to measure swatch sizes to find
      where one group ended. The space is what separates them; both sets are
      still the same palette, so nothing stronger than space is wanted. */
-  #ROOT .swatches.more { grid-template-columns: repeat(8, 1fr); gap: 6px;
+  #sr-root .swatches.more { grid-template-columns: repeat(8, 1fr); gap: 6px;
                          margin: 18px 0 0; }
-  #ROOT .swatches.more .swatch { height: 28px; min-height: 28px; border-radius: 7px; }
+  #sr-root .swatches.more .swatch { height: 28px; min-height: 28px; border-radius: 7px; }
 
   /* The day strip: a picture of the whole day, drawn once and reused. */
-  #ROOT .day { position: relative; height: 104px; border-radius: 12px;
+  #sr-root .day { position: relative; height: 104px; border-radius: 12px;
                overflow: hidden; touch-action: none; }
-  #ROOT .day .mark { position: absolute; top: 0; bottom: 0; width: 0;
+  #sr-root .day .mark { position: absolute; top: 0; bottom: 0; width: 0;
                      border-left: 1.5px dashed var(--lk-day-mark); }
-  #ROOT .day .tag { position: absolute; top: 6px; transform: translateX(-50%);
+  #sr-root .day .tag { position: absolute; top: 6px; transform: translateX(-50%);
                     background: var(--lk-day-tag-bg); color: var(--lk-body);
                     font-size: 9.5px; font-weight: 600; letter-spacing: .05em;
                     text-transform: uppercase; padding: 3px 5px; border-radius: 4px; }
-  #ROOT .day .handle { position: absolute; top: 50%; width: 26px; height: 26px;
+  #sr-root .day .handle { position: absolute; top: 50%; width: 26px; height: 26px;
                        margin: -13px 0 0 -13px; border-radius: 50%;
                        background: var(--lk-surface); box-sizing: border-box;
                        border: 2.5px solid var(--lk-handle-edge); z-index: 1;
                        box-shadow: var(--lk-handle-shadow); }
-  #ROOT .day .handle.sel { width: 34px; height: 34px; margin: -17px 0 0 -17px;
+  #sr-root .day .handle.sel { width: 34px; height: 34px; margin: -17px 0 0 -17px;
                            border: 3px solid var(--lk-accent); z-index: 2;
                            box-shadow: var(--lk-handle-shadow-sel); }
-  #ROOT .clockline { display: flex; justify-content: space-between;
+  #sr-root .clockline { display: flex; justify-content: space-between;
                      font-size: 11px; color: var(--lk-body); margin: 8px 2px 4px; }
 
   /* The three or four decisions a flow is about to ask for, numbered.
@@ -523,17 +524,355 @@
      Spaced, not ruled. A hairline between two decisions turns a promise about
      what is coming into a settings list, and the numbers already say these are
      three of one thing. */
-  #ROOT .plan { display: flex; flex-direction: column; gap: 14px;
+  #sr-root .plan { display: flex; flex-direction: column; gap: 14px;
                 margin: 0 0 22px; }
-  #ROOT .decision { display: flex; align-items: flex-start; gap: 12px; }
-  #ROOT .decision .n { flex: none; width: 26px; height: 26px; border-radius: 50%;
+  #sr-root .decision { display: flex; align-items: flex-start; gap: 12px; }
+  #sr-root .decision .n { flex: none; width: 26px; height: 26px; border-radius: 50%;
                        box-sizing: border-box;
                        background: var(--lk-accent-tint); color: var(--lk-accent-strong);
                        border: 1.5px solid var(--lk-accent-line);
                        font-size: 13px; font-weight: 700;
                        display: flex; align-items: center; justify-content: center; }
-  #ROOT .decision .what { font-size: 15px; font-weight: 600; line-height: 26px; }
-  #ROOT .decision .why { font-size: 13px; color: var(--lk-muted); margin-top: 2px;
+  #sr-root .decision .what { font-size: 15px; font-weight: 600; line-height: 26px; }
+  #sr-root .decision .why { font-size: 13px; color: var(--lk-muted); margin-top: 2px;
                          line-height: 1.45; }
 
   /* ==== end shared base ==== */
+
+  /* ---- this view only ---------------------------------------------------- */
+
+  /* ONE SCREEN, TWO QUESTIONS. Which Lightkeeper device a button takes its
+     colour and warmth from, and which one it takes its level from — the same
+     list shape either way, differing only in what each row SHOWS on the right.
+
+     A radio list rather than a checklist, because a button composes exactly one
+     of each: two colours averaged is a colour neither device ever asked for,
+     which is the argument the Room-sensing Light's one-sensor rule already
+     makes at greater length. */
+  #sr-root .pick { display: flex; align-items: center; gap: 12px; width: 100%;
+                   padding: 12px 0; min-height: 44px; box-sizing: border-box;
+                   background: none; border: none; border-bottom: 1px solid var(--lk-line);
+                   font: inherit; color: inherit; text-align: left; cursor: pointer; }
+  #sr-root .pick:last-child { border-bottom: none; }
+
+  /* A ring rather than a box: this is a choice of one, and the shape is what
+     says so before any of the words do. */
+  #sr-root .pick .dot { flex: none; width: 22px; height: 22px; border-radius: 50%;
+                        border: 1.5px solid var(--lk-box); box-sizing: border-box;
+                        display: flex; align-items: center; justify-content: center;
+                        font-size: 13px; font-weight: 700; color: transparent; }
+  #sr-root .pick[aria-checked="true"] .dot { background: var(--lk-accent);
+                                             border-color: var(--lk-accent);
+                                             color: var(--lk-accent-ink); }
+  #sr-root .pick .what { flex: 1; min-width: 0; }
+  #sr-root .pick .name { display: block; font-size: 14.5px; }
+  #sr-root .pick[aria-checked="true"] .name { font-weight: 600; }
+  /* The device's own driver name and room. Truncated rather than wrapped: the
+     row's height is what makes a list of eight scannable. */
+  /* The margin is written OUT, not just overridden on top: the base's own `.sub`
+     is the screen's subtitle and carries `margin: 0 0 18px`, so a row that set
+     only `margin-top` inherited eighteen pixels under every second line and the
+     list stood half again as tall as the light picker beside it. */
+  #sr-root .pick .sub { display: block; font-size: 12.5px; color: var(--lk-muted);
+                        margin: 2px 0 0; overflow: hidden; text-overflow: ellipsis;
+                        white-space: nowrap; }
+
+  /* WHAT THAT SETUP IS DOING RIGHT NOW, at the end of the row — the whole
+     reason this is a screen and not a dropdown. A name tells somebody which of
+     their three curves this is; the swatch tells them which one is producing
+     the light they are picturing. */
+  /* `.dab` and not `.swatch`, and the name is the whole reason for this comment:
+     the base already owns `.swatch` for the palette GRID, where it is a 34px
+     rounded rectangle with a `min-height` to match — and its own comment warns
+     that a swatch whose height is overridden away becomes a coloured line. It
+     wins over a plain height here, so a 22px circle came out as a 34px ellipse.
+     A different name is the honest fix; borrowing the base's and fighting its
+     min-height is not. */
+  #sr-root .pick .dab { flex: none; width: 22px; height: 22px; border-radius: 50%;
+                        border: 1px solid var(--lk-line); box-sizing: border-box; }
+  /* Nothing to show is drawn as an empty ring rather than as a grey fill: a
+     device between plans has no colour, and a grey dot is a colour. */
+  #sr-root .pick .dab.none { background: none; border-style: dashed; }
+
+  #sr-root .pick .level { flex: none; display: flex; align-items: center; gap: 8px; }
+  #sr-root .pick .bar { width: 44px; height: 6px; border-radius: 999px;
+                        background: var(--lk-field); position: relative; overflow: hidden; }
+  #sr-root .pick .bar i { position: absolute; left: 0; top: 0; bottom: 0;
+                          border-radius: 999px; background: var(--lk-accent); }
+  #sr-root .pick .pct { font-size: 12.5px; color: var(--lk-muted);
+                        min-width: 30px; text-align: right; }
+
+  /* The footnote sits UNDER the list, because it explains what was just read
+     rather than what is about to be chosen. The subtitle at the top carries the
+     half that has to be known first. */
+  #sr-root .note { background: var(--lk-flat-bg); border-radius: 12px;
+                   padding: 11px 13px; margin: 14px 0 0;
+                   font-size: 12.5px; color: var(--lk-muted); line-height: 1.45; }
+</style>
+
+<div class="wrap" id="sr-root">
+  <h2 id="sr-title"></h2>
+  <p class="sub" id="sr-blurb"></p>
+
+  <div id="sr-error" class="msg bad" style="display:none;"></div>
+
+  <div class="card rows" id="sr-list"></div>
+  <div class="note" id="sr-note"></div>
+</div>
+
+<script type="text/javascript">
+/**
+ * Which Lightkeeper device a button takes a value from — pushed from the job
+ * editor, once per question.
+ *
+ * ONE view for both questions rather than two near-identical files, and the
+ * driver is what says which: `job.html` calls `editSource('colour' |
+ * 'brightness')` before `showView('source')`, exactly as `buttons.html` calls
+ * `editGesture` before showing `job.html`. A pair session has no query string,
+ * so the alternative to telling the driver first is guessing.
+ *
+ * Every row carries what that setup is producing RIGHT NOW — a swatch, or a
+ * level — and that is the whole reason this is a screen rather than a dropdown.
+ * Somebody with three curves knows which is which by what each one is doing at
+ * the moment they are looking, not by the names they gave them months ago. It
+ * is also why the footnote says the values are live: a swatch beside a radio
+ * button reads, at a glance, like the value this button is being fixed at.
+ *
+ * The choice is COMMITTED on tap, like every other decision in this flow.
+ * Homey's own chrome is the way back from a pushed screen and it does not ask
+ * this view anything on the way, so a choice held for a button at the bottom is
+ * a choice lost by anybody who uses the back arrow.
+ */
+function __lkBootSr(Homey) {
+  var __root = document.getElementById('sr-root');
+  if (!__root || __root.dataset.llBooted === '1') return;
+  __root.dataset.llBooted = '1';
+
+  (function stabiliseScrollbar() {
+    /**
+     * Reserve room for the scrollbar so growing the view cannot re-wrap it.
+     *
+     * GENERATED. Spliced into every pair view by `npm run sync:views` from
+     * views/shared/stabilise-scrollbar.js. **Edit that file, not this one.**
+     *
+     * When the content grows past the pane height a scrollbar appears, the
+     * usable width drops by its thickness, and every line of text re-measures —
+     * so a heading that sat on one line before a list was expanded sits on two
+     * afterwards, and the whole screen shifts under the tap that expanded it.
+     * `scrollbar-gutter: stable` keeps the gutter reserved whether or not the
+     * bar is showing, which makes the width one number for the life of the
+     * session instead of two.
+     *
+     * It runs in EVERY view, not only the ones that grow, because the scroller
+     * belongs to the pairing container and outlives each screen: a flow whose
+     * first screen reserved the gutter is stable throughout, and a flow whose
+     * first screen did not is stable nowhere. That asymmetry is exactly how
+     * this was found — the two device types with a credential screen stabilised
+     * on step 1 and the three without it never did, so the sensor picker
+     * re-wrapped its heading the moment the sensor list unfolded.
+     *
+     * The scrolling element belongs to the pairing container, not to us, so
+     * find it by walking up rather than guessing a selector.
+     */
+    var scroller = null;
+    for (var el = __root.parentElement; el && el !== document.documentElement; el = el.parentElement) {
+      var overflowY = getComputedStyle(el).overflowY;
+      if (overflowY === 'auto' || overflowY === 'scroll') { scroller = el; break; }
+    }
+    var targets = scroller ? [scroller] : [document.documentElement, document.body];
+    var supported = window.CSS && CSS.supports && CSS.supports('scrollbar-gutter', 'stable');
+
+    targets.forEach(function (el) {
+      if (!el) return;
+      if (supported) el.style.scrollbarGutter = 'stable';
+      // Without gutter support, always showing the track is the stable option.
+      else if (el !== document.body) el.style.overflowY = 'scroll';
+    });
+  })();
+
+  function emit(event, data) {
+    /**
+     * Homey.emit, as a promise that always settles.
+     *
+     * GENERATED. Spliced into every pair view by `npm run sync:views` from
+     * views/shared/emit.js. **Edit that file, not this one.**
+     *
+     * Both call styles are handled because the pairing bridge has used a
+     * callback and a promise at different times, and the 20 s timeout is what
+     * keeps a dropped callback from leaving the screen spinning with no message
+     * forever.
+     *
+     * Inside the function, like `stabiliseScrollbar()`'s, and that is not a
+     * style choice: `spliceFunction` matches from the `function` keyword, so a
+     * docblock above one is never replaced — it is prepended again on every
+     * sync. Four stale copies of the week grid's reached the shipped archive
+     * that way. It also means this explanation now appears in all 56 views
+     * rather than in the two credential screens that happened to carry it.
+     */
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var finish = function (err, result) {
+        if (settled) return;
+        settled = true;
+        if (err) reject(err instanceof Error ? err : new Error(String(err)));
+        else resolve(result);
+      };
+      var timer = setTimeout(function () { finish(new Error('Homey did not respond in time. Close this screen and try again. (' + event + ')')); }, 20000);
+      var done = function (err, result) { clearTimeout(timer); finish(err, result); };
+      try {
+        var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
+        if (returned && typeof returned.then === 'function') {
+          returned.then(function (r) { done(null, r); }, function (e) { done(e); });
+        }
+      } catch (err) { done(err); }
+    });
+  }
+
+  function node(tag, className, text) {
+    var el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined && text !== null) el.textContent = String(text);
+    return el;
+  }
+
+  function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+
+  var el = {
+    title: document.getElementById('sr-title'),
+    blurb: document.getElementById('sr-blurb'),
+    error: document.getElementById('sr-error'),
+    list: document.getElementById('sr-list'),
+    note: document.getElementById('sr-note'),
+  };
+
+  var state = { kind: 'colour', sources: [], chosen: 'none', empty: '' };
+
+  function render() {
+    clear(el.list);
+
+    /**
+     * One row is never a list, and here it means the house has nothing to
+     * offer: the only entry is "Leave it alone". The driver withdraws the job
+     * entirely in that case, so this is the race — a curve deleted between
+     * opening the editor and opening this screen — rather than the common path.
+     */
+    if (state.sources.length <= 1) {
+      el.list.appendChild(node('div', 'empty', state.empty));
+      el.note.style.display = 'none';
+      return;
+    }
+
+    for (var i = 0; i < state.sources.length; i++) {
+      el.list.appendChild(pickRow(state.sources[i]));
+    }
+    el.note.style.display = '';
+  }
+
+  function pickRow(source) {
+    var row = node('button', 'pick');
+    row.type = 'button';
+    row.setAttribute('role', 'radio');
+    row.setAttribute('aria-checked', state.chosen === source.id ? 'true' : 'false');
+
+    row.appendChild(node('span', 'dot', '✓'));
+
+    var what = node('span', 'what');
+    what.appendChild(node('span', 'name', source.name));
+    if (source.subtitle) what.appendChild(node('span', 'sub', source.subtitle));
+    row.appendChild(what);
+
+    row.appendChild(valueOf(source));
+
+    row.addEventListener('click', function () { choose(source.id); });
+    return row;
+  }
+
+  /**
+   * What the row shows on the right, which is the one thing the two questions
+   * do not share.
+   *
+   * "Leave it alone" shows nothing at all — it is not a setup and has no value
+   * to report, and a dash or an empty bar beside it would read as a setup that
+   * is currently producing nothing.
+   */
+  function valueOf(source) {
+    if (source.swatch === undefined && source.level === undefined) return node('span');
+
+    if (state.kind === 'colour') {
+      var dab = node('span', source.swatch ? 'dab' : 'dab none');
+      if (source.swatch) dab.style.background = source.swatch;
+      return dab;
+    }
+
+    var level = node('span', 'level');
+    var bar = node('span', 'bar');
+    var fill = node('i');
+    // Clamped in the view as well as computed in the driver, because a width
+    // past 100% silently overflows the track and reads as a full bar.
+    fill.style.width = Math.round(Math.max(0, Math.min(1, source.level || 0)) * 100) + '%';
+    bar.appendChild(fill);
+    level.appendChild(bar);
+    level.appendChild(node('span', 'pct',
+      source.level === null ? '—' : Math.round(source.level * 100) + '%'));
+    return level;
+  }
+
+  /**
+   * Chosen, and saved, before anything is redrawn.
+   *
+   * The optimistic repaint happens first so the tap feels immediate, and a
+   * refusal puts the row back — the driver refuses one thing here, clearing the
+   * last of the two sources, and the row that caused it must not be left
+   * looking like it was accepted.
+   */
+  function choose(id) {
+    var previous = state.chosen;
+    state.chosen = id;
+    render();
+
+    emit('setSource', { id: id }).then(function () {
+      el.error.style.display = 'none';
+    }).catch(function (err) {
+      state.chosen = previous;
+      render();
+      fail(err);
+    });
+  }
+
+  function fail(err) {
+    el.error.textContent = err && err.message ? err.message : String(err);
+    el.error.style.display = '';
+  }
+
+  emit('getSource').then(function (payload) {
+    state.kind = payload.kind;
+    state.sources = payload.sources || [];
+    state.chosen = payload.chosen || 'none';
+    state.empty = payload.empty || '';
+    el.title.textContent = payload.title;
+    el.blurb.textContent = payload.blurb;
+    el.note.textContent = payload.note;
+    render();
+  }).catch(fail);
+}
+
+(function () {
+  var tries = 0;
+  function waitForHomey() {
+    if (window.Homey && typeof window.Homey.emit === 'function') { __lkBootSr(window.Homey); return; }
+    if (++tries > 100) {
+      var root = document.getElementById('sr-root');
+      if (root) {
+        var banner = document.createElement('div');
+        banner.className = 'msg bad';
+        banner.textContent = 'This screen could not reach Homey. Close it and try again.';
+        root.appendChild(banner);
+      }
+      return;
+    }
+    setTimeout(waitForHomey, 50);
+  }
+  window.onHomeyReady = function (ready) { __lkBootSr(ready || window.Homey); };
+  waitForHomey();
+})();
+</script>

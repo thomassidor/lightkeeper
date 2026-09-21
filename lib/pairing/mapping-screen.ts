@@ -1,5 +1,6 @@
 import type { PickerLight } from './target-picker';
 import type { MappingRule } from '../mapping/mapping-types';
+import type { MappingRuleDto } from '../validation/pairing-dto';
 import type { TargetSpec } from '../outputs/light-intent';
 
 /**
@@ -126,4 +127,36 @@ export function mappingRuleRows(rules: MappingRule[], lights: PickerLight[]): Ma
  */
 export function ruleTargetFrom(deviceIds: string[] | null): TargetSpec | null {
   return deviceIds && deviceIds.length > 0 ? { kind: 'devices', deviceIds } : null;
+}
+
+/**
+ * One validated row, as the rule a profile stores.
+ *
+ * The whole of the conversion, in one place, because it was in two and they
+ * disagreed. `setGesture` carried the preset through and `setRules` — the bulk
+ * path — rebuilt the rule field by field and left it behind, so a
+ * `brightness_set` or a `color_set` arriving that way was stored as a job that
+ * says "set a value" and names none. `validateControllerProfile` refuses
+ * exactly that shape, so the device paired, wrote its store and went
+ * unavailable on the next `onInit` with nothing naming the row that did it.
+ *
+ * The preset is not optional-if-present-please: `validateMappingRules` has
+ * already dropped any row whose function needs a value and has none, so every
+ * DTO reaching here carries what it must and the spread is faithful rather than
+ * forgiving.
+ *
+ * Here rather than inline in the driver for the reason everything else in this
+ * file is: a file containing `extends Homey.Driver` cannot be imported by a
+ * test (platform §13), and one shared function is the only way the two paths
+ * can be held to the same answer.
+ */
+export function storedRuleFrom(dto: MappingRuleDto): MappingRule {
+  return {
+    id: dto.id,
+    function: dto.function,
+    inputKey: dto.inputKey,
+    // null inherits the controller's own targets.
+    target: ruleTargetFrom(dto.deviceIds),
+    ...(dto.preset !== undefined ? { preset: dto.preset } : {}),
+  };
 }

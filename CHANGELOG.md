@@ -3,10 +3,172 @@
 Every release, in full. [`README.md`](README.md#changelog) carries the short version — the current
 release in a few bullets and one line for each older one; this is where the detail lives.
 
-Newest first. Pre-1.0, so there are no major bumps for breaking changes: a change that would break
-something says so in its own entry instead.
+Newest first. **Lightkeeper is in early development**, and pre-1.0 there are no major bumps for
+breaking changes: a change that would break something says so in its own entry instead. Read the
+entry before updating — a device may need Homey's **Repair** run on it, or in the worst case
+deleting and adding again. [`FAQ.md` → Is this finished?](FAQ.md#is-this-finished) has the longer
+answer.
 
 ## 0.6.5
+
+### The setup screens, redrawn against the design
+
+Every pairing screen in all five device types has been put beside the design canvas and brought into
+line with it — [`docs/design/`](docs/design/README.md) carries the canvas and the eight places the
+app deliberately still differs. Most of it is colour and spacing that nobody would name but everybody
+would feel: one muted grey where there were three, a chevron that clears the 3:1 a UI mark owes, one
+recessed grey instead of two, a 12px corner on every inset panel. Six things are more than that.
+
+**A schedule block is given a colour now, not a warmth.** It offered a Candlelight-to-Daylight
+slider; it offers the same closed set of colours a Colour Curve Light does, eight shown and sixteen
+behind "Show more colours". A lamp that cannot take a colour is not left out — it gets the colour
+temperature that goes with whichever swatch was chosen, so a block does the same thing to every lamp
+in the room rather than one thing to the colour bulbs and nothing to the rest. A schedule now also
+publishes the colour it is holding, so it can be read in a Flow and in Insights the way the other
+device types already could.
+
+**Two blocks that overlap can be merged from the screen that warns about them.** The warning already
+said what would happen — the later block wins while they overlap, and nothing breaks. It now offers
+to make them one block, or to leave them exactly as they are. Next was never blocked and still is
+not.
+
+**A schedule's last screen shows the day it just described**, with its blocks on it, including one
+that crosses midnight. It was the only device type whose review had no picture, on the one device
+type whose whole configuration is a picture.
+
+**Following the sun now shows where the sun is.** With no light sensor picked, the brightness screen
+drew four shapes to choose between and then nothing at all about today. It now carries a card saying
+when this room gets its light, where the sun is right now on the day's own range, and what the lamps
+will do as it arrives — the same job the sensor's week does when there is a sensor.
+
+**"No lights yet" is a screen rather than a message.** Opening Lightkeeper on a Homey with no lights
+paired showed one grey line. It now says what is missing, offers to look again, offers to go and add
+one, and offers to close.
+
+**An API key that Homey accepts but will not build Flows with is explained properly.** The screen
+keeps the key on view, masked, so the next attempt is not a guess about which one was pasted — and it
+says the thing that saves that attempt: permissions cannot be added to a key after it is made.
+
+### Setting the colour before lights come on is hidden for now
+
+The switch that appeared on the circadian and Colour Curve setup screens in this release is not
+drawn any more, while where it belongs is settled. **Nothing about the behaviour changes**: a newly
+added device still sets the colour in advance, a device added before this release still does not,
+and a light that ever comes on by itself from it still turns the whole thing off for that device and
+never tries again. What is gone for the moment is the switch and the button that tried it on your own
+lamps.
+
+
+### A light switched on, or switched off, is no longer mistaken for a person
+
+Two more of these, found by reading a day of diagnostics out of a house running six Lightkeeper
+devices. Both are the same mistake the entries below describe — a lamp doing something ordinary,
+read as somebody taking its light over by hand — in the two places nothing was watching for it.
+
+**A light that comes back on tells you what it came back on at**, and that used to be read as
+somebody moving it. A lamp switched on comes up at whatever level it was last showing, and says so a
+few seconds later; the app already made allowance for that, but the allowance was as long as its own
+work happened to take, and a pass with little to do left it too short. Seen in the Garage: four
+lamps came on together, reported their old levels four seconds later, and all four were set aside as
+overridden — so the Room-sensing Light driving them did nothing at all for the twenty-nine minutes
+they were on. The first thing a light says after coming on is now read as the light, not as a
+person. Anyone who switches a light on and *then* dims it is still recognised, because that is the
+second thing it says.
+
+**A light that fades out as it switches off** reports itself part-way down on the way, about half a
+minute before it reports itself off. A reading of exactly nothing was already understood as a light
+going off; one that fades through a tenth was not, so every switch-off in one room left a false
+"someone took this over" behind it for the last half minute of its life. Those are now recorded as
+what they were. Nothing about how lights are driven changes here — the reading still stands the
+light down for that half minute, deliberately, because the proof that it was switching off arrives
+afterwards and waiting for it would mean fighting somebody who really had just dimmed a lamp.
+
+**And the app's own record of all this no longer fills up with its own voice.** Everything set
+aside — including the routine echo of a change the app itself had just made — took a line in a log
+that holds the last hundred and twenty. One device was losing three hundred and forty of them every
+five hours, and nine in ten of those lines were an echo. A run of identical entries is now one line
+that says how many, and a light repeating an override it has already raised counts against that
+override instead of taking a new line each time. The same history now reaches back days rather than
+hours, which is what makes any of the above visible the next time.
+
+### A remote button that turns the lights on the way the rest of the house already knows
+
+A Light Remote's buttons could do nine things, and every one of them was self-contained: on, off,
+brighter, a set brightness, a set colour. None of them could say *come on the way the house already
+knows it should look right now* — which is precisely what a circadian light, a Colour Curve Light, a
+schedule and a Room-sensing Light each work out every minute.
+
+There is a tenth job now: **On – with Lightkeeper**. Choose which of your other Lightkeeper devices
+the button takes its colour and warmth from, and which one it takes its brightness from, and the
+press reads both at the moment it happens. A button set up in February goes on being right in June,
+because it stores which setup to follow rather than the numbers that setup happened to be showing.
+
+Two pickers sit behind the card, and each row shows what that setup is producing **right now** — a
+swatch for a colour, a bar and a percentage for a brightness — because a house with three curves in
+it is told apart by what each one is doing, not by the names they were given months ago.
+
+A switch on the same card makes a second press turn the lights off again, so one button is a whole
+light switch. It is on to begin with, and it follows the same rule the existing **On and off** job
+does: if any of the lights is on, they all go off.
+
+The values reach the lamps in a single change rather than three visible steps, exactly as the
+`Set lights the Lightkeeper way` Flow card does — it is the same machinery, reached from a button
+instead of from a Flow. And if the setup a button follows is deleted, the button still turns the
+lights on; it simply cannot say what colour.
+
+The job is offered only once you own at least one circadian light, Colour Curve Light, schedule or
+Room-sensing Light — there is nothing to follow before that.
+
+### A lamp that takes its time is no longer mistaken for a person
+
+Some lamps do not jump to a new colour temperature or brightness — they fade to it, and a few of them
+fade for far longer than anything visible from the app would suggest. Watched on a real Homey: four
+lamps in one room accepted a warmth, acknowledged it, and then spent ninety minutes drifting towards
+it a hundredth at a time.
+
+Every one of those intermediate readings looked, to the app, like somebody had reached for the
+vendor's own app and moved the lamp — so it stood down and left that room alone, which is exactly
+what it should do when a person takes over, and exactly the wrong thing here. The room was released
+only when the lights were switched off at the wall.
+
+The app now recognises a lamp that is on its way. A reading closer to what was asked for than
+anything since it was asked — arriving gradually, a step at a time — is that write landing late, and
+the lights stay under the schedule's control while it finishes. Somebody genuinely taking a light
+over still gets it: a light moved the other way, moved past what was asked for, or set somewhere else
+in one go all read as a person, as they did before.
+
+### A Light Remote with a colour button no longer arrives broken
+
+A Light Remote whose buttons included **Set colour** paired cleanly and was then unavailable before
+anybody had touched it, saying only that its stored configuration could not be read. Nothing named
+the button that caused it, and nothing on any screen had refused it: the colour job was offered
+wherever the chosen lamps could show one, and accepted all the way to the store.
+
+The store was never at fault. The check that reads a configuration back on every start carried a
+hand-written list of the jobs it would accept, and `Set colour` had been added to the screens, to the
+engine and to the save path without ever being added to that list — so the first read after pairing
+refused the device's own configuration. The list is complete now, and a test fails if a job is ever
+offered that cannot be stored.
+
+**Nothing was lost.** A device quarantined this way is left exactly as it was saved, deliberately, so
+a Light Remote that has been sitting unavailable comes back with every button intact as soon as this
+version is installed. Nothing needs to be set up again.
+
+A second version of the same fault was closed beside it, one release ahead of anybody meeting it: of
+the two ways a button's job reaches the store, only one carried the value the job was set to. The
+screens use the other one, so no device was affected — both now go through a single shared step.
+
+### Press-to-find is gone
+
+The remote picker's *"Or press a button to find it"*, the screen it opened, and the live indicator on
+the buttons screen that jumped to the row a real press landed on have all been removed. The shortcut
+did not work reliably enough to be the thing to reach for, and the list it was a shortcut past is the
+path that always works — some remotes speak only through Flow cards and can never be heard at all, so
+the list could never have been replaced by it.
+
+Choosing a remote is unchanged: it is still grouped by room, still searchable, and still carries how
+many separate presses Homey has heard from each device, which is the same evidence pressing a button
+was there to give.
 
 ### What each device wants your lights to be, readable from your own Flows
 

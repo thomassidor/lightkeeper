@@ -407,11 +407,11 @@ export const RENDER_REPLIES = {
   'sensor.html': {
     listSensors: {
       rooms: [
-        { zoneName: 'Kitchen', sensors: [
+        { zoneId: 'z1', zoneName: 'Kitchen', sensors: [
           { id: 's1', name: 'Kitchen motion', zoneName: 'Kitchen', lux: 41, at: Date.now() - 60_000, available: true, selected: true },
           { id: 's2', name: 'Window sensor', zoneName: 'Kitchen', lux: 1400, at: Date.now() - 90_000, available: true, selected: false },
         ] },
-        { zoneName: 'Hall', sensors: [
+        { zoneId: 'z2', zoneName: 'Hall', sensors: [
           { id: 's3', name: 'Hall motion', zoneName: 'Hall', lux: 12, at: Date.now() - 3_600_000, available: true, selected: false },
           // Greyed rather than hidden: a dead sensor somebody expects to see is
           // then explained rather than missing.
@@ -425,19 +425,19 @@ export const RENDER_REPLIES = {
          * so the fixture carries a house rather than the two rooms that happen
          * to have one, and the folded list and its `none` rows are drawn.
          */
-        { zoneName: 'Living room', sensors: [
+        { zoneId: 'z3', zoneName: 'Living room', sensors: [
           { id: 's5', name: 'Shelf sensor', zoneName: 'Living room', lux: 90, at: Date.now() - 400_000, available: true, selected: false },
         ] },
-        { zoneName: 'Bedroom', sensors: [
+        { zoneId: 'z4', zoneName: 'Bedroom', sensors: [
           { id: 's6', name: 'Bedroom motion', zoneName: 'Bedroom', lux: 4, at: Date.now() - 7_200_000, available: true, selected: false },
         ] },
-        { zoneName: 'Dining', sensors: [] },
-        { zoneName: 'Landing', sensors: [] },
-        { zoneName: 'Garden', sensors: [
+        { zoneId: 'z5', zoneName: 'Dining', sensors: [] },
+        { zoneId: 'z6', zoneName: 'Landing', sensors: [] },
+        { zoneId: 'z7', zoneName: 'Garden', sensors: [
           { id: 's7', name: 'Garden light sensor', zoneName: 'Garden', lux: 8200, at: Date.now() - 120_000, available: true, selected: false },
         ] },
-        { zoneName: 'Basement', sensors: [] },
-        { zoneName: '', unzoned: true, sensors: [] },
+        { zoneId: 'z8', zoneName: 'Basement', sensors: [] },
+        { zoneId: 'z9', zoneName: '', unzoned: true, sensors: [] },
       ],
       selected: ['s1'],
       sky: { elevation: 18, level: 0.55, location: { latitude: 55.68, longitude: 12.57 } },
@@ -456,6 +456,13 @@ export const RENDER_REPLIES = {
       staleFor: null,
       atDark: '20:18',
       atBright: '12:04',
+      /**
+       * Today's sun. Null on the sensor path in the real payload, and present
+       * here so a render of THIS screen can also be read against the sun
+       * variant — the fixture serves both, and the view decides which card to
+       * draw from `response.sensor` rather than from this.
+       */
+      sun: { elevation: 12.4, peak: 41.8, sunset: '19:48', now: '10:04' },
     },
     setDaylight: {
       response: RESPONSE,
@@ -481,13 +488,18 @@ export const RENDER_REPLIES = {
     getSchedule: {
       maxEntries: 12,
       support: SUPPORT,
+      // The same closed set the curve screen draws from: a block picks a colour
+      // rather than a warmth as of this release.
+      palette: PALETTE_SWATCHES,
+      featuredColors: 8,
       lights: LIGHTS.slice(0, 2),
       entries: [
         // The SELECTED block, and it carries a brightness so the render draws
         // that control open rather than only its switch — the same reason the
         // day, curve and job fixtures set theirs.
         { id: 'a', onAt: 420, end: { kind: 'time', at: 520 }, brightness: 0.8 },
-        { id: 'b', onAt: 1155, end: { kind: 'time', at: 1410 }, brightness: 0.2, temperature: 0.95 },
+        { id: 'b', onAt: 1155, end: { kind: 'time', at: 1410 }, brightness: 0.2,
+          temperature: 0.95, color: 'amber' },
         // Crosses midnight AND overlaps the one above, so the render draws both
         // the wrapped bar and the outlined conflict.
         { id: 'c', onAt: 1290, end: { kind: 'time', at: 60 } },
@@ -606,6 +618,13 @@ export const RENDER_REPLIES = {
         { id: 'warmer', label: say('functions.warmer'), preset: 'none' },
         { id: 'colder', label: say('functions.colder'), preset: 'none' },
         { id: 'color_set', label: say('functions.color_set'), preset: 'colour' },
+        /**
+         * The tenth, and it is NOT a tenth grid cell — the view pulls it out by
+         * its preset kind and draws it as the card above. It trails the nine
+         * here because that is the order `availableFunctions()` yields, and a
+         * fixture that reordered them would render a grid this app never draws.
+         */
+        { id: 'lightkeeper_on', label: say('functions.lightkeeper_on'), preset: 'lightkeeper' },
       ],
       // The newest job, chosen, so the render draws the grid, the palette that
       // opens under it AND the checklist. A job carrying no value would show
@@ -618,15 +637,47 @@ export const RENDER_REPLIES = {
       lights: RULE_LIGHTS,
       allLabel: say('job.allLights', { count: say('count.three') }),
       chosenLights: ['light-1'],
+      /**
+       * The two rows of the card, in the words the driver resolves for them.
+       *
+       * Both answered, so the render shows the card at rest rather than
+       * half-filled — and neither is "Leave it alone", because a contact sheet
+       * of the unset state would say nothing about the screen's real shape.
+       */
+      sourceNames: { colour: 'Follow the sun', brightness: 'Desk sensor light' },
     },
     setGesture: { set: true },
     test: { writes: 2, skipped: 0, targets: 2 },
   },
 
-  'listen.html': {
-    startListening: { listening: true },
-    stopListening: { listening: false },
+  /**
+   * Which setup a button takes a value from — one file, two questions, and the
+   * BRIGHTNESS one is drawn because it is the richer of the two: a bar and a
+   * percentage per row, where the colour question draws one swatch.
+   */
+  'source.html': {
+    getSource: {
+      kind: 'brightness',
+      title: say('job.takeBrightnessTitle'),
+      blurb: say('job.takeBlurb'),
+      note: say('job.levelNote'),
+      empty: say('job.noSources'),
+      chosen: 'lk-daylight-1',
+      sources: [
+        { id: 'none', name: say('flow.leaveAlone'), subtitle: say('flow.leaveAloneHint') },
+        { id: 'lk-curve-1', name: 'Evening curve',
+          subtitle: 'Colour Curve Light · Living room', level: 0.4 },
+        { id: 'lk-circadian-1', name: 'Follow the sun',
+          subtitle: 'Circadian light · Whole house', level: 0.75 },
+        { id: 'lk-sched-1', name: "Kids' bedtime",
+          subtitle: "Light schedule · Kids' room", level: 0.15 },
+        { id: 'lk-daylight-1', name: 'Desk sensor light',
+          subtitle: 'Room-sensing Light · Office', level: 0.9 },
+      ],
+    },
+    setSource: { chosen: 'lk-daylight-1' },
   },
+
 };
 
 /**
@@ -674,8 +725,22 @@ export const DRIVER_REPLIES = {
     getReview: {
       stepIndex: 3,
       stepCount: 3,
+      /**
+       * The same three blocks `blocks.html`'s fixture carries, as percentages
+       * of the day — including the one that crosses midnight, which arrives as
+       * two so the render shows the wrap.
+       */
+      hero: {
+        kind: 'timeline',
+        blocks: [
+          { left: 29.17, width: 6.94 },
+          { left: 80.21, width: 17.71 },
+          { left: 89.58, width: 10.42 },
+          { left: 0, width: 4.17 },
+        ],
+      },
       rows: [
-        { label: say('review.lights'), value: 'Ceiling, Reading lamp', view: 'lights' },
+        { label: say('review.lights'), value: '2 in Living room', view: 'lights' },
         { label: say('review.timeBlocks'), value: '3', view: 'blocks' },
         { label: say('review.onTheseDays'), value: 'Mon to Fri', view: 'blocks' },
       ],

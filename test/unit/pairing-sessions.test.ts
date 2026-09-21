@@ -9,8 +9,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 import { deriveControllerName, deriveSuffixedName } from '../../lib/pairing/derive-name';
 import {
-  mappingGroups, mappingRuleRows, ruleTargetFrom, singleLightOf,
+  mappingGroups, mappingRuleRows, ruleTargetFrom, singleLightOf, storedRuleFrom,
 } from '../../lib/pairing/mapping-screen';
+import { validateControllerProfile } from '../../lib/validation/plans';
+import { DEFAULT_BEHAVIOR } from '../../lib/mapping/mapping-types';
 import { buildSourceList, groupSourcesByRoom } from '../../lib/pairing/source-list';
 import { validateMappingRules } from '../../lib/validation/pairing-dto';
 import type { DeviceCatalog } from '../../lib/device-catalog';
@@ -628,6 +630,139 @@ describe('a rule that names its own lights', () => {
 
     assert.equal(rules.length, 0);
     assert.match(dropped[0]!.reason, /no colour to set/);
+  });
+});
+
+/**
+ * "On – with Lightkeeper": the third kind of value a job can carry.
+ *
+ * The preset is two device ids and a switch, and the rules that matter are the
+ * two the other kinds do not have — a preset naming NEITHER device is refused,
+ * and the message a dropped row carries has to name what is actually missing.
+ * The second was a real regression waiting to happen: the reason was built by a
+ * ternary that said "brightness" for everything that was not a colour, which
+ * was true while there were two kinds.
+ */
+describe('a composed job carries two device ids', () => {
+  const LIGHTS = new Set(['l1', 'l2']);
+  const OFFERED = ['toggle', 'lightkeeper_on'] as const;
+
+  const row = (preset?: unknown) => ({
+    id: 'r1', function: 'lightkeeper_on', inputKey: 'a|press',
+    ...(preset !== undefined ? { preset } : {}),
+  });
+
+  test('both sources and the switch survive into the stored rule', () => {
+    const preset = {
+      colourSource: 'lk-curve-1', brightnessSource: 'lk-daylight-1', pressAgainOff: true,
+    };
+    const { rules, dropped } = validateMappingRules([row(preset)], LIGHTS, OFFERED);
+
+    assert.deepEqual(dropped, []);
+    assert.deepEqual(storedRuleFrom(rules[0]!).preset, preset);
+  });
+
+  test('one source alone is an answer; neither is not', () => {
+    const one = validateMappingRules([row({
+      colourSource: 'none', brightnessSource: 'lk-daylight-1', pressAgainOff: false,
+    })], LIGHTS, OFFERED);
+    assert.equal(one.rules.length, 1);
+
+    assert.throws(
+      () => validateMappingRules([row({
+        colourSource: 'none', brightnessSource: 'none', pressAgainOff: true,
+      })], LIGHTS, OFFERED),
+      /names no Lightkeeper device/,
+    );
+  });
+
+  test('a row with no preset at all names what it is missing', () => {
+    const { rules, dropped } = validateMappingRules([row()], LIGHTS, OFFERED);
+
+    assert.equal(rules.length, 0);
+    assert.match(dropped[0]!.reason, /Lightkeeper device to take a colour or a brightness from/);
+    assert.ok(!/brightness to set/.test(dropped[0]!.reason),
+      'the old two-arm ternary reported every non-colour kind as a missing brightness');
+  });
+
+  test('the switch has to be a boolean, not a string a script happened to send', () => {
+    assert.throws(
+      () => validateMappingRules([row({
+        colourSource: 'lk-curve-1', brightnessSource: 'none', pressAgainOff: 'yes',
+      })], LIGHTS, OFFERED),
+      /pressAgainOff/,
+    );
+  });
+});
+
+/**
+ * A validated row and the rule a profile stores are the SAME rule.
+ *
+ * The bug this pins: the two pairing paths each built the stored rule by hand
+ * and only one of them copied the preset across. `setGesture`, which the buttons
+ * screen uses, carried it; `setRules`, the bulk path, rebuilt the rule field by
+ * field and dropped it. A `brightness_set` or a `color_set` saved that way was
+ * stored as a job that promises a value and names none — which
+ * `validateControllerProfile` refuses — so the device paired, wrote its store,
+ * and came up unavailable on the very next `onInit`.
+ *
+ * The round trip is the assertion, not the field list: whatever
+ * `validateMappingRules` is willing to return must survive `storedRuleFrom` into
+ * a profile the load path will read back.
+ */
+describe('a validated row survives into a readable profile', () => {
+  const LIGHTS = new Set(['l1', 'l2']);
+  const OFFERED = ['toggle', 'brightness_set', 'color_set'] as const;
+
+  const profileAround = (mappings: unknown[]) => ({
+    schemaVersion: 1,
+    enabled: true,
+    source: { deviceId: 'remote-1', eventSurfaceFingerprint: 'fp' },
+    target: { kind: 'devices', deviceIds: ['l1', 'l2'] },
+    mappings,
+    behavior: { ...DEFAULT_BEHAVIOR },
+    managedFlows: [],
+  });
+
+  const rows = [
+    { id: 'r1', function: 'toggle', inputKey: 'a|press' },
+    { id: 'r2', function: 'brightness_set', inputKey: 'b|press', preset: { brightness: 0.4 } },
+    { id: 'r3', function: 'color_set', inputKey: 'c|press', preset: { color: 'amber' }, lights: ['l2'] },
+  ];
+
+  test('the preset reaches the stored rule', () => {
+    const { rules, dropped } = validateMappingRules(rows, LIGHTS, OFFERED);
+    assert.deepEqual(dropped, []);
+
+    const stored = rules.map(storedRuleFrom);
+    assert.deepEqual(stored.map(rule => rule.preset), [
+      undefined, { brightness: 0.4 }, { color: 'amber' },
+    ]);
+    assert.deepEqual(stored[2]!.target, devicesTarget(['l2']));
+  });
+
+  test('and the profile it lands in is one the load path can read', () => {
+    const { rules } = validateMappingRules(rows, LIGHTS, OFFERED);
+    const profile = validateControllerProfile(profileAround(rules.map(storedRuleFrom)));
+
+    assert.deepEqual(profile.mappings.map(rule => rule.function), [
+      'toggle', 'brightness_set', 'color_set',
+    ]);
+  });
+
+  test('a rule stripped of its preset is exactly what quarantines the device', () => {
+    // The failure the shared conversion exists to prevent, stated as the thing
+    // that must still throw: this is what the old `setRules` wrote.
+    const { rules } = validateMappingRules(rows, LIGHTS, OFFERED);
+    const stripped = rules.map(rule => {
+      const { preset: _preset, ...rest } = storedRuleFrom(rule);
+      return rest;
+    });
+
+    assert.throws(
+      () => validateControllerProfile(profileAround(stripped)),
+      /preset` is missing|preset is missing/,
+    );
   });
 });
 

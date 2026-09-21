@@ -54,30 +54,61 @@
     /* Between the accent and its line. The middle of the three listening dots,
        and the only place a mid-tone is needed: the logo has none. */
     --lk-accent-mid: #9f81dc;
+    /* A block on the schedule timeline that is not the one being edited. It
+       borrowed --lk-accent-line, which is the edge of a numbered badge and a
+       step too pale to hold a 52px bar: four of them across a grey track read
+       as a smudge rather than as the day's other windows. */
+    --lk-block: #b9a6e4;
+    /* And a block on a timeline where NOTHING is selected — the review's
+       picture of the finished day. Deeper than the one above because the pale
+       violet only exists to recede behind a selected block, and on a review
+       there is nothing for it to recede behind: four faint bars on a grey
+       track read as a chart that had failed to load. */
+    --lk-block-settled: #7a57c8;
     --lk-accent-strong: #3b2279;
+    /* Two more steps down the same violet, for the three-bar level picture: it
+       is a LEVEL rather than a direction, so only the tallest bar is at full
+       strength and the two under it fall away. Derived from the accent the same
+       way the tints are — the logo has no mid-tones to read them out of. */
+    --lk-level-mid: #7a62c0;
+    --lk-level-low: #c4b8e4;
+
+    /* Drawn ON the accent tint rather than on white, and that is the whole
+       reason these three exist. A grey hairline on #f3eefc is the one place in
+       this palette where a neutral reads as dirty, and --lk-muted on it reads
+       as faded rather than as secondary. So the tint gets its own edge, its own
+       rule and its own second ink, all violet-shifted to match the ground they
+       sit on. */
+    --lk-tint-line: #e2d8f6;
+    --lk-tint-rule: #f0ecfa;
+    --lk-tint-ink: #5a4d80;
     --lk-ring: rgba(42, 25, 88, .16);
     /* The edge of a handle nobody has selected. It is NOT --lk-ring: at .16 a
        26px circle on an orange strip had no edge at all, and the second
        boundary looked like a smudge rather than something to drag. */
     --lk-handle-edge: rgba(42, 25, 88, .45);
 
-    /* The ink ladder. Every one of these clears WCAG AA (4.5:1) against
-       --lk-surface, because all five are used between 11px and 15px — and the
-       two lightest carry the section titles, the tile meta and the help text.
-       They were 3.1:1 (--lk-muted) and 2.6:1 (--lk-faint): grey on white that
-       is legible on a desk monitor and not on a phone in daylight. What
-       separates the steps now is weight, size and caps as much as tone. */
+    /* The ink ladder: THREE greys, and the design canvas has no fourth.
+
+       It had five. --lk-sub (#5f6672) and --lk-faint (#6f7683) sat either side
+       of --lk-muted and were never a step anybody could see — #6f7683 against
+       #6a7180 is a difference of five in one channel, which is not a decision,
+       it is a drift. Both are gone and their consumers took the neighbour the
+       canvas actually draws: an end-caption and the midnight/noon line are
+       --lk-body, everything else that was faint is --lk-muted.
+
+       All three clear WCAG AA (4.5:1) against --lk-surface, because all three
+       are used between 10.5px and 15px. Collapsing --lk-faint RAISED the
+       contrast of every caption that used it, from 4.6:1 to 4.9:1. What
+       separates the steps is weight, size and caps as much as tone. */
     --lk-ink: #16181d;
-    --lk-sub: #5f6672;
     --lk-body: #4b5563;
     --lk-muted: #6a7180;
-    --lk-faint: #6f7683;
 
     /* transparent, not white: the pairing container paints the page behind us,
        and claiming it would flatten every card against it. */
     --lk-page: transparent;
     --lk-surface: #ffffff;
-    --lk-raised: #f7f8fa;
     --lk-line: #eceef2;
     --lk-field: #e3e6ec;
     /* The edge of an UNTICKED box or radio, and only that. A shade darker than
@@ -86,8 +117,18 @@
     --lk-box: #d4d8e0;
     --lk-hover: #c9d2e0;
     /* A chevron is an affordance, not a value: lighter than the text it sits
-       beside, so a list of rows reads as labels rather than as arrows. */
-    --lk-chev: #a8aeb9;
+       beside, so a list of rows reads as labels rather than as arrows.
+
+       #a8aeb9 took that too far. A non-text UI component still owes 3:1, and
+       at #a8aeb9 the chevron was 2.4:1 — an affordance nobody has to read is
+       still one somebody has to SEE. The canvas's #8f97a3 is 3.2:1 and is
+       still visibly lighter than every ink in the ladder above. */
+    --lk-chev: #8f97a3;
+    /* The circled "i" on a .tip. Its own grey rather than the chevron's,
+       because it is a ring drawn around a LETTER: the ring may sit at the
+       chevron's weight, the letter inside it may not (it is text, and owes
+       4.5:1), so the two are named separately and only the ring is light. */
+    --lk-tip-edge: #8a919e;
     --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
 
     /* The pairing primitives' own colours, here for the same reason every
@@ -97,6 +138,10 @@
     --lk-slider-knob-shadow: 0 0 0 2px rgba(22, 24, 29, .6), 0 1px 4px rgba(16, 24, 40, .35);
     --lk-slider-knob-shadow-warm: 0 0 0 2.5px #ffffff, 0 1px 4px rgba(16, 24, 40, .35);
     --lk-slider-inset: inset 0 0 0 1px rgba(22, 24, 29, .1);
+    /* The ring around a knob drawn at icon scale, where the full
+       --lk-slider-knob-shadow is two shadows on a 4px mark and comes out as a
+       smudge. One ring, half a pixel thinner than the real control's. */
+    --lk-knob-edge: rgba(22, 24, 29, .5);
     /* The two axes a slider can carry, as whole gradients rather than as a
        list of stops: a ramp is one decision about what the axis LOOKS like,
        and splitting it into six tokens would invite five of them to change. */
@@ -104,6 +149,25 @@
                                     #f2e6d6, #eaf0fb, #dbe8fb);
     --lk-bright-ramp: linear-gradient(90deg, #221a3d, #43318a, #7a5fc4,
                                       #b9a6e4, #ece5f9);
+    /* How light it is OUTSIDE, pale to deep — the third axis this app draws,
+       and the only one that runs dark at the TOP of its range rather than the
+       bottom. It is the week grid's scale, and its six stops are the same six
+       the cells are quantised to: `SHADES` in views/shared/week-grid.js, which
+       cannot read a custom property and so carries them again. Change one and
+       change the other; `pair-view-styles.test.ts` checks that they agree. */
+    --lk-lux-ramp: linear-gradient(90deg, #f4f2fa, #e0d6f6, #c4b0ec,
+                                   #9f81dc, #6b48bc, #3b2279);
+    /* The same six stops, the other way round, for the sun's own height.
+       Reversed on purpose: the lux ramp measures HOW MUCH LIGHT there is, so
+       more light is more ink, while this one is a picture of the DAY — and the
+       dark end of a day is the night. The two never meet on screen, because a
+       Room-sensing Light has a sensor or it has the sun. */
+    --lk-sun-ramp: linear-gradient(90deg, #3b2279, #6b48bc, #9f81dc,
+                                   #c4b0ec, #f4f2fa);
+    /* The hours of a "when does this room get its sun?" tile: the ones that
+       ARE this room's sun, and the ones that are the day going on around it. */
+    --lk-peak-on: #4b2ea0;
+    --lk-peak-off: #dfd4f4;
     /* The two ENDS of the warmth axis, for the two tiles that nudge along it
        rather than setting it. The whole ramp draws the same picture on both,
        which is no picture at all, so each of these runs from the middle of
@@ -112,13 +176,13 @@
        the real end of the axis is a chip with no edge, so the tile that said
        "cooler" showed nothing at all. Deepened to where it reads, and no
        further — it is a picture of a direction, not a colour to match. */
-    --lk-warmer-ramp: linear-gradient(90deg, #f7efe3, #e8892c);
-    --lk-cooler-ramp: linear-gradient(90deg, #f7efe3, #7ba7e0);
+    --lk-warmer-ramp: linear-gradient(90deg, #f2e6d6, #e8892c);
+    --lk-cooler-ramp: linear-gradient(90deg, #f2e6d6, #9fc0f0);
     /* A lamp that is ON, drawn rather than named: the one warm accent in an
        interface that is otherwise entirely violet, because "on" is a picture of
        light and the brand colour is a picture of the app. */
-    --lk-lamp-lit: #f0b429;
-    --lk-lamp-glow: rgba(240, 180, 41, .22);
+    --lk-lamp-lit: #f4c24a;
+    --lk-lamp-glow: rgba(244, 194, 74, .32);
     --lk-handle-shadow: 0 2px 6px rgba(16, 24, 40, .2);
     /* A small mark lifted off whatever it is drawn ON — the curve chart's
        selected point, which sits on top of a bar of any colour. */
@@ -129,6 +193,14 @@
     --lk-select-halo: 0 0 0 3px rgba(42, 25, 88, .18);
     --lk-handle-shadow-sel: 0 0 0 4px var(--lk-ring), 0 2px 8px rgba(16, 24, 40, .28);
     --lk-hairline: rgba(22, 24, 29, .1);
+    /* The two-hour cell a sensor reported NOTHING in, drawn as a hatch. Its own
+       two colours because nothing else in the app is a hatch: the pale stripe
+       has to sit above --lk-line without becoming white (a white stripe made
+       the cell read as missing from the grid rather than as empty in it), and
+       the edge has to hold the cell's rectangle at 11px tall, which the stripes
+       alone do not. */
+    --lk-hatch-pale: #f7f8fa;
+    --lk-hatch-edge: #dfe3e9;
     --lk-day-mark: rgba(22, 24, 29, .4);
     /* The curve chart's own "you are editing this point" line. Accent rather
        than ink, because on that chart it marks a SELECTION; on the day strip
@@ -141,6 +213,12 @@
     /* Not an error. The one thing that reads this way is a schedule overlap,
        which is allowed, resolved deterministically, and worth pointing at. */
     --lk-warn-bg: #fdf3e7; --lk-warn-ink: #7a4a10;
+    /* A key the Homey accepted and then refused to build a Flow with. Its own
+       colour rather than --lk-bad-ink, and a full step lighter, because it is
+       drawn as an EDGE round a field and as a 16px badge — at #8f1d18 a
+       1.5px border round a white field read as damage, and the message beside
+       it says the key itself is fine. */
+    --lk-reject: #c05a3e;
     --lk-flat-bg: #f4f5f7; --lk-flat-ink: #5b616e;
 
     background: var(--lk-page);
@@ -180,8 +258,13 @@
               margin-bottom: 10px; }
 
   #rs-root .section { margin-bottom: 18px; }
-  #rs-root .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase;
-                       letter-spacing: .06em; color: var(--lk-faint); margin: 0 0 8px 2px; }
+  /* The label over a group — "Does", "To", "When does this room get its sun?".
+     It is a .control-title with nothing on its right: the same 13.5px/600 ink,
+     sentence case. It used to be 12px uppercase small-caps in the faintest
+     grey, which made the two words holding the job screen's sentence together
+     read as filing-cabinet labels rather than as the sentence's own verbs. */
+  #rs-root .section-title { font-size: 13.5px; font-weight: 600; line-height: 1.2;
+                       color: var(--lk-ink); margin: 0 0 9px; }
 
   /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
   #rs-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
@@ -196,7 +279,7 @@
 
   #rs-root input[type=text], #rs-root input[type=password], #rs-root select {
     width: 100%; box-sizing: border-box; padding: 12px 13px; font-size: 15px;
-    border: 1.5px solid var(--lk-field); border-radius: 11px; background: var(--lk-surface);
+    border: 1.5px solid var(--lk-field); border-radius: 12px; background: var(--lk-surface);
     color: var(--lk-ink); font-family: inherit; -webkit-appearance: none; appearance: none; }
   /* The chevron's fill stays a literal: #6a7180 is --lk-muted, and a data URI
      cannot read a custom property. So this is the one place a token's value is
@@ -214,11 +297,19 @@
   #rs-root .btn:hover { border-color: var(--lk-hover); }
   #rs-root .btn:disabled { opacity: .45; cursor: not-allowed; }
   /* The same button across the width of the screen. What a secondary action
-     looks like when it is the only one on a pushed screen — "Stop listening",
-     "Close" — where a primary button would claim the choice was made. */
+     looks like when it is the only one on a pushed screen — "Close" — where a
+     primary button would claim the choice was made. */
   #rs-root .btn.wide { display: block; width: 100%; font-size: 16px; font-weight: 600;
                     padding: 14px; border-radius: 12px; min-height: 50px;
                     box-sizing: border-box; margin-top: 16px; }
+  /* And the same button when it is the SECOND of two, under a primary — "Put
+     them back". It borrows the primary's outline rather than the field grey,
+     because the pair is one decision offered twice ("show me" / "undo that")
+     and a grey partner reads as the disabled twin of the button above it.
+     Lighter than the primary in weight and height, never in hue. */
+  #rs-root .btn.wide.accent { border-color: var(--lk-accent); color: var(--lk-accent);
+                           font-size: 15px; font-weight: 500; padding: 13px;
+                           min-height: 48px; }
   #rs-root .btn-primary { width: 100%; font-size: 16px; font-weight: 600; padding: 14px;
                      border-radius: 12px; border: none; background: var(--lk-accent);
                      color: var(--lk-accent-ink); cursor: pointer; min-height: 50px;
@@ -227,7 +318,7 @@
 
   /* A default ground, so a .msg shown before any state class lands on it is
      still a message rather than bare text on the page. */
-  #rs-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 11px; font-size: 13.5px;
+  #rs-root .msg { margin-top: 14px; padding: 12px 13px; border-radius: 12px; font-size: 13.5px;
              line-height: 1.5; background: var(--lk-flat-bg); color: var(--lk-flat-ink); }
   #rs-root .ok { background: var(--lk-ok-bg); color: var(--lk-ok-ink); }
   #rs-root .bad { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
@@ -259,7 +350,7 @@
      device types. */
   #rs-root .steps.tight i { width: 16px; }
   #rs-root .steps i.on { background: var(--lk-accent); }
-  #rs-root .steps span { margin-left: 4px; font-size: 12px; color: var(--lk-faint); }
+  #rs-root .steps span { margin-left: 4px; font-size: 12px; color: var(--lk-muted); }
 
   /* `label · value · chevron`. The one shape everything secondary takes:
      a row that says what it is, what it is set to, and that it can be opened.
@@ -341,7 +432,7 @@
   #rs-root .slider.warm .knob { background: var(--lk-ink);
                              box-shadow: var(--lk-slider-knob-shadow-warm); }
   #rs-root .ends { display: flex; justify-content: space-between;
-                font-size: 11px; color: var(--lk-faint); margin: 9px 0 0; }
+                font-size: 11px; color: var(--lk-body); margin: 9px 0 0; }
 
   /* An aside under a control: "there is a device type that does this for you".
      Deliberately NOT a .msg — a message has a coloured ground and is about
@@ -356,7 +447,7 @@
      that one instead. */
   #rs-root .tip { display: flex; align-items: flex-start; gap: 7px;
                margin: 13px 0 0; font-size: 12px; line-height: 1.45;
-               font-style: italic; color: var(--lk-faint); }
+               font-style: italic; color: var(--lk-muted); }
   /* The circled i, DRAWN rather than set. A glyph that the phone's font does
      not carry renders as a box, which is why the one other mark this design
      puts inside text — the row chevron — is an entity rather than an icon; a
@@ -370,10 +461,10 @@
      text, and a mark written as a child would be written over. */
   #rs-root .tip::before { content: "i"; flex: none; box-sizing: border-box;
                        width: 15px; height: 15px; margin-top: 1px;
-                       border: 1.2px solid var(--lk-chev); border-radius: 50%;
+                       border: 1.2px solid var(--lk-tip-edge); border-radius: 50%;
                        font-size: 10px; font-weight: 700; font-style: normal;
                        line-height: 12.6px; text-align: center;
-                       color: var(--lk-chev); }
+                       color: var(--lk-muted); }
 
   /* The swatches a colour is chosen from, four across.
      Not one row of eight: at 390px that is 34px a swatch, under the touch
@@ -421,7 +512,30 @@
                            border: 3px solid var(--lk-accent); z-index: 2;
                            box-shadow: var(--lk-handle-shadow-sel); }
   #rs-root .clockline { display: flex; justify-content: space-between;
-                     font-size: 11px; color: var(--lk-faint); margin: 8px 2px 4px; }
+                     font-size: 11px; color: var(--lk-body); margin: 8px 2px 4px; }
+
+  /* The three or four decisions a flow is about to ask for, numbered.
+
+     SHARED rather than intro-only: the credential gate draws the same rows for
+     the four steps of minting a key, and it used to draw an <ol> instead — a
+     browser list with a browser's numerals, inside a screen where every other
+     number is a filled circle. Two places, one shape.
+
+     Spaced, not ruled. A hairline between two decisions turns a promise about
+     what is coming into a settings list, and the numbers already say these are
+     three of one thing. */
+  #rs-root .plan { display: flex; flex-direction: column; gap: 14px;
+                margin: 0 0 22px; }
+  #rs-root .decision { display: flex; align-items: flex-start; gap: 12px; }
+  #rs-root .decision .n { flex: none; width: 26px; height: 26px; border-radius: 50%;
+                       box-sizing: border-box;
+                       background: var(--lk-accent-tint); color: var(--lk-accent-strong);
+                       border: 1.5px solid var(--lk-accent-line);
+                       font-size: 13px; font-weight: 700;
+                       display: flex; align-items: center; justify-content: center; }
+  #rs-root .decision .what { font-size: 15px; font-weight: 600; line-height: 26px; }
+  #rs-root .decision .why { font-size: 13px; color: var(--lk-muted); margin-top: 2px;
+                         line-height: 1.45; }
 
   /* ==== end shared base ==== */
 
@@ -445,13 +559,13 @@
 #rs-root .week-head .span { display: block; font-size: 12.5px; color: var(--lk-muted);
                          margin-top: 2px; }
 
-#rs-root .week-row { display: flex; align-items: center; gap: 3px; margin-bottom: 3px; }
+#rs-root .week-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
 /* `week-day`, not `day`. The shared base already styles `.day` as the day STRIP
    — 104px tall with its own overflow — and a label that borrowed the name
    inherited all of it: the first render put every weekday in a 104px block and
    pushed its own row off to the side. Scoping protects one view from another;
    inside a view, only the name does. */
-#rs-root .week-row .week-day { flex: none; width: 26px; font-size: 10px; color: var(--lk-faint); }
+#rs-root .week-row .week-day { flex: none; width: 18px; font-size: 10.5px; color: var(--lk-body); }
 #rs-root .week-row i { flex: 1; height: 11px; border-radius: 2px; }
 
 /* A cell with no reading is HATCHED, never dark. A gap has to read as "no
@@ -459,30 +573,51 @@
    lunchtime is the case this exists for, and drawing it black would argue for
    a dark threshold the room never actually met. */
 #rs-root .week-row i.gap {
-  background: repeating-linear-gradient(45deg,
-    var(--lk-line) 0, var(--lk-line) 2px,
-    var(--lk-surface) 2px, var(--lk-surface) 4px);
+  background: repeating-linear-gradient(135deg,
+    var(--lk-line) 0 3px,
+    var(--lk-hatch-pale) 3px 6px);
+  box-shadow: inset 0 0 0 1px var(--lk-hatch-edge);
 }
 
+/* What the hatch MEANS, said once, and only when there is a hatched cell to
+   explain. A legend on every week would be a line of furniture on the screen
+   whose whole job is the two lux numbers; a legend that appears exactly when a
+   sensor has stopped reporting is the sentence that screen is missing. */
+#rs-root .week-legend { display: flex; align-items: center; gap: 8px; margin-top: 10px;
+                     font-size: 12px; color: var(--lk-body); }
+#rs-root .week-legend i { flex: none; width: 22px; height: 11px; border-radius: 2px;
+  background: repeating-linear-gradient(135deg,
+    var(--lk-line) 0 3px,
+    var(--lk-hatch-pale) 3px 6px);
+  box-shadow: inset 0 0 0 1px var(--lk-hatch-edge); }
+
 #rs-root .week-hours { display: flex; justify-content: space-between;
-                    font-size: 11px; color: var(--lk-muted);
-                    margin: 6px 0 0 29px; }
+                    font-size: 10.5px; color: var(--lk-body);
+                    margin: 7px 0 0 24px; }
 
 /* The live reading, ticked on the same scale the cells are drawn on, so the
    two lux numbers below are never abstract. */
-#rs-root .week-scale { display: flex; align-items: center; gap: 8px;
-                    margin-top: 12px; font-size: 11.5px; color: var(--lk-muted); }
+/* 28px of air above it, not 12: the tick's own label is drawn ABOVE the bar
+   (`top: -20px`), so at 12px it collided with the hours line and the live
+   reading overprinted the axis it was being read against. */
+#rs-root .week-scale { display: flex; align-items: center; gap: 7px;
+                    margin-top: 28px; font-size: 11.5px; color: var(--lk-body); }
+/* The scale runs PALE to DEEP, the same direction the cells do. It used to run
+   the other way — accent at 0 lx fading to the accent line at the top — which
+   drew a dark left end under a grid whose dark cells were the bright hours, so
+   the one picture argued against the other. */
 #rs-root .week-scale .bar { flex: 1; position: relative; height: 8px; border-radius: 999px;
-                         background: linear-gradient(90deg,
-                           var(--lk-accent) 0%, var(--lk-accent-line) 100%); }
-#rs-root .week-scale .tick { position: absolute; top: -5px; bottom: -5px; width: 2px;
-                          margin-left: -1px; background: var(--lk-ink); }
+                         background: var(--lk-lux-ramp); }
+#rs-root .week-scale .tick { position: absolute; top: -5px; bottom: -5px; width: 4px;
+                          margin-left: -2px; border-radius: 3px;
+                          background: var(--lk-ink);
+                          box-shadow: 0 0 0 2px var(--lk-surface); }
 #rs-root .week-scale .tickLabel { position: absolute; top: -20px; transform: translateX(-50%);
                                font-size: 11px; font-weight: 600; color: var(--lk-ink);
                                white-space: nowrap; }
 
-#rs-root .week-verdict { font-size: 13px; line-height: 1.5; color: var(--lk-body);
-                      margin-top: 14px; }
+#rs-root .week-verdict { font-size: 12.5px; line-height: 1.45; color: var(--lk-ink);
+                      margin-top: 11px; }
 #rs-root .week-verdict b { color: var(--lk-ink); }
 /* ==== end shared week grid ==== */
 
@@ -499,7 +634,7 @@
   #rs-root .end-head .which { font-size: 12.5px; color: var(--lk-muted); }
 
   #rs-root .threshold { display: flex; align-items: center; gap: 10px;
-                        background: var(--lk-raised); border-radius: 11px;
+                        background: var(--lk-flat-bg); border-radius: 12px;
                         padding: 9px 11px;
                         margin-bottom: 13px; min-height: 44px; box-sizing: border-box; }
   #rs-root .threshold .cap { flex: 1; font-size: 13.5px; color: var(--lk-body); }
@@ -516,17 +651,62 @@
   /* "When does this room get its sun?" — four answers, each drawn as the shape
      it produces, so the choice is made by recognising a picture rather than by
      trusting a word. Only ever shown when following the sun. */
-  #rs-root .peaks { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
-  #rs-root .peak { padding: 10px; border-radius: 12px; background: var(--lk-surface);
+  /* The question and its four answers are ONE card. The title used to float
+     above them as a bare section label, which made the four tiles read as a
+     control the screen had started with rather than as the answer to something
+     asked — and the blurb under it then belonged to neither. */
+  #rs-root .sunask { margin-bottom: 16px; }
+  #rs-root .sunask .ask { font-size: 13.5px; font-weight: 600; line-height: 1.2;
+                          color: var(--lk-ink); margin: 0 0 4px; }
+  #rs-root .sunask .why { font-size: 12.5px; color: var(--lk-muted); margin: 0 0 12px;
+                          line-height: 1.4; }
+  #rs-root .peaks { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  #rs-root .peak { padding: 9px 8px; border-radius: 12px; background: var(--lk-surface);
                    border: 1.5px solid var(--lk-line); cursor: pointer;
-                   font: inherit; color: inherit; min-height: 44px; }
+                   font: inherit; color: inherit; min-height: 44px; box-sizing: border-box; }
   #rs-root .peak[aria-pressed="true"] { border-color: var(--lk-accent);
                                         background: var(--lk-accent-tint); }
-  #rs-root .peak .shape { display: flex; align-items: flex-end; gap: 2px; height: 32px; }
-  #rs-root .peak .shape i { flex: 1; border-radius: 2px 2px 0 0; background: var(--lk-accent-line); }
+  #rs-root .peak .shape { display: flex; align-items: flex-end; gap: 2px; height: 30px;
+                          margin-bottom: 6px; }
+  /* Two-tone, and that is what makes these four pictures readable at 90px
+     wide. A tile drawn in one colour is a silhouette the eye has to measure;
+     picking out the hours the sun is actually ON this room says which part of
+     the day the shape is about, which is the entire question. */
+  #rs-root .peak .shape i { flex: 1; border-radius: 1px 1px 0 0;
+                            background: var(--lk-peak-off); }
+  #rs-root .peak .shape i.lit { background: var(--lk-peak-on); }
   #rs-root .peak .hours { display: flex; justify-content: space-between;
-                          font-size: 10px; color: var(--lk-muted); margin-top: 3px; }
-  #rs-root .peak .name { font-size: 13px; font-weight: 600; margin-top: 4px; }
+                          font-size: 10.5px; color: var(--lk-body); margin-bottom: 6px; }
+  #rs-root .peak .name { font-size: 12px; color: var(--lk-body); text-align: center; }
+  #rs-root .peak[aria-pressed="true"] .name { font-weight: 600; color: var(--lk-ink); }
+
+  /* What following the sun MEANS, when there is no sensor's week to mean it.
+     Same anatomy as the week card above it — a heading, a scale with the live
+     reading ticked on it, and a sentence — because it answers the same question
+     with the one instrument the household has left. */
+  #rs-root .sunnow .head { padding-bottom: 12px; margin-bottom: 26px;
+                           border-bottom: 1px solid var(--lk-line); }
+  #rs-root .sunnow .head .name { font-size: 15px; font-weight: 600; }
+  #rs-root .sunnow .head .span { display: block; font-size: 12.5px;
+                                 color: var(--lk-muted); margin-top: 2px; }
+  #rs-root .sunnow .scale { display: flex; align-items: center; gap: 8px;
+                            font-size: 11.5px; color: var(--lk-body); }
+  /* Deep at NIGHT and pale at midday, which is the reverse of the lux scale on
+     the sensor path — and deliberately so. That scale measures how much light
+     there is, so more light is more ink; this one is a picture of the day, and
+     the dark end of a day is the night. The two never appear on screen
+     together: a device has a sensor or it has the sun. */
+  #rs-root .sunnow .bar { flex: 1; position: relative; height: 8px;
+                          border-radius: 999px; background: var(--lk-sun-ramp); }
+  #rs-root .sunnow .tick { position: absolute; top: -5px; bottom: -5px; width: 4px;
+                           margin-left: -2px; border-radius: 3px;
+                           background: var(--lk-ink);
+                           box-shadow: 0 0 0 2px var(--lk-surface); }
+  #rs-root .sunnow .tickLabel { position: absolute; top: -25px; transform: translateX(-50%);
+                                font-size: 11px; font-weight: 600; color: var(--lk-ink);
+                                white-space: nowrap; }
+  #rs-root .sunnow .means { font-size: 12.5px; line-height: 1.45; color: var(--lk-ink);
+                            margin-top: 13px; }
 
   #rs-root .others { background: var(--lk-surface); border: 1px solid var(--lk-line);
                      border-radius: 14px; box-shadow: var(--lk-shadow);
@@ -558,9 +738,29 @@
 
   <!-- Following the sun: the question no other field can reach. -->
   <div id="rs-sunBlock" style="display:none;">
-    <div class="section-title" data-i18n="response.whenSun"></div>
-    <p class="sub" data-i18n="response.whenSunWhy"></p>
-    <div class="peaks" id="rs-peaks"></div>
+    <div class="card sunask">
+      <div class="ask" data-i18n="response.whenSun"></div>
+      <div class="why" data-i18n="response.whenSunWhy"></div>
+      <div class="peaks" id="rs-peaks"></div>
+    </div>
+    <!--
+      And what that adds up to today. Without a sensor this is the only evidence
+      the screen has, so it says where the sun is right now on its own scale and
+      what the lamps will do about it — the same job the sensor's week does two
+      lines up, with the one instrument a household without sensors still has.
+    -->
+    <div class="card sunnow" id="rs-sunNow" style="display:none;">
+      <div class="head">
+        <div class="name" data-i18n="response.followingSun"></div>
+        <div class="span" id="rs-sunSpan"></div>
+      </div>
+      <div class="scale">
+        <span data-i18n="response.scaleNight"></span>
+        <span class="bar" id="rs-sunBar"></span>
+        <span data-i18n="response.scaleMidday"></span>
+      </div>
+      <div class="means" data-i18n="response.followingSunMeans"></div>
+    </div>
   </div>
 
   <!-- With a sensor: its own week, which is the evidence for the two numbers. -->
@@ -783,13 +983,15 @@ function __lkBootRs(Homey) {
       return lux >= 10 ? Math.round(lux) : Math.round(lux * 10) / 10;
     }
 
+    var anyGap = false;
     for (var row = 0; row < week.cells.length; row++) {
       var line = node('div', 'week-row');
       line.appendChild(node('span', 'week-day', Homey.__(DAY_KEYS[(week.days[row] || 1) - 1])));
       for (var column = 0; column < week.cells[row].length; column++) {
         var value = shade(week.cells[row][column]);
         var cell = node('i', value === null ? 'gap' : null);
-        if (value !== null) cell.style.background = cellColour(value);
+        if (value === null) anyGap = true;
+        else cell.style.background = cellColour(value);
         line.appendChild(cell);
       }
       host.appendChild(line);
@@ -815,6 +1017,22 @@ function __lkBootRs(Homey) {
     scale.appendChild(bar);
     scale.appendChild(node('span', null, Homey.__('week.lux', { lux: round(high) })));
     host.appendChild(scale);
+
+    /**
+     * What the hatch means, and only when there is one.
+     *
+     * A hatched cell is the difference between "pitch dark" and "nothing
+     * arrived", and that difference is the whole argument of the stopped-sensor
+     * screen — but it is a distinction nobody can be expected to read out of a
+     * pattern. So it gets a line, on the weeks that have a gap in them, and no
+     * line at all on the ones that do not.
+     */
+    if (anyGap) {
+      var legend = node('div', 'week-legend');
+      legend.appendChild(node('i'));
+      legend.appendChild(node('span', null, Homey.__('week.nothingReported')));
+      host.appendChild(legend);
+    }
 
     /**
      * What this week is worth, in a sentence with the numbers in it.
@@ -862,6 +1080,9 @@ function __lkBootRs(Homey) {
     stale: document.getElementById('rs-stale'),
     staleLead: document.getElementById('rs-staleLead'),
     sunBlock: document.getElementById('rs-sunBlock'),
+    sunNow: document.getElementById('rs-sunNow'),
+    sunSpan: document.getElementById('rs-sunSpan'),
+    sunBar: document.getElementById('rs-sunBar'),
     peaks: document.getElementById('rs-peaks'),
     week: document.getElementById('rs-week'),
     endName: document.getElementById('rs-endName'),
@@ -879,16 +1100,40 @@ function __lkBootRs(Homey) {
   };
 
   /** The four answers, each with the shape it produces. */
+  /**
+   * The four answers, each with the shape it produces and the hours that shape
+   * is ABOUT.
+   *
+   * `lit` is which of the eight bars are this room's own sun rather than the
+   * day going on around it. Two colours per tile is what makes the four
+   * readable side by side at 90px: in one colour they are four humps that have
+   * to be measured against each other, and the whole point is that the answer
+   * is recognised rather than compared.
+   *
+   * Heights are percentages, not a scale to divide: they are drawn to be told
+   * apart, and "hardly any" has to stay visibly a curve rather than collapsing
+   * to a flat line — a room with no direct sun still brightens and darkens with
+   * the day, just less.
+   */
   var PEAKS = [
-    { id: 'morning', nameKey: 'response.peakMorning', shape: [3, 6, 9, 8, 6, 4, 2, 1] },
-    { id: 'midday', nameKey: 'response.peakMidday', shape: [1, 3, 6, 9, 9, 6, 3, 1] },
-    { id: 'afternoon', nameKey: 'response.peakAfternoon', shape: [1, 2, 4, 6, 8, 9, 6, 3] },
-    { id: 'flat', nameKey: 'response.peakFlat', shape: [2, 3, 4, 4, 4, 4, 3, 2] }
+    { id: 'morning', nameKey: 'response.peakMorning', sentenceKey: 'response.peaksMorning',
+      lit: [0, 1, 2], shape: [62, 96, 88, 52, 26, 14, 10, 8] },
+    { id: 'midday', nameKey: 'response.peakMidday', sentenceKey: 'response.peaksMidday',
+      lit: [3, 4], shape: [8, 18, 46, 92, 96, 58, 22, 8] },
+    { id: 'afternoon', nameKey: 'response.peakAfternoon', sentenceKey: 'response.peaksAfternoon',
+      lit: [5, 6, 7], shape: [8, 10, 16, 30, 60, 94, 96, 56] },
+    { id: 'flat', nameKey: 'response.peakFlat', sentenceKey: 'response.peaksFlat',
+      lit: [], shape: [14, 18, 22, 26, 26, 22, 18, 14] }
   ];
 
   var state = {
     response: null,
     usingSensor: false,
+    // Today's sun, for the card that stands in for the sensor's week. Null with
+    // a sensor, and null when the Homey has never been told where it is — in
+    // which case the card simply is not drawn, because there is nothing true to
+    // put on it.
+    sun: null,
     selected: 'dark',
     week: null,
     now: null
@@ -908,6 +1153,38 @@ function __lkBootRs(Homey) {
     el.steps.appendChild(node('span', null, Homey.__('response.step', { index: 3, count: 4 })));
   }
 
+  /**
+   * Where the sun is now, on the day's own range.
+   *
+   * Scaled between astronomical twilight and TODAY's own peak rather than a
+   * fixed pair of angles: 20° is most of a December day and barely mid-morning
+   * in June, so a scale fixed at the solstice would put every winter reading in
+   * the same left-hand inch and say nothing.
+   */
+  function renderSunNow() {
+    clear(el.sunBar);
+    if (!state.sun) { el.sunNow.style.display = 'none'; return; }
+    el.sunNow.style.display = '';
+
+    var bits = [];
+    for (var p = 0; p < PEAKS.length; p++) {
+      if (PEAKS[p].id === state.response.sunPeak) bits.push(Homey.__(PEAKS[p].sentenceKey));
+    }
+    if (state.sun.sunset) bits.push(Homey.__('response.andSunset', { time: state.sun.sunset }));
+    el.sunSpan.textContent = bits.join(' · ');
+
+    var floor = -18;
+    var ceiling = Math.max(state.sun.peak, floor + 1);
+    var at = Math.max(0, Math.min(1, (state.sun.elevation - floor) / (ceiling - floor)));
+
+    var tick = node('span', 'tick');
+    tick.style.left = (at * 100) + '%';
+    el.sunBar.appendChild(tick);
+    var label = node('span', 'tickLabel', Homey.__('response.nowAt', { time: state.sun.now }));
+    label.style.left = (at * 100) + '%';
+    el.sunBar.appendChild(label);
+  }
+
   function renderPeaks() {
     clear(el.peaks);
     for (var i = 0; i < PEAKS.length; i++) {
@@ -922,8 +1199,8 @@ function __lkBootRs(Homey) {
 
     var shape = node('div', 'shape');
     for (var i = 0; i < peak.shape.length; i++) {
-      var bar = node('i');
-      bar.style.height = (peak.shape[i] / 9) * 100 + '%';
+      var bar = node('i', peak.lit.indexOf(i) === -1 ? null : 'lit');
+      bar.style.height = peak.shape[i] + '%';
       shape.appendChild(bar);
     }
     tile.appendChild(shape);
@@ -991,7 +1268,7 @@ function __lkBootRs(Homey) {
   function render() {
     el.sunBlock.style.display = state.usingSensor ? 'none' : '';
     el.week.style.display = state.usingSensor ? '' : 'none';
-    if (!state.usingSensor) renderPeaks();
+    if (!state.usingSensor) { renderPeaks(); renderSunNow(); }
     else weekGrid(el.week, { week: state.week, sensorName: state.sensorName, nowLux: state.nowLux });
 
     var which = state.selected;
@@ -1143,6 +1420,7 @@ function __lkBootRs(Homey) {
     state.response = payload.response;
     state.usingSensor = payload.response.sensor !== null;
     state.week = payload.week;
+    state.sun = payload.sun || null;
     state.sensorName = payload.sensorName;
     state.nowLux = payload.nowLux;
     state.atDark = payload.atDark;

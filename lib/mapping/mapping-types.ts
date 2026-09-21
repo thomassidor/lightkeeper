@@ -1,4 +1,5 @@
 import type { TargetSpec } from '../outputs/light-intent';
+import { LEAVE_ALONE } from '../outputs/lightkeeper-settings';
 
 /**
  * The lighting functions a user can assign an event to.
@@ -12,7 +13,8 @@ export type LightFunction =
   | 'toggle' | 'on' | 'off'
   | 'brightness_up' | 'brightness_down'
   | 'warmer' | 'colder'
-  | 'brightness_set' | 'color_set' | 'temperature_cycle';
+  | 'brightness_set' | 'color_set' | 'temperature_cycle'
+  | 'lightkeeper_on';
 
 /** Which capability a function needs — drives which rows appear. */
 export const FUNCTION_CAPABILITY:
@@ -27,6 +29,17 @@ Record<LightFunction, 'onoff' | 'dim' | 'light_temperature' | 'light_hue'> = {
   brightness_set: 'dim',
   color_set: 'light_hue',
   temperature_cycle: 'light_temperature',
+  /**
+   * `onoff`, although it writes a level and a colour too.
+   *
+   * This record answers "which lamps may be offered this job", and the honest
+   * answer for a job whose name is "On" is every lamp that can be switched on.
+   * A lamp with no `dim` still comes on; the planner skips the brightness half
+   * for it, exactly as it does for `preset_absolute`. Asking for `dim` here
+   * would take the job away from a plain switched lamp in the same room for the
+   * sake of a value it was never going to take.
+   */
+  lightkeeper_on: 'onoff',
 };
 
 /**
@@ -59,7 +72,7 @@ export const RETIRED_FUNCTIONS: readonly LightFunction[] = ['temperature_cycle']
  * which is the gesture a one-button remote gets instead of a warmer and a cooler
  * button, and where it starts is wherever the lamp already is.
  */
-export type PresetKind = 'none' | 'brightness' | 'colour';
+export type PresetKind = 'none' | 'brightness' | 'colour' | 'lightkeeper';
 
 export const FUNCTION_PRESET: Record<LightFunction, PresetKind> = {
   toggle: 'none',
@@ -72,6 +85,7 @@ export const FUNCTION_PRESET: Record<LightFunction, PresetKind> = {
   brightness_set: 'brightness',
   color_set: 'colour',
   temperature_cycle: 'none',
+  lightkeeper_on: 'lightkeeper',
 };
 
 export interface BrightnessPreset {
@@ -108,7 +122,43 @@ export interface ColorPreset {
  * and a `brightness` on a colour job is a number nothing will ever read. Every
  * reader discriminates, which is the point.
  */
-export type MappingPreset = BrightnessPreset | ColorPreset;
+/**
+ * Two other Lightkeeper devices, named — not a colour and not a brightness.
+ *
+ * The value behind "On – with Lightkeeper": which device this button takes its
+ * colour and warmth from, which one it takes its level from, and whether a
+ * second press turns the lights off again. What the lamps actually receive is
+ * whatever those two devices want at the moment of the press, which is why the
+ * stored value is two ids rather than the numbers they were showing when the
+ * button was configured.
+ *
+ * **Both ids are always stored**, `LEAVE_ALONE` for "do not set this at all",
+ * and that is what makes `isLightkeeperPreset` below able to recognise a preset
+ * with neither source chosen. An optional field would have left `{}` — which is
+ * a `BrightnessPreset` missing its brightness, a `ColorPreset` missing its
+ * colour and this, all at once, and the union exists precisely so that shape is
+ * unsayable.
+ *
+ * `validateMappingPreset` refuses a preset where both are `LEAVE_ALONE`: that is
+ * plain "On" under a name that promises more, which is the "looks configured,
+ * does nothing" failure this app exists to prevent.
+ */
+export interface LightkeeperPreset {
+  /** A Lightkeeper device id, or `LEAVE_ALONE`. Only curve-driven devices qualify. */
+  colourSource: string;
+  /** A Lightkeeper device id, or `LEAVE_ALONE`. A curve, a schedule or a Room-sensing Light. */
+  brightnessSource: string;
+  /**
+   * Whether a second press switches the lights off.
+   *
+   * The same group rule `planGroupToggle` uses — if any target is on, they all
+   * go off — so the app has one answer to "what does pressing again do" rather
+   * than two that differ by which tile was chosen.
+   */
+  pressAgainOff: boolean;
+}
+
+export type MappingPreset = BrightnessPreset | ColorPreset | LightkeeperPreset;
 
 /** Narrowing for the union above, in one place so the test can name it. */
 export function isBrightnessPreset(preset: MappingPreset): preset is BrightnessPreset {
@@ -117,6 +167,15 @@ export function isBrightnessPreset(preset: MappingPreset): preset is BrightnessP
 
 export function isColorPreset(preset: MappingPreset): preset is ColorPreset {
   return 'color' in preset;
+}
+
+export function isLightkeeperPreset(preset: MappingPreset): preset is LightkeeperPreset {
+  return 'colourSource' in preset;
+}
+
+/** Whether a stored preset names any source at all, as against naming none. */
+export function namesASource(preset: LightkeeperPreset): boolean {
+  return preset.colourSource !== LEAVE_ALONE || preset.brightnessSource !== LEAVE_ALONE;
 }
 
 export interface MappingRule {

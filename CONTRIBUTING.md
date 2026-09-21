@@ -11,6 +11,14 @@ Thanks for taking a look. This is a small app with a specific shape, and two fil
 Everything below is the short version. [`docs/commands.md`](docs/commands.md) has every command in
 one place if that is all you came for, and [`docs/README.md`](docs/README.md) indexes the rest.
 
+**This is a 0.x app in early development, and that is a rule rather than a disclaimer.** Nothing
+stored is frozen yet, so a change that reshapes a device's stored settings is allowed — but it comes
+with a migration wherever one is possible (`lib/*/migrations`, run through `runMigrationChain()`),
+and it says so in plain language in all three changelogs, because an update that silently breaks
+somebody's lights is the one failure this app cannot afford. There are no major bumps before 1.0, so
+the changelog entry is the only warning a user gets. See
+[`FAQ.md` → Is this finished?](FAQ.md#is-this-finished) for what users have been told to expect.
+
 ## Getting set up
 
 ```bash

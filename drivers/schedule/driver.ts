@@ -1,6 +1,7 @@
 import Homey from 'homey';
 import type { LightkeeperApp } from '../../lib/app-contract';
-import { registerIntroHandler, registerReviewHandler } from '../../lib/pairing/flow-screens';
+import { lightsSummary, registerIntroHandler, registerReviewHandler } from '../../lib/pairing/flow-screens';
+import { FEATURED_COLORS, PALETTE } from '../../lib/circadian/palette';
 
 import {
   resolveSummary, targetLights,
@@ -8,10 +9,11 @@ import {
 import { CURRENT_SCHEDULE_SCHEMA_VERSION } from '../../lib/schedules/schedule-migrations';
 import { daysLabel } from '../../lib/schedules/schedule-bindings';
 import {
-  MAX_ENTRIES, overlappingPairs, sanitiseEntries, sanitiseScheduleDays,
+  MAX_ENTRIES, MINUTES_PER_DAY, overlappingPairs, sanitiseEntries, sanitiseScheduleDays,
   type IsoWeekday,
   type ScheduleBoundary, type ScheduleEntry, type SchedulePlan,
 } from '../../lib/schedules/schedule-types';
+import { windowLengthMinutes } from '../../lib/schedules/schedule-window';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
 import {
   handlerRegistrar,
@@ -150,6 +152,23 @@ module.exports = class ScheduleDriver extends Homey.Driver {
         // Which controls to offer at all: brightness and warmth are hidden
         // rather than shown-and-ignored when nothing selected supports them.
         support: summary.support,
+        /**
+         * The same closed palette a Colour Curve Light draws from, with its
+         * locale keys already resolved: `lib/` has no access to `homey.__`, so
+         * a colour carries a key and the driver layer turns it into a word.
+         *
+         * A block picks a colour rather than a warmth as of this release. The
+         * lamps that cannot take one are not left out — `sanitiseEntries`
+         * derives a colour temperature from whichever swatch is chosen, and
+         * that is what they get.
+         */
+        palette: PALETTE.map(color => ({
+          id: color.id,
+          label: this.homey.__(color.labelKey),
+          hue: color.hue,
+          saturation: color.saturation,
+        })),
+        featuredColors: FEATURED_COLORS,
         lights,
         entries: state.entries,
         days: state.days,
@@ -218,6 +237,7 @@ module.exports = class ScheduleDriver extends Homey.Driver {
       return {
         stepIndex: 3,
         stepCount: 3,
+        hero: { kind: 'timeline' as const, blocks: this.timelineBlocks(state.entries) },
         rows: [
           {
             labelKey: 'review.lights',
@@ -263,13 +283,36 @@ module.exports = class ScheduleDriver extends Homey.Driver {
     target: TargetSpec,
     summary: { count: number },
   ): Promise<string> {
-    const host = this.pairHost();
-    if (target.kind === 'zone') {
-      const zones = await this.app.catalog.allZones();
-      const zone = zones.find((candidate: { id: string }) => candidate.id === target.zoneId);
-      return host.translate('review.wholeRoom', { room: zone?.name ?? '?' });
+    return lightsSummary(this.pairHost(), target, summary, () => this.app.catalog.allZones());
+  }
+
+  /**
+   * Every block as a percentage of the day, for the review's picture.
+   *
+   * A block that crosses midnight becomes TWO — the tail from the on-time to
+   * the end of the day, and the head from midnight — for the same reason
+   * `blocks.html` draws it as two bars: a single bar would have to run off the
+   * right edge and reappear on the left, which is not something a positioned
+   * element does.
+   *
+   * Percentages rather than minutes so the view needs no clock arithmetic: by
+   * the review there is nothing left to edit, only a day to look at.
+   */
+  private timelineBlocks(entries: readonly ScheduleEntry[]): Array<{ left: number; width: number }> {
+    const blocks: Array<{ left: number; width: number }> = [];
+    const pct = (minutes: number) => Math.round((minutes / MINUTES_PER_DAY) * 10000) / 100;
+
+    for (const entry of entries) {
+      const length = windowLengthMinutes(entry);
+      const end = entry.onAt + length;
+      if (end <= MINUTES_PER_DAY) {
+        blocks.push({ left: pct(entry.onAt), width: pct(length) });
+      } else {
+        blocks.push({ left: pct(entry.onAt), width: pct(MINUTES_PER_DAY - entry.onAt) });
+        blocks.push({ left: 0, width: pct(end - MINUTES_PER_DAY) });
+      }
     }
-    return host.translate('review.someLights', { count: summary.count });
+    return blocks;
   }
 
   private timezone(): string | null {
