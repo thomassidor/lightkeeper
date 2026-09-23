@@ -440,7 +440,8 @@ Stated plainly, because a limit you find out about later is worse than one you w
   the case where doing nothing means a dark evening — but a window that already ended is left alone.
   Switching a household's lights off at app start, on the guess that we might once have switched them
   on, is the worse surprise.
-- **Times are clock times.** Sunrise and sunset are not offered yet — for schedules or for curves.
+- **Schedule blocks and Colour Curve points are clock times.** Only the circadian light follows
+  sunrise and sunset; neither a schedule nor a curve point can be tied to them yet.
 - **A circadian or Colour Curve Light never switches a light on or off.** It only changes the colour
   of lights that are already on and — if you ask it to — sets the colour of lights that are off so
   they are right the moment they come on.

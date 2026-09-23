@@ -298,8 +298,9 @@ The five limits most likely to matter. [FAQ.md](FAQ.md#limits) has the rest, sta
   only work with what the remote's own Homey app publishes — either a change it announces (a button
   state, a dial position) or a Flow trigger card it offers. A few integrations publish neither, and
   then no app on your Homey can react to that remote, Lightkeeper included.
-- **Times are clock times** — an hour and a minute you type in. Sunrise and sunset are not available
-  yet, neither in schedules nor in circadian and Colour Curve Lights.
+- **Schedule blocks and Colour Curve points are clock times** — an hour and a minute you type in.
+  Only the circadian light follows sunrise and sunset; a schedule or a curve point cannot be tied to
+  them yet.
 - **If the app was not running at the moment a window should have ended, that "off" is missed**, and
   those lights stay on until the next window switches them. Lightkeeper deliberately does not go
   back and catch up on a missed "off": having your lights go dark on you some time after a restart
