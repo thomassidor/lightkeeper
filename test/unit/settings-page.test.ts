@@ -124,7 +124,10 @@ const NO_ORPHANS = {
 function textOf(view: SettingsRun, id: string): string {
   const section = view.byId(id);
   assert.ok(section, `no #${id} on the page`);
-  return section.descendants().map(n => n.textContent).join(' ').trim();
+  // The DOM's own concatenation. Joining every descendant's textContent, as
+  // this did while the harness kept text as a per-node field, now counts each
+  // string once per ancestor.
+  return section.textContent.trim();
 }
 
 describe('the settings page on a Homey with nothing set up (the old 1.2)', () => {

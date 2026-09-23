@@ -1051,6 +1051,15 @@ a Homey entry point using `export default` is not loaded at all — so there is 
 before exporting, so removing a member the contract promises fails at compile time rather than as
 `undefined` inside a settings-page handler.
 
+**The shells are testable after all, from the test side.** Nothing about the Homey changed; what
+changed is that a test can stand in for the missing module. `test/support/fake-homey.ts` wraps
+`Module._resolveFilename` so the bare request `'homey'` resolves to a file exporting recording
+`App`/`Driver`/`Device` base classes, and because the suite is compiled to CommonJS by tsx, an entry
+point's `import Homey from 'homey'` goes through it. `app.ts`, all five drivers and all five devices
+were executed by a test for the first time on 23 September 2026, and five defects came out of code
+that every review had read. The split above stays — it is still where the rules belong — but "a
+lifecycle nobody tests twice" no longer has to be true of the wiring.
+
 Two ordering rules the lifecycle owns, both of which cost a real bug:
 
 - **A verdict carries a sequence number.** Serialising the availability updates is not enough: a

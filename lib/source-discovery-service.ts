@@ -342,8 +342,11 @@ export const NORMALIZER_VERSION = 1;
  * So both are computed. A profile that carries a v2 hash is compared on v2; one
  * that does not keeps v1 semantics until it is next saved or repaired, at which
  * point it gets a v2 and never looks back.
+ *
+ * Exported, with `fingerprintOf`, for `flow-card-catalogue.test.ts`, which feeds it a projected card
+ * with a nameless argument — the input that used to throw inside its sort.
  */
-function fingerprintV2Of(device: CatalogDevice, cards: DiscoveredTriggerCard[]): string {
+export function fingerprintV2Of(device: CatalogDevice, cards: DiscoveredTriggerCard[]): string {
   const shape = {
     normalizer: NORMALIZER_VERSION,
     ownerUri: device.ownerUri,
@@ -388,7 +391,7 @@ function fingerprintV2Of(device: CatalogDevice, cards: DiscoveredTriggerCard[]):
  * about a surface that had not moved. `fingerprintV2Of` above is where new
  * strictness goes.
  */
-function fingerprintOf(device: CatalogDevice, cards: DiscoveredTriggerCard[]): string {
+export function fingerprintOf(device: CatalogDevice, cards: DiscoveredTriggerCard[]): string {
   const shape = {
     ownerUri: device.ownerUri,
     driverId: device.driverId,

@@ -17,11 +17,14 @@ import { localNow } from '../../lib/time/local-clock';
 import { sunTimes } from '../../lib/daylight/solar-elevation';
 import { usableLocation } from '../../lib/daylight/daylight-types';
 import type { AnchorContext } from '../../lib/circadian/circadian-curve';
+import { keepsLightsUpdated, writesLightsField } from '../../lib/runtime/writes-lights';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
 import {
   lightsSummary, registerIntroHandler, registerReviewHandler, warmthKey, warmthSwatch,
 } from '../../lib/pairing/flow-screens';
+import { registerControlHandlers, reviewControl } from '../../lib/pairing/control-choice';
 import {
+  curvePreStageProbe,
   handlerRegistrar,
   registerCurvePreviewHandlers,
   registerSaveHandler,
@@ -56,7 +59,14 @@ interface SessionState {
   target?: TargetSpec;
   zones: CircadianZones;
   adjustBrightness: boolean;
+  /** "Set lights before they turn on" — see lib/pairing/control-choice.ts. */
   preStage: boolean;
+  /** The lamps the review screen's test proved. Absent = never tested. */
+  preStageLights?: string[] | undefined;
+  /** This session's test, with names, for the review to draw back. */
+  tested?: Array<{ deviceId: string; name: string; ok: boolean }> | undefined;
+  /** Keep the lights up to date all day, or only publish. See lib/runtime/writes-lights.ts. */
+  writesLights: boolean;
   /**
    * The lamps as they were before this session's first scrub, or absent.
    *
@@ -64,20 +74,45 @@ interface SessionState {
    * pairing SESSION — which is what this used to say while living on the
    * driver, where it is held for the life of the app. A Homey driver is a
    * singleton, and there is no `disconnect` handler here to clear it: abandon
-   * the try-it screen without pressing "Put them back", open another session,
+   * the try-it screen without pressing "Stop preview", open another session,
    * press it there, and `putBack` wrote the PREVIOUS session's lamps back to
    * the previous session's values while leaving this session's lamps scrubbed.
    *
    * Re-taking it on every scrub would snapshot the values the previous scrub
-   * wrote, and "Put them back" would put them back to the last preview — which
+   * wrote, and "Stop preview" would put them back to the last preview — which
    * is not a restore, it is a no-op wearing a restore's name. So: once per
    * session, and a session is what `bindSession` builds.
    */
   restore?: LampSnapshot[] | null;
 }
 
-/** What the try-it screen restores, and the only capabilities it touches. */
-const RESTORABLE = ['dim', 'light_temperature', 'light_hue', 'light_saturation', 'onoff'];
+/**
+ * What the try-it screen restores, and the only capabilities it touches.
+ *
+ * `light_mode` is in it because the preview CHANGES it: `planColor` and
+ * `planTemperature` each write the mode ahead of the value it enables, so a
+ * lamp in colour mode that was shown a warmth comes out of the preview in
+ * temperature mode. Restoring its hue without restoring the mode first is
+ * sending a value the mode it is in makes it ignore — silently, reported as
+ * accepted (platform §6) — which is one of CLAUDE.md's safety properties.
+ */
+const RESTORABLE = ['dim', 'light_mode', 'light_temperature', 'light_hue', 'light_saturation', 'onoff'];
+
+/**
+ * The capabilities each `light_mode` value enables — and so the only colour
+ * axis a restore sends, after the mode itself.
+ *
+ * The other axis is deliberately NOT restored: on a gating lamp it would be
+ * ignored, and on the lamps that switch mode on any colour write it would undo
+ * the mode that was just put back. Its snapshotted value is invisible while the
+ * lamp is in the other mode, which is the state it was found in. The same
+ * one-axis rule `restoreLamp` in the circadian runtime applies to the review
+ * screen's pre-stage test.
+ */
+const AXIS_FOR_MODE: Record<string, readonly string[]> = {
+  color: ['light_hue', 'light_saturation'],
+  temperature: ['light_temperature'],
+};
 
 interface LampSnapshot {
   id: string;
@@ -86,6 +121,24 @@ interface LampSnapshot {
   on: boolean;
   values: Record<string, unknown>;
 }
+
+/**
+ * The capabilities a restore writes, in the order it writes them.
+ *
+ * Brightness, then the mode, then the one axis that mode enables, then the
+ * switch. A pure function of the snapshot, so the ORDER — the thing worth
+ * proving — is one line to read; `driver-circadian.test.ts` proves it through
+ * the try-it handlers, against the writes a fake lamp actually received.
+ */
+function restoreOrder(values: Record<string, unknown>): string[] {
+  const mode = typeof values.light_mode === 'string' ? values.light_mode : null;
+  const axes = mode !== null && AXIS_FOR_MODE[mode]
+    ? ['light_mode', ...AXIS_FOR_MODE[mode]!]
+    // No mode we can read: a one-mode lamp, so every axis it reported.
+    : ['light_temperature', 'light_hue', 'light_saturation'];
+  return ['dim', ...axes, 'onoff'].filter(capability => capability in values);
+}
+
 
 module.exports = class CircadianDriver extends Homey.Driver {
 
@@ -137,6 +190,9 @@ module.exports = class CircadianDriver extends Homey.Driver {
       zones: plan?.zones ?? DEFAULT_SIMPLE_PLAN.zones,
       adjustBrightness: plan?.adjustBrightness ?? false,
       preStage: plan?.preStage ?? false,
+      preStageLights: plan?.preStageLights,
+      // Absent means ON, the opposite of `preStage` above.
+      writesLights: plan ? keepsLightsUpdated(plan) : true,
     }, device);
   }
 
@@ -145,6 +201,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
       zones: DEFAULT_SIMPLE_PLAN.zones,
       adjustBrightness: DEFAULT_SIMPLE_PLAN.adjustBrightness,
       preStage: DEFAULT_SIMPLE_PLAN.preStage,
+      writesLights: true,
       ...initial,
     };
 
@@ -190,7 +247,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
      * somewhere the device will not actually go.
      */
     handler('getDay', async () => {
-      if (!state.target) throw new Error('Choose some lights first.');
+      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
       const [summary, lights] = await Promise.all([
         resolveSummary(this.app.catalog, state.target),
         targetLights(this.app.catalog, state.target),
@@ -206,7 +263,6 @@ module.exports = class CircadianDriver extends Homey.Driver {
         lights,
         zones: state.zones,
         adjustBrightness: state.adjustBrightness,
-        preStage: state.preStage,
         /** Today's sun, or nulls where there is none to anchor to. */
         sun: {
           sunriseMinute: sun.sunriseMinute ?? null,
@@ -260,7 +316,6 @@ module.exports = class CircadianDriver extends Homey.Driver {
       }
       state.zones = result.zones;
       state.adjustBrightness = result.adjustBrightness;
-      state.preStage = (payload as { preStage?: unknown })?.preStage === true;
 
       const bounds = resolveBoundaries(state.zones, this.sunContext());
       return {
@@ -280,6 +335,10 @@ module.exports = class CircadianDriver extends Homey.Driver {
     });
 
     registerCurvePreviewHandlers(host, handler, () => expandSimplePlan(this.buildPlan(state)));
+    registerControlHandlers(handler, state, {
+      offerBefore: true,
+      probe: curvePreStageProbe(host, () => expandSimplePlan(this.buildPlan(state))),
+    });
 
     // -------------------------------------------------------------- try it
 
@@ -291,7 +350,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
      * curve rather than two that happen to agree today.
      */
     handler('getPreview', async () => {
-      if (!state.target) throw new Error('Choose some lights first.');
+      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
       const context = this.sunContext();
       const points = zonePoints(state.zones, context, state.adjustBrightness);
       const bounds = resolveBoundaries(state.zones, context);
@@ -320,7 +379,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
     /**
      * Show one minute of the day on the real lamps.
      *
-     * **Every lamp's state is taken before the first write**, so "Put them back"
+     * **Every lamp's state is taken before the first write**, so "Stop preview"
      * can be a promise rather than a hope. That is what makes scrubbing safe to
      * offer at all, and it is why this is the primary action on that screen
      * while Save is not.
@@ -332,9 +391,9 @@ module.exports = class CircadianDriver extends Homey.Driver {
      * everywhere.
      */
     handler('previewAt', async (payload: unknown) => {
-      if (!state.target) throw new Error('Choose some lights first.');
+      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
       const minute = Number((payload as { minute?: unknown })?.minute);
-      if (!Number.isFinite(minute)) throw new Error('That is not a time of day.');
+      if (!Number.isFinite(minute)) throw new Error(this.homey.__('errors.notATimeOfDay'));
 
       const context = this.sunContext();
       const value = valueAt(zonePoints(state.zones, context, state.adjustBrightness), minute);
@@ -356,7 +415,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
 
       const runtime = await this.app.curves.ephemeral(frozen);
       try {
-        const outcome = await runtime.applyNow('preview', { force: true, waitForResults: true });
+        const outcome = await runtime.applyNow('preview', { force: true, waitForResults: true, preview: true });
         await runtime.drain();
 
         /**
@@ -446,8 +505,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
             view: 'day',
           },
         ],
-        promiseKey: 'review.promiseCircadian',
-        promiseTokens: { count: summary.count },
+        control: await reviewControl(host, state, true),
       };
     });
 
@@ -468,12 +526,12 @@ module.exports = class CircadianDriver extends Homey.Driver {
    *
    * Taken ONCE, before the first preview write, and held for the life of the
    * pairing session. Re-taking it on every scrub would snapshot the values the
-   * previous scrub wrote, and "Put them back" would put them back to the last
+   * previous scrub wrote, and "Stop preview" would put them back to the last
    * preview — which is not a restore, it is a no-op wearing a restore's name.
    *
-   * Only the five capabilities this app ever writes. Reading everything a lamp
-   * has would snapshot values nothing is going to change and give the restore
-   * more to get wrong.
+   * Only the six capabilities this app ever writes, `light_mode` among them.
+   * Reading everything a lamp has would snapshot values nothing is going to
+   * change and give the restore more to get wrong.
    */
   private async snapshot(target: TargetSpec): Promise<LampSnapshot[]> {
     const ids = await targetDeviceIds(this.app.catalog, target);
@@ -502,6 +560,10 @@ module.exports = class CircadianDriver extends Homey.Driver {
    * lamp that was off by writing its brightness first would leave it lit at the
    * value it had before somebody switched it off.
    *
+   * `light_mode` AHEAD of the colour axis it enables, and only that axis — see
+   * `AXIS_FOR_MODE`. A lamp with no `light_mode` has one mode and cannot gate,
+   * so everything it reported is written back as before.
+   *
    * A lamp that refuses is logged and skipped rather than failing the restore:
    * the other lamps in the room still want putting back.
    */
@@ -513,16 +575,10 @@ module.exports = class CircadianDriver extends Homey.Driver {
       try {
         const device = await api.devices.getDevice({ id: lamp.id });
         let written = 0;
-        for (const capability of RESTORABLE) {
-          if (capability === 'onoff') continue;
-          if (!(capability in lamp.values)) continue;
+        for (const capability of restoreOrder(lamp.values)) {
           await device.setCapabilityValue({
             capabilityId: capability, value: lamp.values[capability],
           });
-          written += 1;
-        }
-        if ('onoff' in lamp.values) {
-          await device.setCapabilityValue({ capabilityId: 'onoff', value: lamp.values.onoff });
           written += 1;
         }
         // Counted on having WRITTEN something, not on having read the device.
@@ -582,7 +638,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
   }
 
   private buildPlan(state: SessionState): SimpleCircadianPlan {
-    if (!state.target) throw new Error('Choose some lights first.');
+    if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
 
     return {
       schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION,
@@ -591,6 +647,8 @@ module.exports = class CircadianDriver extends Homey.Driver {
       zones: state.zones,
       adjustBrightness: state.adjustBrightness,
       preStage: state.preStage,
+      ...(state.preStageLights !== undefined ? { preStageLights: [...state.preStageLights] } : {}),
+      ...writesLightsField(state.writesLights),
     };
   }
 

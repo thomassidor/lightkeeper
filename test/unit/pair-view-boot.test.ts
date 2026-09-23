@@ -68,7 +68,10 @@ const FIRST_CALL: Record<string, { event: string; reply: unknown }> = {
   },
   'review.html': {
     event: 'getReview',
-    reply: { stepIndex: 3, stepCount: 3, rows: [], promise: 'It starts now.' },
+    reply: {
+      stepIndex: 3, stepCount: 3, rows: [],
+      control: { modes: ['after', 'before', 'none'], selected: 'after', lightCount: 2 },
+    },
   },
   'credential.html': {
     event: 'getCredentialStatus',
@@ -89,7 +92,6 @@ const FIRST_CALL: Record<string, { event: string; reply: unknown }> = {
         eveningStart: -60,
       },
       adjustBrightness: false,
-      preStage: false,
       sun: { sunriseMinute: 390, sunsetMinute: 1180 },
       boundaries: {
         morningEndMinute: 420, morningEnd: '07:00',
@@ -113,8 +115,8 @@ const FIRST_CALL: Record<string, { event: string; reply: unknown }> = {
   'curve.html': {
     event: 'getCurve',
     reply: {
-      points: [], palette: [], featuredColors: 8,
-      adjustBrightness: false, preStage: false,
+      points: [], palette: [], layout: { featured: [], more: [] },
+      adjustBrightness: false,
       minPoints: 2, maxPoints: 8,
     },
   },
@@ -134,10 +136,6 @@ const FIRST_CALL: Record<string, { event: string; reply: unknown }> = {
       sensorName: null, nowLux: null, week: null, staleFor: null,
       atDark: '20:18', atBright: '12:04',
     },
-  },
-  'sensordetail.html': {
-    event: 'getSensorDetail',
-    reply: { sensorName: 'Hall motion', nowLux: 41, week: null },
   },
 
   // ---- schedule ---------------------------------------------------------

@@ -215,10 +215,25 @@ export interface DeviceOwner<
    *
    * Two device types only carry state forward from the plan already stored (a
    * pause someone set, references to Flows already owned). The controller also
-   * deletes the Flows of a source device it no longer listens to, and the
-   * ordering there is load-bearing — its own override says why.
+   * RELEASES the Flows of a source device it no longer listens to — and deletes
+   * them only in `afterApply`, once the new plan has committed. Nothing
+   * irreversible belongs here: this runs before the register, and everything
+   * after it can still roll back.
    */
   prepareApply(previous: TPlan | null, incoming: TPlan): Promise<TPlan>;
+  /**
+   * Anything that may only happen once an apply has COMMITTED — the runtime
+   * started and the plan persisted — and must not happen if it rolls back.
+   *
+   * The controller is the one user: deleting the old remote's Flows used to sit
+   * in `prepareApply`, BEFORE the register, so an apply that then failed rolled
+   * back to a profile whose `managedFlows` named Flows that had just been
+   * deleted. Optional, because the four other device types have nothing
+   * irreversible to do; and it can never fail the apply — the new plan is
+   * running and stored by the time this is called, so a failure here is logged
+   * and the transaction stands.
+   */
+  afterApply?(previous: TPlan | null, committed: TPlan): Promise<void>;
 }
 
 /**
@@ -453,6 +468,17 @@ export class DeviceLifecycle<
         throw error;
       }
       this.applying = false;
+
+      // Past the point of no return, so nothing here may throw into the
+      // caller: the pair screen would report a failed save for a plan that is
+      // running and stored.
+      if (this.owner.afterApply) {
+        try {
+          await this.owner.afterApply(previous, merged);
+        } catch (error) {
+          this.owner.error('Finishing the new configuration failed:', messageOf(error));
+        }
+      }
 
       if (this.owner.withPauseSwitch) {
         await this.owner.setCapabilityValue('onoff', this.owner.planEnabled(merged))

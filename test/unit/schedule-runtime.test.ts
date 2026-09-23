@@ -24,6 +24,8 @@ interface FakeDevice {
   id: string;
   name: string;
   zoneName: string;
+  /** 'light', or a zone target skips it — the real `lightsInZone` rule. */
+  class: string;
   capabilities: string[];
   capabilitiesObj: Record<string, unknown>;
   available: boolean;
@@ -36,7 +38,7 @@ function light(id: string, capabilities: string[] = ['onoff', 'dim', 'light_temp
   if (capabilities.includes('light_temperature')) {
     capabilitiesObj.light_temperature = { min: 0, max: 1, decimals: 2, value: 0.5 };
   }
-  return { id, name: id, zoneName: 'Kitchen', capabilities, capabilitiesObj, available: true };
+  return { id, name: id, zoneName: 'Kitchen', class: 'light', capabilities, capabilitiesObj, available: true };
 }
 
 function harness(options: {

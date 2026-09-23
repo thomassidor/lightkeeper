@@ -5,33 +5,8 @@ import {
   SupersedeGate, contestedControls, type GatedInput,
 } from '../../lib/mapping/supersede-gate';
 import type { InputAction, InputEvent } from '../../lib/inputs/input-event';
+import { FakeTimers } from '../support/fake-timers';
 
-/** Controllable clock so the 250 ms window is exercised without waiting. */
-class FakeClock {
-  private seq = 0;
-  private timers = new Map<number, { fn: () => void; at: number }>();
-  private now = 0;
-
-  setTimeout = (fn: () => void, ms: number): unknown => {
-    const id = ++this.seq;
-    this.timers.set(id, { fn, at: this.now + ms });
-    return id;
-  };
-
-  clearTimeout = (handle: unknown): void => {
-    this.timers.delete(handle as number);
-  };
-
-  advance(ms: number): void {
-    this.now += ms;
-    for (const [id, timer] of [...this.timers.entries()]) {
-      if (timer.at <= this.now) {
-        this.timers.delete(id);
-        timer.fn();
-      }
-    }
-  }
-}
 
 /**
  * The gate carries the binding key BESIDE the event, so every submission is a
@@ -46,7 +21,9 @@ const event = (
 });
 
 function harness(contested: string[]) {
-  const clock = new FakeClock();
+  // The shared clock, so the 250 ms window is exercised in due order without
+  // waiting.
+  const clock = new FakeTimers();
   const dispatched: GatedInput[] = [];
   const gate = new SupersedeGate({
     supersedeMs: 250,

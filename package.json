@@ -37,6 +37,7 @@
     "render:views": "node scripts/render-views.mjs",
     "render:icons": "node scripts/render-icons.mjs",
     "test": "node --import tsx --test \"test/unit/**/*.test.ts\"",
+    "test:coverage": "node scripts/coverage.mjs",
     "test:watch": "node --import tsx --test --watch \"test/unit/**/*.test.ts\"",
     "validate": "homey app validate --level publish",
     "lint": "eslint ."

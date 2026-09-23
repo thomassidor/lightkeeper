@@ -20,6 +20,7 @@ import {
   withinOverrideTolerance,
   TargetStateCache,
   stepFromDecimals,
+  type LiveValues,
 } from '../outputs/target-state-cache';
 import { planIntent, type Capability, type PlannedWrite } from '../outputs/intent-planner';
 import { toDevice } from '../outputs/light-intent';
@@ -36,10 +37,13 @@ import { withDefaults, type Timers } from '../support/timers';
 // a second copy of the Intl handling and its fallback.
 import { describeClock, localNow, localNowResolved } from '../time/local-clock';
 import { nextPointAfter, resolvePoints, valueAt, type CurveValue } from './circadian-curve';
-import { formatMinutes, type CircadianPlan, type CircadianPoint } from './circadian-types';
+import {
+  formatMinutes, preStagesLamp, type CircadianPlan, type CircadianPoint,
+} from './circadian-types';
 import { messageOf } from '../support/homey-errors';
 import { VisibleState } from '../runtime/visible-state';
 import { ValueBoard, VALUE_CAPABILITIES, type PublishedValues } from '../runtime/published-values';
+import { keepsLightsUpdated } from '../runtime/writes-lights';
 
 /**
  * One circadian light, live.
@@ -273,6 +277,18 @@ const PRE_STAGE_RETEST_MS = 24 * 60 * 60_000;
  * generates no Flows, so no API key is involved in anything it does (platform
  * §12).
  */
+/** One lamp's answer to "Test my {n} lights". See `probePreStageAll()`. */
+export interface PreStageLampResult {
+  deviceId: string;
+  name: string;
+  /** It stayed off while it was given a colour, so it may be set in advance. */
+  ok: boolean;
+  /** Put back the way the test found it. */
+  restored: boolean;
+  /** Why not, in words a log can carry. Absent on a pass. */
+  reason?: string;
+}
+
 export interface CircadianDiagnostics extends ReturnType<ControlHistory<CircadianAction>['snapshot']> {
   sampledAt: number;
   writeHistory: ReturnType<LightTargetAdapter['writeHistory']>;
@@ -311,6 +327,11 @@ export interface CircadianDiagnostics extends ReturnType<ControlHistory<Circadia
   nextPoint: { id: string; at: string; inMinutes: number } | null;
   adjustBrightness: boolean;
   preStage: boolean;
+  /** The lamps the test proved safe. Empty with `preStage` is "chosen, untested". */
+  preStageLights: string[];
+  /** False on a device that only publishes; see lib/runtime/writes-lights.ts. */
+  writesLights: boolean;
+  /** The LAST lamp struck off `preStageLights` for coming on, and when. */
   preStageDisabled: { at: number; deviceId: string } | null;
   targetIds: string[];
   targetNames: string[];
@@ -742,6 +763,18 @@ export class CircadianRuntime {
   }
 
   private async subscribeAll(): Promise<void> {
+    /**
+     * Nothing to watch on a device that writes to no lamp.
+     *
+     * The subscriptions exist for two things — the switched-on pass and the
+     * override check — and a publish-only device has neither. Left in place they
+     * are worse than idle: `noteOverride` records an override for any report it
+     * has no write of ours to compare with, so every hand on every lamp would be
+     * filed as somebody taking the lamp over from a device that never had it.
+     * The one-time refresh in `buildRuntime` stays, so a preview still knows
+     * which lamps are on.
+     */
+    if (!keepsLightsUpdated(this.plan)) return;
     const capabilities = this.watchedCapabilities();
     for (const deviceId of this.targetIds) {
       await this.adapter.subscribe(deviceId, capabilities, (id, capability, value, external) =>
@@ -845,10 +878,27 @@ export class CircadianRuntime {
      *
      * Still recorded as `report_ignored`, under its own reason, so the evidence
      * shows the report rather than swallowing it.
+     *
+     * **`lamp_off` is for EVERY capability, not only `dim`.** A report on a lamp
+     * that is off can never be a useful override: either edge of `onoff` clears
+     * one, so whatever it protects is thrown away the moment the lamp comes on —
+     * and until then it keeps that lamp out of pre-staging, badges the device,
+     * and costs a slot in the event log. What DOES report a colour on an off lamp
+     * is a colour sent to it while off, and in this app that is pre-staging:
+     * another Lightkeeper device doing it to lamps they share, or "Test my
+     * lights" on a review screen. Measured on the reference Homey, 23 September
+     * 2026: one house-wide test left the household's own Studio curve with three
+     * of its spots "overridden" at `light_hue` 0.1, within 200 ms of each other —
+     * and the same test run from Repair does it to the very device being
+     * repaired. This used to apply to `dim` alone, which is the one axis nothing
+     * ever writes to an off lamp.
      */
-    const ignored = capability === 'dim' && (value === 0 || this.cache.state(deviceId).actualOn !== true)
-      ? (value === 0 ? 'dim_zero' : 'lamp_off')
-      : this.cache.overrideSuppression(deviceId, capability, value);
+    const lampOff = this.cache.state(deviceId).actualOn !== true;
+    const ignored = capability === 'dim' && value === 0
+      ? 'dim_zero'
+      : lampOff
+        ? 'lamp_off'
+        : this.cache.overrideSuppression(deviceId, capability, value);
     if (ignored) {
       this.history.ignored({ at: this.now(), type: 'report_ignored', deviceId, capability,
         ...(typeof value === 'number' ? { value } : {}), reason: ignored });
@@ -1095,11 +1145,23 @@ export class CircadianRuntime {
    */
   async applyNow(
     reason: string,
-    options: { deviceIds?: string[]; force?: boolean; waitForResults?: boolean } = {},
+    options: { deviceIds?: string[]; force?: boolean; waitForResults?: boolean; preview?: boolean } = {},
   ): Promise<{ writes: number; skipped: number }> {
     this.publishValues();
 
     if (!this.plan.enabled) return this.noteNothingToDo(reason, 'the plan is switched off');
+    /**
+     * A device that only PUBLISHES stops here, after the values are out and
+     * before anything is planned (see lib/runtime/writes-lights.ts).
+     *
+     * `preview` is the one way past, and it is a separate option rather than
+     * `force` because the runtime's own switched-on pass is forced too. A
+     * preview is a person pressing "Try it" on the lamps they picked; a button
+     * that did nothing there would read as the curve being broken.
+     */
+    if (!options.preview && !keepsLightsUpdated(this.plan)) {
+      return this.noteNothingToDo(reason, 'this device only publishes its values');
+    }
     if (this.plan.points.length === 0) return this.noteNothingToDo(reason, 'the curve has no points');
 
     const value = this.currentValue();
@@ -1125,9 +1187,10 @@ export class CircadianRuntime {
       const isOn = this.cache.state(deviceId).actualOn === true;
       if (isOn) lit.push(deviceId);
 
-      // A light that is off is only worth writing to when the user has opted into
-      // pre-staging, and even then only its colour — see the brightness leg below.
-      if (!isOn && !this.plan.preStage) {
+      // A light that is off is only worth writing to when the user chose to set
+      // lights before they turn on AND this lamp passed the test — and even then
+      // only its colour; see the brightness leg below.
+      if (!isOn && !preStagesLamp(this.plan, deviceId)) {
         excluded.set(deviceId, 'off');
         skipped += 1;
         continue;
@@ -1137,8 +1200,8 @@ export class CircadianRuntime {
        * And not worth writing to at all once it has refused, three ticks
        * running, to take a colour while off.
        *
-       * Note what this is NOT: it is not `disablePreStage()`, it is one lamp,
-       * it does not persist, and `this.plan.preStage` stays `true` — every
+       * Note what this is NOT: it is not `disablePreStage()` — it does not
+       * persist, and the lamp stays in `preStageLights` — so every
        * other target goes on being pre-staged, because the refusal is measured
        * to be a property of the lamp rather than of the integration. The lamp
        * is offered a colour again the moment it is switched on (see
@@ -1619,9 +1682,10 @@ export class CircadianRuntime {
    * The mirror of the adapter's `verifyCameOn`: did a colour write to an off lamp
    * leave it off?
    *
-   * If it did not, pre-staging is not safe on this integration and turns itself
-   * off for the whole device — persisted, so tonight's surprise is not repeated
-   * tomorrow. It deliberately does NOT switch the light back off: by now we
+   * If it did not, pre-staging is not safe on THIS LAMP, and the lamp is struck
+   * off the device's `preStageLights` — persisted, so tonight's surprise is not
+   * repeated tomorrow. Only that lamp: the others passed their own test, and
+   * one lamp's integration is no evidence about another's. It deliberately does NOT switch the light back off: by now we
    * cannot tell our own doing from somebody walking in and hitting the switch,
    * and switching off a room a person has just lit is the worse failure of the
    * two. The pairing screen's probe DOES restore it, because there the user
@@ -1642,7 +1706,7 @@ export class CircadianRuntime {
       if ((this.writeGeneration.get(deviceId) ?? 0) !== generation) return;
       if (this.cache.state(deviceId).actualOn !== true) return;
       fireAndForget(
-        this.disablePreStage(deviceId), this.deps.log, 'Turning pre-staging off',
+        this.disablePreStage(deviceId), this.deps.log, 'Turning pre-staging off for a lamp',
       );
     }, PRE_STAGE_CHECK_MS);
     this.probes.set(deviceId, { timer, generation });
@@ -1742,12 +1806,16 @@ export class CircadianRuntime {
   }
 
   private async disablePreStage(deviceId: string): Promise<void> {
-    if (!this.plan.preStage) return;
-    this.plan = { ...this.plan, preStage: false };
+    const listed = this.plan.preStageLights ?? [];
+    if (!this.plan.preStage || !listed.includes(deviceId)) return;
+    // The choice stays: "Set lights before they turn on" is still what the
+    // household picked, and the review screen shows this lamp as the fallback
+    // the next time it is opened. Only the lamp's own pass is withdrawn.
+    this.plan = { ...this.plan, preStageLights: listed.filter(id => id !== deviceId) };
     this.preStageDisabled = { at: this.now(), deviceId };
     this.deps.log(
-      `${deviceId} switched itself on from a colour write, so pre-staging has been turned off `
-      + 'for this device. Its lights will be corrected as they come on instead.',
+      `${deviceId} switched itself on from a colour write, so it will no longer be set before it `
+      + 'turns on. It will be corrected as it comes on instead; the other lights are unaffected.',
     );
     // AWAITED: this is the one verdict this device type persists, and a write
     // that silently failed would switch the same lamp on again tomorrow night.
@@ -1766,6 +1834,10 @@ export class CircadianRuntime {
   }> {
     const value = this.currentValue();
     if (!value) return { deviceId: null, stayedOff: false, restored: false, reason: 'no curve' };
+    // Pre-staging is a way of writing to lamps, and this device writes to none.
+    if (!keepsLightsUpdated(this.plan)) {
+      return { deviceId: null, stayedOff: false, restored: false, reason: 'this device only publishes its values' };
+    }
 
     await Promise.all(this.targetIds.map(id => this.adapter.refresh(id)));
 
@@ -1911,6 +1983,146 @@ export class CircadianRuntime {
   }
 
   /**
+   * "Test my {n} lights": prove pre-staging on EVERY lamp, and say which.
+   *
+   * The review screen's test, and the per-lamp successor to `probePreStage()`
+   * above — which answers "can this household pre-stage?" off one lamp that
+   * happens to be off, and so could never produce the per-lamp list that
+   * "Set lights before they turn on" now stores (`preStageLights`).
+   *
+   * **A lamp that is ON is switched off first**, and that is what "each light
+   * blinks once, then goes back to how it was" on the screen means. Testing
+   * only the lamps that happened to be off would leave the rest untested, and
+   * an untested lamp is never pre-staged — so a household testing in the
+   * evening, with the lights on, would get a list of nothing.
+   *
+   * **In parallel, not in turn.** Each lamp's test is two waits long (settle
+   * off, then `PRE_STAGE_CHECK_MS` to see whether the colour switched it on),
+   * so a sequential run of six lamps passes the 20 s a pair view waits for any
+   * answer — `emit()` in views/shared/emit.js — and the screen reports a
+   * timeout for a test that is still running. Together, the whole test is two
+   * waits long whatever the count.
+   *
+   * Every lamp is put back: one that was on is switched on again and given back
+   * the brightness and the one colour axis the test wrote; one that was off and
+   * came on is switched off again. Unlike `verifyStayedOff`, that is right
+   * here, because the user asked for the test and is standing in front of it.
+   */
+  async probePreStageAll(waitMs: number = PRE_STAGE_CHECK_MS): Promise<{
+    lights: PreStageLampResult[]; reason?: string;
+  }> {
+    const value = this.currentValue();
+    if (!value) return { lights: [], reason: 'no curve' };
+    // Pre-staging is a way of writing to lamps, and this device writes to none.
+    if (!keepsLightsUpdated(this.plan)) {
+      return { lights: [], reason: 'this device only publishes its values' };
+    }
+
+    // Captured ONCE, before any wait: see `probePreStage` for why the check
+    // after the wait is what stands between a stopped runtime and a restore
+    // write to a lamp nothing owns any more.
+    const stillRunning = this.lifetime.current();
+    const lights = await Promise.all(this.targetIds.map((deviceId, index) =>
+      this.probeOneLamp(deviceId, this.targetNames[index] ?? deviceId, value, waitMs, stillRunning)));
+    return { lights };
+  }
+
+  private async probeOneLamp(
+    deviceId: string,
+    name: string,
+    value: CurveValue,
+    waitMs: number,
+    stillRunning: () => boolean,
+  ): Promise<PreStageLampResult> {
+    const wait = (ms: number) => new Promise(resolve => this.setTimer(() => resolve(null), ms));
+    const result = (ok: boolean, restored: boolean, reason?: string): PreStageLampResult =>
+      ({ deviceId, name, ok, restored, ...(reason !== undefined ? { reason } : {}) });
+
+    await this.adapter.refresh(deviceId);
+
+    // The axis pre-staging would actually write, which is the only one worth
+    // testing: see `probePreStage` on why a temperature-only probe skipped the
+    // very lamps a coloured curve drives.
+    const onColour = value.color !== undefined && this.cache.supports(deviceId, 'light_hue');
+    if (!onColour && !this.cache.supports(deviceId, 'light_temperature')) {
+      // A brightness-only lamp has nothing to set in advance: a `dim` write is
+      // what switches a lamp on (platform §12). Not a failure, just a fallback.
+      return result(false, true, 'takes no colour or colour temperature');
+    }
+
+    const before = this.cache.reportedValues(deviceId);
+    const wasOn = before.onoff === true;
+
+    try {
+      if (wasOn) {
+        await this.adapter.write(deviceId, 'onoff', false);
+        await wait(waitMs);
+        if (!stillRunning()) return result(false, false, 'the device was switched off before the test finished');
+        await this.adapter.refresh(deviceId);
+        if (this.cache.state(deviceId).actualOn === true) {
+          return result(false, await this.restoreLamp(deviceId, before, onColour),
+            'it could not be switched off to test it');
+        }
+      }
+
+      // Planned rather than hand-rolled, for the reason `probePreStage` gives:
+      // `light_mode` has to go out ahead of the value it enables (platform §6).
+      const planned = onColour
+        ? planIntent(
+          { type: 'color_absolute', hue: value.color!.hue, saturation: value.color!.saturation },
+          [deviceId], this.cache, DEFAULT_BEHAVIOR,
+        )
+        : planIntent({ type: 'temperature_absolute', value: value.warmth }, [deviceId], this.cache, DEFAULT_BEHAVIOR);
+      for (const write of planned.writes) {
+        await this.adapter.write(deviceId, write.capability, write.value, { preStage: true });
+      }
+    } catch (error) {
+      // A refusal is the third answer and means what "it came on" means — see
+      // `probePreStage`. The lamp may already be off by our hand, so it is
+      // put back either way.
+      const restored = stillRunning() ? await this.restoreLamp(deviceId, before, onColour) : false;
+      return result(false, restored, messageOf(error));
+    }
+
+    await wait(waitMs);
+    if (!stillRunning()) return result(false, false, 'the device was switched off before the test finished');
+
+    await this.adapter.refresh(deviceId);
+    const cameOn = this.cache.state(deviceId).actualOn === true;
+    const restored = await this.restoreLamp(deviceId, before, onColour);
+    return cameOn ? result(false, restored, 'it came on when it was set') : result(true, restored);
+  }
+
+  /**
+   * Put one lamp back the way `probeOneLamp` found it, and say whether that
+   * worked.
+   *
+   * `onoff` FIRST for a lamp that was on, and not last as `putBack` in the
+   * circadian driver does it — because here the values are the question under
+   * test: a colour sent to an off lamp is exactly what may or may not stick, so
+   * it is sent once the lamp is on again. Only the axis the test wrote is
+   * restored, plus brightness; the test changed nothing else.
+   */
+  private async restoreLamp(deviceId: string, before: LiveValues, onColour: boolean): Promise<boolean> {
+    try {
+      if (before.onoff !== true) {
+        await this.adapter.refresh(deviceId);
+        if (this.cache.state(deviceId).actualOn === true) await this.adapter.write(deviceId, 'onoff', false);
+        return true;
+      }
+      await this.adapter.write(deviceId, 'onoff', true);
+      const axes: Capability[] = onColour ? ['light_hue', 'light_saturation'] : ['light_temperature'];
+      for (const capability of [...axes, 'dim'] as Capability[]) {
+        const previous = before[capability as keyof LiveValues];
+        if (typeof previous === 'number') await this.adapter.write(deviceId, capability, previous);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * The health inputs as of the last assessment, so a tick can tell whether
    * anything a verdict depends on has actually moved.
    *
@@ -1963,6 +2175,20 @@ export class CircadianRuntime {
 
     if (!localNowResolved(this.deps.timezone(), this.now()).resolved) {
       this.setState('needs_repair', { key: 'state.noTimezone' });
+      return;
+    }
+
+    /**
+     * A device that only publishes is well whatever its lamps are doing.
+     *
+     * After the clock, because a curve needs to know what time it is to have
+     * anything to publish; before the targets, because it never writes to them
+     * and a lamp that is unreachable, or cannot change its warmth, costs it
+     * nothing. Reporting those would take a working source offline — and a
+     * remote's "On – with Lightkeeper" button reads it whatever its state.
+     */
+    if (!keepsLightsUpdated(this.plan)) {
+      this.setState('ready');
       return;
     }
 
@@ -2172,6 +2398,8 @@ export class CircadianRuntime {
       nextPoint: next ? { id: next.id, at: formatMinutes(next.minute), inMinutes: next.inMinutes } : null,
       adjustBrightness: this.plan.adjustBrightness,
       preStage: this.plan.preStage,
+      preStageLights: [...(this.plan.preStageLights ?? [])],
+      writesLights: keepsLightsUpdated(this.plan),
       preStageDisabled: this.preStageDisabled,
       targetIds: this.targetIds,
       targetNames: this.targetNames,

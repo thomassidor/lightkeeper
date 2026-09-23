@@ -56,6 +56,18 @@ export function daysLabel(days: IsoWeekday[] | null): string {
   return days.map(day => WEEKDAY_LABELS[day]).join(', ');
 }
 
+/**
+ * The same summary as `daysLabel`, as locale keys — for the review screen,
+ * which IS one of our screens and so must be translatable. A named set is one
+ * key; anything else is a list of weekday keys for the driver to join.
+ */
+export function daysLabelKeys(days: IsoWeekday[] | null): string[] {
+  if (days === null || days.length === 7) return ['days.everyDay'];
+  if (days.length === 5 && [1, 2, 3, 4, 5].every(d => days.includes(d as IsoWeekday))) return ['days.weekdays'];
+  if (days.length === 2 && days.includes(6) && days.includes(7)) return ['days.weekends'];
+  return days.map(day => `weekday.${day}`);
+}
+
 export function boundaryLabel(
   entry: ScheduleEntry,
   days: IsoWeekday[] | null,

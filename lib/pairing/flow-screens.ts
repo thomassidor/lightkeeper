@@ -1,4 +1,6 @@
 import type { PairSessionHost, HandlerRegistrar } from './pair-session';
+import type { ReviewControl } from './control-choice';
+import { PALETTE, PALETTE_LAYOUT } from '../circadian/palette';
 
 /**
  * The two screens every flow now opens and closes with, as data.
@@ -146,14 +148,48 @@ export function warmthSwatch(value: number): string {
  *    out as two indistinguishable greys, and the screen whose job is to show
  *    that this device does colour opened with a row of them.
  *
- * DUPLICATED in `css()` in drivers/curve/pair/curve.html, which repaints the
- * chart on every drag and so cannot ask the driver. Change one and change the
- * other.
+ * A palette colour that carries its own `swatch` is painted in THAT: it is the
+ * design's hex, and these two curves only approximate it. The curves are for
+ * everything else — a blend between two points, which has no hex of its own.
+ *
+ * DUPLICATED in `css()` in drivers/curve/pair/curve.html and
+ * drivers/schedule/pair/blocks.html, which repaint on every drag and so cannot
+ * ask the driver. Change one and change the others.
  */
-export function colourSwatch(colour: { hue: number; saturation: number }): string {
+export function colourSwatch(colour: { hue: number; saturation: number; swatch?: string }): string {
+  if (colour.swatch) return colour.swatch;
   const saturation = Math.round((0.25 + colour.saturation * 0.55) * 100);
   const lightness = Math.round(86 - colour.saturation * 36);
   return `hsl(${Math.round(colour.hue * 360)},${saturation}%,${lightness}%)`;
+}
+
+/**
+ * The closed palette as a colour selector draws it: every colour, and where
+ * each one goes.
+ *
+ * EVERY colour, hidden ones included, because a view looks a stored point's
+ * colour up by id to name and paint it — and a point that names `moss` must
+ * still read as Moss. `layout` is the separate answer to what is DRAWN, which
+ * is why it is ids: the grid shows `ocean` twice and `moss` not at all.
+ *
+ * Here rather than in each driver because three drivers built the same list,
+ * and the split used to travel as a bare count (`featuredColors: 8`) that could
+ * not describe a grid with a colour in it twice.
+ */
+export function paletteForScreen(translate: (key: string) => string): {
+  palette: Array<{ id: string; label: string; hue: number; saturation: number; swatch: string }>;
+  layout: { featured: string[]; more: string[] };
+} {
+  return {
+    palette: PALETTE.map(colour => ({
+      id: colour.id,
+      label: translate(colour.labelKey),
+      hue: colour.hue,
+      saturation: colour.saturation,
+      swatch: colourSwatch(colour),
+    })),
+    layout: { featured: [...PALETTE_LAYOUT.featured], more: [...PALETTE_LAYOUT.more] },
+  };
 }
 
 export interface ReviewScreen {
@@ -162,12 +198,17 @@ export interface ReviewScreen {
   rows: ReviewRow[];
   hero?: ReviewHero;
   /**
-   * Locale key for the sentence under the rows: what the device will do, in the
-   * present tense, naming how many lights. It is the promise the Add button is
-   * about to keep, so it is stated before the button rather than after it.
+   * "How Lightkeeper controls your lights", on the three engine device types
+   * and nowhere else — see lib/pairing/control-choice.ts.
+   *
+   * It took the place of the sentence that closed this screen ("Lightkeeper
+   * sets these lights whenever they are on, starting now"), on all five: that
+   * sentence was a promise about HOW the lights would be driven, and on the
+   * three that now ask, the answer is the choice right under it. A schedule and
+   * a remote have nothing to choose, and the design draws them with no closing
+   * sentence either.
    */
-  promiseKey: string;
-  promiseTokens?: Record<string, string | number>;
+  control?: ReviewControl;
 }
 
 export function registerReviewHandler(
@@ -185,8 +226,8 @@ export function registerReviewHandler(
         value: row.value,
         ...(row.view !== undefined ? { view: row.view } : {}),
       })),
-      promise: host.translate(screen.promiseKey, screen.promiseTokens),
       ...(screen.hero !== undefined ? { hero: screen.hero } : {}),
+      ...(screen.control !== undefined ? { control: screen.control } : {}),
     };
   });
 }

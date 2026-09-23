@@ -101,8 +101,16 @@ export interface SimpleCircadianPlan {
   zones: CircadianZones;
   /** Follow the brightness as well as the temperature. See `CircadianZone`. */
   adjustBrightness: boolean;
-  /** Write to lights that are OFF. Opt-in and self-disabling; see platform §12. */
+  /** Write to lights that are OFF — only those in `preStageLights`. See CircadianPlan. */
   preStage: boolean;
+  /** The lamps a pre-stage test proved safe. See CircadianPlan.preStageLights. */
+  preStageLights?: string[];
+  /**
+   * Absent = keep the lights up to date all day; `false` = publish only.
+   * Stored only when false. See lib/runtime/writes-lights.ts for why the gate
+   * is `!== false`.
+   */
+  writesLights?: false;
 }
 
 /** What a new device starts with: a warm morning and evening, a cool working day. */
@@ -115,39 +123,31 @@ export const DEFAULT_ZONES: CircadianZones = {
 };
 
 /**
- * `preStage: true` is what a NEW device starts with, and that is a reversal.
+ * What a new circadian light starts with: brightness ON, pre-staging OFF.
  *
- * It was `false` because a colour written to an off lamp switches it on through
- * some integrations (platform §6), and "lights coming on by themselves at night
- * is a far worse failure than a half-second of the wrong white". That reasoning
- * is still right about the failure; what it got wrong was the alternative,
- * because the half-second is not what opting out actually bought. Measured on
- * the reference Homey: a lamp switched on at the wall reports itself on, the
- * runtime fires within 70 ms, and the colour lands 1.3 to 1.9 s later. Every
- * light in the house visibly changed colour after somebody had already looked
- * at it, every time, for as long as the app has existed.
+ * **Brightness on** because the zones above already carry one each, and the
+ * 2026-09-23 design makes "Set brightness too" the default everywhere it is
+ * offered. A saved device keeps what it stored.
  *
- * What makes the reversal safe is that the protection is unchanged and does not
- * depend on anybody opting in: `verifyStayedOff` probes 1.5 s after the first
- * pre-stage write and, if the lamp came on, turns pre-staging off for the whole
- * device and PERSISTS that. The exposure is therefore one lamp coming on once,
- * on an integration that does this, before the device stops doing it for good.
+ * **Pre-staging off, and that is the SECOND reversal.** It started off (a colour
+ * written to an off lamp switches it on through some integrations, platform
+ * §6), was turned on for new devices in 0.6.5 because opting out cost every
+ * switch-on a visible colour change 1.3–1.9 s after the lamp came on, and is off
+ * again now because the question it answered has moved to where it can be
+ * answered properly. The review screen asks "How Lightkeeper controls your
+ * lights", and "Set lights before they turn on" pre-stages only the lamps its
+ * own per-lamp test watched stay off (`preStageLights`). Defaulting it on would
+ * mean defaulting to a choice nobody can make before the test has run — and a
+ * chosen-but-untested device behaves as option 1 anyway.
  *
- * It is one lamp coming ON, not one staying on unnoticed: the probe does not
- * switch it back, because by then our doing it and somebody walking into the
- * room are indistinguishable (platform §12). That is the cost, it is bounded,
- * and the pairing screen now carries a test that answers the question against
- * the household's own lamps before any of it happens.
- *
- * Deliberately NOT applied to devices that already exist. They were paired
- * under the opt-in promise, and the store's own gate still reads
- * `preStage === true`, so an absent key stays off. See lib/validation/plans.ts.
+ * `verifyStayedOff` still guards the lamps that did pass: one that later comes
+ * on from a pre-stage write is struck off the list, persisted.
  */
 export const DEFAULT_SIMPLE_PLAN: Omit<SimpleCircadianPlan, 'target' | 'schemaVersion'> = {
   enabled: true,
   zones: DEFAULT_ZONES,
-  adjustBrightness: false,
-  preStage: true,
+  adjustBrightness: true,
+  preStage: false,
 };
 
 /** The two boundaries as minutes of the local day, in an order the curve can use. */
@@ -283,6 +283,10 @@ export function expandSimplePlan(plan: SimpleCircadianPlan): CircadianPlan {
     zones: plan.zones,
     adjustBrightness: points.every(p => p.brightness !== undefined),
     preStage: plan.preStage,
+    // Field by field above, so a new stored field has to be carried here by
+    // name or the runtime never sees it.
+    ...(plan.preStageLights !== undefined ? { preStageLights: [...plan.preStageLights] } : {}),
+    ...(plan.writesLights === false ? { writesLights: false as const } : {}),
   };
 }
 
@@ -290,9 +294,9 @@ export function expandSimplePlan(plan: SimpleCircadianPlan): CircadianPlan {
  * The other half of `expandSimplePlan`: what the runtime knows, folded back onto
  * what this device type stores.
  *
- * Only two fields can move while a runtime is running. `preStage` turns ITSELF
- * off after observing a lamp come on from a colour write (platform §12), and
- * that verdict has to survive a restart or the same lamp is switched on again
+ * Only two things can move while a runtime is running. `preStageLights` loses a
+ * lamp after observing it come on from a colour write (platform §12), and that
+ * verdict has to survive a restart or the same lamp is switched on again
  * tomorrow night; `enabled` moves when somebody uses the pause switch.
  * Everything else in the expanded plan is derived from the zones, so reading it
  * back would be reading back a derivation.
@@ -305,9 +309,19 @@ export function expandSimplePlan(plan: SimpleCircadianPlan): CircadianPlan {
  */
 export function foldBackSimplePlan(
   onto: SimpleCircadianPlan,
-  runtimePlan: { enabled: boolean; preStage: boolean },
+  runtimePlan: { enabled: boolean; preStage: boolean; preStageLights?: string[] },
 ): SimpleCircadianPlan {
-  return { ...onto, enabled: runtimePlan.enabled, preStage: runtimePlan.preStage };
+  // `preStageLights` rather than `preStage` is what the runtime moves now: a
+  // lamp seen coming on is struck off the list, and the choice itself stays.
+  // Absent on the runtime side means absent here too, never an empty list.
+  const { preStageLights: _dropped, ...rest } = onto;
+  return {
+    ...rest,
+    enabled: runtimePlan.enabled,
+    preStage: runtimePlan.preStage,
+    ...(runtimePlan.preStageLights !== undefined
+      ? { preStageLights: [...runtimePlan.preStageLights] } : {}),
+  };
 }
 
 /**

@@ -86,6 +86,24 @@ describe('zone targets', () => {
     assert.deepEqual(resolved.missing, [], 'a zone cannot have missing members');
   });
 
+  test('a socket in the zone is not swept up, unless its owner said it is a lamp', async () => {
+    // The fake's `lightsInZone` used to filter on `onoff` alone, so this could
+    // not be written: every zone test resolved sockets as lights. It now calls
+    // the real `isLightClass()`, and `virtualClass` is the person who owns the
+    // room answering the question for us.
+    const resolver = new TargetResolver(catalog([
+      device({ id: 'light-1' }),
+      device({ id: 'plug-1', class: 'socket', capabilities: ['onoff'] }),
+      device({ id: 'plug-lamp', class: 'socket', virtualClass: 'light', capabilities: ['onoff'] }),
+    ]));
+
+    const resolved = await resolver.resolve({
+      kind: 'zone', zoneId: 'z1', includeSubzones: false,
+    });
+
+    assert.deepEqual(resolved.devices.map(d => d.id), ['light-1', 'plug-lamp']);
+  });
+
   test('the capability summary counts each capability separately', async () => {
     // What decides which functions the mapping screen offers. A zone of mixed
     // lamps must report partial support rather than none.

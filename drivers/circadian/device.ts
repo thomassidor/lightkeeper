@@ -106,9 +106,9 @@ module.exports = class CircadianDevice
   /**
    * The runtime's view of its plan, folded back into what this device stores.
    *
-   * Only two fields can move while a runtime is running: `preStage`, which turns
-   * ITSELF off after observing a lamp come on from a colour write (§12), and
-   * `enabled`. Everything else in the expanded plan is derived, so reading it back
+   * Only two things can move while a runtime is running: `preStageLights`,
+   * which loses a lamp after observing it come on from a colour write (§12),
+   * and `enabled`. Everything else in the expanded plan is derived, so reading it back
    * would be reading back a constant.
    */
   override planOf(runtime: CircadianRuntime, base: SimpleCircadianPlan | null): SimpleCircadianPlan {

@@ -166,7 +166,7 @@ describe('POST /devices/:id/preview (T21, T27, T28)', () => {
 
     assert.deepEqual(result, { writes: 2, skipped: 1 });
     assert.deepEqual(recorded.applied,
-      [{ id: CURVE_ID, reason: 'preview', force: true, waitForResults: true }]);
+      [{ id: CURVE_ID, reason: 'preview', force: true, waitForResults: true, preview: true }]);
     // Forced, because the caller asked for a visible change and is owed one even
     // where the lamps already sit close to the curve.
     // `waitForResults` — an explicit option, not a sniff at the reason string —
@@ -197,7 +197,7 @@ describe('POST /devices/:id/preview (T21, T27, T28)', () => {
 
     assert.deepEqual(result, { writes: 2, skipped: 1 });
     assert.deepEqual(recorded.applied,
-      [{ id: DAYLIGHT_ID, reason: 'preview', force: true, waitForResults: true }]);
+      [{ id: DAYLIGHT_ID, reason: 'preview', force: true, waitForResults: true, preview: true }]);
     assert.equal(recorded.drained, 1);
   });
 
@@ -207,7 +207,7 @@ describe('POST /devices/:id/preview (T21, T27, T28)', () => {
 
     await api.previewDevice({ homey: h, params: { id: CURVE_ID } });
     assert.deepEqual(recorded.applied,
-      [{ id: CURVE_ID, reason: 'preview', force: true, waitForResults: true }]);
+      [{ id: CURVE_ID, reason: 'preview', force: true, waitForResults: true, preview: true }]);
   });
 
   test('a missing id is refused before anything is looked up', async () => {

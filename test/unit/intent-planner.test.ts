@@ -359,6 +359,17 @@ describe('clamping to each device\'s own range', () => {
 });
 
 describe('perceptual curve', () => {
+  test('the exponent is 2.2, written down here and not derived', () => {
+    // Nothing else pins it: the round-trip below holds for any exponent, and
+    // the runtime suites compute their expected `dim` through toDevice()
+    // itself, so a changed γ would move every expectation with it. Every
+    // stored brightness in every house is a perceptual number read through this
+    // curve, and `MINIMUM_BRIGHTNESS` / `litDim()` are argued at 2.2.
+    assert.ok(Math.abs(toDevice(0.5) - 0.5 ** 2.2) < 1e-12, `toDevice(0.5) = ${toDevice(0.5)}`);
+    assert.ok(Math.abs(toDevice(0.5) - 0.2176) < 1e-4, 'and 0.5 ** 2.2 is ~0.2176');
+    assert.ok(Math.abs(toPerceptual(0.2176) - 0.5) < 1e-4);
+  });
+
   test('round-trips', () => {
     for (const v of [0, 0.1, 0.25, 0.5, 0.75, 1]) {
       assert.ok(Math.abs(toDevice(toPerceptual(v)) - v) < 1e-9);

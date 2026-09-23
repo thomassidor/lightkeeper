@@ -4,9 +4,7 @@
    file, not this one.**
 
    A sensor's own last week, as 7 rows of 12 two-hour cells. It appears on the
-   response screen, under the two lux numbers it is the evidence for, and on
-   the detail screen a sensor row pushes. Both draw the same picture, so both
-   splice the same block. */
+   response screen, above the two lux numbers it is the evidence for. */
 #ROOT .week { background: var(--lk-surface); border: 1px solid var(--lk-edge);
               border-radius: 16px; box-shadow: var(--lk-shadow);
               padding: 14px; margin-bottom: 14px; }
@@ -87,4 +85,8 @@
 #ROOT .week-verdict { font-size: 13px; line-height: 1.45; color: var(--lk-ink);
                       margin-top: 11px; }
 #ROOT .week-verdict b { color: var(--lk-ink); }
+/* The flat and the quiet week, drawn as a block where the verdict line would
+   be. The design pads it a pixel wider than a plain .msg, so the two lines sit
+   level with the card's own text. */
+#ROOT .week-finding { padding: 13px 14px; }
 /* ==== end shared week grid ==== */

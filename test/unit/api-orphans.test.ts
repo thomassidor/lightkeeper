@@ -3,12 +3,15 @@ import assert from 'node:assert/strict';
 import { BoundedLog } from '../../lib/support/bounded-log';
 import { FlowBridgeManager } from '../../lib/bridge/flow-bridge-manager';
 import type { HomeyApiService } from '../../lib/homey-api-service';
+import { CredentialService } from '../../lib/credential-service';
 
 const api = require('../../api') as {
   countOrphans(args: any): Promise<any>;
   sweepOrphans(args: any): Promise<any>;
   getStatus(args: any): Promise<any>;
   getDiagnostics(args: any): Promise<any>;
+  setCredential(args: any): Promise<any>;
+  deleteCredential(args: any): Promise<any>;
 };
 
 /**
@@ -84,6 +87,8 @@ function homey(options: {
     controller?: Write[]; schedule?: Write[]; circadian?: Write[];
     interleaved?: Write[];
   };
+  /** The app's credential service. A stub reporting a valid key, unless given. */
+  credentials?: unknown;
 }) {
   const swept: Array<Set<string>> = [];
   const deleted: string[] = [];
@@ -182,7 +187,7 @@ function homey(options: {
       app: {
         recentEvents: new BoundedLog<never>(40),
         recentWrites: writeLog,
-        credentials: { getStatus: () => ({ present: true, valid: true }) },
+        credentials: options.credentials ?? { getStatus: () => ({ present: true, valid: true }) },
         controllers: { all: () => (options.controllers ?? []).map(id => runtime(id, 'controller')) },
         schedules: {
           all: () => (options.schedules ?? []).map(id => runtime(id, 'schedule')),
@@ -595,5 +600,87 @@ describe('the settings payload', () => {
 
     const diagnostics = await api.getDiagnostics(h.args);
     assert.deepEqual(diagnostics.controllers[0].recentWrites, [ctrl]);
+  });
+});
+
+/**
+ * "The API key is never returned over the app API", asserted on what the
+ * handlers RETURN rather than on what `api.ts` spells.
+ *
+ * `webview-safety.test.ts` used to stand in for this with a source search for
+ * the settings storage key's name, which proves only that `api.ts` does not
+ * name it — a handler returning `app.credentials` wholesale, or spreading a
+ * status object that had grown a `token`, would have passed. Here a REAL
+ * `CredentialService` holds a key, and every route that touches the credential
+ * or reports on the app is serialised and searched for it, including the two
+ * that are handed the key itself.
+ */
+describe('the app API never returns the stored key', () => {
+  /** Synthetic, and shaped like a real key so a redactor would recognise it. */
+  const KEY = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:11111111-2222-3333-4444-555555555555:'
+    + '0123456789abcdef0123456789abcdef01234567';
+  const SECRET = '0123456789abcdef0123456789abcdef01234567';
+  const PASTED = 'ffffffff-bbbb-cccc-dddd-eeeeeeeeeeee:11111111-2222-3333-4444-555555555555:'
+    + 'fedcba9876543210fedcba9876543210fedcba98';
+
+  function holdingKey(writeClient: () => Promise<unknown>) {
+    const store = new Map<string, unknown>([['flowWriteApiKey', KEY]]);
+    const credentials = new CredentialService({
+      settings: {
+        get: k => store.get(k),
+        set: (k, v) => { store.set(k, v); },
+        unset: k => { store.delete(k); },
+      },
+      createWriteClient: writeClient,
+      getLocalAddress: async () => 'http://127.0.0.1:80',
+      log: () => { /* quiet */ },
+    });
+    return homey({ controllers: [ID.ctrl], schedules: [ID.sched], credentials });
+  }
+
+  function assertNoKey(label: string, response: unknown): void {
+    const serialised = JSON.stringify(response) ?? '';
+    for (const secret of [KEY, SECRET, PASTED, PASTED.slice(-40)]) {
+      assert.equal(serialised.includes(secret), false, `${label} returned key material`);
+    }
+  }
+
+  test('status, diagnostics and the orphan count carry no key', async () => {
+    const h = holdingKey(async () => ({}));
+    const status = await api.getStatus(h.args);
+    // The service is real and the key is there, so this is not vacuous.
+    assert.equal(status.credential.present, true);
+    assertNoKey('getStatus', status);
+    assertNoKey('getDiagnostics', await api.getDiagnostics(h.args));
+    assertNoKey('countOrphans', await api.countOrphans(h.args));
+  });
+
+  test('a refused key comes back as a status, not as itself', async () => {
+    // The handshake fails with an error that ECHOES the token, which is the
+    // refusal path and the one place an error object has been near the key.
+    const h = holdingKey(async () => { throw new Error(`401 Unauthorized for token ${PASTED}`); });
+    const status = await api.setCredential({ ...h.args, body: { token: PASTED } });
+    assert.equal(status.valid, false);
+    assertNoKey('setCredential (refused)', status);
+    assertNoKey('getStatus after a refusal', await api.getStatus(h.args));
+  });
+
+  test('an accepted key comes back as a status, not as itself', async () => {
+    const client = {
+      // What `flowWriteProbe` does with a write client: sweep, create a
+      // folder, delete it.
+      flow: {
+        getFlowFolders: async () => ({}),
+        createFlowFolder: async () => ({ id: 'probe-folder' }),
+        deleteFlowFolder: async () => undefined,
+      },
+      destroy: () => undefined,
+    };
+    const h = holdingKey(async () => client);
+    const status = await api.setCredential({ ...h.args, body: { token: PASTED } });
+    assert.equal(status.valid, true, 'the probe was meant to succeed here');
+    assertNoKey('setCredential (accepted)', status);
+    assertNoKey('getStatus after acceptance', await api.getStatus(h.args));
+    assertNoKey('deleteCredential', await api.deleteCredential(h.args));
   });
 });

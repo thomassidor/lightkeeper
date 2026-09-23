@@ -16,6 +16,8 @@ import {
   DEFAULT_RESPONSE, LUMINANCE_CAPABILITY, SENSOR_STALE_MS, sanitiseResponse, usableLocation,
   type DaylightPlan, type DaylightResponse,
 } from '../../lib/daylight/daylight-types';
+import { keepsLightsUpdated, writesLightsField } from '../../lib/runtime/writes-lights';
+import { registerControlHandlers, reviewControl } from '../../lib/pairing/control-choice';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
 import {
   handlerRegistrar,
@@ -52,15 +54,35 @@ import {
 interface SessionState {
   target?: TargetSpec;
   response: DaylightResponse;
+  /** Keep the lights up to date all day, or only publish. See lib/runtime/writes-lights.ts. */
+  writesLights: boolean;
   /**
-   * The sensor whose week is being LOOKED AT, which is not the sensor chosen.
+   * Whether the two LUX thresholds are somebody's decision rather than ours.
    *
-   * Tapping a row on the sensor list opens that sensor's week before committing
-   * to it, and the detail screen decides on the way back. Holding it here rather
-   * than passing an id through `showView` is what makes a reload of the detail
-   * screen land on the same sensor instead of on nothing.
+   * True once a person has had them in front of them with a sensor chosen: a
+   * repair of a device that was saved reading a sensor, or any `setDaylight`
+   * pushed while one is chosen — the response screen pushes only on an edit.
+   * `getResponse` pre-fills the sensor's week's suggestion only while this is
+   * false, because "still equal to the defaults" cannot tell a default nobody
+   * looked at from a default somebody kept on purpose, and overwriting the
+   * second is exactly what the suggestion's own comment promised not to do.
+   *
+   * Following the sun does NOT settle them. The response screen shows angles
+   * then, so a household that repairs a sun-following device and picks its
+   * first sensor has never seen a lux number and is owed the suggestion.
    */
-  inspecting?: string;
+  luxChosen: boolean;
+}
+
+
+/** The week grid's own labels, Monday first — ISO weekday 1 is `week.mon`. */
+const WEEKDAY_KEYS = ['week.mon', 'week.tue', 'week.wed', 'week.thu', 'week.fri', 'week.sat', 'week.sun'];
+
+/** The later of two optional instants. */
+function newest(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return Math.max(a, b);
 }
 
 module.exports = class DaylightDriver extends Homey.Driver {
@@ -111,12 +133,18 @@ module.exports = class DaylightDriver extends Homey.Driver {
     await this.bindSession(session, {
       target: plan?.target,
       response: plan?.response ?? DEFAULT_RESPONSE,
+      // Absent means ON: every device paired before the switch existed writes.
+      writesLights: plan ? keepsLightsUpdated(plan) : true,
+      // Saved reading a sensor: its lux thresholds are what somebody saved.
+      luxChosen: typeof plan?.response?.sensor === 'string',
     }, device);
   }
 
   private async bindSession(session: any, initial: Partial<SessionState>, device?: any) {
     const state: SessionState = {
       response: DEFAULT_RESPONSE,
+      writesLights: true,
+      luxChosen: false,
       ...initial,
     };
 
@@ -207,10 +235,8 @@ module.exports = class DaylightDriver extends Homey.Driver {
      * never sees a warning.
      */
     handler('setSensor', async (payload: unknown) => {
-      const asked = payload as { sensor?: unknown; useInspected?: unknown } | undefined;
-      const wanted = asked?.useInspected === true
-        ? state.inspecting ?? null
-        : (typeof asked?.sensor === 'string' ? asked.sensor : null);
+      const asked = payload as { sensor?: unknown } | undefined;
+      const wanted = typeof asked?.sensor === 'string' ? asked.sensor : null;
 
       // MEMBERSHIP, not just shape: a pair session is a Web API surface and can
       // be scripted (platform §14). A lamp id accepted as a sensor is subscribed
@@ -225,25 +251,6 @@ module.exports = class DaylightDriver extends Homey.Driver {
       return { sensor: state.response.sensor };
     });
 
-    /** Remember which sensor's week the detail screen is about to draw. */
-    handler('inspectSensor', async (deviceId: unknown) => {
-      state.inspecting = typeof deviceId === 'string' ? deviceId : undefined;
-      return { inspecting: state.inspecting ?? null };
-    });
-
-    handler('getSensorDetail', async () => {
-      if (!state.inspecting) throw new Error('No sensor is being looked at.');
-      const device = await this.app.catalog.device(state.inspecting);
-      const reading = (this.app.daylight.sensors() as WatchedSensor[])
-        .find(watched => watched.deviceId === state.inspecting);
-
-      return {
-        sensorName: device?.name ?? host.translate('detail.missing'),
-        nowLux: reading?.lux ?? null,
-        week: await this.app.luminance.week(state.inspecting, this.timezone() ?? undefined),
-      };
-    });
-
     /**
      * Everything the response screen draws.
      *
@@ -253,7 +260,7 @@ module.exports = class DaylightDriver extends Homey.Driver {
      * judgement before showing what to judge it on.
      */
     handler('getResponse', async () => {
-      if (!state.target) throw new Error('Choose some lights first.');
+      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
       const sensor = state.response.sensor;
       const reading = sensor === null
         ? undefined
@@ -271,9 +278,12 @@ module.exports = class DaylightDriver extends Homey.Driver {
        * This is the fix for `brightLux = 500` being a kitchen number: of four
        * sensors measured in one house, only one wanted anything near it
        * (platform §16). Overwriting a value somebody had already set would be a
-       * different and much worse behaviour, so the suggestion applies once.
+       * different and much worse behaviour, so the suggestion applies once —
+       * and never to thresholds somebody has already had the chance to keep,
+       * even when what they kept IS the defaults. See `luxChosen`.
        */
       if (week?.suggestion
+        && !state.luxChosen
         && state.response.darkLux === DEFAULT_RESPONSE.darkLux
         && state.response.brightLux === DEFAULT_RESPONSE.brightLux) {
         state.response = {
@@ -283,13 +293,22 @@ module.exports = class DaylightDriver extends Homey.Driver {
         };
       }
 
+      /**
+       * When the sensor last said anything, from whichever source knows later:
+       * the live subscription can be ahead of Insights, and Insights can know
+       * about a sensor this session has only just subscribed to.
+       */
+      const lastAt = newest(reading?.at ?? null, week?.lastAt ?? null);
+
       return {
         response: state.response,
         sensorName: device?.name ?? null,
         nowLux: reading?.lux ?? null,
         week,
-        /** Half a day of silence, which is the one warning that stays in pairing. */
-        staleFor: this.staleHours(reading?.at ?? null),
+        /** Half a day of silence, which the week card turns into its error block. */
+        staleFor: this.staleHours(lastAt),
+        /** "Sat 12:40" — when it last reported, for that block's second line. */
+        lastReport: lastAt === null ? null : this.reportedAt(lastAt),
         ...this.elevationTimes(state.response),
         /**
          * Where today's sun is, for the card that replaces the sensor's week
@@ -311,6 +330,8 @@ module.exports = class DaylightDriver extends Homey.Driver {
       );
       result.response.sensor = allowed ?? null;
       state.response = result.response;
+      // An edit made with a sensor chosen was made looking at the lux numbers.
+      if (state.response.sensor !== null) state.luxChosen = true;
 
       await this.app.luminance.retain(allowed ? [allowed] : [], sessionOwner);
 
@@ -332,7 +353,7 @@ module.exports = class DaylightDriver extends Homey.Driver {
     handler('previewNow', async () => {
       const runtime = await this.app.daylights.ephemeral(this.buildPlan(state));
       try {
-        const outcome = await runtime.applyNow('preview', { force: true, waitForResults: true });
+        const outcome = await runtime.applyNow('preview', { force: true, waitForResults: true, preview: true });
         await runtime.drain();
         return outcome;
       } finally {
@@ -417,10 +438,12 @@ module.exports = class DaylightDriver extends Homey.Driver {
             value: `${Math.round(verdict.brightness * 100)}%`,
           },
         ],
-        promiseKey: 'review.promiseDaylight',
-        promiseTokens: { count: summary.count },
+        // Two of the three: a brightness written to an off lamp switches it on,
+        // so there is no "set lights before they turn on" to offer here.
+        control: await reviewControl(host, state, false),
       };
     });
+    registerControlHandlers(handler, state, { offerBefore: false });
 
     registerSaveHandler(host, handler, state, {
       device,
@@ -565,14 +588,26 @@ module.exports = class DaylightDriver extends Homey.Driver {
     return elapsed >= SENSOR_STALE_MS ? Math.floor(elapsed / 3_600_000) : null;
   }
 
+  /**
+   * A moment as the week card names it: the grid's own weekday label and a
+   * clock time, on the Homey's clock — the same two things the grid's rows and
+   * columns are, so the sentence can be checked against the hatched cells.
+   */
+  private reportedAt(at: number): string {
+    const local = localNow(this.timezone() ?? undefined, at);
+    const day = WEEKDAY_KEYS[(local.isoWeekday - 1) % 7]!;
+    return `${this.homey.__(day)} ${formatMinutes(local.minutesOfDay)}`;
+  }
+
   private buildPlan(state: SessionState): DaylightPlan {
-    if (!state.target) throw new Error('Choose some lights first.');
+    if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
 
     return {
       schemaVersion: CURRENT_DAYLIGHT_SCHEMA_VERSION,
       enabled: true,
       target: state.target,
       response: state.response,
+      ...writesLightsField(state.writesLights),
     };
   }
 

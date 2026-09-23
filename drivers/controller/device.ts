@@ -52,22 +52,48 @@ module.exports = class ControllerDevice extends LightkeeperDevice<ControllerProf
    * Carry forward the flows we already own, so reconciliation reuses them
    * instead of orphaning a set and creating duplicates — but only while the
    * source device is the same one. See carryForwardFlows().
+   *
+   * A changed source's Flows are RELEASED here and deleted in `afterApply`,
+   * never deleted here. This used to delete them before registering, on the
+   * argument that reconciliation would otherwise recreate their replacements
+   * beside them — which was true, and which the release now answers instead:
+   * a released Flow is not in the new profile and not in the bridge's journal,
+   * so the new runtime's first pass neither reuses it nor mistakes it for an
+   * edit of its own. What deleting-first cost was the rollback. An apply that
+   * failed after the delete restored the previous profile with `managedFlows`
+   * naming Flows that no longer existed, so "the save failed, nothing changed"
+   * was untrue: the old remote had silently lost every Flow it had.
    */
   override async prepareApply(
     previous: ControllerProfile | null,
     incoming: ControllerProfile,
   ): Promise<ControllerProfile> {
     const { profile: merged, obsolete } = carryForwardFlows(previous, incoming);
-
-    // The source moved, so these flows trigger on a device that is gone. Delete
-    // them BEFORE registering, or reconciliation recreates their replacements
-    // alongside them and the user is left with two sets.
     if (obsolete.length > 0) {
-      const removed = await this.app.bridge.removeAll(obsolete);
-      this.log(`Source changed: removed ${removed} of ${obsolete.length} flow(s) from the old remote`);
+      this.app.bridge.releaseReferences(this.deviceId, obsolete.map(ref => ref.flowId));
     }
-
     return merged;
+  }
+
+  /**
+   * The old remote's Flows, deleted now that the new profile is running and
+   * stored.
+   *
+   * Recomputed from the two profiles rather than carried over from
+   * `prepareApply`, so there is no state held on the device between the two
+   * calls — the pair of plans IS the answer. A delete that does not stick is
+   * handed to the bridge's cleanup list rather than forgotten: deletes are
+   * idempotent, so the next reconcile retries every one of them safely.
+   */
+  override async afterApply(previous: ControllerProfile | null, committed: ControllerProfile): Promise<void> {
+    const { obsolete } = carryForwardFlows(previous, committed);
+    if (obsolete.length === 0) return;
+
+    const removed = await this.app.bridge.removeAll(obsolete);
+    this.log(`Source changed: removed ${removed} of ${obsolete.length} flow(s) from the old remote`);
+    if (removed < obsolete.length) {
+      this.app.bridge.deferCleanup(this.deviceId, obsolete.map(ref => ref.flowId));
+    }
   }
 
 };

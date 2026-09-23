@@ -95,11 +95,13 @@ export function isSunPeak(value: unknown): value is SunPeak {
  * to the sky would do so precisely when the room is most stable. So the honest
  * answer is to keep using it and say out loud that it is old.
  *
- * ONE constant because two readers need the same answer and used to have their
- * own: the pairing screen's `staleHours()` warns at 12 h, and until now the
- * runtime had no opinion at all — so a sensor that died after pairing kept the
- * device on 'ready' for as long as the app ran. Two numbers here would mean a
- * device that warns during repair and not during use, or the reverse.
+ * ONE constant because three readers need the same answer and used to have
+ * their own: the pairing screen's `staleHours()` warns at 12 h, the sensor
+ * week's `SILENT_MS` (lib/daylight/sensor-history.ts) is now this constant by
+ * name, and until then the runtime had no opinion at all — so a sensor that
+ * died after pairing kept the device on 'ready' for as long as the app ran.
+ * Two numbers here would mean a device that warns during repair and not during
+ * use, or the reverse.
  */
 export const SENSOR_STALE_MS = 12 * 60 * 60_000;
 
@@ -148,6 +150,16 @@ export interface DaylightPlan {
   enabled: boolean;
   target: TargetSpec;
   response: DaylightResponse;
+  /**
+   * Absent = keep the lights up to date all day; `false` = compute and publish
+   * only, and write to no lamp. Stored only when false — see
+   * lib/runtime/writes-lights.ts for why the gate is `!== false`.
+   *
+   * At the ROOT, never inside `response`: `updatePlan` wipes the feedback-loop
+   * evidence whenever the response changes, and this switch is not a change to
+   * how the room is read.
+   */
+  writesLights?: false;
 }
 
 /**

@@ -7,6 +7,7 @@ import { assessTargets } from '../../lib/runtime/target-health';
 import type { DeviceCatalog } from '../../lib/device-catalog';
 import type { HomeyApiService, Unsubscribe } from '../../lib/homey-api-service';
 import { ownsNothing, zoneLights } from '../support/fake-catalog';
+import { FakeTimers } from '../support/fake-timers';
 
 /**
  * A lamp that stops taking writes, and how long it takes anybody to notice.
@@ -48,10 +49,21 @@ function rig(options: { failing?: () => boolean } = {}) {
   } as unknown as HomeyApiService;
 
   const logs: string[] = [];
+  /**
+   * An injected clock that does not move unless a test moves it.
+   *
+   * These tests are ABOUT time — "three failures inside ten seconds" against
+   * "five minutes of them" — and they used to measure it with `Date.now()`,
+   * so every failure was stamped by the machine's own clock and the offsets
+   * were added to a second reading of it. That is fine until a slow CI runner
+   * spends a second between the two, and then the boundary under test moves.
+   * Frozen, every streak starts at exactly `clock.now()`.
+   */
+  const clock = new FakeTimers(1_755_500_000_000);
   const adapter = new LightTargetAdapter(
-    api, new TargetStateCache(), (...args) => logs.push(args.join(' ')),
+    api, new TargetStateCache(), (...args) => logs.push(args.join(' ')), clock,
   );
-  return { adapter, attempts, logs };
+  return { adapter, attempts, logs, clock };
 }
 
 /** Swallowed: `write()` rethrows, and every caller of it already catches. */
@@ -78,31 +90,31 @@ describe('when a target counts as not responding', () => {
   });
 
   test('a whole ramp of failures inside ten seconds never trips it', async () => {
-    const { adapter } = rig();
+    const { adapter, clock } = rig();
     // HARD_STOP_MS over minWriteIntervalMs is fifty writes, all failing.
     for (let i = 0; i < 50; i += 1) await attempt(adapter, 'dim', 0.5);
 
-    assert.deepEqual([...adapter.unwritableTargets(Date.now() + 10_000)], []);
+    assert.deepEqual([...adapter.unwritableTargets(clock.now() + 10_000)], []);
   });
 
   test('five minutes of failures does trip it', async () => {
-    const { adapter } = rig();
+    const { adapter, clock } = rig();
     for (let i = 0; i < 3; i += 1) await attempt(adapter, 'dim', 0.5);
 
-    assert.deepEqual([...adapter.unwritableTargets(Date.now() + FIVE_MINUTES)], ['lamp']);
+    assert.deepEqual([...adapter.unwritableTargets(clock.now() + FIVE_MINUTES)], ['lamp']);
   });
 
   test('two failures five minutes apart are still not enough', async () => {
-    const { adapter } = rig();
+    const { adapter, clock } = rig();
     await attempt(adapter, 'dim', 0.5);
     await attempt(adapter, 'dim', 0.5);
 
     // A twice-a-day schedule missing two windows says nothing about the lamp.
-    assert.deepEqual([...adapter.unwritableTargets(Date.now() + FIVE_MINUTES)], []);
+    assert.deepEqual([...adapter.unwritableTargets(clock.now() + FIVE_MINUTES)], []);
   });
 
   test('a light_mode success does NOT clear the streak', async () => {
-    const { adapter, attempts } = rig();
+    const { adapter, attempts, clock } = rig();
     for (let i = 0; i < 3; i += 1) {
       // Exactly what the scheduler sends for a temperature: the enabler, then
       // the value it enables. On the reference lamp the first landed and the
@@ -112,20 +124,20 @@ describe('when a target counts as not responding', () => {
     }
 
     assert.ok(attempts.includes('light_mode'), 'the mode write really was attempted');
-    assert.deepEqual([...adapter.unwritableTargets(Date.now() + FIVE_MINUTES)], ['lamp'],
+    assert.deepEqual([...adapter.unwritableTargets(clock.now() + FIVE_MINUTES)], ['lamp'],
       'a lamp that only ever acks light_mode is not a working lamp');
   });
 
   test('one real success clears it, with no separate healing path', async () => {
     let broken = true;
-    const { adapter } = rig({ failing: () => broken });
+    const { adapter, clock } = rig({ failing: () => broken });
     for (let i = 0; i < 3; i += 1) await attempt(adapter, 'dim', 0.5);
-    assert.deepEqual([...adapter.unwritableTargets(Date.now() + FIVE_MINUTES)], ['lamp']);
+    assert.deepEqual([...adapter.unwritableTargets(clock.now() + FIVE_MINUTES)], ['lamp']);
 
     broken = false;
     await attempt(adapter, 'dim', 0.5);
 
-    assert.deepEqual([...adapter.unwritableTargets(Date.now() + FIVE_MINUTES)], []);
+    assert.deepEqual([...adapter.unwritableTargets(clock.now() + FIVE_MINUTES)], []);
   });
 
   test('crossing the threshold is not announced before it is crossed', async () => {
@@ -149,28 +161,28 @@ describe('when a target counts as not responding', () => {
    * for as long as anybody had them switched off.
    */
   test('a colour refused by a lamp that is off is evidence of nothing', async () => {
-    const { adapter } = rig();
+    const { adapter, clock } = rig();
     for (let i = 0; i < 3; i += 1) {
       await attempt(adapter, 'light_temperature', 0.5, { preStage: true });
     }
 
-    assert.deepEqual([...adapter.unwritableTargets(Date.now() + FIVE_MINUTES)], []);
+    assert.deepEqual([...adapter.unwritableTargets(clock.now() + FIVE_MINUTES)], []);
   });
 
   test('but the same write to a lit lamp still counts', async () => {
-    const { adapter } = rig();
+    const { adapter, clock } = rig();
     for (let i = 0; i < 3; i += 1) await attempt(adapter, 'light_temperature', 0.5);
 
     // The exclusion is the caller's flag and nothing else. Widen it to "a
     // colour axis" or "the lamp is off" and this is the test that fails.
-    assert.deepEqual([...adapter.unwritableTargets(Date.now() + FIVE_MINUTES)], ['lamp']);
+    assert.deepEqual([...adapter.unwritableTargets(clock.now() + FIVE_MINUTES)], ['lamp']);
   });
 
   test('a pre-stage SUCCESS still clears a standing streak', async () => {
     let broken = true;
-    const { adapter } = rig({ failing: () => broken });
+    const { adapter, clock } = rig({ failing: () => broken });
     for (let i = 0; i < 3; i += 1) await attempt(adapter, 'dim', 0.5);
-    assert.deepEqual([...adapter.unwritableTargets(Date.now() + FIVE_MINUTES)], ['lamp']);
+    assert.deepEqual([...adapter.unwritableTargets(clock.now() + FIVE_MINUTES)], ['lamp']);
 
     // One-directional, unlike light_mode: that ack never left the phone, while
     // this one reached the bridge and the bridge did not refuse it. Excluding
@@ -179,30 +191,30 @@ describe('when a target counts as not responding', () => {
     broken = false;
     await attempt(adapter, 'light_temperature', 0.5, { preStage: true });
 
-    assert.deepEqual([...adapter.unwritableTargets(Date.now() + FIVE_MINUTES)], []);
+    assert.deepEqual([...adapter.unwritableTargets(clock.now() + FIVE_MINUTES)], []);
   });
 
   test('an off lamp that refuses everything is still found once anything real is written', async () => {
-    const { adapter } = rig();
+    const { adapter, clock } = rig();
     for (let i = 0; i < 3; i += 1) {
       await attempt(adapter, 'light_temperature', 0.5, { preStage: true });
     }
-    assert.deepEqual([...adapter.unwritableTargets(Date.now() + FIVE_MINUTES)], []);
+    assert.deepEqual([...adapter.unwritableTargets(clock.now() + FIVE_MINUTES)], []);
 
     // The bounded cost of the exclusion, stated as a test: a dead lamp spoken
     // to only speculatively builds no streak, and accounting resumes in full
     // the moment anything real is written to it.
     for (let i = 0; i < 3; i += 1) await attempt(adapter, 'dim', 0.5);
 
-    assert.deepEqual([...adapter.unwritableTargets(Date.now() + FIVE_MINUTES)], ['lamp']);
+    assert.deepEqual([...adapter.unwritableTargets(clock.now() + FIVE_MINUTES)], ['lamp']);
   });
 
   test('a device that stops being a target takes its streak with it', async () => {
-    const { adapter } = rig();
+    const { adapter, clock } = rig();
     for (let i = 0; i < 3; i += 1) await attempt(adapter, 'dim', 0.5);
     await adapter.unsubscribe('lamp');
 
-    assert.deepEqual([...adapter.unwritableTargets(Date.now() + FIVE_MINUTES)], []);
+    assert.deepEqual([...adapter.unwritableTargets(clock.now() + FIVE_MINUTES)], []);
   });
 });
 

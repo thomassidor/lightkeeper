@@ -348,6 +348,14 @@ app, and six things a day of real diagnostics showed:
   colour from and which one it takes the brightness from, and it reads both at the moment you press.
   A switch on the same card makes a second press turn them off, so one button is a whole light
   switch.
+- **The last screen asks how Lightkeeper controls your lights** — change them after they turn on
+  (the default), set them before they turn on once a quick per-light test says which lights can take
+  it, or leave them alone and only publish the values for a remote button or a Flow. **A device that
+  had "set the colour before lights come on" on stops doing it until that test is run from Repair.**
+  The remote's source picker warns when the device you pick is also driving the same lights.
+- **The setup screens follow the 23 September design** — a five-across colour picker with eleven new
+  colours, "Set brightness too" on from the start, a sensor that barely changes or has gone quiet
+  said on the brightness step instead of on screens of its own, and Add device on every last screen.
 - **A Light Remote with a colour button was unavailable the moment it was added** — the check that
   reads a configuration back on every start had never been told about that one job. Nothing was
   lost: any remote sitting unavailable for this reason comes back with every button intact.
@@ -358,6 +366,10 @@ app, and six things a day of real diagnostics showed:
 - **What each device wants your lights to be is now readable from your own Flows** — as a tag, as a
   new card that sets a room from two devices at once, and as a condition that asks a Room-sensing
   Light whether it is dark enough. [What that looks like](#using-lightkeeper-in-your-own-flows).
+- **Four fixes found by testing code that had never run under a test** — a remote event with no
+  number no longer moves the lights a step, a failed save no longer costs a remote's old Flows,
+  stopping a circadian preview no longer leaves a warm-white lamp in colour mode, and repair keeps
+  lux thresholds left at their defaults.
 - **Every screen is on one design system** — five type sizes, four radii, three border roles, two
   button shapes — across all five setup flows and the settings page. Cards have a visible edge again,
   disabled buttons change colour rather than fading below a readable contrast, a button that is
@@ -411,7 +423,7 @@ If it changes how carefully you want to review the code before trusting it with 
 the code is right here.
 
 It has been verified end to end on a Homey Pro 2023 across four remotes and three transports, with
-Over 1700 unit tests covering the logic — [how well tested is this?](FAQ.md#how-well-tested-is-this) has
+Over 2000 unit tests covering the logic — [how well tested is this?](FAQ.md#how-well-tested-is-this) has
 the detail, including what has *not* run on hardware yet.
 
 ## Contributing

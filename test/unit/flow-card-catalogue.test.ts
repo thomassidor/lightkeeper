@@ -1,9 +1,13 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { FlowCardCatalogue, NO_CACHE, toDiscoveredCard } from '../../lib/flow-card-catalogue';
 import { FlowBridgeManager } from '../../lib/bridge/flow-bridge-manager';
 import type { HomeyApiService } from '../../lib/homey-api-service';
+import type { CatalogDevice } from '../../lib/device-catalog';
+import { fingerprintOf, fingerprintV2Of } from '../../lib/source-discovery-service';
 
 /**
  * The catalogue exists for one reason: `homey-api` retains every item returned
@@ -275,8 +279,12 @@ describe('flow card catalogue', () => {
       assert.equal(card.args[0]!.type, 'dropdown');
       assert.equal(typeof card.args[1]!.name, 'string');
 
-      // The sort the fingerprint does, which is what used to throw.
-      assert.doesNotThrow(() => [...card.args].sort((a, b) => a.name.localeCompare(b.name)));
+      // The REAL fingerprints, both versions, which is where the sort that used
+      // to throw lives. A hash of the right shape is the assertion; a copy of
+      // the sort written here would only prove the copy.
+      const device = { ownerUri: 'homey:app:x', driverId: 'remote' } as CatalogDevice;
+      assert.match(fingerprintOf(device, [card]), /^[0-9a-f]{32}$/);
+      assert.match(fingerprintV2Of(device, [card]), /^[0-9a-f]{32}$/);
     });
 
     test('a non-string name is coerced rather than carried', () => {
@@ -284,5 +292,96 @@ describe('flow card catalogue', () => {
       assert.equal(card.args[0]!.name, '7');
       assert.equal(card.args[0]!.type, '');
     });
+  });
+});
+
+/**
+ * Platform §15's rule, enforced: a `getAll` call site either passes `NO_CACHE`
+ * or carries a comment saying what it retains and why.
+ *
+ * The rule was prose, and prose is what a new call site forgets. The set of
+ * operations that ARE `getAll` is not guessed from their names — §15 is blunt
+ * that it is a property of the specification — so it is read from the very
+ * specification `homey-api` builds its managers from. A `getAll` added to the
+ * client in a later version is covered the day the pin moves.
+ *
+ * What counts as the opt-out: `NO_CACHE` or `$updateCache: false` in the call's
+ * own arguments, which may run over a few lines. What counts as the documented
+ * opt-in: a comment in the lines above the call that cites §15 — that is where
+ * `DeviceCatalog.refreshNow()` argues its measured reason, and where
+ * `loadAppNames()` says why an unconnected manager retains nothing.
+ */
+describe('every getAll call site opts out of the cache, or says why not', () => {
+  const ROOT = join(import.meta.dirname, '..', '..');
+
+  function getAllOperations(): Array<{ manager: string; operation: string }> {
+    const spec = JSON.parse(readFileSync(
+      join(ROOT, 'node_modules', 'homey-api', 'assets', 'specifications', 'HomeyAPIV3Local.json'),
+      'utf8',
+    )) as { managers: Record<string, { idCamelCase: string; operations?: Record<string, any> }> };
+    const found: Array<{ manager: string; operation: string }> = [];
+    for (const manager of Object.values(spec.managers)) {
+      for (const [operation, definition] of Object.entries(manager.operations ?? {})) {
+        if (definition?.crud?.type === 'getAll') found.push({ manager: manager.idCamelCase, operation });
+      }
+    }
+    return found;
+  }
+
+  function sources(): string[] {
+    const found = ['api.ts', 'app.ts'];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(join(ROOT, dir), { withFileTypes: true })) {
+        const path = `${dir}/${entry.name}`;
+        if (entry.isDirectory()) walk(path);
+        else if (entry.name.endsWith('.ts')) found.push(path);
+      }
+    };
+    walk('lib');
+    return found;
+  }
+
+  const isComment = (line: string) => /^\s*(\/\/|\*|\/\*)/.test(line);
+
+  test('the specification still names the getAll operations this app uses', () => {
+    // Without this the scan below could pass by finding no operations at all.
+    const names = getAllOperations().map(o => `${o.manager}.${o.operation}`);
+    for (const expected of ['flow.getFlows', 'flow.getFlowCardTriggers', 'devices.getDevices', 'zones.getZones']) {
+      assert.ok(names.includes(expected), `${expected} is no longer a getAll in the pinned homey-api`);
+    }
+  });
+
+  test('no call site retains a getAll silently', () => {
+    const operations = getAllOperations();
+    const pattern = new RegExp(
+      String.raw`\.(${[...new Set(operations.map(o => o.manager))].join('|')})\??\.`
+      + String.raw`(${[...new Set(operations.map(o => o.operation))].join('|')})\(`,
+    );
+    const isGetAll = (manager: string, operation: string) =>
+      operations.some(o => o.manager === manager && o.operation === operation);
+
+    const offenders: string[] = [];
+    let sites = 0;
+    for (const file of sources()) {
+      const lines = readFileSync(join(ROOT, file), 'utf8').split(/\r?\n/);
+      lines.forEach((line, index) => {
+        if (isComment(line)) return;
+        const match = pattern.exec(line);
+        if (!match || !isGetAll(match[1]!, match[2]!)) return;
+        sites += 1;
+        const call = lines.slice(index, index + 6).join('\n');
+        if (/NO_CACHE|\$updateCache:\s*false/.test(call)) return;
+        const above = lines.slice(Math.max(0, index - 40), index).filter(isComment).join('\n');
+        if (/§15/.test(above)) return;
+        offenders.push(`${file}:${index + 1}: ${line.trim()}`);
+      });
+    }
+
+    assert.ok(sites >= 5, `found only ${sites} getAll call sites — is the scan still finding them?`);
+    assert.deepEqual(
+      offenders, [],
+      'a getAll that neither passes NO_CACHE nor says, citing platform §15, what it '
+      + 'retains and why',
+    );
   });
 });

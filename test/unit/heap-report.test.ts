@@ -51,8 +51,37 @@ describe('heap report', () => {
     assert.ok(marks[0]!.atMs <= marks[marks.length - 1]!.atMs);
   });
 
-  test('neither sampler can throw, whatever it is called with', () => {
-    assert.doesNotThrow(() => markPhase(''));
-    assert.doesNotThrow(() => sampleHeap());
+  test('neither sampler can throw, and each still lands a well-formed row', () => {
+    // A bare doesNotThrow proved nothing on a machine where every reading
+    // works. So the one reading everything depends on is made to fail the way
+    // §17's `process.memoryUsage()` does in the sandbox, and what arrives is
+    // asserted: a row with its number nulled, and the refusal named.
+    const v8 = require('node:v8') as { getHeapStatistics: () => unknown };
+    const original = v8.getHeapStatistics;
+    v8.getHeapStatistics = () => { throw new Error('EPERM: sandboxed'); };
+    try {
+      const report = heapReport();
+      assert.equal(report.heapUsed, null);
+      assert.equal(report.heapTotal, null);
+      assert.ok(
+        report.unavailable.some(line => line === 'v8.getHeapStatistics: EPERM: sandboxed'),
+        `the refusal is named with its message: ${report.unavailable.join(' | ')}`,
+      );
+
+      markPhase('');
+      const mark = heapReport().marks.at(-1)!;
+      assert.deepEqual(Object.keys(mark).sort(), ['atMs', 'heapUsed', 'phase', 'rss']);
+      assert.equal(mark.phase, '');
+      assert.equal(mark.heapUsed, null);
+      assert.equal(typeof mark.atMs, 'number');
+
+      sampleHeap();
+      const sample = heapReport().trend.at(-1)!;
+      assert.deepEqual(Object.keys(sample).sort(), ['atMs', 'heapTotal', 'heapUsed']);
+      assert.equal(sample.heapUsed, null);
+      assert.equal(sample.heapTotal, null);
+    } finally {
+      v8.getHeapStatistics = original;
+    }
   });
 });

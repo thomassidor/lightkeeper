@@ -330,8 +330,9 @@
      looks like when it is the only one on a pushed screen — "Close" — where a
      primary button would claim the choice was made. */
   #rs-root .btn.wide { display: block; width: 100%; margin-top: 16px; }
-  /* And the same button when it is the SECOND of two, under a primary — "Put
-     them back". It borrows the primary's outline rather than the field grey,
+  /* And the same button when it is the SECOND of two, under a primary — "Stop
+     preview" — or the one secondary action inside a card, as "Test my lights"
+     is on the review screen. It borrows the primary's outline rather than the field grey,
      because the pair is one decision offered twice ("show me" / "undo that")
      and a grey partner reads as the disabled twin of the button above it.
      Lighter than the primary in weight and height, never in hue. */
@@ -525,12 +526,17 @@
                margin: 13px 0 0; font-size: 13px; line-height: 1.45;
                font-style: italic; color: var(--lk-muted); }
 
-  /* The swatches a colour is chosen from, four across.
-     Not one row of eight: at 390px that is 34px a swatch, under the touch
-     minimum and too small to judge a colour by. Two rows of four is the same
-     set of eight, legibly, and the sixteen that fold out below continue it. */
-  #rs-root .swatches { display: grid; grid-template-columns: repeat(4, 1fr);
-                    gap: 7px; margin: 0 0 11px; }
+  /* The swatches a colour is chosen from, five across, EVERYWHERE.
+     Two rows by default — whites, then one of each colour — and five more
+     that fold out below, one hue family a row. Five and not eight: at 390px
+     eight is 34px of width a swatch, under the touch minimum and too small to
+     judge a colour by; five is still a comfortable target at 34px tall.
+
+     7px under every grid, which the margins between block siblings collapse
+     to: 7px from the default rows to the fold-out, as the design draws it, and
+     the link under the last grid keeps its own 9px. */
+  #rs-root .swatches { display: grid; grid-template-columns: repeat(5, 1fr);
+                    gap: 7px; margin: 0 0 7px; }
   /* min-height as well as height: the container's own stylesheet is not ours
      to read, and a swatch whose height is overridden away is a coloured line
      rather than a colour anybody can judge. */
@@ -542,16 +548,14 @@
      the palette, which a white gap did not against the pale ones. */
   #rs-root .swatch[aria-pressed="true"] { border: 2.5px solid var(--lk-accent);
                                        box-shadow: 0 0 0 3px var(--lk-ring); }
-  /* The sixteen that fold out: same set, half the size, eight across.
+  /* The twenty-five that fold out: the SAME grid, same size, same gap.
 
-     18px above them, not the 7px between the featured rows: at the same gap the
-     fold-out read as two more rows of the grid above it rather than as the set
-     that had just been opened, and the eye had to measure swatch sizes to find
-     where one group ended. The space is what separates them; both sets are
-     still the same palette, so nothing stronger than space is wanted. */
-  #rs-root .swatches.more { grid-template-columns: repeat(8, 1fr); gap: 6px;
-                         margin: 18px 0 0; }
-  #rs-root .swatches.more .swatch { height: 28px; min-height: 28px; border-radius: 8px; }
+     It used to be a second grid of smaller swatches, eight across, 18px below —
+     and the space and the smaller size were what told the two sets apart. The
+     2026-09-23 design makes it one grid that simply grows: the fold-out rows
+     are hue families, deep to pale, and read as rows of one palette because
+     they are. So `.more` carries nothing of its own any more; the class stays
+     as the hook the views show and hide. */
 
   /* The day strip: a picture of the whole day, drawn once and reused. */
   #rs-root .day { position: relative; height: 104px; border-radius: 12px;
@@ -604,9 +608,7 @@
    file, not this one.**
 
    A sensor's own last week, as 7 rows of 12 two-hour cells. It appears on the
-   response screen, under the two lux numbers it is the evidence for, and on
-   the detail screen a sensor row pushes. Both draw the same picture, so both
-   splice the same block. */
+   response screen, above the two lux numbers it is the evidence for. */
 #rs-root .week { background: var(--lk-surface); border: 1px solid var(--lk-edge);
               border-radius: 16px; box-shadow: var(--lk-shadow);
               padding: 14px; margin-bottom: 14px; }
@@ -687,6 +689,10 @@
 #rs-root .week-verdict { font-size: 13px; line-height: 1.45; color: var(--lk-ink);
                       margin-top: 11px; }
 #rs-root .week-verdict b { color: var(--lk-ink); }
+/* The flat and the quiet week, drawn as a block where the verdict line would
+   be. The design pads it a pixel wider than a plain .msg, so the two lines sit
+   level with the card's own text. */
+#rs-root .week-finding { padding: 13px 14px; }
 /* ==== end shared week grid ==== */
 
   /* ---- this view only ---------------------------------------------------- */
@@ -793,16 +799,6 @@
   <h2 data-i18n="response.title"></h2>
 
   <div id="rs-error" class="msg bad" style="display:none;"></div>
-
-  <!--
-    The one warning that stays inside pairing, because a frozen sensor makes the
-    whole device a no-op. Half a day of silence is the threshold, not an hour: a
-    still room legitimately goes quiet for hours (platform §16).
-  -->
-  <div id="rs-stale" class="msg bad" style="display:none;">
-    <div class="lead" id="rs-staleLead"></div>
-    <div id="rs-staleBody" data-i18n="response.staleMeans"></div>
-  </div>
 
   <!-- Following the sun: the question no other field can reach. -->
   <div id="rs-sunBlock" style="display:none;">
@@ -953,7 +949,7 @@ function __lkBootRs(Homey) {
      * style choice: `spliceFunction` matches from the `function` keyword, so a
      * docblock above one is never replaced — it is prepended again on every
      * sync. Four stale copies of the week grid's reached the shipped archive
-     * that way. It also means this explanation now appears in all 56 views
+     * that way. It also means this explanation now appears in all 54 views
      * rather than in the two credential screens that happened to carry it.
      */
     return new Promise(function (resolve, reject) {
@@ -984,8 +980,9 @@ function __lkBootRs(Homey) {
      *
      * It takes no arguments beyond the element and the payload, and it closes
      * over the `node` every carrier already has — the same trick the daylight
-     * card used, and what lets the body be byte-identical on the response screen
-     * and on the detail screen, whose surroundings have nothing else in common.
+     * card used. One carrier today, the response screen: the detail screen a
+     * sensor row used to push is gone, and with it the two refusals it drew —
+     * see the verdict at the foot of this function.
      *
      * The grid IS the argument for the two lux thresholds. Nobody can judge
      * "under 8 lx" in the abstract; anybody can judge it against a week that
@@ -1073,7 +1070,11 @@ function __lkBootRs(Homey) {
     var scale = node('div', 'week-scale');
     scale.appendChild(node('span', null, Homey.__('week.lux', { lux: round(low) })));
     var bar = node('span', 'bar');
-    if (payload.nowLux !== null && payload.nowLux !== undefined) {
+    // No "now" tick on a sensor that has stopped: its last reading is hours
+    // old, and a tick labelled "now" would be the one false thing on a card
+    // whose whole job is to show that nothing has arrived since.
+    var quiet = payload.staleFor !== null && payload.staleFor !== undefined;
+    if (!quiet && payload.nowLux !== null && payload.nowLux !== undefined) {
       var at = shade(payload.nowLux);
       var tick = node('span', 'tick');
       tick.style.left = (at * 100) + '%';
@@ -1120,24 +1121,43 @@ function __lkBootRs(Homey) {
     }
 
     /**
-     * What this week is worth, in a sentence with the numbers in it.
+     * What this week is worth, in a sentence with the numbers in it — or, for
+     * the two weeks that argue against using the sensor at all, a block.
      *
-     * Four verdicts, and the order they are decided in matters: a sensor that
-     * stopped a month ago also looks flat, and "it stopped on Saturday" is the
-     * far more useful thing to say.
+     * Those two used to be screens of their own ("A sensor not worth using",
+     * "Sensor has gone quiet"), each with a list of three ways out. The
+     * 2026-09-23 design folds both into this card, where the ways out are the
+     * screen's own chrome: Previous picks another sensor or the sun, Next uses
+     * it anyway. So the finding has to be impossible to miss IN the card, which
+     * is what a tinted block is for in this system — a finding somebody has to
+     * act on. Quiet is the error ground, flat the warning one: a stopped sensor
+     * will hold the lights at one brightness, a flat one merely has nothing to
+     * say.
+     *
+     * Quiet is decided by the SCREEN's `staleFor`, not by the week's verdict:
+     * the live reading can be newer than the Insights history, and the driver
+     * has already taken the newer of the two.
      */
     var verdict = week.verdict || { kind: 'nothing' };
-    var sentence = node('div', 'week-verdict');
 
+    if (quiet) {
+      host.appendChild(finding('msg bad',
+        Homey.__('week.quiet', { name: payload.sensorName || '', hours: payload.staleFor }),
+        Homey.__('week.quietMeans', { when: payload.lastReport || '' })));
+      return;
+    }
+    if (verdict.kind === 'flat') {
+      host.appendChild(finding('msg warn',
+        Homey.__('week.flat'),
+        Homey.__('week.flatDetail', { low: round(verdict.low), high: round(verdict.high) })));
+      return;
+    }
+
+    var sentence = node('div', 'week-verdict');
     if (verdict.kind === 'usable') {
       sentence.appendChild(node('b', null, Homey.__('week.usable')));
       sentence.appendChild(document.createTextNode(' ' + Homey.__('week.usableDetail', {
         night: round(verdict.nightLux), noon: round(verdict.noonLux)
-      })));
-    } else if (verdict.kind === 'flat') {
-      sentence.appendChild(node('b', null, Homey.__('week.flat')));
-      sentence.appendChild(document.createTextNode(' ' + Homey.__('week.flatDetail', {
-        low: round(verdict.low), high: round(verdict.high)
       })));
     } else if (verdict.kind === 'stopped') {
       sentence.appendChild(node('b', null, Homey.__('week.stopped')));
@@ -1148,6 +1168,15 @@ function __lkBootRs(Homey) {
       sentence.appendChild(node('b', null, Homey.__('week.nothing')));
     }
     host.appendChild(sentence);
+
+    function finding(className, lead, body) {
+      // What happened, then what it means — one block, the shape every other
+      // message on these screens takes.
+      var block = node('div', className + ' week-finding');
+      block.appendChild(node('div', 'lead', lead));
+      block.appendChild(node('div', null, body));
+      return block;
+    }
   }
 
   function node(tag, className, text) {
@@ -1162,8 +1191,6 @@ function __lkBootRs(Homey) {
   var el = {
     steps: document.getElementById('rs-steps'),
     error: document.getElementById('rs-error'),
-    stale: document.getElementById('rs-stale'),
-    staleLead: document.getElementById('rs-staleLead'),
     sunBlock: document.getElementById('rs-sunBlock'),
     sunNow: document.getElementById('rs-sunNow'),
     sunSpan: document.getElementById('rs-sunSpan'),
@@ -1221,7 +1248,11 @@ function __lkBootRs(Homey) {
     sun: null,
     selected: 'dark',
     week: null,
-    now: null
+    now: null,
+    // Hours since the sensor last reported, once that is half a day or more,
+    // and when that was — for the week card's "has not reported" block.
+    staleFor: null,
+    lastReport: null
   };
 
   function fail(err) {
@@ -1354,7 +1385,18 @@ function __lkBootRs(Homey) {
     el.sunBlock.style.display = state.usingSensor ? 'none' : '';
     el.week.style.display = state.usingSensor ? '' : 'none';
     if (!state.usingSensor) { renderPeaks(); renderSunNow(); }
-    else weekGrid(el.week, { week: state.week, sensorName: state.sensorName, nowLux: state.nowLux });
+    else {
+      /**
+       * A sensor gone quiet is said INSIDE its week, where the hatched hours
+       * are, rather than in a banner above the screen. Half a day of silence is
+       * the threshold, not an hour: a still room legitimately goes quiet for
+       * hours (platform §16). See views/shared/week-grid.js.
+       */
+      weekGrid(el.week, {
+        week: state.week, sensorName: state.sensorName, nowLux: state.nowLux,
+        staleFor: state.staleFor, lastReport: state.lastReport
+      });
+    }
 
     var which = state.selected;
     el.endName.textContent = Homey.__(which === 'dark'
@@ -1508,18 +1550,10 @@ function __lkBootRs(Homey) {
     state.sun = payload.sun || null;
     state.sensorName = payload.sensorName;
     state.nowLux = payload.nowLux;
+    state.staleFor = payload.staleFor || null;
+    state.lastReport = payload.lastReport || null;
     state.atDark = payload.atDark;
     state.atBright = payload.atBright;
-
-    if (payload.staleFor) {
-      // The lead says what happened; the body says what it means. Two lines
-      // in one block, which is the shape every other message on these screens
-      // takes and the shape the design draws this one in.
-      el.staleLead.textContent = Homey.__('response.stale', {
-        name: payload.sensorName, hours: payload.staleFor
-      });
-      el.stale.style.display = '';
-    }
 
     render();
   }).catch(fail);

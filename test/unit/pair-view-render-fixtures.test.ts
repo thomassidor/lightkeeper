@@ -82,7 +82,6 @@ describe('render fixtures', () => {
       // Daylight.
       'sensor.html': 'listSensors',
       'response.html': 'getResponse',
-      'sensordetail.html': 'getSensorDetail',
       // Schedule.
       'blocks.html': 'getSchedule',
       // Controller. `remote.html` asks `checkReattach` first, but its failure is
@@ -136,9 +135,8 @@ describe('render fixtures', () => {
       + 'is not on screen',
     );
     assert.ok(
-      replies['curve.html'].getCurve.palette.length
-        > replies['curve.html'].getCurve.featuredColors,
-      'more colours than are featured, or "Show more colours" has nothing behind it',
+      replies['curve.html'].getCurve.layout.more.length > 0,
+      'colours behind "Show more colours", or the fold-out has nothing behind it',
     );
 
     // The schedule: more than one block, a restricted day set, and a conflict.
@@ -197,8 +195,8 @@ describe('render fixtures', () => {
       'do nothing is the tile below the grid, so it must not be in the grid itself');
     assert.notEqual(gesture.presetKind, 'none',
       'the editor opens on a job that carries a value, or its controls never draw');
-    assert.ok(gesture.colors.length > gesture.featuredColors,
-      'more colours than are featured, or the fold-out has nothing behind it');
+    assert.ok(gesture.layout.more.length > 0,
+      'colours behind the fold, or the fold-out has nothing behind it');
     assert.ok(gesture.lights.length >= 3, 'enough lights that a subset is visibly a subset');
     assert.ok(
       gesture.chosenLights && gesture.chosenLights.length < gesture.lights.length,

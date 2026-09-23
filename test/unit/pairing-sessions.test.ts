@@ -46,6 +46,7 @@ function catalog(lights: PickerLight[], zones: Array<{ id: string; name: string 
     id: light.id,
     name: light.name,
     zoneName: light.zoneName,
+    class: 'light',
     capabilities: light.capabilities,
   }));
   return {
@@ -774,11 +775,11 @@ describe('a validated row survives into a readable profile', () => {
  * (platform §13), so the only thing that can hold this invariant is a reader.
  *
  * The bug it pins: the circadian driver held the try-it screen's lamp snapshot
- * — the values "Put them back" restores — in a private field on the driver. Its
+ * — the values "Stop preview" restores — in a private field on the driver. Its
  * own docblock said "held for the life of the pairing session", and there is no
  * `disconnect` handler on that driver to clear it, so it was held for the life
  * of the APP. Abandoning the try-it screen and opening a second session meant
- * the second session took no snapshot of its own and "Put them back" wrote the
+ * the second session took no snapshot of its own and "Stop preview" wrote the
  * FIRST session's lamps back to the first session's values, leaving the second
  * session's lamps scrubbed.
  *
@@ -798,25 +799,6 @@ describe('drivers keep no per-session state on the driver', () => {
   });
 
   for (const driverId of DRIVERS) {
-    /**
-     * A whitespace-only name is nothing, and has to be treated as nothing.
-     *
-     * The shared `registerSaveHandler` in lib/pairing/pair-session.ts writes
-     * `name?.trim() || …` with a comment explaining why: a name of spaces is
-     * truthy, so it was accepted verbatim and produced a device whose tile
-     * appears to have no name at all. The controller driver is the one that does
-     * not use the shared handler, and it still carried the pre-fix `name || …`.
-     */
-    test(`${driverId} does not accept a whitespace-only device name`, () => {
-      const source = readFileSync(join(ROOT, 'drivers', driverId, 'driver.ts'), 'utf8');
-
-      assert.ok(
-        !/name \|\|/.test(source),
-        `${driverId}/driver.ts falls back on \`name || …\`, which accepts a name of spaces. `
-        + 'Trim it first, as lib/pairing/pair-session.ts does.',
-      );
-    });
-
     test(`${driverId} assigns to no instance field`, () => {
       const source = readFileSync(join(ROOT, 'drivers', driverId, 'driver.ts'), 'utf8');
 

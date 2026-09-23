@@ -1,7 +1,10 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { LocalisedError } from '../../lib/support/localised-error';
+
 import {
+  curvePreStageProbe,
   handlerRegistrar,
   newSessionOwner,
   registerCredentialHandlers,
@@ -13,6 +16,9 @@ import {
   type PairSessionHost,
   type SharedSessionState,
 } from '../../lib/pairing/pair-session';
+import {
+  controlModeOf, registerControlHandlers, reviewControl, type ControlState,
+} from '../../lib/pairing/control-choice';
 
 /**
  * The pairing-session mechanics, tested for the first time.
@@ -163,7 +169,12 @@ function rig(options: RigOptions = {}) {
               return { writes: 3 };
             },
             drain: async () => { recorded.drained += 1; },
-            probePreStage: async () => ({ preStageSafe: true }),
+            probePreStageAll: async () => ({
+              lights: [
+                { deviceId: 'lamp-1', name: 'Hall lamp', ok: true, restored: true },
+                { deviceId: 'lamp-2', name: 'Porch lamp', ok: false, restored: true, reason: 'it came on' },
+              ],
+            }),
             stop: async () => { recorded.stopped += 1; },
           };
         },
@@ -193,6 +204,19 @@ describe('the handler wrapper', () => {
     assert.deepEqual(await call('getEnds'), { ok: true });
     assert.deepEqual(recorded.logs, ['pair/getEnds ok']);
     assert.deepEqual(recorded.errors, []);
+  });
+
+  test('a refusal raised in lib/ reaches the screen translated, not as a key', async () => {
+    // lib/ cannot translate (CLAUDE.md), so it throws a LocalisedError and the
+    // wrapper — the one place every handler's error passes — resolves it.
+    const { handler, call } = rig();
+    handler('save', async () => { throw new LocalisedError('errors.targetSelectionChanged'); });
+
+    await assert.rejects(() => call('save'), (error: Error) => {
+      assert.equal(error.message, '[errors.targetSelectionChanged]');
+      assert.ok(!(error instanceof LocalisedError), 'the key must not travel on past the wrapper');
+      return true;
+    });
   });
 
   test('a throwing handler is logged AND re-thrown', async () => {
@@ -478,13 +502,125 @@ describe('the curve preview handlers', () => {
     assert.equal(recorded.stopped, 0);
   });
 
-  test('testPreStage asks the runtime and stops it', async () => {
-    const { host, recorded, handler, call } = rig();
+  test('the pre-stage probe asks an ephemeral runtime, and stops it', async () => {
+    // It moved to the review screen, but the runtime it asks is still built
+    // from the plan on screen and still torn down, or the test leaves
+    // subscriptions on the household's lamps.
+    const { host, recorded } = rig();
 
-    registerCurvePreviewHandlers(host, handler, () => ({ points: [] }) as never);
-    const result = await call('testPreStage');
+    const outcome = await curvePreStageProbe(host, () => ({ points: [] }) as never)();
 
-    assert.deepEqual(result, { preStageSafe: true });
+    assert.equal(outcome.lights.length, 2);
+    assert.equal(recorded.ephemeral.length, 1);
     assert.equal(recorded.stopped, 1);
+  });
+});
+
+describe('"How Lightkeeper controls your lights"', () => {
+  const state = (over: Partial<ControlState> = {}): ControlState => ({
+    preStage: false, writesLights: true, target: { kind: 'devices', deviceIds: ['lamp-1', 'lamp-2'] },
+    ...over,
+  });
+
+  test('the three modes are the two stored flags, and nothing new', () => {
+    assert.equal(controlModeOf({ preStage: false, writesLights: true }), 'after');
+    assert.equal(controlModeOf({ preStage: true, writesLights: true }), 'before');
+    // Publish-only wins: a device that writes to no lamp pre-stages none either.
+    assert.equal(controlModeOf({ preStage: true, writesLights: false }), 'none');
+  });
+
+  test('setControl moves both flags, and keeps a test already run', async () => {
+    const { handler, call } = rig();
+    const session = state({ preStage: true, preStageLights: ['lamp-1'] });
+    registerControlHandlers(handler, session, { offerBefore: true });
+
+    await call('setControl', { mode: 'none' });
+    assert.equal(session.writesLights, false);
+    assert.equal(session.preStage, false);
+    // Coming back to "before" must not mean running the test again.
+    assert.deepEqual(session.preStageLights, ['lamp-1']);
+
+    await call('setControl', { mode: 'before' });
+    assert.equal(session.writesLights, true);
+    assert.equal(session.preStage, true);
+  });
+
+  test('setControl refuses a mode it does not know, and one this device cannot do', async () => {
+    // A pair session is a scriptable surface (platform §14), so the screen is
+    // not what enforces a Room-sensing Light's two options.
+    const { handler, call } = rig();
+    const session = state();
+    registerControlHandlers(handler, session, { offerBefore: false });
+
+    await assert.rejects(() => call('setControl', { mode: 'sometimes' }), /errors\.notAControlMode/);
+    await assert.rejects(() => call('setControl', { mode: 'before' }), /errors\.cannotSetBefore/);
+    assert.equal(session.preStage, false);
+  });
+
+  test('the test stores the lamps that passed, and never the ones that did not', async () => {
+    const { host, handler, call } = rig();
+    const session = state({ preStage: true });
+    registerControlHandlers(handler, session, {
+      offerBefore: true,
+      probe: curvePreStageProbe(host, () => ({ points: [] }) as never),
+    });
+
+    const result = await call('testPreStage') as { lights: unknown[]; restored: number };
+
+    assert.deepEqual(session.preStageLights, ['lamp-1']);
+    assert.deepEqual(result.lights, [{ name: 'Hall lamp', ok: true }, { name: 'Porch lamp', ok: false }]);
+    assert.equal(result.restored, 2);
+  });
+
+  test('a Room-sensing Light registers no test at all', () => {
+    const { handler } = rig();
+    const names: string[] = [];
+    registerControlHandlers((name, fn) => { names.push(name); handler(name, fn); }, state(), { offerBefore: false });
+    assert.deepEqual(names, ['setControl']);
+  });
+
+  test('a repair reads the stored list back against the lamps it drives today', async () => {
+    const { host } = rig({
+      devices: [
+        { id: 'lamp-1', name: 'Hall lamp', capabilities: ['onoff'] },
+        { id: 'lamp-2', name: 'Porch lamp', capabilities: ['onoff'] },
+      ] as never,
+    });
+    // Nothing tested in THIS session: the list came from the store.
+    const control = await reviewControl(host, state({ preStage: true, preStageLights: ['lamp-1'] }), true);
+
+    assert.equal(control.selected, 'before');
+    assert.equal(control.lightCount, 2);
+    assert.deepEqual(control.tested, {
+      fresh: false,
+      lights: [{ name: 'Hall lamp', ok: true }, { name: 'Porch lamp', ok: false }],
+    });
+  });
+
+  test('a fresh test that no longer covers the lamps is read back instead', async () => {
+    // Test, go back, add a lamp, come here again: "Tested just now" would then
+    // be silent about the lamp that was never tested.
+    const { host } = rig({
+      devices: [
+        { id: 'lamp-1', name: 'Hall lamp', capabilities: ['onoff'] },
+        { id: 'lamp-2', name: 'Porch lamp', capabilities: ['onoff'] },
+      ] as never,
+    });
+    const control = await reviewControl(host, state({
+      preStage: true,
+      preStageLights: ['lamp-1'],
+      tested: [{ deviceId: 'lamp-1', name: 'Hall lamp', ok: true }],
+    }), true);
+
+    assert.equal(control.tested?.fresh, false);
+    assert.equal(control.tested?.lights.length, 2);
+  });
+
+  test('a Room-sensing Light offers two modes and no test result', async () => {
+    const { host } = rig();
+    const control = await reviewControl(host, { writesLights: false }, false);
+    assert.deepEqual(control.modes, ['after', 'none']);
+    assert.equal(control.selected, 'none');
+    assert.equal(control.tested, undefined);
   });
 });

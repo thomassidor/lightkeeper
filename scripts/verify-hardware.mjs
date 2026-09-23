@@ -28,11 +28,47 @@
  *                                                  Needs --yes
  *   repair      — T46                              opens a repair session per
  *                                                  device, saves nothing. Needs --yes
+ *   repairsave  — T177                             SAVES one harmless edit through
+ *                                                  a repair session on each of this
+ *                                                  pass's devices, reads it back,
+ *                                                  and puts it back. Needs --yes
+ *   jobs        — T152, T153, T154                 reads a Light Remote's job and
+ *                                                  source screens through a repair
+ *                                                  session, never saved. Needs --yes
+ *   settings    — T137                             read-only: what the settings
+ *                                                  page is built from
+ *   flowcards   — T147, T149, T150, T151           runs the `set_lights` action and
+ *                                                  the `daylight_is_dark` condition
+ *                                                  over this pass's own devices, on
+ *                                                  lamps in `room` nobody else
+ *                                                  drives; every lamp put back.
+ *                                                  Needs --yes
+ *   control     — T166-T173                        the review screen's control
+ *                                                  choice and "Test my lights" —
+ *                                                  in `room` only, unless --house.
+ *                                                  Each tested lamp blinks and is
+ *                                                  put back. Needs --yes
  *   pairspike   — nothing; the one-off probe that proved pairing over the API
  *                 works at all (platform §14). Needs --yes
  *
- *   all         — the four read-only commands
+ *   all         — the read-only commands
  *   full        — the whole pass, in the plan's own order, ending in teardown
+ *
+ *   T178 (installed build matches this checkout) is reported by `spike`, which
+ *   is also the first thing `full` runs. T180 (the orphan sweep refuses when
+ *   nothing Flow-owning is live) is reported by `teardown`, and only ever read.
+ *
+ * FLAGS
+ *
+ *   --yes          confirm a command that changes the Homey
+ *   --json <path>  also write every result, the app version, the firmware and
+ *                  the build shape to a JSON file. No key and no address in it,
+ *                  but device and room names: a capture, so write it under the
+ *                  gitignored temp/
+ *   --strict       a SKIPPED line fails the exit code too — for a dedicated test
+ *                  Homey, where "nothing to test against" is itself the fault
+ *   --house        let `control` test every lamp in the house, room by room and
+ *                  then all at once. Without it, `control` stays in `room`
  *
  * IT ONLY EVER TOUCHES ITS OWN DEVICES. Every device this pass builds is named
  * with a marker — see `MARKER` below, and the comment there for why the name and
@@ -55,7 +91,16 @@
  * - The LAMPS are shared. `pickLights()` picks from your real lights; there are
  *   no others. `preview`, `rejoin` and `schedule` write colour, switch lamps off
  *   and on, and set values by hand — on lamps your own devices may also drive.
- *   `HOMEY_TEST_ROOM` is the containment, and worth setting.
+ *   `HOMEY_TEST_ROOM` is the containment, and worth setting. `control` and
+ *   `flowcards` honour it too: `control` tests the lamps in that room and no
+ *   others unless `--house` is typed, and refuses to guess a room when none is
+ *   set; `flowcards` only ever writes to a lamp none of YOUR devices drives.
+ *
+ * WHAT IS PUT BACK, AND WHEN. Every change above registers an undo the moment
+ * before it is made — see `scripts/verify/undo.mjs`. A command that throws has
+ * its undos run before the next command starts, and Ctrl-C (or SIGTERM) runs
+ * every one still registered, newest first, before exiting non-zero. Ctrl-C a
+ * second time skips that and exits at once.
  * - During a run there are TWO devices of each type, probably on the same
  *   remote. Nothing here presses a remote, so this only shows if you do.
  *
@@ -111,11 +156,22 @@
  *   node scripts/verify-hardware.mjs all              # every read-only command
  *
  * Output is one line per test-plan line, in the plan's own `Tn OK` form, so it
- * pastes straight into a report. Exit code is 1 if anything FAILED.
+ * pastes straight into a report. Exit code is 1 if anything FAILED (or, with
+ * `--strict`, was SKIPPED). Every number it prints is listed with its meaning in
+ * `scripts/verify/lines.mjs` and in `docs/hardware-test-coverage.md`.
+ *
+ * Importing this file runs nothing: `main()` is guarded on being the process's
+ * own entry point, so `test/unit/verify-hardware-logic.test.ts` can exercise the
+ * pure helpers without a Homey.
  */
 import { createRequire } from 'node:module';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { parseArgs } from './verify/args.mjs';
+import { createUndoStack, installInterruptHandlers } from './verify/undo.mjs';
+import { stillManual } from './verify/lines.mjs';
+import { summarise, jsonReport, buildShapeFrom } from './verify/outcome.mjs';
 
 const require = createRequire(import.meta.url);
 // homey-api ships JS with JSDoc rather than type declarations, so everything it
@@ -137,6 +193,29 @@ const here = dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/,
 
 /** @type {Array<{ line: string, status: string, detail: string }>} */
 const results = [];
+
+/**
+ * Everything changed and not yet put back. See `scripts/verify/undo.mjs` for
+ * why this exists and who runs it.
+ */
+const undo = createUndoStack();
+
+/**
+ * Set by an interrupt, so the polling loop gives up rather than carrying on
+ * writing to a Homey the undo is busy putting back. `sleep` and the other
+ * helpers shared with `probe-lights.mjs` are deliberately not touched — see
+ * `test/unit/probe-shared-helpers.test.ts`.
+ */
+let interrupted = false;
+
+/**
+ * What is known about the installed build, for `--json`. Filled by
+ * `checkInstalledBuild()` when `spike` runs, and read lazily at the end
+ * otherwise.
+ *
+ * @type {{ installed: string | null, checkout: string | null, build: 'dev' | 'launch' | 'unknown', firmware: string | null }}
+ */
+const buildFacts = { installed: null, checkout: null, build: 'unknown', firmware: null };
 
 /**
  * One line of the report. `line` is a test-plan number — `T24` — or `-` for
@@ -283,9 +362,17 @@ async function switchALampOn(api, targetIds, label) {
     // Only a lamp we can put back, and only one that is actually off.
     if (lamp?.capabilitiesObj?.onoff?.value === true) return noop;
 
+    // Registered BEFORE the switch, so an interrupt between the two still puts
+    // it back. The restore handed out below runs this same entry, which is what
+    // makes it safe to call from a `finally` and from the interrupt alike: it
+    // runs once, whoever gets there first.
+    const putBack = undo.push(`switch "${lamp?.name}" back off`, async () => {
+      await lamp.setCapabilityValue({ capabilityId: 'onoff', value: false });
+    });
     try {
       await lamp.setCapabilityValue({ capabilityId: 'onoff', value: true });
     } catch (error) {
+      putBack.release();
       console.log(`          could not switch "${lamp?.name}" on: ${messageOf(error)}`);
       continue;
     }
@@ -296,11 +383,12 @@ async function switchALampOn(api, targetIds, label) {
     return {
       lit: String(lamp?.name ?? id),
       restore: async () => {
-        try {
-          await lamp.setCapabilityValue({ capabilityId: 'onoff', value: false });
+        const outcome = await putBack.run();
+        if (!outcome.ran) return;
+        if (outcome.ok) {
           console.log(`          switched "${lamp?.name}" back off`);
-        } catch (error) {
-          console.log(`          could NOT put "${lamp?.name}" back: ${messageOf(error)}`);
+        } else {
+          console.log(`          could NOT put "${lamp?.name}" back: ${messageOf(outcome.error)}`);
         }
       },
     };
@@ -649,6 +737,7 @@ async function waitFor(check, opts) {
   const deadline = Date.now() + opts.timeoutMs;
   note(`waiting up to ${Math.round(opts.timeoutMs / 1000)}s for ${opts.what}...`);
   for (;;) {
+    if (interrupted) throw new Error(`interrupted while waiting for ${opts.what}`);
     const value = await check();
     if (value) return value;
     if (Date.now() >= deadline) return null;
@@ -671,6 +760,30 @@ async function waitFor(check, opts) {
  * discarded write.
  */
 const LAMP_TOLERANCE = 0.1;
+
+/**
+ * How long after a lamp comes on this script must NOT pretend to be a person.
+ *
+ * The app reserves the first report each capability makes after a power-on for
+ * the lamp itself — `POWER_RESTORE_MS` in `lib/outputs/target-state-cache.ts`,
+ * 15 s — because a lamp coming back on restates the level it was left at and
+ * that is news about the lamp, not somebody arriving. The allowance is spent by
+ * whichever report lands first, needed or not.
+ *
+ * T25 stands in for a person, and it runs straight after the power cycle T24
+ * and T29 need. On 22 September 2026 that put the hand-set 14.0 s and 13.8 s
+ * after the lamp came on: both were correctly booked as `power_restore`, both
+ * spent the allowance, and because a Hue bulb reports only on change no second
+ * report ever came — so the override was never raised and T25 failed against
+ * an app that had done exactly what it says it does. It was intermittent for
+ * the same reason it was wrong: whether the settle wait above cleared 15 s
+ * decided the verdict, and one run in two passed.
+ *
+ * So the wait is explicit and keyed to the app's own constant, with margin. It
+ * is not a hedge against slowness: inside this window there is no question to
+ * ask, because the app is entitled to the answer.
+ */
+const HAND_SET_AFTER_POWER_ON_MS = 20_000;
 
 /**
  * Capabilities whose round trip is not the app's promise.
@@ -733,6 +846,152 @@ async function lightkeeperDevices(api) {
     });
   }
   return found;
+}
+
+/**
+ * Which lamps share bulbs with which, through Homey's own device groups.
+ *
+ * A Homey light GROUP is an ordinary device with its own id, its own
+ * capabilities and its own row in `getDevices()`. Nothing on it or on its
+ * members says they are the same bulbs — the membership is in the group's
+ * `settings.deviceIds`, and a caller that does not go and read it sees a group
+ * and its members as unrelated lights.
+ *
+ * That blindness cost this pass two releases of confusing failures. In the
+ * reference house "Cieling Lamp (Garage)" IS "Ceiling 1 | Garage" and
+ * "Ceiling 2 | Garage", and "Cieling Lamp (Studio)" IS the three Studio spots —
+ * so the chooser below handed the group to the circadian light and a member to
+ * the Colour Curve Light, and the two then wrote different colours to one bulb
+ * all run. T24 and T29 read back whatever the other one wrote last: measured 22
+ * September 2026, `light_temperature` 0.440 written and 0.740 read, and
+ * `light_saturation` 0.512 written at hue 0.11 with 0.400 read at hue 0.36.
+ * The hue is the tell — it was never a value this pass sent.
+ *
+ * Returns, per device id, every id it shares light with, itself included: its
+ * members if it is a group, and any group it belongs to. A lamp in no group
+ * maps to just itself, so callers need no special case.
+ *
+ * @param {any} api
+ * @returns {Promise<Map<string, Set<string>>>}
+ */
+async function lampOverlaps(api) {
+  const devices = Object.values(/** @type {any} */ (await api.devices.getDevices()));
+  /** @type {Map<string, Set<string>>} */
+  const overlaps = new Map();
+  /** @param {string} id */
+  const of = (id) => {
+    let set = overlaps.get(id);
+    if (!set) { set = new Set([id]); overlaps.set(id, set); }
+    return set;
+  };
+
+  for (const device of /** @type {any[]} */ (devices)) {
+    const id = String(device?.id ?? '');
+    if (!id) continue;
+    of(id);
+    if (!String(device?.driverId ?? '').includes('virtualdrivergroup')) continue;
+    for (const raw of /** @type {any[]} */ (device?.settings?.deviceIds ?? [])) {
+      const member = String(raw);
+      // Both ways: the group is busy when a member is driven, and a member is
+      // busy when the group is.
+      of(id).add(member);
+      of(member).add(id);
+    }
+  }
+  return overlaps;
+}
+
+/**
+ * Every lamp a Lightkeeper device the USER paired is already driving.
+ *
+ * The pass builds its own devices over the household's real lamps, which is
+ * unavoidable and documented. What is avoidable is pointing them at a lamp
+ * somebody else's curve is also writing to — and in the reference house the
+ * Studio holds a Colour Curve Light and a Room-sensing Light of the user's own
+ * across five of its six lamps, so the pass landed on a contested one by
+ * default.
+ *
+ * That makes exactly one line unanswerable. T24/T29 ask whether the lamp holds
+ * what the app wrote, and on a shared lamp the answer is "whichever device
+ * wrote last": measured 22 September 2026, the pass wrote `light_saturation`
+ * 0.512 at hue 0.11 and read back 0.400 at hue 0.36, which was the user's own
+ * Studio curve a tick later. Twice, at different values, which is what a
+ * contest looks like and what a slow lamp does not.
+ *
+ * So it is a PREFERENCE, not a filter. A house where every lamp is already
+ * driven still gets a full pass; it gets a line saying so instead, which is the
+ * thing that makes the next T29 readable.
+ *
+ * `[verify]` devices are excluded: those are this pass's own, and a previous
+ * run's leftovers must not make every lamp look busy.
+ *
+ * Expanded through `lampOverlaps`, because a device driving "Ceiling 1" is
+ * driving the group that contains it just as surely.
+ *
+ * @param {any} app
+ * @param {Map<string, Set<string>>} overlaps
+ * @returns {Promise<Set<string>>} lamp device ids
+ */
+async function lampsDrivenByTheirOwnDevices(app, overlaps) {
+  /** @type {Set<string>} */
+  const busy = new Set();
+  /** @type {any} */
+  const diagnostics = await app.get('/diagnostics').catch(() => null);
+  if (!diagnostics) return busy;
+  for (const group of ['controllers', 'schedules', 'circadian', 'daylight']) {
+    for (const device of /** @type {any[]} */ (diagnostics?.[group] ?? [])) {
+      if (isMarked(String(device?.name ?? ''))) continue;
+      for (const id of /** @type {any[]} */ (device?.targetIds ?? [])) {
+        for (const shared of overlaps.get(String(id)) ?? [String(id)]) busy.add(shared);
+      }
+    }
+  }
+  return busy;
+}
+
+/**
+ * Controllers whose own remote is unavailable on the Homey right now.
+ *
+ * A Light Remote watches a physical device, and a battery Zigbee remote drops
+ * off: all three BILRESA scroll wheels in the reference house read
+ * `available: false` with "Device is not responding" on 22 September 2026,
+ * having answered an hour earlier in the same pass. The app's response is
+ * correct and is the whole point of the state — the controller goes
+ * `needs_repair` and says "Homey reports that this remote is unavailable."
+ *
+ * But two lines assert over every Flow-owning device at once: T32 wants them
+ * all available after a restart, and T38 wants them all in `needs_credential`
+ * once the key is pulled. A sleeping remote breaks both by being right, because
+ * `needs_repair` outranks `needs_credential` (worst wins, `lib/runtime/verdict.ts`)
+ * and an unavailable source makes an unavailable controller. Reporting that as
+ * a failure is the script blaming the app for the house.
+ *
+ * Keyed by controller id, which is the device's own `data.id` and the same
+ * string `/diagnostics` and `/` both call it.
+ *
+ * Only an EXISTING source that is unavailable is excused. A source that has
+ * been deleted is a different situation with the same state, and this is not
+ * the line that should be quiet about it.
+ *
+ * @param {any} api
+ * @param {any} app
+ * @returns {Promise<Map<string, string>>} controller id -> the remote's name
+ */
+async function controllersWithASleepingRemote(api, app) {
+  /** @type {Map<string, string>} */
+  const asleep = new Map();
+  /** @type {any} */
+  const diagnostics = await app.get('/diagnostics').catch(() => null);
+  for (const controller of /** @type {any[]} */ (diagnostics?.controllers ?? [])) {
+    const sourceId = controller?.source?.deviceId;
+    if (!sourceId) continue;
+    const live = await api.devices.getDevice({ id: String(sourceId), $cache: false })
+      .catch(() => null);
+    if (live && live.available === false) {
+      asleep.set(String(controller.controllerId), String(controller?.source?.name ?? sourceId));
+    }
+  }
+  return asleep;
 }
 
 /**
@@ -886,6 +1145,18 @@ async function capabilityValue(api, deviceId, capability) {
  * whatever it last saw either way — so a genuine mismatch still fails, just
  * later and with better evidence.
  *
+ * The window is 20 s rather than the 6 s it started at, because 6 s is a read
+ * of a lamp still moving. Measured 22 September 2026: a Hue bulb written
+ * `light_saturation` 0.619 read back 0.470 inside the window and 0.62 — the
+ * written value, at the capability's own two decimals — once it had arrived.
+ * T29 called that "it did not take". A lamp that has just come on and is being
+ * given a mode, a hue and a saturation in one burst fades to all three, and the
+ * bridge reports the fade.
+ *
+ * Widening costs nothing on a lamp that answers promptly: this returns the
+ * instant the value is within tolerance, so the window is only ever spent on a
+ * lamp that is late or a write that genuinely did not land.
+ *
  * @param {any} api
  * @param {string} deviceId
  * @param {string} capability
@@ -893,7 +1164,7 @@ async function capabilityValue(api, deviceId, capability) {
  * @param {number} [windowMs]
  * @returns {Promise<number | boolean | string | null>}
  */
-async function capabilityValueSettling(api, deviceId, capability, wanted, windowMs = 6_000) {
+async function capabilityValueSettling(api, deviceId, capability, wanted, windowMs = 20_000) {
   const deadline = Date.now() + windowMs;
   let last = await capabilityValue(api, deviceId, capability);
 
@@ -922,6 +1193,7 @@ async function capabilityValueSettling(api, deviceId, capability, wanted, window
  */
 async function commandSpike(api) {
   note(`Homey software version ${api.version ?? '(not reported)'}`);
+  await checkInstalledBuild(api);
 
   /**
    * Split in the first lines of the report, because it is the whole promise of
@@ -1543,92 +1815,126 @@ async function commandCredential(api, key) {
    */
   const ourControllers = await ourDataIds(api);
 
-  // T36 — a bad key must not unseat the working one. This is the regression that
-  // made every device unavailable on a typo.
-  /** @type {any} */
-  const refusal = await app.post('/credential', { token: 'not-a-key' });
-  const afterBad = await status();
-  const stillValid = afterBad?.credential?.valid === true;
-  const stillWorking = flowOwners(afterBad).every(o => o.state !== 'needs_credential');
-  report('T36', refusal?.valid === false && stillValid && stillWorking ? 'OK' : 'FAILED',
-    `nonsense refused (valid=${refusal?.valid} failure=${refusal?.failure ?? 'none'}), `
-    + `stored key still valid=${stillValid}, `
-    + `no device pushed to needs_credential=${stillWorking}`);
-
   /**
-   * T37 — and the gesture still works.
+   * The key goes back in a `finally`, and is registered as an undo before it is
+   * taken away — before T36, not before the delete, because T36 hands the app a
+   * nonsense key, and the regression it exists for is that key unseating the
+   * working one.
    *
-   * Run through the generated Flow's own action card rather than pressed. That
-   * is honest HERE, unlike at T9: the question this line asks is whether the
-   * path from a Flow to a light survived a bad key, not whether the radio works.
+   * It used to be deleted and restored with nothing between them but
+   * straight-line code — two waits, two Flow reads and two fired Flows — so a
+   * throw anywhere in there, or a Ctrl-C, left every controller and schedule on
+   * the Homey, the household's own included, without a key. The report line
+   * that would have said so never printed.
    */
-  const afterBadKey = await fireBridgeEvent(api, app, ourControllers);
-  report('T37', afterBadKey.skipped ? 'SKIPPED' : afterBadKey.ok ? 'OK' : 'FAILED',
-    `with nonsense rejected, the generated Flow still fires: ${afterBadKey.detail}`);
+  const keyBack = undo.push("put the app's own API key back", async () => {
+    /** @type {any} */
+    const answer = await app.post('/credential', { token: key });
+    if (answer?.valid !== true) {
+      throw new Error(`the key was refused on the way back in: failure=${answer?.failure ?? 'none'}`);
+    }
+  });
 
-  // T38 — removing the key must degrade the devices and delete nothing.
-  await app.del('/credential');
-  const degraded = await waitFor(async () => {
-    const s = await status();
-    const owners = flowOwners(s);
-    return owners.length > 0 && owners.every(o => o.state === 'needs_credential') ? s : null;
-  }, { timeoutMs: 60_000, everyMs: 3_000, what: 'the Flow-owning devices to report needs_credential' });
+  let keyRestored = false;
+  try {
+    // T36 — a bad key must not unseat the working one. This is the regression that
+    // made every device unavailable on a typo.
+    /** @type {any} */
+    const refusal = await app.post('/credential', { token: 'not-a-key' });
+    const afterBad = await status();
+    const stillValid = afterBad?.credential?.valid === true;
+    const stillWorking = flowOwners(afterBad).every(o => o.state !== 'needs_credential');
+    report('T36', refusal?.valid === false && stillValid && stillWorking ? 'OK' : 'FAILED',
+      `nonsense refused (valid=${refusal?.valid} failure=${refusal?.failure ?? 'none'}), `
+      + `stored key still valid=${stillValid}, `
+      + `no device pushed to needs_credential=${stillWorking}`);
 
-  if (degraded) {
-    report('T38', 'OK', 'controller and schedule went to needs_credential after the key was removed');
-  } else {
-    const s = await status();
-    report('T38', 'FAILED', 'they did not all reach needs_credential within 60s: '
-      + flowOwners(s).map(o => `${o.name ?? o.sourceName ?? o.id}=${o.state}`).join(', '));
+    /**
+     * T37 — and the gesture still works.
+     *
+     * Run through the generated Flow's own action card rather than pressed. That
+     * is honest HERE, unlike at T9: the question this line asks is whether the
+     * path from a Flow to a light survived a bad key, not whether the radio works.
+     */
+    const afterBadKey = await fireBridgeEvent(api, app, ourControllers);
+    report('T37', afterBadKey.skipped ? 'SKIPPED' : afterBadKey.ok ? 'OK' : 'FAILED',
+      `with nonsense rejected, the generated Flow still fires: ${afterBadKey.detail}`);
+
+    // T38 — removing the key must degrade the devices and delete nothing.
+    //
+    // A controller whose remote is asleep is already in `needs_repair`, which
+    // outranks `needs_credential` — so it is excused rather than counted, for the
+    // reason `controllersWithASleepingRemote` gives.
+    const asleep = await controllersWithASleepingRemote(api, app);
+    /** @param {any} s */
+    const asked = (s) => flowOwners(s).filter(o => !asleep.has(String(o.id)));
+    if (asleep.size > 0) {
+      note(`not asking ${asleep.size} controller(s) for needs_credential — their own remotes `
+        + `are unavailable, so they are in needs_repair: ${[...asleep.values()].join(', ')}`);
+    }
+
+    await app.del('/credential');
+    const degraded = await waitFor(async () => {
+      const s = await status();
+      const owners = asked(s);
+      return owners.length > 0 && owners.every(o => o.state === 'needs_credential') ? s : null;
+    }, { timeoutMs: 60_000, everyMs: 3_000, what: 'the Flow-owning devices to report needs_credential' });
+
+    if (degraded) {
+      report('T38', 'OK', 'controller and schedule went to needs_credential after the key was removed');
+    } else {
+      const s = await status();
+      report('T38', 'FAILED', 'they did not all reach needs_credential within 60s: '
+        + asked(s).map(o => `${o.name ?? o.sourceName ?? o.id}=${o.state}`).join(', '));
+    }
+
+    /**
+     * Compared BY FLOW ID, and failing only on a Flow that has GONE.
+     *
+     * A count cannot tell "the user's controller reconciled and added one" from
+     * "the key removal deleted one of ours", and with the user's own devices left
+     * standing throughout a run, the first happens. A Flow arriving is normal; a
+     * Flow vanishing is the bug this line exists to catch.
+     */
+    const flowsAfterRemoval = await managedFlows(api);
+    const lostOnRemoval = flowsBefore.filter(f => !flowsAfterRemoval.some(n => n.flowId === f.flowId));
+    report('T38', lostOnRemoval.length === 0 ? 'OK' : 'FAILED',
+      `${flowsAfterRemoval.length} generated Flow(s) after removal, was ${flowsBefore.length} — `
+      + 'losing the key must not delete anything'
+      + (lostOnRemoval.length
+        ? `, but ${lostOnRemoval.length} are GONE: ${lostOnRemoval.map(f => f.name).join(', ')}`
+        : ''));
+
+    /**
+     * T39 — with NO key at all, the Flows are still there and still fire.
+     *
+     * The safety property in one line: losing the key pauses Flow MAINTENANCE, it
+     * does not stop the lights working. A user whose key expired keeps their
+     * remotes until they get round to pasting a new one in.
+     */
+    const withoutKey = await fireBridgeEvent(api, app, ourControllers);
+    report('T39', withoutKey.skipped ? 'SKIPPED' : withoutKey.ok ? 'OK' : 'FAILED',
+      `with no key stored at all, the generated Flow still fires: ${withoutKey.detail}`);
+
+    // T41 — neither light-driving device type holds a key or has a
+    // needs_credential state at all (platform §12), so nothing here may touch them.
+    const midway = await status();
+    const curvesTouched = /** @type {any[]} */ (midway?.circadian ?? [])
+      .filter(c => c.state === 'needs_credential');
+    report('T41', curvesTouched.length === 0 ? 'OK' : 'FAILED',
+      curvesTouched.length === 0
+        ? `circadian and Colour Curve Lights untouched with no key stored: ${curveStates(midway) || 'none paired'}`
+        : `${curvesTouched.length} of them reported needs_credential, which they have no state for`);
+  } finally {
+    // T40 — and back, without a restart. Whatever happened above.
+    const outcome = await keyBack.run();
+    keyRestored = outcome.ran && outcome.ok === true;
+    if (outcome.ran && !keyRestored) {
+      report('T40', 'FAILED', `${messageOf(outcome.error)}. The devices are still without a key — `
+        + 'paste it in from app settings.');
+    }
   }
-
-  /**
-   * Compared BY FLOW ID, and failing only on a Flow that has GONE.
-   *
-   * A count cannot tell "the user's controller reconciled and added one" from
-   * "the key removal deleted one of ours", and with the user's own devices left
-   * standing throughout a run, the first happens. A Flow arriving is normal; a
-   * Flow vanishing is the bug this line exists to catch.
-   */
-  const flowsAfterRemoval = await managedFlows(api);
-  const lostOnRemoval = flowsBefore.filter(f => !flowsAfterRemoval.some(n => n.flowId === f.flowId));
-  report('T38', lostOnRemoval.length === 0 ? 'OK' : 'FAILED',
-    `${flowsAfterRemoval.length} generated Flow(s) after removal, was ${flowsBefore.length} — `
-    + 'losing the key must not delete anything'
-    + (lostOnRemoval.length
-      ? `, but ${lostOnRemoval.length} are GONE: ${lostOnRemoval.map(f => f.name).join(', ')}`
-      : ''));
-
-  /**
-   * T39 — with NO key at all, the Flows are still there and still fire.
-   *
-   * The safety property in one line: losing the key pauses Flow MAINTENANCE, it
-   * does not stop the lights working. A user whose key expired keeps their
-   * remotes until they get round to pasting a new one in.
-   */
-  const withoutKey = await fireBridgeEvent(api, app, ourControllers);
-  report('T39', withoutKey.skipped ? 'SKIPPED' : withoutKey.ok ? 'OK' : 'FAILED',
-    `with no key stored at all, the generated Flow still fires: ${withoutKey.detail}`);
-
-  // T41 — neither light-driving device type holds a key or has a
-  // needs_credential state at all (platform §12), so nothing here may touch them.
-  const midway = await status();
-  const curvesTouched = /** @type {any[]} */ (midway?.circadian ?? [])
-    .filter(c => c.state === 'needs_credential');
-  report('T41', curvesTouched.length === 0 ? 'OK' : 'FAILED',
-    curvesTouched.length === 0
-      ? `circadian and Colour Curve Lights untouched with no key stored: ${curveStates(midway) || 'none paired'}`
-      : `${curvesTouched.length} of them reported needs_credential, which they have no state for`);
-
-  // T40 — and back, without a restart.
-  /** @type {any} */
-  const restored = await app.post('/credential', { token: key });
-  if (restored?.valid !== true) {
-    report('T40', 'FAILED', `the real key was refused on the way back in: `
-      + `failure=${restored?.failure ?? 'none'}. The devices are still without a key — `
-      + 'paste it in from app settings.');
-    return;
-  }
+  if (!keyRestored) return;
 
   const recovered = await waitFor(async () => {
     const s = await status();
@@ -1754,19 +2060,52 @@ async function commandRejoin(api) {
       note(`${label}: this pass switched "${arranged.lit}" on to make the check runnable`);
     }
 
-    await rejoinAfterPowerCycle(api, app, runtimeId(runtime), lampId, lampName, label, rejoinLine);
-    // T25 is written once, for the circadian light, but the behaviour belongs to
-    // the shared engine — so it runs for a Colour Curve Light too and reports against
-    // the same number.
-    await handOverAndRejoin(api, app, runtimeId(runtime), lampId, lampName, label);
-
-    // Put back only what we changed, and only after both checks have run.
-    await arranged.restore();
+    /**
+     * The lamp as it was before either check touched it, put back in a
+     * `finally` — and registered as an undo, so Ctrl-C puts it back too.
+     *
+     * Both used to be the last line of the loop body: a throw in either check
+     * left a lamp this pass had switched on still on, and T25's value set by
+     * hand was never put back at all. That value is only safe to leave where the
+     * app has visibly taken the lamp back — T25's own closing power cycle — and
+     * writing the old one over it then would be this pass overriding its own
+     * device. Everywhere else it is put back.
+     */
+    const snapshot = await snapshotLamp(api, lampId);
+    const lampBack = undo.push(`put "${lampName}" back as rejoin found it`, () => putLampBack(snapshot));
+    /** @type {'untouched' | 'rejoined' | 'left'} */
+    let handed = 'left';
+    try {
+      const poweredOnAt = await rejoinAfterPowerCycle(
+        api, app, runtimeId(runtime), lampId, lampName, label, rejoinLine);
+      // T25 is written once, for the circadian light, but the behaviour belongs to
+      // the shared engine — so it runs for a Colour Curve Light too and reports against
+      // the same number.
+      handed = await handOverAndRejoin(api, app, runtimeId(runtime), lampId, lampName, label, poweredOnAt);
+    } finally {
+      if (handed === 'left') {
+        const outcome = await lampBack.run();
+        if (outcome.ran) {
+          note(outcome.ok
+            ? `${label}: put "${lampName}" back as it was found`
+            : `${label}: could NOT put "${lampName}" back: ${messageOf(outcome.error)} — set it yourself`);
+        }
+      } else {
+        lampBack.release();
+      }
+      // And only then switch off a lamp this pass switched on for the check.
+      await arranged.restore();
+    }
   }
 }
 
 /**
  * The lamp goes off and on, and the app must write to it again.
+ *
+ * Returns the moment the lamp was switched back on, because the check that runs
+ * next must wait that moment out — see `HAND_SET_AFTER_POWER_ON_MS`. Returned
+ * on the failure path too: the lamp came on either way, and the window the app
+ * reserves does not care whether anything was written inside it.
  *
  * @param {any} api
  * @param {any} app
@@ -1775,6 +2114,7 @@ async function commandRejoin(api) {
  * @param {string} lampName
  * @param {string} label
  * @param {string} line
+ * @returns {Promise<number>} when the lamp was switched back on
  */
 async function rejoinAfterPowerCycle(api, app, wantedId, lampId, lampName, label, line) {
   const lamp = await api.devices.getDevice({ id: lampId });
@@ -1791,7 +2131,7 @@ async function rejoinAfterPowerCycle(api, app, wantedId, lampId, lampName, label
   if (!write) {
     report(line, 'FAILED', `${label}: nothing was written to "${lampName}" in the 120s after `
       + 'it was switched back on — it did not rejoin');
-    return;
+    return switchedOnAt;
   }
 
   const held = await capabilityValueSettling(api, lampId, String(write.capability), write.value);
@@ -1805,6 +2145,7 @@ async function rejoinAfterPowerCycle(api, app, wantedId, lampId, lampName, label
     `${label}: "${lampName}" came back on and was written `
     + `${write.capability}=${round(write.value)}; the lamp now holds ${round(held)}`
     + (matches ? '' : ' — it did not take'));
+  return switchedOnAt;
 }
 
 /**
@@ -1817,13 +2158,16 @@ async function rejoinAfterPowerCycle(api, app, wantedId, lampId, lampName, label
  * @param {string} lampId
  * @param {string} lampName
  * @param {string} label
+ * @param {number} poweredOnAt when the lamp was last switched on by this pass
+ * @returns {Promise<'untouched' | 'rejoined' | 'left'>} whether the lamp is the
+ *   app's again, or still holds something this pass did to it
  */
-async function handOverAndRejoin(api, app, wantedId, lampId, lampName, label) {
+async function handOverAndRejoin(api, app, wantedId, lampId, lampName, label, poweredOnAt) {
   const lamp = await api.devices.getDevice({ id: lampId });
   const current = Number(await capabilityValue(api, lampId, 'light_temperature'));
   if (!Number.isFinite(current)) {
     report('T25', 'SKIPPED', `${label}: "${lampName}" reports no light_temperature to take over`);
-    return;
+    return 'untouched';
   }
 
   /**
@@ -1866,6 +2210,15 @@ async function handOverAndRejoin(api, app, wantedId, lampId, lampName, label) {
   }, { timeoutMs: 60_000, everyMs: 1_000, what: `${label} to stop writing to "${lampName}"` });
 
   if (!settled) note(`${label}: still writing after 60s — taking the lamp over anyway`);
+
+  // And wait out the window the app reserves for the lamp's own restore, which
+  // the settle wait above clears only by luck. See HAND_SET_AFTER_POWER_ON_MS.
+  const reserved = poweredOnAt + HAND_SET_AFTER_POWER_ON_MS - Date.now();
+  if (reserved > 0) {
+    note(`${label}: waiting ${Math.ceil(reserved / 1_000)}s more — the app reserves the first `
+      + 'report after a power-on for the lamp itself');
+    await sleep(reserved);
+  }
 
   /**
    * The mode goes first here too, for the same reason the app now does it.
@@ -1919,7 +2272,9 @@ async function handOverAndRejoin(api, app, wantedId, lampId, lampName, label) {
         + `(it holds ${round(held)}) and the app wrote nothing, so the lamp itself refused `
         + 'the value — there is nothing here to judge the app on');
     }
-    return;
+    // The app wrote over it, so the lamp is the app's again; or the lamp refused,
+    // and the mode this pass switched it to is still worth putting back.
+    return overwrote ? 'rejoined' : 'left';
   }
 
   // The curve ticks once a minute, so the app needs a tick to notice and another
@@ -1956,15 +2311,16 @@ async function handOverAndRejoin(api, app, wantedId, lampId, lampName, label) {
 
   if (!write) {
     report('T25', 'FAILED', `${label}: "${lampName}" did not rejoin after being switched off `
-      + 'and on — it is left overridden, and holding a value this script set. '
-      + 'Switch it off and on again by hand.');
-    return;
+      + 'and on — it is left overridden. This pass puts back the value it found; switch the '
+      + 'lamp off and on again by hand to hand it back to the app.');
+    return 'left';
   }
 
   const target = await targetOf(app, wantedId, lampId);
   report('T25', target?.overridden === false ? 'OK' : 'FAILED',
     `${label}: "${lampName}" rejoined after a power cycle `
     + `(written ${write.capability}=${round(write.value)}, overridden=${target?.overridden})`);
+  return 'rejoined';
 }
 
 /**
@@ -2102,9 +2458,25 @@ async function commandRestart(api) {
       reasons.push(`${device.name}: "${live?.unavailableMessage ?? '(no message)'}"`);
     }
 
-    report('T32', 'FAILED', `after 120s: ${now.length} of ${before.length} device(s) back`
-      + (missing.length ? `, missing ${missing.map(d => d.name).join(', ')}` : '')
-      + (unavailable.length ? `. UNAVAILABLE — ${reasons.join('; ')}` : ''));
+    // A controller whose remote is asleep is unavailable BECAUSE the app is
+    // reporting the truth. See `controllersWithASleepingRemote`.
+    const asleep = await controllersWithASleepingRemote(api, app);
+    const explained = unavailable.filter(d => asleep.has(d.dataId));
+    const unexplained = unavailable.filter(d => !asleep.has(d.dataId));
+    const named = explained.map(d => `${d.name} (remote "${asleep.get(d.dataId)}")`).join(', ');
+
+    if (missing.length === 0 && unexplained.length === 0 && explained.length > 0) {
+      report('T32', 'OK', `all ${now.length} device(s) came back; ${explained.length} `
+        + `unavailable because its own remote is, which is the app saying so rather than `
+        + `failing to start: ${named}`);
+    } else {
+      report('T32', 'FAILED', `after 120s: ${now.length} of ${before.length} device(s) back`
+        + (missing.length ? `, missing ${missing.map(d => d.name).join(', ')}` : '')
+        + (unexplained.length
+          ? `. UNAVAILABLE — ${reasons.join('; ')}`
+          : '')
+        + (explained.length ? `. Excused, their own remotes are asleep: ${named}` : ''));
+    }
   }
 
   // T34: the curves still hold the right values a minute later. Asked of the app
@@ -2357,6 +2729,25 @@ async function commandSchedule(api) {
     ...(e.temperature === undefined ? {} : { temperature: e.temperature }),
   }));
 
+  /**
+   * Every change below registers its undo first — the windows, the name, and
+   * the pause — so a throw part-way, or Ctrl-C, still puts the schedule back.
+   * The windows were already restored in a `finally`; the name and the pause
+   * were restored on the success path only.
+   */
+  const windowsBack = undo.push(`restore the windows of schedule "${originalName}"`, async () => {
+    if (restore.length > 0) await app.post(`/schedules/${id}/entries`, { entries: restore });
+  });
+  /** @type {import('./verify/undo.mjs').UndoHandle | null} */
+  let nameBack = null;
+  /** @type {import('./verify/undo.mjs').UndoHandle | null} */
+  let resume = null;
+  /** @param {string} label */
+  const resumeWhenDone = (label) => undo.push(label, async () => {
+    const tile = await api.devices.getDevice({ id: device.homeyId });
+    await tile.setCapabilityValue({ capabilityId: 'onoff', value: true });
+  });
+
   try {
     /**
      * T15 first, while nothing has been changed: two blocks that overlap.
@@ -2423,6 +2814,7 @@ async function commandSchedule(api) {
     // its tile carries the switch that un-pauses it, and an unavailable device
     // cannot be switched.
     const lamp = await api.devices.getDevice({ id: device.homeyId });
+    resume = resumeWhenDone(`un-pause schedule "${originalName}"`);
     await lamp.setCapabilityValue({ capabilityId: 'onoff', value: false });
     const paused = await waitFor(async () => {
       /** @type {any} */
@@ -2433,6 +2825,7 @@ async function commandSchedule(api) {
 
     const whilePaused = (await lightkeeperDevices(api)).find(d => d.dataId === id);
     await lamp.setCapabilityValue({ capabilityId: 'onoff', value: true });
+    resume.release();
     const resumed = await waitFor(async () => {
       /** @type {any} */
       const status = await app.get('/');
@@ -2449,6 +2842,9 @@ async function commandSchedule(api) {
 
     // T18: renamed, and the Flow folder follows.
     const testName = `${originalName} (verify)`;
+    nameBack = undo.push(`rename "${testName}" back to "${originalName}"`, async () => {
+      await api.devices.updateDevice({ id: device.homeyId, device: { name: originalName } });
+    });
     await api.devices.updateDevice({ id: device.homeyId, device: { name: testName } });
     /**
      * Two questions, in order, because they have different answers.
@@ -2525,9 +2921,11 @@ async function commandSchedule(api) {
        */
       note('the folder did not follow; pausing and resuming to force a reconcile...');
       const paused = await api.devices.getDevice({ id: device.homeyId });
+      resume = resumeWhenDone(`un-pause schedule "${originalName}"`);
       await paused.setCapabilityValue({ capabilityId: 'onoff', value: false });
       await sleep(5_000);
       await paused.setCapabilityValue({ capabilityId: 'onoff', value: true });
+      resume.release();
 
       if (await folderExists(90_000)) {
         report('T18', 'SKIPPED',
@@ -2541,19 +2939,28 @@ async function commandSchedule(api) {
       }
     }
 
-    await api.devices.updateDevice({ id: device.homeyId, device: { name: originalName } });
   } finally {
-    // Put the schedule back, whatever happened above.
-    if (restore.length > 0) {
-      try {
-        await app.post(`/schedules/${id}/entries`, { entries: restore });
-        note(`schedule "${originalName}" restored to its ${restore.length} original window(s)`);
-      } catch (error) {
-        report('-', 'FAILED', `could not restore the original windows: ${messageOf(error)} — `
-          + `the schedule is left holding this script's test window. Repair it from the app.`);
-      }
-    } else {
-      note('the schedule had no windows to restore');
+    // Put the schedule back, whatever happened above: its name, its switch and
+    // its windows. Each runs at most once, so one an interrupt already ran is
+    // not run again here.
+    const renamed = await nameBack?.run();
+    if (renamed?.ran && !renamed.ok) {
+      report('-', 'FAILED', `could not rename the schedule back to "${originalName}": `
+        + `${messageOf(renamed.error)} — rename it by hand`);
+    }
+    const resumed = await resume?.run();
+    if (resumed?.ran && !resumed.ok) {
+      report('-', 'FAILED', `could not un-pause the schedule: ${messageOf(resumed.error)} — `
+        + 'switch it on from its tile');
+    }
+    const windows = await windowsBack.run();
+    if (windows.ran && windows.ok) {
+      note(restore.length > 0
+        ? `schedule "${originalName}" restored to its ${restore.length} original window(s)`
+        : 'the schedule had no windows to restore');
+    } else if (windows.ran) {
+      report('-', 'FAILED', `could not restore the original windows: ${messageOf(windows.error)} — `
+        + `the schedule is left holding this script's test window. Repair it from the app.`);
     }
   }
 }
@@ -2639,177 +3046,202 @@ async function commandPreview(api) {
     /** Named in the report: a line the harness set up has to admit it. */
     let arrangedNote = '';
 
-    if (outcome?.writes === 0 && lampsOn.length === 0) {
-      /**
-       * ARRANGE the precondition rather than ask for it.
-       *
-       * With every target off there is genuinely nothing to write to, and this
-       * used to be a prompt — which an unattended run cannot show, so the line
-       * skipped every time nobody happened to have the right lamp on. The pass
-       * already writes `onoff` to these lamps (T14 does), so switching one on is
-       * nothing new; it is put back afterwards.
-       */
-      arranged = await switchALampOn(
-        api, /** @type {string[]} */ (runtime?.targetIds ?? []), label,
-      );
-
-      if (arranged.lit) {
-        outcome = await app.post(`/devices/${id}/preview`, {})
-          .catch((/** @type {any} */ error) => ({ error: messageOf(error) }));
-        /** @type {any} */
-        const fresh = await app.get('/diagnostics');
-        const now = /** @type {any[]} */ (fresh?.circadian ?? []).find(c => runtimeId(c) === id);
-        lampsOn = /** @type {any[]} */ (now?.targets ?? []).filter(t => t?.on === true);
-        arrangedNote = ` — this pass switched "${arranged.lit}" on for it`;
-      }
-    }
-
-    if (outcome?.error) {
-      report(previewLine, 'FAILED', `${label}: preview was refused: ${outcome.error}`);
-      await arranged.restore();
-      continue;
-    }
-
-    if (outcome?.writes === 0 && lampsOn.length === 0) {
-      report(previewLine, 'SKIPPED',
-        `${label}: none of its ${runtime?.targets?.length ?? 0} lamp(s) is on and none could be `
-        + 'switched on, so there was nothing to write to');
-      await arranged.restore();
-      continue;
-    }
-
-    report(previewLine, outcome?.writes > 0 ? 'OK' : 'FAILED',
-      `${label}: "Try it now" wrote to ${outcome?.writes} lamp(s), skipped ${outcome?.skipped}`
-      + arrangedNote
-      + (outcome?.writes === 0
-        ? ` — but ${lampsOn.length} lamp(s) ARE on, so it should have written`
-        : ''));
-
-    // T28 / T27: what each lamp was written, and whether it took. A lamp that
-    // can do colour should have been given hue; one that cannot should have been
-    // given the point's warmth instead, so the shape of the day is the same on
-    // every lamp.
-    /** @type {any} */
-    const after = await app.get('/diagnostics');
-    const mine = /** @type {any[]} */ (after?.circadian ?? []).find(c => runtimeId(c) === id);
-    const writes = /** @type {any[]} */ (mine?.recentWrites ?? [])
-      .filter(w => Number(w?.at) >= since && w?.ok !== false && String(w?.capability) !== 'onoff');
-
-    if (writes.length === 0) {
-      // Only a contradiction if the preview claimed to have written something.
-      report(kind === 'curve' ? 'T28' : 'T21', outcome?.writes > 0 ? 'FAILED' : 'SKIPPED',
-        outcome?.writes > 0
-          ? `${label}: the preview reported ${outcome.writes} write(s) but the runtime `
-            + 'recorded none'
-          : `${label}: nothing was written, so there is nothing to read back`);
-      await arranged.restore();
-      continue;
-    }
-
-    /** @type {string[]} */
-    const mismatches = [];
-    /** @type {Set<string>} */
-    const capabilities = new Set();
-    for (const write of writes) {
-      capabilities.add(String(write.capability));
-      // An enabler is judged by whether the value it enables landed, not by
-      // whether the lamp echoes the enabler back.
-      if (ENABLER_CAPABILITIES.has(String(write.capability))) continue;
-      const held = await capabilityValueSettling(
-        api, String(write.deviceId), String(write.capability), write.value,
-      );
-      const wanted = Number(write.value);
-      const actual = Number(held);
-      const matches = Number.isFinite(wanted) && Number.isFinite(actual)
-        ? Math.abs(wanted - actual) <= LAMP_TOLERANCE
-        : held === write.value;
-      if (!matches) {
-        mismatches.push(`${write.deviceId} ${write.capability}: wrote ${round(write.value)}, `
-          + `holds ${round(held)}`);
-      }
-    }
-
-    report(kind === 'curve' ? 'T28' : 'T21', mismatches.length === 0 ? 'OK' : 'FAILED',
-      `${label}: ${writes.length} write(s) across [${[...capabilities].join(', ')}], `
-      + (mismatches.length === 0
-        ? 'every lamp holds what it was written'
-        : `${mismatches.length} did not take — ${mismatches.join('; ')}`));
-
-    if (kind === 'curve' && capabilities.has('light_hue')) {
-      // The colour half of T27: a coloured point reached a colour-capable lamp.
-      report('T27', 'OK', `${label}: a colour was written (light_hue), and lamps without `
-        + 'colour got warmth instead');
-    }
-
-    // T22 — pre-staging, proved on this household's own lamps rather than
-    // assumed. Both answers are correct; which one this Homey gives is the
-    // result.
     /**
-     * Switch a lamp OFF so there is something to pre-stage.
+     * A lamp this pass switched OFF for the T22 probe, to be switched back on.
      *
-     * `probePreStage` needs a target that is off and colour-capable, and by this
-     * point the pass has switched them all on — so this line skipped itself on
-     * every run, which is a check that never runs dressed as a check that
-     * passes. Turning one off is exactly the state the probe is about; it is put
-     * back afterwards whatever happens.
+     * @type {import('./verify/undo.mjs').UndoHandle | null}
      */
-    /** @type {any} */
-    const beforeProbe = await app.get('/diagnostics');
-    const probeRuntime = /** @type {any[]} */ (beforeProbe?.circadian ?? [])
-      .find(c => runtimeId(c) === id);
-    const anyOff = /** @type {any[]} */ (probeRuntime?.targets ?? [])
-      .some(t => t?.on !== true);
+    let switchedOn = null;
 
-    /** @type {any} */
-    let switchedOff = null;
-    if (!anyOff) {
-      const victim = /** @type {any[]} */ (probeRuntime?.targets ?? [])[0];
-      if (victim) {
-        switchedOff = await api.devices.getDevice({ id: String(victim.id) }).catch(() => null);
-        if (switchedOff) {
-          await switchedOff.setCapabilityValue({ capabilityId: 'onoff', value: false })
-            .catch(() => { switchedOff = null; });
-          // The runtime subscribes to onoff; give it a moment to notice.
-          if (switchedOff) await sleep(4_000);
+    /**
+     * Everything below in one `try`, so every way out of this iteration — the
+     * `continue`s and a throw alike — goes through the one `finally` that
+     * puts the lamps back. It used to be a restore call before each `continue`,
+     * which covered every exit except an exception.
+     */
+    try {
+      if (outcome?.writes === 0 && lampsOn.length === 0) {
+        /**
+         * ARRANGE the precondition rather than ask for it.
+         *
+         * With every target off there is genuinely nothing to write to, and this
+         * used to be a prompt — which an unattended run cannot show, so the line
+         * skipped every time nobody happened to have the right lamp on. The pass
+         * already writes `onoff` to these lamps (T14 does), so switching one on is
+         * nothing new; it is put back afterwards.
+         */
+        arranged = await switchALampOn(
+          api, /** @type {string[]} */ (runtime?.targetIds ?? []), label,
+        );
+
+        if (arranged.lit) {
+          outcome = await app.post(`/devices/${id}/preview`, {})
+            .catch((/** @type {any} */ error) => ({ error: messageOf(error) }));
+          /** @type {any} */
+          const fresh = await app.get('/diagnostics');
+          const now = /** @type {any[]} */ (fresh?.circadian ?? []).find(c => runtimeId(c) === id);
+          lampsOn = /** @type {any[]} */ (now?.targets ?? []).filter(t => t?.on === true);
+          arrangedNote = ` — this pass switched "${arranged.lit}" on for it`;
         }
       }
-    }
 
-    /** @type {any} */
-    const probe = await app.post(`/devices/${id}/prestage-test`, {})
-      .catch((/** @type {any} */ error) => ({ error: messageOf(error) }));
+      if (outcome?.error) {
+        report(previewLine, 'FAILED', `${label}: preview was refused: ${outcome.error}`);
+        continue;
+      }
 
-    if (switchedOff) {
-      await switchedOff.setCapabilityValue({ capabilityId: 'onoff', value: true })
-        .catch(() => { /* it was on when we found it; say so rather than fail here */ });
-    }
+      if (outcome?.writes === 0 && lampsOn.length === 0) {
+        report(previewLine, 'SKIPPED',
+          `${label}: none of its ${runtime?.targets?.length ?? 0} lamp(s) is on and none could be `
+          + 'switched on, so there was nothing to write to');
+        continue;
+      }
 
-    if (probe?.error) {
-      report('T22', 'FAILED', `${label}: the pre-stage probe was refused: ${probe.error}`);
-    } else if (probe?.deviceId === null) {
-      report('T22', 'SKIPPED', `${label}: no lamp was off and colour-capable to probe `
-        + `(${probe?.reason ?? 'no reason given'})`);
-    } else {
+      report(previewLine, outcome?.writes > 0 ? 'OK' : 'FAILED',
+        `${label}: "Try it now" wrote to ${outcome?.writes} lamp(s), skipped ${outcome?.skipped}`
+        + arrangedNote
+        + (outcome?.writes === 0
+          ? ` — but ${lampsOn.length} lamp(s) ARE on, so it should have written`
+          : ''));
+
+      // T28 / T27: what each lamp was written, and whether it took. A lamp that
+      // can do colour should have been given hue; one that cannot should have been
+      // given the point's warmth instead, so the shape of the day is the same on
+      // every lamp.
+      /** @type {any} */
+      const after = await app.get('/diagnostics');
+      const mine = /** @type {any[]} */ (after?.circadian ?? []).find(c => runtimeId(c) === id);
+      const writes = /** @type {any[]} */ (mine?.recentWrites ?? [])
+        .filter(w => Number(w?.at) >= since && w?.ok !== false && String(w?.capability) !== 'onoff');
+
+      if (writes.length === 0) {
+        // Only a contradiction if the preview claimed to have written something.
+        report(kind === 'curve' ? 'T28' : 'T21', outcome?.writes > 0 ? 'FAILED' : 'SKIPPED',
+          outcome?.writes > 0
+            ? `${label}: the preview reported ${outcome.writes} write(s) but the runtime `
+              + 'recorded none'
+            : `${label}: nothing was written, so there is nothing to read back`);
+        continue;
+      }
+
+      /** @type {string[]} */
+      const mismatches = [];
+      /** @type {Set<string>} */
+      const capabilities = new Set();
+      for (const write of writes) {
+        capabilities.add(String(write.capability));
+        // An enabler is judged by whether the value it enables landed, not by
+        // whether the lamp echoes the enabler back.
+        if (ENABLER_CAPABILITIES.has(String(write.capability))) continue;
+        const held = await capabilityValueSettling(
+          api, String(write.deviceId), String(write.capability), write.value,
+        );
+        const wanted = Number(write.value);
+        const actual = Number(held);
+        const matches = Number.isFinite(wanted) && Number.isFinite(actual)
+          ? Math.abs(wanted - actual) <= LAMP_TOLERANCE
+          : held === write.value;
+        if (!matches) {
+          mismatches.push(`${write.deviceId} ${write.capability}: wrote ${round(write.value)}, `
+            + `holds ${round(held)}`);
+        }
+      }
+
+      report(kind === 'curve' ? 'T28' : 'T21', mismatches.length === 0 ? 'OK' : 'FAILED',
+        `${label}: ${writes.length} write(s) across [${[...capabilities].join(', ')}], `
+        + (mismatches.length === 0
+          ? 'every lamp holds what it was written'
+          : `${mismatches.length} did not take — ${mismatches.join('; ')}`));
+
+      if (kind === 'curve' && capabilities.has('light_hue')) {
+        // The colour half of T27: a coloured point reached a colour-capable lamp.
+        report('T27', 'OK', `${label}: a colour was written (light_hue), and lamps without `
+          + 'colour got warmth instead');
+      }
+
+      // T22 — pre-staging, proved on this household's own lamps rather than
+      // assumed. Both answers are correct; which one this Homey gives is the
+      // result.
       /**
-       * Three outcomes, all of them results.
+       * Switch a lamp OFF so there is something to pre-stage.
        *
-       * The lamp stayed off; the lamp came on and was put back; or the
-       * integration declined the write outright — a Hue Bridge does the last for
-       * a lamp it considers "soft off". Only the first means pre-staging works,
-       * and none of the three is a fault in the app.
+       * `probePreStage` needs a target that is off and colour-capable, and by this
+       * point the pass has switched them all on — so this line skipped itself on
+       * every run, which is a check that never runs dressed as a check that
+       * passes. Turning one off is exactly the state the probe is about; it is put
+       * back afterwards whatever happens.
        */
-      const how = probe?.stayedOff
-        ? 'it stayed off, so pre-staging works on this Homey'
-        : probe?.reason
-          ? `the integration refused the write, so pre-staging is not available here `
-            + `— it said: ${probe.reason}`
-          : `it switched itself on, restored=${probe?.restored} — pre-staging is not `
-            + 'available here and the app disables it itself';
+      /** @type {any} */
+      const beforeProbe = await app.get('/diagnostics');
+      const probeRuntime = /** @type {any[]} */ (beforeProbe?.circadian ?? [])
+        .find(c => runtimeId(c) === id);
+      const anyOff = /** @type {any[]} */ (probeRuntime?.targets ?? [])
+        .some(t => t?.on !== true);
 
-      report('T22', 'OK', `${label}: probed "${probe?.name ?? probe?.deviceId}" — ${how}`);
+      if (!anyOff) {
+        const victim = /** @type {any[]} */ (probeRuntime?.targets ?? [])[0];
+        /** @type {any} */
+        const lamp = victim
+          ? await api.devices.getDevice({ id: String(victim.id) }).catch(() => null)
+          : null;
+        if (lamp) {
+          // Registered first and run by the `finally` below, so the lamp this
+          // pass switched OFF is switched back on whatever the probe does.
+          switchedOn = undo.push(`switch "${lamp?.name}" back on`, async () => {
+            await lamp.setCapabilityValue({ capabilityId: 'onoff', value: true });
+          });
+          const off = await lamp.setCapabilityValue({ capabilityId: 'onoff', value: false })
+            .then(() => true, () => false);
+          if (off) {
+            // The runtime subscribes to onoff; give it a moment to notice.
+            await sleep(4_000);
+          } else {
+            switchedOn.release();
+            switchedOn = null;
+          }
+        }
+      }
+
+      /** @type {any} */
+      const probe = await app.post(`/devices/${id}/prestage-test`, {})
+        .catch((/** @type {any} */ error) => ({ error: messageOf(error) }));
+
+      if (switchedOn) {
+        // It was on when we found it; say so rather than fail here if it will not go back.
+        const outcome = await switchedOn.run();
+        switchedOn = null;
+        if (outcome.ran && !outcome.ok) note(`${label}: could NOT switch the probed lamp back on — do it by hand`);
+      }
+
+      if (probe?.error) {
+        report('T22', 'FAILED', `${label}: the pre-stage probe was refused: ${probe.error}`);
+      } else if (probe?.deviceId === null) {
+        report('T22', 'SKIPPED', `${label}: no lamp was off and colour-capable to probe `
+          + `(${probe?.reason ?? 'no reason given'})`);
+      } else {
+        /**
+         * Three outcomes, all of them results.
+         *
+         * The lamp stayed off; the lamp came on and was put back; or the
+         * integration declined the write outright — a Hue Bridge does the last for
+         * a lamp it considers "soft off". Only the first means pre-staging works,
+         * and none of the three is a fault in the app.
+         */
+        const how = probe?.stayedOff
+          ? 'it stayed off, so pre-staging works on this Homey'
+          : probe?.reason
+            ? `the integration refused the write, so pre-staging is not available here `
+              + `— it said: ${probe.reason}`
+            : `it switched itself on, restored=${probe?.restored} — pre-staging is not `
+              + 'available here and the app disables it itself';
+
+        report('T22', 'OK', `${label}: probed "${probe?.name ?? probe?.deviceId}" — ${how}`);
+      }
+    } finally {
+      await switchedOn?.run();
+      // Whatever this iteration did, put back the lamp this pass switched on.
+      await arranged.restore();
     }
-    // Whatever this iteration did, put back the lamp this pass switched on.
-    await arranged.restore();
   }
 }
 
@@ -3031,6 +3463,12 @@ async function commandTeardown(api) {
       `the app reports ${orphans?.total} generated Flow(s), ${orphanedNow} orphaned `
       + `(${strays.length} were already orphaned before this teardown)`
       + (orphans?.refused ? ` (refused: ${orphans.refused})` : ''));
+
+    // T180, from the same read and nothing more: see `orphanRefusalVerdict`.
+    // The sweep is never POSTed here — only its preview is read.
+    const owners = (await lightkeeperDevices(api))
+      .filter(device => FLOW_OWNING_DRIVERS.includes(device.driver)).length;
+    report('T180', ...orphanRefusalVerdict({ flowOwningDevices: owners, preview: orphans }));
   } catch (error) {
     report('T52', 'SKIPPED', `could not read /orphans: ${messageOf(error)}`);
   }
@@ -3103,7 +3541,9 @@ async function commandPair(api, room) {
    * it would report SKIPPED all the way down and prove nothing.
    */
   const existing = await ourDevices(api);
-  const lights = await pickLights(session, room);
+  const overlaps = await lampOverlaps(api);
+  const lights = await pickLights(
+    session, room, await lampsDrivenByTheirOwnDevices(app, overlaps), overlaps);
   if (!lights) return;
 
   /** Build order matches the plan's: the key-holding types first. */
@@ -3336,10 +3776,15 @@ async function pairSessions(api) {
  * Warmth-capable lamps go to the two curve-driven types, which have nothing to
  * write without one.
  *
+ * A lamp no OTHER Lightkeeper device is driving comes first, for the reason
+ * `lampsDrivenByTheirOwnDevices` gives.
+ *
  * @param {any} session
  * @param {string} room only lamps in this room, or every room when empty
+ * @param {Set<string>} busy lamps the user's own Lightkeeper devices drive
+ * @param {Map<string, Set<string>>} overlaps which lamps share bulbs — see lampOverlaps
  */
-async function pickLights(session, room) {
+async function pickLights(session, room, busy, overlaps) {
   const driverId = session.idOf('circadian');
   if (!driverId) {
     report('-', 'FAILED', 'no circadian driver to ask for the light list');
@@ -3354,47 +3799,47 @@ async function pickLights(session, room) {
     const targets = await session.emit(open, 'listTargets');
     const rooms = /** @type {any[]} */ (targets?.rooms ?? []);
 
-    const wanted = room
-      ? rooms.filter(candidate => String(candidate?.zoneName ?? '') === room)
-      : rooms;
-
-    if (room && wanted.length === 0) {
-      report('-', 'FAILED', `no room called "${room}" has lights this app can drive. `
-        + `Rooms offered: ${rooms.map(r => r.zoneName).join(', ')}`);
+    const choice = chooseLamps(rooms, room, busy, overlaps);
+    if ('error' in choice) {
+      report('-', 'FAILED', choice.error);
       return null;
     }
+    const { all, warm, picks, chosen } = choice;
+    /** @param {any} l */
+    const free = (l) => !busy.has(String(l?.id ?? ''));
 
-    const all = wanted
-      .flatMap(candidate => /** @type {any[]} */ (candidate?.lights ?? []))
-      .filter(light => light?.available !== false);
-
-    if (all.length === 0) {
-      report('-', 'FAILED', room
-        ? `"${room}" has no available lights to point anything at`
-        : 'this Homey offers no available lights to point anything at');
-      return null;
-    }
     report('T6', 'OK', `the light picker offered ${rooms.length} room(s); using `
       + `${all.length} light(s) from ${room ? `"${room}"` : 'all of them'}`);
 
-    const warm = all.filter(l => (l?.capabilities ?? []).includes('light_temperature'));
-    const rest = all.filter(l => !warm.includes(l));
-    // Warmth-capable first, so `circadian` and `curve` get one if any exist.
-    const ordered = [...warm, ...rest];
-
-    /** @param {number} index */
-    const at = (index) => ordered[Math.min(index, ordered.length - 1)];
-    const chosen = {
-      circadian: at(0), curve: at(1), schedule: at(2), controller: at(3),
-      // `at()` clamps, so a reference room with fewer than five lamps hands the
-      // same one to more than one device type. That is fine for this pass and is
-      // the existing behaviour for four; a Room-sensing Light writing `dim` to a
-      // lamp a Colour Curve Light is writing `light_temperature` to is two axes on one
-      // lamp, not a conflict.
-      daylight: at(4),
-    };
+    if (picks.length < 5) {
+      report('-', 'INFO', `${room ? `"${room}"` : 'this Homey'} has ${picks.length} lamp(s) that `
+        + 'do not share bulbs with each other, so some device types are sharing one. Homey light '
+        + 'GROUPS are why a room can look bigger than this — a group and its members are one set '
+        + 'of bulbs behind several device ids');
+    }
     note('lamps chosen: ' + Object.entries(chosen)
-      .map(([kind, light]) => `${kind}=${light.name}`).join(', '));
+      .map(([kind, light]) => `${kind}=${light.name}${free(light) ? '' : ' (shared)'}`).join(', '));
+
+    /**
+     * Name the picks that are SHARED, per device type.
+     *
+     * The ordering above takes the free lamps first, so this fires only when
+     * there were not enough to go round — and then it matters which device type
+     * drew the short straw, because T24 and T29 are the two lines a shared lamp
+     * makes unanswerable and they belong to the circadian light and the Colour
+     * Curve Light specifically. "All of them are shared" was the first version
+     * of this line and said nothing on a Homey with one free lamp, which is the
+     * case it exists for.
+     */
+    const shared = Object.entries(chosen).filter(([, light]) => !free(light));
+    if (shared.length > 0) {
+      report('-', 'INFO', `${shared.length} of 5 lamp(s) are already driven by a Lightkeeper `
+        + `device you paired: ${shared.map(([kind, light]) => `${kind}=${light.name}`).join(', ')}`
+        + '. Another device writing to the same lamp is why a read-back can disagree with what '
+        + 'this pass wrote — for circadian and curve that is T24 and T29, and a failure there '
+        + 'is a contest rather than a defect. Check the hue or warmth it came back with: if it '
+        + 'is not a value this pass ever sent, another device sent it.');
+    }
 
     if (warm.length === 0) {
       report('-', 'INFO', 'no lamp on this Homey reports light_temperature — the circadian '
@@ -3407,6 +3852,88 @@ async function pickLights(session, room) {
   } finally {
     if (open) await session.close(open);
   }
+}
+
+/**
+ * The lamp each device type gets — the decision half of `pickLights`, pure.
+ *
+ * Warmth-capable lamps first, so `circadian` and `curve` get one if any exist —
+ * and within each half, a lamp nobody else is driving before one that is.
+ *
+ * Then five lamps that do not share bulbs with each other, in that priority,
+ * falling back to sharing only when the room runs out. The old version was
+ * `ordered[Math.min(index, length - 1)]`, which is index-based and therefore
+ * blind to groups: in the Garage it handed "Cieling Lamp" to the circadian light
+ * and "Ceiling 1 | Garage" to the Colour Curve Light, which are the same two
+ * bulbs. Two of this pass's own devices then wrote different colours to one lamp
+ * for the whole run, and T24 and T29 reported the app as unable to hold a value
+ * it was holding perfectly. See `lampOverlaps`.
+ *
+ * Clamping to the last lamp is kept as the fallback, because a room with fewer
+ * than five distinct lamps must still produce a full pass — `pickLights` says
+ * so instead of doing it silently.
+ *
+ * @param {any[]} rooms the light picker's `rooms`
+ * @param {string} room only lamps in this room, or every room when empty
+ * @param {Set<string>} busy lamps the user's own Lightkeeper devices drive
+ * @param {Map<string, Set<string>>} overlaps which lamps share bulbs
+ * @returns {{ error: string } | { all: any[], warm: any[], picks: any[], chosen: Record<'circadian'|'curve'|'schedule'|'controller'|'daylight', any> }}
+ */
+function chooseLamps(rooms, room, busy, overlaps) {
+  const wanted = room
+    ? rooms.filter(candidate => String(candidate?.zoneName ?? '') === room)
+    : rooms;
+
+  if (room && wanted.length === 0) {
+    return { error: `no room called "${room}" has lights this app can drive. `
+      + `Rooms offered: ${rooms.map(r => r.zoneName).join(', ')}` };
+  }
+
+  const all = wanted
+    .flatMap(candidate => /** @type {any[]} */ (candidate?.lights ?? []))
+    .filter(light => light?.available !== false);
+
+  if (all.length === 0) {
+    return { error: room
+      ? `"${room}" has no available lights to point anything at`
+      : 'this Homey offers no available lights to point anything at' };
+  }
+
+  const warm = all.filter(l => (l?.capabilities ?? []).includes('light_temperature'));
+  const rest = all.filter(l => !warm.includes(l));
+  /** @param {any} l */
+  const free = (l) => !busy.has(String(l?.id ?? ''));
+  const ordered = [
+    ...warm.filter(free), ...warm.filter(l => !free(l)),
+    ...rest.filter(free), ...rest.filter(l => !free(l)),
+  ];
+
+  /** @param {any} light */
+  const sharesWith = (light) => overlaps.get(String(light?.id ?? '')) ?? new Set([String(light?.id ?? '')]);
+  /** @type {Set<string>} */
+  const taken = new Set();
+  /** @type {any[]} */
+  const picks = [];
+  for (const light of ordered) {
+    if (picks.length === 5) break;
+    const shared = sharesWith(light);
+    if ([...shared].some(id => taken.has(id))) continue;
+    for (const id of shared) taken.add(id);
+    picks.push(light);
+  }
+  /** @param {number} index */
+  const at = (index) => picks[Math.min(index, picks.length - 1)] ?? ordered[ordered.length - 1];
+  return {
+    all, warm, picks,
+    chosen: {
+      circadian: at(0), curve: at(1), schedule: at(2), controller: at(3),
+      // `at()` clamps, so a reference room with fewer than five DISTINCT lamps
+      // hands the same one to more than one device type. That is fine for this
+      // pass; a Room-sensing Light writing `dim` to a lamp a Colour Curve Light
+      // is writing `light_temperature` to is two axes on one lamp, not a conflict.
+      daylight: at(4),
+    },
+  };
 }
 
 /** @param {any} light */
@@ -3738,7 +4265,10 @@ async function buildDaylight(session, open, lights) {
   const saved = /** @type {any} */ (await session.emit(open, 'setDaylight', {
     response: { ...response, sensor: null },
   }));
-  report('T79', saved?.response?.brightLux > saved?.response?.darkLux ? 'OK' : 'FAILED',
+  // T77, not T79: T79 is the `flows` line that a Room-sensing Light owns no Flow,
+  // and this used to share its number — so a `T79 OK` in a report could mean
+  // either thing.
+  report('T77', saved?.response?.brightLux > saved?.response?.darkLux ? 'OK' : 'FAILED',
     `response accepted: dark at ${saved?.response?.darkLux} lx, bright at `
     + `${saved?.response?.brightLux} lx, ends ${Math.round((saved?.response?.dark ?? 0) * 100)}% `
     + `and ${Math.round((saved?.response?.bright ?? 0) * 100)}%`
@@ -4062,10 +4592,1726 @@ async function commandPairSpike(api) {
 
 // --------------------------------------------------------------------- main
 
-const READ_ONLY = ['spike', 'memory', 'flows', 'redaction'];
+// ------------------------------------------------------------------ control
+
+/**
+ * "How Lightkeeper controls your lights", and what the 23 September 2026 handoff
+ * changed around it — T166-T172, as far as a script can take them.
+ *
+ * Six parts, in the order they depend on each other:
+ *
+ *  1. T166 every review screen of every device this pass built, read through a
+ *     repair session: the three engine types send `control` with the modes they
+ *     may offer, the other two send none, and none sends the closing sentence
+ *     it replaced. A Room-sensing Light must REFUSE "before" in the driver, not
+ *     only hide it on the screen — a pair session is scriptable (platform §14),
+ *     which is exactly what this is.
+ *  2. T169 the household's OWN devices that stored `preStage: true` before the
+ *     per-lamp test existed: each must now pre-stage none of its lamps. Read
+ *     only.
+ *  3. T167 "Test my lights" over the configured `room`'s lamps, through a
+ *     throwaway pair session that is never saved — or, with `--house`, room by
+ *     room across the whole house and then once with every lamp at once. Every lamp is snapshotted first and read back afterwards, and one
+ *     the test did not put back is put back HERE and reported as a failure: the
+ *     screen promises "each light blinks once, then goes back to how it was",
+ *     and that promise is the line.
+ *  4. T168 the stored list reaching the runtime: on this pass's own Colour Curve
+ *     Light, choose "before", test, save, and read `preStageLights` back out of
+ *     /diagnostics. Colour on arrival itself still needs eyes.
+ *  5. T170 "Don't change lights automatically" on this pass's own circadian
+ *     light: saved, ticked, and the pass must write nothing.
+ *  6. T171 / T172 what a Room-sensing Light's step 3 says about every sensor in
+ *     the house, and the palette a curve screen is sent.
+ *
+ * The test writes to lamps this pass did not build, which is what the test on
+ * the review screen itself does to a household's lamps, so it is the honest way
+ * to measure it — and it is why every lamp is read back and, if need be,
+ * restored by hand.
+ *
+ * **It stays in `room` unless `--house` is typed.** It used to blink every
+ * colour-capable lamp in the house, switching the ones that were ON off to test
+ * them, while the plan told the reader that `room` was the containment. A
+ * command that reaches a child's bedroom has to be asked to by name. With no
+ * `room` set and no `--house`, the house test is SKIPPED with the reason rather
+ * than guessing which room was meant.
+ *
+ * @param {any} api
+ * @param {{ room: string, house: boolean }} scope
+ */
+async function commandControl(api, scope) {
+  const session = await pairSessions(api);
+  if (!session) return;
+
+  /** @type {any} */
+  let app;
+  try {
+    app = await appApi(api);
+  } catch (error) {
+    report('T166', 'SKIPPED', `the app Web API is out of reach: ${messageOf(error)}`);
+    return;
+  }
+
+  await controlReviews(api, session);
+  await controlLegacyPreStage(api, app);
+  await controlHouseTest(api, app, session, scope);
+  await controlStoredList(api, app, session);
+  await controlPublishOnly(api, app, session);
+  await controlSensorsAndPalette(session, scope);
+}
+
+/** The modes each driver's review must offer, or null for none at all. */
+const CONTROL_MODES = /** @type {Record<string, string[] | null>} */ ({
+  circadian: ['after', 'before', 'none'],
+  curve: ['after', 'before', 'none'],
+  daylight: ['after', 'none'],
+  controller: null,
+  schedule: null,
+});
+
+/** @param {any} api @param {any} session */
+async function controlReviews(api, session) {
+  const ours = await ourDevices(api);
+  if (ours.length === 0) {
+    report('T166', 'SKIPPED', `no device built by this pass — ${NOTHING_OF_OURS}`);
+    return;
+  }
+
+  for (const device of ours) {
+    const driverId = session.idOf(device.driver);
+    if (!driverId || !(device.driver in CONTROL_MODES)) continue;
+    const want = CONTROL_MODES[device.driver];
+    const label = `${device.driver} "${device.name}"`;
+
+    /** @type {any} */
+    let open = null;
+    try {
+      open = await session.open(driverId, device.homeyId);
+      /** @type {any} */
+      const review = await session.emit(open, 'getReview');
+      const got = review?.control?.modes ?? null;
+      const sentence = review != null && Object.prototype.hasOwnProperty.call(review, 'promise');
+      const modesRight = want === null ? got === null : JSON.stringify(got) === JSON.stringify(want);
+      report('T166', modesRight && !sentence ? 'OK' : 'FAILED',
+        `${label}: ${got ? `offers ${got.join(' / ')}, "${review.control.selected}" chosen, `
+          + `${review.control.lightCount} light(s) to test` : 'no control choice'}`
+        + (sentence ? ' — and it still sends the closing sentence' : '')
+        + (modesRight ? '' : ` — expected ${want ? want.join(' / ') : 'none'}`));
+
+      if (device.driver === 'daylight') {
+        const refused = await session.emit(open, 'setControl', { mode: 'before' })
+          .then(() => false, () => true);
+        report('T166', refused ? 'OK' : 'FAILED', `${label}: "set lights before they turn on" is `
+          + (refused ? 'refused by the driver itself, not only left off the screen'
+            : 'ACCEPTED over the API — a brightness-only device would pre-stage nothing and claim to'));
+      }
+    } catch (error) {
+      report('T166', 'FAILED', `${label}: ${messageOf(error)}`);
+    } finally {
+      // Never saved: this reads the screen and changes nothing.
+      if (open) await session.close(open);
+    }
+  }
+}
+
+/** @param {any} api @param {any} app */
+async function controlLegacyPreStage(api, app) {
+  /** @type {any} */
+  const diagnostics = await app.get('/diagnostics');
+  const ours = await ourDataIds(api);
+  const legacy = /** @type {any[]} */ (diagnostics?.circadian ?? [])
+    .filter(runtime => !ours.has(runtimeId(runtime)) && runtime?.preStage === true);
+
+  if (legacy.length === 0) {
+    report('T169', 'SKIPPED', 'none of your own curve-driven devices has pre-staging chosen');
+    return;
+  }
+  for (const runtime of legacy) {
+    const listed = /** @type {string[]} */ (runtime?.preStageLights ?? []);
+    const lamps = (runtime?.targetIds ?? []).length;
+    report('T169', listed.length === 0 ? 'OK' : 'FAILED',
+      `"${runtime?.name}" chose pre-staging before the per-lamp test existed, and now pre-stages `
+      + (listed.length === 0 ? `none of its ${lamps} lamp(s) until it is tested from Repair`
+        : `${listed.length} of its ${lamps} lamp(s) that no test here ever proved`));
+  }
+}
+
+/**
+ * The capabilities a lamp is snapshotted on, and the tolerance it is read back
+ * within. 0.03 is the app's own override tolerance (target-state-cache.ts): a
+ * lamp that comes back within it is, to the app, the lamp it was.
+ */
+const SNAPSHOT_CAPS = ['onoff', 'dim', 'light_temperature', 'light_hue', 'light_saturation', 'light_mode'];
+const RESTORE_TOLERANCE = 0.03;
+
+/** @param {any} api @param {string} id */
+async function snapshotLamp(api, id) {
+  /** @type {any} */
+  const device = await api.devices.getDevice({ id, $cache: false, $updateCache: false });
+  /** @type {Record<string, unknown>} */
+  const values = {};
+  for (const capability of SNAPSHOT_CAPS) {
+    const value = device?.capabilitiesObj?.[capability]?.value;
+    if (value !== undefined && value !== null) values[capability] = value;
+  }
+  return { id, name: String(device?.name ?? id), values, device };
+}
+
+/**
+ * What differs between a snapshot and now, in the terms a person would check.
+ *
+ * A lamp that was OFF is compared on `onoff` alone: the test gives it a colour
+ * while it is off and does not take it away again, because an off lamp's colour
+ * cannot be seen and writing it back would be a second write to a lamp whose
+ * whole question is what writes do to it. Documented in `restoreLamp()`.
+ *
+ * @param {{ values: Record<string, unknown> }} before
+ * @param {{ values: Record<string, unknown> }} after
+ */
+function lampDrift(before, after) {
+  /** @type {string[]} */
+  const drift = [];
+  if (before.values.onoff !== after.values.onoff) {
+    drift.push(`onoff ${before.values.onoff} → ${after.values.onoff}`);
+  }
+  if (before.values.onoff !== true) return drift;
+  for (const capability of SNAPSHOT_CAPS.slice(1)) {
+    const was = before.values[capability];
+    const now = after.values[capability];
+    if (typeof was !== 'number' || typeof now !== 'number') continue;
+    // Hue is a wheel: 0.99 and 0.01 are neighbours.
+    const delta = capability === 'light_hue'
+      ? Math.min(Math.abs(was - now), 1 - Math.abs(was - now))
+      : Math.abs(was - now);
+    if (delta > RESTORE_TOLERANCE + 1e-9) drift.push(`${capability} ${round(was)} → ${round(now)}`);
+  }
+  return drift;
+}
+
+/**
+ * Put a lamp back by hand. Onoff first for a lamp that was on, the axes after
+ * it — the same order the app's own restore uses, for the same reason: a value
+ * written to an off lamp is the one thing not to trust.
+ *
+ * @param {any} snapshot
+ */
+async function putLampBack(snapshot) {
+  const { device, values } = snapshot;
+  const write = (/** @type {string} */ capabilityId, /** @type {unknown} */ value) =>
+    device.setCapabilityValue({ capabilityId, value });
+  if (values.onoff === true) {
+    await write('onoff', true);
+    for (const [capability, value] of restoreSequence(values)) await write(capability, value);
+  } else if (values.onoff === false) {
+    await write('onoff', false);
+  }
+}
+
+/**
+ * The axis writes that put a lit lamp back, in order — pure, so the order can be
+ * tested.
+ *
+ * Only the axis of the MODE the lamp was in. A lamp in temperature mode still
+ * reports a stale hue and saturation, and writing those back last — which this
+ * used to do, unconditionally — left a lamp that had been warm white in colour
+ * mode, on a hue nobody chose. The mode goes first because a gating lamp ignores
+ * the other axis's value (platform §6), and `dim` goes last, as the app's own
+ * restore does it: on some bridges a low `dim` makes the bridge refuse what
+ * follows it.
+ *
+ * @param {Record<string, unknown>} values a snapshot's values
+ * @returns {Array<[string, unknown]>}
+ */
+function restoreSequence(values) {
+  /** @type {Array<[string, unknown]>} */
+  const writes = [];
+  const mode = values.light_mode;
+  const has = (/** @type {string} */ capability) => capability in values;
+  if (mode === 'temperature' || mode === 'color') writes.push(['light_mode', mode]);
+  const temperature = mode !== 'color' && has('light_temperature');
+  const colour = mode !== 'temperature';
+  if (temperature) writes.push(['light_temperature', values.light_temperature]);
+  if (colour && has('light_hue')) writes.push(['light_hue', values.light_hue]);
+  if (colour && has('light_saturation')) writes.push(['light_saturation', values.light_saturation]);
+  if (has('dim')) writes.push(['dim', values.dim]);
+  return writes;
+}
+
+/**
+ * Every lamp the circadian picker offers, by room — lights only, and only ones
+ * that take colour. With `only` set, that room alone.
+ *
+ * @param {any} session
+ * @param {string} [only] a zone name, or every room when empty
+ */
+async function testableLampsByRoom(session, only = '') {
+  const driverId = session.idOf('circadian');
+  /** @type {Map<string, any[]>} */
+  const byRoom = new Map();
+  if (!driverId) return byRoom;
+  /** @type {any} */
+  let open = null;
+  try {
+    open = await session.open(driverId);
+    /** @type {any} */
+    const targets = await session.emit(open, 'listTargets');
+    for (const room of /** @type {any[]} */ (targets?.rooms ?? [])) {
+      const lamps = /** @type {any[]} */ (room?.lights ?? []).filter(light =>
+        light?.isLight !== false
+        && light?.available !== false
+        // Only a lamp the test has an axis for. A socket, a fan or a NAS is on
+        // the picker because it has `onoff`, and must never be switched off by
+        // a test about colour.
+        && ((light?.capabilities ?? []).includes('light_temperature')
+          || (light?.capabilities ?? []).includes('light_hue')));
+      if (only && String(room?.zoneName ?? '') !== only) continue;
+      if (lamps.length > 0) byRoom.set(String(room?.zoneName || '(no room)'), lamps);
+    }
+  } finally {
+    if (open) await session.close(open);
+  }
+  return byRoom;
+}
+
+/**
+ * Which running Lightkeeper devices drive each lamp, from one /diagnostics read,
+ * and every override they currently hold — keyed `runtime name → lamp id → at`.
+ *
+ * @param {any} app
+ */
+async function driversAndOverrides(app) {
+  /** @type {any} */
+  const diagnostics = await app.get('/diagnostics');
+  /** @type {Map<string, string[]>} */
+  const drivenBy = new Map();
+  /** @type {Array<{ device: string, lamp: string, at: number, capability: string }>} */
+  const overrides = [];
+  for (const runtime of [
+    .../** @type {any[]} */ (diagnostics?.circadian ?? []),
+    .../** @type {any[]} */ (diagnostics?.daylight ?? []),
+  ]) {
+    const name = String(runtime?.name ?? runtimeId(runtime));
+    if (runtime?.enabled === false) continue;
+    for (const id of /** @type {string[]} */ (runtime?.targetIds ?? [])) {
+      drivenBy.set(id, [...(drivenBy.get(id) ?? []), name]);
+    }
+    for (const target of /** @type {any[]} */ (runtime?.targets ?? [])) {
+      if (target?.overridden && target?.override?.at) {
+        overrides.push({
+          device: name, lamp: String(target.id), at: Number(target.override.at),
+          capability: String(target.override.capability ?? ''),
+        });
+      }
+    }
+  }
+  return { drivenBy, overrides };
+}
+
+/**
+ * One "Test my lights" through a curve pair session over these lamps, with the
+ * read-back and the repair that make it safe to run on a house.
+ *
+ * Two lines come out of it. T167 is the test's own promise: every lamp answers,
+ * in time, and is back as it was — except where another running Lightkeeper
+ * device drives it, because switching a lamp off and on is exactly when such a
+ * device applies its own colour, and that is the device working. T173 is what
+ * the test must NOT do to those devices: make any of them file a lamp as
+ * overridden, which is what the first run of this line found it doing.
+ *
+ * @param {any} api @param {any} app @param {any} session @param {string} label @param {any[]} lamps
+ * @returns {Promise<{ passed: string[], fallback: string[], ms: number } | null>}
+ */
+async function testLamps(api, app, session, label, lamps) {
+  const driverId = session.idOf('curve');
+  if (!driverId) {
+    report('T167', 'FAILED', 'no curve driver to run the test through');
+    return null;
+  }
+  const ids = lamps.map(lamp => String(lamp.id));
+  const before = await Promise.all(ids.map(id => snapshotLamp(api, id)));
+  const lit = before.filter(lamp => lamp.values.onoff === true).length;
+  // Every lamp, registered before the test touches any of them. Released below
+  // once each has been read back — put back by hand where the test did not, or
+  // left to the device that drives it. A throw or Ctrl-C before then puts all of
+  // them back as they were found.
+  const lampsBack = before.map(snapshot =>
+    undo.push(`put "${snapshot.name}" back after "Test my lights"`, () => putLampBack(snapshot)));
+  const { drivenBy } = await driversAndOverrides(app);
+  const testStartedAt = Date.now();
+
+  /** @type {any} */
+  let open = null;
+  /** @type {any} */
+  let result = null;
+  let ms = 0;
+  try {
+    open = await session.open(driverId);
+    await session.emit(open, 'selectTargets', { kind: 'devices', deviceIds: ids });
+    // The curve screen's own default day, which is what a new device tests with.
+    await session.emit(open, 'getCurve');
+    await session.emit(open, 'setControl', { mode: 'before' });
+    const started = Date.now();
+    result = await session.emit(open, 'testPreStage', '');
+    ms = Date.now() - started;
+  } catch (error) {
+    report('T167', 'FAILED', `${label}: the test did not answer: ${messageOf(error)}`);
+  } finally {
+    // NEVER saved: this is a question asked of the lamps, not a device.
+    if (open) await session.close(open);
+  }
+
+  // Give a bridge its moment to report what the test's restore did.
+  await sleep(4000);
+  const after = await Promise.all(ids.map(id => snapshotLamp(api, id)));
+
+  /** @type {string[]} */
+  const unrestored = [];
+  for (let i = 0; i < before.length; i += 1) {
+    const drift = lampDrift(before[i], after[i]);
+    if (drift.length === 0) continue;
+    const owners = drivenBy.get(before[i].id) ?? [];
+    if (owners.length > 0 && before[i].values.onoff === after[i].values.onoff) {
+      // Same power state, a different colour: the lamp came back on and a device
+      // that drives it applied its own. Not put back, on purpose — writing the
+      // old colour over it would be this pass overriding that device.
+      note(`${label}: "${before[i].name}" came back on and was taken by ${owners.join(', ')} `
+        + `(${drift.join(', ')}) — that device doing its job at switch-on, left as it is`);
+      continue;
+    }
+    unrestored.push(`${before[i].name} (${drift.join(', ')})`);
+    const outcome = await lampsBack[i]?.run();
+    if (outcome?.ran && !outcome.ok) {
+      console.log(`          could NOT put "${before[i].name}" back by hand: ${messageOf(outcome.error)} `
+        + '— set it yourself');
+    }
+  }
+  // Read back, and put back where it needed it: nothing left to undo.
+  for (const handle of lampsBack) handle.release();
+
+  // T173: did the test make any running device think a person had taken a lamp?
+  const tested = new Set(ids);
+  const raised = (await driversAndOverrides(app)).overrides
+    .filter(entry => tested.has(entry.lamp) && entry.at >= testStartedAt);
+  const lampName = (/** @type {string} */ id) => before.find(lamp => lamp.id === id)?.name ?? id;
+  report('T173', raised.length === 0 ? 'OK' : 'FAILED', raised.length === 0
+    ? `${label}: no Lightkeeper device read the test as a person on any of its lamps`
+    : `${label}: the test left ${raised.length} lamp(s) "overridden" on devices that drive them: `
+      + raised.map(entry => `${entry.device} → ${lampName(entry.lamp)} (${entry.capability})`).join('; '));
+
+  if (!result) return null;
+  const answered = /** @type {any[]} */ (result?.lights ?? []);
+  const passed = answered.filter(lamp => lamp?.ok === true).map(lamp => String(lamp.name));
+  const fallback = answered.filter(lamp => lamp?.ok !== true).map(lamp => String(lamp.name));
+
+  // The screen gives up at 20 s (views/shared/emit.js). 18 is the line, because
+  // a test that answers in 19.9 s here is a timeout on a slower phone.
+  const inTime = ms < 18_000;
+  const everyone = answered.length === ids.length;
+  const clean = unrestored.length === 0;
+  report('T167', inTime && everyone && clean ? 'OK' : 'FAILED',
+    `${label}: ${ids.length} lamp(s), ${lit} of them on, tested in ${(ms / 1000).toFixed(1)} s — `
+    + `${passed.length} stay off when set, ${fallback.length} fall back`
+    + (everyone ? '' : ` — but only ${answered.length} answered`)
+    + (inTime ? '' : ' — SLOWER than the 18 s a screen can wait')
+    + (clean ? ', every lamp back as it was'
+      : ` — NOT put back by the test, restored by this pass: ${unrestored.join('; ')}`));
+  return { passed, fallback, ms };
+}
+
+/**
+ * Where "Test my lights" may run — pure, so the refusal is tested.
+ *
+ * `--house` is the only way to the whole house, and a `room` keeps it there.
+ * Neither set is a refusal rather than a default, because the old default WAS
+ * the whole house.
+ *
+ * @param {{ room: string, house: boolean }} scope
+ * @returns {{ skip: string } | { room: string }}
+ */
+function testScope(scope) {
+  if (scope.house) return { room: '' };
+  if (scope.room) return { room: scope.room };
+  return { skip: 'no room is set, and "Test my lights" switches lamps that are on OFF to test '
+    + 'them. Set HOMEY_TEST_ROOM (or "room" in scripts/hardware-env.json), or type --house to '
+    + 'test every lamp in the house' };
+}
+
+/**
+ * @param {any} api @param {any} app @param {any} session
+ * @param {{ room: string, house: boolean }} scope
+ */
+async function controlHouseTest(api, app, session, scope) {
+  const decision = testScope(scope);
+  if ('skip' in decision) {
+    report('T167', 'SKIPPED', decision.skip);
+    report('T173', 'SKIPPED', decision.skip);
+    return;
+  }
+
+  const byRoom = await testableLampsByRoom(session, decision.room);
+  if (byRoom.size === 0) {
+    const where = decision.room ? `"${decision.room}"` : 'this Homey';
+    report('T167', 'SKIPPED', `no lamp in ${where} takes a colour or a colour temperature`);
+    return;
+  }
+
+  /** @type {Array<{ room: string, passed: string[], fallback: string[] }>} */
+  const matrix = [];
+  for (const [room, lamps] of byRoom) {
+    const outcome = await testLamps(api, app, session, `room "${room}"`, lamps);
+    if (outcome) matrix.push({ room, passed: outcome.passed, fallback: outcome.fallback });
+  }
+
+  const everything = [...byRoom.values()].flat();
+  if (scope.house) {
+    // And once with the whole house at once: the case the parallel test exists
+    // for, and the one a household with every light in one device would hit.
+    await testLamps(api, app, session, `the whole house at once`, everything);
+  } else if (everything.length < 6) {
+    // T167's second half asks for six or more lamps in one test, which is the
+    // case the parallel test exists for. Said, rather than passed silently.
+    report('-', 'INFO', `"${decision.room}" has ${everything.length} testable lamp(s), so T167's `
+      + '"six or more at once" half was not exercised — run `control --yes --house` for it, '
+      + 'or test six lamps from a review screen by hand');
+  }
+
+  console.log('          per-lamp answers (the evidence T167 asks you to report):');
+  for (const row of matrix) {
+    console.log(`            ${row.room}: stays off — ${row.passed.join(', ') || 'none'}; `
+      + `falls back — ${row.fallback.join(', ') || 'none'}`);
+  }
+}
+
+/** Open a repair session on one of this pass's devices, run `steps`, and save. */
+/** @param {any} session @param {any} device @param {(open: any) => Promise<void>} steps */
+async function repairAndSave(session, device, steps) {
+  const driverId = session.idOf(device.driver);
+  /** @type {any} */
+  let open = null;
+  try {
+    open = await session.open(driverId, device.homeyId);
+    await steps(open);
+    /** @type {any} */
+    const saved = await session.emit(open, 'save', '');
+    if (!saved?.updated) throw new Error(`repair save answered ${JSON.stringify(saved)}`);
+  } finally {
+    if (open) await session.close(open);
+  }
+}
+
+/** @param {any} api @param {any} app @param {any} session */
+async function controlStoredList(api, app, session) {
+  const curve = (await ourDevices(api)).find(device => device.driver === 'curve');
+  if (!curve) {
+    report('T168', 'SKIPPED', `no Colour Curve Light built by this pass — ${NOTHING_OF_OURS}`);
+    return;
+  }
+
+  /** @type {any} */
+  let tested = null;
+  try {
+    await repairAndSave(session, curve, async (open) => {
+      await session.emit(open, 'setControl', { mode: 'before' });
+      tested = await session.emit(open, 'testPreStage', '');
+    });
+  } catch (error) {
+    report('T168', 'FAILED', `"${curve.name}": ${messageOf(error)}`);
+    return;
+  }
+
+  const runtime = await waitFor(async () => {
+    /** @type {any} */
+    const diagnostics = await app.get('/diagnostics');
+    const found = /** @type {any[]} */ (diagnostics?.circadian ?? [])
+      .find(entry => runtimeId(entry) === curve.dataId);
+    return found?.preStage === true ? found : null;
+  }, { timeoutMs: 30_000, everyMs: 2_000, what: 'the repaired curve to come back' }).catch(() => null);
+
+  const passedNames = /** @type {any[]} */ (tested?.lights ?? [])
+    .filter(lamp => lamp?.ok === true).map(lamp => String(lamp.name));
+  const listed = /** @type {string[]} */ (runtime?.preStageLights ?? []);
+  // By name via the runtime's own id↔name columns, so the line reads as lamps.
+  const names = listed.map(id => {
+    const index = (runtime?.targetIds ?? []).indexOf(id);
+    return index >= 0 ? String(runtime.targetNames[index]) : id;
+  });
+  const agree = runtime && names.length === passedNames.length
+    && names.every(name => passedNames.includes(name));
+  report('T168', agree ? 'OK' : 'FAILED',
+    `"${curve.name}": the test passed ${passedNames.join(', ') || 'no lamp'}, and the running `
+    + `device pre-stages ${names.join(', ') || 'no lamp'}`
+    + (runtime ? '' : ' — the device did not come back with pre-staging chosen'));
+}
+
+/** @param {any} api @param {any} app @param {any} session */
+async function controlPublishOnly(api, app, session) {
+  const circadian = (await ourDevices(api)).find(device => device.driver === 'circadian');
+  if (!circadian) {
+    report('T170', 'SKIPPED', `no circadian light built by this pass — ${NOTHING_OF_OURS}`);
+    return;
+  }
+
+  // Back to the default whatever happens, so `teardown` deletes a device in its
+  // normal shape — registered before the change, run at the end.
+  const modeBack = undo.push(`set "${circadian.name}" back to changing lights after they turn on`,
+    () => repairAndSave(session, circadian, async (open) => {
+      await session.emit(open, 'setControl', { mode: 'after' });
+    }));
+  try {
+    await repairAndSave(session, circadian, async (open) => {
+      await session.emit(open, 'setControl', { mode: 'none' });
+    });
+  } catch (error) {
+    report('T170', 'FAILED', `"${circadian.name}": ${messageOf(error)}`);
+    await modeBack.run();
+    return;
+  }
+
+  // A forced pass, so "wrote nothing" cannot be a curve that simply had not
+  // moved far enough to be worth a write.
+  await waitFor(async () => {
+    /** @type {any} */
+    const diagnostics = await app.get('/diagnostics');
+    const found = /** @type {any[]} */ (diagnostics?.circadian ?? [])
+      .find(entry => runtimeId(entry) === circadian.dataId);
+    return found?.writesLights === false ? found : null;
+  }, { timeoutMs: 30_000, everyMs: 2_000, what: 'the repaired circadian light to come back' })
+    .catch(() => null);
+  await app.post('/curves/tick', {});
+  await sleep(3000);
+
+  /** @type {any} */
+  const diagnostics = await app.get('/diagnostics');
+  const runtime = /** @type {any[]} */ (diagnostics?.circadian ?? [])
+    .find(entry => runtimeId(entry) === circadian.dataId);
+  const lastAction = runtime?.lastAction;
+  const wrote = typeof lastAction?.writes === 'number' ? lastAction.writes : null;
+  const quiet = runtime?.writesLights === false && (wrote === null || wrote === 0);
+  report('T170', quiet ? 'OK' : 'FAILED',
+    `"${circadian.name}": publish-only after the review's third answer — `
+    + `writesLights ${runtime?.writesLights}, last pass wrote ${wrote ?? 'nothing'}`
+    + `${runtime?.state ? `, state ${runtime.state}` : ''}`);
+
+  // Put it back to the default, so `teardown` deletes a device in its normal shape.
+  const back = await modeBack.run();
+  if (back.ran && !back.ok) note(`"${circadian.name}" could not be set back to "after": ${messageOf(back.error)}`);
+}
+
+/**
+ * Read-only, both halves: the throwaway sessions below select a lamp and read
+ * screens, and write to nothing. The lamp comes from `room` where one is set.
+ *
+ * @param {any} session
+ * @param {{ room: string, house: boolean }} scope
+ */
+async function controlSensorsAndPalette(session, scope) {
+  const byRoom = await testableLampsByRoom(session, scope.room);
+  const anyLamp = [...byRoom.values()].flat()[0];
+  if (!anyLamp) {
+    report('T171', 'SKIPPED', 'no lamp to point a throwaway session at');
+    return;
+  }
+  const target = { kind: 'devices', deviceIds: [String(anyLamp.id)] };
+
+  // ---- T172: the palette a curve screen is sent
+  /** @type {any} */
+  let open = null;
+  try {
+    open = await session.open(session.idOf('curve'));
+    await session.emit(open, 'selectTargets', target);
+    /** @type {any} */
+    const curve = await session.emit(open, 'getCurve');
+    const palette = /** @type {any[]} */ (curve?.palette ?? []);
+    const layout = curve?.layout ?? {};
+    const drawn = [...(layout.featured ?? []), ...(layout.more ?? [])];
+    const byId = new Map(palette.map(colour => [colour.id, colour]));
+    const missing = drawn.filter(id => !byId.get(id)?.swatch);
+    const shapeRight = (layout.featured ?? []).length === 10 && (layout.more ?? []).length === 25;
+    report('T172', shapeRight && missing.length === 0 ? 'OK' : 'FAILED',
+      `the curve screen is sent ${palette.length} colours, ${layout.featured?.length} by default and `
+      + `${layout.more?.length} behind the fold`
+      + (missing.length ? ` — drawn without a hex: ${missing.join(', ')}` : ', every drawn one with its own hex'));
+  } catch (error) {
+    report('T172', 'FAILED', messageOf(error));
+  } finally {
+    if (open) await session.close(open);
+  }
+
+  // ---- T171: what step 3 says about every sensor in the house
+  open = null;
+  try {
+    open = await session.open(session.idOf('daylight'));
+    await session.emit(open, 'selectTargets', target);
+    /** @type {any} */
+    const list = await session.emit(open, 'listSensors');
+    const sensors = /** @type {any[]} */ (list?.rooms ?? []).flatMap(room => room?.sensors ?? []);
+    if (sensors.length === 0) {
+      report('T171', 'SKIPPED', 'nothing on this Homey reports measure_luminance');
+      return;
+    }
+    /** @type {Record<string, number>} */
+    const tally = {};
+    for (const sensor of sensors) {
+      await session.emit(open, 'setSensor', { sensor: sensor.id });
+      /** @type {any} */
+      const step = await session.emit(open, 'getResponse');
+      const kind = step?.staleFor != null ? 'quiet' : String(step?.week?.verdict?.kind ?? 'no history');
+      tally[kind] = (tally[kind] ?? 0) + 1;
+      const response = step?.response;
+      const filled = response && response.brightLux > response.darkLux;
+      // What the card will say, and that the two thresholds start from the week
+      // whatever it said — "Next = use it anyway" has to land somewhere sane.
+      const wantsSuggestion = kind !== 'nothing' && kind !== 'no history';
+      const ok = filled && (!wantsSuggestion || step?.week?.suggestion != null)
+        && (kind !== 'quiet' || typeof step?.lastReport === 'string');
+      report('T171', ok ? 'OK' : 'FAILED',
+        `"${sensor.name}": ${kind}`
+        + (kind === 'quiet' ? ` for ${step.staleFor} h, last report ${step.lastReport}` : '')
+        + (step?.week ? `, ${round(step.week.low)}–${round(step.week.high)} lx this week` : '')
+        + `, thresholds start at under ${response?.darkLux} / over ${response?.brightLux} lx`);
+    }
+    note(`sensor verdicts across the house: ${Object.entries(tally).map(([k, v]) => `${v} ${k}`).join(', ')}`);
+  } catch (error) {
+    report('T171', 'FAILED', messageOf(error));
+  } finally {
+    // Closing the session releases every sensor it subscribed to.
+    if (open) await session.close(open);
+  }
+}
+
+// ------------------------------------------------------------ installed build
+
+/**
+ * The version this checkout builds, from the manifest's SOURCE — `app.json` is
+ * generated and can be a regeneration behind, the same reason `withManifest()`
+ * reads `driver.compose.json`.
+ *
+ * @returns {string | null}
+ */
+function checkoutVersion() {
+  try {
+    /** @type {any} */
+    const manifest = JSON.parse(readFileSync(join(here, '..', '.homeycompose', 'app.json'), 'utf8')
+      .replace(/^﻿/, ''));
+    return typeof manifest?.version === 'string' ? manifest.version : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * T178 — is the Homey running the build this checkout would install?
+ *
+ * Every line after this one is a statement about the INSTALLED app, and the
+ * report is pasted as a statement about this code. A version that differs makes
+ * the whole report about something else; `messageOf()` already turns a missing
+ * route into "the Homey is running an older build", but only once a command has
+ * tripped over one. This says it first.
+ *
+ * Equal versions do not prove equal code — nothing is published, so every
+ * commit carries the same number — which is why the check is a floor and the
+ * line says what it compared. The build SHAPE comes from whether the dev-only
+ * evidence route answers (`buildShapeFrom`), because a release pass should run
+ * against the launch build users get.
+ *
+ * @param {any} api
+ */
+async function checkInstalledBuild(api) {
+  buildFacts.checkout = checkoutVersion();
+  buildFacts.firmware = api?.version ? String(api.version) : null;
+
+  try {
+    /** @type {any} */
+    const installed = await api.apps.getApp({ id: APP_ID });
+    buildFacts.installed = installed?.version ? String(installed.version) : null;
+  } catch (error) {
+    report('T178', 'SKIPPED', `could not read the installed app: ${messageOf(error)}`);
+    return;
+  }
+
+  try {
+    const app = await appApi(api);
+    await app.get('/evidence');
+    buildFacts.build = buildShapeFrom({ answered: true });
+  } catch (error) {
+    buildFacts.build = buildShapeFrom({ answered: false, message: messageOf(error) });
+  }
+
+  const { installed, checkout, build } = buildFacts;
+  const match = installed !== null && installed === checkout;
+  report('T178', match ? 'OK' : 'FAILED', match
+    ? `the Homey runs ${installed}, the version this checkout builds — a ${build} build. `
+      + 'Equal numbers are a floor, not proof of equal code: nothing is published, so every '
+      + 'commit is this number'
+    : `the Homey runs ${installed ?? 'no Lightkeeper at all'} and this checkout builds `
+      + `${checkout ?? '(unreadable .homeycompose/app.json)'} — every line below is about the `
+      + 'installed build, not this code. Reinstall: npx homey app install');
+  if (build === 'dev') {
+    report('-', 'INFO', 'this is a DEV build (the evidence recorder is in, because .dev-build existed '
+      + 'at install). A release pass belongs on the launch build users get');
+  }
+}
+
+// ----------------------------------------------------------------- settings
+
+/**
+ * T137, the half a machine can read — what the settings page is BUILT from.
+ *
+ * The page renders `GET /` and `GET /orphans` and nothing else on load. A
+ * device that cannot describe itself is left off `GET /` rather than taking the
+ * page down (`cards()` in api.ts), so the failure this line exists for now
+ * shows as an ABSENCE: a runtime `/diagnostics` knows about and `/` does not
+ * list. That is what is checked, over every device on the Homey — read-only, so
+ * the household's own are fair game. Whether the page then LOOKS right is still
+ * the plan line, on a phone.
+ *
+ * @param {any} api
+ */
+async function commandSettings(api) {
+  /** @type {any} */
+  let app;
+  try {
+    app = await appApi(api);
+  } catch (error) {
+    report('T137', 'SKIPPED', `the app Web API is out of reach: ${messageOf(error)}`);
+    return;
+  }
+
+  const [status, diagnostics] = await Promise.all([app.get('/'), app.get('/diagnostics')]);
+  const gaps = settingsGaps(status, diagnostics);
+  const listed = SETTINGS_LISTS.reduce(
+    (sum, list) => sum + (Array.isArray(status?.[list]) ? status[list].length : 0), 0);
+  report('T137', gaps.length === 0 ? 'OK' : 'FAILED', gaps.length === 0
+    ? `the settings page's GET / lists all ${listed} running device(s), each with a name and a state, `
+      + 'and the credential box has its status'
+    : `GET / is missing what the page needs: ${gaps.join('; ')}`);
+
+  /** @type {any} */
+  const orphans = await app.get('/orphans');
+  const shape = orphanPreviewProblems(orphans);
+  report('T137', shape.length === 0 ? 'OK' : 'FAILED', shape.length === 0
+    ? `"Delete orphaned Flows" has a count and a list to show before any button: `
+      + `${orphans?.orphans} orphaned of ${orphans?.total} generated`
+      + (orphans?.refused ? ` (refused: ${orphans.refused})` : '')
+    : `GET /orphans is not the shape the settings page reads: ${shape.join('; ')}`);
+}
+
+/** The four device lists `GET /` and `/diagnostics` both carry. */
+const SETTINGS_LISTS = ['controllers', 'schedules', 'circadian', 'daylight'];
+
+/**
+ * What the settings page would be missing — pure.
+ *
+ * @param {any} status `GET /`
+ * @param {any} diagnostics `GET /diagnostics`
+ * @returns {string[]}
+ */
+function settingsGaps(status, diagnostics) {
+  /** @type {string[]} */
+  const gaps = [];
+  if (!status || typeof status !== 'object') return ['GET / answered with nothing'];
+  if (!status.credential || typeof status.credential.present !== 'boolean') {
+    gaps.push('no credential status for the key box');
+  }
+  for (const list of SETTINGS_LISTS) {
+    const cards = status[list];
+    if (!Array.isArray(cards)) {
+      gaps.push(`no "${list}" list`);
+      continue;
+    }
+    const shown = new Set(cards.map((/** @type {any} */ card) => runtimeId(card)));
+    for (const runtime of /** @type {any[]} */ (diagnostics?.[list] ?? [])) {
+      if (!shown.has(runtimeId(runtime))) {
+        gaps.push(`${list} "${runtime?.name ?? runtimeId(runtime)}" runs but cannot describe itself `
+          + '(api.ts leaves it off the page — the app log names why)');
+      }
+    }
+    for (const card of cards) {
+      if (typeof card?.state !== 'string') gaps.push(`${list} "${runtimeId(card)}" has no state`);
+    }
+  }
+  return gaps;
+}
+
+/**
+ * What is wrong with an orphan preview, for the settings page that renders it
+ * — pure. A refused preview is a correct answer, not a malformed one.
+ *
+ * @param {any} preview `GET /orphans`
+ * @returns {string[]}
+ */
+function orphanPreviewProblems(preview) {
+  if (!preview || typeof preview !== 'object') return ['it answered with nothing'];
+  /** @type {string[]} */
+  const problems = [];
+  if (typeof preview.total !== 'number') problems.push('no numeric total');
+  if (typeof preview.orphans !== 'number') problems.push('no numeric orphan count');
+  if (!Array.isArray(preview.flowIds)) problems.push('no flowIds list to approve');
+  else if (typeof preview.orphans === 'number' && preview.flowIds.length !== preview.orphans) {
+    problems.push(`${preview.flowIds.length} flow id(s) for ${preview.orphans} orphan(s)`);
+  }
+  if (typeof preview.token !== 'string') problems.push('no preview token for the sweep to check');
+  return problems;
+}
+
+/**
+ * T180 — the orphan sweep refuses when nothing Flow-owning is live.
+ *
+ * The refusal exists because, with no controller or schedule installed, EVERY
+ * generated Flow looks orphaned, and a sweep would delete them all. Reaching
+ * that state on purpose means deleting or disabling the household's own
+ * controllers, which this pass never does — so the line is only ever READ, at
+ * the one moment the state may arise by itself: after teardown, on a Homey
+ * whose owner has no Flow-owning device of their own. Anywhere else it is
+ * SKIPPED and says why. Pure, so the three outcomes are tested.
+ *
+ * @param {{ flowOwningDevices: number, preview: any }} observed
+ * @returns {['OK' | 'FAILED' | 'SKIPPED', string]}
+ */
+function orphanRefusalVerdict(observed) {
+  const { flowOwningDevices, preview } = observed;
+  if (flowOwningDevices > 0) {
+    return ['SKIPPED', `${flowOwningDevices} Flow-owning Lightkeeper device(s) of yours are live, so `
+      + 'the refusal cannot be reached without touching them — which this pass never does. It '
+      + 'needs a Homey with no controller or schedule left after teardown'];
+  }
+  if (!preview || typeof preview.total !== 'number') {
+    return ['FAILED', 'GET /orphans did not answer with a count'];
+  }
+  if (preview.total === 0) {
+    return ['SKIPPED', 'no generated Flow is left at all, so there is nothing for the sweep to refuse'];
+  }
+  return preview.refused
+    ? ['OK', `nothing Flow-owning is live and ${preview.total} generated Flow(s) remain: the sweep `
+      + `refuses (${preview.refused}) rather than offering to delete them all`]
+    : ['FAILED', `nothing Flow-owning is live, ${preview.total} generated Flow(s) remain, and the `
+      + `preview offers ${preview.orphans} of them for deletion WITHOUT refusing — the guard that `
+      + 'stops a sweep deleting every managed Flow is not holding'];
+}
+
+// ---------------------------------------------------------------- flowcards
+
+/**
+ * The two Flow cards this app OFFERS, run over the Web API: T147, T149, T150
+ * and T151 — the halves a machine can read.
+ *
+ * Run the same way `bridge` runs a generated Flow's own action card —
+ * enumerated and echoed back, never constructed (platform §3) — because that is
+ * the path the Flow engine takes: `runFlowCardAction` for `set_lights`,
+ * `runFlowCardCondition` for `daylight_is_dark`. What this cannot see is the
+ * Flow EDITOR (the pickers, the tag list) and the one-visible-change question
+ * T149 is really about; those stay the plan's.
+ *
+ * WHERE IT WRITES. Only this pass's own devices are sources, and only lamps in
+ * `room` that none of YOUR devices drives are targets: `set_lights` writes to
+ * whatever it is pointed at, and a lamp one of your curves drives would file
+ * the write as a person and stand down for four hours. Every lamp is
+ * snapshotted first, registered as an undo, and put back at the end.
+ *
+ * @param {any} api
+ * @param {string} room
+ */
+async function commandFlowCards(api, room) {
+  /** @type {any} */
+  let app;
+  try {
+    app = await appApi(api);
+  } catch (error) {
+    report('T147', 'SKIPPED', `the app Web API is out of reach: ${messageOf(error)}`);
+    return;
+  }
+
+  const ours = await ourDevices(api);
+  /** @type {any} */
+  const diagnostics = await app.get('/diagnostics');
+  await flowPublishedValues(api, ours, diagnostics);
+  await flowDarkness(api, ours.find(device => device.driver === 'daylight'));
+  await flowSetLights(api, app, ours, diagnostics, room);
+}
+
+/**
+ * What a runtime's `/diagnostics` entry says its capability rows should hold —
+ * pure, and the arithmetic is the app's own: a curve publishes its warmth, and
+ * a brightness only when `adjustBrightness` is on; a Room-sensing Light
+ * publishes `toDevice(brightness)` and its level, or no level when it cannot
+ * tell (`publishValues()` in each runtime). γ = 2.2, as `toDevice` has it.
+ *
+ * @param {'curve' | 'daylight'} kind
+ * @param {any} runtime
+ * @returns {Record<string, number | null>}
+ */
+function expectedPublished(kind, runtime) {
+  const now = runtime?.now ?? null;
+  /** @param {unknown} value */
+  const finite = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+  /** @param {number | null} perceptual */
+  const toDevice = (perceptual) => (perceptual === null
+    ? null : Math.pow(Math.min(1, Math.max(0, perceptual)), 2.2));
+
+  if (kind === 'daylight') {
+    return {
+      lightkeeper_brightness: toDevice(finite(now?.brightness)),
+      lightkeeper_daylight: now?.source === 'none' ? null : finite(now?.level),
+    };
+  }
+  return {
+    lightkeeper_temperature: finite(now?.warmth),
+    lightkeeper_brightness: runtime?.adjustBrightness === true ? toDevice(finite(now?.brightness)) : null,
+  };
+}
+
+/**
+ * Where a device's rows disagree with what it should be publishing — pure.
+ *
+ * The tolerance is two hundredths: the board publishes at the capability's own
+ * two decimals (half a hundredth of rounding), and the curve moves about 0.003
+ * a minute between the two reads.
+ *
+ * @param {Record<string, number | null>} expected
+ * @param {Record<string, unknown>} actual capability id -> the row's value, or undefined if absent
+ * @param {number} [tolerance]
+ * @returns {string[]}
+ */
+function publishedMismatches(expected, actual, tolerance = 0.02) {
+  /** @type {string[]} */
+  const problems = [];
+  for (const [capability, want] of Object.entries(expected)) {
+    if (!(capability in actual)) {
+      problems.push(`no ${capability} row at all — the capability sync did not run (T146)`);
+      continue;
+    }
+    const got = actual[capability];
+    if (want === null) {
+      if (got !== null && got !== undefined) problems.push(`${capability} holds ${round(got)}, expected empty`);
+      continue;
+    }
+    if (typeof got !== 'number' || Math.abs(got - want) > tolerance + 1e-9) {
+      problems.push(`${capability} holds ${round(got)}, /diagnostics says ${round(want)}`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * T147 — each engine's rows agree with its own `now`.
+ *
+ * @param {any} api @param {any[]} ours @param {any} diagnostics
+ */
+async function flowPublishedValues(api, ours, diagnostics) {
+  const runtimes = [
+    .../** @type {any[]} */ (diagnostics?.circadian ?? []).map(r => ({ kind: /** @type {const} */ ('curve'), r })),
+    .../** @type {any[]} */ (diagnostics?.daylight ?? []).map(r => ({ kind: /** @type {const} */ ('daylight'), r })),
+  ].filter(({ r }) => ours.some(device => device.dataId === runtimeId(r)));
+
+  if (runtimes.length === 0) {
+    report('T147', 'SKIPPED', `no circadian, curve or Room-sensing Light built by this pass — ${NOTHING_OF_OURS}`);
+    return;
+  }
+
+  for (const { kind, r } of runtimes) {
+    const device = ours.find(d => d.dataId === runtimeId(r));
+    if (!device) continue;
+    /** @type {any} */
+    const live = await api.devices.getDevice({ id: device.homeyId, $cache: false, $updateCache: false });
+    const expected = expectedPublished(kind, r);
+    /** @type {Record<string, unknown>} */
+    const actual = {};
+    for (const capability of Object.keys(expected)) {
+      if (live?.capabilitiesObj && capability in live.capabilitiesObj) {
+        actual[capability] = live.capabilitiesObj[capability]?.value ?? null;
+      }
+    }
+    const problems = publishedMismatches(expected, actual);
+    report('T147', problems.length === 0 ? 'OK' : 'FAILED',
+      `${device.driver} "${device.name}": `
+      + (problems.length === 0
+        ? Object.entries(expected).map(([c, v]) => `${c}=${v === null ? 'empty' : round(v)}`).join(', ')
+          + ' — the rows agree with /diagnostics'
+        : problems.join('; ')));
+  }
+}
+
+/**
+ * The boolean out of `runFlowCardCondition`, whatever it is wrapped in — or
+ * null for a shape nobody has seen, which must read as "unanswered", never as
+ * false. Pure.
+ *
+ * @param {unknown} answer
+ * @returns {boolean | null}
+ */
+function conditionResult(answer) {
+  if (typeof answer === 'boolean') return answer;
+  const wrapped = /** @type {any} */ (answer)?.result;
+  return typeof wrapped === 'boolean' ? wrapped : null;
+}
+
+/**
+ * The thresholds to ask `daylight_is_dark` at, and the answer each must give —
+ * pure.
+ *
+ * Fifteen hundredths either side of the published level, so the two-decimal
+ * rounding of the row cannot flip an answer; a side that would leave 0..1 is
+ * not asked. With no level at all, the only honest question is the widest one,
+ * and it must still be false: "if it cannot tell how light it is, this is never
+ * true" (`isDarkEnough`).
+ *
+ * @param {number | null} level
+ * @returns {Array<{ threshold: number, expect: boolean }>}
+ */
+function darknessCases(level) {
+  if (level === null) return [{ threshold: 1, expect: false }];
+  /** @type {Array<{ threshold: number, expect: boolean }>} */
+  const cases = [];
+  const above = Math.round((level + 0.15) * 100) / 100;
+  const below = Math.round((level - 0.15) * 100) / 100;
+  if (above <= 1) cases.push({ threshold: above, expect: true });
+  if (below >= 0) cases.push({ threshold: below, expect: false });
+  return cases;
+}
+
+/**
+ * T151 — "It is dark enough", run as the Flow engine runs it.
+ *
+ * The card is registered per DEVICE (platform §18), so it is found under
+ * `homey:device:<id>:daylight_is_dark` by matching an enumerated id, never by
+ * building one.
+ *
+ * @param {any} api @param {any} daylight this pass's Room-sensing Light, if any
+ */
+async function flowDarkness(api, daylight) {
+  if (!daylight) {
+    report('T151', 'SKIPPED', `no Room-sensing Light built by this pass — ${NOTHING_OF_OURS}`);
+    return;
+  }
+
+  const conditions = Object.values(/** @type {any} */ (await api.flow.getFlowCardConditions()));
+  const card = /** @type {any[]} */ (conditions).find(c => {
+    const id = String(c?.id ?? '');
+    return id.startsWith(`homey:device:${daylight.homeyId}:`) && id.endsWith(':daylight_is_dark');
+  });
+  if (!card) {
+    report('T151', 'FAILED', `no daylight_is_dark card is registered for "${daylight.name}" — `
+      + 'looked for homey:device:<its id>:daylight_is_dark, where platform §18 says a '
+      + 'device-scoped card lives');
+    return;
+  }
+
+  /** @type {any} */
+  const live = await api.devices.getDevice({ id: daylight.homeyId, $cache: false, $updateCache: false });
+  const raw = live?.capabilitiesObj?.lightkeeper_daylight?.value;
+  const level = typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
+
+  for (const { threshold, expect } of darknessCases(level)) {
+    /** @type {unknown} */
+    let answer;
+    try {
+      answer = await withTimeout(api.flow.runFlowCardCondition({
+        // Both echoed back verbatim from the enumeration, as `bridge` does.
+        id: card.id, uri: card.uri, args: { level: threshold },
+      }), 30_000, 'runFlowCardCondition');
+    } catch (error) {
+      report('T151', 'FAILED', `"${daylight.name}": the condition refused at ${threshold}: ${messageOf(error)}`);
+      continue;
+    }
+    const result = conditionResult(answer);
+    if (result === null) {
+      report('T151', 'SKIPPED', `"${daylight.name}": the condition answered in a shape this script `
+        + `does not know (${describeKeys(answer)}) — read it by hand and widen conditionResult()`);
+      continue;
+    }
+    report('T151', result === expect ? 'OK' : 'FAILED',
+      `"${daylight.name}" reads ${level === null ? 'nothing (it cannot tell)' : round(level)}; `
+      + `"dark enough at ${Math.round(threshold * 100)}%" answered ${result}`
+      + (result === expect ? '' : `, expected ${expect}`)
+      + (level === null ? ' — false is the promise when the device cannot tell' : ''));
+  }
+}
+
+/**
+ * The lamps `set_lights` may be pointed at, best first — pure.
+ *
+ * A lamp any of YOUR devices drives is refused outright, group membership
+ * included (`busy` is already expanded through `lampOverlaps`): the card's
+ * write would be a person to that device. Of the rest, one nothing drives at
+ * all beats one this pass's own devices drive, because those write too and
+ * blur what the card did. Two lamps that share bulbs are never both chosen.
+ *
+ * @param {any[]} lamps the room's testable lamps
+ * @param {Set<string>} busy lamps the user's own devices drive
+ * @param {Set<string>} oursDrive lamps this pass's own devices drive
+ * @param {Map<string, Set<string>>} overlaps
+ * @param {number} [want]
+ * @returns {any[]}
+ */
+function flowLamps(lamps, busy, oursDrive, overlaps, want = 2) {
+  const eligible = lamps.filter(lamp => !busy.has(String(lamp?.id)));
+  const ordered = [
+    ...eligible.filter(lamp => !oursDrive.has(String(lamp?.id))),
+    ...eligible.filter(lamp => oursDrive.has(String(lamp?.id))),
+  ];
+  /** @type {Set<string>} */
+  const taken = new Set();
+  /** @type {any[]} */
+  const picks = [];
+  for (const lamp of ordered) {
+    if (picks.length === want) break;
+    const shared = overlaps.get(String(lamp?.id)) ?? new Set([String(lamp?.id)]);
+    if ([...shared].some(id => taken.has(id))) continue;
+    for (const id of shared) taken.add(id);
+    picks.push(lamp);
+  }
+  return picks;
+}
+
+/**
+ * The `lights` argument the card stores for a list of lamps.
+ *
+ * Built here rather than enumerated, and that is not a breach of platform §3:
+ * this is Lightkeeper's OWN argument encoding (`targetChoiceId()` in
+ * `lib/flow/flow-arguments.ts`), not a Homey URI, and the logic test pins the
+ * two together.
+ *
+ * @param {string[]} ids
+ */
+function lightsArgument(ids) {
+  return `devices:${ids.join(',')}`;
+}
+
+/**
+ * T149 and T150 — `set_lights`, on lamps nothing of yours drives.
+ *
+ * @param {any} api @param {any} app @param {any[]} ours @param {any} diagnostics @param {string} room
+ */
+async function flowSetLights(api, app, ours, diagnostics, room) {
+  const colourFrom = ours.find(device => device.driver === 'circadian')
+    ?? ours.find(device => device.driver === 'curve');
+  const brightnessFrom = ours.find(device => device.driver === 'daylight');
+  if (!colourFrom || !brightnessFrom) {
+    report('T149', 'SKIPPED', 'needs a circadian (or curve) light AND a Room-sensing Light built by '
+      + `this pass — ${NOTHING_OF_OURS}`);
+    return;
+  }
+
+  const actions = Object.values(/** @type {any} */ (await api.flow.getFlowCardActions()));
+  const card = /** @type {any[]} */ (actions).find(c => {
+    const id = String(c?.id ?? '');
+    return id.includes(APP_ID) && id.endsWith(':set_lights');
+  });
+  if (!card) {
+    report('T149', 'FAILED', 'the set_lights action card is not on this Homey — an app\'s cards '
+      + 'exist only while it is running (platform §3)');
+    return;
+  }
+
+  // The lamps: from `room` where one is set, else from the lamps this pass's
+  // own devices were given — which came from the same place.
+  const session = await pairSessions(api);
+  if (!session) return;
+  const byRoom = await testableLampsByRoom(session, room);
+  const overlaps = await lampOverlaps(api);
+  const busy = await lampsDrivenByTheirOwnDevices(app, overlaps);
+  /** @type {Set<string>} */
+  const oursDrive = new Set();
+  for (const list of ['circadian', 'daylight', 'schedules', 'controllers']) {
+    for (const runtime of /** @type {any[]} */ (diagnostics?.[list] ?? [])) {
+      if (!ours.some(device => device.dataId === runtimeId(runtime))) continue;
+      for (const id of /** @type {any[]} */ (runtime?.targetIds ?? [])) {
+        for (const shared of overlaps.get(String(id)) ?? [String(id)]) oursDrive.add(shared);
+      }
+    }
+  }
+  const pool = room ? [...byRoom.values()].flat()
+    : [...byRoom.values()].flat().filter(lamp => oursDrive.has(String(lamp?.id)));
+  const picks = flowLamps(pool, busy, oursDrive, overlaps, 2)
+    .filter(lamp => (lamp?.capabilities ?? []).includes('dim'));
+
+  if (picks.length === 0) {
+    report('T149', 'SKIPPED', `no dimmable lamp ${room ? `in "${room}" ` : ''}that none of your own `
+      + 'devices drives — `set_lights` would read as a person to that device, so this pass will '
+      + 'not point it at one');
+    return;
+  }
+  const blurred = picks.filter(lamp => oursDrive.has(String(lamp?.id))).map(lamp => lamp.name);
+  if (blurred.length > 0) {
+    report('-', 'INFO', `${blurred.join(', ')} ${blurred.length === 1 ? 'is' : 'are'} also driven by `
+      + "this pass's own devices, which write the same values when a lamp comes on — so T149 "
+      + 'shows the end state, not which of them set it');
+  }
+
+  const ids = picks.map(lamp => String(lamp.id));
+  const snapshots = await Promise.all(ids.map(id => snapshotLamp(api, id)));
+  const handles = snapshots.map(snapshot =>
+    undo.push(`put "${snapshot.name}" back after set_lights`, () => putLampBack(snapshot)));
+
+  /** @param {string} id @param {boolean} on */
+  const power = async (id, on) => {
+    const lamp = await api.devices.getDevice({ id });
+    await lamp.setCapabilityValue({ capabilityId: 'onoff', value: on });
+  };
+  /** @param {Record<string, unknown>} args */
+  const run = async (args) => {
+    try {
+      await withTimeout(api.flow.runFlowCardAction({ id: card.id, uri: card.uri, args }),
+        30_000, 'runFlowCardAction');
+      return null;
+    } catch (error) {
+      // An action whose listener returns false can surface as an error; the
+      // lamps are what is judged either way.
+      return messageOf(error);
+    }
+  };
+  const sources = {
+    colour: { id: colourFrom.dataId, name: colourFrom.name },
+    brightness: { id: brightnessFrom.dataId, name: brightnessFrom.name },
+  };
+  const lights = { id: lightsArgument(ids), name: picks.map(lamp => lamp.name).join(', ') };
+
+  try {
+    // ---- T150: "only lights already on" leaves a dark lamp dark.
+    const [first, second] = ids;
+    if (first && second) {
+      await power(first, true);
+      await power(second, false);
+      await sleep(5_000);
+      const refused = await run({ lights, ...sources, power: 'only_on' });
+      await sleep(8_000);
+      const darkStayed = (await capabilityValue(api, second, 'onoff')) === false;
+      report('T150', darkStayed ? 'OK' : 'FAILED',
+        `"only lights already on" over ${lights.name}: "${picks[1]?.name}" was off and `
+        + (darkStayed ? 'stayed off' : 'CAME ON — the card switched a lamp nobody asked it to')
+        + (refused ? ` (the card answered: ${refused})` : ''));
+    } else {
+      report('-', 'INFO', `only one lamp to point set_lights at, so T150's "one on, one off" half `
+        + 'was not run');
+    }
+
+    // ---- T150: a source that is gone writes NOTHING, not the half that survived.
+    for (const id of ids) await power(id, false);
+    await sleep(5_000);
+    const missing = await run({
+      lights, colour: { id: 'verify-no-such-device', name: 'gone' }, brightness: sources.brightness,
+      power: 'on',
+    });
+    await sleep(8_000);
+    const cameOn = [];
+    for (const [index, id] of ids.entries()) {
+      if ((await capabilityValue(api, id, 'onoff')) !== false) cameOn.push(picks[index]?.name);
+    }
+    report('T150', cameOn.length === 0 ? 'OK' : 'FAILED', cameOn.length === 0
+      ? `with its colour source gone, "switch them on" wrote nothing — every lamp still off`
+        + (missing ? ` (the card answered: ${missing})` : '')
+        + '. The app log should now carry "Ignoring set_lights:" naming it; that half is the plan\'s'
+      : `with its colour source gone the card still switched on ${cameOn.join(', ')} — half a `
+        + 'setting was written');
+
+    // ---- T149: "switch them on" brings them on, at both chosen values.
+    /** @type {any} */
+    const fresh = await app.get('/diagnostics');
+    const colourRuntime = /** @type {any[]} */ (fresh?.circadian ?? []).find(r => runtimeId(r) === colourFrom.dataId);
+    const brightnessRuntime = /** @type {any[]} */ (fresh?.daylight ?? []).find(r => runtimeId(r) === brightnessFrom.dataId);
+    const wantTemperature = expectedPublished('curve', colourRuntime).lightkeeper_temperature;
+    const wantDim = expectedPublished('daylight', brightnessRuntime).lightkeeper_brightness;
+
+    const refusedOn = await run({ lights, ...sources, power: 'on' });
+    /** @type {string[]} */
+    const wrong = [];
+    for (const [index, id] of ids.entries()) {
+      const name = picks[index]?.name ?? id;
+      const on = await capabilityValueSettling(api, id, 'onoff', true);
+      if (on !== true) { wrong.push(`"${name}" did not come on`); continue; }
+      const caps = /** @type {string[]} */ (picks[index]?.capabilities ?? []);
+      if (wantTemperature !== null && caps.includes('light_temperature')) {
+        const held = await capabilityValueSettling(api, id, 'light_temperature', wantTemperature);
+        if (typeof held !== 'number' || Math.abs(held - wantTemperature) > LAMP_TOLERANCE) {
+          wrong.push(`"${name}" light_temperature ${round(held)}, wanted ${round(wantTemperature)}`);
+        }
+      }
+      if (wantDim !== null) {
+        const held = await capabilityValueSettling(api, id, 'dim', wantDim);
+        if (typeof held !== 'number' || Math.abs(held - wantDim) > LAMP_TOLERANCE) {
+          wrong.push(`"${name}" dim ${round(held)}, wanted ${round(wantDim)}`);
+        }
+      }
+    }
+    report('T149', wrong.length === 0 ? 'OK' : 'FAILED',
+      `"switch them on", colour from "${colourFrom.name}", brightness from "${brightnessFrom.name}": `
+      + (wrong.length === 0
+        ? `${ids.length} lamp(s) came on at light_temperature ${round(wantTemperature)} and dim `
+          + `${round(wantDim)}. Whether that was ONE visible change is the plan's, on a real room`
+        : wrong.join('; '))
+      + (refusedOn ? ` (the card answered: ${refusedOn})` : ''));
+  } finally {
+    for (const handle of handles) {
+      const outcome = await handle.run();
+      if (outcome.ran && !outcome.ok) note(`could NOT put a set_lights lamp back: ${messageOf(outcome.error)}`);
+    }
+  }
+}
+
+// --------------------------------------------------------------------- jobs
+
+/**
+ * T152, T153 and T154 — a Light Remote's "On – with Lightkeeper" job and its
+ * two source pickers, read through a REPAIR session on this pass's own
+ * controller and never saved.
+ *
+ * Only reads. `editGesture` and `editSource` say which row a screen is about
+ * to show; neither changes the stored rules, and the session is closed without
+ * `save`. What a phone adds — the card's look, the swatches as colours, the
+ * press itself (T155, T156) — stays the plan's.
+ *
+ * @param {any} api
+ */
+async function commandJobs(api) {
+  const session = await pairSessions(api);
+  if (!session) return;
+  /** @type {any} */
+  let app;
+  try {
+    app = await appApi(api);
+  } catch (error) {
+    report('T152', 'SKIPPED', `the app Web API is out of reach: ${messageOf(error)}`);
+    return;
+  }
+
+  const controller = (await ourDevices(api)).find(device => device.driver === 'controller');
+  if (!controller) {
+    report('T152', 'SKIPPED', `no Light Remote built by this pass — ${NOTHING_OF_OURS}`);
+    return;
+  }
+
+  /** @type {any} */
+  const diagnostics = await app.get('/diagnostics');
+  const expected = sourceExpectations(diagnostics);
+
+  /** @type {any} */
+  let open = null;
+  try {
+    open = await session.open(String(session.idOf('controller')), controller.homeyId);
+    /** @type {any} */
+    const buttons = await session.emit(open, 'getButtons');
+    const gesture = /** @type {any[]} */ (buttons?.gestures ?? [])[0];
+    if (!gesture) {
+      report('T152', 'FAILED', `"${controller.name}": the buttons screen listed no gesture`);
+      return;
+    }
+    await session.emit(open, 'editGesture', gesture.key);
+    /** @type {any} */
+    const editor = await session.emit(open, 'getGesture');
+    const offered = /** @type {any[]} */ (editor?.jobs ?? []).some(job => job?.id === 'lightkeeper_on');
+    const sources = expected.colour.length + expected.brightness.length > 0;
+    report('T152', offered === sources ? 'OK' : 'FAILED',
+      `"${controller.name}" button "${gesture.label}": "On – with Lightkeeper" is `
+      + `${offered ? 'offered' : 'withheld'}, and this Homey has `
+      + `${sources ? 'devices to take a value from' : 'no device to take a value from'}`
+      + (offered === sources ? '' : ' — it should be the other way round')
+      + (sources ? '. The withheld half needs a Homey with no source device at all' : ''));
+
+    await session.emit(open, 'editSource', 'colour');
+    /** @type {any} */
+    const colour = await session.emit(open, 'getSource');
+    await session.emit(open, 'editSource', 'brightness');
+    /** @type {any} */
+    const brightness = await session.emit(open, 'getSource');
+
+    const problems = pickerProblems(expected, colour?.sources ?? [], brightness?.sources ?? []);
+    report('T153', problems.length === 0 ? 'OK' : 'FAILED', problems.length === 0
+      ? `the colour picker offers ${expected.colour.length} curve-driven device(s) and no `
+        + `Room-sensing Light; the brightness picker offers ${expected.brightness.length}, `
+        + 'schedules and Room-sensing Lights included'
+      : problems.join('; '));
+
+    const levels = levelProblems(diagnostics, brightness?.sources ?? []);
+    report('T154', levels.checked === 0 ? 'SKIPPED' : levels.problems.length === 0 ? 'OK' : 'FAILED',
+      levels.checked === 0
+        ? 'no Room-sensing Light row with a level to compare'
+        : levels.problems.length === 0
+          ? `${levels.checked} Room-sensing Light row(s) draw the perceptual level the setup screens `
+            + 'use, not the value sent to a lamp'
+          : levels.problems.join('; '));
+  } catch (error) {
+    report('T152', 'FAILED', `"${controller.name}": ${messageOf(error)}`);
+  } finally {
+    // Never saved: this read the screens and changed nothing.
+    if (open) await session.close(open);
+  }
+}
+
+/**
+ * Which runtime ids each picker must offer, from `/diagnostics` — pure. The
+ * rule is `sourceRegistry()` in app.ts: a colour only from a curve-driven
+ * device, a brightness from those, Room-sensing Lights and schedules.
+ *
+ * @param {any} diagnostics
+ */
+function sourceExpectations(diagnostics) {
+  const ids = (/** @type {string} */ list) =>
+    /** @type {any[]} */ (diagnostics?.[list] ?? []).map(runtime => runtimeId(runtime));
+  const curves = ids('circadian');
+  return {
+    colour: curves,
+    brightness: [...curves, ...ids('daylight'), ...ids('schedules')],
+    neverColour: [...ids('daylight'), ...ids('schedules')],
+  };
+}
+
+/**
+ * What is wrong with the two pickers' rows — pure. The first row of each is
+ * "Leave it alone", which is not a device and is not counted.
+ *
+ * @param {{ colour: string[], brightness: string[], neverColour: string[] }} expected
+ * @param {any[]} colourRows
+ * @param {any[]} brightnessRows
+ * @returns {string[]}
+ */
+function pickerProblems(expected, colourRows, brightnessRows) {
+  /** @type {string[]} */
+  const problems = [];
+  const colourIds = new Set(colourRows.map(row => String(row?.id)));
+  const brightnessIds = new Set(brightnessRows.map(row => String(row?.id)));
+  for (const id of expected.colour) {
+    if (!colourIds.has(id)) problems.push(`the colour picker is missing curve-driven device ${id}`);
+  }
+  for (const id of expected.neverColour) {
+    if (colourIds.has(id)) problems.push(`the colour picker offers ${id}, which publishes no colour`);
+  }
+  for (const id of expected.brightness) {
+    if (!brightnessIds.has(id)) problems.push(`the brightness picker is missing ${id}`);
+  }
+  for (const row of colourRows.slice(1)) {
+    if (!('swatch' in (row ?? {}))) problems.push(`colour row "${row?.name}" carries no swatch field`);
+  }
+  for (const row of brightnessRows.slice(1)) {
+    if (!('level' in (row ?? {}))) problems.push(`brightness row "${row?.name}" carries no level field`);
+  }
+  return problems;
+}
+
+/**
+ * T154's comparison — pure. A Room-sensing Light's row must draw the PERCEPTUAL
+ * level its own setup screen used, which is its diagnostics `now.brightness`;
+ * the value sent to a lamp is that through γ = 2.2, and the two differ by a lot
+ * in the middle of the range (55% is sent as 26%).
+ *
+ * The row is computed from the published row, which is rounded to two decimals
+ * in DEVICE terms — so near the dark end the perceptual reading carries real
+ * rounding, and the tolerance is 0.05 rather than the curve's 0.02. Where the
+ * two scales are far enough apart to tell, the row must also NOT be the device
+ * value.
+ *
+ * @param {any} diagnostics
+ * @param {any[]} rows
+ * @returns {{ checked: number, problems: string[] }}
+ */
+function levelProblems(diagnostics, rows) {
+  /** @type {string[]} */
+  const problems = [];
+  let checked = 0;
+  for (const runtime of /** @type {any[]} */ (diagnostics?.daylight ?? [])) {
+    const perceptual = runtime?.now?.brightness;
+    if (typeof perceptual !== 'number') continue;
+    const row = rows.find(candidate => String(candidate?.id) === runtimeId(runtime));
+    if (!row || typeof row.level !== 'number') continue;
+    checked += 1;
+    const device = Math.pow(perceptual, 2.2);
+    if (Math.abs(row.level - perceptual) > 0.05) {
+      problems.push(`"${runtime?.name}" is drawn at ${round(row.level)}, its setup screen says `
+        + `${round(perceptual)}` + (Math.abs(row.level - device) <= 0.05 ? ' — that is the value SENT to a lamp' : ''));
+    }
+  }
+  return { checked, problems };
+}
+
+// --------------------------------------------------------------- repairsave
+
+/**
+ * One harmless edit per device type, for T177 — pure. `read` is the screen that
+ * holds the value, `value` finds it in that screen's reply, `nudge` moves it by
+ * an amount that changes nothing anybody would notice for the minute it is in
+ * place, and `write` is the event and payload that store it.
+ *
+ * A Light Remote gets NO edit: any change to its rules regenerates Flows, which
+ * is not harmless. Its round trip is a save of exactly what it holds, and the
+ * assertion is the stronger one that falls out of that — the rules and every
+ * Flow survive by id. A save that churned a household's Flows on every repair
+ * would be a defect worth finding.
+ *
+ * @type {Record<string, { read: string, value: (reply: any) => unknown, nudge: ((value: any) => unknown) | null, write: (reply: any, value: any) => [string, unknown] }>}
+ */
+const ROUND_TRIPS = {
+  controller: {
+    read: 'getButtons',
+    value: (reply) => JSON.stringify(reply?.jobs ?? null),
+    nudge: null,
+    // Never called: a Light Remote is saved exactly as it is.
+    write: () => ['getButtons', undefined],
+  },
+  schedule: {
+    read: 'getSchedule',
+    value: (reply) => (reply?.entries?.[0]?.end?.kind === 'duration' ? reply.entries[0].end.minutes : null),
+    // SHORTER, never longer: a restarted schedule applies a window that contains
+    // now (catch-up), so a longer window could switch lamps on that the stored
+    // one would not have — a shorter one only ever does less.
+    nudge: (minutes) => (Number(minutes) > 10 ? Number(minutes) - 5 : Number(minutes) + 5),
+    write: (reply, minutes) => ['setSchedules', {
+      entries: /** @type {any[]} */ (reply?.entries ?? []).map((entry, index) => (index === 0
+        ? { ...entry, end: { ...entry.end, minutes } } : entry)),
+      days: reply?.days ?? null,
+    }],
+  },
+  circadian: {
+    read: 'getDay',
+    value: (reply) => reply?.zones?.evening?.temperature ?? null,
+    nudge: (warmth) => Math.round((Number(warmth) > 0.5 ? Number(warmth) - 0.05 : Number(warmth) + 0.05) * 100) / 100,
+    write: (reply, temperature) => ['setDay', {
+      ...(reply?.zones ?? {}),
+      evening: { ...(reply?.zones?.evening ?? {}), temperature },
+      adjustBrightness: reply?.adjustBrightness === true,
+    }],
+  },
+  curve: {
+    read: 'getCurve',
+    value: (reply) => reply?.points?.[0]?.warmth ?? null,
+    nudge: (warmth) => Math.round((Number(warmth) > 0.5 ? Number(warmth) - 0.05 : Number(warmth) + 0.05) * 100) / 100,
+    write: (reply, warmth) => ['setCurve', {
+      points: /** @type {any[]} */ (reply?.points ?? []).map((point, index) => (index === 0
+        ? { ...point, warmth } : point)),
+      adjustBrightness: reply?.adjustBrightness === true,
+    }],
+  },
+  daylight: {
+    read: 'getResponse',
+    value: (reply) => reply?.response?.darkLux ?? null,
+    nudge: (lux) => Number(lux) + 1,
+    write: (reply, darkLux) => ['setDaylight', { response: { ...(reply?.response ?? {}), darkLux } }],
+  },
+};
+
+/**
+ * T177 — a repair that SAVES, on every device type, read back from a fresh
+ * repair session and then put back.
+ *
+ * `repair` (T46) proves a repair screen opens seeded; it saves nothing, and the
+ * gap it leaves was an old manual line (T67 — "T46 only proves the screens are
+ * seeded, not that a save round-trips"). This closes it on this pass's own
+ * devices: edit, save, open a NEW session and find the edit, then store the
+ * original and find that. The put-back is registered as an undo before the
+ * first save.
+ *
+ * @param {any} api
+ */
+async function commandRepairSave(api) {
+  const session = await pairSessions(api);
+  if (!session) return;
+  const devices = await ourDevices(api);
+  if (devices.length === 0) {
+    report('T177', 'SKIPPED', `no device built by this pass to repair — ${NOTHING_OF_OURS}`);
+    return;
+  }
+
+  for (const device of devices) {
+    const plan = ROUND_TRIPS[device.driver];
+    const driverId = session.idOf(device.driver);
+    if (!plan || !driverId) {
+      report('T177', 'SKIPPED', `no round trip for driver "${device.driver}"`);
+      continue;
+    }
+    const label = `${device.driver} "${device.name}"`;
+
+    /** Read the value through a fresh repair session, saving nothing. */
+    const readBack = async () => {
+      /** @type {any} */
+      let open = null;
+      try {
+        open = await session.open(driverId, device.homeyId);
+        return { reply: await session.emit(open, plan.read) };
+      } finally {
+        if (open) await session.close(open);
+      }
+    };
+    /** Store `value` through a repair session, and save. @param {any} reply @param {unknown} value */
+    const store = (reply, value) => repairAndSave(session, device, async (open) => {
+      await session.emit(open, plan.read);
+      if (plan.nudge === null) return;
+      const [event, payload] = plan.write(reply, value);
+      await session.emit(open, event, payload);
+    });
+
+    try {
+      const { reply } = await readBack();
+      const original = plan.value(reply);
+      if (original === null || original === undefined) {
+        report('T177', 'SKIPPED', `${label}: nothing on its ${plan.read} screen to edit harmlessly`);
+        continue;
+      }
+
+      if (plan.nudge === null) {
+        const flowsBefore = (await managedFlows(api)).filter(f => f.ownerDataId === device.dataId);
+        await store(reply, original);
+        await waitForRuntime(api, device);
+        const after = plan.value((await readBack()).reply);
+        const flowsAfter = (await managedFlows(api)).filter(f => f.ownerDataId === device.dataId);
+        const lost = flowsBefore.filter(f => !flowsAfter.some(n => n.flowId === f.flowId));
+        const same = after === original && lost.length === 0;
+        report('T177', same ? 'OK' : 'FAILED', `${label}: saved unchanged through repair — `
+          + (after === original ? 'its buttons read back identical' : 'its buttons CHANGED')
+          + `, ${flowsAfter.length} Flow(s) after, ${flowsBefore.length} before`
+          + (lost.length ? `, ${lost.length} REPLACED or gone: ${lost.map(f => f.name).join(', ')}` : ', none replaced'));
+        continue;
+      }
+
+      const edited = plan.nudge(original);
+      const putBack = undo.push(`put ${label}'s ${plan.read} value back to ${original}`, async () => {
+        const { reply: now } = await readBack();
+        await store(now, original);
+      });
+      try {
+        await store(reply, edited);
+        await waitForRuntime(api, device);
+        const saved = plan.value((await readBack()).reply);
+        const back = await putBack.run();
+        await waitForRuntime(api, device);
+        const restored = plan.value((await readBack()).reply);
+        const ok = saved === edited && back.ok === true && restored === original;
+        report('T177', ok ? 'OK' : 'FAILED', `${label}: repair saved ${original} → ${edited}, a fresh `
+          + `repair read ${saved}; put back and read ${restored}`
+          + (back.ok === false ? ` — the put-back failed: ${messageOf(back.error)}` : '')
+          + (saved !== edited ? ' — the saved edit did NOT come back from the store' : '')
+          + (restored !== original ? ' — the original did not come back either; repair it by hand' : ''));
+      } finally {
+        // If anything above threw before the put-back, it runs here.
+        await putBack.run();
+      }
+    } catch (error) {
+      report('T177', 'FAILED', `${label}: ${messageOf(error)}`);
+    }
+  }
+}
+
+/**
+ * A repaired device restarts its runtime; wait for the app to list it again
+ * before reading it back, the same signal `pair` waits on.
+ *
+ * @param {any} api @param {{ dataId: string, name: string }} device
+ */
+async function waitForRuntime(api, device) {
+  const app = await appApi(api);
+  await waitFor(async () => {
+    /** @type {any} */
+    const status = await app.get('/').catch(() => null);
+    const all = [
+      .../** @type {any[]} */ (status?.controllers ?? []),
+      .../** @type {any[]} */ (status?.schedules ?? []),
+      .../** @type {any[]} */ (status?.circadian ?? []),
+      .../** @type {any[]} */ (status?.daylight ?? []),
+    ];
+    return all.find(entry => runtimeId(entry) === device.dataId) ?? null;
+  }, { timeoutMs: 30_000, everyMs: 2_000, what: `"${device.name}" to come back after the save` });
+}
+
+const READ_ONLY = ['spike', 'memory', 'flows', 'redaction', 'settings'];
 const DESTRUCTIVE = [
   'credential', 'rejoin', 'pairspike', 'restart', 'bridge', 'schedule', 'preview',
-  'pair', 'repair', 'teardown',
+  'pair', 'repair', 'repairsave', 'jobs', 'flowcards', 'control', 'teardown',
 ];
 
 /**
@@ -4075,26 +6321,131 @@ const DESTRUCTIVE = [
  * and `credential` is late because it is the one that leaves the app briefly
  * without a key. `pairspike` is deliberately NOT here: it answers a question
  * about the platform rather than about this release, and it is run once.
+ * `spike` is first, and is also where T178 says whether the installed build is
+ * this checkout's at all — before any line that would be about the wrong one.
  */
 const FULL = [
-  'spike', 'memory', 'pair', 'flows', 'schedule', 'preview', 'rejoin',
-  'restart', 'bridge', 'credential', 'redaction', 'repair', 'teardown',
+  'spike', 'memory', 'pair', 'flows', 'settings', 'schedule', 'preview', 'rejoin', 'flowcards',
+  'restart', 'bridge', 'credential', 'redaction', 'repair', 'repairsave', 'jobs', 'control',
+  'teardown',
 ];
 
-/** Lines no script can reach, printed at the end so a report is complete. */
-const STILL_MANUAL = [
-  'T3  Add device → Lightkeeper lists five types, with five different pictures',
-  'T9  press the mapped button — the lights respond',
-  'T10 hold the ramp button — it ramps, and STOPS when you let go, inside 10s',
-  'T11 turn the dial — the lights move by a sensible amount, not straight to full',
-  'T53 one look at every rendered screen: npm run render:views',
-  'T54 anything that read wrong on the device you paired by hand',
-];
+/**
+ * What is left for a person, from the plan itself.
+ *
+ * This used to be a hand-kept list of six lines while the plan held sixty, so
+ * the end of `full` told a person their share of the pass was six lines long.
+ * It is now every unchecked plan line the script does not answer, or answers
+ * only in part — `stillManual()` in `scripts/verify/lines.mjs` — read from
+ * `docs/hardware-test-plan.md` at run time, so it cannot fall behind.
+ *
+ * @returns {Array<{ line: string, title: string, partial: boolean }> | null}
+ */
+function manualLines() {
+  const path = join(here, '..', 'docs', 'hardware-test-plan.md');
+  if (!existsSync(path)) return null;
+  return stillManual(readFileSync(path, 'utf8'));
+}
+
+/**
+ * Run one command. Split out of `main()` so every command runs inside the same
+ * isolation — see the loop there.
+ *
+ * @param {string} command
+ * @param {any} api
+ * @param {{ address: string, key: string, appKey: string, room: string }} config
+ * @param {{ house: boolean }} flags
+ * @returns {Promise<number | undefined>} the T59 reading, for `memory`
+ */
+async function runCommand(command, api, config, flags) {
+  if (command === 'spike') await commandSpike(api);
+  if (command === 'memory') return commandMemory(api);
+  if (command === 'flows') await commandFlows(api);
+  if (command === 'settings') await commandSettings(api);
+  // Both keys: the app can only have been near the one it holds, but a report
+  // that leaked either would be a report with a live credential in it.
+  if (command === 'redaction') await commandRedaction(api, [config.appKey, config.key]);
+  if (command === 'credential') await commandCredential(api, config.appKey);
+  if (command === 'rejoin') await commandRejoin(api);
+  if (command === 'pairspike') await commandPairSpike(api);
+  if (command === 'pair') await commandPair(api, config.room);
+  if (command === 'repair') await commandRepair(api);
+  if (command === 'repairsave') await commandRepairSave(api);
+  if (command === 'jobs') await commandJobs(api);
+  if (command === 'flowcards') await commandFlowCards(api, config.room);
+  if (command === 'control') await commandControl(api, { room: config.room, house: flags.house });
+  if (command === 'restart') await commandRestart(api);
+  if (command === 'bridge') await commandBridge(api);
+  if (command === 'schedule') await commandSchedule(api);
+  if (command === 'preview') await commandPreview(api);
+  if (command === 'teardown') await commandTeardown(api);
+  return undefined;
+}
+
+/**
+ * Put back whatever a command left registered, and say so.
+ *
+ * A command's own `finally` blocks run before it returns or throws, so anything
+ * still here is a change whose own code never got to put it back — a throw
+ * between the change and its restore. Run now, before the next command starts,
+ * rather than at the end: the next command may be the one that reads that lamp.
+ *
+ * @param {string} after what just finished, for the message
+ */
+async function settleUndo(after) {
+  if (undo.size === 0) return;
+  note(`${after} left ${undo.size} change(s) not put back — putting them back now: `
+    + [...undo.labels()].reverse().join('; '));
+  for (const outcome of await undo.runAll()) {
+    if (outcome.ok) {
+      note(`  put back: ${outcome.label}`);
+    } else {
+      report('-', 'FAILED', `could not ${outcome.label}: ${messageOf(outcome.error)} — do it by hand`);
+    }
+  }
+}
+
+/**
+ * The build facts `--json` carries, read if `spike` did not already. Best
+ * effort and reports nothing: this is metadata about the run, not a line.
+ *
+ * @param {any} api
+ */
+async function fillBuildFacts(api) {
+  if (buildFacts.checkout === null) buildFacts.checkout = checkoutVersion();
+  if (buildFacts.firmware === null && api?.version) buildFacts.firmware = String(api.version);
+  if (buildFacts.installed === null) {
+    try {
+      /** @type {any} */
+      const installed = await api.apps.getApp({ id: APP_ID });
+      buildFacts.installed = installed?.version ? String(installed.version) : null;
+    } catch {
+      // Unknown stays null, which the JSON says as `versionsMatch: false`.
+    }
+  }
+}
+
+/**
+ * @param {string} path
+ * @param {Parameters<typeof jsonReport>[0]} run
+ */
+function writeJsonReport(path, run) {
+  const target = resolve(path);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, `${JSON.stringify(jsonReport(run), null, 2)}\n`, 'utf8');
+  console.log(`Wrote ${target}`);
+}
 
 async function main() {
-  const argv = process.argv.slice(2);
-  const confirmed = argv.includes('--yes');
-  let commands = argv.filter(a => !a.startsWith('--'));
+  const startedAt = Date.now();
+  const args = parseArgs(process.argv.slice(2));
+  if (args.errors.length > 0) {
+    console.error(args.errors.join('\n'));
+    process.exitCode = 2;
+    return;
+  }
+  const confirmed = args.yes;
+  let commands = [...args.commands];
 
   if (commands.length === 0) commands = ['spike'];
   if (commands.includes('all')) commands = [...READ_ONLY];
@@ -4124,10 +6475,22 @@ async function main() {
       pair: 'pair CREATES one of each Lightkeeper device type on your Homey, its own even if '
         + 'you already have some',
       repair: 'repair opens a repair session on each device and reads its screens. Saves nothing',
+      repairsave: 'repairsave SAVES one small edit through repair on each device this pass built, '
+        + 'reads it back and saves the original again',
+      jobs: 'jobs reads a Light Remote\'s job and source screens through a repair session. Saves nothing',
+      flowcards: 'flowcards runs the set_lights and daylight_is_dark cards, switching up to two lamps '
+        + 'in your test room that none of your own devices drives on and off. Each is put back',
       restart: 'restart restarts the Lightkeeper app on your Homey',
       bridge: 'bridge runs one of your generated Flows, which switches lights',
       schedule: 'schedule replaces a schedule\'s windows and fires them (both are restored)',
       preview: 'preview writes the current curve to your lamps, and probes one that is off',
+      control: args.house
+        ? 'control runs the review screen\'s "Test my lights" on EVERY lamp in the house, room by '
+          + 'room and then all at once — each blinks, and is put back — and repairs this pass\'s '
+          + 'own curve and circadian devices'
+        : 'control runs the review screen\'s "Test my lights" on the lamps in your test room — each '
+          + 'blinks, and is put back — and repairs this pass\'s own curve and circadian devices. '
+          + 'The whole house only with --house',
       teardown: 'teardown DELETES the devices this pass built and nothing else. '
         + 'Nothing it deletes comes back',
     };
@@ -4166,9 +6529,32 @@ async function main() {
   }
 
   console.log(`Lightkeeper hardware verification against ${config.address}`);
-  console.log(`Commands: ${commands.join(', ')}\n`);
+  console.log(`Commands: ${commands.join(', ')}`
+    + (args.strict ? ' (strict: a SKIPPED line fails the run)' : '')
+    + (args.house ? ' (--house: control tests the whole house)' : '') + '\n');
 
   const api = await connect(config);
+
+  /** @param {boolean} wasInterrupted */
+  const runRecord = (wasInterrupted) => ({
+    results, commands, startedAt, finishedAt: Date.now(), strict: args.strict,
+    interrupted: wasInterrupted, build: { ...buildFacts },
+    ...(expanded ? { stillManual: manualLines() ?? [] } : {}),
+  });
+
+  /**
+   * Ctrl-C and SIGTERM put back what this pass changed, then exit non-zero —
+   * see `scripts/verify/undo.mjs`. The JSON is still written, marked
+   * interrupted, because a run that stopped part-way is exactly the one whose
+   * record somebody will want.
+   */
+  const uninstall = installInterruptHandlers(undo, {
+    onInterrupt: () => { interrupted = true; },
+    beforeExit: () => {
+      if (args.json) writeJsonReport(args.json, runRecord(true));
+      disconnectAll(api);
+    },
+  });
 
   if (skipCredential) {
     report('T35', 'SKIPPED', 'HOMEY_APP_KEY is not set to a SECOND Personal API Key, so the key '
@@ -4183,46 +6569,58 @@ async function main() {
    * lazily: an app nothing has asked anything of yet looks thin whatever it
    * does with the answer (platform §15).
    */
+  /** @type {number | undefined} */
   let pssBefore;
 
-  for (const command of commands) {
-    console.log(`--- ${command}`);
-    if (command === 'spike') await commandSpike(api);
-    if (command === 'memory') pssBefore = await commandMemory(api);
-    if (command === 'flows') await commandFlows(api);
-    // Both keys: the app can only have been near the one it holds, but a report
-    // that leaked either would be a report with a live credential in it.
-    if (command === 'redaction') await commandRedaction(api, [config.appKey, config.key]);
-    if (command === 'credential') await commandCredential(api, config.appKey);
-    if (command === 'rejoin') await commandRejoin(api);
-    if (command === 'pairspike') await commandPairSpike(api);
-    if (command === 'pair') await commandPair(api, config.room);
-    if (command === 'repair') await commandRepair(api);
-    if (command === 'restart') await commandRestart(api);
-    if (command === 'bridge') await commandBridge(api);
-    if (command === 'schedule') await commandSchedule(api);
-    if (command === 'preview') await commandPreview(api);
-    if (command === 'teardown') await commandTeardown(api);
-    console.log('');
+  try {
+    /**
+     * Each command in its own `try`, so one that throws is reported FAILED and
+     * the rest still run.
+     *
+     * It used to be one straight loop, so a single throw — one socket timeout
+     * in `schedule` — ended the pass there: `teardown` never ran, this pass's
+     * devices were left on the Homey, and every line after the throw was simply
+     * absent from a report that still read as a report. The message is narrowed
+     * through `explainFailure`, exactly as the top-level catch does it, because
+     * a `homey-api` error can quote the request back.
+     */
+    for (const command of commands) {
+      if (interrupted) break;
+      console.log(`--- ${command}`);
+      try {
+        const reading = await runCommand(command, api, config, { house: args.house });
+        if (command === 'memory') pssBefore = reading;
+      } catch (error) {
+        report('-', 'FAILED', `${command} stopped part-way: ${explainFailure(error)}`);
+      } finally {
+        await settleUndo(command);
+      }
+      console.log('');
+    }
+
+    if (pssBefore !== undefined && commands.length > 1 && !interrupted) {
+      console.log('--- memory (again)');
+      await reportMemoryDelta(api, pssBefore);
+      console.log('');
+    }
+
+    if (args.json) await fillBuildFacts(api);
+  } finally {
+    await settleUndo('the run');
+    uninstall();
+    disconnectAll(api);
   }
 
-  if (pssBefore !== undefined && commands.length > 1) {
-    console.log('--- memory (again)');
-    await reportMemoryDelta(api, pssBefore);
-    console.log('');
+  const summary = summarise(results, { strict: args.strict });
+  console.log(`${summary.ok} OK, ${summary.failed} failed, ${summary.skipped} skipped`
+    + (args.strict && summary.skipped > 0 ? ' — strict, so the skips fail the run' : ''));
+  if (summary.failing.length > 0) {
+    console.log(args.strict ? '\nFailed, or skipped under --strict:' : '\nFailed:');
+    for (const failure of summary.failing) console.log(`  ${failure.line} ${failure.detail}`);
   }
+  process.exitCode = summary.exitCode;
 
-  disconnectAll(api);
-
-  const failed = results.filter(r => r.status === 'FAILED');
-  const passed = results.filter(r => r.status === 'OK');
-  const skipped = results.filter(r => r.status === 'SKIPPED');
-  console.log(`${passed.length} OK, ${failed.length} failed, ${skipped.length} skipped`);
-  if (failed.length > 0) {
-    console.log('\nFailed:');
-    for (const failure of failed) console.log(`  ${failure.line} ${failure.detail}`);
-    process.exitCode = 1;
-  }
+  if (args.json) writeJsonReport(args.json, runRecord(false));
 
   /**
    * What is left for a person, printed rather than remembered.
@@ -4233,8 +6631,16 @@ async function main() {
    * whole pass" is actually being made.
    */
   if (expanded) {
-    console.log('\nStill needs a person:');
-    for (const line of STILL_MANUAL) console.log(`  ${line}`);
+    const manual = manualLines();
+    console.log('\nStill needs a person — every unticked line in docs/hardware-test-plan.md this run '
+      + 'does not answer (* = answered in part):');
+    if (manual === null) {
+      console.log('  docs/hardware-test-plan.md was not found; read it for the list');
+    } else {
+      for (const line of manual) {
+        console.log(`  ${line.line.padEnd(5)}${line.partial ? '*' : ' '} ${line.title}`);
+      }
+    }
   }
 }
 
@@ -4282,10 +6688,34 @@ function explainFailure(error) {
   return message;
 }
 
-main().catch(error => {
-  // The message may have been near the key, so it is printed rather than the
-  // whole error: a stack from homey-api can quote the request back, and this
-  // script's own rule is the app's — the key is never printed.
-  console.error(`\nverify-hardware failed: ${explainFailure(error)}`);
-  process.exitCode = 1;
-});
+/**
+ * The pure helpers, for `test/unit/verify-hardware-logic.test.ts`. One list at
+ * the end rather than `export` on each declaration, because
+ * `probe-shared-helpers.test.ts` finds the helpers it compares by a signature
+ * that starts at `function`.
+ */
+export {
+  clamp, round, mb, minutesOf, messageOf, runtimeId, markName, isMarked, MARKER,
+  lampOverlaps, controllersWithASleepingRemote, lampsDrivenByTheirOwnDevices,
+  pssBytesIn, findNumber, verdictFor, MEMORY_CEILING_MB, MEMORY_GUIDELINE_MB,
+  lampDrift, restoreSequence, withManifest, dtoFrom, chooseLamps, testScope,
+  expectedPublished, publishedMismatches, conditionResult, darknessCases, flowLamps,
+  lightsArgument, sourceExpectations, pickerProblems, levelProblems, ROUND_TRIPS,
+  settingsGaps, orphanPreviewProblems, orphanRefusalVerdict, checkoutVersion,
+  READ_ONLY, DESTRUCTIVE, FULL, results,
+};
+
+/**
+ * Guarded on being the process's own entry point, so a test can import the
+ * helpers above without reaching for a Homey — the same guard
+ * `scripts/probe-lights.mjs` has.
+ */
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch(error => {
+    // The message may have been near the key, so it is printed rather than the
+    // whole error: a stack from homey-api can quote the request back, and this
+    // script's own rule is the app's — the key is never printed.
+    console.error(`\nverify-hardware failed: ${explainFailure(error)}`);
+    process.exitCode = 1;
+  });
+}

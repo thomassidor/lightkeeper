@@ -2,9 +2,10 @@
  * Run a pairing view's script the way the pairing container does, with a DOM
  * small enough to fit in this file.
  *
- * This exists because of a bug that shipped: `ends.html` was generated with its
- * own boot preamble (`var root` / `data-booted`) while the SHARED
- * `stabiliseScrollbar()` helper it also carried reads `__root` by name. The view
+ * This exists because of a bug that shipped: a daylight screen (since folded
+ * away) was generated with its own boot preamble (`var root` / `data-booted`)
+ * while the SHARED `stabiliseScrollbar()` helper it also carried reads `__root`
+ * by name. The view
  * threw `ReferenceError: __root is not defined` before it ever asked the driver
  * for its data — so it rendered its static markup, then nothing, with no error on
  * screen because the `.catch` was never reached.
@@ -24,6 +25,17 @@ export interface FakeNode {
   tagName: string;
   id: string;
   className: string;
+  /**
+   * A real DOM's, not a field: reading it concatenates every descendant's text
+   * — `createTextNode` children and parsed markup text alike — and writing it
+   * replaces ALL children with one text node.
+   *
+   * It was a plain field, which let two wrong things pass. A view that wrote a
+   * label with `appendChild(createTextNode(...))` read back as empty from its
+   * parent, and a view that set `textContent` on an element that still held
+   * child elements kept them — so a stale row could survive a re-render here
+   * and nowhere else.
+   */
   textContent: string;
   value: string;
   checked: boolean;
@@ -53,7 +65,10 @@ export interface FakeNode {
   type: string;
   /** Set to reparse this node's children. Reading it is refused — see below. */
   innerHTML: string;
+  /** ELEMENT children only, as the DOM's `children` is. */
   readonly children: FakeNode[];
+  /** Every child, text nodes included — what `firstChild` and `removeChild` walk. */
+  readonly childNodes: FakeNode[];
   readonly style: Record<string, string>;
   readonly dataset: Record<string, string>;
   readonly attributes: Record<string, string>;
@@ -75,8 +90,9 @@ export interface FakeNode {
   /** This node or the nearest ancestor matching `selector`, as the DOM's does. */
   closest(selector: string): FakeNode | null;
   matches(selector: string): boolean;
+  /** The first child NODE, text included — which is what every view's `clear()` loops on. */
   readonly firstChild: FakeNode | null;
-  /** Every node beneath this one, this one included. */
+  /** Every ELEMENT beneath this one, this one included. Text nodes are not elements. */
   descendants(): FakeNode[];
 }
 
@@ -108,11 +124,23 @@ function matchesSelector(node: FakeNode, selector: string): boolean {
   );
 }
 
+const TEXT = '#text';
+
+function textNode(text: string): FakeNode {
+  const node = makeNode(TEXT);
+  node.textContent = text;
+  return node;
+}
+
 function makeNode(tagName: string): FakeNode {
+  const childNodes: FakeNode[] = [];
+  // Only a text node holds text of its own; an element's is its descendants'.
+  let data = '';
   const node: FakeNode = {
     tagName: tagName.toLowerCase(),
     id: '',
     className: '',
+    // Replaced below by an accessor pair, like `innerHTML`.
     textContent: '',
     value: '',
     checked: false,
@@ -127,7 +155,10 @@ function makeNode(tagName: string): FakeNode {
     // Replaced below by an accessor pair; declared here so the object literal
     // satisfies FakeNode.
     innerHTML: '',
-    children: [],
+    get children() {
+      return childNodes.filter(child => child.tagName !== TEXT);
+    },
+    childNodes,
     style: {},
     /**
      * A real `dataset` writes THROUGH to the attribute, and several views depend
@@ -175,19 +206,21 @@ function makeNode(tagName: string): FakeNode {
       // as if it were an element would nest every row one level too deep, and
       // every selector in a test would then be wrong in the same invisible way.
       if (child.tagName === '#fragment') {
-        for (const grandchild of [...child.children]) {
+        for (const grandchild of [...child.childNodes]) {
           child.removeChild(grandchild);
           node.appendChild(grandchild);
         }
         return child;
       }
+      // A node lives in one place, as in the DOM: re-appending moves it.
+      child.parentElement?.removeChild(child);
       child.parentElement = node;
-      node.children.push(child);
+      childNodes.push(child);
       return child;
     },
     removeChild(child) {
-      const at = node.children.indexOf(child);
-      if (at >= 0) node.children.splice(at, 1);
+      const at = childNodes.indexOf(child);
+      if (at >= 0) childNodes.splice(at, 1);
       child.parentElement = null;
       return child;
     },
@@ -224,7 +257,7 @@ function makeNode(tagName: string): FakeNode {
       return matchesSelector(node, selector);
     },
     get firstChild() {
-      return node.children[0] ?? null;
+      return childNodes[0] ?? null;
     },
     descendants() {
       const found: FakeNode[] = [node];
@@ -233,14 +266,29 @@ function makeNode(tagName: string): FakeNode {
     },
   };
 
+  Object.defineProperty(node, 'textContent', {
+    enumerable: true,
+    get(): string {
+      if (node.tagName === TEXT) return data;
+      return childNodes.map(child => child.textContent).join('');
+    },
+    set(text: unknown) {
+      const value = text === null || text === undefined ? '' : String(text);
+      if (node.tagName === TEXT) {
+        data = value;
+        return;
+      }
+      for (const child of childNodes.splice(0, childNodes.length)) child.parentElement = null;
+      if (value) node.appendChild(textNode(value));
+    },
+  });
+
   /**
    * `innerHTML =` reparses; reading it REFUSES.
    *
-   * Two views build their rows as strings and assign them — `pointHtml` in
-   * `curve.html` and `entryHtml` in `schedule.html` — and they are the two most
-   * logic-heavy screens in the app, so a harness without this covers neither.
-   * (They are also the two entries on `webview-safety.test.ts`'s `innerHTML`
-   * allowlist, which is why every value inside them goes through `escapeHtml`.)
+   * No view assigns `innerHTML` any more (`webview-safety.test.ts` enforces it),
+   * so the setter is here for the harness's own parse and for a test that wants
+   * to build a fragment of markup; it is not a path any screen takes.
    *
    * The getter throws instead of serialising the tree back to markup. Nothing in
    * any view reads `innerHTML`, and a getter that returned an approximation
@@ -257,7 +305,6 @@ function makeNode(tagName: string): FakeNode {
       );
     },
     set(html: string) {
-      node.children.splice(0, node.children.length);
       node.textContent = '';
       parseInto(String(html), node, { rootIsFirstTag: false, stopAtScript: false });
     },
@@ -270,8 +317,7 @@ function makeNode(tagName: string): FakeNode {
  * Parse just enough of a view's markup to build its element tree.
  *
  * Tags, ids, classes and `data-*` attributes — which is what the scripts address
- * elements by. Text content is ignored: every string a view shows comes from
- * `Homey.__` at runtime, so the markup's own text is empty anyway.
+ * elements by — plus whatever static text the markup carries, as text nodes.
  */
 function parseBody(html: string, root: FakeNode): void {
   parseInto(html.slice(html.indexOf('<div class="wrap"')), root, {
@@ -296,7 +342,7 @@ function parseSettingsBody(html: string, root: FakeNode): void {
 
 const VOID = new Set(['input', 'br', 'img', 'hr', 'line', 'polyline', 'path', 'circle', 'rect']);
 
-/** The five `escapeHtml()` produces, undone. */
+/** The five HTML entities markup can carry, undone. */
 function decodeEntities(text: string): string {
   return text
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
@@ -308,14 +354,12 @@ function decodeEntities(text: string): string {
 /**
  * Scan markup into an element tree.
  *
- * Shared by the whole-view parse and by `innerHTML =`, which is the point:
- * a row built by `pointHtml` must land in the same shape as a row written into
- * the file, or a test proves something about the harness rather than the view.
+ * Shared by the whole-view parse and by `innerHTML =`, so markup lands in one
+ * shape whichever way it arrives.
  *
- * Text IS captured, unlike the original body-only parser, because the strings
- * these two views build are interpolated INTO the markup rather than assigned
- * through `textContent` afterwards — `<option value="6" selected>06</option>`
- * carries the only copy of "06" there is.
+ * Text is captured as text NODES, in document order beside the elements, so
+ * `textContent` reads it back the way a browser would — static markup text such
+ * as `<option value="6">06</option>` carries the only copy of "06" there is.
  */
 function parseInto(
   html: string,
@@ -335,7 +379,7 @@ function parseInto(
     // Whatever sat between the last tag and this one belongs to the open
     // element. Markup indentation is not content, so it is trimmed away.
     const between = html.slice(cursor, match.index).trim();
-    if (between) stack[stack.length - 1]!.textContent += decodeEntities(between);
+    if (between) stack[stack.length - 1]!.appendChild(textNode(decodeEntities(between)));
     cursor = match.index + whole!.length;
 
     if (closing) {
@@ -357,7 +401,7 @@ function parseInto(
   }
 
   const trailing = html.slice(cursor).trim();
-  if (trailing) stack[stack.length - 1]!.textContent += decodeEntities(trailing);
+  if (trailing) stack[stack.length - 1]!.appendChild(textNode(decodeEntities(trailing)));
 }
 
 function applyAttrs(node: FakeNode, attrs: string): void {
@@ -433,9 +477,9 @@ export interface ViewRun {
   /**
    * Fire a DELEGATED listener, the way a real click does.
    *
-   * `curve.html` and `schedule.html` listen on the list and reach the row with
-   * `event.target.closest('[data-act]')`, so a listener fired with the list as
-   * its own target finds nothing and the test passes by doing nothing. This
+   * A view that listens on a list and reaches the row with
+   * `event.target.closest(...)` finds nothing when the listener is fired with
+   * the list as its own target, and the test passes by doing nothing. This
    * fires the listener registered on an ANCESTOR, with `target` set to the node
    * that was actually clicked.
    */
@@ -532,11 +576,7 @@ export function runPairView(html: string, options: ViewOptions = {}): ViewRun {
     createElement: makeNode,
     createElementNS: (_ns: string, tag: string) => makeNode(tag),
     createDocumentFragment: () => makeNode('#fragment'),
-    createTextNode: (text: string) => {
-      const node = makeNode('#text');
-      node.textContent = text;
-      return node;
-    },
+    createTextNode: textNode,
     documentElement: makeNode('html'),
     // `insertAdjacentHTML` is the poller's give-up path: a view that never finds
     // Homey says so in the container's own document rather than staying blank.
@@ -709,11 +749,7 @@ export function runSettingsPage(html: string, options: SettingsOptions = {}): Se
     createElement: makeNode,
     createElementNS: (_ns: string, tag: string) => makeNode(tag),
     createDocumentFragment: () => makeNode('#fragment'),
-    createTextNode: (text: string) => {
-      const node = makeNode('#text');
-      node.textContent = text;
-      return node;
-    },
+    createTextNode: textNode,
     documentElement: makeNode('html'),
     body: root,
     querySelectorAll: (selector: string) => root.querySelectorAll(selector),

@@ -2,7 +2,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  bindingsFor, bindingsForPlan, boundaryLabel, daysLabel, eventKeyFor, parseEventKey,
+  bindingsFor, bindingsForPlan, boundaryLabel, daysLabel, daysLabelKeys, eventKeyFor, parseEventKey,
 } from '../../lib/schedules/schedule-bindings';
 import { discoverTimeCard, timeArgumentValue } from '../../lib/schedules/time-card-discovery';
 import { migrateSchedulePlan, CURRENT_SCHEDULE_SCHEMA_VERSION } from '../../lib/schedules/schedule-migrations';
@@ -103,6 +103,16 @@ describe('schedule labels', () => {
     assert.equal(daysLabel([1, 2, 3, 4, 5]), 'Mon–Fri');
     assert.equal(daysLabel([6, 7]), 'weekends');
     assert.equal(daysLabel([1, 3]), 'Mon, Wed');
+  });
+
+  test('the review screen gets the same summary as locale keys, in the same cases', () => {
+    // daysLabel stays English because it names a Flow; the review is our own
+    // screen, so it is built from keys the driver translates.
+    assert.deepEqual(daysLabelKeys(null), ['days.everyDay']);
+    assert.deepEqual(daysLabelKeys([1, 2, 3, 4, 5, 6, 7]), ['days.everyDay']);
+    assert.deepEqual(daysLabelKeys([1, 2, 3, 4, 5]), ['days.weekdays']);
+    assert.deepEqual(daysLabelKeys([6, 7]), ['days.weekends']);
+    assert.deepEqual(daysLabelKeys([1, 3]), ['weekday.1', 'weekday.3']);
   });
 
   test('a boundary label names the time it actually fires at', () => {

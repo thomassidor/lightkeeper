@@ -48,6 +48,7 @@ covers switch-ons that go through it, and pre-staging is what covers the wall sw
 
 ```bash
 npm test                       # unit tests via node --test + tsx. No hardware needed.
+npm run test:coverage          # the same suite under coverage, with floors. What CI runs
 npm run typecheck              # tsc --noEmit, the app only
 npm run typecheck:test         # the suite and scripts/, via tsconfig.test.json
 npm run lint                   # eslint, type-checked. See eslint.config.mjs for what and why
@@ -141,7 +142,9 @@ lib/
                                 published-values.ts is visible-state.ts's sibling for NUMBERS:
                                 what each engine wants the lights to be, gated at the
                                 capability's own resolution, on its way to the capability rows
-                                and the Flow tags Homey makes of them (platform §18)
+                                and the Flow tags Homey makes of them (platform §18).
+                                writes-lights.ts is "Don't change lights automatically": whether
+                                an engine device drives its lamps or only publishes. Read it first
   profiles/                     profile schema, migrations
   schedules/                    types, window maths, local clock, bindings, runtime, manager,
                                 time-card discovery, migrations. A block carries a palette `color`
@@ -172,6 +175,10 @@ lib/
                                 storedRuleFrom(), the ONE conversion from a validated row to the
                                 rule a profile stores — it was two, and only one of them carried
                                 the preset.
+                                control-choice.ts is "How Lightkeeper controls your lights", the
+                                review screen's radio group on the three engine device types:
+                                three modes over the two flags the plans already had, the
+                                per-lamp pre-stage test, and what repair reads back from it.
                                 source-picker.ts is what the two "take it from" screens offer:
                                 which devices answer which question, the live swatch or level on
                                 each row, and why a level is drawn perceptually when the board
@@ -227,8 +234,10 @@ drivers/curve/                  the FULL one: every point, and a colour per poin
 drivers/daylight/               brightness from the room, and the ONLY device type that reads a
                                 sensor. NO credential screen. driver.flow.compose.json is the
                                 one per-driver Flow card in the app: "it is dark enough" 
-  pair/                         intro, 1 lights, 2 sensor, 3 response, 4 review, plus the pushed
-                                sensordetail. Three of its own; the rest are the controller's
+  pair/                         intro, 1 lights, 2 sensor, 3 response, 4 review. Two of its own;
+                                the rest are the controller's. A tapped sensor goes straight to
+                                response, whose week card says what is wrong with a flat or a
+                                quiet one — the detail screen that used to sit between is gone
   repair/                       exact copies of pair/, generated — see platform §8
 drivers/schedule/               virtual device, driver. Needs the key, so it has the credential
                                 screen
@@ -240,6 +249,12 @@ scripts/build.mjs               `npm run build`, which the Homey CLI calls for i
                                 exists — strips the evidence recorder out of .homeybuild and
                                 verifies none of it is left. The switch, and the only hook there is
 scripts/sync-views.mjs          makes every copy named above; nothing runs it for you
+scripts/coverage.mjs            `npm run test:coverage`: the suite under coverage, with per-file and
+                                total floors, and a failure for any source file no test loads
+scripts/verify/                 the hardware script's importable parts — argument parsing, the
+                                interrupt undo stack, the T-line table (lines.mjs, which the docs'
+                                table and hardware-test-numbers.test.ts are checked against), and
+                                the --json / --strict outcome
 scripts/verify-hardware.mjs     most of the hardware pass. Talks to a REAL Homey over its OWN
                                 Personal API Key — needs HOMEY_ADDRESS + HOMEY_API_KEY, and
                                 HOMEY_APP_KEY for `credential`. TWO keys: one session per key
@@ -291,7 +306,7 @@ scripts/hardware-env.json       GITIGNORED. A Homey address and two Personal API
 views/shared/                   NOT bundled. The one authored copy of each block that appears
                                 in more than one pair view — the CSS base, emit() and
                                 stabiliseScrollbar() in all 54, the week grid's CSS and weekGrid()
-                                in the two daylight screens that draw it. `npm run sync:views`
+                                in the one daylight screen that draws it. `npm run sync:views`
                                 splices them in
 settings/index.html             app settings page
 locales/en.json                 all user-facing strings
@@ -304,6 +319,12 @@ locales/en.json                 all user-facing strings
 assets/                         the app's own icon and store images, all generated
 README.txt                      the App Store long description — not README.md
 test/                           unit tests and hand-transcribed fixtures
+  support/                      the shared fakes. fake-homey.ts is the SDK stand-in that lets a test
+                                load app.ts, a driver or a device (platform §13); fake-homey-api.ts a
+                                live homey-api client under the REAL DeviceCatalog; fake-lightkeeper-
+                                app.ts the app a driver talks to; fake-timers.ts the one fake clock —
+                                fire in due order, including timers armed while advancing;
+                                pair-view-harness.ts the hand-rolled DOM the views run in
 docs/                           NOT bundled. `docs/README.md` indexes it
   homey-platform.md             the platform reference, cited in code as `platform §n`
   privacy.md                    the privacy notice
@@ -318,8 +339,8 @@ docs/                           NOT bundled. `docs/README.md` indexes it
                                 five type sizes, four radii, three border roles, two button
                                 shapes — and the flows file that applies it to all 34
                                 screens. The README says what they are the authority on,
-                                where the two disagree (the flows file wins), the seven
-                                places the app departs on purpose, and the one still open.
+                                where the two disagree (the flows file wins), the nine
+                                places the app departs on purpose, and that nothing is open.
                                 `npm run render:views` draws the artefact to put beside it
 artwork/                        NOT bundled. Every graphic's source, and its own two docs
   masters/                      every graphic's source
@@ -618,12 +639,18 @@ Two consequences that look like awkwardness and are not:
   surface down by hand instead, and `app.ts` assigns its class to that type before exporting it — so
   removing a member the contract promises fails at compile time rather than as `undefined` inside a
   settings-page handler.
-- **A file containing `extends Homey.Device` cannot be imported by a test.** `require('homey')`
-  resolves to the CLI in `node_modules`, whose main executes the CLI; the SDK module exists only on a
-  Homey. `@types/homey` supplies the types, so `tsc` is happy and any test that imports such a file
-  dies with `Class extends value undefined`. That is why the device layer is split:
-  `lib/devices/device-lifecycle.ts` holds every rule and takes its host as an argument, and
-  `lib/devices/lightkeeper-device.ts` is the `Homey.Device` shell that forwards five entry points.
+- **A file containing `extends Homey.Device` cannot be imported by a test — unless the test imports
+  `test/support/fake-homey.ts` first.** `require('homey')` resolves to the CLI in `node_modules`,
+  whose main executes the CLI; the SDK module exists only on a Homey. `@types/homey` supplies the
+  types, so `tsc` is happy and any test that imports such a file dies with `Class extends value
+  undefined`. That is why the device layer is split: `lib/devices/device-lifecycle.ts` holds every
+  rule and takes its host as an argument, and `lib/devices/lightkeeper-device.ts` is the
+  `Homey.Device` shell that forwards five entry points. The split stays — rules still belong in
+  `lib/` — but the shells are no longer untestable: `fake-homey.ts` wraps `Module._resolveFilename`
+  so `'homey'` resolves to three recording base classes, and `app.ts`, every `driver.ts` and every
+  `device.ts` now run under the suite (`app-entry`, `driver-*`, `devices`, `pair-view-contract`).
+  Running them for the first time found five real defects, which is the argument for keeping it so.
+  Load an entry point with `require()` after the fake's import, never `import`.
 
 **`any` at Homey API boundaries is deliberate.** `homey-api` ships JavaScript with JSDoc rather than
 type declarations. Everything of ours is strict — `strict: true`, `noImplicitOverride: true`.
@@ -653,7 +680,8 @@ than in a global. Each file's header explains this.
 
 **The shared blocks are GENERATED, and `views/shared/` is where they are authored.** The CSS base,
 `emit()` and `stabiliseScrollbar()` appear in every view file; the week grid — its own CSS and
-`weekGrid()` — appears in the two daylight screens that draw a sensor's history.
+`weekGrid()` — appears in the one daylight screen that draws a sensor's history, the response
+step (it had a second carrier until the sensor detail screen was folded into it).
 (`wc -l views/shared/*` for the sizes: they are quoted nowhere, deliberately, because three places
 once carried three stale numbers.) All of it used to be authored by hand in every copy, under an
 in-file instruction to "edit this block in all files, or in none of them", with
@@ -726,9 +754,19 @@ in each place (platform §8). Edit the controller's copy of a shared view, never
 
 Three of those four are answered by a payload rather than by shared code: a driver returns
 `{ title, blurb, hero, decisions[], nextView }` from `getIntro` and `{ stepIndex, stepCount, rows[],
-promise }` from `getReview`, and `lib/pairing/flow-screens.ts` is where both are built. That is what
+hero?, control? }` from `getReview`, and `lib/pairing/flow-screens.ts` is where both are built.
+`control` is "How Lightkeeper controls your lights", sent by the three engine device types only;
+it took the place of the closing sentence every review used to end on. That is what
 lets five different flows — three steps or four, with or without a credential screen — share one
 file each rather than five near-copies.
+
+**Every source file is loaded by a test, and CI enforces it.** `npm run test:coverage`
+(`scripts/coverage.mjs`) runs the suite under Node's own coverage and fails on three things a plain
+`--test-coverage-lines` cannot see: a source file NO test loads (V8 leaves it out of the report, so it
+can never lower an aggregate — which is how `app.ts` and all five drivers went untested), a single
+file under the per-file floor, and the totals. The floors sit just under what the suite achieves;
+raise them as coverage rises and never lower one to land a change. A type-only file goes on its
+`TYPE_ONLY` list with the reason.
 
 **Tests use `node --test` with `tsx`.** No framework. Fixtures in
 `test/fixtures/reference-devices.ts` are transcribed from the four remotes above; the expected
@@ -810,6 +848,13 @@ Load-bearing product guarantees, not implementation details:
   it must not shut. It is NOT lengthened instead: somebody who switches a light on and immediately
   dims it is doing exactly what the override machinery exists to honour. Bounded because only an
   already-open window is extended.
+- **A report on a lamp that is OFF is never an override, on any axis.** Either edge of `onoff`
+  clears an override, so one raised on an off lamp protects nothing and only costs that lamp its
+  pre-staging and a slot in the event log. It was `dim` only until a house-wide "Test my lights"
+  (23 September 2026) sent a colour to three off Studio spots and the household's own Studio curve,
+  which drives them, filed all three as a person within 200 ms — the same thing Repair does to the
+  device being repaired, and two devices pre-staging shared lamps do to each other. `lamp_off` in
+  `circadian-runtime.ts`; T173 is its hardware line.
 - **A reported `dim` of 0 is never an override.** Neither curve-driven nor daylight-driven writes can
   produce a 0 (`MINIMUM_BRIGHTNESS` plus `litDim()`), so a reported 0 is always the lamp's own. The
   `actualOn` guard was not enough because an integration can report `dim 0` a median of **29.9 s**
@@ -1000,30 +1045,50 @@ Load-bearing product guarantees, not implementation details:
   responding all night; without the second, we asked six hundred times a night and never listened.
   Both halves ship together: suppression alone would freeze the streak at exactly the tripping value
   and remove the only writes that could clear it.
-- **Pre-staging is ON for a new curve-driven device, and OFF for every device that predates 0.6.5.**
-  Two different gates, and conflating them is the whole risk: `DEFAULT_SIMPLE_PLAN.preStage` (and the
-  curve driver's session seed) is what a NEW device starts with, while `preStage: plan.preStage ===
-  true` in `lib/validation/plans.ts` is the STORE's gate, where an absent key must keep meaning "no".
-  Flip the second to match the first and every device paired before this silently starts writing to
-  lamps that are off. The reversal is argued at `DEFAULT_SIMPLE_PLAN`: opting out never cost "a
-  half-second of the wrong white", it cost every switch-on permanently — measured at 1.3–1.9 s from
-  the lamp reporting itself on to the colour landing — and `verifyStayedOff()` disables the whole
-  thing device-wide, persistently, 1.5 s after the first write that brings a lamp on. It does not
-  switch that lamp back off (platform §12), so the exposure is one lamp coming on once.
-  **The control is HIDDEN again, behind `SHOW_PRE_STAGE` in `day.html` and `curve.html`.** It had no
-  control at all for two releases — the plan carried it, both drivers registered `testPreStage`, the
-  runtime had the probe, and `FAQ.md` promised it was "provable from the pairing screen" while no
-  screen drew a switch — so 0.6.5 drew one on both, test button included. The design canvas has no
-  pre-staging control anywhere, and where it belongs is an open question, so the markup and every
-  `preStage.*` string stay in place behind one `false` rather than being deleted. **Nothing else
-  changed**: both gates above are untouched, a new device still pairs with it on, and
-  `verifyStayedOff()` still disables it device-wide the first time a lamp comes on. What a household
-  loses meanwhile is the only instrument that can answer the question for their own lamps, which is
-  why it is a flag and not a deletion. See `docs/design/README.md`.
+- **Pre-staging is chosen on the review screen and then proven PER LAMP — and choosing it is not
+  enough.** "How Lightkeeper controls your lights" offers "Set lights before they turn on" on the two
+  curve-driven types, and it is stored as `preStage: true` plus `preStageLights`: the lamps the
+  review screen's test ("Test my {n} lights", `probePreStageAll()`) watched stay off while given a
+  colour. `preStagesLamp()` in `lib/circadian/circadian-types.ts` is the one rule — BOTH, always.
+  Chosen and not tested pre-stages nothing, which is the design's "until the test has run, the
+  device behaves as option 1", and it is also exactly what every device paired before this change
+  with `preStage: true` now reads as: no migration, and those devices stopped pre-staging until
+  somebody runs the test in repair. Three gates, and conflating any two is the risk:
+  `DEFAULT_SIMPLE_PLAN.preStage` (and the curve driver's session seed) is now `false` for a NEW device
+  — the second reversal of that default, argued at `DEFAULT_SIMPLE_PLAN`; `preStage === true` in
+  `lib/validation/plans.ts` is still the STORE's gate, where an absent key must keep meaning "no";
+  and `preStageLights` is sanitised forgivingly, because a malformed entry can only ever mean a lamp
+  that is not pre-staged. `verifyStayedOff()` is now per lamp as well: a lamp seen coming on from a
+  pre-stage write is struck off `preStageLights`, persisted, and the choice and every other lamp are
+  left alone — one integration switching a lamp on is no evidence about another. It still does not
+  switch that lamp back off (platform §12).
+  **The test switches lamps that are ON off to test them**, then puts each back — onoff first, then
+  the brightness and the one colour axis the test wrote. That is what "each light blinks once" on the
+  screen means, and it is new behaviour on hardware: testing only the lamps that happen to be off
+  would leave an evening household with nothing to pre-stage. It runs the lamps in PARALLEL, because
+  each is two waits long and a pair view's `emit()` gives up at 20 s. `probePreStage()` (one lamp,
+  already off) is kept for the `testPreStage` API route.
+  `SHOW_PRE_STAGE` and the hidden switch it guarded are gone from `day.html` and `curve.html`, and so
+  is the "Keep these lights up to date" switch beside them: both answers now live in one radio group
+  on the last screen. See `lib/pairing/control-choice.ts`.
+- **A device paired before `writesLights` keeps writing: the gate is `!== false`.** The three engine
+  types can be set to only PUBLISH — "Don't change lights automatically" on the review screen, which
+  computes and publishes their values and writes to no lamp — so a
+  remote's *On – with Lightkeeper* button can read them without a second writer on the same bulbs.
+  That was measured, not imagined: one press became three devices and ~30 writes to five lamps. The
+  flag is opt-OUT and stored only when false, which is the reverse of `preStage` one line above it in
+  every validator; copying `preStage === true` would silently stop every existing device in every
+  house. `lib/runtime/writes-lights.ts` holds the one rule, and the gate sits in `applyNow` AFTER
+  `publishValues()` — on a Room-sensing Light also before the aim bookkeeping, or the slew walks
+  towards a level nothing writes. A publish-only device subscribes to no lamp, because `noteOverride`
+  files every report it has no write to compare with as an override. `preview` is the only way past
+  the gate, and it is its own option because the switched-on pass is forced too.
 - **A Room-sensing Light never switches a lamp on or off, and has no pre-stage option at all.** A
   `dim` write turns an off lamp on — measured, not suspected — so pre-staging is a colour-only idea
   and a brightness-only device type has nothing to pre-stage. It writes to lamps that are already
-  on. That is the same promise the two curve-driven types make (platform §12), with one fewer
+  on. So its review screen offers TWO of the three ways to control lights, and `setControl` refuses
+  the third rather than trusting the screen (platform §14) — the design drew all three, and the
+  third would have failed its test on every lamp there is. That is the same promise the two curve-driven types make (platform §12), with one fewer
   setting to get wrong.
 - **A Room-sensing Light that cannot tell how light it is falls back to a number, never to
   darkness.** `source: 'none'` is real — a Homey never told where it is, a flat battery in the one

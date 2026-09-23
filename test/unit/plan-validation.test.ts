@@ -334,7 +334,14 @@ describe('forged managed-Flow references never reach a delete', () => {
   test('the filter never throws, because a delete path that throws leaks', () => {
     // Throwing here would skip the cleanup entirely and leave every OTHER
     // reference's Flow behind — worse than deleting fewer things.
-    assert.doesNotThrow(() => validManagedFlowRefs([undefined, Number.NaN, () => 1]));
+    // So what it RETURNS is the assertion: the junk dropped, and a good
+    // reference among it still kept — a filter that "did not throw" by
+    // returning [] for any hostile list would fail the second.
+    assert.deepEqual(validManagedFlowRefs([undefined, Number.NaN, () => 1]), []);
+    assert.deepEqual(
+      validManagedFlowRefs([undefined, good, Number.NaN, () => 1, Symbol('x')]),
+      [good],
+    );
   });
 });
 
@@ -425,20 +432,57 @@ describe('the shared migration runner', () => {
 });
 
 /**
- * Pre-staging defaults ON for a new device as of 0.6.5, and that reversal has
- * exactly one boundary: a device that already exists must not be changed under
- * its household's feet.
+ * Pre-staging is a CHOICE on the review screen, and then a per-lamp test.
  *
- * The two halves are enforced in different places, which is why they are tested
- * together — the DEFAULT is a constant the pairing session seeds from, and the
- * STORE's gate is `preStage === true` in the validator. Flip the gate to match
- * the default and every device paired before this silently starts writing to
- * lamps that are off.
+ * "How Lightkeeper controls your lights" defaults to "Change lights after they
+ * turn on", so a new device starts with `preStage` off — the second reversal of
+ * that default, argued at DEFAULT_SIMPLE_PLAN. The store's own gate is
+ * unchanged and still the thing to protect: `preStage === true`, so an absent
+ * key is not consent. And `true` alone pre-stages nothing any more; only the
+ * lamps in `preStageLights` are written to while off.
  */
-describe('pre-staging is on by default without changing devices that exist', () => {
-  test('a new device starts with it on', async () => {
+describe('pre-staging is chosen, then proven lamp by lamp', () => {
+  test('a new device starts with it off, and with brightness on', async () => {
     const { DEFAULT_SIMPLE_PLAN } = await import('../../lib/circadian/simple-curve');
-    assert.equal(DEFAULT_SIMPLE_PLAN.preStage, true);
+    assert.equal(DEFAULT_SIMPLE_PLAN.preStage, false);
+    assert.equal(DEFAULT_SIMPLE_PLAN.adjustBrightness, true);
+  });
+
+  test('the lamps a test proved are kept, de-duplicated, and junk is dropped', () => {
+    const plan = validateCircadianPlan({
+      schemaVersion: 1,
+      enabled: true,
+      target: { kind: 'devices', deviceIds: ['l1', 'l2'] },
+      points: DEFAULT_POINTS,
+      adjustBrightness: false,
+      preStage: true,
+      preStageLights: ['l1', 'l1', '', 7, null, 'l2'],
+    });
+    assert.deepEqual(plan.preStageLights, ['l1', 'l2']);
+  });
+
+  test('a plan with no list round-trips without growing one', () => {
+    const plan = validateCircadianPlan({
+      schemaVersion: 1,
+      enabled: true,
+      target: { kind: 'devices', deviceIds: ['l1'] },
+      points: DEFAULT_POINTS,
+      adjustBrightness: false,
+      preStage: true,
+    });
+    assert.equal('preStageLights' in plan, false, 'absent in, absent out');
+  });
+
+  test('a device chosen but never tested pre-stages no lamp', async () => {
+    const { preStagesLamp } = await import('../../lib/circadian/circadian-types');
+    // Every device paired before this change with `preStage: true` looks like
+    // this, and that is the agreed reading: option 2, untested.
+    assert.equal(preStagesLamp({ preStage: true }, 'l1'), false);
+    assert.equal(preStagesLamp({ preStage: true, preStageLights: [] }, 'l1'), false);
+    assert.equal(preStagesLamp({ preStage: true, preStageLights: ['l1'] }, 'l1'), true);
+    assert.equal(preStagesLamp({ preStage: true, preStageLights: ['l1'] }, 'l2'), false);
+    // The list alone is not consent either: leaving "before" keeps it for later.
+    assert.equal(preStagesLamp({ preStage: false, preStageLights: ['l1'] }, 'l1'), false);
   });
 
   test('a stored plan that never had the key stays off', () => {

@@ -167,7 +167,7 @@ export type ScheduleSummary =
 export type CircadianSummary =
   Pick<CircadianDiagnostics,
   'state' | 'name' | 'enabled' | 'now' | 'nextPoint' | 'points' | 'timezone'
-  | 'localTime' | 'targetNames' | 'preStage' | 'preStageDisabled'>
+  | 'localTime' | 'targetNames' | 'preStage' | 'writesLights' | 'preStageDisabled'>
   & {
     id: string;
     /**
@@ -180,7 +180,7 @@ export type CircadianSummary =
 
 export type DaylightSummary =
   Pick<DaylightDiagnostics,
-  'state' | 'name' | 'enabled' | 'now' | 'response' | 'targetNames' | 'sensors'>
+  'state' | 'name' | 'enabled' | 'writesLights' | 'now' | 'response' | 'targetNames' | 'sensors'>
   & {
     id: string;
     /** As above: counted from `targets`, not carried by diagnostics. */

@@ -16,7 +16,7 @@
  *
  * THREE views are one FILE and five SCREENS. `intro.html`, `lights.html` and
  * `review.html` are shared by every driver (platform §8) and differ entirely in
- * what the driver answers them with — a different promise, a different picture,
+ * what the driver answers them with — a different picture, different rows,
  * a different number of steps. Keyed by file alone, the contact sheet drew the
  * circadian intro five times and the four other device types were never on it.
  * So `DRIVER_REPLIES` below is keyed `<driver>/<file>` and the renderer prefers
@@ -116,37 +116,55 @@ const SUPPORT = { onoff: 3, dim: 3, light_temperature: 2, light_hue: 2, total: 3
 const TIMEZONE = 'Europe/Copenhagen';
 
 /**
- * The whole palette, so the render shows the featured eight AND what folds out.
+ * The whole palette, so the render shows the default ten AND what folds out.
  *
- * Hue and saturation are Homey's normalised axes; the view turns them into
- * something a browser will paint.
+ * Hue and saturation are Homey's normalised axes, and `swatch` is the design's
+ * own hex, which is what a selector paints. Copied from lib/circadian/palette.ts
+ * with the labels resolved; `moss` is there and hidden, as it is on a Homey.
  */
 const PALETTE = [
-  { id: 'amber', label: 'Warm amber', hue: 0.11, saturation: 0.75 },
-  { id: 'candle', label: 'Candlelight', hue: 0.08, saturation: 0.55 },
-  { id: 'coral', label: 'Sunset coral', hue: 0.02, saturation: 0.55 },
-  { id: 'neutral', label: 'Neutral white', hue: 0.10, saturation: 0.05 },
-  { id: 'coolwhite', label: 'Cool white', hue: 0.58, saturation: 0.08 },
-  { id: 'ocean', label: 'Ocean', hue: 0.55, saturation: 0.70 },
-  { id: 'forest', label: 'Forest', hue: 0.35, saturation: 0.55 },
-  { id: 'violet', label: 'Violet', hue: 0.78, saturation: 0.55 },
-  { id: 'ember', label: 'Ember', hue: 0.02, saturation: 0.85 },
-  { id: 'crimson', label: 'Crimson', hue: 0.99, saturation: 0.75 },
-  { id: 'blush', label: 'Blush', hue: 0.98, saturation: 0.35 },
-  { id: 'rose', label: 'Rose', hue: 0.96, saturation: 0.50 },
-  { id: 'peach', label: 'Peach', hue: 0.04, saturation: 0.45 },
-  { id: 'apricot', label: 'Apricot', hue: 0.07, saturation: 0.60 },
-  { id: 'gold', label: 'Gold', hue: 0.13, saturation: 0.65 },
-  { id: 'lime', label: 'Lime', hue: 0.25, saturation: 0.60 },
-  { id: 'moss', label: 'Moss', hue: 0.30, saturation: 0.45 },
-  { id: 'mint', label: 'Mint', hue: 0.42, saturation: 0.40 },
-  { id: 'teal', label: 'Teal', hue: 0.48, saturation: 0.65 },
-  { id: 'sky', label: 'Sky', hue: 0.58, saturation: 0.45 },
-  { id: 'indigo', label: 'Indigo', hue: 0.70, saturation: 0.70 },
-  { id: 'lavender', label: 'Lavender', hue: 0.75, saturation: 0.40 },
-  { id: 'orchid', label: 'Orchid', hue: 0.82, saturation: 0.45 },
-  { id: 'magenta', label: 'Magenta', hue: 0.88, saturation: 0.65 },
+  { id: 'candle', label: 'Candlelight', hue: 0.082, saturation: 0.81, swatch: '#e8892c' },
+  { id: 'amber', label: 'Warm amber', hue: 0.086, saturation: 0.632, swatch: '#efa658' },
+  { id: 'warmwhite', label: 'Warm white', hue: 0.094, saturation: 0.434, swatch: '#f4c68a' },
+  { id: 'neutral', label: 'Neutral white', hue: 0.095, saturation: 0.116, swatch: '#f2e6d6' },
+  { id: 'coolwhite', label: 'Cool white', hue: 0.599, saturation: 0.127, swatch: '#dbe8fb' },
+  { id: 'coral', label: 'Sunset coral', hue: 0.021, saturation: 0.719, swatch: '#e0533f' },
+  { id: 'sunflower', label: 'Sunflower', hue: 0.142, saturation: 0.715, swatch: '#ddc63f' },
+  { id: 'forest', label: 'Forest', hue: 0.37, saturation: 0.464, swatch: '#5aa86b' },
+  { id: 'ocean', label: 'Ocean', hue: 0.569, saturation: 0.658, swatch: '#3f86b8' },
+  { id: 'orchid', label: 'Orchid', hue: 0.8, saturation: 0.462, swatch: '#a763b8' },
+  { id: 'crimson', label: 'Crimson', hue: 0.01, saturation: 0.761, swatch: '#b8342c' },
+  { id: 'ember', label: 'Ember', hue: 0.034, saturation: 0.802, swatch: '#d94f2b' },
+  { id: 'rose', label: 'Rose', hue: 0.944, saturation: 0.56, swatch: '#d85f88' },
+  { id: 'blush', label: 'Blush', hue: 0.967, saturation: 0.417, swatch: '#f08ca0' },
+  { id: 'peach', label: 'Peach', hue: 0.019, saturation: 0.282, swatch: '#f5b8b0' },
+  { id: 'rust', label: 'Rust', hue: 0.071, saturation: 0.84, swatch: '#c2641f' },
+  { id: 'apricot', label: 'Apricot', hue: 0.1, saturation: 0.741, swatch: '#e8a33c' },
+  { id: 'gold', label: 'Gold', hue: 0.129, saturation: 0.612, swatch: '#e8c85a' },
+  { id: 'butter', label: 'Butter', hue: 0.131, saturation: 0.492, swatch: '#f0d77a' },
+  { id: 'cream', label: 'Cream', hue: 0.129, saturation: 0.287, swatch: '#f7e7b0' },
+  { id: 'pine', label: 'Pine', hue: 0.404, saturation: 0.615, swatch: '#2f7a4f' },
+  { id: 'leaf', label: 'Leaf', hue: 0.39, saturation: 0.5, swatch: '#4f9e6a' },
+  { id: 'lime', label: 'Lime', hue: 0.225, saturation: 0.541, swatch: '#9fc45a' },
+  { id: 'teal', label: 'Teal', hue: 0.489, saturation: 0.594, swatch: '#3f9b95' },
+  { id: 'mint', label: 'Mint', hue: 0.382, saturation: 0.17, swatch: '#b9dfc4' },
+  { id: 'navy', label: 'Navy', hue: 0.602, saturation: 0.696, swatch: '#2a4f8a' },
+  { id: 'cobalt', label: 'Cobalt', hue: 0.62, saturation: 0.672, swatch: '#3f63c0' },
+  { id: 'sky', label: 'Sky', hue: 0.566, saturation: 0.504, swatch: '#6fb3e0' },
+  { id: 'ice', label: 'Ice blue', hue: 0.568, saturation: 0.223, swatch: '#bcdcf2' },
+  { id: 'indigo', label: 'Indigo', hue: 0.716, saturation: 0.659, swatch: '#4a2f8a' },
+  { id: 'iris', label: 'Iris', hue: 0.68, saturation: 0.582, swatch: '#5b52c4' },
+  { id: 'violet', label: 'Violet', hue: 0.735, saturation: 0.589, swatch: '#7d4fc0' },
+  { id: 'magenta', label: 'Magenta', hue: 0.891, saturation: 0.51, swatch: '#c25fa0' },
+  { id: 'lavender', label: 'Lavender', hue: 0.758, saturation: 0.178, swatch: '#d9c2ec' },
+  { id: 'moss', label: 'Moss', hue: 0.30, saturation: 0.45, hidden: true },
 ];
+
+/** Where each swatch is drawn — `PALETTE_LAYOUT`, as `paletteForScreen()` sends it. */
+const LAYOUT = {
+  featured: ['candle', 'amber', 'warmwhite', 'neutral', 'coolwhite', 'coral', 'sunflower', 'forest', 'ocean', 'orchid'],
+  more: ['crimson', 'ember', 'rose', 'blush', 'peach', 'rust', 'apricot', 'gold', 'butter', 'cream', 'pine', 'leaf', 'lime', 'teal', 'mint', 'navy', 'cobalt', 'ocean', 'sky', 'ice', 'indigo', 'iris', 'violet', 'magenta', 'lavender'],
+};
 
 /** A house with more rooms than fit on one screen, so the fold is drawn. */
 const ROOMS = [
@@ -269,19 +287,34 @@ const RULE_LIGHTS = [
 ];
 
 /**
- * The same palette as the job screen is sent it: painted, not as two axes.
- *
- * That screen draws its swatches once and asks the driver for the colour, so
- * the driver runs `colourSwatch()` — the fixture runs the same two curves so a
- * render shows what a Homey would.
+ * The palette as `paletteForScreen()` sends it: each colour with the CSS it is
+ * painted in, which for a drawn colour is its own hex — so the job screen,
+ * which paints from `swatch` alone, draws exactly what the other two do.
  */
 const PALETTE_SWATCHES = PALETTE.map(colour => ({
-  id: colour.id,
-  label: colour.label,
-  swatch: `hsl(${Math.round(colour.hue * 360)},`
+  ...colour,
+  swatch: colour.swatch ?? `hsl(${Math.round(colour.hue * 360)},`
     + `${Math.round((0.25 + colour.saturation * 0.55) * 100)}%,`
     + `${Math.round(86 - colour.saturation * 36)}%)`,
 }));
+
+/**
+ * "How Lightkeeper controls your lights", as `reviewControl()` sends it.
+ *
+ * "Set lights before they turn on" chosen and already tested, so one render
+ * shows the radio group, the unfolded option and both kinds of result row —
+ * which is three of the design's five screenshots of this control at once.
+ */
+const CONTROL = {
+  modes: ['after', 'before', 'none'],
+  selected: 'before',
+  lightCount: 2,
+  tested: {
+    fresh: true,
+    restored: 2,
+    lights: [{ name: 'Ceiling', ok: true }, { name: 'Reading lamp', ok: false }],
+  },
+};
 
 export const RENDER_REPLIES = {
   // ---- shared by every driver --------------------------------------------
@@ -324,7 +357,7 @@ export const RENDER_REPLIES = {
         { label: 'Evening', value: 'Deep amber · 45%', view: 'day' },
         { label: 'Follows the sun', value: '06:51 – 18:48', view: 'day' },
       ],
-      promise: 'Lightkeeper sets these 2 lights whenever they are on, starting now.',
+      control: CONTROL,
       // The rows above are a circadian light's, so the hero is its day. Three
       // of the five drivers send none at all and the frame is then not drawn —
       // which this fixture cannot show, being one entry for one file.
@@ -353,7 +386,6 @@ export const RENDER_REPLIES = {
       zones: ZONES,
       // On, so the render shows the brightness slider as well as the switch.
       adjustBrightness: true,
-      preStage: true,
       sun: { sunriseMinute: 381, sunsetMinute: 1188 },
       boundaries: BOUNDARIES,
       nextView: 'review',
@@ -393,9 +425,8 @@ export const RENDER_REPLIES = {
         { id: 'p5', anchor: { kind: 'clock', at: 1350 }, warmth: 1, color: 'violet', brightness: 0.36 },
       ],
       palette: PALETTE,
-      featuredColors: 8,
+      layout: LAYOUT,
       adjustBrightness: true,
-      preStage: true,
       minPoints: 2,
       maxPoints: 8,
       timezone: TIMEZONE,
@@ -444,7 +475,6 @@ export const RENDER_REPLIES = {
       sunsetAt: '19:48',
     },
     setSensor: { sensor: 's1' },
-    inspectSensor: { inspecting: 's1' },
   },
 
   'response.html': {
@@ -454,6 +484,7 @@ export const RENDER_REPLIES = {
       nowLux: 41,
       week: week(),
       staleFor: null,
+      lastReport: null,
       atDark: '20:18',
       atBright: '12:04',
       /**
@@ -474,15 +505,6 @@ export const RENDER_REPLIES = {
     previewNow: { writes: 2, skipped: 0 },
   },
 
-  'sensordetail.html': {
-    getSensorDetail: {
-      sensorName: 'Kitchen motion',
-      nowLux: 41,
-      week: week(),
-    },
-    setSensor: { sensor: 's1' },
-  },
-
   // ---- schedule -----------------------------------------------------------
   'blocks.html': {
     getSchedule: {
@@ -491,7 +513,7 @@ export const RENDER_REPLIES = {
       // The same closed set the curve screen draws from: a block picks a colour
       // rather than a warmth as of this release.
       palette: PALETTE_SWATCHES,
-      featuredColors: 8,
+      layout: LAYOUT,
       lights: LIGHTS.slice(0, 2),
       entries: [
         // The SELECTED block, and it carries a brightness so the render draws
@@ -633,7 +655,7 @@ export const RENDER_REPLIES = {
       presetKind: 'colour',
       preset: { color: 'amber' },
       colors: PALETTE_SWATCHES,
-      featuredColors: 8,
+      layout: LAYOUT,
       lights: RULE_LIGHTS,
       allLabel: say('job.allLights', { count: say('count.three') }),
       chosenLights: ['light-1'],
@@ -645,6 +667,7 @@ export const RENDER_REPLIES = {
        * of the unset state would say nothing about the screen's real shape.
        */
       sourceNames: { colour: 'Follow the sun', brightness: 'Desk sensor light' },
+      sourceWarnings: { colour: null, brightness: { name: 'Desk sensor light', sharedLights: 3 } },
     },
     setGesture: { set: true },
     test: { writes: 2, skipped: 0, targets: 2 },
@@ -672,7 +695,10 @@ export const RENDER_REPLIES = {
         { id: 'lk-sched-1', name: "Kids' bedtime",
           subtitle: "Light schedule · Kids' room", level: 0.15 },
         { id: 'lk-daylight-1', name: 'Desk sensor light',
-          subtitle: 'Room-sensing Light · Office', level: 0.9 },
+          subtitle: 'Room-sensing Light · Office', level: 0.9,
+          // The chosen row drives its own lights too, so the render shows the
+          // warning a household sees when a button and a device share lamps.
+          warn: { sharedLights: 3 } },
       ],
     },
     setSource: { chosen: 'lk-daylight-1' },
@@ -686,7 +712,7 @@ export const RENDER_REPLIES = {
  * Keyed `<driver>/<file>`, and `scripts/render-views.mjs` prefers these over the
  * per-file entries above. Every value is either resolved from the locale through
  * the key the driver passes, or is demo data of the same SHAPE the driver builds
- * — the number of steps, the hero, the rows, the promise. Nothing here is a
+ * — the number of steps, the hero, the rows, the control choice. Nothing here is a
  * screen's own wording written out a second time.
  */
 export const DRIVER_REPLIES = {
@@ -709,7 +735,6 @@ export const DRIVER_REPLIES = {
         { label: say('review.lights'), value: 'Ceiling, Reading lamp', view: 'lights' },
         { label: say('review.buttonsWithAJob'), value: '4 / 6', view: 'buttons' },
       ],
-      promise: say('review.promiseController'),
     },
   },
 
@@ -744,7 +769,6 @@ export const DRIVER_REPLIES = {
         { label: say('review.timeBlocks'), value: '3', view: 'blocks' },
         { label: say('review.onTheseDays'), value: 'Mon to Fri', view: 'blocks' },
       ],
-      promise: say('review.promiseSchedule', { count: 2 }),
     },
   },
 
@@ -766,7 +790,8 @@ export const DRIVER_REPLIES = {
         { label: say('review.midday'), value: 'Cool white · 90%', view: 'day' },
         { label: say('review.evening'), value: 'Deep amber · 45%', view: 'day' },
       ],
-      promise: say('review.promiseCircadian', { count: 2 }),
+      // The default, as a new device pairs: nothing unfolds.
+      control: { modes: ['after', 'before', 'none'], selected: 'after', lightCount: 2 },
       hero: {
         kind: 'strip',
         stops: [
@@ -794,8 +819,9 @@ export const DRIVER_REPLIES = {
       rows: [
         { label: say('review.lights'), value: 'Ceiling, Reading lamp', view: 'lights' },
         { label: say('review.colourChanges'), value: '5 · 06:30–22:30', view: 'curve' },
+        { label: say('review.brightness'), value: say('review.brightnessRange', { min: 36, max: 94 }), view: 'curve' },
       ],
-      promise: say('review.promiseCurve', { count: 2 }),
+      control: CONTROL,
     },
   },
 
@@ -825,7 +851,8 @@ export const DRIVER_REPLIES = {
         { label: say('review.brightRoom'),
           value: `${say('review.overLux', { lux: 160 })} → 22%`, view: 'response' },
       ],
-      promise: say('review.promiseDaylight', { count: 2 }),
+      // Two of the three: a Room-sensing Light has nothing to set in advance.
+      control: { modes: ['after', 'none'], selected: 'after', lightCount: 2 },
     },
   },
 };

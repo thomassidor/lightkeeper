@@ -33,6 +33,7 @@ import type { LuminanceSource, WatchedSensor } from './luminance-source';
 import { messageOf } from '../support/homey-errors';
 import { VisibleState } from '../runtime/visible-state';
 import { ValueBoard, VALUE_CAPABILITIES, type PublishedValues } from '../runtime/published-values';
+import { keepsLightsUpdated } from '../runtime/writes-lights';
 
 /**
  * One Room-sensing Light, live.
@@ -104,6 +105,8 @@ export interface DaylightDiagnostics extends ReturnType<ControlHistory<DaylightA
   name: string;
   state: ControllerState;
   enabled: boolean;
+  /** False on a device that only publishes; see lib/runtime/writes-lights.ts. */
+  writesLights: boolean;
   response: DaylightPlan['response'];
   /** What the response asks for right now, and where that came from. */
   now: DaylightVerdict;
@@ -181,9 +184,11 @@ export interface DaylightDiagnostics extends ReturnType<ControlHistory<DaylightA
  * Were the step per tick smaller than the band, a target just outside the band
  * would be approached in increments that never leave it, and the lamp would
  * creep and stall.
+ *
+ * Exported for `daylight-runtime.test.ts`, which asserts that order.
  */
-const DAYLIGHT_DEADBAND = 0.02;
-const MAX_STEP_PER_TICK = 0.05;
+export const DAYLIGHT_DEADBAND = 0.02;
+export const MAX_STEP_PER_TICK = 0.05;
 
 /**
  * When to stop calling the feedback loop a risk and start calling it observed.
@@ -412,6 +417,10 @@ export class DaylightRuntime {
   }
 
   private async subscribeAll(): Promise<void> {
+    // Nothing to watch on a device that writes to no lamp, and worse than idle
+    // if left: `noteOverride` files every report it has no write of ours to
+    // compare with as an override. The same argument as the circadian runtime's.
+    if (!keepsLightsUpdated(this.plan)) return;
     for (const deviceId of this.targetIds) {
       await this.adapter.subscribe(deviceId, WATCHED, (id, capability, value, external) =>
         this.onCapabilityChange(id, capability, value, external));
@@ -639,12 +648,25 @@ export class DaylightRuntime {
    */
   async applyNow(
     reason: string,
-    options: { deviceIds?: string[]; force?: boolean; waitForResults?: boolean } = {},
+    options: { deviceIds?: string[]; force?: boolean; waitForResults?: boolean; preview?: boolean } = {},
   ): Promise<{ writes: number; skipped: number }> {
     // Before every early return below, for the reason `publishValues` gives.
     this.publishValues();
 
     if (!this.plan.enabled) return this.noteNothingToDo(reason, 'the plan is switched off');
+    /**
+     * A device that only PUBLISHES stops here (lib/runtime/writes-lights.ts) —
+     * and it has to be HERE, ahead of the aim bookkeeping and `noteFeedback`
+     * below. Past them, `aim` would walk a slew towards a level nothing is
+     * writing, and switching writes back on would start the lamps from that
+     * fiction; the feedback count would observe a loop that cannot exist.
+     *
+     * `preview` is the only way past, for the reason the circadian runtime
+     * gives: the switched-on pass is forced too, and "Try it" must still work.
+     */
+    if (!options.preview && !keepsLightsUpdated(this.plan)) {
+      return this.noteNothingToDo(reason, 'this device only publishes its values');
+    }
 
     const verdict = this.currentValue();
     /**
@@ -1003,9 +1025,15 @@ export class DaylightRuntime {
       return;
     }
 
-    const assessment = await assessTargets(
-      this.deps.catalog, this.plan.target, this.adapter.unwritableTargets(),
-    );
+    /**
+     * A device that only publishes skips the two LAMP legs and keeps the two
+     * SENSOR legs: its lamps cost it nothing, but a missing daylight source or a
+     * frozen sensor is still wrong about the one thing it publishes.
+     */
+    const publishOnly = !keepsLightsUpdated(this.plan);
+    const assessment: { state: ControllerState; detail?: StateDetail } = publishOnly
+      ? { state: 'ready' }
+      : await assessTargets(this.deps.catalog, this.plan.target, this.adapter.unwritableTargets());
     if (assessment.state === 'needs_repair') {
       this.setState(assessment.state, assessment.detail);
       return;
@@ -1018,7 +1046,7 @@ export class DaylightRuntime {
      * still works, and says so.
      */
     const drivable = this.targetIds.filter(id => this.cache.supports(id, 'dim'));
-    if (this.targetIds.length > 0 && drivable.length === 0) {
+    if (!publishOnly && this.targetIds.length > 0 && drivable.length === 0) {
       this.setState('needs_repair', {
         key: 'state.noDimTargets',
         text: 'None of its lights can change their brightness.',
@@ -1249,6 +1277,7 @@ export class DaylightRuntime {
       name: this.deps.displayName(),
       state: this.visible.current,
       enabled: this.plan.enabled,
+      writesLights: keepsLightsUpdated(this.plan),
       response: this.plan.response,
       now: this.currentValue(),
       // Filtered to this device's own sensors: the service is shared, and a

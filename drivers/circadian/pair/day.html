@@ -330,8 +330,9 @@
      looks like when it is the only one on a pushed screen — "Close" — where a
      primary button would claim the choice was made. */
   #dy-root .btn.wide { display: block; width: 100%; margin-top: 16px; }
-  /* And the same button when it is the SECOND of two, under a primary — "Put
-     them back". It borrows the primary's outline rather than the field grey,
+  /* And the same button when it is the SECOND of two, under a primary — "Stop
+     preview" — or the one secondary action inside a card, as "Test my lights"
+     is on the review screen. It borrows the primary's outline rather than the field grey,
      because the pair is one decision offered twice ("show me" / "undo that")
      and a grey partner reads as the disabled twin of the button above it.
      Lighter than the primary in weight and height, never in hue. */
@@ -525,12 +526,17 @@
                margin: 13px 0 0; font-size: 13px; line-height: 1.45;
                font-style: italic; color: var(--lk-muted); }
 
-  /* The swatches a colour is chosen from, four across.
-     Not one row of eight: at 390px that is 34px a swatch, under the touch
-     minimum and too small to judge a colour by. Two rows of four is the same
-     set of eight, legibly, and the sixteen that fold out below continue it. */
-  #dy-root .swatches { display: grid; grid-template-columns: repeat(4, 1fr);
-                    gap: 7px; margin: 0 0 11px; }
+  /* The swatches a colour is chosen from, five across, EVERYWHERE.
+     Two rows by default — whites, then one of each colour — and five more
+     that fold out below, one hue family a row. Five and not eight: at 390px
+     eight is 34px of width a swatch, under the touch minimum and too small to
+     judge a colour by; five is still a comfortable target at 34px tall.
+
+     7px under every grid, which the margins between block siblings collapse
+     to: 7px from the default rows to the fold-out, as the design draws it, and
+     the link under the last grid keeps its own 9px. */
+  #dy-root .swatches { display: grid; grid-template-columns: repeat(5, 1fr);
+                    gap: 7px; margin: 0 0 7px; }
   /* min-height as well as height: the container's own stylesheet is not ours
      to read, and a swatch whose height is overridden away is a coloured line
      rather than a colour anybody can judge. */
@@ -542,16 +548,14 @@
      the palette, which a white gap did not against the pale ones. */
   #dy-root .swatch[aria-pressed="true"] { border: 2.5px solid var(--lk-accent);
                                        box-shadow: 0 0 0 3px var(--lk-ring); }
-  /* The sixteen that fold out: same set, half the size, eight across.
+  /* The twenty-five that fold out: the SAME grid, same size, same gap.
 
-     18px above them, not the 7px between the featured rows: at the same gap the
-     fold-out read as two more rows of the grid above it rather than as the set
-     that had just been opened, and the eye had to measure swatch sizes to find
-     where one group ended. The space is what separates them; both sets are
-     still the same palette, so nothing stronger than space is wanted. */
-  #dy-root .swatches.more { grid-template-columns: repeat(8, 1fr); gap: 6px;
-                         margin: 18px 0 0; }
-  #dy-root .swatches.more .swatch { height: 28px; min-height: 28px; border-radius: 8px; }
+     It used to be a second grid of smaller swatches, eight across, 18px below —
+     and the space and the smaller size were what told the two sets apart. The
+     2026-09-23 design makes it one grid that simply grows: the fold-out rows
+     are hue families, deep to pale, and read as rows of one palette because
+     they are. So `.more` carries nothing of its own any more; the class stays
+     as the hook the views show and hide. */
 
   /* The day strip: a picture of the whole day, drawn once and reused. */
   #dy-root .day { position: relative; height: 104px; border-radius: 12px;
@@ -737,24 +741,6 @@
 
   <div class="others" id="dy-others"></div>
 
-  <!--
-    Device-wide, and the same control as the Colour Curve Light's: both drive a
-    curve, both had `preStage` in the plan and a `testPreStage` handler behind
-    it, and neither ever drew anything a household could press. See the longer
-    note on the curve screen for why the test button is not optional.
-  -->
-  <button class="toggle" id="dy-preToggle" type="button" aria-checked="false">
-    <span class="label" data-i18n="preStage.toggle"></span>
-    <span class="track"><span class="knob"></span></span>
-  </button>
-  <div class="tip" id="dy-preTip" data-i18n="preStage.tip"></div>
-  <div id="dy-preBlock" style="display:none;">
-    <div class="msg warn" data-i18n="preStage.warning"></div>
-    <button class="morelink" id="dy-preTest" type="button" data-i18n="preStage.test"></button>
-    <div id="dy-preResult" class="msg" style="display:none;"></div>
-    <div class="tip" data-i18n="preStage.brightnessNote"></div>
-  </div>
-
   <div class="card rows">
     <button class="row" id="dy-tryit" type="button">
       <span class="label" data-i18n="day.tryIt"></span>
@@ -848,7 +834,7 @@ function __lkBootDy(Homey) {
      * style choice: `spliceFunction` matches from the `function` keyword, so a
      * docblock above one is never replaced — it is prepended again on every
      * sync. Four stale copies of the week grid's reached the shipped archive
-     * that way. It also means this explanation now appears in all 56 views
+     * that way. It also means this explanation now appears in all 54 views
      * rather than in the two credential screens that happened to carry it.
      */
     return new Promise(function (resolve, reject) {
@@ -909,12 +895,7 @@ function __lkBootDy(Homey) {
     bright: document.getElementById('dy-bright'),
     brightKnob: document.getElementById('dy-brightKnob'),
     others: document.getElementById('dy-others'),
-    tryit: document.getElementById('dy-tryit'),
-    preToggle: document.getElementById('dy-preToggle'),
-    preTip: document.getElementById('dy-preTip'),
-    preBlock: document.getElementById('dy-preBlock'),
-    preTest: document.getElementById('dy-preTest'),
-    preResult: document.getElementById('dy-preResult')
+    tryit: document.getElementById('dy-tryit')
   };
 
   var KEYS = ['morning', 'midday', 'evening'];
@@ -935,7 +916,6 @@ function __lkBootDy(Homey) {
   var state = {
     zones: null,
     adjustBrightness: false,
-    preStage: false,
     selected: 'morning',
     bounds: null,
     sun: { sunriseMinute: null, sunsetMinute: null },
@@ -1245,97 +1225,6 @@ function __lkBootDy(Homey) {
 
   el.tryit.addEventListener('click', function () { Homey.showView('tryit'); });
 
-  /**
-   * PRE-STAGING IS HIDDEN, AND NOTHING ELSE ABOUT IT HAS CHANGED.
-   *
-   * The design canvas draws no pre-staging control on any pairing screen, and
-   * where the setting should live is still an open question. So the UI is
-   * switched off here and the whole mechanism is left standing: the plan still
-   * carries `preStage`, a NEW device still pairs with it on
-   * (`DEFAULT_SIMPLE_PLAN`, and the curve driver's session seed), a device
-   * paired before 0.6.5 still has it off because `lib/validation/plans.ts`
-   * reads an absent key as "no", the `testPreStage` handler is still
-   * registered, and `verifyStayedOff()` still disables the whole thing
-   * device-wide the first time a lamp comes on from a pre-stage write.
-   *
-   * The markup and the strings stay for the same reason: turning this back on
-   * is one line, and `locales.test.ts` would otherwise start failing on every
-   * `preStage.*` key the moment the block was deleted — which is exactly the
-   * pressure that would turn "hidden for now" into "gone".
-   *
-   * What a user loses meanwhile is the ability to answer the question against
-   * their own lamps, which platform §6 says only their own lamps can answer.
-   * That is the cost of hiding it, and it is why this is a flag rather than a
-   * deletion.
-   */
-  var SHOW_PRE_STAGE = false;
-  if (!SHOW_PRE_STAGE) {
-    el.preToggle.style.display = 'none';
-    el.preTip.style.display = 'none';
-  }
-
-  function renderPreStage() {
-    el.preToggle.setAttribute('aria-checked', state.preStage ? 'true' : 'false');
-    el.preBlock.style.display = (SHOW_PRE_STAGE && state.preStage) ? '' : 'none';
-  }
-
-  /**
-   * One line saying what this household's own lamps did, which is the only
-   * authority there is on the question (platform §6). Nodes and textContent,
-   * like every other view: nothing here assigns innerHTML.
-   */
-  function showPreStageResult(className, text) {
-    clear(el.preResult);
-    el.preResult.className = 'msg ' + className;
-    el.preResult.appendChild(node('span', null, text));
-    el.preResult.style.display = '';
-  }
-
-  el.preToggle.addEventListener('click', function () {
-    state.preStage = !state.preStage;
-    // The last answer described the setting as it was, and it is no longer
-    // that. Leaving it up under a toggle that has moved is how a screen comes
-    // to assert something it never tested.
-    el.preResult.style.display = 'none';
-    renderPreStage();
-    push();
-  });
-
-  el.preTest.addEventListener('click', function () {
-    el.preTest.disabled = true;
-    showPreStageResult('muted', Homey.__('preStage.testing'));
-    /**
-     * The setting is NOT changed by the result. One lamp out of a household is
-     * not evidence about the household — platform §6 measured that roughly half
-     * a Hue household declines while the rest stage happily — and the runtime's
-     * own self-disable is the thing allowed to act, because it watches every
-     * lamp on every pass rather than one lamp once.
-     */
-    emit('testPreStage').then(function (outcome) {
-      el.preTest.disabled = false;
-      if (!outcome || outcome.deviceId === null) {
-        showPreStageResult('muted', Homey.__('preStage.nothingOff'));
-        return;
-      }
-      var name = outcome.name || '';
-      if (outcome.stayedOff) {
-        showPreStageResult('ok', Homey.__('preStage.worksHere', { name: name }));
-      } else if (outcome.restored) {
-        showPreStageResult('bad', Homey.__('preStage.cameOn', { name: name }));
-      } else if (outcome.reason) {
-        // The integration's own words, kept rather than replaced: "soft off" is
-        // what a Hue Bridge says, and a reader searching for that sentence finds
-        // the same one in the diagnostics dump.
-        showPreStageResult('bad', Homey.__('preStage.declined', { name: name }) + ' ' + outcome.reason);
-      } else {
-        showPreStageResult('bad', Homey.__('preStage.cameOnStuck', { name: name }));
-      }
-    }, function () {
-      el.preTest.disabled = false;
-      showPreStageResult('bad', Homey.__('preStage.failed'));
-    });
-  });
-
   function push() {
     emit('setDay', {
       morning: state.zones.morning,
@@ -1343,8 +1232,7 @@ function __lkBootDy(Homey) {
       evening: state.zones.evening,
       morningEnd: state.zones.morningEnd,
       eveningStart: state.zones.eveningStart,
-      adjustBrightness: state.adjustBrightness,
-      preStage: state.preStage
+      adjustBrightness: state.adjustBrightness
     }).then(function (reply) {
       // The driver's clamp is the one that counts. Snapping to it visibly beats
       // leaving a handle where the finger stopped while the device goes
@@ -1376,7 +1264,6 @@ function __lkBootDy(Homey) {
   emit('getDay').then(function (payload) {
     state.zones = payload.zones;
     state.adjustBrightness = payload.adjustBrightness;
-    state.preStage = payload.preStage;
     state.bounds = payload.boundaries;
     state.sun = payload.sun;
     state.limits = payload.limits;
@@ -1394,7 +1281,6 @@ function __lkBootDy(Homey) {
       });
 
     renderZone();
-    renderPreStage();
   }).catch(show);
 }
 

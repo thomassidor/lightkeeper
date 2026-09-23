@@ -267,6 +267,9 @@ module.exports = {
           // that has stopped following it by accident.
           overridden: diagnostics.targets.filter(target => target.overridden).length,
           preStage: diagnostics.preStage,
+          // A device that only publishes leaves its lights alone, which looks
+          // exactly like a broken one unless the card says so.
+          writesLights: diagnostics.writesLights,
           preStageDisabled: diagnostics.preStageDisabled,
         };
       }),
@@ -281,6 +284,7 @@ module.exports = {
           // the wrong brightness is almost always one of those two.
           now: diagnostics.now,
           response: diagnostics.response,
+          writesLights: diagnostics.writesLights,
           targetNames: diagnostics.targetNames,
           // Lights somebody has taken over by hand. Shown because a light that
           // has stopped following the room on purpose looks exactly like one
@@ -541,7 +545,7 @@ module.exports = {
         `no circadian, Colour Curve or Room-sensing Light with id "${id}" is running`);
     }
 
-    const outcome = await runtime.applyNow('preview', { force: true, waitForResults: true });
+    const outcome = await runtime.applyNow('preview', { force: true, waitForResults: true, preview: true });
     await runtime.drain();
     return outcome;
   },

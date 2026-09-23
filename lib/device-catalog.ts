@@ -37,6 +37,17 @@ export interface CatalogDevice {
   available: boolean;
   capabilities: string[];
   capabilitiesObj: Record<string, CatalogCapability>;
+  /**
+   * The lamps a Homey device GROUP stands for, when this device is one.
+   *
+   * A group is a light as far as every capability is concerned, so the light
+   * picker offers it and a remote can drive it — while a Colour Curve Light
+   * drives its members one by one. The two then reach the same bulbs through two
+   * doors, which is how one press on the reference Homey became two sets of
+   * writes to three spots. Present only on a group, so every fixture that never
+   * built one is untouched; see `groupMembersOf` for where it comes from.
+   */
+  groupMembers?: string[];
 }
 
 export interface CatalogCapability {
@@ -353,6 +364,7 @@ export class DeviceCatalog {
         available: d.available !== false,
         capabilities: Array.isArray(d.capabilities) ? d.capabilities.map(String) : [],
         capabilitiesObj: normaliseCapabilities(d.capabilitiesObj),
+        ...groupMembersOf(d),
       }];
     }));
 
@@ -384,6 +396,11 @@ export class DeviceCatalog {
   private async loadAppNames(client: any): Promise<void> {
     if (this.appNames.size > 0) return;
     try {
+      // A `getAll` WITHOUT `NO_CACHE`, and platform §15's rule wants the why:
+      // it retains nothing. `homey-api` writes a `getAll` into its cache only
+      // while the manager `isConnected()`, and `HomeyApiService.read()` never
+      // connects `apps` — the names are projected into `appNames` once and the
+      // raw array goes out of scope here.
       const apps = await client.apps.getApps();
       for (const app of Object.values(apps) as any[]) {
         if (app?.id) this.appNames.set(`homey:app:${app.id}`, app.name ?? app.id);
@@ -412,6 +429,25 @@ function readDataId(raw: unknown): string | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const id = (raw as { id?: unknown }).id;
   return typeof id === 'string' && id.length > 0 ? id : null;
+}
+
+/** Homey's own device-group driver, the one whose settings name its members. */
+const HOMEY_GROUP_DRIVER = 'homey:virtualdrivergroup:driver';
+
+/**
+ * A group's members, from `settings.deviceIds`, or nothing at all.
+ *
+ * Only for Homey's own group driver: another app's "group" is its own business,
+ * and a `deviceIds` setting on some unrelated device is not a membership list.
+ * Anything not a list of non-empty strings is read as no membership rather than
+ * guessed at.
+ */
+export function groupMembersOf(raw: RawDevice): { groupMembers?: string[] } {
+  if (raw.driverId !== HOMEY_GROUP_DRIVER) return {};
+  const ids = (raw.settings as { deviceIds?: unknown } | null | undefined)?.deviceIds;
+  if (!Array.isArray(ids)) return {};
+  const members = ids.filter((id): id is string => typeof id === 'string' && id.length > 0);
+  return members.length > 0 ? { groupMembers: members } : {};
 }
 
 function normaliseCapabilities(raw: unknown): Record<string, CatalogCapability> {

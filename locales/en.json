@@ -70,30 +70,41 @@
     "colourBlend": "__from__ → __to__"
   },
   "palette": {
-    "amber": "Warm amber",
     "candle": "Candlelight",
-    "coral": "Sunset coral",
+    "amber": "Warm amber",
+    "warmwhite": "Warm white",
     "neutral": "Neutral white",
     "coolwhite": "Cool white",
-    "ocean": "Ocean",
+    "coral": "Sunset coral",
+    "sunflower": "Sunflower",
     "forest": "Forest",
-    "violet": "Violet",
-    "ember": "Ember",
+    "ocean": "Ocean",
+    "orchid": "Orchid",
     "crimson": "Crimson",
-    "blush": "Blush",
+    "ember": "Ember",
     "rose": "Rose",
+    "blush": "Blush",
     "peach": "Peach",
+    "rust": "Rust",
     "apricot": "Apricot",
     "gold": "Gold",
+    "butter": "Butter",
+    "cream": "Cream",
+    "pine": "Pine",
+    "leaf": "Leaf",
     "lime": "Lime",
-    "moss": "Moss",
-    "mint": "Mint",
     "teal": "Teal",
+    "mint": "Mint",
+    "navy": "Navy",
+    "cobalt": "Cobalt",
     "sky": "Sky",
+    "ice": "Ice blue",
     "indigo": "Indigo",
+    "iris": "Iris",
+    "violet": "Violet",
+    "magenta": "Magenta",
     "lavender": "Lavender",
-    "orchid": "Orchid",
-    "magenta": "Magenta"
+    "moss": "Moss"
   },
   "functions": {
     "toggle": "Toggle on/off",
@@ -245,7 +256,8 @@
     "circadianNowColour": "Now showing __colour__, next point at __next__",
     "circadianNowBetween": "Now between __from__ and __to__, next point at __next__",
     "circadianOverridden": "__count__ light(s) changed by hand",
-    "circadianPreStageOff": "Setting the colour before the lights come on was turned off automatically: one of these lights switched itself on."
+    "circadianPreStageOff": "Setting the colour before the lights come on was turned off automatically: one of these lights switched itself on.",
+    "publishOnly": "Works out what its lights should be, and leaves them alone until a remote or a Flow asks."
   },
   "lights": {
     "title": "Which lights?",
@@ -319,11 +331,6 @@
     "buttonsWithAJob": "Buttons with a job",
     "wholeRoom": "__count__ in __room__",
     "someLights": "__count__ picked",
-    "promiseCircadian": "Lightkeeper sets these __count__ lights whenever they are on, starting now.",
-    "promiseCurve": "Lightkeeper sets these __count__ lights whenever they are on, fading between your points, starting now.",
-    "promiseDaylight": "Lightkeeper adjusts these __count__ lights whenever they are on, starting now.",
-    "promiseSchedule": "Lightkeeper switches these __count__ lights on and off at these times, starting today.",
-    "promiseController": "The remote takes over as soon as you add it. Existing Flows on these buttons keep working.",
     "followsSun": "Follows the sun",
     "fixedHours": "Fixed hours",
     "theSun": "The sun",
@@ -335,7 +342,32 @@
     "overLux": "Over __lux__ lx",
     "belowDegrees": "Below __degrees__°",
     "aboveDegrees": "Above __degrees__°",
-    "rightNow": "Right now"
+    "rightNow": "Right now",
+    "brightness": "Brightness",
+    "brightnessRange": "__min__–__max__%, per colour",
+    "notChanged": "Not changed",
+    "control": {
+      "title": "How Lightkeeper controls your lights",
+      "after": "Change lights after they turn on",
+      "afterWhy": "Lights can turn on in their previous colour and change a moment later.",
+      "afterBrightnessWhy": "Lights can turn on at their previous brightness and change a moment later.",
+      "before": "Set lights before they turn on",
+      "beforeWhy": "Lights turn on in the right colour. Needs a quick test first, as some lights turn on when they are set.",
+      "none": "Don’t change lights automatically",
+      "noneWhy": "Lightkeeper calculates colour and brightness but leaves your lights alone. Use the values in your own flows.",
+      "test": "Test my __count__ lights",
+      "testOne": "Test my light",
+      "testing": "Testing…",
+      "testNote": "Takes about 15 seconds. Each light blinks once, then goes back to how it was.",
+      "passed": "Turns on in the right colour",
+      "fallback": "Turned on when set, so it is changed after it turns on",
+      "testedNow": "Tested just now · __count__ lights back to how they were",
+      "testedNowOne": "Tested just now · the light is back to how it was",
+      "testedNowSome": "Tested just now · __restored__ of __count__ lights back to how they were",
+      "testedBefore": "From the last test. Lights added since then are changed after they turn on until they are tested.",
+      "testAgain": "Test again",
+      "testFailed": "The test could not be run. Check that the lights are reachable and try again."
+    }
   },
   "tip": {
     "daylight": "Want more control? Use the Room-sensing light from Lightkeeper."
@@ -432,8 +464,8 @@
     "help": "Drag to a time, then show it on the lamps.",
     "showAt": "Show __time__ on my lights",
     "showing": "Showing…",
-    "putBack": "Put them back",
-    "puttingBack": "Putting them back…",
+    "putBack": "Stop preview",
+    "puttingBack": "Stopping…",
     "set": "Set",
     "leftAlone": "Off, left alone"
   },
@@ -497,15 +529,7 @@
     "sixAm": "6am",
     "sixPm": "6pm",
     "tryIt": "Try it now",
-    "tried": "Set __writes__ light(s) to what the room asks for right now.",
-    "stale": "__name__ has not reported for __hours__ hours",
-    "staleMeans": "A few quiet hours in a still room are normal. Most light sensors report at least twice a day, so this one has probably stopped — and a stopped sensor holds your lights at one brightness."
-  },
-  "detail": {
-    "missing": "That sensor",
-    "useIt": "Use this one",
-    "useAnyway": "Use it anyway",
-    "followSun": "Follow the sun instead"
+    "tried": "Set __writes__ light(s) to what the room asks for right now."
   },
   "week": {
     "lastSevenDays": "Last 7 days",
@@ -521,14 +545,16 @@
     "noHistory": "No readings to show yet, so the numbers below start from the defaults.",
     "usable": "A clear day and night pattern.",
     "usableDetail": "__night__ lx at night, __noon__ lx around noon — plenty to act on.",
-    "flat": "Barely changes all week.",
-    "flatDetail": "__low__ to __high__ lx — nothing to act on.",
+    "flat": "Barely changes all week",
+    "flatDetail": "__low__ to __high__ lx — nothing to act on. Try a sensor in a room that gets daylight, or have the lights follow the sun instead.",
     "stopped": "Reported normally, then stopped.",
     "stoppedDetail": "Nothing since __when__.",
     "nothing": "Nothing reported in the last seven days.",
     "nothingReported": "Nothing reported",
     "less": "Less",
-    "more": "More"
+    "more": "More",
+    "quiet": "__name__ has not reported for __hours__ hours",
+    "quietMeans": "It reported normally until __when__, then stopped — and a stopped sensor holds your lights at one brightness. Try a different sensor, or have the lights follow the sun instead."
   },
   "buttons": {
     "title": "What should each button do?",
@@ -586,23 +612,59 @@
     "rd": "rd",
     "th": "th"
   },
-  "preStage": {
-    "toggle": "Set the colour before lights come on",
-    "tip": "Lights that are off are given their colour in advance, so they are already right the moment somebody switches them on. Without this they come on as they were and change a second or two later.",
-    "warning": "On some lights a colour sent while they are off switches them on. Test it on your own lights below. If one ever does come on by itself, this turns itself off.",
-    "brightnessNote": "Brightness is never set in advance, because that would switch the light on. Only the colour is.",
-    "test": "Test it on my lights",
-    "testing": "Testing…",
-    "worksHere": "__name__ stayed off, so setting the colour in advance works on your lights.",
-    "cameOn": "__name__ came on, so the colour cannot be set in advance here. It has been switched back off.",
-    "cameOnStuck": "__name__ came on and could not be switched back off.",
-    "declined": "__name__ would not take a colour while it was off, so its colour cannot be set in advance.",
-    "nothingOff": "Every one of these lights is already on, so there is nothing to test. Switch one off and try again.",
-    "failed": "The test could not be run."
+  "sourceWarn": {
+    "keepsUpdated": "__name__ keeps its own lights up to date as well.",
+    "sharedMeans": "__count__ of this button’s lights are also driven by __name__, so both will set them when they come on and they may step between the two. Choose “Don’t change lights automatically” on __name__, or give this button a plain On.",
+    "ownMeans": "It will go on setting its own lights through the day, whatever this button does."
   },
   "flow": {
     "room": "Every light in this room",
     "leaveAlone": "Leave it alone",
     "leaveAloneHint": "Do not set this at all"
+  },
+  "errors": {
+    "chooseLightsFirst": "Choose some lights first.",
+    "chooseRemoteAndLights": "Choose a remote and some lights first.",
+    "notATimeOfDay": "That is not a time of day.",
+    "reattachOnlyInRepair": "Re-attach is only available when repairing.",
+    "remoteGone": "That remote is no longer available.",
+    "deviceGone": "That device is no longer available.",
+    "notThisRemotesButton": "That is not one of this remote's buttons.",
+    "noButtonEditing": "No button is being edited.",
+    "jobNotUsable": "That job cannot be used here.",
+    "notASourceKind": "That is not a source this button takes.",
+    "noSourceChoosing": "No source is being chosen.",
+    "curveNeedsPoints": "A curve needs at least __count__ points.",
+    "addASchedule": "Add at least one schedule.",
+    "targetSelectionChanged": "The lights you chose changed while this was being checked. Choose them again.",
+    "notAControlMode": "“__mode__” is not a way Lightkeeper can control lights.",
+    "cannotSetBefore": "This device cannot set lights before they turn on."
+  },
+  "mappingDropped": {
+    "notOneOfTheLights": "That button names a light this remote does not control.",
+    "noLights": "That button names no lights at all.",
+    "lightsCannotDoThat": "The chosen lights cannot do that.",
+    "notThisRemotesEvent": "That is not something this remote sends.",
+    "takesNoValue": "That job does not take a value.",
+    "missing": {
+      "none": "Choose a value to set.",
+      "brightness": "Choose a brightness to set.",
+      "colour": "Choose a colour to set.",
+      "lightkeeper": "Choose a Lightkeeper device to take a colour or a brightness from."
+    }
+  },
+  "days": {
+    "everyDay": "every day",
+    "weekdays": "Mon–Fri",
+    "weekends": "weekends"
+  },
+  "weekday": {
+    "1": "Mon",
+    "2": "Tue",
+    "3": "Wed",
+    "4": "Thu",
+    "5": "Fri",
+    "6": "Sat",
+    "7": "Sun"
   }
 }

@@ -46,19 +46,19 @@
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, rmSync, copyFileSync, readdirSync, statSync } from 'node:fs';
-import { join, dirname, relative } from 'node:path';
+import { join, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const BUILD = join(ROOT, '.homeybuild');
 
 /** The recorder's Web API route names, as declared in `.homeycompose/app.json`. */
-const EVIDENCE_ROUTES = [
+export const EVIDENCE_ROUTES = [
   'getEvidence', 'noteEvidence', 'startEvidence', 'stopEvidence', 'clearEvidence', 'readEvidence',
 ];
 
 /** Compiled modules a launch build must not contain. */
-const EVIDENCE_MODULES = [
+export const EVIDENCE_MODULES = [
   'lib/support/evidence-recorder.js',
   'lib/support/evidence-sampler.js',
   'lib/support/evidence-feature-disabled.js',
@@ -74,9 +74,7 @@ const FORBIDDEN = [
 ];
 
 /** What the settings page calls, and the shortest string that proves it still can. */
-const ROUTE_CALL = "'/evidence";
-
-const devBuild = existsSync(join(ROOT, '.dev-build')) || process.env.LIGHTKEEPER_DEV === '1';
+export const ROUTE_CALL = "'/evidence";
 
 /**
  * Every top-level entry a packaged Lightkeeper is allowed to have.
@@ -99,7 +97,7 @@ const devBuild = existsSync(join(ROOT, '.dev-build')) || process.env.LIGHTKEEPER
  * device reads either. They are listed so this check stays a stray-file guard
  * rather than a reopening of that argument.
  */
-const EXPECTED_ROOTS = new Set([
+export const EXPECTED_ROOTS = new Set([
   'LICENSE', 'README.txt',
   'api.js', 'app.js', 'app.json',
   'assets', 'drivers', 'lib', 'locales', 'settings',
@@ -115,9 +113,9 @@ const EXPECTED_ROOTS = new Set([
  * (see the header). Dotfiles are skipped — the CLI's own default rules keep them
  * out of the package, and `.dev-build` is deliberately one of them.
  */
-function verifyNoStrays() {
-  if (!existsSync(BUILD)) return;
-  const strays = readdirSync(BUILD)
+export function verifyNoStrays(build = BUILD) {
+  if (!existsSync(build)) return;
+  const strays = readdirSync(build)
     .filter(entry => !entry.startsWith('.') && !EXPECTED_ROOTS.has(entry));
   if (strays.length > 0) {
     const label = strays.length === 1 ? 'entry' : 'entries';
@@ -167,9 +165,11 @@ function stripBlock(text, open, close, label) {
  * markers to remove it by. That means somebody edited the block boundaries out
  * of `settings/index.html`, and it is the one case where carrying on would ship
  * the recorder.
+ *
+ * @param {string} build
  */
-function stripCopied() {
-  const settings = join(BUILD, 'settings/index.html');
+function stripCopied(build) {
+  const settings = join(build, 'settings/index.html');
   if (existsSync(settings)) {
     let html = readFileSync(settings, 'utf8');
     if (html.includes('<!-- ==== dev-only: evidence recorder')) {
@@ -183,7 +183,7 @@ function stripCopied() {
     }
   }
 
-  const manifestPath = join(BUILD, 'app.json');
+  const manifestPath = join(build, 'app.json');
   if (existsSync(manifestPath)) {
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     for (const route of EVIDENCE_ROUTES) delete manifest.api?.[route];
@@ -201,24 +201,24 @@ function stripCopied() {
  * missed on its own — the compiled modules, the settings page, and the manifest
  * that advertises the routes.
  */
-function verifyStripped() {
+export function verifyStripped(build = BUILD) {
   const offenders = [];
 
-  for (const path of filesUnder(BUILD)) {
+  for (const path of filesUnder(build)) {
     // Code and markup only. A document that merely NAMES the recorder is not a
     // dangling require, and nothing that ships should be prose anyway.
     if (!/\.(js|json|html|css)$/.test(path)) continue;
     const text = readFileSync(path, 'utf8');
     const hit = FORBIDDEN.find(pattern => pattern.test(text));
-    if (hit) offenders.push(`${relative(BUILD, path)} still matches ${hit}`);
+    if (hit) offenders.push(`${relative(build, path)} still matches ${hit}`);
   }
 
-  const settings = join(BUILD, 'settings/index.html');
+  const settings = join(build, 'settings/index.html');
   if (existsSync(settings) && readFileSync(settings, 'utf8').includes(ROUTE_CALL)) {
     offenders.push('settings/index.html still calls the recorder routes');
   }
 
-  const manifestPath = join(BUILD, 'app.json');
+  const manifestPath = join(build, 'app.json');
   if (existsSync(manifestPath)) {
     const api = JSON.parse(readFileSync(manifestPath, 'utf8')).api ?? {};
     const left = EVIDENCE_ROUTES.filter(route => route in api);
@@ -230,20 +230,20 @@ function verifyStripped() {
   }
 }
 
-function strip() {
+export function strip(build = BUILD) {
   // 1. The feature module becomes its twin, under the twin's own name.
   copyFileSync(
-    join(BUILD, 'lib/support/evidence-feature-disabled.js'),
-    join(BUILD, 'lib/support/evidence-feature.js'),
+    join(build, 'lib/support/evidence-feature-disabled.js'),
+    join(build, 'lib/support/evidence-feature.js'),
   );
 
   // 2. The recorder, the sampler and the now-copied twin go entirely.
-  for (const module of EVIDENCE_MODULES) rmSync(join(BUILD, module), { force: true });
+  for (const module of EVIDENCE_MODULES) rmSync(join(build, module), { force: true });
 
   // 3 and 4. The settings page and the manifest, where they were copied in.
-  stripCopied();
+  stripCopied(build);
 
-  verifyStripped();
+  verifyStripped(build);
 }
 
 /**
@@ -254,18 +254,50 @@ function strip() {
  * package's own bin script runs on any platform, needs no shell, and skips npx's
  * resolution entirely.
  */
-execFileSync(process.execPath, [join(ROOT, 'node_modules/typescript/bin/tsc')], { cwd: ROOT, stdio: 'inherit' });
+function build() {
+  const devBuild = existsSync(join(ROOT, '.dev-build')) || process.env.LIGHTKEEPER_DEV === '1';
 
-verifyNoStrays();
+  execFileSync(process.execPath, [join(ROOT, 'node_modules/typescript/bin/tsc')], { cwd: ROOT, stdio: 'inherit' });
 
-if (devBuild) {
-  console.log('');
-  console.log('  ############################################################');
-  console.log('  ##  DEV BUILD - the seven-day evidence recorder IS built in');
-  console.log('  ##  Delete .dev-build before publishing.');
-  console.log('  ############################################################');
-  console.log('');
-} else {
-  strip();
-  console.log('Launch build: evidence recorder stripped (create .dev-build to keep it).');
+  verifyNoStrays();
+
+  if (devBuild) {
+    console.log('');
+    console.log('  ############################################################');
+    console.log('  ##  DEV BUILD - the seven-day evidence recorder IS built in');
+    console.log('  ##  Delete .dev-build before publishing.');
+    console.log('  ############################################################');
+    console.log('');
+  } else {
+    strip();
+    console.log('Launch build: evidence recorder stripped (create .dev-build to keep it).');
+  }
+}
+
+/**
+ * `--verify`: check the `.homeybuild/` the last packaging run left, building
+ * nothing.
+ *
+ * The strip proves itself from INSIDE the build, which is the half that stops a
+ * broken launch build shipping. This is the half that lets something OUTSIDE it
+ * look: CI runs `validate` — which runs this script without `.dev-build` — and
+ * then this, so a strip that silently stopped running at all (a guard inverted,
+ * the call deleted) fails the run instead of going green over a recorder.
+ */
+function verifyExisting() {
+  if (!existsSync(BUILD)) throw new Error('.homeybuild/ does not exist — run `npm run validate` first');
+  verifyNoStrays();
+  for (const module of EVIDENCE_MODULES) {
+    if (existsSync(join(BUILD, module))) throw new Error(`.homeybuild/ still contains ${module}`);
+  }
+  verifyStripped();
+  console.log('.homeybuild/ is a launch build: no evidence recorder, no stray roots.');
+}
+
+// Importable, for test/unit/build-strip.test.ts: the work runs only when this
+// file IS the entry point — the same guard sync-views.mjs needed, for the same
+// reason (a test importing a script must not perform it).
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  if (process.argv.includes('--verify')) verifyExisting();
+  else build();
 }

@@ -2,19 +2,19 @@ import type { LightkeeperApp } from '../../lib/app-contract';
 import { mintDeviceId } from '../../lib/bridge/flow-bridge-manager';
 import Homey from 'homey';
 import {
-  colourSwatch, lightsSummary, registerIntroHandler, registerReviewHandler,
+  lightsSummary, paletteForScreen, registerIntroHandler, registerReviewHandler,
 } from '../../lib/pairing/flow-screens';
 import {
-  isSourceKind, sourceRows, type SourceDevice, type SourceKind,
+  isSourceKind, sharedLightCount, sourceRows, type SourceDevice, type SourceKind,
 } from '../../lib/pairing/source-picker';
-import { LEAVE_ALONE } from '../../lib/outputs/lightkeeper-settings';
+import { keepsLightsUpdated } from '../../lib/runtime/writes-lights';
+import { LEAVE_ALONE, brightnessSourceIn, colourSourceIn } from '../../lib/outputs/lightkeeper-settings';
 import { isLightkeeperPreset, type LightkeeperPreset } from '../../lib/mapping/mapping-types';
 
 import {
   DEFAULT_BEHAVIOR, FUNCTION_CAPABILITY, FUNCTION_PRESET,
   type LightFunction, type MappingRule,
 } from '../../lib/mapping/mapping-types';
-import { FEATURED_COLORS, PALETTE } from '../../lib/circadian/palette';
 import {
   CURRENT_SCHEMA_VERSION, dedupeByInputKey, type ControllerProfile,
 } from '../../lib/profiles/controller-profile';
@@ -47,6 +47,12 @@ import {
  * The same three screens serve both pairing and repair; repair pre-selects the
  * existing values.
  */
+
+/** A chosen source that drives its own lights too, as the job tile names it. */
+interface SourceWarning {
+  name: string;
+  sharedLights: number;
+}
 
 interface SessionState {
   sourceDeviceId?: string;
@@ -203,17 +209,17 @@ module.exports = class ControllerDriver extends Homey.Driver {
     });
 
     handler('applyReattach', async () => {
-      if (!device) throw new Error('Re-attach is only available when repairing.');
+      if (!device) throw new Error(this.homey.__('errors.reattachOnlyInRepair'));
       const profile: ControllerProfile = device.getStoreValue('profile');
       const candidate = await this.app.health.findReattachCandidate(profile);
-      if (!candidate) throw new Error('That remote is no longer available.');
+      if (!candidate) throw new Error(this.homey.__('errors.remoteGone'));
 
       const newSource = await this.app.catalog.device(candidate.deviceId);
       // The candidate came from a health check that ran a moment ago, and a
       // device can be removed between the two — in which case re-attaching to
       // it would discover an empty surface and silently produce a controller
       // with no mappings.
-      if (!newSource) throw new Error('That remote is no longer available.');
+      if (!newSource) throw new Error(this.homey.__('errors.remoteGone'));
       const discovered = await this.app.discovery.discover(newSource);
 
       // The whole discovery result, not just its inputs: a re-attach must adopt
@@ -250,7 +256,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
     handler('selectSource', async (deviceId: string) => {
       const device = await this.app.catalog.device(deviceId);
-      if (!device) throw new Error('That device is no longer available.');
+      if (!device) throw new Error(this.homey.__('errors.deviceGone'));
 
       const result = await this.app.discovery.discover(device);
 
@@ -353,7 +359,6 @@ module.exports = class ControllerDriver extends Homey.Driver {
             view: 'buttons',
           },
         ],
-        promiseKey: 'review.promiseController',
       };
     });
 
@@ -373,7 +378,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
      * paths this screen is not the only way in through.
      */
     handler('getButtons', async () => {
-      if (!state.target) throw new Error('Choose some lights first.');
+      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
 
       /**
        * The job AND the lights it drives, on the row, as one line.
@@ -419,15 +424,15 @@ module.exports = class ControllerDriver extends Homey.Driver {
       // scriptable Web API surface (platform §14), and a rule naming an event
       // the remote does not have is a rule that can never fire.
       if (!state.catalogue.some(input => input.key === wanted)) {
-        throw new Error('That is not one of this remote\'s buttons.');
+        throw new Error(this.homey.__('errors.notThisRemotesButton'));
       }
       state.editing = wanted;
       return { editing: wanted };
     });
 
     handler('getGesture', async () => {
-      if (!state.editing) throw new Error('No button is being edited.');
-      if (!state.target) throw new Error('Choose some lights first.');
+      if (!state.editing) throw new Error(this.homey.__('errors.noButtonEditing'));
+      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
 
       const summary = await resolveSummary(this.app.catalog, state.target);
       const offered = availableFunctions(summary.support);
@@ -472,6 +477,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
       const offerable = composable || rule?.function === 'lightkeeper_on'
         ? tiles
         : tiles.filter(fn => fn !== 'lightkeeper_on');
+      const palette = paletteForScreen(key => this.homey.__(key));
 
       return {
         title: input ? input.label.split(' — ').join(' · ') : '',
@@ -498,27 +504,13 @@ module.exports = class ControllerDriver extends Homey.Driver {
         presetKind: rule ? FUNCTION_PRESET[rule.function] : 'none',
         preset: rule?.preset ?? null,
         /**
-         * The same closed palette a Colour Curve Light chooses from, painted by
-         * the view from the two axes rather than from a hex string: there is no
-         * hex anywhere in the palette, and inventing one here would be a second
-         * definition of "amber" to keep in step.
+         * The same closed palette a Colour Curve Light chooses from, each colour
+         * with the CSS it is painted in — the design's own hex — and the grid it
+         * is drawn in. This screen draws its swatches once, so it asks rather
+         * than carrying a copy of `colourSwatch()` the way the curve screen must.
          */
-        colors: PALETTE.map(colour => ({
-          id: colour.id,
-          label: this.homey.__(colour.labelKey),
-          /**
-           * The CSS the swatch is painted in, computed HERE.
-           *
-           * `colourSwatch()` already turns Homey's two normalised axes into an
-           * hsl() a browser will paint, and the curve screen carries a second
-           * copy of that maths because its chart repaints on every drag and
-           * cannot ask the driver. This screen draws its swatches once, so it
-           * asks — a third copy of two magic curves is a third place to get
-           * them wrong.
-           */
-          swatch: colourSwatch(colour),
-        })),
-        featuredColors: FEATURED_COLORS,
+        colors: palette.palette,
+        layout: palette.layout,
         /**
          * WHICH lights, and the answer is a subset of the device's own — never
          * the whole Homey. The second half of the sentence this screen is:
@@ -544,6 +536,11 @@ module.exports = class ControllerDriver extends Homey.Driver {
          * the stored `lk-curve-…` at somebody.
          */
         sourceNames: this.sourceNames(rule?.preset),
+        /**
+         * Whether either chosen source ALSO drives its own lights, so the tile
+         * can say so without anybody having to open the picker to find out.
+         */
+        sourceWarnings: await this.sourceWarnings(rule?.preset, await this.buttonLights(state, rule)),
       };
     });
 
@@ -558,7 +555,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
     const applyGesture = async (
       asked: { job?: unknown; preset?: unknown; lights?: unknown } | undefined,
     ) => {
-      if (!state.editing) throw new Error('No button is being edited.');
+      if (!state.editing) throw new Error(this.homey.__('errors.noButtonEditing'));
       const job = typeof asked?.job === 'string' ? asked.job : null;
 
       const kept = state.mappings.filter(rule => rule.inputKey !== state.editing);
@@ -597,7 +594,8 @@ module.exports = class ControllerDriver extends Homey.Driver {
       );
 
       if (rules.length === 0) {
-        throw new Error(dropped[0]?.reason ?? 'That job cannot be used here.');
+        const why = dropped[0]?.detail;
+        throw new Error(why ? this.homey.__(why.key, why.tokens) : this.homey.__('errors.jobNotUsable'));
       }
 
       state.mappings = [...kept, storedRuleFrom(rules[0]!)];
@@ -612,19 +610,19 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
     /** Which of the two questions the pushed picker is about to ask. */
     handler('editSource', async (kind: unknown) => {
-      if (!state.editing) throw new Error('No button is being edited.');
+      if (!state.editing) throw new Error(this.homey.__('errors.noButtonEditing'));
       // Checked against the two literals for the same reason `editGesture`
       // checks its key: a pair session is a scriptable Web API surface
       // (platform §14), and a third kind would open a screen for a question
       // this app does not ask.
-      if (!isSourceKind(kind)) throw new Error('That is not a source this button takes.');
+      if (!isSourceKind(kind)) throw new Error(this.homey.__('errors.notASourceKind'));
       state.editingSource = kind;
       return { editing: kind };
     });
 
     handler('getSource', async () => {
       const kind = state.editingSource;
-      if (!kind) throw new Error('No source is being chosen.');
+      if (!kind) throw new Error(this.homey.__('errors.noSourceChoosing'));
 
       const rule = state.mappings.find(candidate => candidate.inputKey === state.editing);
       const preset = rule?.preset;
@@ -645,7 +643,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
         note: this.homey.__(kind === 'colour' ? 'job.swatchNote' : 'job.levelNote'),
         empty: this.homey.__('job.noSources'),
         chosen,
-        sources: sourceRows(kind, await this.sourceDevices(kind), {
+        sources: sourceRows(kind, await this.sourceDevices(kind, await this.buttonLights(state, rule)), {
           name: this.homey.__('flow.leaveAlone'),
           subtitle: this.homey.__('flow.leaveAloneHint'),
         }),
@@ -662,7 +660,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
      */
     handler('setSource', async (payload: unknown) => {
       const kind = state.editingSource;
-      if (!kind) throw new Error('No source is being chosen.');
+      if (!kind) throw new Error(this.homey.__('errors.noSourceChoosing'));
       const asked = payload as { id?: unknown } | undefined;
       const id = typeof asked?.id === 'string' && asked.id.length > 0 ? asked.id : LEAVE_ALONE;
 
@@ -704,7 +702,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
     // -------------------------------------------------------------- mapping
 
     handler('getMapping', async () => {
-      if (!state.target) throw new Error('Choose some lights first.');
+      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
       const summary = await resolveSummary(this.app.catalog, state.target);
       const offered = availableFunctions(summary.support);
       const lights = await targetLights(this.app.catalog, state.target);
@@ -747,7 +745,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
      * "inherit" — all of them.
      */
     handler('setRules', async (raw: unknown) => {
-      if (!state.target) throw new Error('Choose some lights first.');
+      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
 
       /**
        * Checked against what is ALREADY chosen, not against the whole Homey.
@@ -807,7 +805,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
      * silent failure.
      */
     handler('test', async ({ func, deviceIds }: { func: LightFunction; deviceIds: string[] | null }) => {
-      if (!state.target) throw new Error('Choose some lights first.');
+      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
       const runtime = await this.app.controllers.ephemeral(this.buildProfile(state));
       try {
         return await runtime.testFunction(func, deviceIds && deviceIds.length ? deviceIds : undefined);
@@ -966,11 +964,11 @@ module.exports = class ControllerDriver extends Homey.Driver {
     if (preset === undefined || !isLightkeeperPreset(preset)) {
       return { colour: leaveAlone, brightness: leaveAlone };
     }
+    // Through the SAME lookup the press itself uses (`sourceRegistryOver` in
+    // app.ts), so the name on this card is the device the button will read.
     return {
-      colour: this.app.curves.get(preset.colourSource)?.deviceName ?? leaveAlone,
-      brightness: (this.app.daylights.get(preset.brightnessSource)
-        ?? this.app.curves.get(preset.brightnessSource)
-        ?? this.app.schedules.get(preset.brightnessSource))?.deviceName ?? leaveAlone,
+      colour: colourSourceIn(this.app, preset.colourSource)?.deviceName ?? leaveAlone,
+      brightness: brightnessSourceIn(this.app, preset.brightnessSource)?.deviceName ?? leaveAlone,
     };
   }
 
@@ -986,28 +984,92 @@ module.exports = class ControllerDriver extends Homey.Driver {
    * itself, and all three have to agree or a screen offers a device the press
    * will then call missing.
    */
-  private async sourceDevices(kind: SourceKind): Promise<SourceDevice[]> {
+  private async sourceDevices(kind: SourceKind, buttonLights: readonly string[]): Promise<SourceDevice[]> {
     const subtitles = await this.ownDeviceSubtitles();
+    const membersOf = await this.groupMembership();
     const describe = (id: string, name: string) => ({
       id, name, subtitle: subtitles.get(id) ?? '',
     });
 
+    /**
+     * Whether an ENGINE device drives its own lights, and how many of this
+     * button's it shares — the two facts the picker's warning is made of.
+     *
+     * The engine types only. A schedule in the brightness list writes at the
+     * start of each window and nowhere in between, so it cannot fight the
+     * button every time a lamp comes on, which is what the warning is about.
+     */
+    const ownership = async (plan: { target: TargetSpec; writesLights?: boolean }) => ({
+      keepsLightsUpdated: keepsLightsUpdated(plan),
+      sharedLights: sharedLightCount(
+        buttonLights, await targetDeviceIds(this.app.catalog, plan.target), membersOf,
+      ),
+    });
+
     if (kind === 'colour') {
-      return this.app.curves.all().map(runtime => ({
+      return Promise.all(this.app.curves.all().map(async runtime => ({
         ...describe(runtime.controllerId, runtime.deviceName),
         values: runtime.publishedValues(),
         // The live value, not the board: the board publishes the colour as a
         // NAME and a swatch needs the two axes. Same read `set_lights` makes.
         current: runtime.currentValue(),
-      }));
+        ...await ownership(runtime.currentPlan),
+      })));
     }
 
-    return [
-      ...this.app.daylights.all(), ...this.app.curves.all(), ...this.app.schedules.all(),
-    ].map(runtime => ({
-      ...describe(runtime.controllerId, runtime.deviceName),
-      values: runtime.publishedValues(),
-    }));
+    return Promise.all([
+      ...[...this.app.daylights.all(), ...this.app.curves.all()].map(async runtime => ({
+        ...describe(runtime.controllerId, runtime.deviceName),
+        values: runtime.publishedValues(),
+        ...await ownership(runtime.currentPlan),
+      })),
+      ...this.app.schedules.all().map(async runtime => ({
+        ...describe(runtime.controllerId, runtime.deviceName),
+        values: runtime.publishedValues(),
+      })),
+    ]);
+  }
+
+  /**
+   * The lamps a button drives: its own subset where it has one, otherwise every
+   * light this remote controls. The same reading `getGesture` gives `aimed`.
+   */
+  private async buttonLights(state: SessionState, rule: MappingRule | undefined): Promise<string[]> {
+    if (rule?.target) return targetDeviceIds(this.app.catalog, rule.target);
+    return state.target ? targetDeviceIds(this.app.catalog, state.target) : [];
+  }
+
+  /** Every Homey device group's members, by the group's own id. */
+  private async groupMembership(): Promise<(id: string) => readonly string[] | undefined> {
+    const groups = new Map<string, string[]>();
+    for (const device of await this.app.catalog.allDevices()) {
+      if (device.groupMembers) groups.set(device.id, device.groupMembers);
+    }
+    return id => groups.get(id);
+  }
+
+  /**
+   * The picker's warning, for the two sources this button already has.
+   *
+   * Through `sourceDevices` rather than a second reading of the same facts, so
+   * the tile and the picker cannot disagree about whether a device warns.
+   */
+  private async sourceWarnings(
+    preset: MappingRule['preset'],
+    buttonLights: readonly string[],
+  ): Promise<{ colour: SourceWarning | null; brightness: SourceWarning | null }> {
+    if (preset === undefined || !isLightkeeperPreset(preset)) return { colour: null, brightness: null };
+    const warningFor = async (kind: SourceKind, id: string): Promise<SourceWarning | null> => {
+      if (id === LEAVE_ALONE) return null;
+      const device = (await this.sourceDevices(kind, buttonLights)).find(d => d.id === id);
+      return device?.keepsLightsUpdated
+        ? { name: device.name, sharedLights: device.sharedLights ?? 0 }
+        : null;
+    };
+    return {
+      colour: await warningFor('colour', preset.colourSource),
+      brightness: await warningFor('brightness', preset.brightnessSource),
+    };
   }
 
   /**
@@ -1078,7 +1140,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
   private buildProfile(state: SessionState): ControllerProfile {
     if (!state.sourceDeviceId || !state.target) {
-      throw new Error('Choose a remote and some lights first.');
+      throw new Error(this.homey.__('errors.chooseRemoteAndLights'));
     }
     return {
       schemaVersion: CURRENT_SCHEMA_VERSION,

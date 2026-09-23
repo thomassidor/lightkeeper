@@ -20,10 +20,11 @@
  * `capabilitiesObj` the rest of the app reads its ranges from, and the planner
  * clamps against each lamp's own options before anything is written.
  *
- * Adding a colour is adding an entry here plus its locale key. Removing one is
- * NOT safe: a stored plan names it, and `sanitiseCurve` drops a point whose
- * colour it cannot resolve — so a removed colour silently deletes a point from
- * somebody's curve. Deprecate by leaving it in place.
+ * Adding a colour is adding an entry here plus its locale key, and a place in
+ * `PALETTE_LAYOUT`. Removing one is NOT safe: a stored plan names it, and
+ * `sanitiseCurve` drops a point whose colour it cannot resolve — so a removed
+ * colour silently deletes a point from somebody's curve. Deprecate by marking
+ * it `hidden` and taking it out of the layout.
  */
 
 export interface PaletteColor {
@@ -35,63 +36,104 @@ export interface PaletteColor {
   hue: number;
   /** Homey's normalised distance from white, 0–1. */
   saturation: number;
+  /**
+   * What the selector paints, as the design drew it. Absent on a hidden colour.
+   *
+   * A hex beside the two axes rather than instead of them, because the axes are
+   * what a LAMP is sent and the hex is what a screen shows — and `colourSwatch()`
+   * cannot recover a designer's exact hex from a hue and a saturation, having no
+   * third axis to recover it with.
+   */
+  swatch?: string;
+  /** In the palette so a stored plan still resolves, and never drawn. */
+  hidden?: true;
 }
 
 /**
- * How many of the palette the screen shows without being asked.
+ * The palette: every colour a plan may name.
  *
- * Eight, and then "Show more colours" folds the other sixteen out IN PLACE,
- * never onto a second screen. A set is a decision; a continuous picker is a
- * tuning session, and a set of twenty-four shown all at once is a tuning session
- * with extra steps. The first eight are the ones the default curve uses plus the
- * three most ordinary colours, so the common case never opens the fold.
- */
-export const FEATURED_COLORS = 8;
-
-/**
- * The palette, with the eight shown by default FIRST.
+ * **Redrawn on 2026-09-23 from the design's own hexes.** Each drawn colour's
+ * hue and saturation is the HSV reading of its `swatch`, so the screen and the
+ * lamp are told the same colour; a colour that existed before kept its id (and
+ * so every stored point that names it) and was re-tuned to the nearest swatch.
+ * Eleven are new, and one — `moss` — has no swatch and is kept, hidden.
  *
- * Ordering is a screen concern, not a data one — a colour is stored and resolved
- * by id — so the array is arranged for reading rather than by hue: the featured
- * eight, then the rest warm to cool. The wheel puts red next to magenta, which is
- * not how anyone browses a list of colours for a room.
- *
- * **The two whites are near-white HUES, not colour temperatures**, and that is
- * the one thing worth knowing before adding to this list. A point's `color`
- * replaces its warmth on a lamp that can take a colour, so "cool white" here is a
- * faintly blue hue at saturation 0.08 rather than a `light_temperature` value.
- * A lamp with no colour capability is unaffected either way: it gets the point's
+ * **The whites are near-white HUES, not colour temperatures**, and that is the
+ * one thing worth knowing before adding to this list. A point's `color`
+ * replaces its warmth on a lamp that can take a colour, so "cool white" here is
+ * a faintly blue hue rather than a `light_temperature` value. The first row runs
+ * candlelight to bright white along exactly the stops of `--lk-warm-ramp`. A
+ * lamp with no colour capability is unaffected either way: it gets the point's
  * `warmth`, which is why `warmth` stays required even on a coloured point.
  */
 export const PALETTE: readonly PaletteColor[] = [
-  // The featured eight.
-  { id: 'amber', labelKey: 'palette.amber', hue: 0.11, saturation: 0.75 },
-  { id: 'candle', labelKey: 'palette.candle', hue: 0.08, saturation: 0.55 },
-  { id: 'coral', labelKey: 'palette.coral', hue: 0.02, saturation: 0.55 },
-  { id: 'neutral', labelKey: 'palette.neutral', hue: 0.10, saturation: 0.05 },
-  { id: 'coolwhite', labelKey: 'palette.coolwhite', hue: 0.58, saturation: 0.08 },
-  { id: 'ocean', labelKey: 'palette.ocean', hue: 0.55, saturation: 0.70 },
-  { id: 'forest', labelKey: 'palette.forest', hue: 0.35, saturation: 0.55 },
-  { id: 'violet', labelKey: 'palette.violet', hue: 0.78, saturation: 0.55 },
+  // Drawn, in the order the screen first meets them: the default ten, then the
+  // twenty-five behind "Show more colours". `ocean` is drawn twice (the default
+  // blue, and the middle of the blues row) and stored once.
+  { id: 'candle', labelKey: 'palette.candle', hue: 0.082, saturation: 0.81, swatch: '#e8892c' },
+  { id: 'amber', labelKey: 'palette.amber', hue: 0.086, saturation: 0.632, swatch: '#efa658' },
+  { id: 'warmwhite', labelKey: 'palette.warmwhite', hue: 0.094, saturation: 0.434, swatch: '#f4c68a' },
+  { id: 'neutral', labelKey: 'palette.neutral', hue: 0.095, saturation: 0.116, swatch: '#f2e6d6' },
+  { id: 'coolwhite', labelKey: 'palette.coolwhite', hue: 0.599, saturation: 0.127, swatch: '#dbe8fb' },
+  { id: 'coral', labelKey: 'palette.coral', hue: 0.021, saturation: 0.719, swatch: '#e0533f' },
+  { id: 'sunflower', labelKey: 'palette.sunflower', hue: 0.142, saturation: 0.715, swatch: '#ddc63f' },
+  { id: 'forest', labelKey: 'palette.forest', hue: 0.37, saturation: 0.464, swatch: '#5aa86b' },
+  { id: 'ocean', labelKey: 'palette.ocean', hue: 0.569, saturation: 0.658, swatch: '#3f86b8' },
+  { id: 'orchid', labelKey: 'palette.orchid', hue: 0.8, saturation: 0.462, swatch: '#a763b8' },
+  { id: 'crimson', labelKey: 'palette.crimson', hue: 0.01, saturation: 0.761, swatch: '#b8342c' },
+  { id: 'ember', labelKey: 'palette.ember', hue: 0.034, saturation: 0.802, swatch: '#d94f2b' },
+  { id: 'rose', labelKey: 'palette.rose', hue: 0.944, saturation: 0.56, swatch: '#d85f88' },
+  { id: 'blush', labelKey: 'palette.blush', hue: 0.967, saturation: 0.417, swatch: '#f08ca0' },
+  { id: 'peach', labelKey: 'palette.peach', hue: 0.019, saturation: 0.282, swatch: '#f5b8b0' },
+  { id: 'rust', labelKey: 'palette.rust', hue: 0.071, saturation: 0.84, swatch: '#c2641f' },
+  { id: 'apricot', labelKey: 'palette.apricot', hue: 0.1, saturation: 0.741, swatch: '#e8a33c' },
+  { id: 'gold', labelKey: 'palette.gold', hue: 0.129, saturation: 0.612, swatch: '#e8c85a' },
+  { id: 'butter', labelKey: 'palette.butter', hue: 0.131, saturation: 0.492, swatch: '#f0d77a' },
+  { id: 'cream', labelKey: 'palette.cream', hue: 0.129, saturation: 0.287, swatch: '#f7e7b0' },
+  { id: 'pine', labelKey: 'palette.pine', hue: 0.404, saturation: 0.615, swatch: '#2f7a4f' },
+  { id: 'leaf', labelKey: 'palette.leaf', hue: 0.39, saturation: 0.5, swatch: '#4f9e6a' },
+  { id: 'lime', labelKey: 'palette.lime', hue: 0.225, saturation: 0.541, swatch: '#9fc45a' },
+  { id: 'teal', labelKey: 'palette.teal', hue: 0.489, saturation: 0.594, swatch: '#3f9b95' },
+  { id: 'mint', labelKey: 'palette.mint', hue: 0.382, saturation: 0.17, swatch: '#b9dfc4' },
+  { id: 'navy', labelKey: 'palette.navy', hue: 0.602, saturation: 0.696, swatch: '#2a4f8a' },
+  { id: 'cobalt', labelKey: 'palette.cobalt', hue: 0.62, saturation: 0.672, swatch: '#3f63c0' },
+  { id: 'sky', labelKey: 'palette.sky', hue: 0.566, saturation: 0.504, swatch: '#6fb3e0' },
+  { id: 'ice', labelKey: 'palette.ice', hue: 0.568, saturation: 0.223, swatch: '#bcdcf2' },
+  { id: 'indigo', labelKey: 'palette.indigo', hue: 0.716, saturation: 0.659, swatch: '#4a2f8a' },
+  { id: 'iris', labelKey: 'palette.iris', hue: 0.68, saturation: 0.582, swatch: '#5b52c4' },
+  { id: 'violet', labelKey: 'palette.violet', hue: 0.735, saturation: 0.589, swatch: '#7d4fc0' },
+  { id: 'magenta', labelKey: 'palette.magenta', hue: 0.891, saturation: 0.51, swatch: '#c25fa0' },
+  { id: 'lavender', labelKey: 'palette.lavender', hue: 0.758, saturation: 0.178, swatch: '#d9c2ec' },
 
-  // Behind "Show more colours", warm to cool.
-  { id: 'ember', labelKey: 'palette.ember', hue: 0.02, saturation: 0.85 },
-  { id: 'crimson', labelKey: 'palette.crimson', hue: 0.99, saturation: 0.75 },
-  { id: 'blush', labelKey: 'palette.blush', hue: 0.98, saturation: 0.35 },
-  { id: 'rose', labelKey: 'palette.rose', hue: 0.96, saturation: 0.50 },
-  { id: 'peach', labelKey: 'palette.peach', hue: 0.04, saturation: 0.45 },
-  { id: 'apricot', labelKey: 'palette.apricot', hue: 0.07, saturation: 0.60 },
-  { id: 'gold', labelKey: 'palette.gold', hue: 0.13, saturation: 0.65 },
-  { id: 'lime', labelKey: 'palette.lime', hue: 0.25, saturation: 0.60 },
-  { id: 'moss', labelKey: 'palette.moss', hue: 0.30, saturation: 0.45 },
-  { id: 'mint', labelKey: 'palette.mint', hue: 0.42, saturation: 0.40 },
-  { id: 'teal', labelKey: 'palette.teal', hue: 0.48, saturation: 0.65 },
-  { id: 'sky', labelKey: 'palette.sky', hue: 0.58, saturation: 0.45 },
-  { id: 'indigo', labelKey: 'palette.indigo', hue: 0.70, saturation: 0.70 },
-  { id: 'lavender', labelKey: 'palette.lavender', hue: 0.75, saturation: 0.40 },
-  { id: 'orchid', labelKey: 'palette.orchid', hue: 0.82, saturation: 0.45 },
-  { id: 'magenta', labelKey: 'palette.magenta', hue: 0.88, saturation: 0.65 },
+  // NOT DRAWN, and still resolvable: a stored point may name it. See the module
+  // comment on why a colour is never removed.
+  { id: 'moss', labelKey: 'palette.moss', hue: 0.30, saturation: 0.45, hidden: true },
 ] as const;
+
+/**
+ * Which swatches the colour selector draws, and where.
+ *
+ * Five across everywhere — two rows by default, and five more rows of one hue
+ * family each, deep to pale, behind "Show more colours". Ids rather than
+ * entries, because the grid is a picture of the palette and not the palette:
+ * `ocean` is in it twice, and `moss` is in the palette and not in it at all.
+ * curve-colour.test.ts holds the two together.
+ */
+export const PALETTE_LAYOUT: { readonly featured: readonly string[]; readonly more: readonly string[] } = {
+  featured: [
+    // Whites, candlelight to bright white.
+    'candle', 'amber', 'warmwhite', 'neutral', 'coolwhite',
+    // One of each colour.
+    'coral', 'sunflower', 'forest', 'ocean', 'orchid',
+  ],
+  more: [
+    'crimson', 'ember', 'rose', 'blush', 'peach', //        reds and pinks
+    'rust', 'apricot', 'gold', 'butter', 'cream', //         oranges and yellows
+    'pine', 'leaf', 'lime', 'teal', 'mint', //               greens
+    'navy', 'cobalt', 'ocean', 'sky', 'ice', //              blues
+    'indigo', 'iris', 'violet', 'magenta', 'lavender', //    purples
+  ],
+};
 
 const BY_ID = new Map(PALETTE.map(color => [color.id, color]));
 

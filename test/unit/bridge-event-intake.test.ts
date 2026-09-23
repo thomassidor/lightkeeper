@@ -183,29 +183,10 @@ describe('the magnitude', () => {
     }
   });
 
-  /**
-   * `Number(null)` and `Number('')` are both 0, so those arrive as a magnitude
-   * of zero rather than as an absence — and that is left alone deliberately.
-   *
-   * A zero magnitude is not a hazard: it plans a zero delta, and a zero delta
-   * writes nothing (see `advanceDim` in the planner, which returns early on
-   * `delta === 0`). Distinguishing "empty field" from "the number nought" would
-   * mean guessing at what the Flow editor sends for an emptied numeric argument,
-   * which is not something this repo has established on hardware.
-   */
-  test('an empty numeric argument arrives as zero, which is harmless', () => {
-    const r = registries();
-    for (const value of [null, '']) {
-      r.calls.length = 0;
-      intakeBridgeEvent(
-        'bridge_numeric_event',
-        { controller: CTRL, event_key: 'k', value },
-        args => Number(args.value),
-        r.deps,
-      );
-      assert.equal(r.calls[0]!.magnitude, 0, JSON.stringify(value));
-    }
-  });
+  // `Number(null)` and `Number('')` are both 0 — which is NOT harmless, because
+  // `MappingEngine.intentFor` reads a zero magnitude as one notch. The shipped
+  // cards therefore never coerce: see magnitude-reader.test.ts for the guarded
+  // readers and the `requireMagnitude` refusal app.ts runs them with.
 
   test('the plain card carries none at all', () => {
     const r = registries();

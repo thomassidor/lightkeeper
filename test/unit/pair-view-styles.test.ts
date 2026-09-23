@@ -161,17 +161,19 @@ describe('pair view styles', () => {
      * from the room is what a Room-sensing Light is for, and offering it on four
      * device types meant four screens carrying the same 250 lines.
      *
-     * What is spliced now is the sensor's-week grid, on the two daylight screens
-     * that draw it: the response screen, where it is the evidence for the two lux
-     * numbers, and the detail screen a sensor row pushes. There is still nowhere
-     * to put a stylesheet, so the duplication is made safe rather than avoided.
+     * What is spliced now is the sensor's-week grid, on the one screen that
+     * draws it: the response screen, where it is the evidence for the two lux
+     * numbers. It had a second carrier — the detail screen a sensor row pushed —
+     * until the 2026-09-23 design folded that screen into this one, so "several"
+     * became "at least one": the block is still spliced, and a second carrier
+     * appearing again must still match the first. `sync:views:check` is what
+     * holds the one copy to its source.
      */
     const carriers = Object.keys(VIEWS).filter(view => cardBlock(view) !== null);
 
     assert.ok(
-      carriers.length > 1,
-      `expected several views to carry the week grid, found ${carriers.length}: `
-      + `${carriers.join(', ')}`,
+      carriers.length >= 1,
+      'expected the response screen to carry the week grid, and no view does',
     );
 
     const reference = cardBlock(carriers[0]);
@@ -519,12 +521,12 @@ describe('pair view script helpers', () => {
    * count `npm test` reports is the count release-metadata.test.ts can derive
    * from the source — which is what README.md quotes.
    */
-  function assertIdentical(name: string): void {
+  function assertIdentical(name: string, atLeast = 2): void {
     const copies = Object.keys(VIEWS)
       .map(view => ({ view, body: helper(view, name) }))
       .filter((c): c is { view: string; body: string } => c.body !== null);
 
-    assert.ok(copies.length > 1, `${name}() appears in ${copies.length} view(s)`);
+    assert.ok(copies.length >= atLeast, `${name}() appears in ${copies.length} view(s)`);
 
     for (const copy of copies.slice(1)) {
       assert.equal(
@@ -609,10 +611,10 @@ describe('pair view script helpers', () => {
   });
 
   test('weekGrid() is identical everywhere it appears', () => {
-    // Spliced from views/shared/week-grid.js into the two daylight screens that
-    // draw a sensor's week. It closes over each view's own `node`, which is what
-    // lets the body be byte-identical on two screens with nothing else in common.
-    assertIdentical('weekGrid');
+    // Spliced from views/shared/week-grid.js into the screen that draws a
+    // sensor's week — ONE since the detail screen went, so one copy is enough
+    // here; a second must still match it.
+    assertIdentical('weekGrid', 1);
   });
 
 

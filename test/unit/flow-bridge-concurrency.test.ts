@@ -439,3 +439,57 @@ describe('the app root folder is created exactly once', () => {
     );
   });
 });
+
+/**
+ * The journal is read once at the start of a pass and written back wholesale at
+ * its commit, so anything that edits it WHILE the pass is awaiting the Homey was
+ * undone. Two callers do: a controller whose remote changed releases the old
+ * remote's references (`prepareApply`) and, after the commit, defers the ones it
+ * could not delete (`afterApply`) — both while a pass on the old profile may
+ * still be in flight.
+ */
+describe('a journal edit made while a pass is in flight', () => {
+  async function passHeldAtCreate() {
+    const h = harness();
+    const first = await h.bridge.sync(request({ mapped: [scheduleInput('sched:0:on', '22:00')] }));
+    const [oldRef] = first.references;
+
+    // Held at the one await that sits between the pass's journal read and its
+    // commit: creating the second binding's Flow.
+    const client: any = await h.api.read();
+    const create = client.flow.createFlow;
+    const hold = deferred();
+    client.flow.createFlow = async (args: any) => { await hold.promise; return create(args); };
+
+    const pass = h.bridge.sync(request({
+      mapped: [scheduleInput('sched:0:on', '22:00'), scheduleInput('sched:0:off', '23:00')],
+      existing: first.references,
+    }));
+    await settle();
+    return { h, oldRef: oldRef!, pass, release: () => hold.resolve() };
+  }
+
+  test('a reference released mid-pass is not committed back', async () => {
+    const { h, oldRef, pass, release } = await passHeldAtCreate();
+    h.bridge.releaseReferences('lk-sched-1-1', [oldRef.flowId]);
+    release();
+    const result = await pass;
+
+    assert.ok(
+      !result.references.some(ref => ref.flowId === oldRef.flowId),
+      'the pass committed a reference that was released while it ran',
+    );
+    assert.ok(h.live[oldRef.flowId], 'released, not deleted: deleting is for the commit');
+  });
+
+  test('a delete deferred mid-pass is kept, and carried out by that same pass', async () => {
+    const { h, pass, release } = await passHeldAtCreate();
+    h.live.stray = { id: 'stray', name: 'from the old remote' };
+    h.bridge.deferCleanup('lk-sched-1-1', ['stray']);
+    release();
+    await pass;
+
+    assert.equal(h.live.stray, undefined, 'the deferred delete was dropped by the commit');
+  });
+});
+

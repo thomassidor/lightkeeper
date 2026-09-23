@@ -666,9 +666,11 @@ export function validateCircadianPlan(raw: unknown): CircadianPlan {
     points,
     adjustBrightness,
     ...(zones !== undefined ? { zones } : {}),
-    // Opt-in, so anything other than a real `true` is a no. Matching the 0 → 1
-    // migration, which reads `preStage === true` for the same reason.
+    // Opt-in, so anything other than a real `true` is a no — and a device that
+    // predates the key must keep reading "no".
     preStage: plan.preStage === true,
+    ...storedPreStageLights(plan),
+    ...storedWritesLights(plan),
   };
 }
 
@@ -741,7 +743,40 @@ export function validateSimpleCircadianPlan(raw: unknown): SimpleCircadianPlan {
     adjustBrightness,
     // Opt-in, so anything other than a real `true` is a no.
     preStage: plan.preStage === true,
+    ...storedPreStageLights(plan),
+    ...storedWritesLights(plan),
   };
+}
+
+/**
+ * The lamps a pre-stage test proved safe, as the ids it stored.
+ *
+ * FORGIVING, unlike most of this file, and deliberately: a malformed entry here
+ * can only ever mean a lamp that is not pre-staged, which is the safe answer,
+ * so it is dropped rather than quarantining a device over it. Not checked
+ * against the targets, because a room target is resolved at runtime and this
+ * validator cannot know its lamps; an id that no longer names a target simply
+ * never matches one. Absent in, absent out, so a plan without it round-trips
+ * to exactly itself — and an existing `preStage: true` device reads as "chosen,
+ * not tested", which pre-stages nothing (`preStagesLamp()`).
+ */
+function storedPreStageLights(plan: Record<string, unknown>): { preStageLights?: string[] } {
+  if (!Array.isArray(plan.preStageLights)) return {};
+  const ids = plan.preStageLights.filter((id): id is string => typeof id === 'string' && id.length > 0);
+  return { preStageLights: [...new Set(ids)] };
+}
+
+/**
+ * `writesLights`, read the OPPOSITE way to `preStage` beside it.
+ *
+ * Opt-OUT: only a real `false` turns it off, and an absent key — every device
+ * paired before the flag existed — keeps writing to its lights. Copying the
+ * `=== true` line above would stop every existing engine device on update. The
+ * key is returned only when false, so a plan that never had it round-trips to
+ * exactly itself. See lib/runtime/writes-lights.ts.
+ */
+function storedWritesLights(plan: Record<string, unknown>): { writesLights?: false } {
+  return plan.writesLights === false ? { writesLights: false } : {};
 }
 
 /**
@@ -849,6 +884,7 @@ export function validateDaylightPlan(raw: unknown): DaylightPlan {
   return {
     ...planRoot(plan, ROOT.daylight),
     response: validateDaylightResponse(plan.response, `${ROOT.daylight}.response`),
+    ...storedWritesLights(plan),
   };
 }
 

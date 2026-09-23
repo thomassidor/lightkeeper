@@ -14,7 +14,7 @@ function emit(event, data) {
      * style choice: `spliceFunction` matches from the `function` keyword, so a
      * docblock above one is never replaced — it is prepended again on every
      * sync. Four stale copies of the week grid's reached the shipped archive
-     * that way. It also means this explanation now appears in all 56 views
+     * that way. It also means this explanation now appears in all 54 views
      * rather than in the two credential screens that happened to carry it.
      */
     return new Promise(function (resolve, reject) {

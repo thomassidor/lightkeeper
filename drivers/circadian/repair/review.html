@@ -330,8 +330,9 @@
      looks like when it is the only one on a pushed screen — "Close" — where a
      primary button would claim the choice was made. */
   #rv-root .btn.wide { display: block; width: 100%; margin-top: 16px; }
-  /* And the same button when it is the SECOND of two, under a primary — "Put
-     them back". It borrows the primary's outline rather than the field grey,
+  /* And the same button when it is the SECOND of two, under a primary — "Stop
+     preview" — or the one secondary action inside a card, as "Test my lights"
+     is on the review screen. It borrows the primary's outline rather than the field grey,
      because the pair is one decision offered twice ("show me" / "undo that")
      and a grey partner reads as the disabled twin of the button above it.
      Lighter than the primary in weight and height, never in hue. */
@@ -525,12 +526,17 @@
                margin: 13px 0 0; font-size: 13px; line-height: 1.45;
                font-style: italic; color: var(--lk-muted); }
 
-  /* The swatches a colour is chosen from, four across.
-     Not one row of eight: at 390px that is 34px a swatch, under the touch
-     minimum and too small to judge a colour by. Two rows of four is the same
-     set of eight, legibly, and the sixteen that fold out below continue it. */
-  #rv-root .swatches { display: grid; grid-template-columns: repeat(4, 1fr);
-                    gap: 7px; margin: 0 0 11px; }
+  /* The swatches a colour is chosen from, five across, EVERYWHERE.
+     Two rows by default — whites, then one of each colour — and five more
+     that fold out below, one hue family a row. Five and not eight: at 390px
+     eight is 34px of width a swatch, under the touch minimum and too small to
+     judge a colour by; five is still a comfortable target at 34px tall.
+
+     7px under every grid, which the margins between block siblings collapse
+     to: 7px from the default rows to the fold-out, as the design draws it, and
+     the link under the last grid keeps its own 9px. */
+  #rv-root .swatches { display: grid; grid-template-columns: repeat(5, 1fr);
+                    gap: 7px; margin: 0 0 7px; }
   /* min-height as well as height: the container's own stylesheet is not ours
      to read, and a swatch whose height is overridden away is a coloured line
      rather than a colour anybody can judge. */
@@ -542,16 +548,14 @@
      the palette, which a white gap did not against the pale ones. */
   #rv-root .swatch[aria-pressed="true"] { border: 2.5px solid var(--lk-accent);
                                        box-shadow: 0 0 0 3px var(--lk-ring); }
-  /* The sixteen that fold out: same set, half the size, eight across.
+  /* The twenty-five that fold out: the SAME grid, same size, same gap.
 
-     18px above them, not the 7px between the featured rows: at the same gap the
-     fold-out read as two more rows of the grid above it rather than as the set
-     that had just been opened, and the eye had to measure swatch sizes to find
-     where one group ended. The space is what separates them; both sets are
-     still the same palette, so nothing stronger than space is wanted. */
-  #rv-root .swatches.more { grid-template-columns: repeat(8, 1fr); gap: 6px;
-                         margin: 18px 0 0; }
-  #rv-root .swatches.more .swatch { height: 28px; min-height: 28px; border-radius: 8px; }
+     It used to be a second grid of smaller swatches, eight across, 18px below —
+     and the space and the smaller size were what told the two sets apart. The
+     2026-09-23 design makes it one grid that simply grows: the fold-out rows
+     are hue families, deep to pale, and read as rows of one palette because
+     they are. So `.more` carries nothing of its own any more; the class stays
+     as the hook the views show and hide. */
 
   /* The day strip: a picture of the whole day, drawn once and reused. */
   #rv-root .day { position: relative; height: 104px; border-radius: 12px;
@@ -606,17 +610,62 @@
                    border-radius: 16px; box-shadow: var(--lk-shadow);
                    padding: 4px 14px; margin-bottom: 16px; }
 
-  /* The one sentence that says what will happen, in the present tense and
-     naming the lights. It is the promise the Add button is about to keep. */
-  #rv-root .promise { font-size: 15px; line-height: 1.5; color: var(--lk-body);
-                      margin: 0 0 20px; }
+  /* "How Lightkeeper controls your lights": one radio group, on the three
+     engine device types only. It took the place of the sentence that used to
+     close this screen, because that sentence was a promise about HOW the
+     lights would be driven and this is where that is now decided.
+
+     The rows are the sensor picker's shape — a 22px round mark, a 15/500 title
+     and a 13px line under it — because a single choice from a short list is
+     one thing in this system, wherever it is drawn. */
+  #rv-root .control { background: var(--lk-surface); border: 1px solid var(--lk-edge);
+                      border-radius: 16px; box-shadow: var(--lk-shadow);
+                      padding: 0 14px; margin-bottom: 16px; }
+  #rv-root .mode { border-top: 1px solid var(--lk-line); }
+  #rv-root .mode:first-child { border-top: none; }
+  #rv-root .mode .pick { display: flex; align-items: flex-start; gap: 12px; width: 100%;
+                         padding: 12px 0; min-height: 44px; box-sizing: border-box;
+                         background: none; border: none; font: inherit; color: inherit;
+                         text-align: left; cursor: pointer; }
+  #rv-root .mode .box { flex: none; width: 22px; height: 22px; border-radius: 50%;
+                        border: 1.5px solid var(--lk-box); box-sizing: border-box;
+                        display: flex; align-items: center; justify-content: center;
+                        font-size: 13px; font-weight: 700; color: transparent; }
+  #rv-root .mode .pick[aria-checked="true"] .box { background: var(--lk-accent);
+                                                  border-color: var(--lk-accent);
+                                                  color: var(--lk-accent-ink); }
+  #rv-root .mode .text, #rv-root .tested .text { flex: 1; min-width: 0; }
+  #rv-root .mode .what { font-size: 15px; font-weight: 500; line-height: 22px; }
+  #rv-root .mode .why { font-size: 13px; color: var(--lk-muted); line-height: 1.45;
+                        margin-top: 1px; }
+  /* What unfolds under "Set lights before they turn on", indented to the
+     title's own left edge — 22px of mark plus 12px of gap — so it reads as
+     belonging to that option rather than as a fourth one. */
+  #rv-root .mode .more { margin: 0 0 14px 34px; }
+  #rv-root .mode .more .btn.wide { margin-top: 0; }
+  #rv-root .mode .note { font-size: 13px; color: var(--lk-muted); line-height: 1.45;
+                         margin: 9px 0 0; }
+  /* The test's answer per lamp. Success is a DOT (the system has no green
+     ground); the fallback is the same dot in the chevron grey, because a lamp
+     that is changed after it turns on is not a fault — it is option 1. */
+  #rv-root .tested { background: var(--lk-flat-bg); border-radius: 12px;
+                     padding: 4px 12px; }
+  #rv-root .tested .lamp { display: flex; align-items: flex-start; gap: 10px;
+                           padding: 11px 0; min-height: 44px; box-sizing: border-box; }
+  #rv-root .tested .lamp + .lamp { border-top: 1px solid var(--lk-edge); }
+  #rv-root .tested .dot { flex: none; width: 8px; height: 8px; border-radius: 50%;
+                          margin-top: 7px; background: var(--lk-chev); }
+  #rv-root .tested .lamp.pass .dot { background: var(--lk-ok-dot); }
+  #rv-root .tested .name { font-size: 15px; font-weight: 600; line-height: 22px; }
+  /* margin 0: the shared base gives `.sub` 18px below, for a screen subtitle. */
+  #rv-root .tested .sub { font-size: 13px; color: var(--lk-muted); line-height: 1.45; margin: 0; }
 
   /* An optional picture of what was just configured, above the rows.
      Two of the five drivers have one worth drawing and three do not: a list of
      rows IS the review of a remote's buttons, and a picture invented for it
      would be decoration. `hero` is absent in that case and nothing is drawn. */
   #rv-root .hero { height: 52px; border-radius: 8px; overflow: hidden;
-                   margin: 0 0 16px; display: flex; align-items: flex-end; gap: 3px;
+                   margin: 0 0 16px; display: flex; align-items: flex-end; gap: 2px;
                    background: var(--lk-flat-bg); }
   #rv-root .hero i { flex: 1; border-radius: 2px 2px 0 0; }
   #rv-root .hero.strip { display: block; }
@@ -647,7 +696,11 @@
 
   <div class="hero" id="rv-hero" style="display:none;"></div>
   <div class="rows" id="rv-rows"></div>
-  <p class="promise" id="rv-promise"></p>
+
+  <div id="rv-controlBlock" style="display:none;">
+    <div class="control-title" data-i18n="review.control.title"></div>
+    <div class="control" id="rv-control" role="radiogroup"></div>
+  </div>
 
   <button class="btn-primary" id="rv-save" data-i18n="review.add"></button>
 </div>
@@ -665,9 +718,10 @@
  * that owns the value rather than opening an editor of its own — so there is one
  * place each thing is set, and this screen never becomes a second one.
  *
- * **One file, five drivers** (platform §8). The rows, the sentence and the step
- * count all arrive from `getReview`, because what a schedule reviews and what a
- * controller reviews have nothing in common but their shape.
+ * **One file, five drivers** (platform §8). The rows, the step count and — on
+ * the three engine device types — the control choice all arrive from
+ * `getReview`, because what a schedule reviews and what a controller reviews
+ * have nothing in common but their shape.
  *
  * Homey asks for the device NAME after this, on its own screen, so pairing never
  * does — `registerSaveHandler` derives one from the lights when nothing is typed.
@@ -735,7 +789,7 @@ function __lkBootRv(Homey) {
      * style choice: `spliceFunction` matches from the `function` keyword, so a
      * docblock above one is never replaced — it is prepended again on every
      * sync. Four stale copies of the week grid's reached the shipped archive
-     * that way. It also means this explanation now appears in all 56 views
+     * that way. It also means this explanation now appears in all 54 views
      * rather than in the two credential screens that happened to carry it.
      */
     return new Promise(function (resolve, reject) {
@@ -770,7 +824,8 @@ function __lkBootRv(Homey) {
     steps: document.getElementById('rv-steps'),
     error: document.getElementById('rv-error'),
     rows: document.getElementById('rv-rows'),
-    promise: document.getElementById('rv-promise'),
+    controlBlock: document.getElementById('rv-controlBlock'),
+    control: document.getElementById('rv-control'),
     hero: document.getElementById('rv-hero'),
     save: document.getElementById('rv-save')
   };
@@ -925,11 +980,148 @@ function __lkBootRv(Homey) {
     }
   }
 
+  /**
+   * "How Lightkeeper controls your lights", or nothing.
+   *
+   * The screen holds its own copy of the choice and redraws from it, and the
+   * driver is told on every tap: `setControl` is what the saved device will
+   * store, and a choice that only lived here would be lost on the way to
+   * "Add device". The per-lamp result is the driver's, never echoed back —
+   * see lib/pairing/control-choice.ts.
+   */
+  var control = null;
+
+  /**
+   * The three options' words, as explicit keys rather than `'review.control.'
+   * + mode`: `locales.test.ts` reads the views to decide which keys are live,
+   * and a key assembled at runtime reads as an unused one.
+   */
+  var MODE_TITLE = {
+    after: 'review.control.after',
+    before: 'review.control.before',
+    none: 'review.control.none'
+  };
+  var MODE_WHY = {
+    after: 'review.control.afterWhy',
+    before: 'review.control.beforeWhy',
+    none: 'review.control.noneWhy'
+  };
+
+  function renderControl() {
+    clear(el.control);
+    if (!control || !control.modes || !control.modes.length) {
+      el.controlBlock.style.display = 'none';
+      return;
+    }
+    el.controlBlock.style.display = '';
+    // A Room-sensing Light has no colour to change, so its first option says
+    // what it does change: the brightness.
+    var brightnessOnly = control.modes.indexOf('before') === -1;
+    for (var i = 0; i < control.modes.length; i++) {
+      el.control.appendChild(renderMode(control.modes[i], brightnessOnly));
+    }
+  }
+
+  function renderMode(mode, brightnessOnly) {
+    var wrap = node('div', 'mode');
+    var pick = node('button', 'pick');
+    pick.type = 'button';
+    pick.setAttribute('role', 'radio');
+    var checked = control.selected === mode;
+    pick.setAttribute('aria-checked', checked ? 'true' : 'false');
+    pick.appendChild(node('span', 'box', '✓'));
+    var text = node('span', 'text');
+    text.appendChild(node('div', 'what', Homey.__(MODE_TITLE[mode])));
+    var why = mode === 'after' && brightnessOnly ? 'review.control.afterBrightnessWhy' : MODE_WHY[mode];
+    text.appendChild(node('div', 'why', Homey.__(why)));
+    pick.appendChild(text);
+    pick.addEventListener('click', function () { choose(mode); });
+    wrap.appendChild(pick);
+    if (checked && mode === 'before') wrap.appendChild(renderBefore());
+    return wrap;
+  }
+
+  /** The test, or its answer — only under "Set lights before they turn on". */
+  function renderBefore() {
+    var more = node('div', 'more');
+    var tested = control.tested;
+
+    if (!tested || !tested.lights || !tested.lights.length) {
+      var count = control.lightCount || 0;
+      var test = node('button', 'btn wide accent',
+        Homey.__(count === 1 ? 'review.control.testOne' : 'review.control.test', { count: count }));
+      test.type = 'button';
+      test.addEventListener('click', function () { runTest(test); });
+      more.appendChild(test);
+      more.appendChild(node('p', 'note', Homey.__('review.control.testNote')));
+      return more;
+    }
+
+    var list = node('div', 'tested');
+    for (var i = 0; i < tested.lights.length; i++) {
+      var lamp = node('div', tested.lights[i].ok ? 'lamp pass' : 'lamp');
+      lamp.appendChild(node('span', 'dot'));
+      var text = node('span', 'text');
+      text.appendChild(node('div', 'name', tested.lights[i].name));
+      text.appendChild(node('div', 'sub', Homey.__(tested.lights[i].ok
+        ? 'review.control.passed' : 'review.control.fallback')));
+      lamp.appendChild(text);
+      list.appendChild(lamp);
+    }
+    more.appendChild(list);
+
+    if (tested.fresh) {
+      var total = tested.lights.length;
+      var back = typeof tested.restored === 'number' ? tested.restored : total;
+      var key = back === total
+        ? (total === 1 ? 'review.control.testedNowOne' : 'review.control.testedNow')
+        : 'review.control.testedNowSome';
+      more.appendChild(node('p', 'note', Homey.__(key, { count: total, restored: back })));
+    } else {
+      // Read back from a test run when the device was set up. The lamps may
+      // have changed since, so it can be run again.
+      more.appendChild(node('p', 'note', Homey.__('review.control.testedBefore')));
+      var again = node('button', 'morelink', Homey.__('review.control.testAgain'));
+      again.type = 'button';
+      again.addEventListener('click', function () { runTest(again); });
+      more.appendChild(again);
+    }
+    return more;
+  }
+
+  function choose(mode) {
+    if (!control || control.selected === mode) return;
+    var was = control.selected;
+    control.selected = mode;
+    el.error.style.display = 'none';
+    renderControl();
+    emit('setControl', { mode: mode }).catch(function (err) {
+      control.selected = was;
+      renderControl();
+      show(err);
+    });
+  }
+
+  function runTest(button) {
+    var done = inFlight(button, 'review.control.testing');
+    el.error.style.display = 'none';
+    emit('testPreStage', '').then(function (result) {
+      if (!result || !result.lights || !result.lights.length) {
+        done();
+        show(new Error(Homey.__('review.control.testFailed')));
+        return;
+      }
+      control.tested = { fresh: true, lights: result.lights, restored: result.restored };
+      renderControl();
+    }).catch(function (err) { done(); show(err); });
+  }
+
   emit('getReview').then(function (payload) {
     renderSteps(payload);
     renderHero(payload.hero);
     renderRows(payload.rows || []);
-    el.promise.textContent = payload.promise || '';
+    control = payload.control || null;
+    renderControl();
     if (payload.cta) el.save.textContent = payload.cta;
   }).catch(show);
 }

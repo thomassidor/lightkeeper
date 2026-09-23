@@ -36,7 +36,9 @@ prompt. Create `scripts/hardware-env.json` (gitignored):
 `room` keeps the test lamps to one room, and is the one containment worth setting. The pass switches
 lamps on and off, writes colours to them and power-cycles one, so without it that happens to
 whichever lights sort first across the whole house — including lamps your own Lightkeeper devices
-drive. Omit it to use every room.
+drive. Omit it to use every room — except for `control`, whose "Test my lights" switches lamps that
+are ON off to test them: with no `room` it refuses rather than guess, and it reaches the whole house
+only when you type `--house`. `flowcards` never writes to a lamp one of your own devices drives.
 
 If the file is missing the script asks for the values instead and offers to save them. It hides
 keys as you type, but a terminal that mangles that would put a live credential in your scrollback —
@@ -60,7 +62,9 @@ If it says a device type from an earlier run is still there, it reuses that one 
 a second — run `teardown --yes` first if you want it rebuilt. A device of yours never counts: the
 pass builds its own alongside it.
 
-**Paste its whole output into the report.** Every line is numbered. `OK` and `SKIPPED` need nothing from you; `SKIPPED` means that line was **not** tested.
+**Paste its whole output into the report.** Every line is numbered. `OK` and `SKIPPED` need nothing from you; `SKIPPED` means that line was **not** tested. Every number the script prints — including the fifty-odd that are not written out as a line below, because the script answers them whole — is listed with its meaning in [`hardware-test-coverage.md`](hardware-test-coverage.md#every-line-the-script-reports).
+
+Two flags worth knowing: `--json <path>` writes every result, the app version, the firmware and the build shape to a file (no key and no address in it, but your device and room names — write it under the gitignored `temp/`), and `--strict` makes a `SKIPPED` line fail the exit code — for a dedicated test Homey, where "nothing to test against" is itself the fault. **Ctrl-C puts back what the pass changed** — the app's API key, every lamp it switched or set, a schedule's windows, name and switch — and then exits; Ctrl-C twice skips that. At the end of `full` the script prints every unticked line below that it did not answer, read from this file.
 
 ## 3. Check these yourself
 
@@ -86,35 +90,27 @@ run. **These have not**: nothing has been published, and the 0.6.0 block below w
 worked through. So both are live, and they are kept apart rather than merged — 0.6.5's are
 specific and take a few minutes each, while 0.6.0's is a full pass with a phone.
 
-Nothing in either block can be checked by the script, and that is the point: `verify-hardware.mjs`
-drives pair sessions over the Web API (platform §14), so it proves the HANDLERS answer. It cannot
-see a screen. Every line here needs a phone.
+Most of these need a phone, and that is the point: `verify-hardware.mjs` drives pair sessions and
+the Flow cards over the Web API (platform §14), so it proves the HANDLERS answer. It cannot see a
+screen. **It does answer the machine-readable half of several**, and says which by number:
+`control` T166–T173, `flowcards` T147 and T149–T151, `jobs` T152–T154, `settings` T137. A line the
+script answers in part is still yours — the end of `full` lists it with a `*` — and its report line
+says what it left for you.
 
 ### 0.6.5 — the Flow surface, the switch-on work, and the code review's three
 
 The fixes whose evidence is not in the suite. Everything else is covered by a unit test, and the ones
 that could be were run against the old code first to confirm they fail on it.
 
-T138–T141 are the switch-on work and need a room whose lights are OFF to begin with. T140 is the one
-that cannot be faked in a test: it asks what YOUR integrations do, and platform §6 measured that the
-answer differs between lamps behind one bridge.
+T139 and T141 are the switch-on work and need a room whose lights are OFF to begin with. The
+colour-on-arrival and test-button lines that stood beside them (T138, T140) are retired: the switch
+and the one-lamp test they exercised moved to the review screen, and T166–T168 below replace them.
 
-- [ ] **T138** Colour on arrival. Add a Colour Curve Light over a room's lamps with the new **Set the
-      colour before lights come on** switch left ON (it is the default for a new device), finish
-      pairing, and switch the room off. Wait for a tick, then switch it on at the wall. The lamps must
-      come on **already** at the curve's colour — no visible change a second or two afterwards. Then
-      pair a second one with the switch OFF and repeat: that one must show the old behaviour, coming
-      on as it was and correcting itself. The contrast is the assertion; one room alone proves little.
-- [ ] **T139** Brightness is still late, and that is correct. On the T138 device, turn **Set
-      brightness too** on as well and repeat. The colour must be right on arrival and the brightness
-      must NOT be — a brightness write turns an off lamp on, so it can only follow. If brightness is
-      also right on arrival, something is pre-staging `dim` and that is a defect, not an improvement.
-- [ ] **T140** The test button, on your own lamps. On the curve or day screen, with at least one
-      target lamp OFF, press **Test it on my lights**. It must name one of your own lamps and say one
-      of three things: it stayed off, it came on (and was put back), or your bridge declined with the
-      integration's own sentence. All three are passes — the failure is a raw error string, a silent
-      button, or a lamp that comes on and is NOT put back. Press it again with every target lamp ON:
-      it must say there is nothing to test rather than doing anything.
+- [ ] **T139** Brightness is still late, and that is correct. On the T168 device, with **Set
+      brightness too** on (the default now), repeat T168's switch-on. The colour must be right on
+      arrival and the brightness must NOT be — a brightness write turns an off lamp on, so it can
+      only follow. If brightness is also right on arrival, something is pre-staging `dim` and that is
+      a defect, not an improvement.
 - [ ] **T141** A lamp that ignores a write is not read as a person. Needs a lamp that snaps to a
       coarser step than it declares — on the reference Homey the Garage lamps take `dim` in tenths
       while declaring hundredths. Drive one to a level that quantises away (a Room-sensing Light at
@@ -134,9 +130,9 @@ answer differs between lamps behind one bridge.
       credential block reading `present=true valid=true`.
 - [ ] **T136** The circadian try-it screen, across two sessions. Add a circadian light, open
       **Try it**, scrub the day so the lamps visibly change, then **close the pairing sheet
-      without** pressing "Put them back" — the lamps stay where the preview left them, which is
+      without** pressing "Stop preview" — the lamps stay where the preview left them, which is
       expected. Now start a **second** circadian light on a **different** set of lamps, open its
-      Try it, scrub, and press "Put them back". Only the second set may move, and it must return to
+      Try it, scrub, and press "Stop preview". Only the second set may move, and it must return to
       how it was. The first set staying put is the pass; the first set changing is the bug this
       line exists for.
 - [ ] **T137** A Colour Curve Light and the settings page. With at least one of each device type
@@ -190,6 +186,19 @@ that nothing already installed has ever exercised.
       showing none of them means the sync did not run; a device showing one it should not carry means
       `valueCapabilities` disagrees with its `driver.compose.json`. Check the app log for
       `Added the lightkeeper_… capability` lines, one per row per device.
+- [ ] **T179** The upgrade path, on a **dedicated test Homey only** — never the one you live with,
+      because the first half installs an OLDER build over stored plans, and a build that cannot read
+      a plan written by a newer one quarantines the device (T121). There are no release tags yet, so
+      "the previous release" is a commit: `git worktree add ../lk-prev <commit>` for the last build
+      you shipped to anybody, then in that worktree `npm ci` and `npx homey app install` (the CLI's
+      own `homey login` session, not a Personal API Key). Pair one of each device type there with
+      that worktree's own `node scripts/verify-hardware.mjs pair --yes`, and save its
+      `node scripts/diagnostics.mjs --save`. Then from THIS checkout, a plain `npx homey app
+      install` — never `--clean`, which is the one that can take the stored key with it. Every device
+      must come back available with its plan intact: `node scripts/verify-hardware.mjs spike flows
+      repair --yes` must show T178 OK, the same Flow ids for each device as before (T8/T16), and T46
+      seeded; then T146 on those devices. Remove the worktree afterwards. Not automated, and why is
+      in [`hardware-test-coverage.md`](hardware-test-coverage.md#what-the-script-still-cannot-answer).
 - [ ] **T147** The values are right, and they move. Read a circadian light's colour-temperature row
       against the same device's **now** block in `/diagnostics`: they must agree to two decimals.
       Leave it an hour and confirm the row has moved and the device's Insights chart has points —
@@ -221,6 +230,63 @@ that nothing already installed has ever exercised.
       that one away — so `/diagnostics` shows `source: "none"`, and run the Flow again in the dark.
       The condition must be **false**: the lamp stays off. True here would mean a room lighting
       itself in daylight on a flat battery, repeatedly, with nothing on screen explaining it.
+
+### 0.6.5 — the 23 September design handoff
+
+T166–T173 are the handoff pass: the control choice on the last screen, the per-lamp pre-stage test,
+and the light-sensing screens that lost their detail step. T167 is the one that cannot be faked in a
+test — it asks what YOUR integrations do, and it now switches lamps that are on OFF to ask it, which
+nothing in this app did before.
+
+- [ ] **T166** The choice, and that it sticks. Add a circadian light: the last screen must ask **How
+      Lightkeeper controls your lights**, with *Change lights after they turn on* chosen and nothing
+      unfolded, and no closing sentence. Add it, open **Repair**, and the same answer must be chosen.
+      Choose *Don't change lights automatically*, save, and repair again: that must be chosen. Then add
+      a Room-sensing Light: its last screen must offer exactly two answers, the first worded for
+      brightness. A schedule's and a remote's last screens must offer none.
+- [ ] **T167** "Test my lights", on your own lamps, some on and some off. On a Colour Curve Light's
+      last screen, choose *Set lights before they turn on* and press **Test my {n} lights** with at
+      least one target lamp ON and one OFF. Every lamp must blink once and end exactly as it started —
+      on at its own brightness and colour, or off. The list must name every lamp, each either *Turns
+      on in the right colour* or *Turned on when set, so it is changed after it turns on*, followed by
+      *Tested just now · n lights back to how they were*. Report which of your lamps landed where —
+      that list is the evidence, and on the reference Homey roughly half a Hue household is expected
+      to be the fallback. Then repeat with **six or more** lamps: the answer must arrive, not a "did
+      not respond in time" error (the test runs every lamp at once to stay inside the 20 s a screen
+      waits).
+- [ ] **T168** Colour on arrival, for the lamps that passed and only those. Save T167's device,
+      switch the room off, wait for a tick, and switch it on at the wall. The lamps T167 listed as
+      *Turns on in the right colour* must come on **already** at the curve's colour; the fallback
+      lamps must come on as they were and correct themselves a second or two later. `/diagnostics` on
+      the device must show `preStage: true` and `preStageLights` naming exactly the passing lamps.
+- [ ] **T169** A device that pre-staged before this build stops until it is tested. Before
+      installing, note a circadian or curve device whose `/diagnostics` shows `preStage: true`.
+      After installing, its `preStageLights` must be `[]` and its lamps must come on as they were and
+      correct themselves; Repair must open on *Set lights before they turn on*, untested, with the
+      test button. Running the test there and saving must bring T168's behaviour back.
+- [ ] **T170** *Don't change lights automatically*, chosen on the last screen. On a Colour Curve
+      Light, choose it and save. For the next hour, no write from this device may reach any of its
+      lamps, the tile must stay ready, and its colour rows must keep moving. A preview from
+      the setup screens still writes — that is a person asking.
+- [ ] **T171** Light-sensing: a flat sensor and a quiet sensor, straight to step 3. Add a
+      Room-sensing Light and tap a sensor that barely changes (a cupboard, a hallway with no window):
+      the tap must go straight to **How bright should the lamps be?**, with an amber *Barely changes
+      all week* block inside the sensor's week and the two threshold cards filled from its own numbers.
+      Next must continue. Then take the batteries out of a sensor for half a day and pick it: a red
+      *has not reported for n hours* block, hatched hours, a *Nothing reported* key, and no *now* tick.
+- [ ] **T173** The test is not a person, to any device. After T167, no Lightkeeper device that drives
+      a tested lamp may list it as overridden. `node scripts/verify-hardware.mjs control --yes` checks
+      this for the lamps in `room`; add `--house` for every room and then the whole house at once. *23 Sep 2026: the first run of it FAILED — the household's
+      own Studio curve filed three off spots as overridden at `light_hue` 0.1 within 200 ms of the
+      test's colour write, and Repair would have done the same to the device being repaired. Fixed:
+      no report on an OFF lamp is an override, on any axis (it had been `dim` only).* A lamp another
+      device drives may come back from the test in THAT device's colour rather than its old one —
+      that is the device applying itself at switch-on, and `control` reports it as information.
+- [ ] **T172** The colour picker, on the phone. On a curve point, the picker must be five across:
+      a row of whites from candlelight to bright white, a row of colours, and *Show more colours*
+      folding out five more rows in place, 7px below. The blue in the second row appears again in the
+      blues row, and choosing it must mark both. A curve that already used a colour must still show
+      it by name after the update.
 
 ### 0.6.5 — every screen on one design system
 
@@ -390,20 +456,20 @@ if you do not already have them; the job does not appear at all before that, whi
       circadian day and curve steppers, the schedule's seven day chips, the HOUR/MINUTE captions,
       both dashed `Add a …` buttons and the two `Remove this …` links. Report anything that reads
       oversized, mis-weighted, or out of proportion with the row it sits in.
-- [ ] **T128** **One remote, two different sets of lights.** Pair a Light Remote over three or more
+- [ ] **T174** **One remote, two different sets of lights.** Pair a Light Remote over three or more
       lamps. Give the top button a job aimed at ALL of them and the bottom button the same job aimed
       at ONE, using the checklist under "To". The buttons list must say which lights each drives —
       "all three" against one row and the lamp's own name against the other — and then press the two
       real buttons: exactly the named lamps may move, and nothing else in the room. Then go back to
       step 2, untick the lamp the bottom button named, and return: that row must have been re-aimed
       to all of them rather than left pointing at a light the device no longer has.
-- [ ] **T129** **The colour job, on a lamp that can take a colour.** Assign "Set colour", pick a
+- [ ] **T175** **The colour job, on a lamp that can take a colour.** Assign "Set colour", pick a
       colour, and use Test — the lamp must land on that colour, from colour mode or from white.
       Check the nine tiles on a set of lamps with NO colour support as well: the colour tile must be
       absent rather than present and dead, and on lamps with no warmth the two warmth tiles too. If
       you have a button still set to "step through warm and cool" from an earlier build, open it:
       the tile must be there and selected, and the button must go on working.
-- [ ] **T127** **The buttons screen's rows, on the phone and nowhere else.** Open step 3 of a
+- [ ] **T176** **The buttons screen's rows, on the phone and nowhere else.** Open step 3 of a
       Light Remote and look at the gesture names. Each one is plain text over its own second line —
       "Top" above "Pressed" — on the card's white, with no pill, no box and no tint behind it. It
       shipped drawing every name inside the pairing container's own grey button pill, because the
@@ -598,6 +664,60 @@ the machine rather than of this app**, and three restarts of one build spanned 7
       no Flow, so a device that goes unavailable here means something else moved with it. Check the
       app's settings page too: the first section is headed **Light Remotes**, and a device that is
       mid-repair says "this device needs repair" rather than naming a type it is not.
+
+### Last run — 22 September 2026, firmware 13.5.0, app 0.6.5 (`ee09fa6`, launch build)
+
+**75 OK, 0 failed, 0 skipped**, in **Studio**, after four earlier runs the same morning that failed
+between one and two lines each. **Every one of those failures was the script, not the app** — three
+distinct defects in the harness, all now fixed, all with the evidence written into the code that
+carries them. A run before those fixes is not comparable with one after.
+
+`memory`: **59.2 MB PSS** on a Homey at **7.3% free with 529 MB of swap in use**, so read it as a
+reading about that Homey that hour (platform §15). App heap 23.9 MB of a 70 MB limit, 8.9 MB of it
+spent importing modules before `onInit`.
+
+**1. A hand-set value inside the restore window is the lamp's, and the script was standing in for a
+person there.** T25 failed, then passed, then failed on both device types — the signature of a race.
+`/diagnostics` named it exactly: `report_ignored … light_temperature 0.51 reason power_restore`,
+**14.0 s** after the lamp came on, against a `POWER_RESTORE_MS` of 15 s. T25 runs straight after the
+power cycle T24 and T29 need, so it was setting a value by hand inside the window the app reserves
+for the lamp's own restore — and because a Hue bulb reports only on change, no second report ever
+came and the override was never raised. **The app did exactly what it documents.** The allowance is
+new in 0.6.5, which is why T25 passed on 2 September and not now.
+`HAND_SET_AFTER_POWER_ON_MS` waits it out.
+
+**2. A Homey light GROUP is invisible overlap, and it had this pass fighting itself.** T24 and T29
+kept reporting a lamp that "did not take" a value. `Cieling Lamp (Studio)` is a **group of Spot C, L
+and R**; `Cieling Lamp (Garage)` is a **group of Ceiling 1 and Ceiling 2** — ordinary devices with
+their own ids, whose membership lives only in `settings.deviceIds`. The chooser picked by index and
+handed the group to one device type and a member to another, so two devices this pass built wrote
+different colours to one bulb all run. The tell is in the read-back: `light_saturation` 0.512
+written **at hue 0.11** and 0.400 read **at hue 0.36**, which is not a value this pass ever sent.
+`lampOverlaps()` now expands group membership both ways, the chooser takes lamps that do not share
+bulbs, and both the sharing and the shortfall are reported as INFO lines rather than discovered
+later as a failure.
+
+**3. A sleeping remote is not a device that failed to start.** All three BILRESA scroll wheels went
+`available: false` — *"Device is not responding"* — part way through the morning, having answered an
+hour earlier. Their controllers correctly went `needs_repair` and said *"Homey reports that this
+remote is unavailable."* T32 (everything available after a restart) and T38 (every Flow owner in
+`needs_credential`) both assert over all Flow-owning devices at once, so a sleeping remote broke them
+by being right: `needs_repair` outranks `needs_credential`, worst wins. `controllersWithASleepingRemote()`
+excuses exactly that and names the remote.
+
+**What the pass cannot answer in this house, and now says so.** Every lamp in Studio and Garage is
+already driven by a Lightkeeper device the owner paired, and each room has only **three** lamps that
+do not share bulbs with each other. So T24 and T29 are asking whether a lamp holds a value two
+devices are writing. They passed on the final run; when they do not, the INFO line above is what
+makes the difference between a contest and a defect readable. Disabling the owner's own Garage or
+Studio devices for the length of a run is the only way to make those two lines unconditional.
+
+Firmware is **13.5.0** proper now, up from the 13.5.0-rc.4 the pins were last justified against.
+Nothing in `docs/homey-platform.md` was re-derived this run.
+
+Still owed, and none of it machine-answerable: **T3, T9–T11, T54**, the whole of the 0.6.5 blocks
+(**T135–T165**) and the 0.6.0 block (**T112** onward). T53 was run — 28 screens to `.views/` — and
+the comparison against `docs/design/` was done in the design pass that produced `ee09fa6`.
 
 ### Last run — 13 September 2026 (evening), firmware 13.5.0, app 0.6.0 + the pairing rewrite
 
@@ -801,7 +921,8 @@ than the end state. Still unmeasured, and needing the Homey app rather than the 
 injected view's own external reference loads once the pairing container has placed the view in its
 shared document. §8 carries the one-minute test.
 
-Still needing a person: T3, T9-T11, T53, T54, and the save half of T88 above.
+Still needing a person: T3, T9-T11, T53, T54, and the save half of the repair line (then T88, since
+retired; `repairsave` now answers it by machine as T177).
 
 
 ### Last run — 2 September 2026, Homey Pro 2023, firmware 13.5.0-rc.4, app 0.5.1 + the code-review pass
@@ -873,7 +994,7 @@ mid-pairing).
 
 ### Last run — 30 August 2026, Homey Pro 2023, firmware 13.4.1, app 0.5.0
 
-*The 0.5.0 lines T55&ndash;T60 were retired with this section when 0.5.1 rewrote it; what they found is recorded below and in `docs/hardware-test-coverage.md`.*
+*The 0.5.0 lines T55&ndash;T58 were retired with this section when 0.5.1 rewrote it; what they found is recorded below and in `docs/hardware-test-coverage.md`. T59 and T60, the two memory readings, were kept rather than retired: `memory` reports them on every pass.*
 
 `node scripts/verify-hardware.mjs full --yes`: **50 OK, 3 failed, 5 skipped.** All three failures
 were investigated and none is a defect in the app.
@@ -901,7 +1022,7 @@ One line per number, in the order above:
 ```
 T24 OK
 T46 failed: Repair on the schedule showed unknown_error_getting_file
-T55 OK — Hue spots took the amber, the kitchen strip went warm instead
+T157 OK — Hue spots took the amber, the kitchen strip went warm instead
 ```
 
 For anything that failed, add:

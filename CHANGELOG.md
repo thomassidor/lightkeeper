@@ -11,11 +11,119 @@ answer.
 
 ## 0.6.5
 
+### The last screen asks how Lightkeeper controls your lights
+
+A circadian light, a Colour Curve Light and a Room-sensing Light end their setup on one question,
+**How Lightkeeper controls your lights**, with three answers:
+
+- **Change lights after they turn on** — what every device has always done, and the default. A light
+  can come on in its previous colour and change a moment later.
+- **Set lights before they turn on** — the colour is written to lights that are off, so they come on
+  already right. It needs a quick test first, **Test my lights**, because some lights switch
+  themselves on when they are set: each light blinks once, and each is then listed as turning on in
+  the right colour or as being changed after it turns on instead. Only the lights that passed are
+  ever set in advance, and until the test has run the device behaves as the first answer.
+- **Don't change lights automatically** — the device works its values out and publishes them for a
+  remote's *On – with Lightkeeper* button or your own Flows, and leaves the lights alone.
+
+A Room-sensing Light is offered the first and the last. It writes brightness and nothing else, and a
+brightness sent to an off lamp switches it on, so "before" would fail its test on every lamp there is.
+
+The same screen is where a device is changed afterwards: Homey's **Repair** runs the setup again, and
+it opens with the device's current answer and, for "before", the result of its last test.
+
+It replaces two switches that answered the same question halfway through the setup: *Keep these
+lights up to date*, on each device's own editing step, and *Set the colour before lights come on*,
+which this release first drew and then hid again while where it belonged was settled. It belongs
+here.
+
+**What this changes for a device you already have:**
+
+- **A device that had "set the colour before lights come on" switched on stops doing it** until the
+  test is run once from Repair. The setting it stored said "all of my lights" and was never proven
+  for any of them; the test is what proves it, lamp by lamp. Until then its lights are corrected as
+  they come on, as every device did before.
+- A device's own "keep these lights up to date" setting is kept, and reads as the matching answer.
+
+**The test is not mistaken for a person.** Found on the hardware pass for this change: a
+house-wide test sent a colour to three Studio spots that were off, and the household's own Studio
+curve, which drives them, marked all three as overridden — and a test run from Repair would do the
+same to the device being repaired. A report from a lamp that is off is now never read as somebody
+taking it over, on any axis; it had been brightness only. Nothing is lost by it: switching a lamp on
+already cleared any override it had.
+
+Under the hood: `preStage: true` now pre-stages only the lamps in a new `preStageLights` list, which
+is what the test stores (`preStagesLamp()`). No migration, because an absent list already means the
+safe answer. The self-disable is per lamp too — a lamp seen coming on from a pre-stage write is
+struck off the list, persisted, and the others carry on — where it used to switch pre-staging off
+for the whole device. The test switches a lamp that is on off to test it and then puts it back, and
+tests all of a device's lamps at once, because a pair view waits 20 s for any answer. A new device
+starts on the first answer: pre-staging is off by default again, because it can no longer be
+switched on without the test that decides which lamps it is for.
+
+### The setup screens, against the 23 September design handoff
+
+- **The colour picker is five across everywhere**, 34px swatches, with ten colours by default — a row
+  of whites from candlelight to bright white, and a row of one of each colour — and twenty-five more
+  behind *Show more colours*, one hue family a row, deep to pale. Eleven colours are new. The ones
+  that existed keep their names and every plan that uses them; each was re-tuned to the nearest new
+  swatch, so a point set to one of them may look slightly different on the lamp. *Moss* has no swatch
+  any more and is kept so a plan that names it still works; it can no longer be picked.
+- **"Set brightness too" starts on** for a new circadian light, a new Colour Curve Light and a new
+  schedule block. Anything saved keeps what it has.
+- **A Colour Curve Light's last screen** gains a **Brightness** row — the lowest and highest
+  brightness your points ask for, or *Not changed* — and its picture is the same 24 hourly bars the
+  curve step draws.
+- **A light-sensing sensor that barely changes, or has gone quiet, is said on the brightness step**,
+  in the sensor's own week — the two screens that used to stop you on the way there are gone.
+  Tapping a sensor now chooses it. Previous picks another sensor or the sun; Next uses it anyway, and
+  the two thresholds start from what the sensor actually reported.
+- **The last screen of every setup ends on its own Add device button**, and no longer on a sentence
+  about what is about to happen.
+- An open room in the light picker has a tinted header, and *Put them back* on a circadian light's
+  preview is now **Stop preview**.
+
+### A device that works its values out without touching the lights
+
+A circadian light, a Colour Curve Light and a Room-sensing Light can be told to leave the lights alone
+— **Don't change lights automatically**, the third answer on the last screen (above); it first shipped
+in this release as a switch, *Keep these lights up to date*. Every device, including every one
+already set up, keeps changing its lights unless told otherwise. Told not to, the device goes on
+computing what it wants the lights to be — and publishing it, to its capability rows, to the Flow
+tags, to the `set_lights` card and to a remote's *On – with Lightkeeper* button — and writes to no
+lamp at all.
+
+Why: on the reference Homey a remote's *On – with Lightkeeper* button took its colour from a Colour
+Curve Light and its brightness from a Room-sensing Light that were ALSO driving the same five bulbs.
+Every press became three devices writing to one lamp: the button's colour and brightness, the curve's
+colour again on seeing the lamp come on, and the Room-sensing Light's own brightness — ~30 writes in
+three seconds through one Hue Bridge, with two different levels in them. The lamps stepped between
+the values, one reverted to where it had been, and the next turn of the wheel planned from that. The
+two ways of using these devices — one owns the lamps all day, or a button asks on demand — had no way
+to be told apart, because an engine device could only exist by driving lights.
+
+What else changed with it:
+
+- **The remote's source picker warns** when the chosen device keeps its own lights up to date, and
+  says how many of the button's lights it shares. The job tile carries the same line.
+- **A Homey device group now counts as the lamps inside it** for that count — the case found had the
+  remote on a group of three spots and the curve on the spots themselves, which no id comparison can
+  see. The catalogue reads a group's members from its settings.
+- **A device that only publishes is `ready` whatever its lamps are doing**, watches none of them (so
+  a hand on one is never filed as an override), and never pre-stages. A Room-sensing Light still
+  reports a missing daylight source or a frozen sensor, because that is what it publishes from.
+  *Try it* on the pairing screen still writes: that is a person asking to see it.
+- The settings page and `scripts/diagnostics.mjs` say "publishes only" on such a device.
+
+Stored as `writesLights: false`, and only when false. **The gate is `!== false`**, the opposite of
+`preStage` beside it: every device paired before this has no key and must keep writing. No migration
+and no schema bump, because an absent key already means the old behaviour.
+
 ### Every screen on one design system
 
 A design system has been ratified — five type sizes, four radii, three border roles, two button
 shapes — and every pairing screen plus the app settings page has been brought onto it.
-[`docs/design/`](docs/design/README.md) holds it, the flows it is applied to, and the seven places the
+[`docs/design/`](docs/design/README.md) holds it, the flows it is applied to, and the nine places the
 app still departs on purpose.
 
 Most of this is invisible one screen at a time and obvious across a flow. Half-pixel type sizes are
@@ -85,14 +193,12 @@ one, and offers to close.
 keeps the key on view, masked, so the next attempt is not a guess about which one was pasted — and it
 says the thing that saves that attempt: permissions cannot be added to a key after it is made.
 
-### Setting the colour before lights come on is hidden for now
+### Setting the colour before lights come on moved to the last screen
 
-The switch that appeared on the circadian and Colour Curve setup screens in this release is not
-drawn any more, while where it belongs is settled. **Nothing about the behaviour changes**: a newly
-added device still sets the colour in advance, a device added before this release still does not,
-and a light that ever comes on by itself from it still turns the whole thing off for that device and
-never tries again. What is gone for the moment is the switch and the button that tried it on your own
-lamps.
+The switch this release first drew on the circadian and Colour Curve setup screens was hidden again
+while where it belonged was settled, and has now been settled: it is the second answer to *How
+Lightkeeper controls your lights*, at the top of this entry, with a test per lamp in place of the
+switch's one-lamp test.
 
 
 ### A light switched on, or switched off, is no longer mistaken for a person
@@ -272,21 +378,21 @@ the FAQ promised it was "provable from the pairing screen against your own lamps
 **No screen ever drew a control for it.** A setting nobody can reach is off, and every one of these
 devices had it off.
 
-Both setup screens now carry it, with the test the FAQ promised: it picks one of your own lights that
-is off, sends it a colour, and tells you what happened — it stayed off, it came on, or your bridge
-declined. Which of those you get depends on your own integrations and nothing else can answer it.
+It is reachable now, as *Set lights before they turn on* on the last screen (see the top of this
+entry), with the test the FAQ promised — run on every one of your own lights rather than on one, and
+telling you per light whether it stayed off. Which answer you get depends on your own integrations
+and nothing else can answer it.
 
-It is **on by default for newly added devices**, which is a reversal. It was opt-in because a colour
-sent to an off lamp switches it on through some integrations, and a light coming on by itself is a
-worse failure than a moment of the wrong white. That is still true; what was wrong was the idea that
-opting out cost only a moment. It cost every switch-on, permanently. The protection is unchanged and
-does not depend on anyone opting in: 1.5 s after the first such write the app checks whether the lamp
-came on and, if it did, turns the whole thing off for that device for good. The exposure is one lamp
-coming on once, on an integration that does this. **Devices you already have are not changed** — they
-were set up under the old promise, and the setting stays exactly where you left it.
+For part of this release it was **on by default for newly added devices**, on the argument that
+opting out never cost a moment of the wrong white: it cost every switch-on, permanently. The argument
+stands. What changed is that a device no longer pre-stages a light its test has not passed, so there
+is nothing for a default to switch on before somebody has run the test — and a new device starts on
+"Change lights after they turn on". The protection behind it still does not depend on anyone opting
+in: 1.5 s after a pre-stage write the app checks whether that lamp came on, and if it did, stops
+setting that one lamp in advance, for good.
 
 Brightness is still never set in advance, because a brightness write turns an off lamp on. Only the
-colour is, and the screens now say so.
+colour is.
 
 ### A lamp that ignores us is no longer mistaken for a person
 
@@ -411,7 +517,7 @@ expected failure, and a fact being re-derived from scratch every two minutes.
 
 ### The other nine
 
-- **"Put them back" could put the wrong lights back.** Trying a circadian light's colours out scrubs
+- **"Put them back" (now "Stop preview") could put the wrong lights back.** Trying a circadian light's colours out scrubs
   through the day on real lamps, and remembers how they were so it can restore them. That memory
   was kept on the driver rather than on the setup session, so closing the screen without pressing
   "Put them back" left it behind: the next time you set one up, that button restored the PREVIOUS
@@ -447,6 +553,34 @@ expected failure, and a fact being re-derived from scratch every two minutes.
   switched on at zero brightness in the non-default synchronised group mode, and a schedule route
   that could take a device offline instead of refusing.
 
+
+### Five fixes a coverage review found in code no test had ever run
+
+`app.ts`, all five drivers and every device shell could not be loaded by a test, because
+`require('homey')` only resolves on a Homey (platform §13). A test double for the SDK now stands in for
+it, every source file is loaded by the suite, and coverage has floors in CI. Running that code for the
+first time found five things wrong:
+
+- **A remote event with no number in it moved the lights a step.** The numeric and token bridge
+  cards read their value with `Number()`, and `Number(null)` and `Number('')` are both 0 — which the
+  intake accepted, and which the mapping engine reads as one notch. A card with no usable number is now
+  refused and logged, like any other malformed bridge event.
+- **Changing a Light Remote's remote, and then having the save fail, cost the old remote its Flows.**
+  They were deleted before the new setup was stored, so a failed save restored a device pointing at
+  Flows that no longer existed. They are now set aside first and deleted only once the new setup has
+  saved; one that cannot be deleted then is retried on the next pass. A pass already running on the
+  old setup can no longer hand them back, either.
+- **Stopping a circadian light's preview could leave a warm-white lamp in colour mode.** The restore
+  put back every value the lamp had reported, colour included, but never its mode. It now restores the
+  mode first and then only the values that mode uses.
+- **Repairing a Room-sensing Light replaced lux thresholds you had deliberately left at their
+  defaults** with the suggestion from the sensor's week. A threshold you saved, or edited on the
+  screen, is kept now.
+- **A schedule's blocks, sent as a bare list, were saved as no blocks at all.** Only reachable through a
+  scripted pair session (platform §14), and refused properly now.
+
+Every error a setup screen can show is also translatable now; five drivers still carried English
+text of their own.
 
 ## 0.6.0
 

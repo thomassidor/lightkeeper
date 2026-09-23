@@ -161,7 +161,8 @@ function digest(/** @type {any} */ diagnostics) {
     const targets = runtime.targets ?? [];
     const on = targets.filter((/** @type {any} */ t) => t.on === true).length;
     const overridden = targets.filter((/** @type {any} */ t) => t.overridden).length;
-    out.push(`-- ${nameOf(runtime)} (${runtime.section}) — ${runtime.state}${runtime.enabled === false ? ', switched off' : ''}`);
+    out.push(`-- ${nameOf(runtime)} (${runtime.section}) — ${runtime.state}${runtime.enabled === false ? ', switched off' : ''}`
+      + (runtime.writesLights === false ? ', publishes only' : ''));
     const sensor = runtime.sensors?.[0];
     // A Light Remote reports its lights as ids alone: it writes Flows rather
     // than driving the lamps itself, so it tracks no per-target state to show.

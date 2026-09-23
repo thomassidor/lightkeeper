@@ -43,7 +43,7 @@ function light(id: string, capabilities = ['onoff', 'dim', 'light_temperature'],
     capabilitiesObj.light_temperature = { min: 0, max: 1, decimals: 2, value: 0.5 };
   }
   return {
-    id, name: id, zoneId: 'z', zoneName: 'Kitchen',
+    id, name: id, zoneId: 'z', zoneName: 'Kitchen', class: 'light',
     capabilities, capabilitiesObj, available: true, ...over,
   };
 }

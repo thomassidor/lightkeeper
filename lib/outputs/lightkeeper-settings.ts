@@ -164,6 +164,67 @@ export interface SourceRegistry {
   brightness(id: string): ValueSource | undefined;
 }
 
+/** The one method of a runtime manager a source lookup needs. */
+export interface ById<T> {
+  get(id: string): T | undefined;
+}
+
+/**
+ * The three managers that can answer a source question, as the app names them.
+ *
+ * Structural, so `app.ts` can pass itself and the controller driver can pass
+ * `this.app`: both already carry these three fields, and the lookup reads them
+ * at CALL time — which is what lets `app.ts` hand this to
+ * `ControllerRuntimeManager` before the other three managers exist.
+ */
+export interface SourceManagers<TCurve, TDaylight, TSchedule> {
+  readonly curves: ById<TCurve>;
+  readonly daylights: ById<TDaylight>;
+  readonly schedules: ById<TSchedule>;
+}
+
+/**
+ * The runtime a chosen COLOUR id names. Curve-driven devices only — see
+ * `SourceRegistry` for why a Room-sensing Light and a schedule can never be here.
+ */
+export function colourSourceIn<TCurve>(
+  managers: Pick<SourceManagers<TCurve, unknown, unknown>, 'curves'>,
+  id: string,
+): TCurve | undefined {
+  return managers.curves.get(id);
+}
+
+/**
+ * The runtime a chosen BRIGHTNESS id names, asked in ONE order.
+ *
+ * Room-sensing Light first, then a curve, then a schedule. The ids are minted
+ * per device kind (`lk-dayl-`, `lk-circ-`, `lk-sched-`…), so today no id can be
+ * in two registries and the order decides nothing — which is exactly why it
+ * must be written once: it existed twice, in `app.ts`'s registry and in the
+ * controller driver's hero-card names, and a screen that named a device by a
+ * different lookup than the press used would name one device and read another
+ * the day ids stopped being disjoint.
+ */
+export function brightnessSourceIn<TCurve, TDaylight, TSchedule>(
+  managers: SourceManagers<TCurve, TDaylight, TSchedule>,
+  id: string,
+): TCurve | TDaylight | TSchedule | undefined {
+  return managers.daylights.get(id) ?? managers.curves.get(id) ?? managers.schedules.get(id);
+}
+
+/**
+ * The `SourceRegistry` over the app's three managers — the rule above, as the
+ * interface `resolveSources` and the controller runtime take.
+ */
+export function sourceRegistryOver(
+  managers: SourceManagers<ColourSource, ValueSource, ValueSource>,
+): SourceRegistry {
+  return {
+    colour: id => colourSourceIn(managers, id),
+    brightness: id => brightnessSourceIn(managers, id),
+  };
+}
+
 /**
  * Two chosen ids, as the two sources they name — or as an entry in `missing`.
  *

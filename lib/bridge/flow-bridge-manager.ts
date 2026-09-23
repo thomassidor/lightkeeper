@@ -313,6 +313,47 @@ export class FlowBridgeManager {
     this.journalStore?.unset(`flowJournal:${owner}`);
   }
 
+  /**
+   * Stop treating these Flows as part of `owner`'s current set, WITHOUT
+   * deleting them.
+   *
+   * For a controller whose remote changed. Its old Flows trigger on a device it
+   * no longer listens to, and they must not be deleted until the new profile
+   * has committed — a rollback restores the old profile, whose references would
+   * otherwise name Flows that no longer exist. But the journal would hand them
+   * straight back to the NEW runtime's first `sync()` as existing references:
+   * with the same binding keys (an identical replacement remote) they read as
+   * user-edited, because their trigger names the old device, and the device
+   * lands in repair beside two sets of Flows. Released here, they are nobody's
+   * until either the rollback's own references reclaim them or the commit
+   * deletes them.
+   */
+  releaseReferences(owner: string, flowIds: readonly string[]): void {
+    if (flowIds.length === 0) return;
+    const drop = new Set(flowIds);
+    const journal = this.journal(owner);
+    journal.references = journal.references.filter(ref => !drop.has(ref.flowId));
+    this.saveJournal(owner, journal);
+  }
+
+  /**
+   * Hand Flows to `owner`'s next `sync()` to delete, and keep them out of its
+   * orphan adoption meanwhile.
+   *
+   * The journal's `cleanup` list already does exactly this for a superseded
+   * Flow whose delete failed, and it persists across restarts. A delete that
+   * could not be made to stick after a commit is the same failure, and without
+   * this it would be a live Flow referenced by neither the profile nor the
+   * journal — invisible to the orphan sweep too, because its controller id is
+   * live.
+   */
+  deferCleanup(owner: string, flowIds: readonly string[]): void {
+    if (flowIds.length === 0) return;
+    const journal = this.journal(owner);
+    journal.cleanup = [...new Set([...journal.cleanup, ...flowIds])];
+    this.saveJournal(owner, journal);
+  }
+
   private cardRefs: BridgeCardRefs | null = null;
   private readonly folders: FlowFolderManager;
 
@@ -563,6 +604,34 @@ export class FlowBridgeManager {
     const cleanup = new Set(journal.cleanup);
     let committed = false;
 
+    /**
+     * What `releaseReferences` and `deferCleanup` did to this journal WHILE the
+     * pass was awaiting the Homey.
+     *
+     * The pass reads the journal once, here, and writes it back wholesale at the
+     * commit — so either call landing in between was silently undone. For a
+     * controller whose remote changed that is the exact failure the release
+     * exists to prevent: a pass already in flight on the OLD profile (whose
+     * `request.existing` still names the old remote's Flows) committed them
+     * back as live references, and the new runtime's first pass then read them
+     * as user-edited. And a deferred delete was simply forgotten, leaving a live
+     * Flow that neither the profile, the journal nor the orphan sweep would ever
+     * admit to. Both calls are synchronous, so diffing against a snapshot at
+     * each write is exact; `known` moves forward after each write so ids this
+     * pass itself deleted are not resurrected.
+     */
+    const startedWith = new Set(journal.references.map(ref => ref.flowId));
+    let known = new Set(journal.cleanup);
+    const releasedMeanwhile = (): Set<string> => {
+      const now = new Set(journal.references.map(ref => ref.flowId));
+      return new Set([...startedWith].filter(id => !now.has(id)));
+    };
+    const writeCleanup = (): void => {
+      for (const id of journal.cleanup) if (!known.has(id)) cleanup.add(id);
+      journal.cleanup = [...cleanup];
+      known = new Set(journal.cleanup);
+    };
+
     try {
       for (const [key, { flow, bindingKey }] of wanted) {
         const existing = existingByKey.get(key);
@@ -637,8 +706,10 @@ export class FlowBridgeManager {
       }
 
       // Commit the complete set before deleting any working predecessor.
+      const released = releasedMeanwhile();
+      result.references = result.references.filter(ref => !released.has(ref.flowId));
       journal.references = [...result.references];
-      journal.cleanup = [...cleanup];
+      writeCleanup();
       journal.staged = [];
       this.saveJournal(request.controllerId, journal);
       committed = true;
@@ -653,7 +724,7 @@ export class FlowBridgeManager {
           this.log(`Could not delete superseded flow ${id}; active replacements: ${result.references.map(ref => ref.flowId).join(', ')}`);
         }
       }
-      journal.cleanup = [...cleanup];
+      writeCleanup();
       this.saveJournal(request.controllerId, journal);
 
       // Anything we own that is no longer wanted.

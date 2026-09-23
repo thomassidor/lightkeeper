@@ -238,8 +238,22 @@ on with the values. It is the same rule the *On and off* job follows.
 
 It is not the same as pointing the lights at that device. The button reads the setup once, on the
 press — it does not keep following it afterwards. Following a colour through the evening is what a
-circadian light or a Colour Curve Light is for, and there is nothing to stop a button and a device
-driving the same lamps.
+circadian light or a Colour Curve Light is for.
+
+**Decide which of the two you want for each lamp.** The last setup screen of a circadian light, a
+Colour Curve Light and a Room-sensing Light asks *How Lightkeeper controls your lights*. Either of the
+first two answers means the device drives its own lights all day and sets them the moment they come
+on, however they are switched on — so a remote pointed at the same lamps only needs a plain *On*.
+*Don't change lights automatically* means the device works its values out and leaves every lamp
+alone, and a button or a Flow is what puts them on the lights. A device that drives its lights and a
+button that sets them too means two devices setting the same bulbs at every switch-on: two
+brightnesses, the colour twice, and lights that visibly step between them. The source picker warns
+when the device you pick drives its own lights, and says how many of the button's lights it shares.
+Run **Repair** on the device to change its answer.
+
+A Homey **device group** counts as the lamps inside it. A remote driving a group called "Ceiling"
+and a curve driving the three spots in that group are driving the same three bulbs, and the warning
+counts them that way.
 
 If the setup a button follows is deleted, the button still turns the lights on. It simply cannot say
 what colour, so they come on as they were.
@@ -430,13 +444,13 @@ Stated plainly, because a limit you find out about later is worse than one you w
 - **A circadian or Colour Curve Light never switches a light on or off.** It only changes the colour
   of lights that are already on and — if you ask it to — sets the colour of lights that are off so
   they are right the moment they come on.
-- **Setting the colour of a light that is off is on for new devices, and there is currently no
-  switch for it.** Without it a light comes on as it was and changes a second or two later, which is
-  what it did for every release up to 0.6.0. Devices added before 0.6.5 keep whatever they were set
-  up with; devices added since do it. The switch and the button that tried it on your own lamps
-  appeared in 0.6.5 and are hidden again while where they belong is settled — the behaviour is
-  unchanged either way, and it still disables itself for the whole device the first time a lamp comes
-  on from one, because on some integrations a colour write switches the lamp on.
+- **Setting the colour of a light that is off is a choice, and then a test.** Without it a light
+  comes on as it was and changes a second or two later — *Change lights after they turn on*, the
+  default. *Set lights before they turn on* needs **Test my lights** first, because on some
+  integrations a colour sent to an off lamp switches it on: each light blinks once, and only the lights
+  that stayed off are ever set in advance. A light that later comes on by itself from one is taken off
+  that list for good, and the others carry on. A device that had this switched on before 0.6.5's
+  per-light test existed stops doing it until you run the test once from **Repair**.
 - **Brightness is never pre-staged**, only colour. A brightness write turns an off lamp on; that is
   measured, not suspected.
 - **A circadian light and a schedule pointed at the same lights will disagree.** Use one or the other
@@ -563,6 +577,6 @@ including the segment that wraps midnight — and every rule about when a write 
 covered by unit tests, and the pairing screen's **Try it now** proves the whole write path against
 your own lamps before you save.
 
-Over 1700 unit tests, type-clean, validated at `publish` level. The test fixtures are transcribed verbatim
+Over 2000 unit tests, type-clean, validated at `publish` level. The test fixtures are transcribed verbatim
 from the four real remotes above, and the expected results are written by hand beside them, so the
 tests prove the code rather than the fixture.

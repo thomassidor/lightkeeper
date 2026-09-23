@@ -1,13 +1,14 @@
 import Homey from 'homey';
 import type { LightkeeperApp } from '../../lib/app-contract';
-import { lightsSummary, registerIntroHandler, registerReviewHandler } from '../../lib/pairing/flow-screens';
-import { FEATURED_COLORS, PALETTE } from '../../lib/circadian/palette';
+import {
+  lightsSummary, paletteForScreen, registerIntroHandler, registerReviewHandler,
+} from '../../lib/pairing/flow-screens';
 
 import {
   resolveSummary, targetLights,
 } from '../../lib/pairing/target-picker';
 import { CURRENT_SCHEDULE_SCHEMA_VERSION } from '../../lib/schedules/schedule-migrations';
-import { daysLabel } from '../../lib/schedules/schedule-bindings';
+import { daysLabelKeys } from '../../lib/schedules/schedule-bindings';
 import {
   MAX_ENTRIES, MINUTES_PER_DAY, overlappingPairs, sanitiseEntries, sanitiseScheduleDays,
   type IsoWeekday,
@@ -141,7 +142,7 @@ module.exports = class ScheduleDriver extends Homey.Driver {
     // ------------------------------------------------------------ schedules
 
     handler('getSchedule', async () => {
-      if (!state.target) throw new Error('Choose some lights first.');
+      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
       const [summary, lights] = await Promise.all([
         resolveSummary(this.app.catalog, state.target),
         targetLights(this.app.catalog, state.target),
@@ -162,13 +163,7 @@ module.exports = class ScheduleDriver extends Homey.Driver {
          * derives a colour temperature from whichever swatch is chosen, and
          * that is what they get.
          */
-        palette: PALETTE.map(color => ({
-          id: color.id,
-          label: this.homey.__(color.labelKey),
-          hue: color.hue,
-          saturation: color.saturation,
-        })),
-        featuredColors: FEATURED_COLORS,
+        ...paletteForScreen(key => this.homey.__(key)),
         lights,
         entries: state.entries,
         days: state.days,
@@ -191,7 +186,11 @@ module.exports = class ScheduleDriver extends Homey.Driver {
      * than repairing it into a schedule the user never asked for.
      */
     handler('setSchedules', async (raw: unknown) => {
-      const payload = (raw && typeof raw === 'object' && 'entries' in raw
+      // `!Array.isArray` first, and it is not tidiness: `'entries' in []` is
+      // TRUE — every array inherits `Array.prototype.entries` — so a bare list
+      // was read as a wrapper whose `entries` was that method, and every row
+      // in it was silently dropped.
+      const payload = (raw && typeof raw === 'object' && !Array.isArray(raw) && 'entries' in raw
         ? raw
         : { entries: raw }) as { entries?: unknown; days?: unknown };
 
@@ -219,7 +218,7 @@ module.exports = class ScheduleDriver extends Homey.Driver {
      * primary defence against a schedule that looks configured and does nothing.
      */
     handler('test', async ({ entryId, boundary }: { entryId: string; boundary: ScheduleBoundary }) => {
-      if (!state.target) throw new Error('Choose some lights first.');
+      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
       const runtime = await this.app.schedules.ephemeral(this.buildPlan(state));
       try {
         return await runtime.testEntry(entryId, boundary === 'off' ? 'off' : 'on');
@@ -251,12 +250,10 @@ module.exports = class ScheduleDriver extends Homey.Driver {
           },
           {
             labelKey: 'review.onTheseDays',
-            value: daysLabel(state.days),
+            value: daysLabelKeys(state.days).map(key => this.homey.__(key)).join(', '),
             view: 'blocks',
           },
         ],
-        promiseKey: 'review.promiseSchedule',
-        promiseTokens: { count: summary.count },
       };
     });
 
@@ -320,8 +317,8 @@ module.exports = class ScheduleDriver extends Homey.Driver {
   }
 
   private buildPlan(state: SessionState): SchedulePlan {
-    if (!state.target) throw new Error('Choose some lights first.');
-    if (state.entries.length === 0) throw new Error('Add at least one schedule.');
+    if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+    if (state.entries.length === 0) throw new Error(this.homey.__('errors.addASchedule'));
 
     return {
       schemaVersion: CURRENT_SCHEDULE_SCHEMA_VERSION,

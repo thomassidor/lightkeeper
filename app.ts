@@ -18,7 +18,7 @@ import { LuminanceSource } from './lib/daylight/luminance-source';
 import { DaylightEvaluator } from './lib/daylight/daylight-evaluator';
 import { DaylightRuntimeManager } from './lib/daylight/daylight-runtime-manager';
 import {
-  intakeBridgeEvent, type IntakeRecord, type MagnitudeReader,
+  MAGNITUDE_READERS, intakeBridgeEvent, type IntakeRecord, type MagnitudeReader,
 } from './lib/bridge/bridge-event-intake';
 import { flowWriteProbe } from './lib/credential-service';
 import { fireAndForget } from './lib/support/async';
@@ -29,7 +29,7 @@ import { markPhase, sampleHeap } from './lib/support/heap-report';
 import { timezoneOf } from './lib/time/local-clock';
 import { FlowLightWriter } from './lib/flow/light-writer';
 import { isPowerChoice, planSetLights } from './lib/flow/set-lights';
-import { resolveSources, type SourceRegistry } from './lib/outputs/lightkeeper-settings';
+import { resolveSources, sourceRegistryOver, type SourceRegistry } from './lib/outputs/lightkeeper-settings';
 import { lightChoices, matching, parseTargetChoice, sourceChoices } from './lib/flow/flow-arguments';
 import { isDarkEnough } from './lib/flow/darkness-condition';
 
@@ -347,8 +347,12 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     });
 
     this.registerBridgeCard('bridge_event');
-    this.registerBridgeCard('bridge_numeric_event', args => Number(args.value));
-    this.registerBridgeCard('bridge_token_event', args => Number(args.droptoken));
+    // Guarded readers, not `Number()`: an emptied argument is `null` or `''`,
+    // both of which `Number()` makes 0 — and 0 reaches the mapping engine as
+    // one notch. Both cards exist to carry an amount, so an event without a
+    // usable one is refused rather than guessed at. See `readMagnitude`.
+    this.registerBridgeCard('bridge_numeric_event', MAGNITUDE_READERS.value);
+    this.registerBridgeCard('bridge_token_event', MAGNITUDE_READERS.droptoken);
     this.registerSetLightsCard();
     this.registerDarknessCondition();
 
@@ -512,13 +516,14 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
    *
    * The reading itself — what `LEAVE_ALONE` means, and what happens to an id no
    * live runtime answers to — is `resolveSources` in `lib/`, where a test can
-   * reach it (platform §13).
+   * reach it (platform §13). So is the ORDER the brightness question is asked
+   * in: it was written out here and again in the controller driver's
+   * `sourceNames`, and two copies of a lookup order are two answers to "which
+   * device is this id" waiting to disagree. `sourceRegistryOver` reads `this`
+   * per call, which is what keeps it lazy.
    */
   private sourceRegistry(): SourceRegistry {
-    return {
-      colour: id => this.curves.get(id),
-      brightness: id => this.daylights.get(id) ?? this.curves.get(id) ?? this.schedules.get(id),
-    };
+    return sourceRegistryOver(this);
   }
 
   private registerBridgeCard(cardId: string, magnitudeOf?: MagnitudeReader) {
@@ -528,6 +533,9 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       const { accepted, reason, record } = intakeBridgeEvent(cardId, args, magnitudeOf, {
         schedule: (id, key) => this.schedules.dispatchWithReason(id, key),
         controller: (id, key, options) => this.controllers.dispatchWithReason(id, key, options),
+      }, {
+        // A card with a reader is a card that exists to carry an amount.
+        requireMagnitude: magnitudeOf !== undefined,
       });
 
       this.recentEvents.add({ at: Date.now(), ...record });

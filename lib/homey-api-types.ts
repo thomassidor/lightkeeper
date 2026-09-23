@@ -51,6 +51,13 @@ export interface RawDevice {
    * does not join.
    */
   data?: unknown;
+  /**
+   * The device's settings. Read for ONE thing: a Homey device group
+   * (`homey:virtualdrivergroup:driver`) lists its members in
+   * `settings.deviceIds` — observed on firmware 13.5.0-rc.4 — and that is the
+   * only way to tell that a "lamp" is really three lamps somebody else drives.
+   */
+  settings?: unknown;
   ownerUri?: unknown;
   available?: unknown;
   capabilities?: unknown;

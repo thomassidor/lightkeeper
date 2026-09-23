@@ -5,6 +5,7 @@ import { LightTargetAdapter } from '../../lib/outputs/light-target-adapter';
 import { TargetStateCache } from '../../lib/outputs/target-state-cache';
 import type { HomeyApiService, Unsubscribe } from '../../lib/homey-api-service';
 import { settle } from '../support/deferred';
+import { FakeTimers } from '../support/fake-timers';
 
 /**
  * The one place this app writes to a light nobody asked it to write to.
@@ -22,7 +23,8 @@ import { settle } from '../support/deferred';
  */
 
 function harness() {
-  const cache = new TargetStateCache();
+  const clock = new FakeTimers(1_755_500_000_000);
+  const cache = new TargetStateCache(clock.now);
   cache.setCapabilities('light-1', { onoff: true, dim: { min: 0, max: 1, decimals: 2 } });
 
   const writes: Array<{ capability: string; value: unknown }> = [];
@@ -44,33 +46,31 @@ function harness() {
     track: (unsubscribe: Unsubscribe) => unsubscribe,
   } as unknown as HomeyApiService;
 
-  const adapter = new LightTargetAdapter(api, cache, (...args) => logs.push(args.join(' ')));
+  const adapter = new LightTargetAdapter(api, cache, (...args) => logs.push(args.join(' ')), clock);
 
   return {
     adapter, cache, writes, logs,
     /** Somebody, or something, changes the lamp's power. */
-    reportOnOff: (value: boolean) => listener?.(value),
+    reportOnOff: (value: boolean) => {
+      clock.advance(1);
+      listener?.(value);
+    },
     /**
-     * Let the 1.5 s probe fire. REAL time, and 1.6 s per test of it.
+     * Let the 1.5 s probe fire, on the injected clock.
      *
-     * `LightTargetAdapter` now takes an injectable `Timers`, so the obvious move
-     * is a fake clock — 13 s of this suite is spent waiting for a timer whose
-     * only job is to be late. It does not drop in, and the reason is worth
-     * knowing before trying again: the stand-down compares a timestamp the CACHE
-     * recorded against one the ADAPTER recorded, so both have to share the clock
-     * (the cache does accept one) AND the rig has to advance it between the
-     * write and the user's action, because the comparison is strict and a frozen
-     * clock puts them in the same instant. With both of those done, one case —
-     * "a lamp switched off inside the window is left off" — still takes the
-     * corrective write, so something else in the echo/settle path is reading
-     * elapsed time in a way the fake clock does not reproduce.
-     *
-     * Left as real waiting rather than half-converted: a fast test that passes
-     * for the wrong reason is worse than a slow one that passes for the right
-     * one.
+     * This used to wait REAL time — 1.6 s per test, 13 s of the suite — under a
+     * note that a fake clock "does not drop in". It does, given the two things
+     * that note named: the cache and the adapter share ONE clock (the stand-down
+     * compares a timestamp the cache recorded against one the adapter did), and
+     * the clock moves between the write and the person's action, because that
+     * comparison is strict and a frozen clock puts both in the same instant.
+     * `reportOnOff` is where the second happens. With both, every case below
+     * takes the path it names — the stand-down cases assert the log line that
+     * only the stand-down writes, so none of them can pass by the probe simply
+     * never firing.
      */
     async runProbe() {
-      await new Promise(resolve => setTimeout(resolve, 1_600));
+      await clock.advanceAsync(1_600);
       await settle(4);
     },
   };
@@ -101,8 +101,9 @@ describe('the implied-on probe never overrides the user', () => {
   });
 
   test('a lamp power-cycled inside the window is left alone', async () => {
-    // Off and on again: desiredOn ends up true, so the desired-state guard
-    // alone would miss it. The observation timestamp is what catches it.
+    // Off and on again: desiredOn ends up true, so a desired-state guard
+    // alone would miss it. What actually leaves it alone is that the lamp is
+    // ON when the probe fires — see the note at the end.
     const h = harness();
     cacheOn(h.cache, false);
 
@@ -116,6 +117,12 @@ describe('the implied-on probe never overrides the user', () => {
     await h.runProbe();
 
     assert.deepEqual(h.writes.map(w => w.capability), ['dim']);
+    // NOTE: this case does not reach the timestamp at all. The lamp ends ON,
+    // and the probe's `actualOn === true` early return fires before the
+    // stand-down is consulted, so it would pass with the stand-down deleted.
+    // Found when the rig moved to a fake clock and a 'leaving it alone'
+    // assertion here failed; the case that DOES prove the timestamp is the
+    // switched-off one above.
   });
 
   test('a lamp that genuinely stayed dark IS corrected', async () => {

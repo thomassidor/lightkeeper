@@ -220,6 +220,7 @@ function light(id: string) {
     id,
     name: id,
     zoneName: 'Kitchen',
+    class: 'light',
     capabilities: ['onoff', 'dim', 'light_temperature'],
     capabilitiesObj: {
       onoff: { value: false },

@@ -12,6 +12,8 @@ Run everything from the repository root. First time on a machine: `npm install`.
 
 ```bash
 npm test                       # unit tests: node --test + tsx. No Homey, no network
+npm run test:coverage          # the same suite under coverage, with floors — what CI runs.
+                               # Fails on a source file no test loads, not just a low number
 npm run test:watch             # the same, re-run on save
 npm run typecheck              # tsc --noEmit — the app only
 npm run typecheck:test         # the suite and scripts/, via tsconfig.test.json
@@ -37,9 +39,11 @@ npm run lint
 npm run build                  # tsc, then strip the evidence recorder unless .dev-build exists.
                                # The Homey CLI calls this itself; you rarely run it directly
 npm run sync:views:check       # BEFORE the tests. CI never runs the writing version
-npm test
+npm run test:coverage          # the suite, once, with coverage floors
 npm run validate               # regenerates app.json as a side effect
 git diff --exit-code -- app.json   # so a stale committed manifest cannot pass
+node scripts/build.mjs --verify  # the .homeybuild/ validate just left IS a launch build.
+                               # Builds nothing; looks at the tree from outside
 ```
 
 ## Pair views
@@ -163,7 +167,8 @@ shells out to `npm run build` itself whenever it detects TypeScript, so removing
 [`docs/hardware-test-plan.md`](hardware-test-plan.md) against a real Homey.
 [`hardware-test-coverage.md`](hardware-test-coverage.md) says what covers what. Output is one line
 per test-plan line in the plan's own `Tn OK` form, so it pastes straight into a report; the exit code
-is 1 if anything failed.
+is 1 if anything failed. Every number it prints is looked up in
+[`hardware-test-coverage.md` → Every line the script reports](hardware-test-coverage.md#every-line-the-script-reports).
 
 ```bash
 node scripts/verify-hardware.mjs spike            # can it reach a Homey at all? Default command
@@ -172,9 +177,20 @@ node scripts/verify-hardware.mjs memory           # PSS, the machine's free memo
 node scripts/verify-hardware.mjs flows redaction  # several at once
 node scripts/verify-hardware.mjs all              # every read-only command
 node scripts/verify-hardware.mjs full --yes       # the whole pass, in the plan's order
+node scripts/verify-hardware.mjs full --yes --json temp/verify.json  # and a JSON record
+node scripts/verify-hardware.mjs full --yes --strict   # a SKIPPED line fails the run too
+node scripts/verify-hardware.mjs control --yes --house # "Test my lights" on the whole house
 ```
 
-Read-only, no confirmation needed: `spike`, `memory`, `flows`, `redaction` — this is `all`.
+Read-only, no confirmation needed: `spike`, `memory`, `flows`, `redaction`, `settings` — this is
+`all`.
+
+| Flag | What it does |
+|---|---|
+| `--yes` | confirms a command that changes the Homey |
+| `--json <path>` | also writes every result line, the installed and checkout versions, the firmware and the build shape (dev or launch) to a file. No key and no address in it — but device and room names, as the terminal report has them, so it is a capture: keep it under the gitignored `temp/`. Written even when the run is interrupted, marked so |
+| `--strict` | a `SKIPPED` line fails the exit code too — for a dedicated test Homey, where "nothing to test against" is itself the fault. On a household Homey a skip is usually the house, so it is off by default |
+| `--house` | lets `control` test every lamp in the house, room by room and then all at once. Without it `control` tests the lamps in `room` only, and with no `room` set it refuses rather than guessing |
 
 Everything else changes your Homey and needs `--yes`; run without it and the script prints exactly
 what each one would do, then refuses.
@@ -182,6 +198,10 @@ what each one would do, then refuses.
 | Command | What it does |
 |---|---|
 | `pair` | **creates** one of each of the five device types, its own even if you already have some |
+| `flowcards` | runs the `set_lights` action and the `daylight_is_dark` condition over this pass's own devices, switching up to two lamps in `room` that none of your own devices drives; puts them back |
+| `repairsave` | **saves** one small edit through repair on each device this pass built, reads it back from a fresh repair session, and saves the original again |
+| `jobs` | reads a Light Remote's "On – with Lightkeeper" job and its two source pickers through a repair session. Saves nothing |
+| `control` | the review screen's control choice and "Test my lights" — each tested lamp blinks once and is put back. In `room` only, unless `--house`; repairs this pass's own curve and circadian devices |
 | `schedule` | replaces a schedule's windows and fires them; restores both afterwards |
 | `preview` | writes the current curve to your lamps, and probes one that is off |
 | `rejoin` | switches one of your lamps off and on, and sets a colour on it by hand |
@@ -189,11 +209,21 @@ what each one would do, then refuses.
 | `bridge` | runs one of your generated Flows, which switches lights |
 | `credential` | removes the app's stored API key and puts it back. Needs a **second** key |
 | `repair` | opens a repair session on each device and reads its screens. Saves nothing |
-| `teardown` | **deletes** the devices this pass built, and nothing else. Not reversible |
+| `teardown` | **deletes** the devices this pass built, and nothing else. Not reversible. Then only READS the orphan preview, for T180 |
 | `pairspike` | the one-off probe that proved pairing over the API works ([platform §14](homey-platform.md#14-pair-sessions-are-a-web-api-surface-and-pairing-can-be-scripted)). Never in `full` |
 
-`full` is `spike memory pair flows schedule preview rejoin restart bridge credential redaction repair
-teardown`, in that order.
+`full` is `spike memory pair flows settings schedule preview rejoin flowcards restart bridge
+credential redaction repair repairsave jobs control teardown`, in that order. `spike` goes first
+because it is also T178: whether the installed app is the version this checkout builds, and whether
+it is a dev or a launch build — every line after it is about the installed build, not this code. At
+the end, `full` prints every unticked plan line it did not answer (`*` where it answered part), read
+from `docs/hardware-test-plan.md` itself.
+
+**Ctrl-C puts back what the pass changed, then exits.** Every change — the app's API key, a lamp
+switched or set by hand, a schedule's windows, name and switch, a device's control mode, a repair's
+edit — registers an undo before it is made, and an interrupt runs all of them, newest first. Press it
+twice to skip that. A command that throws is reported `FAILED`, its leftovers are put back, and the
+next command still runs — so one timeout no longer ends a pass before `teardown`.
 
 **The trap on `memory`: the PSS number is the least reliable thing the pass prints.** Three restarts
 of one identical build read 71.4, 73.9 and 80.1 MB, and an unmodified build from five days earlier
@@ -208,6 +238,10 @@ PSS cannot tell holding a parsed catalogue from having parsed one. See
 **It only ever touches its own devices.** Everything it builds is named `[verify] …`, every command
 selects from the marked ones, and `teardown` re-checks the mark against the Homey immediately before
 each permanent delete. A device you paired is never selected, written to or deleted.
+
+**The trap on `control`: it switches lamps that are ON off, to test them.** That is what the review
+screen's own test does, and it is why the command stays in `room`. It used to blink every colour lamp
+in the house; now the whole house takes `--house`, typed.
 
 ### Configuration
 
@@ -236,7 +270,10 @@ widened after it is created.
 
 A finger on a remote (T9-T11), and eyes on a screen (T3, T53, T54). The first page of
 [`hardware-test-plan.md`](hardware-test-plan.md) is what is left for a person: mint the keys, press
-the remote three ways, look at the contact sheet.
+the remote three ways, look at the contact sheet. The upgrade path (T179) is a person's too, on a
+dedicated test Homey — the plan line has the procedure, and
+[`hardware-test-coverage.md`](hardware-test-coverage.md#what-the-script-still-cannot-answer) says why
+it is not a command.
 
 ## Reading the app's diagnostics
 

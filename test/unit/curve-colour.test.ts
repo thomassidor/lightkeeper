@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { PALETTE, mixColors, paletteColor, isPaletteColor } from '../../lib/circadian/palette';
+import { PALETTE, PALETTE_LAYOUT, mixColors, paletteColor, isPaletteColor } from '../../lib/circadian/palette';
 import { valueAt, resolvePoints } from '../../lib/circadian/circadian-curve';
 import { sanitiseCurve, type CircadianPoint } from '../../lib/circadian/circadian-types';
 import { migrateCurvePlan, CURRENT_CURVE_SCHEMA_VERSION } from '../../lib/circadian/curve-migrations';
@@ -59,18 +59,53 @@ describe('the palette', () => {
     }
   });
 
+  test('every swatch the grid draws is a colour, painted in its own hex', () => {
+    const drawn = [...PALETTE_LAYOUT.featured, ...PALETTE_LAYOUT.more];
+    // Five across: two rows by default, five behind "Show more colours".
+    assert.equal(PALETTE_LAYOUT.featured.length, 10);
+    assert.equal(PALETTE_LAYOUT.more.length, 25);
+    for (const id of drawn) {
+      const colour = paletteColor(id);
+      assert.ok(colour, `${id} is drawn and is not in the palette`);
+      assert.match(colour!.swatch ?? '', /^#[0-9a-f]{6}$/, `${id} is drawn without a hex of its own`);
+      assert.notEqual(colour!.hidden, true, `${id} is hidden and drawn`);
+    }
+    // And the other way round: a colour nobody can pick must say so.
+    for (const colour of PALETTE) {
+      if (!drawn.includes(colour.id)) assert.equal(colour.hidden, true, `${colour.id} is neither drawn nor hidden`);
+    }
+  });
+
+  test('every colour a plan could name before the redraw still resolves', () => {
+    // A removed colour silently deletes a point from somebody's curve (see
+    // palette.ts), so the twenty-four ids the palette had are pinned here.
+    for (const id of [
+      'amber', 'candle', 'coral', 'neutral', 'coolwhite', 'ocean', 'forest', 'violet',
+      'ember', 'crimson', 'blush', 'rose', 'peach', 'apricot', 'gold', 'lime',
+      'moss', 'mint', 'teal', 'sky', 'indigo', 'lavender', 'orchid', 'magenta',
+    ]) {
+      assert.equal(isPaletteColor(id), true, `${id} no longer resolves`);
+    }
+  });
+
   test('an adjacent pair still blends through the shades between them', () => {
-    // Rose (0.96) to peach (0.04) goes through red, not backward through green —
-    // which is the difference between a sunset and a mistake.
+    // Rose (0.944) to peach (0.019) goes through red, not backward through green
+    // — which is the difference between a sunset and a mistake.
     //
     // It used to be the short arc round the wheel that guaranteed this. It is
     // now a straight line across the disc, and for a pair this close the two are
     // nearly the same line: what changed is the WIDE pairs, below.
+    //
+    // A tenth of a turn either side of red, not the hundredth it was: the chord
+    // is weighted towards the more saturated end, and since the 2026-09-23
+    // palette rose is the stronger of the two by a factor of two, so the middle
+    // of the chord sits nearer rose than the wrap. Green is a third of a turn
+    // away; that is the mistake this is here to catch.
     const rose = paletteColor('rose')!;
     const peach = paletteColor('peach')!;
 
     const half = mixColors(rose, peach, 0.5);
-    assert.ok(half.hue > 0.98 || half.hue < 0.02, `${half.hue} should be near the wrap`);
+    assert.ok(half.hue > 0.9 || half.hue < 0.1, `${half.hue} should be red, near the wrap`);
 
     assert.equal(mixColors(rose, peach, 0).hue, rose.hue);
     assert.ok(Math.abs(mixColors(rose, peach, 1).hue - peach.hue) < 1e-9);

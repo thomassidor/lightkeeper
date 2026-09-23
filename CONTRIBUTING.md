@@ -24,6 +24,7 @@ the changelog entry is the only warning a user gets. See
 ```bash
 npm install
 npm test                 # unit tests, no Homey needed
+npm run test:coverage    # the same, under coverage with floors — what CI runs
 npm run typecheck        # the app
 npm run typecheck:test   # the suite and scripts/
 npm run lint             # eslint, type-checked
@@ -76,7 +77,8 @@ artwork/              every graphic's source, and the script that exports them
 
 ## Before you open a PR
 
-- `npm test`, `npm run typecheck` and `npm run typecheck:test` pass.
+- `npm test`, `npm run typecheck` and `npm run typecheck:test` pass, and so does
+  `npm run test:coverage` — which also fails if a new source file is loaded by no test at all.
 - `npm run lint` passes.
 - `npm run validate` passes, and the `app.json` it regenerates is committed.
 - If you edited a pair view: `npm run sync:views`, and no diff afterwards.

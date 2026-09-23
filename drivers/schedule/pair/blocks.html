@@ -330,8 +330,9 @@
      looks like when it is the only one on a pushed screen — "Close" — where a
      primary button would claim the choice was made. */
   #bl-root .btn.wide { display: block; width: 100%; margin-top: 16px; }
-  /* And the same button when it is the SECOND of two, under a primary — "Put
-     them back". It borrows the primary's outline rather than the field grey,
+  /* And the same button when it is the SECOND of two, under a primary — "Stop
+     preview" — or the one secondary action inside a card, as "Test my lights"
+     is on the review screen. It borrows the primary's outline rather than the field grey,
      because the pair is one decision offered twice ("show me" / "undo that")
      and a grey partner reads as the disabled twin of the button above it.
      Lighter than the primary in weight and height, never in hue. */
@@ -525,12 +526,17 @@
                margin: 13px 0 0; font-size: 13px; line-height: 1.45;
                font-style: italic; color: var(--lk-muted); }
 
-  /* The swatches a colour is chosen from, four across.
-     Not one row of eight: at 390px that is 34px a swatch, under the touch
-     minimum and too small to judge a colour by. Two rows of four is the same
-     set of eight, legibly, and the sixteen that fold out below continue it. */
-  #bl-root .swatches { display: grid; grid-template-columns: repeat(4, 1fr);
-                    gap: 7px; margin: 0 0 11px; }
+  /* The swatches a colour is chosen from, five across, EVERYWHERE.
+     Two rows by default — whites, then one of each colour — and five more
+     that fold out below, one hue family a row. Five and not eight: at 390px
+     eight is 34px of width a swatch, under the touch minimum and too small to
+     judge a colour by; five is still a comfortable target at 34px tall.
+
+     7px under every grid, which the margins between block siblings collapse
+     to: 7px from the default rows to the fold-out, as the design draws it, and
+     the link under the last grid keeps its own 9px. */
+  #bl-root .swatches { display: grid; grid-template-columns: repeat(5, 1fr);
+                    gap: 7px; margin: 0 0 7px; }
   /* min-height as well as height: the container's own stylesheet is not ours
      to read, and a swatch whose height is overridden away is a coloured line
      rather than a colour anybody can judge. */
@@ -542,16 +548,14 @@
      the palette, which a white gap did not against the pale ones. */
   #bl-root .swatch[aria-pressed="true"] { border: 2.5px solid var(--lk-accent);
                                        box-shadow: 0 0 0 3px var(--lk-ring); }
-  /* The sixteen that fold out: same set, half the size, eight across.
+  /* The twenty-five that fold out: the SAME grid, same size, same gap.
 
-     18px above them, not the 7px between the featured rows: at the same gap the
-     fold-out read as two more rows of the grid above it rather than as the set
-     that had just been opened, and the eye had to measure swatch sizes to find
-     where one group ended. The space is what separates them; both sets are
-     still the same palette, so nothing stronger than space is wanted. */
-  #bl-root .swatches.more { grid-template-columns: repeat(8, 1fr); gap: 6px;
-                         margin: 18px 0 0; }
-  #bl-root .swatches.more .swatch { height: 28px; min-height: 28px; border-radius: 8px; }
+     It used to be a second grid of smaller swatches, eight across, 18px below —
+     and the space and the smaller size were what told the two sets apart. The
+     2026-09-23 design makes it one grid that simply grows: the fold-out rows
+     are hue families, deep to pale, and read as rows of one palette because
+     they are. So `.more` carries nothing of its own any more; the class stays
+     as the hook the views show and hide. */
 
   /* The day strip: a picture of the whole day, drawn once and reused. */
   #bl-root .day { position: relative; height: 104px; border-radius: 12px;
@@ -883,7 +887,7 @@ function __lkBootBl(Homey) {
      * style choice: `spliceFunction` matches from the `function` keyword, so a
      * docblock above one is never replaced — it is prepended again on every
      * sync. Four stale copies of the week grid's reached the shipped archive
-     * that way. It also means this explanation now appears in all 56 views
+     * that way. It also means this explanation now appears in all 54 views
      * rather than in the two credential screens that happened to carry it.
      */
     return new Promise(function (resolve, reject) {
@@ -953,7 +957,7 @@ function __lkBootBl(Homey) {
     maxEntries: 12,
     overlaps: [],
     palette: [],
-    featuredColors: 8,
+    layout: { featured: [], more: [] },
     showMore: false,
     // Set once the user has answered the overlap question, so the two rows do
     // not come back on every render of a schedule they have already decided
@@ -1098,14 +1102,37 @@ function __lkBootBl(Homey) {
   function renderSwatches(entry) {
     clear(el.featured);
     clear(el.rest);
-    for (var i = 0; i < state.palette.length; i++) {
-      var colour = state.palette[i];
-      var host = i < state.featuredColors ? el.featured : el.rest;
-      host.appendChild(swatchFor(colour, entry));
-    }
+    appendSwatches(el.featured, state.layout.featured, entry);
+    appendSwatches(el.rest, state.layout.more, entry);
     el.rest.style.display = state.showMore ? '' : 'none';
-    el.more.style.display = state.palette.length > state.featuredColors ? '' : 'none';
+    el.more.style.display = state.layout.more.length > 0 ? '' : 'none';
     el.more.textContent = Homey.__(state.showMore ? 'blocks.fewerColours' : 'blocks.moreColours');
+  }
+
+  function appendSwatches(host, ids, entry) {
+    for (var i = 0; i < ids.length; i++) {
+      for (var j = 0; j < state.palette.length; j++) {
+        if (state.palette[j].id === ids[i]) { host.appendChild(swatchFor(state.palette[j], entry)); break; }
+      }
+    }
+  }
+
+  /**
+   * Which swatches to draw, and in which of the two grids.
+   *
+   * The driver sends it as ids (`layout`), because the grid is a picture of the
+   * palette rather than the palette itself: one colour is drawn twice, and a
+   * colour kept only so an old plan still resolves is not drawn at all. A reply
+   * without it — an older driver — is drawn the way this screen always drew
+   * one: the first ten, then the rest.
+   */
+  function layoutOf(payload, colours) {
+    if (payload.layout && payload.layout.featured) return payload.layout;
+    var ids = [];
+    for (var i = 0; i < colours.length; i++) {
+      if (!colours[i].hidden) ids.push(colours[i].id);
+    }
+    return { featured: ids.slice(0, 10), more: ids.slice(10) };
   }
 
   function swatchFor(colour, entry) {
@@ -1136,6 +1163,9 @@ function __lkBootBl(Homey) {
    * Homey's near-whites are 0.05 and `hsl(36, 5%, ...)` is grey.
    */
   function css(colour) {
+    // A palette colour is painted in the design's own hex, as the curve
+    // screen's copy does; the curves below are only for a colour without one.
+    if (colour.swatch) return colour.swatch;
     var saturation = Math.round((0.25 + colour.saturation * 0.55) * 100);
     var lightness = Math.round(86 - colour.saturation * 36);
     return 'hsl(' + Math.round(colour.hue * 360) + ',' + saturation + '%,' + lightness + '%)';
@@ -1362,15 +1392,29 @@ function __lkBootBl(Homey) {
     push();
   });
 
-  el.add.addEventListener('click', function () {
-    // A new block starts in the evening rather than at midnight: it is the one
-    // the next person to add a block almost always wants, and it lands
-    // somewhere visible on the timeline rather than on its left edge.
-    state.entries.push({
+  /**
+   * A block as it starts life.
+   *
+   * In the evening rather than at midnight: it is the one the next person to
+   * add a block almost always wants, and it lands somewhere visible on the
+   * timeline rather than on its left edge.
+   *
+   * With "Set brightness too" ON, at the same 60% the toggle itself seeds. The
+   * 2026-09-23 design makes brightness the default wherever it is offered; a
+   * block already saved keeps whatever it has, because this only runs for a
+   * block that did not exist a moment ago.
+   */
+  function newBlock() {
+    return {
       id: 'b' + Date.now().toString(36),
       onAt: 19 * 60,
-      end: { kind: 'time', at: 23 * 60 }
-    });
+      end: { kind: 'time', at: 23 * 60 },
+      brightness: 0.6
+    };
+  }
+
+  el.add.addEventListener('click', function () {
+    state.entries.push(newBlock());
     state.selected = state.entries.length - 1;
     render();
     push();
@@ -1396,14 +1440,10 @@ function __lkBootBl(Homey) {
     state.overlaps = payload.overlaps || [];
     state.support = payload.support || {};
     state.palette = payload.palette || [];
-    state.featuredColors = payload.featuredColors || 8;
+    state.layout = layoutOf(payload, state.palette);
 
     if (state.entries.length === 0) {
-      state.entries.push({
-        id: 'b' + Date.now().toString(36),
-        onAt: 19 * 60,
-        end: { kind: 'time', at: 23 * 60 }
-      });
+      state.entries.push(newBlock());
       push();
     }
     render();

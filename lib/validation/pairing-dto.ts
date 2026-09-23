@@ -46,6 +46,17 @@ const MAX_RULE_LIGHTS = 64;
  * third. A `lightkeeper_on` row with neither source chosen reported that it had
  * "no brightness to set", which is not something that row has ever been about.
  */
+/**
+ * Why a mapping row was dropped: English for the log, and a locale key for the
+ * screen. `setGesture` shows the first one to the person editing the button, so
+ * it has to be translatable — and `lib/` cannot translate (CLAUDE.md).
+ */
+export interface DroppedRule {
+  index: number;
+  reason: string;
+  detail: { key: string; tokens?: Record<string, string> };
+}
+
 const MISSING_VALUE: Record<PresetKind, string> = {
   none: 'value to set',
   brightness: 'brightness to set',
@@ -261,10 +272,13 @@ export function validateMappingRules(
    * and an empty set must not mean "drop everything".
    */
   catalogueKeys?: ReadonlySet<string>,
-): { rules: MappingRuleDto[]; dropped: Array<{ index: number; reason: string }> } {
+): { rules: MappingRuleDto[]; dropped: DroppedRule[] } {
   const entries = requireArray(raw, 'rules', MAX_RULES);
   const rules: MappingRuleDto[] = [];
-  const dropped: Array<{ index: number; reason: string }> = [];
+  const dropped: DroppedRule[] = [];
+  const drop = (index: number, reason: string, key: string, tokens?: Record<string, string>) => {
+    dropped.push({ index, reason, detail: { key: `mappingDropped.${key}`, ...(tokens ? { tokens } : {}) } });
+  };
 
   entries.forEach((entry, i) => {
     const path = `rules[${i}]`;
@@ -278,7 +292,7 @@ export function validateMappingRules(
     // ---- membership: dropped and named, never thrown --------------------
     const stranger = deviceIds?.find(deviceId => !selected.has(deviceId));
     if (stranger !== undefined) {
-      dropped.push({ index: i, reason: `"${stranger}" is not one of this controller's lights` });
+      drop(i, `"${stranger}" is not one of this controller's lights`, 'notOneOfTheLights');
       return;
     }
     /**
@@ -290,20 +304,17 @@ export function validateMappingRules(
      * this is the fail-closed half of that rule for every other way in.
      */
     if (deviceIds !== null && deviceIds.length === 0) {
-      dropped.push({ index: i, reason: 'names no lights at all' });
+      drop(i, 'names no lights at all', 'noLights');
       return;
     }
 
     if (!offered.includes(rule.function as LightFunction)) {
-      dropped.push({
-        index: i,
-        reason: `"${String(rule.function)}" is not something the chosen lights can do`,
-      });
+      drop(i, `"${String(rule.function)}" is not something the chosen lights can do`, 'lightsCannotDoThat');
       return;
     }
 
     if (inputKey !== null && catalogueKeys && !catalogueKeys.has(inputKey)) {
-      dropped.push({ index: i, reason: `"${inputKey}" is not an event this remote exposes` });
+      drop(i, `"${inputKey}" is not an event this remote exposes`, 'notThisRemotesEvent');
       return;
     }
 
@@ -327,11 +338,11 @@ export function validateMappingRules(
       : readMappingPreset(rule.preset, `${path}.preset`, kind);
 
     if (kind !== 'none' && preset === undefined) {
-      dropped.push({ index: i, reason: `has no ${MISSING_VALUE[kind]}` });
+      drop(i, `has no ${MISSING_VALUE[kind]}`, `missing.${kind}`);
       return;
     }
     if (kind === 'none' && preset !== undefined) {
-      dropped.push({ index: i, reason: `"${func}" does not take a value` });
+      drop(i, `"${func}" does not take a value`, 'takesNoValue');
       return;
     }
 

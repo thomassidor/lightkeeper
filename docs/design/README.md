@@ -40,44 +40,54 @@ this repo hit the same bug in seven places, fixed it, and has guarded it ever si
 
 ## Where the app departs from them, on purpose
 
-1. **A Colour Curve Light pairs with "Set brightness too" switched ON.** The canvas says the default
-   is off and the chart is purely a day of colour. A flat chart is a picture of one axis: every bar
-   is full height, the Off-to-Full gutter is hidden, and nothing on the first screen shows that the
-   second axis exists. The argument is written out at `DEFAULT_POINTS` in
-   `lib/circadian/circadian-types.ts`, and the default five points carry a real day — 44% at 06:30
-   rising to 94% at 19:00 and falling to 36% at 22:30.
-
-2. **"Which remote?" keeps its search field, its room grouping and its "Show every other device"
+1. **"Which remote?" keeps its search field, its room grouping and its "Show every other device"
    fold.** The canvas draws a flat card of three. The fold is the answer to "my remote is not in the
    list" for a device whose events arrive by a route the app cannot count — rare, real, and
    otherwise a dead end — and search matters in a house with 54 devices.
 
-3. **`curve.html` keeps "Remove this time".** The canvas draws "Add a time" and no way to take one
+2. **`curve.html` keeps "Remove this time".** The canvas draws "Add a time" and no way to take one
    away.
 
-4. **`source.html` keeps its "Leave it alone" row.** The canvas lists only the devices. One of the
+3. **`source.html` keeps its "Leave it alone" row.** The canvas lists only the devices. One of the
    two questions has to be answerable with "not this one", because `job.needASource` requires at
    least one of them to be answered with something.
 
-5. **`job.html` keeps "Set a warmth too" under the brightness preset**, and keeps the
+4. **`job.html` keeps "Set a warmth too" under the brightness preset**, and keeps the
    `temperature_cycle` tile for rules that already use it — it is never offered to a new one.
 
-6. **`tryit.html` keeps its per-lamp result list** ("Set" / "Off, left alone"). The canvas ends at
+5. **`tryit.html` keeps its per-lamp result list** ("Set" / "Off, left alone"). The canvas ends at
    the two buttons. Reporting which lamps answered is the only evidence the preview gives.
 
-7. **A circadian boundary steps ±150 minutes.** The canvas's prototype clamps asymmetrically
+6. **A circadian boundary steps ±150 minutes.** The canvas's prototype clamps asymmetrically
    (−120…+240 in the morning, −240…+120 in the evening). `MAX_OFFSET` and `OFFSET_STEP` in
    `lib/circadian/simple-curve.ts` carry the reasoning for the symmetric range.
 
-**Three things stopped being departures**, because the flows file deleted them rather than omitting
-them: "Look again" and "Add a light to Homey" on the no-lights screen, and "Open my.homey.app again"
-on the rejected-key screen. All three are gone from the app too.
+7. **A Room-sensing Light's last screen offers two of the three ways to control lights.** The
+   2026-09-23 handoff draws "Set lights before they turn on" there too. It writes brightness and
+   nothing else, and a brightness sent to an off lamp switches it on — so that option's test would
+   fail on every lamp there is. `lib/pairing/control-choice.ts` has the argument, and its first
+   answer is reworded for brightness ("at their previous brightness").
+
+8. **The flat and quiet sensor blocks say what the week shows, not what the handoff's sample said.**
+   "1 to 4 lx, and only when the door opens" is the mockup's own cupboard; the app cannot know about
+   a door, so it says "{low} to {high} lx — nothing to act on". The quiet block's "until Saturday
+   lunchtime" is "until Sat 12:40" — the grid's own weekday label and a clock time, both checkable
+   against the hatched cells.
+
+9. **The open room's tinted header is `--lk-accent-tint` (#f3eefc), not the handoff's #F4F2FA.** The
+   handoff says it adds no tokens, and the tint is the nearest one there is; the divider under it is
+   the tint's own line, because a grey hairline on the tint reads as dirty.
+
+**Four things stopped being departures.** Three because the flows file deleted them rather than
+omitting them: "Look again" and "Add a light to Homey" on the no-lights screen, and "Open my.homey.app
+again" on the rejected-key screen — all three are gone from the app too. And a Colour Curve Light
+pairing with "Set brightness too" switched ON, which the canvas used to draw off: the 2026-09-23
+handoff makes on the default for every "Set brightness too" there is.
 
 ## Open, not departed
 
-**Pre-staging has no control on any screen, and neither canvas has one either — but that is a question
-rather than an answer.** The setting exists, a new device still pairs with it on, and every guard
-around it is intact; what is gone is the switch and the "Test it on my lights" button that let a
-household prove it against their own lamps, which platform §6 says only their own lamps can prove.
-It is behind `SHOW_PRE_STAGE` in `drivers/circadian/pair/day.html` and
-`drivers/curve/pair/curve.html` — one line each — pending a decision about where it belongs.
+Nothing, as of the 2026-09-23 handoff. The one question that was here — pre-staging had no control on
+any screen, and neither canvas had one — is answered: it is the second option of *How Lightkeeper
+controls your lights* on the last screen, with a per-lamp test. `SHOW_PRE_STAGE` and the hidden
+switch it guarded are gone.
+

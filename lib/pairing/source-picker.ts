@@ -36,6 +36,14 @@ export interface SourceDevice {
    * runtime the same way `set_lights` reads them.
    */
   current?: { warmth: number; color?: { hue: number; saturation: number } } | null;
+  /**
+   * Whether that device drives its OWN lights all day, rather than only
+   * publishing (lib/runtime/writes-lights.ts). Absent reads as no, because the
+   * warning below is the only thing it feeds and a warning must be earned.
+   */
+  keepsLightsUpdated?: boolean;
+  /** How many of THIS button's lamps that device also drives. See `sharedLightCount`. */
+  sharedLights?: number;
 }
 
 /** One row, as the screen draws it. */
@@ -47,6 +55,36 @@ export interface SourceRow {
   swatch?: string | null;
   /** Brightness list only: PERCEPTUAL 0–1, or null where nothing is being called for. */
   level?: number | null;
+  /**
+   * Present when this source keeps its own lights up to date, which makes
+   * "On – with Lightkeeper" a second writer wherever the two share a lamp.
+   * `sharedLights` is how many of this button's lamps that is; zero still
+   * warns, more softly, because the device is writing to lamps all the same.
+   */
+  warn?: { sharedLights: number };
+}
+
+/**
+ * How many of a button's lamps another device drives too, counting a Homey
+ * device group as the lamps inside it.
+ *
+ * Groups are the reason this is more than a set intersection. The case it was
+ * written for had the remote on "Ceiling Lamp" — a group of three spots — and
+ * the Colour Curve Light on the three spots themselves: no id in common, and
+ * every one of those bulbs written by both at every switch-on. Expanded on BOTH
+ * sides, because the source may be the one holding the group.
+ *
+ * Counted in the BUTTON's lamps, since that is what the warning is about: "3 of
+ * these lights". A group counts once for each member it shares.
+ */
+export function sharedLightCount(
+  buttonLights: readonly string[],
+  sourceLights: readonly string[],
+  membersOf: (id: string) => readonly string[] | undefined,
+): number {
+  const expand = (ids: readonly string[]) => ids.flatMap(id => membersOf(id) ?? [id]);
+  const driven = new Set(expand(sourceLights));
+  return new Set(expand(buttonLights).filter(id => driven.has(id))).size;
 }
 
 /**
@@ -140,6 +178,9 @@ export function sourceRows(
       ...(kind === 'brightness'
         ? { level: sourceLevel(device.values) }
         : { swatch: paintSwatch(device) }),
+      ...(device.keepsLightsUpdated === true
+        ? { warn: { sharedLights: device.sharedLights ?? 0 } }
+        : {}),
     }));
 
   return [{ id: LEAVE_ALONE, name: leaveAlone.name, subtitle: leaveAlone.subtitle }, ...rows];

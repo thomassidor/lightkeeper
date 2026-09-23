@@ -552,6 +552,9 @@
       el.appendChild(meta);
 
       el.appendChild(node('p', 'entry-sub', controlsLine(device)));
+      // Said, because a device that leaves its lights alone on purpose looks
+      // exactly like one that has stopped working.
+      if (device.writesLights === false) el.appendChild(node('p', 'entry-sub', t('publishOnly')));
       if (device.preStageDisabled) {
         el.appendChild(node('p', 'entry-sub', t('circadianPreStageOff')));
       }
@@ -653,6 +656,7 @@
       }
       el.appendChild(meta);
       el.appendChild(node('p', 'entry-sub', controlsLine(device)));
+      if (device.writesLights === false) el.appendChild(node('p', 'entry-sub', t('publishOnly')));
 
       // This device's own sensors, named. The shared list above is every sensor
       // on the Homey; which of them THIS device is reading is the fact that

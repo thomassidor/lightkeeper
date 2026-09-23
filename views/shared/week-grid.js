@@ -7,8 +7,9 @@ function weekGrid(host, payload) {
      *
      * It takes no arguments beyond the element and the payload, and it closes
      * over the `node` every carrier already has — the same trick the daylight
-     * card used, and what lets the body be byte-identical on the response screen
-     * and on the detail screen, whose surroundings have nothing else in common.
+     * card used. One carrier today, the response screen: the detail screen a
+     * sensor row used to push is gone, and with it the two refusals it drew —
+     * see the verdict at the foot of this function.
      *
      * The grid IS the argument for the two lux thresholds. Nobody can judge
      * "under 8 lx" in the abstract; anybody can judge it against a week that
@@ -96,7 +97,11 @@ function weekGrid(host, payload) {
     var scale = node('div', 'week-scale');
     scale.appendChild(node('span', null, Homey.__('week.lux', { lux: round(low) })));
     var bar = node('span', 'bar');
-    if (payload.nowLux !== null && payload.nowLux !== undefined) {
+    // No "now" tick on a sensor that has stopped: its last reading is hours
+    // old, and a tick labelled "now" would be the one false thing on a card
+    // whose whole job is to show that nothing has arrived since.
+    var quiet = payload.staleFor !== null && payload.staleFor !== undefined;
+    if (!quiet && payload.nowLux !== null && payload.nowLux !== undefined) {
       var at = shade(payload.nowLux);
       var tick = node('span', 'tick');
       tick.style.left = (at * 100) + '%';
@@ -143,24 +148,43 @@ function weekGrid(host, payload) {
     }
 
     /**
-     * What this week is worth, in a sentence with the numbers in it.
+     * What this week is worth, in a sentence with the numbers in it — or, for
+     * the two weeks that argue against using the sensor at all, a block.
      *
-     * Four verdicts, and the order they are decided in matters: a sensor that
-     * stopped a month ago also looks flat, and "it stopped on Saturday" is the
-     * far more useful thing to say.
+     * Those two used to be screens of their own ("A sensor not worth using",
+     * "Sensor has gone quiet"), each with a list of three ways out. The
+     * 2026-09-23 design folds both into this card, where the ways out are the
+     * screen's own chrome: Previous picks another sensor or the sun, Next uses
+     * it anyway. So the finding has to be impossible to miss IN the card, which
+     * is what a tinted block is for in this system — a finding somebody has to
+     * act on. Quiet is the error ground, flat the warning one: a stopped sensor
+     * will hold the lights at one brightness, a flat one merely has nothing to
+     * say.
+     *
+     * Quiet is decided by the SCREEN's `staleFor`, not by the week's verdict:
+     * the live reading can be newer than the Insights history, and the driver
+     * has already taken the newer of the two.
      */
     var verdict = week.verdict || { kind: 'nothing' };
-    var sentence = node('div', 'week-verdict');
 
+    if (quiet) {
+      host.appendChild(finding('msg bad',
+        Homey.__('week.quiet', { name: payload.sensorName || '', hours: payload.staleFor }),
+        Homey.__('week.quietMeans', { when: payload.lastReport || '' })));
+      return;
+    }
+    if (verdict.kind === 'flat') {
+      host.appendChild(finding('msg warn',
+        Homey.__('week.flat'),
+        Homey.__('week.flatDetail', { low: round(verdict.low), high: round(verdict.high) })));
+      return;
+    }
+
+    var sentence = node('div', 'week-verdict');
     if (verdict.kind === 'usable') {
       sentence.appendChild(node('b', null, Homey.__('week.usable')));
       sentence.appendChild(document.createTextNode(' ' + Homey.__('week.usableDetail', {
         night: round(verdict.nightLux), noon: round(verdict.noonLux)
-      })));
-    } else if (verdict.kind === 'flat') {
-      sentence.appendChild(node('b', null, Homey.__('week.flat')));
-      sentence.appendChild(document.createTextNode(' ' + Homey.__('week.flatDetail', {
-        low: round(verdict.low), high: round(verdict.high)
       })));
     } else if (verdict.kind === 'stopped') {
       sentence.appendChild(node('b', null, Homey.__('week.stopped')));
@@ -171,4 +195,13 @@ function weekGrid(host, payload) {
       sentence.appendChild(node('b', null, Homey.__('week.nothing')));
     }
     host.appendChild(sentence);
+
+    function finding(className, lead, body) {
+      // What happened, then what it means — one block, the shape every other
+      // message on these screens takes.
+      var block = node('div', className + ' week-finding');
+      block.appendChild(node('div', 'lead', lead));
+      block.appendChild(node('div', null, body));
+      return block;
+    }
   }

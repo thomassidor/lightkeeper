@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { DaylightRuntime } from '../../lib/daylight/daylight-runtime';
+import { DAYLIGHT_DEADBAND, DaylightRuntime, MAX_STEP_PER_TICK } from '../../lib/daylight/daylight-runtime';
 import { DEFAULT_RESPONSE, type DaylightPlan, type DaylightResponse } from '../../lib/daylight/daylight-types';
 import type { DaylightEvaluator, DaylightVerdict } from '../../lib/daylight/daylight-evaluator';
 import type { LuminanceSource } from '../../lib/daylight/luminance-source';
@@ -42,6 +42,8 @@ interface FakeDevice {
   id: string;
   name: string;
   zoneName: string;
+  /** 'light', or a zone target skips it — the real `lightsInZone` rule. */
+  class: string;
   capabilities: string[];
   capabilitiesObj: Record<string, any>;
   available: boolean;
@@ -53,7 +55,7 @@ function light(id: string, capabilities = ['onoff', 'dim'], values: Record<strin
   if (capabilities.includes('dim')) {
     capabilitiesObj.dim = { min: 0, max: 1, decimals: 2, value: values.dim ?? 0.5 };
   }
-  return { id, name: id, zoneName: 'Kitchen', capabilities, capabilitiesObj, available: true };
+  return { id, name: id, zoneName: 'Kitchen', class: 'light', capabilities, capabilitiesObj, available: true };
 }
 
 /**
@@ -330,6 +332,20 @@ describe('DaylightRuntime - the rising edge of onoff is the feature', () => {
 
 
 describe('DaylightRuntime - the loop terminates, which is the whole point', () => {
+  test('the slew per tick is strictly larger than the deadband', () => {
+    // CLAUDE.md, "The daylight loop terminates, and two constants are what make
+    // it": the band is what makes the loop SETTLE and the slew is what makes
+    // it a fade — and only in this order. A step no larger than the band walks
+    // a target just outside it in increments that never leave it, so the lamp
+    // creeps and stalls. The behavioural tests below would catch the stall only
+    // at the particular distances they happen to use; this catches the retune.
+    assert.ok(
+      MAX_STEP_PER_TICK > DAYLIGHT_DEADBAND,
+      `MAX_STEP_PER_TICK (${MAX_STEP_PER_TICK}) must exceed DAYLIGHT_DEADBAND (${DAYLIGHT_DEADBAND})`,
+    );
+    assert.ok(DAYLIGHT_DEADBAND > 0, 'a zero band never settles');
+  });
+
   test('a steady reading is reached and then left alone, for ever', async () => {
     // The single most important property here. An undamped closed loop - a
     // sensor reading the lamps it drives - pulses once a minute for as long as
@@ -1348,5 +1364,67 @@ describe('what the day-long capture found', () => {
       'a whole ON period of doing nothing began exactly here');
     assert.ok(d.recentControlEvents.some(e => e.type === 'report_ignored' && e.reason === 'power_restore'));
     await h.runtime.stop();
+  });
+});
+
+/** `writesLights: false` — see lib/runtime/writes-lights.ts and the circadian twin of this suite. */
+describe('DaylightRuntime - a device that only publishes', () => {
+  const publishOnly = (): DaylightPlan => ({ ...plan(), writesLights: false });
+
+  test('writes nothing at start, on a tick, or when a lamp comes on', async () => {
+    const h = harness({
+      plan: publishOnly(),
+      devices: [light('l1', ['onoff', 'dim'], { onoff: false }), light('l2')],
+    });
+    await h.runtime.start();
+    await h.runtime.drain();
+    h.setVerdict({ brightness: 0.95 });
+    await tick(h);
+    h.report('l1', 'onoff', true);
+    await h.runtime.drain();
+    await h.settle();
+
+    assert.deepEqual(h.writes, []);
+    assert.equal(h.subscribed('l1', 'onoff'), false);
+  });
+
+  test('its slew does not walk towards a level nothing is writing', async () => {
+    // Past the gate, `aim` would advance every pass while no lamp moved, and
+    // switching writes back on would start the lamps from that fiction.
+    const h = harness({ plan: publishOnly() });
+    await h.runtime.start();
+    h.setVerdict({ brightness: 0.95 });
+    for (let i = 0; i < 5; i += 1) await tick(h);
+
+    assert.ok(h.runtime.diagnostics().targets.every(t => t.aim === null || t.aim === undefined));
+  });
+
+  test('still publishes, and is ready even though no lamp can dim', async () => {
+    const h = harness({ plan: publishOnly(), devices: [light('l1', ['onoff'])] });
+    await h.runtime.start();
+
+    assert.equal(h.runtime.currentState, 'ready');
+    assert.equal(typeof h.runtime.publishedValues()['lightkeeper_brightness'], 'number');
+    assert.equal(h.runtime.diagnostics().writesLights, false);
+  });
+
+  test('a sensor gone quiet is still reported, because that is what it publishes from', async () => {
+    const frozen = Date.UTC(2026, 5, 21, 10, 0);
+    const h = harness({ plan: { ...plan({ sensor: 's1' }), writesLights: false }, sensorAt: () => frozen });
+    await h.runtime.start();
+    h.advance(13 * 60 * 60_000);
+    await h.runtime.assessHealth();
+
+    assert.equal(h.runtime.currentState, 'partial');
+    assert.equal(h.runtime.currentDetail?.key, 'state.daylightSensorStale');
+  });
+
+  test('"Try it" still writes', async () => {
+    const h = harness({ plan: publishOnly() });
+    await h.runtime.start();
+    await h.runtime.applyNow('preview', { force: true, waitForResults: true, preview: true });
+    await h.runtime.drain();
+
+    assert.equal(h.dimWrites().length, 2);
   });
 });

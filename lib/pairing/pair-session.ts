@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { timezoneOf as readTimezone } from '../time/local-clock';
+import { LocalisedError } from '../support/localised-error';
 
 import { listTargetsPayload, resolveSummary } from './target-picker';
 import { deriveSuffixedName } from './derive-name';
@@ -99,6 +100,10 @@ export function handlerRegistrar(host: PairSessionHost, session: PairSession): H
         return result;
       } catch (error) {
         host.error(`pair/${name} failed:`, messageOf(error), (error as Error)?.stack);
+        // A refusal raised in lib/ carries a locale key; this is the one place
+        // every handler's error passes, so it is translated here (see
+        // LocalisedError).
+        if (error instanceof LocalisedError) throw new Error(host.translate(error.key, error.tokens));
         throw error;
       }
     });
@@ -240,7 +245,7 @@ export function registerTargetHandlers(
     // light saves a device that resolves to nothing.
     const target = await validateTargetAgainstCatalog(spec, host.app.catalog);
     const summary = await resolveSummary(host.app.catalog, target);
-    if (revision !== selectionRevision) throw new Error('Target selection changed.');
+    if (revision !== selectionRevision) throw new LocalisedError('errors.targetSelectionChanged');
     state.target = target;
     await options.onSelected?.(target);
     return summary;
@@ -344,18 +349,15 @@ export function registerSaveHandler<TPlan>(
  * "Try it now" for the two curve-driven types, before anything is saved.
  *
  * The primary defence against a device that looks configured and does nothing:
- * both handlers build an EPHEMERAL runtime over the plan on screen, so there is
- * something to see before a device exists.
+ * the handler builds an EPHEMERAL runtime over the plan on screen, so there is
+ * something to see before a device exists. The pre-stage test that used to sit
+ * beside it moved to the review screen — see `curvePreStageProbe` below.
  *
  * `curvePlan` is the one difference between the circadian light and the Colour
  * Curve Light. A circadian light stores two ends and expands them through
  * `expandSimplePlan`; a Colour Curve Light stores the points already. Both arrive
  * here
- * as the same shape, which is why one pair of handlers serves both.
- *
- * A Room-sensing Light is not a caller: it has no pre-stage to prove, because a
- * `dim` write turns an off lamp on and a brightness-only device type has
- * nothing to pre-stage.
+ * as the same shape, which is why one handler serves both.
  */
 export function registerCurvePreviewHandlers(
   host: PairSessionHost,
@@ -371,23 +373,35 @@ export function registerCurvePreviewHandlers(
       // back, so what the screen reports is lamps that ACCEPTED the write.
       // It drains on the way out; the second drain is belt and braces for a
       // plan that produced no writes at all.
-      const outcome = await runtime.applyNow('preview', { force: true, waitForResults: true });
+      const outcome = await runtime.applyNow('preview', { force: true, waitForResults: true, preview: true });
       await runtime.drain();
       return outcome;
     } finally {
       await runtime.stop();
     }
   });
+}
 
-  handler('testPreStage', async () => {
-    // Proven on this household's own lights rather than assumed: a colour write
-    // to an off lamp turns it on through some integrations (platform §6), and
-    // this is the only way to find out which.
+/**
+ * The review screen's "Test my {n} lights", against the plan on screen.
+ *
+ * Returned as a function for `registerControlHandlers` (lib/pairing/
+ * control-choice.ts) rather than registered here, because the RESULT belongs
+ * to the control: the lamps that pass are what "Set lights before they turn on"
+ * stores. The runtime is ephemeral, like the preview's, so the test works
+ * before a device exists — and stopped only after the probe has put every lamp
+ * back.
+ */
+export function curvePreStageProbe(
+  host: PairSessionHost,
+  curvePlan: () => Parameters<PairSessionHost['app']['curves']['ephemeral']>[0],
+): () => ReturnType<Awaited<ReturnType<PairSessionHost['app']['curves']['ephemeral']>>['probePreStageAll']> {
+  return async () => {
     const runtime = await host.app.curves.ephemeral(curvePlan());
     try {
-      return await runtime.probePreStage();
+      return await runtime.probePreStageAll();
     } finally {
       await runtime.stop();
     }
-  });
+  };
 }

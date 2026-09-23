@@ -80,8 +80,13 @@ jobs:
       - name: Check pair/repair and shared views are in sync
         run: npm run sync:views:check
 
-      - name: Unit tests
-        run: npm test
+      # The suite once, under coverage, with floors. Not a separate `npm test`
+      # step as well: the run IS the suite, and it fails on a failing test before
+      # it looks at a single percentage. See scripts/coverage.mjs for why a
+      # plain `--test-coverage-lines` threshold is not enough (a file no test
+      # loads is not in the report, so it can never lower the number).
+      - name: Unit tests, with coverage floors
+        run: npm run test:coverage -- --quiet
 
       # Validates app.json, the compose sources, drivers, flow cards and
       # locales at the same level the App Store applies on submission.
@@ -100,4 +105,12 @@ jobs:
       # (test/unit/compose-manifest.test.ts is the local equivalent.)
       - name: Check app.json is in sync with .homeycompose/
         run: git diff --exit-code -- app.json
+
+      # `validate` ran `npm run build` without `.dev-build`, so .homeybuild/ is
+      # now exactly what a launch build packages. The build proves its own strip
+      # from inside; this looks from outside, so a strip that stopped running at
+      # all — a guard inverted, the call deleted — fails here instead of going
+      # green over a recorder that would reach households.
+      - name: Check the packaged tree is a launch build
+        run: node scripts/build.mjs --verify
 

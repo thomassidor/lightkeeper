@@ -30,6 +30,21 @@ function isComment(text: string): boolean {
   return trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*');
 }
 
+/**
+ * Source with its comments removed, for every `match` that asserts code exists.
+ *
+ * This script is commented the way the app is — densely, about exactly the
+ * words these tests look for — so a function whose docblock said "gives up at
+ * a deadline" satisfied `/deadline/` with no deadline in its body. Block
+ * comments go first, then line comments not preceded by `:` so a URL in a
+ * string survives.
+ */
+function stripComments(text: string): string {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:\\])\/\/.*$/gm, '$1');
+}
+
 describe('verify-hardware never prints key material', () => {
   test('no console call names a key', () => {
     /**
@@ -256,7 +271,7 @@ describe('verify-hardware deletes only the devices it created', () => {
     assert.ok(from > 0, `${declaration} is gone`);
     const rest = source.slice(from + declaration.length);
     const to = rest.indexOf('\nasync function ');
-    return rest.slice(0, to === -1 ? undefined : to);
+    return stripComments(rest.slice(0, to === -1 ? undefined : to));
   }
 
   test('every device it pairs is marked', () => {
@@ -330,7 +345,7 @@ describe('verify-hardware reads lamp values live', () => {
     assert.ok(start >= 0, `${name}() is gone from the script`);
     const end = lines.findIndex((line, index) => index > start && line.text === '}');
     assert.ok(end > start, `${name}() has no closing brace at column 0`);
-    return lines.slice(start, end + 1).map(line => line.text).join('\n');
+    return stripComments(lines.slice(start, end + 1).map(line => line.text).join('\n'));
   }
 
   test('capabilityValue opts out of the cache', () => {
@@ -358,9 +373,18 @@ describe('verify-hardware reads lamp values live', () => {
 
   test('every exit path calls the restore it was given', () => {
     // A helper that returns a restore nobody calls is worse than no helper: it
-    // leaves somebody's lamp on and reports a pass.
-    const calls = (source.match(/arranged\.restore\(\)/g) ?? []).length;
-    assert.ok(calls >= 4, `only ${calls} restore call(s) — every exit path needs one`);
+    // leaves somebody's lamp on and reports a pass. This used to COUNT restore
+    // calls, one per early exit — which covered every exit except a throw. The
+    // property now is that each caller restores in a `finally`, which covers
+    // all of them, so that is what is checked.
+    for (const name of ['commandRejoin', 'commandPreview']) {
+      const body = bodyOf(name);
+      assert.match(body, /switchALampOn\(/, `${name} no longer arranges a lamp — update this list`);
+      assert.match(
+        body, /finally \{[\s\S]*?arranged\.restore\(\)/,
+        `${name} must put back the lamp it switched on in a finally, or a throw leaves it on`,
+      );
+    }
   });
 
   test('it no longer asks a person to flick a switch', () => {

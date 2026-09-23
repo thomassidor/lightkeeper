@@ -1,6 +1,7 @@
 import Homey from 'homey';
 import {
-  colourSwatch, lightsSummary, registerIntroHandler, registerReviewHandler, warmthSwatch,
+  colourSwatch, lightsSummary, paletteForScreen, registerIntroHandler, registerReviewHandler,
+  warmthSwatch,
 } from '../../lib/pairing/flow-screens';
 
 import {
@@ -13,10 +14,12 @@ import {
   DEFAULT_POINTS, MAX_POINTS, MIN_POINTS, sanitiseCurve,
   type CircadianPlan, type CircadianPoint,
 } from '../../lib/circadian/circadian-types';
-import { FEATURED_COLORS, PALETTE } from '../../lib/circadian/palette';
 import { formatMinutes } from '../../lib/time/wall-clock';
+import { keepsLightsUpdated, writesLightsField } from '../../lib/runtime/writes-lights';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
+import { registerControlHandlers, reviewControl } from '../../lib/pairing/control-choice';
 import {
+  curvePreStageProbe,
   handlerRegistrar,
   registerCurvePreviewHandlers,
   registerSaveHandler,
@@ -48,7 +51,32 @@ interface SessionState {
   target?: TargetSpec;
   points: CircadianPoint[];
   adjustBrightness: boolean;
+  /** "Set lights before they turn on" — see lib/pairing/control-choice.ts. */
   preStage: boolean;
+  /** The lamps the review screen's test proved. Absent = never tested. */
+  preStageLights?: string[] | undefined;
+  /** This session's test, with names, for the review to draw back. */
+  tested?: Array<{ deviceId: string; name: string; ok: boolean }> | undefined;
+  /** Keep the lights up to date all day, or only publish. See lib/runtime/writes-lights.ts. */
+  writesLights: boolean;
+}
+
+
+/**
+ * The Brightness row's "36–94%": the lowest and highest brightness the user's
+ * own POINTS carry, not the curve's — a curve between two points never goes
+ * outside them, so the points are the whole range, and "per colour" on the
+ * row says that each colour brings its own.
+ */
+function brightnessRange(points: readonly CircadianPoint[]): { min: number; max: number } {
+  const levels = points
+    .map(point => point.brightness)
+    .filter((level): level is number => typeof level === 'number');
+  if (levels.length === 0) return { min: 0, max: 0 };
+  return {
+    min: Math.round(Math.min(...levels) * 100),
+    max: Math.round(Math.max(...levels) * 100),
+  };
 }
 
 module.exports = class CurveDriver extends Homey.Driver {
@@ -110,15 +138,19 @@ module.exports = class CurveDriver extends Homey.Driver {
       points: plan?.points?.length ? plan.points : [...DEFAULT_POINTS],
       adjustBrightness: plan?.adjustBrightness ?? false,
       preStage: plan?.preStage ?? false,
+      preStageLights: plan?.preStageLights,
+      // Absent means ON, the opposite of `preStage` above.
+      writesLights: plan ? keepsLightsUpdated(plan) : true,
     }, device);
   }
 
   private async bindSession(session: any, initial: Partial<SessionState>, device?: any) {
     const state: SessionState = {
-      // `preStage` on for a NEW device, off for one being repaired: `initial`
-      // carries the stored plan's own value and overwrites this. The reversal
-      // and what makes it safe are argued at DEFAULT_SIMPLE_PLAN.
-      points: [...DEFAULT_POINTS], adjustBrightness: false, preStage: true, ...initial,
+      // "Change lights after they turn on" for a NEW device — the review
+      // screen's default, argued at DEFAULT_SIMPLE_PLAN. A repair's `initial`
+      // carries the stored plan's own choice and overwrites this.
+      points: [...DEFAULT_POINTS], adjustBrightness: false, preStage: false, writesLights: true,
+      ...initial,
     };
 
     const host = this.pairHost();
@@ -152,7 +184,7 @@ module.exports = class CurveDriver extends Homey.Driver {
     // ---------------------------------------------------------------- curve
 
     handler('getCurve', async () => {
-      if (!state.target) throw new Error('Choose some lights first.');
+      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
       const [summary, lights] = await Promise.all([
         resolveSummary(this.app.catalog, state.target),
         targetLights(this.app.catalog, state.target),
@@ -173,23 +205,11 @@ module.exports = class CurveDriver extends Homey.Driver {
          * and the driver layer turns them into words — the same rule as every
          * other user-facing string produced in `lib/`.
          */
-        palette: PALETTE.map(color => ({
-          id: color.id,
-          label: this.homey.__(color.labelKey),
-          hue: color.hue,
-          saturation: color.saturation,
-        })),
-        /**
-         * How many of that list to show before "Show more colours".
-         *
-         * Sent rather than hardcoded in the view, because the split is a fact
-         * about the palette and this is the palette's only consumer. The rest
-         * fold out IN PLACE and never onto a second screen: a set is a decision,
-         * and a set of twenty-four shown at once is a tuning session.
-         */
-        featuredColors: FEATURED_COLORS,
+        // The palette and where each swatch goes. Ids and locale keys come from
+        // `lib/`, and the driver layer turns them into words — the same rule as
+        // every other user-facing string produced there.
+        ...paletteForScreen(key => this.homey.__(key)),
         adjustBrightness: state.adjustBrightness,
-        preStage: state.preStage,
         // Shown on screen, because "warm at 20:00" is meaningless without saying
         // whose 20:00 — and a Homey in the wrong timezone is a real support case.
         timezone: this.timezone(),
@@ -206,7 +226,7 @@ module.exports = class CurveDriver extends Homey.Driver {
      * than repairing it into a curve the user never asked for.
      */
     handler('setCurve', async (payload: {
-      points: unknown; adjustBrightness?: boolean; preStage?: boolean;
+      points: unknown; adjustBrightness?: boolean;
     }) => {
       const result = sanitiseCurve(payload?.points, payload?.adjustBrightness === true);
       for (const drop of result.dropped) {
@@ -214,7 +234,6 @@ module.exports = class CurveDriver extends Homey.Driver {
       }
       state.points = result.points;
       state.adjustBrightness = result.adjustBrightness;
-      state.preStage = payload?.preStage === true;
 
       return {
         count: result.points.length,
@@ -268,12 +287,22 @@ module.exports = class CurveDriver extends Homey.Driver {
               + `–${formatMinutes(minutes[minutes.length - 1] ?? 0)}`,
             view: 'curve',
           },
+          {
+            labelKey: 'review.brightness',
+            value: state.adjustBrightness
+              ? host.translate('review.brightnessRange', brightnessRange(state.points))
+              : host.translate('review.notChanged'),
+            view: 'curve',
+          },
         ],
-        promiseKey: 'review.promiseCurve',
-        promiseTokens: { count: summary.count },
+        control: await reviewControl(host, state, true),
       };
     });
     registerCurvePreviewHandlers(host, handler, () => this.buildPlan(state));
+    registerControlHandlers(handler, state, {
+      offerBefore: true,
+      probe: curvePreStageProbe(host, () => this.buildPlan(state)),
+    });
 
     // ----------------------------------------------------------------- save
 
@@ -308,9 +337,9 @@ module.exports = class CurveDriver extends Homey.Driver {
   }
 
   private buildPlan(state: SessionState): CircadianPlan {
-    if (!state.target) throw new Error('Choose some lights first.');
+    if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
     if (state.points.length < MIN_POINTS) {
-      throw new Error(`A curve needs at least ${MIN_POINTS} points.`);
+      throw new Error(this.homey.__('errors.curveNeedsPoints', { count: MIN_POINTS }));
     }
 
     return {
@@ -320,6 +349,8 @@ module.exports = class CurveDriver extends Homey.Driver {
       points: state.points,
       adjustBrightness: state.adjustBrightness,
       preStage: state.preStage,
+      ...(state.preStageLights !== undefined ? { preStageLights: [...state.preStageLights] } : {}),
+      ...writesLightsField(state.writesLights),
     };
   }
 

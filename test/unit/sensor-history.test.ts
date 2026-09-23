@@ -212,7 +212,16 @@ describe('what a week is worth', () => {
     }
     const week = bucketWeek(samples, TZ, NOW);
     assert.equal(week.verdict.kind, 'flat');
-    assert.equal(week.suggestion, null, 'nothing to recommend from a week with no day in it');
+
+    // Refused, and still PRE-FILLED: picking it now goes straight to the
+    // response step, where Next is "use it anyway" — and somebody who does
+    // that gets thresholds from the numbers this sensor reports, not a
+    // kitchen's defaults. Inside its own range, and never a zero-width span.
+    assert.ok(week.suggestion, 'a flat week still pre-fills the two thresholds');
+    const { darkLux, brightLux } = week.suggestion!;
+    assert.ok(brightLux > darkLux, `${darkLux} → ${brightLux} is not a span`);
+    assert.ok(darkLux >= week.low, `dark ${darkLux} sits below anything it reported`);
+    assert.ok(darkLux <= 10, `dark ${darkLux} is not a cupboard's number`);
   });
 
   test('a sensor that stopped is named as stopped, not as flat', () => {
@@ -224,7 +233,11 @@ describe('what a week is worth', () => {
 
     assert.equal(week.verdict.kind, 'stopped');
     assert.equal((week.verdict as { lastAt: number }).lastAt, Math.max(...samples.map(s => s.t)));
-    assert.equal(week.suggestion, null);
+
+    // What it reported before it stopped still has a night and a noon in it,
+    // so that is what the two cards start from.
+    assert.ok(week.suggestion, 'a stopped week with a day in it still pre-fills');
+    assert.ok(week.suggestion!.brightLux > week.suggestion!.darkLux);
   });
 
   test('half a day of silence is the threshold, not an hour', () => {

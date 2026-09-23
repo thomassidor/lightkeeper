@@ -124,16 +124,46 @@ export interface CircadianPlan {
    */
   zones?: CircadianZones;
   /**
-   * Write the day's warmth to lights that are OFF, so a light is already correct
-   * before anyone touches it.
+   * "Set lights before they turn on": write the day's colour to lights that are
+   * OFF, so a light is already correct before anyone touches it.
    *
-   * Opt-in, and proven per installation rather than assumed: a capability write
-   * to an off lamp turns it on through some integrations (measured for `dim` on
-   * Hue, platform §6), and lights coming on by themselves at night is a far
-   * worse failure than a half-second of the wrong white. The runtime disables
-   * this by itself if it ever observes a light coming on from a pre-stage write.
+   * Chosen, and then proven PER LAMP rather than assumed: a capability write to
+   * an off lamp turns it on through some integrations (measured for `dim` on
+   * Hue, platform §6). So `true` alone pre-stages nothing — only the lamps in
+   * `preStageLights` below, which are the ones the review screen's test watched
+   * stay off. See `preStagesLamp()` below.
    */
   preStage: boolean;
+  /**
+   * The lamps a pre-stage test proved safe. Absent or empty with `preStage:
+   * true` is "chosen, not tested yet", and behaves exactly as `false` does.
+   * A lamp the runtime later sees coming on from a pre-stage write is removed
+   * from it, persisted — the others go on being pre-staged.
+   */
+  preStageLights?: string[];
+  /**
+   * Absent = keep the lights up to date all day; `false` = compute and publish
+   * only, and write to no lamp. Stored only when false — see
+   * lib/runtime/writes-lights.ts for why the gate is `!== false`.
+   */
+  writesLights?: false;
+}
+
+/**
+ * Whether this plan pre-stages THIS lamp: "Set lights before they turn on" was
+ * chosen, and the lamp is one the test proved stays off.
+ *
+ * Both halves, always, and that is the whole of the 2026-09-23 change: the
+ * choice used to be device-wide, so one lamp that came on from a colour write
+ * turned pre-staging off for every lamp beside it. A chosen-but-untested device
+ * (no list) pre-stages nothing, which is what the review screen promises —
+ * "until the test has run, the device behaves as option 1".
+ */
+export function preStagesLamp(
+  plan: { preStage: boolean; preStageLights?: readonly string[] },
+  deviceId: string,
+): boolean {
+  return plan.preStage && (plan.preStageLights ?? []).includes(deviceId);
 }
 
 /**

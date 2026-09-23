@@ -1,5 +1,6 @@
 import { test, describe } from 'node:test';
 import { ownsNothing, zoneLights } from '../support/fake-catalog';
+import { FakeTimers } from '../support/fake-timers';
 import assert from 'node:assert/strict';
 
 import { CircadianRuntime } from '../../lib/circadian/circadian-runtime';
@@ -24,6 +25,8 @@ interface FakeDevice {
   id: string;
   name: string;
   zoneName: string;
+  /** 'light', or a zone target skips it — the real `lightsInZone` rule. */
+  class: string;
   capabilities: string[];
   capabilitiesObj: Record<string, any>;
   available: boolean;
@@ -55,7 +58,7 @@ function light(
   if (capabilities.includes('light_saturation')) {
     capabilitiesObj.light_saturation = { min: 0, max: 1, value: values.light_saturation ?? 0.5 };
   }
-  return { id, name: id, zoneName: 'Kitchen', capabilities, capabilitiesObj, available: true };
+  return { id, name: id, zoneName: 'Kitchen', class: 'light', capabilities, capabilitiesObj, available: true };
 }
 
 /** A lamp that can do both axes, so it can be driven into the wrong mode. */
@@ -86,6 +89,11 @@ function harness(options: {
   };
   /** A stand-in evaluator, for the points that follow the daylight. */
   daylight?: { evaluate: () => { brightness: number; source: string } };
+  /**
+   * Lamps whose integration switches them ON when sent a colour while off —
+   * the outcome pre-staging exists to rule out (platform §6).
+   */
+  turnsOnWhenSet?: string[];
 } = {}) {
   const devices = options.devices ?? [light('l1'), light('l2')];
   /** Lamps refusing every write, settable after start. See setCapabilityValue. */
@@ -98,8 +106,15 @@ function harness(options: {
   const logs: string[] = [];
   /** deviceId:capability -> the listener Homey would call. */
   const listeners = new Map<string, (value: unknown) => void>();
-  const timers: Array<{ fn: () => void; ms: number }> = [];
-  let now = options.now ?? EVENING;
+  /**
+   * The shared clock. The wall clock is moved by `advance`/`at` WITHOUT firing
+   * anything — every test here decides when the post-write checks run, with
+   * `runTimers()` — so it is `setNow`, and the checks are `runPending()`.
+   *
+   * This used to be a bare list whose `clearTimeout` did nothing, so a check
+   * the runtime had cancelled (a teardown, a superseding write) still ran.
+   */
+  const timers = new FakeTimers(options.now ?? EVENING);
 
   const deviceHandle = (id: string) => {
     const device = devices.find(d => d.id === id)!;
@@ -122,6 +137,11 @@ function harness(options: {
         // The Homey reports back what it was told, which is what makes the echo
         // dedupe and the override tolerance worth testing at all.
         if (device.capabilitiesObj[capabilityId]) device.capabilitiesObj[capabilityId].value = value;
+        if (options.turnsOnWhenSet?.includes(id)
+          && (capabilityId === 'light_temperature' || capabilityId === 'light_hue')
+          && device.capabilitiesObj.onoff?.value === false) {
+          device.capabilitiesObj.onoff.value = true;
+        }
       },
       makeCapabilityInstance(capability: string, listener: (value: unknown) => void) {
         listeners.set(`${id}:${capability}`, listener);
@@ -156,14 +176,11 @@ function harness(options: {
     catalog,
     timezone: () => 'Europe/Copenhagen',
     displayName: () => 'Kitchen circadian',
-    now: () => now,
-    // Collected rather than run: the pre-stage check must be assertable without
+    now: timers.now,
+    // Held rather than run: the pre-stage check must be assertable without
     // costing the suite a real 1.5 seconds.
-    setTimeout: (fn: () => void, ms: number) => {
-      timers.push({ fn, ms });
-      return timers.length - 1;
-    },
-    clearTimeout: () => { /* nothing to cancel in a list */ },
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
     log: (...args: unknown[]) => logs.push(args.join(' ')),
     onStateChange: (state, detail) => states.push({ state, detail }),
     // Absent unless a test asks, which is the shape a curve with no daylight
@@ -195,13 +212,12 @@ function harness(options: {
     },
     /** Run every pending post-write check. */
     runTimers() {
-      const pending = timers.splice(0, timers.length);
-      for (const timer of pending) timer.fn();
+      timers.runPending();
     },
-    advance(ms: number) { now += ms; },
+    advance(ms: number) { timers.setNow(timers.now() + ms); },
     refuseWrites(id: string) { refusing.add(id); },
     acceptWrites(id: string) { refusing.delete(id); },
-    at(ms: number) { now = ms; },
+    at(ms: number) { timers.setNow(ms); },
     /**
      * Writes now go out behind the scheduler's completion promise (Phase 2),
      * so bookkeeping and the pre-stage probe land a few microtasks after
@@ -217,8 +233,15 @@ function harness(options: {
   };
 }
 
+/**
+ * `preStage: true` here means "chosen, AND the test passed every target" unless
+ * a test says otherwise: that is the device every pre-staging test below was
+ * written against, and since the review screen's per-lamp test the choice alone
+ * pre-stages nothing (`preStagesLamp()`). A test about the untested case, or
+ * about one lamp passing and one not, passes `preStageLights` itself.
+ */
 function plan(over: Partial<CircadianPlan> = {}): CircadianPlan {
-  return {
+  const built: CircadianPlan = {
     schemaVersion: 1,
     enabled: true,
     target: { kind: 'devices', deviceIds: ['l1', 'l2'] },
@@ -231,6 +254,10 @@ function plan(over: Partial<CircadianPlan> = {}): CircadianPlan {
     preStage: false,
     ...over,
   };
+  if (built.preStage && over.preStageLights === undefined && built.target.kind === 'devices') {
+    built.preStageLights = [...built.target.deviceIds];
+  }
+  return built;
 }
 
 /**
@@ -524,8 +551,52 @@ describe('somebody changing a light by hand', () => {
   });
 });
 
+describe('a colour reported by a lamp that is OFF', () => {
+  /**
+   * Found on hardware, 23 September 2026: a house-wide "Test my lights" sent a
+   * colour to three OFF Studio spots, and the household's own Studio curve —
+   * which drives them — filed all three as a person, at `light_hue` 0.1, within
+   * 200 ms. The same test from Repair does it to the device being repaired, and
+   * two devices pre-staging lamps they share do it to each other. An override on
+   * an off lamp protects nothing (the switch-on clears it) and costs the lamp its
+   * pre-staging, so no report on an off lamp is an override, on any axis.
+   */
+  test('a colour or a warmth sent to an off lamp by someone else is not a person', async () => {
+    const h = harness({
+      now: MORNING,
+      devices: [light('l1', ['onoff', 'dim', 'light_temperature', 'light_hue', 'light_saturation'], { onoff: false }), light('l2')],
+    });
+    await h.runtime.start();
+    await settle();
+
+    h.advance(10_000);
+    h.report('l1', 'light_hue', 0.1);
+    h.report('l1', 'light_temperature', 0.95);
+
+    const target = h.runtime.diagnostics().targets.find((t: any) => t.id === 'l1');
+    assert.equal(target?.overridden, false, 'an off lamp was stood down for a report');
+    const reasons = h.runtime.diagnostics().recentControlEvents
+      .filter((event: any) => event.type === 'report_ignored' && event.deviceId === 'l1')
+      .map((event: any) => event.reason);
+    assert.ok(reasons.includes('lamp_off'), 'and it is recorded as set aside, not swallowed');
+  });
+
+  test('the same report on a lamp that is ON is still a person', async () => {
+    // The rule is about the lamp being off, and must not grow into a blind spot.
+    const h = harness({ now: MORNING });
+    await h.runtime.start();
+    await settle();
+
+    h.advance(10_000);
+    h.report('l1', 'light_temperature', 0.05);
+
+    const target = h.runtime.diagnostics().targets.find((t: any) => t.id === 'l1');
+    assert.equal(target?.overridden, true);
+  });
+});
+
 describe('pre-staging that turns out to be unsafe', () => {
-  test('disables itself, persists that, and does not switch the light back off', async () => {
+  test('strikes that one lamp off, persists that, and does not switch it back off', async () => {
     const h = harness({
       plan: plan({ preStage: true }),
       devices: [light('l1', undefined, { onoff: false }), light('l2')],
@@ -538,13 +609,120 @@ describe('pre-staging that turns out to be unsafe', () => {
     await settle();
     h.runTimers();
 
-    assert.equal(h.runtime.currentPlan.preStage, false, 'pre-staging must turn itself off');
-    assert.equal(h.plans.at(-1)?.preStage, false, 'and the verdict must be persisted');
+    // One lamp's verdict, not the device's: l2 passed its own test, and one
+    // integration switching a lamp on is no evidence about another.
+    assert.deepEqual(h.runtime.currentPlan.preStageLights, ['l2'], 'only l1 loses its pass');
+    assert.equal(h.runtime.currentPlan.preStage, true, 'the household\'s choice stays');
+    assert.deepEqual(h.plans.at(-1)?.preStageLights, ['l2'], 'and the verdict must be persisted');
     assert.equal(
       h.writes.filter(w => w.capability === 'onoff').length, 0,
       'switching off a room somebody may have just lit is the worse failure',
     );
     assert.ok(h.runtime.diagnostics().preStageDisabled, 'and it is reported, not hidden');
+  });
+
+  /**
+   * "Test my {n} lights": every lamp, in parallel, each put back.
+   *
+   * The probe waits twice per lamp (settle off, then the check), and each wait
+   * is an injected timer — so this drives timers until it answers.
+   */
+  async function finish<T>(h: ReturnType<typeof harness>, pending: Promise<T>): Promise<T> {
+    let done = false;
+    pending.then(() => { done = true; }, () => { done = true; });
+    for (let i = 0; i < 30 && !done; i += 1) {
+      await h.settle();
+      h.runTimers();
+    }
+    return pending;
+  }
+
+  test('the per-lamp test passes a lamp that stays off and fails one that comes on', async () => {
+    const h = harness({
+      plan: plan({ preStage: true, preStageLights: [] }),
+      devices: [light('l1', undefined, { onoff: false }), light('l2', undefined, { onoff: false })],
+      turnsOnWhenSet: ['l2'],
+    });
+    await h.runtime.startIdle();
+
+    const outcome = await finish(h, h.runtime.probePreStageAll(0));
+
+    assert.deepEqual(outcome.lights.map(lamp => [lamp.deviceId, lamp.ok]), [['l1', true], ['l2', false]]);
+    assert.match(String(outcome.lights[1]!.reason), /came on/);
+    // Both put back: l2 came on by itself and is switched off again, because
+    // here the user asked for the test and is standing in front of it.
+    assert.equal(outcome.lights.every(lamp => lamp.restored), true);
+    assert.deepEqual(
+      h.writes.filter(w => w.capability === 'onoff'),
+      [{ deviceId: 'l2', capability: 'onoff', value: false }],
+    );
+  });
+
+  test('a lamp that is ON is switched off to be tested, then put back as it was', async () => {
+    // The evening case: every light in the room is on. Testing only the ones
+    // that happened to be off would leave nothing to pre-stage at all.
+    const h = harness({
+      plan: plan({ preStage: true, preStageLights: [], target: { kind: 'devices', deviceIds: ['l1'] } }),
+      devices: [light('l1', undefined, { onoff: true, dim: 0.7, light_temperature: 0.3 })],
+    });
+    await h.runtime.startIdle();
+
+    const outcome = await finish(h, h.runtime.probePreStageAll(0));
+
+    assert.equal(outcome.lights[0]!.ok, true);
+    assert.equal(outcome.lights[0]!.restored, true);
+    const onoff = h.writes.filter(w => w.capability === 'onoff').map(w => w.value);
+    assert.deepEqual(onoff, [false, true], 'off to test, on again afterwards');
+    // Back to its own brightness and warmth, sent once it is on again.
+    const last = (capability: string) => h.writes.filter(w => w.capability === capability).at(-1)?.value;
+    assert.equal(last('dim'), 0.7);
+    assert.equal(last('light_temperature'), 0.3);
+  });
+
+  test('a lamp that refuses a colour while off is a fallback, not an error', async () => {
+    const h = harness({
+      plan: plan({ preStage: true, preStageLights: [], target: { kind: 'devices', deviceIds: ['l1'] } }),
+      devices: [light('l1', undefined, { onoff: false })],
+      refuseWrite: {
+        capability: 'light_temperature',
+        message: 'device (light) l1 is "soft off", command may not have effect',
+        when: device => device.capabilitiesObj.onoff.value === false,
+      },
+    });
+    await h.runtime.startIdle();
+
+    const outcome = await finish(h, h.runtime.probePreStageAll(0));
+
+    assert.equal(outcome.lights[0]!.ok, false);
+    assert.match(String(outcome.lights[0]!.reason), /soft off/, 'the integration\'s own words');
+  });
+
+  test('a brightness-only lamp is a fallback without being written to', async () => {
+    // Nothing to set in advance: a `dim` write is what switches a lamp on.
+    const h = harness({
+      plan: plan({ preStage: true, preStageLights: [], target: { kind: 'devices', deviceIds: ['l1'] } }),
+      devices: [light('l1', ['onoff', 'dim'], { onoff: false })],
+    });
+    await h.runtime.startIdle();
+
+    const outcome = await finish(h, h.runtime.probePreStageAll(0));
+
+    assert.equal(outcome.lights[0]!.ok, false);
+    assert.equal(h.writes.length, 0);
+  });
+
+  test('a device that was chosen but never tested pre-stages nothing', async () => {
+    // Every device paired before the per-lamp test existed, with `preStage:
+    // true` stored, reads this way: option 2, untested, behaving as option 1.
+    const h = harness({
+      plan: plan({ preStage: true, preStageLights: [] }),
+      devices: [light('l1', undefined, { onoff: false }), light('l2')],
+    });
+    await h.runtime.start();
+    await settle();
+
+    assert.equal(h.writes.some(w => w.deviceId === 'l1'), false, 'an off lamp was written to');
+    assert.ok(h.writes.some(w => w.deviceId === 'l2'), 'the lamp that is on is still driven');
   });
 
   test('the pairing screen probe reports a lamp that stayed off', async () => {
@@ -1856,5 +2034,102 @@ describe('what the slow-fade capture found', () => {
 
     assert.equal(h.runtime.diagnostics().targets[0].overridden, true, 'an overshoot is not our write');
     await h.runtime.stop();
+  });
+});
+
+/**
+ * `writesLights: false` — the device that only PUBLISHES (lib/runtime/writes-lights.ts).
+ *
+ * Found on the reference Homey: a remote's "On – with Lightkeeper" button pointed
+ * at a Colour Curve Light and a Room-sensing Light that ALSO drove the same five
+ * bulbs, so every switch-on was three devices writing to one lamp. The flag is
+ * what lets a curve be a source without being a writer.
+ */
+describe('a device that only publishes', () => {
+  const publishOnly = () => plan({ writesLights: false });
+
+  test('writes nothing at start, on a tick, or when a light comes on', async () => {
+    const h = harness({
+      plan: publishOnly(),
+      devices: [light('l1', undefined, { onoff: false }), light('l2')],
+    });
+    await h.runtime.start();
+    await applied(h);
+    h.advance(3 * 60 * 60_000);
+    await h.runtime.tick();
+    await applied(h);
+    h.report('l1', 'onoff', true);
+    await applied(h);
+
+    assert.deepEqual(h.writes, []);
+    assert.equal(h.runtime.diagnostics().lastAction?.detail, 'this device only publishes its values');
+  });
+
+  test('still publishes what it wants the lights to be', async () => {
+    const h = harness({ plan: publishOnly() });
+    await h.runtime.start();
+
+    const warmth = h.runtime.publishedValues()['lightkeeper_temperature'];
+    assert.equal(typeof warmth, 'number', 'the remote reads this, so it must be there');
+  });
+
+  test('watches no lamp, so a hand on one is never filed as an override', async () => {
+    const h = harness({ plan: publishOnly() });
+    await h.runtime.start();
+
+    assert.equal(h.isSubscribed('l1', 'onoff'), false);
+    assert.equal(h.isSubscribed('l1', 'light_temperature'), false);
+    h.report('l1', 'light_temperature', 0.05);
+    assert.equal(h.runtime.diagnostics().targets.some(t => t.overridden), false);
+  });
+
+  test('is ready even when none of its lights can change colour', async () => {
+    // The same lamps are needs_repair for a device that drives them; one that
+    // never writes to them has nothing to fail at.
+    const h = harness({ plan: publishOnly(), devices: [light('l1', ['onoff']), light('l2', ['onoff'])] });
+    await h.runtime.start();
+
+    assert.equal(h.runtime.currentState, 'ready');
+  });
+
+  test('"Try it" still writes, because a person asked to see it on the lamps', async () => {
+    const h = harness({ plan: publishOnly() });
+    await h.runtime.start();
+    await h.runtime.applyNow('preview', { force: true, waitForResults: true, preview: true });
+    await applied(h);
+
+    assert.equal(temperatures(h.writes).length, 2);
+  });
+
+  test('refuses the pre-stage probe instead of writing to an off lamp', async () => {
+    const h = harness({
+      plan: plan({ writesLights: false, preStage: true }),
+      devices: [light('l1', undefined, { onoff: false })],
+    });
+    await h.runtime.start();
+    const outcome = await h.runtime.probePreStage(0);
+
+    assert.equal(outcome.deviceId, null);
+    assert.deepEqual(h.writes, []);
+  });
+
+  test('says so in diagnostics, and an absent key still means it writes', async () => {
+    const off = harness({ plan: publishOnly() });
+    const on = harness();
+    await off.runtime.start();
+    await on.runtime.start();
+
+    assert.equal(off.runtime.diagnostics().writesLights, false);
+    assert.equal(on.runtime.diagnostics().writesLights, true);
+  });
+
+  test('switched back on, it subscribes and corrects the room at once', async () => {
+    const h = harness({ plan: publishOnly() });
+    await h.runtime.start();
+    await h.runtime.updatePlan(plan());
+    await applied(h);
+
+    assert.equal(h.isSubscribed('l1', 'onoff'), true);
+    assert.equal(temperatures(h.writes).length, 2);
   });
 });

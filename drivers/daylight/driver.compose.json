@@ -59,12 +59,6 @@
       "navigation": {
         "prev": "response"
       }
-    },
-    {
-      "id": "sensordetail",
-      "navigation": {
-        "prev": "sensor"
-      }
     }
   ],
   "repair": [
@@ -99,12 +93,6 @@
       "id": "review",
       "navigation": {
         "prev": "response"
-      }
-    },
-    {
-      "id": "sensordetail",
-      "navigation": {
-        "prev": "sensor"
       }
     }
   ]

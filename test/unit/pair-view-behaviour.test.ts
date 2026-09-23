@@ -157,33 +157,35 @@ describe('the light picker', () => {
     },
   });
 
-  test('ONE room is open, and the rest are one line each', async () => {
+  test('every room starts folded, as one line each', async () => {
     /**
-     * One at a time, and the first by default.
+     * Nothing open until somebody taps a room.
      *
-     * It used to be a per-room map with nothing open until something was
-     * ticked, which meant two things that both read as broken on a real Homey:
-     * the picker opened as a list of room names with no lights in it, and
-     * opening a second room left the first one open — so a house of eleven
-     * rooms could be unfolded into eleven bordered cards, each claiming to be
-     * the one being worked in.
+     * It used to open the room something was ticked in, else the first room,
+     * which put one room's lights in front of a household that had not said
+     * which room it wanted. Folded, each line already says "n of m", which is
+     * what this step asks first.
      */
     const view = run();
     await view.settle();
 
-    assert.equal(view.byId('lt-open')?.children.length, 1, 'exactly one room is open');
-    assert.equal(view.byId('lt-folded')?.children.length, 1, 'and the other is one line');
+    assert.equal(view.byId('lt-open')?.children.length, 0, 'no room is open');
+    assert.equal(view.byId('lt-folded')?.children.length, 2, 'every room is one line');
+  });
+
+  test('ONE room is open at a time, and opening a second closes the first', async () => {
+    const view = run();
+    await view.settle();
+
+    view.fire(view.byId('lt-folded')!.children[0]!, 'click');
+    await view.settle();
+    assert.equal(view.byId('lt-open')?.children.length, 1, 'the tapped room opened');
     assert.ok(
       view.byId('lt-open')!.children[0]!.className.includes('solo'),
       'the open one wears the accent border, because it is the only one',
     );
-  });
 
-  test('opening a second room closes the first', async () => {
-    const view = run();
-    await view.settle();
-
-    // Kitchen is the folded one; opening it must not leave Living room open.
+    // Kitchen is now the only folded line; opening it must close Living room.
     view.fire(view.byId('lt-folded')!.children[0]!, 'click');
     await view.settle();
 
@@ -238,6 +240,8 @@ describe('the light picker', () => {
     // to the top would move the thing somebody was looking at.
     const view = run();
     await view.settle();
+    view.fire(view.byId('lt-folded')!.children[0]!, 'click');
+    await view.settle();
 
     view.scroller.scrollTop = 900;
     const header = view.byId('lt-open')!.children[0]!
@@ -260,7 +264,7 @@ describe('the light picker', () => {
     const view = run();
     await view.settle();
 
-    view.fire(view.byId('lt-folded')!.children[0]!, 'click');
+    view.fire(view.byId('lt-folded')!.children[1]!, 'click');
     const kitchen = view.byId('lt-open')!.children[0]!;
     view.fire(kitchen.descendants().find(node => node.className === 'light')!, 'click');
     await view.settle();
@@ -273,7 +277,7 @@ describe('the light picker', () => {
     const view = run();
     await view.settle();
 
-    // Living room is the one that opens by default, so there is nothing to tap.
+    view.fire(view.byId('lt-folded')!.children[0]!, 'click');
     const living = view.byId('lt-open')!.children[0]!;
     view.fire(living.descendants().filter(node => node.className === 'light')[0]!, 'click');
     await view.settle();
@@ -289,7 +293,8 @@ describe('the light picker', () => {
     });
     await view.settle();
 
-    assert.equal(view.byId('lt-open')?.children.length, 1, 'a room with picks is open');
+    // Folded like any other, and its line is where the picks show: "2 of 2".
+    assert.equal(view.byId('lt-open')?.children.length, 0, 'no room opens itself');
     assert.equal(view.byId('lt-count')?.textContent, 'lights.chosen');
   });
 
@@ -315,10 +320,9 @@ describe('the light picker', () => {
 
   test('a room with a light ticked in it still collapses', async () => {
     /**
-     * A room opens ITSELF when something in it is chosen, which is what a repair
-     * session wants — but that cannot be the whole rule, or a room you had
-     * picked from would spring straight back open and the header would look
-     * broken. What the user said outranks the ticks.
+     * A pick inside a room must not hold it open, or a room you had picked
+     * from would spring straight back open and the header would look broken.
+     * What the user said outranks the ticks.
      */
     const view = run();
     await view.settle();
@@ -491,6 +495,15 @@ describe('the curve screen', () => {
   const PALETTE = Array.from({ length: 24 }, (_, i) => ({
     id: `c${i}`, label: `Colour ${i}`, hue: i / 24, saturation: 0.6,
   }));
+  /**
+   * Ten, then the rest — with `c5` drawn a second time and an id the palette
+   * does not have, because the real layout draws one colour twice and a
+   * screen must survive a layout ahead of its palette.
+   */
+  const LAYOUT = {
+    featured: PALETTE.slice(0, 10).map(colour => colour.id),
+    more: [...PALETTE.slice(10).map(colour => colour.id), 'c5', 'nope'],
+  };
 
   const run = (over: Record<string, unknown> = {}) => runPairView(read('curve/curve.html'), {
     respond: {
@@ -500,9 +513,8 @@ describe('the curve screen', () => {
           { id: 'p2', anchor: { kind: 'clock', at: 840 }, warmth: 0.2, color: 'c5' },
         ],
         palette: PALETTE,
-        featuredColors: 8,
+        layout: LAYOUT,
         adjustBrightness: false,
-        preStage: false,
         minPoints: 2,
         maxPoints: 8,
         ...over,
@@ -511,17 +523,34 @@ describe('the curve screen', () => {
     },
   });
 
-  test('eight colours are shown and the rest fold out in place', async () => {
-    // A set is a decision; twenty-four shown at once is a tuning session.
+  test('ten colours are shown and the rest fold out in place, as the layout says', async () => {
+    // A set is a decision; everything shown at once is a tuning session.
     const view = run();
     await view.settle();
 
-    assert.equal(view.byId('cv-featured')?.children.length, 8);
+    assert.equal(view.byId('cv-featured')?.children.length, 10);
     assert.equal(view.byId('cv-rest')?.style.display, 'none');
 
     view.fire(view.byId('cv-more')!, 'click');
     assert.notEqual(view.byId('cv-rest')?.style.display, 'none');
-    assert.equal(view.byId('cv-rest')?.children.length, 16);
+    // Fourteen, plus `c5` again; the unknown id is skipped rather than drawn blank.
+    assert.equal(view.byId('cv-rest')?.children.length, 15);
+  });
+
+  test('a colour drawn twice is selected in both places', async () => {
+    const view = run();
+    await view.settle();
+    view.fire(view.byId('cv-more')!, 'click');
+
+    const pressed = [...view.byId('cv-featured')!.children, ...view.byId('cv-rest')!.children]
+      .filter(swatch => swatch.getAttribute('aria-pressed') === 'true');
+    // The first point is c0; select the second, which is c5.
+    assert.equal(pressed.length, 1);
+    view.fire(view.byId('cv-featured')!.children[5]!, 'click');
+    await view.settle();
+    const nowPressed = [...view.byId('cv-featured')!.children, ...view.byId('cv-rest')!.children]
+      .filter(swatch => swatch.getAttribute('aria-pressed') === 'true');
+    assert.equal(nowPressed.length, 2, 'c5 in the default rows and again in the fold-out');
   });
 
   test('a point cannot be stepped onto another point minute', async () => {
@@ -840,23 +869,31 @@ describe('the daylight sensor screen', () => {
     assert.equal(view.scroller.scrollTop, 0);
     assert.equal(
       view.byId('sn-list')!.children[0]!.descendants()
-        .find(node => node.className === 'room-title')?.textContent,
+        // The title's own text node: the element's whole textContent also
+        // carries the close button's chevron, which the harness now reads
+        // back as a browser would.
+        .find(node => node.className === 'room-title')?.firstChild?.textContent,
       'Hall',
       'and the room that opened is the one that was tapped',
     );
   });
 
-  test('tapping a sensor opens its week rather than choosing it', async () => {
-    // The whole argument for the choice is what that sensor has been reading,
-    // and a lux number on one line cannot carry it.
+  test('tapping a sensor chooses it and goes straight on to its week', async () => {
+    // The detail screen that used to sit in between is gone: the response
+    // step draws the same week, and says there what is wrong with a flat or a
+    // stopped sensor, so one tap is one decision.
     const view = run();
     await view.settle();
 
-    view.fire(view.byId('sn-list')!.querySelectorAll('.sensor')[0]!, 'click');
+    const row = view.byId('sn-list')!.querySelectorAll('.sensor')[0]!;
+    view.fire(row, 'click');
     await view.settle();
 
-    assert.ok(view.emitted.some(call => call.event === 'inspectSensor'));
-    assert.deepEqual(view.shown, ['sensordetail']);
+    const chose = view.emitted.find(call => call.event === 'setSensor');
+    assert.ok(chose, 'the tap chose the sensor');
+    assert.equal(typeof (chose!.data as { sensor?: unknown }).sensor, 'string');
+    assert.equal(view.emitted.some(call => call.event === 'inspectSensor'), false);
+    assert.deepEqual(view.shown, ['response']);
   });
 });
 
@@ -908,13 +945,57 @@ describe('the daylight response screen', () => {
     assert.match(String(view.byId('rs-thresholdVal')?.textContent), /response\.degreesAt/);
   });
 
-  test('a sensor that has gone quiet is the one warning kept inside pairing', async () => {
+  /** A week of the given verdict: seven rows of twelve cells, the last few empty. */
+  const weekOf = (verdict: Record<string, unknown>, gapFrom = 12) => ({
+    cells: Array.from({ length: 7 }, (_, row) => Array.from({ length: 12 }, (_, column) =>
+      (row === 6 && column >= gapFrom ? null : 2 + column))),
+    days: [1, 2, 3, 4, 5, 6, 7],
+    covered: 80,
+    low: 1,
+    high: 400,
+    lastAt: Date.now() - 9 * 3_600_000,
+    verdict,
+    suggestion: { darkLux: 2, brightLux: 5 },
+  });
+  const finding = (view: ReturnType<typeof run>) => view.byId('rs-week')!.querySelector('.week-finding');
+
+  test('a sensor that has gone quiet is said inside its week, as an error', async () => {
     // Half a day of silence, not an hour: a still room legitimately goes quiet
-    // for hours, but a stopped sensor makes the whole device a no-op.
-    const view = run({ staleFor: 14 });
+    // for hours, but a stopped sensor holds the lights at one brightness. It
+    // used to be a screen of its own; now it is the week card's own block.
+    const view = run({
+      staleFor: 9, lastReport: 'Sat 12:40',
+      week: weekOf({ kind: 'stopped', lastAt: Date.now() - 9 * 3_600_000 }, 6),
+    });
     await view.settle();
 
-    assert.notEqual(view.byId('rs-stale')?.style.display, 'none');
+    const block = finding(view);
+    assert.ok(block, 'the quiet sensor is named in its own week');
+    assert.ok(block!.className.split(' ').includes('bad'), 'on the error ground');
+    assert.equal(block!.children[0]!.textContent, 'week.quiet');
+    assert.equal(view.byId('rs-week')!.querySelector('.tick'), null, 'no "now" on a sensor with no now');
+    assert.ok(view.byId('rs-week')!.querySelector('.week-legend'), 'and the hatched hours are explained');
+  });
+
+  test('a flat sensor is said inside its week, as a warning, with the cards as normal', async () => {
+    const view = run({ week: weekOf({ kind: 'flat', low: 1, high: 4 }) });
+    await view.settle();
+
+    const block = finding(view);
+    assert.ok(block, 'the flat week is named');
+    assert.ok(block!.className.split(' ').includes('warn'), 'on the warning ground, not the error one');
+    assert.equal(block!.children[0]!.textContent, 'week.flat');
+    // No ways out drawn in the card: Previous and Next are the ways out.
+    assert.equal(view.byId('rs-week')!.querySelectorAll('button').length, 0);
+    assert.match(String(view.byId('rs-thresholdVal')?.textContent), /response\.underLux/);
+  });
+
+  test('a usable week keeps its one-line verdict, and draws no block', async () => {
+    const view = run({ week: weekOf({ kind: 'usable', nightLux: 2, noonLux: 300 }) });
+    await view.settle();
+
+    assert.equal(finding(view), null);
+    assert.ok(view.byId('rs-week')!.querySelector('.week-verdict'));
   });
 
   test('the two ends are one card and one row, and tapping swaps them', async () => {
@@ -939,12 +1020,92 @@ describe('the review screen', () => {
           { label: 'Lights', value: '2 picked', view: 'lights' },
           { label: 'Right now', value: '77%' },
         ],
-        promise: 'It starts now.',
         ...over,
       },
       save: { created: true, device: { name: 'Kitchen daylight', data: { id: 'x' } } },
       add_device: true,
+      setControl: { mode: 'before' },
+      testPreStage: {
+        lights: [{ name: 'Floor lamp', ok: true }, { name: 'Shelf strip', ok: false }],
+        restored: 2,
+      },
     },
+  });
+
+  const THREE = { modes: ['after', 'before', 'none'], selected: 'after', lightCount: 2 };
+  const picks = (view: ReturnType<typeof run>) => view.byId('rv-control')!.querySelectorAll('.pick');
+
+  test('a schedule or a remote has no control choice, and no closing sentence either', async () => {
+    const view = run();
+    await view.settle();
+
+    assert.equal(view.byId('rv-controlBlock')!.style.display, 'none');
+    assert.equal(view.byId('rv-promise'), null, 'the sentence is gone on all five');
+  });
+
+  test('the three ways to control the lights, with the default chosen', async () => {
+    const view = run({ control: THREE });
+    await view.settle();
+
+    assert.notEqual(view.byId('rv-controlBlock')!.style.display, 'none');
+    assert.deepEqual(picks(view).map(pick => pick.getAttribute('aria-checked')), ['true', 'false', 'false']);
+    // Nothing unfolds under the default.
+    assert.equal(view.byId('rv-control')!.querySelector('.more'), null);
+  });
+
+  test('choosing "before" tells the driver, and offers the test until it has run', async () => {
+    const view = run({ control: THREE });
+    await view.settle();
+
+    view.fire(picks(view)[1]!, 'click');
+    await view.settle();
+
+    const told = view.emitted.find(call => call.event === 'setControl');
+    assert.deepEqual(told?.data, { mode: 'before' });
+    const more = view.byId('rv-control')!.querySelector('.more');
+    assert.ok(more, 'the option unfolds');
+    assert.equal(more!.querySelector('.btn')!.textContent, 'review.control.test');
+    assert.equal(more!.querySelector('.tested'), null, 'no result before a test');
+  });
+
+  test('the test answers per lamp, and the button gives way to the answer', async () => {
+    const view = run({ control: { ...THREE, selected: 'before' } });
+    await view.settle();
+
+    view.fire(view.byId('rv-control')!.querySelector('.btn')!, 'click');
+    await view.settle();
+
+    assert.ok(view.emitted.some(call => call.event === 'testPreStage'));
+    const lamps = view.byId('rv-control')!.querySelectorAll('.lamp');
+    assert.equal(lamps.length, 2);
+    assert.ok(lamps[0]!.className.split(' ').includes('pass'), 'the lamp that stayed off');
+    assert.ok(!lamps[1]!.className.split(' ').includes('pass'), 'and the one that is changed after');
+    assert.equal(view.byId('rv-control')!.querySelector('.btn'), null, 'the button is replaced');
+    assert.match(String(view.byId('rv-control')!.querySelector('.note')!.textContent), /testedNow/);
+  });
+
+  test('a repair reads back the last test and offers to run it again', async () => {
+    const view = run({
+      control: {
+        ...THREE, selected: 'before',
+        tested: { fresh: false, lights: [{ name: 'Floor lamp', ok: true }] },
+      },
+    });
+    await view.settle();
+
+    assert.match(String(view.byId('rv-control')!.querySelector('.note')!.textContent), /testedBefore/);
+    assert.equal(view.byId('rv-control')!.querySelector('.morelink')!.textContent, 'review.control.testAgain');
+  });
+
+  test('a Room-sensing Light is offered two, worded for brightness', async () => {
+    const view = run({ control: { modes: ['after', 'none'], selected: 'after', lightCount: 2 } });
+    await view.settle();
+
+    assert.equal(picks(view).length, 2);
+    assert.equal(
+      view.byId('rv-control')!.querySelector('.why')!.textContent,
+      'review.control.afterBrightnessWhy',
+    );
   });
 
   test('a row that owns a step is a button back to it; one that only reports is not', async () => {
@@ -1361,7 +1522,7 @@ describe('the job editor, pushed from one gesture', () => {
           { id: 'ocean', label: 'Ocean', swatch: 'hsl(198,64%,61%)' },
           { id: 'forest', label: 'Forest', swatch: 'hsl(126,55%,66%)' },
         ],
-        featuredColors: 2,
+        layout: { featured: ['amber', 'candle'], more: ['ocean', 'forest'] },
         lights: LIGHTS,
         allLabel: 'All three lights',
         chosenLights: null,
@@ -1514,5 +1675,47 @@ describe('the job editor, pushed from one gesture', () => {
       view.emitted.find(call => call.event === 'test')?.data,
       { func: 'toggle', deviceIds: ['l2'] },
     );
+  });
+});
+
+/**
+ * The harness's `textContent`, held to the DOM's rules.
+ *
+ * It was a plain field: a label built from `createTextNode` read back as empty
+ * from its parent, and assigning it to an element left that element's children
+ * in place. Two tests here had been asserting against that — one read a room
+ * title as 'Hall' when a browser reads 'Hall›', the other counted every string
+ * once per ancestor — so the rules are pinned where the next change to the
+ * harness will meet them.
+ */
+describe('the pair-view harness DOM', () => {
+  const html = `<div class="wrap" id="t-root"><p id="t-p">Static<b id="t-b">bold</b>text</p>`
+    + `<div id="t-host"></div><script>
+      var host = document.getElementById('t-host');
+      var label = document.createElement('span');
+      label.appendChild(document.createTextNode('made '));
+      label.appendChild(document.createTextNode('of nodes'));
+      host.appendChild(label);
+    </script></div>`;
+
+  test('reading textContent concatenates every descendant, text nodes included', () => {
+    const view = runPairView(html);
+    assert.equal(view.error, null);
+    // No spaces at the tag boundaries on purpose: the parser trims the text
+    // between two tags, because in these files it is almost always markup
+    // indentation — a known departure from a browser, which would keep them.
+    assert.equal(view.byId('t-p')!.textContent, 'Staticboldtext',
+      'markup text and child elements, in document order');
+    assert.equal(view.byId('t-host')!.textContent, 'made of nodes');
+  });
+
+  test('writing textContent replaces every child, elements too', () => {
+    const view = runPairView(html);
+    const p = view.byId('t-p')!;
+    p.textContent = 'replaced';
+    assert.equal(p.textContent, 'replaced');
+    assert.equal(p.children.length, 0, 'the <b> is gone, as in a browser');
+    assert.equal(view.byId('t-b'), null);
+    assert.equal(p.childNodes.length, 1);
   });
 });

@@ -1,5 +1,5 @@
 import { localNow } from '../time/local-clock';
-import { LUMINANCE_CAPABILITY, MAX_LUX, MIN_LUX } from './daylight-types';
+import { LUMINANCE_CAPABILITY, MAX_LUX, MIN_LUX, SENSOR_STALE_MS } from './daylight-types';
 import type { IsoWeekday } from '../schedules/schedule-types';
 
 /**
@@ -41,8 +41,13 @@ export const ROWS = 7;
  * else in this app (platform §16). But a sensor that has said nothing for half a
  * day has almost certainly stopped, and a stopped sensor holds the lights at one
  * brightness for ever. That is the one warning worth keeping inside pairing.
+ *
+ * It IS `SENSOR_STALE_MS`, not a second copy of the same twelve hours. The
+ * response screen decides "quiet" from this week's verdict and from the live
+ * reading's age together, and two thresholds would let the grid call a sensor
+ * stopped while the card above it said nothing.
  */
-export const SILENT_MS = 12 * 60 * 60 * 1000;
+export const SILENT_MS = SENSOR_STALE_MS;
 
 /** One reading, as Homey's Insights hands it over. */
 export interface HistorySample {
@@ -87,6 +92,13 @@ export interface SensorWeek {
    * support a recommendation. Always `brightLux > darkLux`: a zero-width span is
    * a division by zero dressed up as a preference, and `sanitiseResponse` throws
    * BOTH values away when it sees one.
+   *
+   * Offered for a FLAT or STOPPED week too, not only a usable one. Picking such
+   * a sensor used to route through a screen of its own ("A sensor not worth
+   * using", "Sensor has gone quiet") with "Use it anyway" as one way out; the
+   * 2026-09-23 design folds both into the response step, where Next IS "use it
+   * anyway" — and a person who does that deserves thresholds from the week they
+   * were just shown, not the defaults from a house that is not theirs.
    */
   suggestion: { darkLux: number; brightLux: number } | null;
 }
@@ -160,7 +172,7 @@ export function bucketWeek(
   const high = sorted.length > 0 ? percentile(sorted, 0.95) : 0;
 
   const verdict = judge(cells, sorted, low, high, lastAt, nowMs);
-  return { cells, days, covered, low, high, lastAt, verdict, suggestion: suggest(verdict) };
+  return { cells, days, covered, low, high, lastAt, verdict, suggestion: suggest(verdict, cells, low, high) };
 }
 
 /**
@@ -273,15 +285,44 @@ function bandValue(
  * "bright" for the whole room. Both are snapped to a round number, because a
  * threshold of 7.43 lx invites a precision the measurement does not have.
  */
-function suggest(verdict: WeekVerdict): { darkLux: number; brightLux: number } | null {
-  if (verdict.kind !== 'usable') return null;
+function suggest(
+  verdict: WeekVerdict,
+  cells: readonly (number | null)[][],
+  low: number,
+  high: number,
+): { darkLux: number; brightLux: number } | null {
+  if (verdict.kind === 'usable') return fromNightAndNoon(verdict.nightLux, verdict.noonLux);
+
+  if (verdict.kind === 'stopped') {
+    // What it reported before it stopped is still a week of this room: if that
+    // much holds a night and a noon, it is the same suggestion a working
+    // sensor would have produced.
+    const nightLux = bandValue(cells, NIGHT_COLUMNS, 0.25);
+    const noonLux = bandValue(cells, NOON_COLUMNS, 0.75);
+    if (nightLux !== null && noonLux !== null && noonLux > nightLux) {
+      return fromNightAndNoon(nightLux, noonLux);
+    }
+  }
+
+  if (verdict.kind === 'nothing') return null;
+
+  // Flat, or stopped without a night and a noon to read: the week's own range,
+  // bottom and top. Nothing to act on, as the screen says — but these are the
+  // numbers this sensor actually reports, which a default is not.
+  const darkLux = ceilNicely(Math.max(MIN_LUX, low * 1.3));
+  let brightLux = roundNicely(Math.max(high, MIN_LUX));
+  if (brightLux <= darkLux) brightLux = roundNicely(darkLux * 4);
+  return { darkLux, brightLux };
+}
+
+function fromNightAndNoon(nightLux: number, noonLux: number): { darkLux: number; brightLux: number } {
   // The dark end rounds UP the ladder, not to the nearest rung. Rounding to the
   // nearest deletes the very margin the 1.3 is there to add: a room whose night
   // reads 5 lx wants 6.5, and the nearest rung is 5 again — which makes the
   // darkest night the only thing that counts as dark, and an ordinary evening
   // no longer qualifies.
-  const darkLux = ceilNicely(Math.max(MIN_LUX, verdict.nightLux * 1.3));
-  let brightLux = roundNicely(verdict.noonLux);
+  const darkLux = ceilNicely(Math.max(MIN_LUX, nightLux * 1.3));
+  let brightLux = roundNicely(noonLux);
   // The sanitiser throws BOTH values away on a zero-width span, so a week whose
   // night and noon round together must not be allowed to produce one.
   if (brightLux <= darkLux) brightLux = roundNicely(darkLux * 4);

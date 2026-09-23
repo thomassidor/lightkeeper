@@ -65,6 +65,8 @@ export abstract class LightkeeperDevice<
   /** Overridden by the two types that own Flows. See DeviceOwner.rawFlowRefs. */
   rawFlowRefs(): unknown { return []; }
   async prepareApply(_previous: TPlan | null, incoming: TPlan): Promise<TPlan> { return incoming; }
+  /** Overridden by the controller only. See DeviceOwner.afterApply. */
+  async afterApply(_previous: TPlan | null, _committed: TPlan): Promise<void> { /* nothing to finish */ }
 
   /** Constructed here rather than in a subclass so every type gets it. */
   protected readonly lifecycle = new DeviceLifecycle<TPlan, TRuntime, TRuntimePlan>(this);
