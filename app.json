@@ -55,6 +55,7 @@
   "bugs": {
     "url": "https://github.com/thomassidor/lightkeeper/issues"
   },
+  "homeyCommunityTopicId": 159938,
   "api": {
     "noteEvidence": {
       "method": "POST",
