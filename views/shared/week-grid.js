@@ -169,7 +169,7 @@ function weekGrid(host, payload) {
 
     if (quiet) {
       host.appendChild(finding('msg bad',
-        lk.t('week.quiet', { name: payload.sensorName || '', hours: payload.staleFor }),
+        lk.t('week.quiet', { name: payload.sensorName || '', count: payload.staleFor }),
         lk.t('week.quietMeans', { when: payload.lastReport || '' })));
       return;
     }

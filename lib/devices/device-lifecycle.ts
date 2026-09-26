@@ -6,6 +6,7 @@ import { messageOf } from '../support/homey-errors';
 import { ALL_VALUE_CAPABILITIES, isTranslatable } from '../runtime/published-values';
 import type { PublishedValue, PublishedValues } from '../runtime/published-values';
 import {
+  ALL_CONTROL_MODES,
   CONTROL_CAPABILITY,
   controlModeOfPlan,
   controlWarningKey,
@@ -133,6 +134,9 @@ export interface DeviceOwner<
   setCapabilityValue(capabilityId: string, value: unknown): Promise<void>;
   hasCapability(capabilityId: string): boolean;
   addCapability(capabilityId: string): Promise<void>;
+  getCapabilityOptions(capabilityId: string): any;
+  /** Expensive, the SDK says — which is why `narrowControlPicker` compares first. */
+  setCapabilityOptions(capabilityId: string, options: object): Promise<void>;
   removeCapability(capabilityId: string): Promise<void>;
   /** The banner on the device's own page. A warning, never an availability. */
   setWarning(message: string | null): Promise<unknown>;
@@ -189,6 +193,11 @@ export interface DeviceOwner<
    * `values` — is what `setControlMode` refuses against.
    */
   readonly controlModes: readonly ControlMode[];
+  /**
+   * The picker's `values`, narrowed to `controlModes` — the capability's own
+   * titles, in every language, for the modes this device type offers.
+   */
+  controlPickerValues(): unknown[];
 
   migrate(raw: unknown): PlanMigration<TPlan>;
   registry(): DeviceRegistry<TPlan, TRuntime>;
@@ -836,6 +845,45 @@ export class DeviceLifecycle<
       } catch (error) {
         this.owner.error(`Could not remove the ${capabilityId} capability:`, messageOf(error));
       }
+    }
+
+    await this.narrowControlPicker();
+  }
+
+  /**
+   * Give the tile's picker only the modes this device type offers.
+   *
+   * A driver's `capabilitiesOptions` is what narrows a Room-sensing Light's
+   * picker to two, and like its `capabilities` array it reaches only devices the
+   * driver pairs (platform §18). A row `addCapability` added carries the
+   * capability's own three values, so a Room-sensing Light paired before 0.6.6
+   * offered "Set lights before they turn on" — which `setControlMode` refuses,
+   * every time, snapping the picker back.
+   *
+   * Compared before it is set, because the SDK calls `setCapabilityOptions`
+   * expensive and this runs on every init. Like everything else here it cannot
+   * fail init: a picker offering one choice too many is cosmetic, and refused.
+   */
+  private async narrowControlPicker(): Promise<void> {
+    const modes = this.owner.controlModes;
+    if (modes.length === 0 || !this.owner.hasCapability(CONTROL_CAPABILITY)) return;
+    try {
+      const current = this.owner.getCapabilityOptions(CONTROL_CAPABILITY) ?? {};
+      const offered: unknown[] = Array.isArray(current.values)
+        ? current.values.map((value: { id?: unknown } | null) => value?.id)
+        : [...ALL_CONTROL_MODES];
+      const same = offered.length === modes.length && modes.every(mode => offered.includes(mode));
+      if (same) return;
+
+      const values = this.owner.controlPickerValues();
+      if (values.length !== modes.length) {
+        this.owner.error(`Could not narrow the ${CONTROL_CAPABILITY} picker: the manifest lists ${values.length} of ${modes.length} modes`);
+        return;
+      }
+      await this.owner.setCapabilityOptions(CONTROL_CAPABILITY, { ...current, values });
+      this.owner.log(`Narrowed the ${CONTROL_CAPABILITY} picker to ${modes.join(', ')}`);
+    } catch (error) {
+      this.owner.error(`Could not narrow the ${CONTROL_CAPABILITY} picker:`, messageOf(error));
     }
   }
 

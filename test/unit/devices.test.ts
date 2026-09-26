@@ -383,6 +383,11 @@ for (const kind of SWITCHABLE) {
       assert.equal(instance.getCapabilityValue(CONTROL_CAPABILITY), 'none');
 
       if (kind.name === 'daylight') {
+        // Paired before the picker existed, so `addCapability` gave it all three
+        // values — and the manifest's narrowing reaches only a fresh pair.
+        const values = instance.fake.capabilityOptions.get(CONTROL_CAPABILITY)?.values as Array<{ id: string; title: { en: string } }>;
+        assert.deepEqual(values?.map(value => value.id), ['after', 'none'], 'the picker offers what the device accepts');
+        assert.ok(values.every(value => typeof value.title.en === 'string' && value.title.en !== ''), 'with their own titles');
         await assert.rejects(Promise.resolve(listener('before')));
         assert.equal(instance.getStoreValue(kind.storeKey).writesLights, false);
       } else {
@@ -391,6 +396,31 @@ for (const kind of SWITCHABLE) {
         assert.equal(instance.fake.warning, translate('warnings.preStageUntested'));
       }
     });
+
+    if (kind.name !== 'schedule') {
+      test('a device paired before its control picker existed still starts', async () => {
+        // The SDK refuses a listener for a capability a device does not have,
+        // and `reconcileCapabilities` is what adds this one to an upgraded tile.
+        const instance = device(kind.Cls, `lk-${kind.name}-1`, { [kind.storeKey]: await kind.plan() },
+          { [kind.registryKey]: registry([]) }, ['onoff']);
+        await instance.onInit();
+        assert.equal(instance.hasCapability(CONTROL_CAPABILITY), true);
+        assert.ok(instance.fake.listeners.get(CONTROL_CAPABILITY), 'and answers its picker');
+      });
+
+      test('a picker the driver already narrowed is not set again', async () => {
+        const homey: FakeHomey = fakeHomey({ app: { [kind.registryKey]: registry([]) } });
+        const modes = kind.name === 'daylight' ? ['after', 'none'] : ['after', 'before', 'none'];
+        const options = kind.name === 'daylight' ? { values: modes.map(id => ({ id, title: { en: id } })) } : {};
+        const instance = makeDevice(kind.Cls, homey, {
+          id: `lk-${kind.name}-1`, store: { [kind.storeKey]: await kind.plan() },
+          capabilities: ['onoff', CONTROL_CAPABILITY], capabilityOptions: { [CONTROL_CAPABILITY]: options },
+        }) as Device & Record<string, any>;
+        await instance.onInit();
+        assert.deepEqual(instance.fake.capabilityOptions.get(CONTROL_CAPABILITY), options);
+        assert.equal(instance.logs.some((line: string) => line.startsWith('Narrowed')), false);
+      });
+    }
 
     test('with nothing stored it says so, and registers nothing', async () => {
       const events: Event[] = [];

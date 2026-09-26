@@ -45,8 +45,9 @@ module.exports = class DaylightDevice extends LightkeeperDevice<DaylightPlan, Da
   override readonly valueCapabilities = [VALUE_CAPABILITIES.brightness, VALUE_CAPABILITIES.daylight];
   /**
    * Two of the three: a `dim` write switches a lamp on (platform §12), so there
-   * is nothing to set before one does. The manifest narrows the picker to match;
-   * this list is what refuses the third when something sends it anyway.
+   * is nothing to set before one does. The manifest narrows the picker to match
+   * on a device paired since, `narrowControlPicker` on one paired before; this
+   * list is what refuses the third when something sends it anyway.
    */
   override readonly controlModes: readonly ControlMode[] = ['after', 'none'];
 

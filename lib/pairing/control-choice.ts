@@ -39,6 +39,9 @@ import { keepsLightsUpdated, writesLightsField } from '../runtime/writes-lights'
 
 export type ControlMode = 'after' | 'before' | 'none';
 
+/** All three, in the capability's own order — what an un-narrowed picker offers. */
+export const ALL_CONTROL_MODES: readonly ControlMode[] = ['after', 'before', 'none'];
+
 /**
  * The same choice as a picker on the device itself, so it can be changed
  * without opening Repair.
@@ -46,7 +49,8 @@ export type ControlMode = 'after' | 'before' | 'none';
  * Its values are the three `ControlMode`s verbatim, which is what lets the tile
  * and the review screen share every rule below rather than translate between
  * two vocabularies. A Room-sensing Light narrows the picker to two through
- * `capabilitiesOptions`, and `DeviceLifecycle.setControlMode` refuses the third
+ * `capabilitiesOptions` — and, on a device paired before the picker existed,
+ * through `DeviceLifecycle.narrowControlPicker` (platform §18) — and `DeviceLifecycle.setControlMode` refuses the third
  * regardless — a capability value is as scriptable as a pair session.
  */
 export const CONTROL_CAPABILITY = 'lightkeeper_control';

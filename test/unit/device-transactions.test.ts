@@ -202,6 +202,10 @@ class FakeOwner implements DeviceOwner<Plan, FakeRuntime> {
     this.removedCapabilities.push(id);
   }
 
+  getCapabilityOptions(_id: string): Record<string, unknown> { return {}; }
+  async setCapabilityOptions(_id: string, _options: object): Promise<void> { /* no picker here */ }
+  controlPickerValues(): unknown[] { return []; }
+
   async setWarning(message: string | null): Promise<void> {
     this.warning = message;
     this.warnings.push(message);

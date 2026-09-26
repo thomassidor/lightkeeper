@@ -107,10 +107,30 @@ export abstract class LightkeeperDevice<
     if (this.withPauseSwitch) {
       this.registerCapabilityListener('onoff', async (value: boolean) => this.lifecycle.setEnabled(value));
     }
-    if (this.controlModes.length > 0) {
-      this.registerCapabilityListener(CONTROL_CAPABILITY, async (value: unknown) => this.lifecycle.setControlMode(value));
+    try {
+      await this.lifecycle.init();
+    } finally {
+      // AFTER init, because init is what adds this capability to a device paired
+      // before it existed (platform §18) — and the SDK throws on a listener for a
+      // capability the device does not have, which failed `onInit` on every
+      // engine device paired before 0.6.6. `finally`, so a device whose plan
+      // could not be registered still answers its own picker; the guard, so one
+      // whose row could not be added still starts.
+      if (this.controlModes.length > 0 && this.hasCapability(CONTROL_CAPABILITY)) {
+        this.registerCapabilityListener(CONTROL_CAPABILITY, async (value: unknown) => this.lifecycle.setControlMode(value));
+      }
     }
-    await this.lifecycle.init();
+  }
+
+  /**
+   * The picker's `values` for THIS device type: the capability's own, from the
+   * generated manifest, narrowed to `controlModes`. What `capabilitiesOptions`
+   * gives a device the driver pairs, rebuilt for one `addCapability` added.
+   */
+  controlPickerValues(): unknown[] {
+    const values: unknown = this.homey.manifest?.capabilities?.[CONTROL_CAPABILITY]?.values;
+    if (!Array.isArray(values)) return [];
+    return values.filter(value => this.controlModes.includes((value as { id?: unknown })?.id as ControlMode));
   }
 
   /** Called by the pair/repair session when the user saves. */

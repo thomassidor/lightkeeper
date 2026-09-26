@@ -143,6 +143,8 @@ export interface FakeDeviceState {
   /** Every `setStoreValue`, in order. */
   storeWrites: Array<{ key: string; value: unknown }>;
   listeners: Map<string, (value: unknown, opts?: unknown) => unknown>;
+  /** Capability id -> its options, as `setCapabilityOptions` last set them. */
+  capabilityOptions: Map<string, Record<string, unknown>>;
   /** Make the next store write of this key reject, the way a full disk does. */
   failStoreWrites: Set<string>;
   /** The device page's warning banner, and every change to it: text, or null. */
@@ -151,7 +153,7 @@ export interface FakeDeviceState {
 }
 
 /**
- * `Homey.Device`, as the thirteen members the device layer uses.
+ * `Homey.Device`, as the fifteen members the device layer uses.
  *
  * `setCapabilityValue` on a capability the device does not have REJECTS, like
  * the SDK — `DeviceLifecycle` relies on that (its first-init `onoff` write has a
@@ -192,8 +194,26 @@ export class Device extends Recorder {
     this.fake.writes.push({ capability: id, value });
   }
 
+  /**
+   * THROWS on a capability the device does not have, as the SDK does. A fake
+   * that accepted any listener hid the one ordering that matters: a capability
+   * added in a release reaches an already-paired device only through
+   * `reconcileCapabilities` (platform §18), so a listener registered before that
+   * runs fails `onInit` on every device paired before the release.
+   */
   registerCapabilityListener(id: string, fn: (value: unknown, opts?: unknown) => unknown): void {
+    if (!this.fake.capabilities.has(id)) throw new Error(`Invalid Capability: ${id}`);
     this.fake.listeners.set(id, fn);
+  }
+
+  /** `{}` for a capability nothing narrowed — including one `addCapability` added. */
+  getCapabilityOptions(id: string): Record<string, unknown> {
+    if (!this.fake.capabilities.has(id)) throw new Error(`Invalid Capability: ${id}`);
+    return this.fake.capabilityOptions.get(id) ?? {};
+  }
+  async setCapabilityOptions(id: string, options: Record<string, unknown>): Promise<void> {
+    if (!this.fake.capabilities.has(id)) throw new Error(`Invalid Capability: ${id}`);
+    this.fake.capabilityOptions.set(id, structuredClone(options));
   }
 
   getAvailable(): boolean { return this.fake.available; }
@@ -404,6 +424,8 @@ export interface FakeDeviceOptions {
   store?: Record<string, unknown>;
   /** Capability ids, or id -> value. */
   capabilities?: string[] | Record<string, unknown>;
+  /** Capability id -> options, as a driver's `capabilitiesOptions` gives a device it pairs. */
+  capabilityOptions?: Record<string, Record<string, unknown>>;
   available?: boolean;
 }
 
@@ -430,6 +452,7 @@ export function makeDevice<C extends new () => Device>(
     writes: [],
     storeWrites: [],
     listeners: new Map(),
+    capabilityOptions: new Map(Object.entries(options.capabilityOptions ?? {})),
     failStoreWrites: new Set(),
     warning: null,
     warnings: [],

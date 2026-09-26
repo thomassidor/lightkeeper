@@ -4,6 +4,18 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { runPairView } from '../support/pair-view-harness';
+
+/**
+ * `Homey.__` over `locales/en.json`: a dotted key, `__token__` substituted. A
+ * key that names a GROUP rather than a string comes back as the key, as it does
+ * on a Homey — which is the failure a counted string's wrong token produces.
+ */
+const EN = JSON.parse(readFileSync(join(import.meta.dirname, '..', '..', 'locales', 'en.json'), 'utf8'));
+const english = (key: string, tokens: Record<string, unknown> = {}): string => {
+  const value = key.split('.').reduce<any>((node, part) => node?.[part], EN);
+  if (typeof value !== 'string') return key;
+  return value.replace(/__(\w+)__/g, (whole, name: string) => (name in tokens ? String(tokens[name]) : whole));
+};
 import { valueAt as curveValueAt } from '../../lib/circadian/circadian-curve';
 import { DEFAULT_POINTS as REAL_POINTS } from '../../lib/circadian/circadian-types';
 import { PALETTE as REAL_PALETTE } from '../../lib/circadian/palette';
@@ -959,7 +971,11 @@ describe('the daylight response screen', () => {
     darkElevation: -6, brightElevation: 25, sunPeak: 'flat',
   };
 
-  const run = (over: Record<string, unknown> = {}) => runPairView(read('daylight/response.html'), {
+  const run = (
+    over: Record<string, unknown> = {},
+    translate?: (key: string, tokens?: Record<string, unknown>) => string,
+  ) => runPairView(read('daylight/response.html'), {
+    translate,
     respond: {
       getResponse: {
         response: RESPONSE,
@@ -1044,16 +1060,20 @@ describe('the daylight response screen', () => {
     // Half a day of silence, not an hour: a still room legitimately goes quiet
     // for hours, but a stopped sensor holds the lights at one brightness. It
     // used to be a screen of its own; now it is the week card's own block.
+    //
+    // Real English, not the harness's echoed keys: `week.quiet` is a plural
+    // group, and a call that passes the hours as anything but `count` resolves
+    // to the bare key — which an echoing translator returns either way.
     const view = run({
       staleFor: 9, lastReport: 'Sat 12:40',
       week: weekOf({ kind: 'stopped', lastAt: Date.now() - 9 * 3_600_000 }, 6),
-    });
+    }, english);
     await view.settle();
 
     const block = finding(view);
     assert.ok(block, 'the quiet sensor is named in its own week');
     assert.ok(block!.className.split(' ').includes('bad'), 'on the error ground');
-    assert.equal(block!.children[0]!.textContent, 'week.quiet');
+    assert.equal(block!.children[0]!.textContent, 'Kitchen motion has not reported for 9 hours');
     assert.equal(view.byId('rs-week')!.querySelector('.tick'), null, 'no "now" on a sensor with no now');
     assert.ok(view.byId('rs-week')!.querySelector('.week-legend'), 'and the hatched hours are explained');
   });
