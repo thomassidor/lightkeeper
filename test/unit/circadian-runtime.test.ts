@@ -242,9 +242,10 @@ function harness(options: {
  */
 function plan(over: Partial<CircadianPlan> = {}): CircadianPlan {
   const built: CircadianPlan = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     enabled: true,
     target: { kind: 'devices', deviceIds: ['l1', 'l2'] },
+    transition: 'balanced',
     // Deliberately steep, so a few hours of simulated time is a visible change.
     points: [
       { id: 'day', anchor: { kind: 'clock', at: 12 * 60 }, warmth: 0.2 },
@@ -1807,7 +1808,20 @@ describe('what the week-long recording found', () => {
   });
 
   test('a bridge exactly one tolerance away is forgiven wherever it sits on the axis', async () => {
-    const h = harness({ now: MORNING });
+    // 08:00 is the MIDPOINT of 06:00 → 10:00, so the value written is 0.25
+    // whatever the curve's shape — every transition passes through halfway at
+    // halfway. It used to ride on the default plan's eased value at 08:00,
+    // which moved when the raised cosine gave way to Balanced and landed on
+    // 0.26, where neither direction is a floating-point boundary case.
+    const h = harness({
+      now: MORNING,
+      plan: plan({
+        points: [
+          { id: 'a', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.2 },
+          { id: 'b', anchor: { kind: 'clock', at: 10 * 60 }, warmth: 0.3 },
+        ],
+      }),
+    });
     await h.runtime.start();
     await settle();
     const written = temperatures(h.writes)[0].value as number;

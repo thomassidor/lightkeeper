@@ -16,7 +16,7 @@ import { validateCircadianPlan } from '../validation/plans';
  * shares every type with it. What it does not share is the STORE: the point-based
  * plan lives under `curve` and the two-ended one under `circadian`.
  *
- * **The table is empty, and that is a deliberate reset rather than an omission.**
+ * **Version 1 began with an empty table, and that was a deliberate reset.**
  * The pairing rewrite changed this stored shape in ways no honest step could
  * carry an old plan across. Nothing had shipped, so the installed base was one
  * Homey and its owner chose the clean slate over a migration inventing values
@@ -27,14 +27,21 @@ import { validateCircadianPlan } from '../validation/plans';
  * `DeviceLifecycle` quarantines the device with its store untouched, so it comes
  * up unavailable with a reason rather than running on a plan nobody can vouch
  * for. Delete it and add it again.
+ *
+ * **1 → 2 (0.6.6): the Transition choice, and existing devices get BALANCED.**
+ * The curve used to ease every segment with a raised cosine. Balanced is within
+ * 0.016 of it at every point of every segment (interpolate.test.ts), under the
+ * colour deadband, so a migrated curve does not visibly change.
  */
 
-export const CURRENT_CURVE_SCHEMA_VERSION = 1;
+export const CURRENT_CURVE_SCHEMA_VERSION = 2;
 
 export type CurveMigration = MigrationStep;
 
-/** Keyed by the version being migrated FROM. Empty: see the header. */
-const CURVE_MIGRATIONS: Record<number, CurveMigration> = {};
+/** Keyed by the version being migrated FROM. See the header for each step. */
+const CURVE_MIGRATIONS: Record<number, CurveMigration> = {
+  1: raw => ({ ...raw, transition: 'balanced', schemaVersion: 2 }),
+};
 
 export function migrateCurvePlan(raw: unknown): MigrationResult<CircadianPlan> {
   return runMigrationChain(raw, {

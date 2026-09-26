@@ -4,6 +4,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { ALL_VALUE_CAPABILITIES, PUBLISHED_DECIMALS } from '../../lib/runtime/published-values';
+import { CONTROL_CAPABILITY } from '../../lib/pairing/control-choice';
 
 /**
  * `app.json` is GENERATED from `.homeycompose/` and must never be hand-edited.
@@ -184,8 +185,9 @@ describe('app.json is generated from .homeycompose/', () => {
 
     // Every id the runtimes publish under is one of these, and every one of
     // these is carried by at least one driver. Either half failing means a
-    // value computed every minute that lands nowhere.
-    assert.deepEqual([...ALL_VALUE_CAPABILITIES].sort(), ids);
+    // value computed every minute that lands nowhere. The one that is not a
+    // published value is the control picker, which the device layer owns.
+    assert.deepEqual([...ALL_VALUE_CAPABILITIES, CONTROL_CAPABILITY].sort(), ids);
 
     const carried = new Set(
       (manifest.drivers as Array<Record<string, any>>).flatMap(d => d.capabilities as string[]),
@@ -205,13 +207,60 @@ describe('app.json is generated from .homeycompose/', () => {
    * Homey then rounded away, once a minute, forever.
    */
   test('every value capability is read-only, at the resolution the gate assumes', () => {
-    for (const [id, capability] of Object.entries(manifest.capabilities ?? {}) as Array<[string, any]>) {
+    for (const id of ALL_VALUE_CAPABILITIES) {
+      const capability = manifest.capabilities[id];
       assert.equal(capability.setable, false, `${id} must not be setable`);
       assert.equal(capability.getable, true, `${id} must be getable`);
       if (capability.type === 'number') {
         assert.equal(capability.decimals, PUBLISHED_DECIMALS, `${id} must match PUBLISHED_DECIMALS`);
       }
     }
+  });
+
+  /**
+   * The one custom capability that IS a control.
+   *
+   * Its values are `ControlMode`s verbatim, which is what lets the device layer
+   * hand a picked value straight to the rules the review screen uses. A
+   * Room-sensing Light narrows it through `capabilitiesOptions`, and a narrowed
+   * list that named a value the capability does not have would draw a choice
+   * nothing can store.
+   */
+  test('the control picker offers exactly the three modes, and a Room-sensing Light two', () => {
+    const control = manifest.capabilities[CONTROL_CAPABILITY];
+    assert.equal(control.type, 'enum');
+    assert.equal(control.setable, true);
+    assert.equal(control.uiComponent, 'picker');
+    const ids = (values: Array<{ id: string }>) => values.map(v => v.id);
+    assert.deepEqual(ids(control.values), ['after', 'before', 'none']);
+
+    const drivers = manifest.drivers as Array<Record<string, any>>;
+    const carriers = drivers.filter(d => (d.capabilities as string[]).includes(CONTROL_CAPABILITY));
+    assert.deepEqual(carriers.map(d => d.id).sort(), ['circadian', 'curve', 'daylight']);
+
+    const daylight = drivers.find(d => d.id === 'daylight')!;
+    assert.deepEqual(ids(daylight.capabilitiesOptions[CONTROL_CAPABILITY].values), ['after', 'none']);
+  });
+
+  /**
+   * Every custom capability carries an icon, and every icon file is one of them.
+   *
+   * Homey's own default icons (platform §10): a system capability's icon cannot
+   * be borrowed by name, so the files ship under `assets/capabilities/`. The
+   * validator checks the path exists case-exactly; this checks it first, and
+   * that the folder holds nothing no capability names.
+   */
+  test('every custom capability has an icon, and no icon is orphaned', () => {
+    const dir = join(ROOT, 'assets', 'capabilities');
+    const files = new Set(readdirSync(dir));
+    const named = new Set<string>();
+    for (const [id, capability] of Object.entries(manifest.capabilities ?? {}) as Array<[string, any]>) {
+      assert.match(String(capability.icon), /^\/assets\/capabilities\/[a-z_]+\.svg$/, `${id} has no icon`);
+      const file = String(capability.icon).split('/').pop()!;
+      assert.ok(files.has(file), `${id}: ${capability.icon} does not exist (case-exact)`);
+      named.add(file);
+    }
+    for (const file of files) assert.ok(named.has(file), `assets/capabilities/${file} is named by no capability`);
   });
 
   test('every driver matches its driver.compose.json', () => {

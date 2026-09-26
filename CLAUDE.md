@@ -154,7 +154,9 @@ lib/
   circadian/                    the curve ENGINE, shared by two device types: curve types and
                                 cyclic interpolation, the 24-colour palette, the three-zone
                                 simple plan and its sun-anchored boundaries, runtime, manager,
-                                and one migration chain per store
+                                and one migration chain per store. A circadian light is
+                                evaluated by zoneValueAt(): zone to zone, each boundary the
+                                halfway point of its blend — not by valueAt() over points
   daylight/                     the brightness-from-the-room engine: NOAA solar elevation AND
                                 sunrise/sunset times (pure, no Homey imports), the response and
                                 its two ramps, the app-level ref-counted sensor subscription, the
@@ -191,7 +193,9 @@ lib/
   support/                      the primitives every layer uses: the per-KEY mutex and the
                                 single-flight coalescer, the bounded ring log, the migration-chain
                                 runner, the injectable Timers seam, error-shape classification,
-                                field-wise equality, fire-and-forget. NOT the queue that gates
+                                field-wise equality, fire-and-forget, and interpolate.ts — the
+                                Transition shapes (Gradual, Balanced, Quick) every engine
+                                interpolates with. NOT the queue that gates
                                 lamp writes: that is DeviceQueue, inside command-scheduler.ts.
                                 KeyedMutex serialises subscribe/unsubscribe, device-lifecycle
                                 operations and flow folders instead
@@ -306,17 +310,22 @@ scripts/hardware-env.json       GITIGNORED. A Homey address and two Personal API
 views/shared/                   NOT bundled. The one authored copy of each block that appears
                                 in more than one pair view — the CSS base, emit() and
                                 stabiliseScrollbar() in all 54, the week grid's CSS and weekGrid()
-                                in the one daylight screen that draws it. `npm run sync:views`
-                                splices them in
+                                in the one daylight screen that draws it, and the Transition card
+                                and transitionShape() on the three engine editing screens.
+                                `npm run sync:views` splices them in
 settings/index.html             app settings page
 locales/en.json                 all user-facing strings
 .homeycompose/                  the manifest's SOURCE; app.json is generated from it
   capabilities/                 the four READ-ONLY capabilities the engines publish into. Custom
                                 because every `dim` and `light_*` in homey-lib is setable, which
-                                would draw a slider nothing honours (platform §18)
+                                would draw a slider nothing honours (platform §18). Plus ONE
+                                setable enum, `lightkeeper_control`: the review screen's control
+                                choice as a picker on the tile. Each names its icon — Athom's
+                                own, shipped as files in assets/capabilities/
   flow/actions/                 the three internal bridge cards, plus set_lights — the one card
                                 this app offers rather than writes
-assets/                         the app's own icon and store images, all generated
+assets/                         the app's own icon and store images, all generated — except
+                                capabilities/, Athom's stock capability icons, copied unmodified
 README.txt                      the App Store long description — not README.md
 test/                           unit tests and hand-transcribed fixtures
   support/                      the shared fakes. fake-homey.ts is the SDK stand-in that lets a test
@@ -681,13 +690,18 @@ than in a global. Each file's header explains this.
 **The shared blocks are GENERATED, and `views/shared/` is where they are authored.** The CSS base,
 `emit()` and `stabiliseScrollbar()` appear in every view file; the week grid — its own CSS and
 `weekGrid()` — appears in the one daylight screen that draws a sensor's history, the response
-step (it had a second carrier until the sensor detail screen was folded into it).
+step (it had a second carrier until the sensor detail screen was folded into it); the Transition
+card — `transition.css` and `transitionCard()` — and `transitionShape()` appear on the three engine
+editing steps. `transitionShape()` is `shape()` in `lib/support/interpolate.ts` written again for a
+view, and `pair-view-zone-copy.test.ts` runs the two against each other, along with the day
+screen's own copy of `zoneValueAt()` — the copy that once went linear where the engine eased.
 (`wc -l views/shared/*` for the sizes: they are quoted nowhere, deliberately, because three places
 once carried three stale numbers.) All of it used to be authored by hand in every copy, under an
 in-file instruction to "edit this block in all files, or in none of them", with
 `test/unit/pair-view-styles.test.ts` asserting they stayed identical. `npm run sync:views` now
 splices them from
-`views/shared/{base.css,emit.js,stabilise-scrollbar.js,week-grid.css,week-grid.js}`, substituting
+`views/shared/{base.css,emit.js,stabilise-scrollbar.js,week-grid.css,week-grid.js,transition.css,`
+`transition-card.js,transition-shape.js}`, substituting
 each view's own root id for `#ROOT` — the same normalisation that test does in reverse.
 **Edit the source, never the view.** `npm run sync:views:check` fails in CI until they agree.
 

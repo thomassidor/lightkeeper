@@ -9,6 +9,7 @@ import { driverApp } from '../support/fake-lightkeeper-app';
 import { settle } from '../support/deferred';
 import { FlowBridgeManager } from '../../lib/bridge/flow-bridge-manager';
 import { VALUE_CAPABILITIES } from '../../lib/runtime/published-values';
+import { CONTROL_CAPABILITY } from '../../lib/pairing/control-choice';
 import type { HomeyApiService } from '../../lib/homey-api-service';
 import { CURRENT_SCHEMA_VERSION } from '../../lib/profiles/controller-profile';
 import { DEFAULT_BEHAVIOR } from '../../lib/mapping/mapping-types';
@@ -351,6 +352,44 @@ for (const kind of SWITCHABLE) {
         assert.equal(instance.hasCapability(capability), true, capability);
       }
       assert.ok(instance.valueCapabilities.includes(VALUE_CAPABILITIES.brightness));
+    });
+
+    /**
+     * The tile's control picker, on the REAL plan shapes: whatever it stores has
+     * to be something this device type's own validator reads back, or the next
+     * restart quarantines the device it was meant to adjust.
+     */
+    test(kind.name === 'schedule'
+      ? 'it has no control picker'
+      : 'its control picker stores a mode its own validator reads back', async () => {
+      const reg = registry([]);
+      const instance = device(kind.Cls, `lk-${kind.name}-1`, { [kind.storeKey]: await kind.plan() },
+        { [kind.registryKey]: reg }, ['onoff']);
+      await instance.onInit();
+
+      const listener = instance.fake.listeners.get(CONTROL_CAPABILITY);
+      if (kind.name === 'schedule') {
+        assert.equal(listener, undefined);
+        assert.equal(instance.hasCapability(CONTROL_CAPABILITY), false);
+        return;
+      }
+      assert.ok(listener, 'the tile carries the picker');
+      assert.equal(instance.getCapabilityValue(CONTROL_CAPABILITY), 'after');
+
+      await listener('none');
+      const stored = instance.getStoreValue(kind.storeKey);
+      assert.equal(stored.writesLights, false);
+      assert.deepEqual(instance.migrate(stored).plan, stored, 'the validator reads it back unchanged');
+      assert.equal(instance.getCapabilityValue(CONTROL_CAPABILITY), 'none');
+
+      if (kind.name === 'daylight') {
+        await assert.rejects(Promise.resolve(listener('before')));
+        assert.equal(instance.getStoreValue(kind.storeKey).writesLights, false);
+      } else {
+        await listener('before');
+        assert.equal(instance.getStoreValue(kind.storeKey).preStage, true);
+        assert.equal(instance.fake.warning, translate('warnings.preStageUntested'));
+      }
     });
 
     test('with nothing stored it says so, and registers nothing', async () => {

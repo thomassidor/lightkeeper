@@ -13,6 +13,7 @@ import {
 import type { ControllerState, ManagedFlowReference, StateDetail } from '../../lib/profiles/controller-profile';
 import { deferred, settle } from '../support/deferred';
 import { ValueBoard, VALUE_CAPABILITIES, type PublishedValues } from '../../lib/runtime/published-values';
+import { CONTROL_CAPABILITY, type ControlMode } from '../../lib/pairing/control-choice';
 
 /**
  * The device layer's transactions.
@@ -34,6 +35,10 @@ interface Plan {
    * are mutually incompatible, which is what makes the omission a type error now.
    */
   expanded?: true;
+  /** The three flags behind "How Lightkeeper controls your lights". */
+  preStage?: boolean;
+  preStageLights?: string[];
+  writesLights?: false;
 }
 
 interface FakeRuntime extends DeviceRuntime {
@@ -135,6 +140,10 @@ class FakeOwner implements DeviceOwner<Plan, FakeRuntime> {
   availableWhenDisabled = false;
   withPauseSwitch = true;
   valueCapabilities: readonly string[] = [];
+  controlModes: readonly ControlMode[] = [];
+  /** The device page's banner, and every change to it. */
+  warning: string | null = null;
+  readonly warnings: Array<string | null> = [];
 
   /** What the device currently carries. A real one starts from its manifest. */
   readonly capabilities = new Set<string>(['onoff']);
@@ -191,6 +200,16 @@ class FakeOwner implements DeviceOwner<Plan, FakeRuntime> {
   async removeCapability(id: string): Promise<void> {
     this.capabilities.delete(id);
     this.removedCapabilities.push(id);
+  }
+
+  async setWarning(message: string | null): Promise<void> {
+    this.warning = message;
+    this.warnings.push(message);
+  }
+
+  async unsetWarning(): Promise<void> {
+    this.warning = null;
+    this.warnings.push(null);
   }
 
   log(...args: unknown[]): void { this.logs.push(args.join(' ')); }
@@ -972,5 +991,111 @@ describe('capability rows', () => {
     await h.drain();
 
     assert.equal(h.owner.capabilityValues.get(VALUE_CAPABILITIES.brightness), 0.5);
+  });
+});
+
+/**
+ * "How Lightkeeper controls your lights", as a picker on the tile.
+ *
+ * The review screen has owned this choice since 0.6.5; the picker is a second
+ * way in to the SAME two stored flags, so what matters is that it writes them
+ * exactly as the review would — `writesLights` stored only when false, `preStage`
+ * only where the plan has one — and reaches the runtime the way the pause switch
+ * does, through `planForRuntime`.
+ */
+describe('control mode on the tile', () => {
+  const ENGINE_MODES: readonly ControlMode[] = ['after', 'before', 'none'];
+
+  function engine(plan: Plan) {
+    const h = harness();
+    h.owner.controlModes = ENGINE_MODES;
+    h.owner.store.set('plan', plan);
+    return h;
+  }
+
+  test('the picker row is added only to a type with a choice to offer', async () => {
+    const withChoice = engine({ enabled: true, value: 'v', preStage: false });
+    await withChoice.lifecycle.init();
+    assert.ok(withChoice.owner.addedCapabilities.includes(CONTROL_CAPABILITY));
+
+    const without = harness();
+    without.owner.capabilities.add(CONTROL_CAPABILITY);
+    without.owner.store.set('plan', { enabled: true, value: 'v' });
+    await without.lifecycle.init();
+    // A Light Remote or a schedule that somehow carries it has it taken away.
+    assert.deepEqual(without.owner.removedCapabilities, [CONTROL_CAPABILITY]);
+  });
+
+  test('init shows the stored choice', async () => {
+    const h = engine({ enabled: true, value: 'v', preStage: false, writesLights: false });
+    await h.lifecycle.init();
+    assert.equal(h.owner.capabilityValues.get(CONTROL_CAPABILITY), 'none');
+  });
+
+  test('choosing a mode stores both flags and restarts the runtime through planForRuntime', async () => {
+    const h = engine({ enabled: true, value: 'v', preStage: false, preStageLights: ['lamp-1'] });
+    await h.lifecycle.init();
+
+    await h.lifecycle.setControlMode('none');
+    const stored = h.owner.store.get('plan') as Plan;
+    assert.equal(stored.writesLights, false);
+    assert.equal(stored.preStage, false);
+    // Kept, so coming back to "before" does not need the test again.
+    assert.deepEqual(stored.preStageLights, ['lamp-1']);
+    assert.equal(h.registry.get('lk-test-1')!.plan.expanded, true);
+    assert.equal(h.owner.capabilityValues.get(CONTROL_CAPABILITY), 'none');
+
+    await h.lifecycle.setControlMode('before');
+    const back = h.owner.store.get('plan') as Plan;
+    // Absent, never `true`: a plan written before the flag existed must round-trip.
+    assert.equal('writesLights' in back, false);
+    assert.equal(back.preStage, true);
+    assert.equal(h.owner.capabilityValues.get(CONTROL_CAPABILITY), 'before');
+  });
+
+  test('a plan with no preStage does not grow one', async () => {
+    const h = harness();
+    h.owner.controlModes = ['after', 'none'];
+    h.owner.store.set('plan', { enabled: true, value: 'v' });
+    await h.lifecycle.init();
+
+    await h.lifecycle.setControlMode('none');
+    assert.equal('preStage' in (h.owner.store.get('plan') as Plan), false);
+  });
+
+  test('a mode this type does not offer is refused, and nothing is stored', async () => {
+    const h = harness();
+    h.owner.controlModes = ['after', 'none'];
+    h.owner.store.set('plan', { enabled: true, value: 'v' });
+    await h.lifecycle.init();
+    const plan = structuredClone(h.owner.store.get('plan'));
+
+    await assert.rejects(h.lifecycle.setControlMode('before'), /errors\.cannotSetBefore/);
+    await assert.rejects(h.lifecycle.setControlMode('sometimes'), /errors\.notAControlMode/);
+    assert.deepEqual(h.owner.store.get('plan'), plan);
+  });
+
+  test('"before" with no lamp ever tested says so, and a tested one does not', async () => {
+    const h = engine({ enabled: true, value: 'v', preStage: false });
+    await h.lifecycle.init();
+    assert.equal(h.owner.warning, null);
+
+    await h.lifecycle.setControlMode('before');
+    assert.equal(h.owner.warning, 'warnings.preStageUntested');
+
+    await h.lifecycle.setControlMode('after');
+    assert.equal(h.owner.warning, null);
+
+    const tested = engine({ enabled: true, value: 'v', preStage: true, preStageLights: ['lamp-1'] });
+    await tested.lifecycle.init();
+    assert.equal(tested.owner.warning, null);
+  });
+
+  test('a Repair that changes the choice moves the picker', async () => {
+    const h = engine({ enabled: true, value: 'v', preStage: false });
+    await h.lifecycle.init();
+
+    await h.lifecycle.apply({ enabled: true, value: 'v', preStage: false, writesLights: false });
+    assert.equal(h.owner.capabilityValues.get(CONTROL_CAPABILITY), 'none');
   });
 });

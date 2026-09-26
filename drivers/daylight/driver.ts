@@ -4,7 +4,9 @@ import { formatMinutes } from '../../lib/time/wall-clock';
 import { localNow } from '../../lib/time/local-clock';
 import { solarElevation, sunTimes } from '../../lib/daylight/solar-elevation';
 import type { WatchedSensor } from '../../lib/daylight/luminance-source';
-import { lightsSummary, registerIntroHandler, registerReviewHandler } from '../../lib/pairing/flow-screens';
+import {
+  lightsSummary, registerIntroHandler, registerReviewHandler, transitionKey,
+} from '../../lib/pairing/flow-screens';
 import { validateSensorsAgainstCatalog } from '../../lib/validation/pairing-dto';
 
 import {
@@ -436,6 +438,11 @@ module.exports = class DaylightDriver extends Homey.Driver {
             // screen says where the room currently sits between them.
             labelKey: 'review.rightNow',
             value: `${Math.round(verdict.brightness * 100)}%`,
+          },
+          {
+            labelKey: 'review.transition',
+            value: host.translate(transitionKey(response.transition)),
+            view: 'response',
           },
         ],
         // Two of the three: a brightness written to an off lamp switches it on,

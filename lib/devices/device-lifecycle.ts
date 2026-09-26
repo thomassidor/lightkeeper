@@ -5,6 +5,15 @@ import type { ControllerState, StateDetail, ManagedFlowReference } from '../prof
 import { messageOf } from '../support/homey-errors';
 import { ALL_VALUE_CAPABILITIES, isTranslatable } from '../runtime/published-values';
 import type { PublishedValue, PublishedValues } from '../runtime/published-values';
+import {
+  CONTROL_CAPABILITY,
+  controlModeOfPlan,
+  controlWarningKey,
+  isControlMode,
+  planWithControlMode,
+  type ControlMode,
+  type ControlPlan,
+} from '../pairing/control-choice';
 
 /**
  * Everything a Lightkeeper virtual device does that is not the SDK.
@@ -125,6 +134,9 @@ export interface DeviceOwner<
   hasCapability(capabilityId: string): boolean;
   addCapability(capabilityId: string): Promise<void>;
   removeCapability(capabilityId: string): Promise<void>;
+  /** The banner on the device's own page. A warning, never an availability. */
+  setWarning(message: string | null): Promise<unknown>;
+  unsetWarning(): Promise<unknown>;
   log(...args: unknown[]): void;
   error(...args: unknown[]): void;
   /** `homey.__`, which `lib/` cannot reach on its own. */
@@ -166,6 +178,17 @@ export interface DeviceOwner<
    * manifest also leaves the tiles it is already on.
    */
   readonly valueCapabilities: readonly string[];
+  /**
+   * The modes the tile's "How Lightkeeper controls your lights" picker offers,
+   * or none for a device type that has no such choice.
+   *
+   * Empty is the answer for a Light Remote and a schedule, and it is what keeps
+   * the picker off their tiles: `reconcileCapabilities` only adds
+   * `lightkeeper_control` where this is non-empty. A Room-sensing Light lists two
+   * (it has nothing to pre-stage), and this list — not the manifest's narrowed
+   * `values` — is what `setControlMode` refuses against.
+   */
+  readonly controlModes: readonly ControlMode[];
 
   migrate(raw: unknown): PlanMigration<TPlan>;
   registry(): DeviceRegistry<TPlan, TRuntime>;
@@ -311,6 +334,7 @@ export class DeviceLifecycle<
       // that message and could not be resumed from its own tile.
       if (!this.owner.planEnabled(plan)) await this.owner.setAvailable();
     }
+    await this.showControl(plan);
 
     await this.registerPlan(plan);
   }
@@ -484,6 +508,8 @@ export class DeviceLifecycle<
         await this.owner.setCapabilityValue('onoff', this.owner.planEnabled(merged))
           .catch(() => { /* not yet initialised */ });
       }
+      // A Repair can change the choice too, and the tile must follow it.
+      await this.showControl(merged);
 
       // The runtime's own verdict is the final word, not an unconditional
       // setAvailable(): a controller whose remote has vanished must not read as
@@ -557,6 +583,77 @@ export class DeviceLifecycle<
 
       this.owner.log(enabled ? 'Resumed' : 'Paused');
     });
+  }
+
+  /**
+   * The tile's "How Lightkeeper controls your lights" picker.
+   *
+   * `setEnabled`'s shape exactly, and for the same reasons: the store first, then
+   * the runtime restarted through `planForRuntime` — never with the stored plan,
+   * which on a circadian light is not the shape its runtime takes. The restart is
+   * what makes "Don't change lights automatically" take effect properly: a
+   * publish-only runtime subscribes to no lamp (lib/runtime/writes-lights.ts),
+   * and only a fresh `start()` decides that.
+   *
+   * It REFUSES rather than coerces, because a capability value arrives from a
+   * Flow or the Web API as readily as from the picker (platform §14), and a Room-
+   * sensing Light set to "before" would be a mode it has no test for and no
+   * write to pre-stage. A refusal from a capability listener puts the tile back
+   * where it was, which is the right thing for the user to see — so the error is
+   * translated HERE: the tile shows an Error's message verbatim, and a
+   * `LocalisedError`'s message is only its key.
+   *
+   * "Before" is accepted with no lamp ever tested, and pre-stages nothing until
+   * one has been — the same rule the review screen's option has always had.
+   * `showControl` puts a warning on the device saying so.
+   */
+  async setControlMode(value: unknown): Promise<void> {
+    if (!isControlMode(value)) {
+      throw new Error(this.owner.translate('errors.notAControlMode', { mode: String(value) }));
+    }
+    if (!this.owner.controlModes.includes(value)) {
+      throw new Error(this.owner.translate('errors.cannotSetBefore'));
+    }
+    return this.operations.run(OPS, async () => {
+      const plan = this.storedPlan();
+      if (!plan) return;
+
+      const updated = planWithControlMode(plan as ControlPlan, value) as TPlan;
+      await this.owner.setStoreValue(this.owner.storeKey, updated);
+
+      const runtime = this.owner.registry().get(this.deviceId);
+      if (runtime?.updatePlan) {
+        await runtime.updatePlan(this.owner.planForRuntime(updated));
+      } else {
+        await this.registerPlan(updated);
+      }
+      await this.showControl(updated);
+
+      this.owner.log(`Control mode set to ${value}`);
+    });
+  }
+
+  /**
+   * The picker's value and the untested-"before" warning, from a plan.
+   *
+   * Neither may fail the caller. The capability write can refuse on a device
+   * whose row `reconcileCapabilities` could not add, and a warning is a banner:
+   * a device that stopped starting over either would stop driving the lights.
+   */
+  private async showControl(plan: TPlan): Promise<void> {
+    if (this.owner.controlModes.length === 0) return;
+    const control = plan as ControlPlan;
+
+    await this.owner.setCapabilityValue(CONTROL_CAPABILITY, controlModeOfPlan(control))
+      .catch(() => { /* no row: reconcileCapabilities already logged why */ });
+
+    const warning = controlWarningKey(control);
+    try {
+      if (warning) await this.owner.setWarning(this.owner.translate(warning));
+      else await this.owner.unsetWarning();
+    } catch (error) {
+      this.owner.error('Could not update the device warning:', messageOf(error));
+    }
   }
 
   /**
@@ -719,6 +816,7 @@ export class DeviceLifecycle<
    */
   private async reconcileCapabilities(): Promise<void> {
     const wanted = new Set(this.owner.valueCapabilities);
+    if (this.owner.controlModes.length > 0) wanted.add(CONTROL_CAPABILITY);
 
     for (const capabilityId of wanted) {
       if (this.owner.hasCapability(capabilityId)) continue;
@@ -730,7 +828,7 @@ export class DeviceLifecycle<
       }
     }
 
-    for (const capabilityId of ALL_VALUE_CAPABILITIES) {
+    for (const capabilityId of [...ALL_VALUE_CAPABILITIES, CONTROL_CAPABILITY]) {
       if (wanted.has(capabilityId) || !this.owner.hasCapability(capabilityId)) continue;
       try {
         await this.owner.removeCapability(capabilityId);

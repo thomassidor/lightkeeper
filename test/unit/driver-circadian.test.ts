@@ -217,8 +217,11 @@ describe('the review and the control choice', () => {
     assert.equal(review.hero.stops.length, 49);
     assert.deepEqual(review.rows.map((row: { label: string }) => row.label), [
       translate('review.lights'), translate('review.morning'), translate('review.midday'),
-      translate('review.evening'), translate('review.followsSun'),
+      translate('review.evening'), translate('review.followsSun'), translate('review.transition'),
     ]);
+    // The last row reads the choice back by name and taps back to the day.
+    assert.equal(review.rows[5].value, translate('transition.balanced'));
+    assert.equal(review.rows[5].view, 'day');
     assert.equal(review.rows[2].value, `${translate('warmth.coolWhite')} · 90%`);
     assert.deepEqual(review.control.modes, ['after', 'before', 'none']);
     assert.equal(review.control.selected, 'after');
@@ -251,8 +254,19 @@ describe('save and repair', () => {
     assert.equal(saved.device.name, 'Living room circadian');
     const plan = saved.device.store.circadian;
     assert.deepEqual(plan.zones, DEFAULT_ZONES);
+    assert.equal(plan.transition, 'balanced', 'a new device is Balanced');
     assert.equal(plan.preStage, false);
     assert.equal('writesLights' in plan, false, 'stored only when false');
+  });
+
+  test('the transition the day screen chose is what the device stores', async () => {
+    const { session } = await withLights(['l1']);
+    const reply = await session.call('setDay', { ...DEFAULT_ZONES, adjustBrightness: true, transition: 'gradual' });
+    assert.equal(reply.transition, 'gradual');
+    assert.equal((await session.call('getDay')).transition, 'gradual');
+    const saved = await session.call('save', '');
+    assert.equal(saved.device.store.circadian.transition, 'gradual');
+    assert.equal((await session.call('getReview')).rows[5].value, translate('transition.gradual'));
   });
 
   test('repair opens on the stored plan and applies to the device', async () => {
@@ -260,8 +274,8 @@ describe('save and repair', () => {
     const session = new FakePairSession();
     const stored = {
       schemaVersion: 2, enabled: false, target: { kind: 'devices', deviceIds: ['l2'] },
-      zones: { ...DEFAULT_ZONES, eveningStart: -30 }, adjustBrightness: false, preStage: true,
-      preStageLights: ['l2'], writesLights: false,
+      zones: { ...DEFAULT_ZONES, eveningStart: -30 }, adjustBrightness: false, transition: 'quick',
+      preStage: true, preStageLights: ['l2'], writesLights: false,
     };
     const applied: any[] = [];
     await r.driver.onRepair(session, {
@@ -272,6 +286,7 @@ describe('save and repair', () => {
     const day = await session.call('getDay');
     assert.equal(day.zones.eveningStart, -30);
     assert.equal(day.adjustBrightness, false);
+    assert.equal(day.transition, 'quick', 'repair opens on the stored transition');
     const review = await session.call('getReview');
     assert.equal(review.control.selected, 'none');
     assert.deepEqual(review.control.tested, { fresh: false, lights: [{ name: 'Floor lamp', ok: true }] });
@@ -279,6 +294,7 @@ describe('save and repair', () => {
     assert.deepEqual(await session.call('save', 'x'), { updated: true });
     assert.deepEqual(applied[0].preStageLights, ['l2']);
     assert.equal(applied[0].writesLights, false);
+    assert.equal(applied[0].transition, 'quick');
   });
 
   test('a repair with nothing stored falls back to the defaults rather than throwing', async () => {

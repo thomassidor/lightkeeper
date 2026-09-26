@@ -36,6 +36,7 @@ const VALID = {
   sensor: 'a', darkLux: 8, brightLux: 400, dark: 0.8, bright: 0.3,
   darkElevation: -6, brightElevation: 25,
   sunPeak: 'flat' as const,
+  transition: 'balanced' as const,
 };
 
 describe('sanitiseResponse - a valid response survives untouched', () => {
@@ -43,6 +44,13 @@ describe('sanitiseResponse - a valid response survives untouched', () => {
     const { response, corrected } = sanitiseResponse(VALID);
     assert.deepEqual(response, VALID);
     assert.deepEqual(corrected, []);
+  });
+
+  test('a transition is one of the three, or corrected to Balanced and said so', () => {
+    assert.equal(sanitiseResponse({ ...VALID, transition: 'quick' }).response.transition, 'quick');
+    const junk = sanitiseResponse({ ...VALID, transition: 'snap' });
+    assert.equal(junk.response.transition, 'balanced');
+    assert.ok(junk.corrected.includes('transition'));
   });
 
   test('no sensor at all is valid, because the sun is a complete answer', () => {
@@ -325,9 +333,27 @@ describe('the daylight migration chain, after the reset', () => {
     target: TARGET,
     response: {
       sensor: 's1', darkLux: 8, brightLux: 400, dark: 0.8, bright: 0.3,
-      darkElevation: -6, brightElevation: 25, sunPeak: 'flat',
+      darkElevation: -6, brightElevation: 25, sunPeak: 'flat', transition: 'balanced',
     },
   };
+
+  test('a version 1 plan gains a transition inside its response, and it is BALANCED', () => {
+    // Both ramps used to be eased with a raised cosine, which Balanced is within
+    // 0.016 of (interpolate.test.ts): the room does not visibly change.
+    const { transition: _new, ...v1Response } = CURRENT.response;
+    const { plan, migrated } = migrateDaylightPlan({ ...CURRENT, schemaVersion: 1, response: v1Response });
+    assert.equal(migrated, true);
+    assert.equal(plan.schemaVersion, 2);
+    assert.equal(plan.response.transition, 'balanced');
+    assert.equal('transition' in plan, false, 'inside the response, never at the root');
+  });
+
+  test('a version 1 plan with no response is refused by the validator, not invented', () => {
+    assert.throws(
+      () => migrateDaylightPlan({ ...CURRENT, schemaVersion: 1, response: 'broken' }),
+      /response/,
+    );
+  });
 
   test('a plan at the current version passes through unmigrated', () => {
     const { plan, migrated, steps } = migrateDaylightPlan(CURRENT);
@@ -342,8 +368,8 @@ describe('the daylight migration chain, after the reset', () => {
     // was given a clean slate. What matters is that such a plan is REFUSED:
     // DeviceLifecycle turns this throw into an unavailable device with a reason,
     // which is the "delete it and add it again" signal.
-    for (const version of [undefined, 0, 1 - 1, CURRENT_DAYLIGHT_SCHEMA_VERSION - 1]) {
-      if (version === CURRENT_DAYLIGHT_SCHEMA_VERSION) continue;
+    // Version 1 is the reset itself, and it now has a step: see the test above.
+    for (const version of [undefined, 0]) {
       assert.throws(
         () => migrateDaylightPlan({ ...CURRENT, schemaVersion: version }),
         `version ${String(version)} should be refused`,

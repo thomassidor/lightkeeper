@@ -1,0 +1,34 @@
+{
+  "type": "enum",
+  "title": {
+    "en": "Lightkeeper control"
+  },
+  "desc": {
+    "en": "How Lightkeeper controls this device's lights: after they turn on, before they turn on, or not at all."
+  },
+  "getable": true,
+  "setable": true,
+  "uiComponent": "picker",
+  "insights": false,
+  "values": [
+    {
+      "id": "after",
+      "title": {
+        "en": "Change lights after they turn on"
+      }
+    },
+    {
+      "id": "before",
+      "title": {
+        "en": "Set lights before they turn on"
+      }
+    },
+    {
+      "id": "none",
+      "title": {
+        "en": "Don’t change lights automatically"
+      }
+    }
+  ],
+  "icon": "/assets/capabilities/light_mode.svg"
+}

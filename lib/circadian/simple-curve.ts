@@ -1,7 +1,10 @@
 import { MINUTES_PER_DAY } from '../time/wall-clock';
 import { MINIMUM_BRIGHTNESS } from '../outputs/light-intent';
 import { sanitiseUnitInterval } from '../validation/unit-interval';
-import type { AnchorContext } from './circadian-curve';
+import type { AnchorContext, CurveValue } from './circadian-curve';
+import {
+  DEFAULT_TRANSITION, mix, sanitiseTransition, shape, type Transition,
+} from '../support/interpolate';
 import type { CircadianPlan, CircadianPoint } from './circadian-types';
 import type { TargetSpec } from '../outputs/light-intent';
 
@@ -31,22 +34,23 @@ import type { TargetSpec } from '../outputs/light-intent';
  */
 
 /**
- * How long each boundary takes to cross, in minutes either side of it.
+ * The shortest a zone may be, in minutes, once its boundaries are resolved.
  *
- * Fifty minutes, so a zone change is something you notice having happened
- * rather than something you watch happen. It is also what keeps each zone FLAT:
- * two points at one temperature with a ramp between them is the only way to hold
- * a value on an interpolating curve, which is the same trick the old four-point
- * shape used.
+ * Two and a half hours. Each zone's value sits at its CENTRE and the day
+ * blends from one centre to the next (`zoneValueAt`), so a zone this short is
+ * one whose own colour is only ever passed through — which is still a day in
+ * order, where a zone of zero width would not be. It is the same 150 minutes
+ * the old fixed-ramp shape needed, kept so that no stored offset resolves
+ * differently than it did.
  */
-export const ZONE_RAMP = 50;
+export const MIN_ZONE_MINUTES = 150;
 
 /**
  * How far a boundary may be pushed off its sunrise or sunset, in minutes.
  *
  * Two and a half hours either way, stepped by a quarter of an hour on screen.
  * Wider than anybody sensible needs and narrow enough that the two boundaries
- * cannot trade places on an ordinary day — and `zonePoints` clamps the resolved
+ * cannot trade places on an ordinary day — and `resolveBoundaries` clamps the resolved
  * minutes anyway, for the days that are not ordinary.
  */
 export const MAX_OFFSET = 150;
@@ -101,6 +105,8 @@ export interface SimpleCircadianPlan {
   zones: CircadianZones;
   /** Follow the brightness as well as the temperature. See `CircadianZone`. */
   adjustBrightness: boolean;
+  /** How each zone blends into the next. See `zoneValueAt`. */
+  transition: Transition;
   /** Write to lights that are OFF — only those in `preStageLights`. See CircadianPlan. */
   preStage: boolean;
   /** The lamps a pre-stage test proved safe. See CircadianPlan.preStageLights. */
@@ -147,6 +153,7 @@ export const DEFAULT_SIMPLE_PLAN: Omit<SimpleCircadianPlan, 'target' | 'schemaVe
   enabled: true,
   zones: DEFAULT_ZONES,
   adjustBrightness: true,
+  transition: DEFAULT_TRANSITION,
   preStage: false,
 };
 
@@ -180,9 +187,9 @@ export function resolveBoundaries(
   const sunrise = context.sunriseMinute ?? FALLBACK_SUNRISE;
   const sunset = context.sunsetMinute ?? FALLBACK_SUNSET;
 
-  // Each zone needs room for its own ramp plus half of each neighbour's, or two
-  // boundaries land on top of one another and the middle zone never holds.
-  const slack = 3 * ZONE_RAMP;
+  // Each zone keeps a minimum width, or two boundaries land on top of one
+  // another and the middle zone is never reached at all.
+  const slack = MIN_ZONE_MINUTES;
 
   const morningEndMinute = clamp(sunrise + zones.morningEnd, slack, MINUTES_PER_DAY - 2 * slack);
   const eveningStartMinute = clamp(
@@ -199,26 +206,13 @@ function clamp(value: number, low: number, high: number): number {
 }
 
 /**
- * The three zones as the curve engine's six points.
+ * The three zones as three points, one at each zone's CENTRE.
  *
- * Six, because holding three values flat needs two points each, and the ramps
- * between them are where the day actually changes:
- *
- * ```
- *   00:00+R  morning ─┐ (the night's ramp into the morning ends)
- *   A−R      morning ─┘ held all morning
- *   A+R      midday  ─┐ cooling across the morning boundary
- *   B−R      midday  ─┘ held through the middle of the day
- *   B+R      evening ─┐ warming across the evening boundary
- *   24:00−R  evening ─┘ held all evening
- * ```
- *
- * The pair around MIDNIGHT is the one the design canvas does not draw, and it is
- * deliberate. The canvas reads the morning temperature from midnight and the
- * evening temperature up to midnight, which was a step change the moment those
- * two stopped being the same value — the lights would jump at 00:00 every night.
- * The engine's interpolation is cyclic, so a ramp across midnight is the same
- * rule applied a third time rather than a special case.
+ * These are for READING — the diagnostics' point list, "next point", and the
+ * snapshot on an expanded plan — and not what the runtime evaluates. Handed to
+ * `valueAt` they would put the change halfway between two centres rather than
+ * at the boundary somebody set; `zoneValueAt` is the evaluator, and it is
+ * centred on the boundaries.
  *
  * Clock anchors rather than sun anchors, because the boundaries have already
  * been clamped against each other by `resolveBoundaries` and a sun anchor would
@@ -231,30 +225,98 @@ export function zonePoints(
   adjustBrightness = false,
 ): CircadianPoint[] {
   const { morningEndMinute, eveningStartMinute } = resolveBoundaries(zones, context);
+  const withBrightness = zonesCarryBrightness(zones, adjustBrightness);
 
-  const withBrightness = adjustBrightness
-    && zones.morning.brightness !== undefined
-    && zones.midday.brightness !== undefined
-    && zones.evening.brightness !== undefined;
-
-  const point = (id: string, minute: number, key: ZoneKey): CircadianPoint => {
+  const point = (key: ZoneKey, minute: number): CircadianPoint => {
     const zone = zones[key];
     return {
-      id,
-      anchor: { kind: 'clock', at: wrap(minute) },
+      id: key,
+      anchor: { kind: 'clock', at: wrap(Math.round(minute)) },
       warmth: zone.temperature,
       ...(withBrightness ? { brightness: zone.brightness! } : {}),
     };
   };
 
   return [
-    point('night-end', ZONE_RAMP, 'morning'),
-    point('morning-hold', morningEndMinute - ZONE_RAMP, 'morning'),
-    point('midday-start', morningEndMinute + ZONE_RAMP, 'midday'),
-    point('midday-hold', eveningStartMinute - ZONE_RAMP, 'midday'),
-    point('evening-start', eveningStartMinute + ZONE_RAMP, 'evening'),
-    point('night-start', MINUTES_PER_DAY - ZONE_RAMP, 'evening'),
+    point('morning', morningEndMinute / 2),
+    point('midday', (morningEndMinute + eveningStartMinute) / 2),
+    point('evening', (eveningStartMinute + MINUTES_PER_DAY) / 2),
   ];
+}
+
+function zonesCarryBrightness(zones: CircadianZones, adjustBrightness: boolean): boolean {
+  return adjustBrightness
+    && zones.morning.brightness !== undefined
+    && zones.midday.brightness !== undefined
+    && zones.evening.brightness !== undefined;
+}
+
+/**
+ * What a circadian light holds at this minute of the local day.
+ *
+ * **Zone to zone, centred on each boundary.** Every zone's value belongs to its
+ * centre, and the day blends from one zone into the next across a window
+ * centred on the boundary between them — so the boundary somebody set
+ * ("Ends: sunrise +30m") is always the halfway point of the change, whatever
+ * the transition. Quick then changes AT the boundary; Gradual spreads the same
+ * change out as far as the window allows.
+ *
+ * The window is symmetric, as wide as the SHORTER of its two zones allows: the
+ * blend reaches that zone's centre exactly and stops short of the longer one's,
+ * which holds its own value flat for the difference. Symmetric because the
+ * alternative — each half as long as its own zone — puts a kink in the curve at
+ * the boundary, which for Balanced and Quick is the exact moment it is moving
+ * fastest.
+ *
+ * Three boundaries, not two: evening → morning crosses midnight. The morning
+ * zone starts at 00:00 and the evening one ends there, so a day without that
+ * third blend would step at midnight every night the two differ.
+ *
+ * This replaced six points with fixed 50-minute ramps either side of each
+ * boundary, which held every zone flat and blended only across 100 minutes.
+ * Existing devices were migrated to Quick, the nearest of the three to that
+ * shape — see lib/circadian/circadian-migrations.ts.
+ */
+export function zoneValueAt(
+  zones: CircadianZones,
+  context: AnchorContext,
+  adjustBrightness: boolean,
+  transition: Transition,
+  minutesOfDay: number,
+): CurveValue {
+  const { morningEndMinute: morningEnd, eveningStartMinute: eveningStart } =
+    resolveBoundaries(zones, context);
+  const withBrightness = zonesCarryBrightness(zones, adjustBrightness);
+  const now = wrap(minutesOfDay);
+
+  const value = (from: CircadianZone, to: CircadianZone, fraction: number): CurveValue => {
+    const shaped = shape(transition, fraction);
+    return {
+      warmth: mix(from.temperature, to.temperature, shaped),
+      ...(withBrightness ? { brightness: mix(from.brightness!, to.brightness!, shaped) } : {}),
+    };
+  };
+
+  // Each boundary with the zones either side of it and how long those zones
+  // are. The midnight one sits at 0 and is measured cyclically.
+  const boundaries: [number, ZoneKey, number, ZoneKey, number][] = [
+    [morningEnd, 'morning', morningEnd, 'midday', eveningStart - morningEnd],
+    [eveningStart, 'midday', eveningStart - morningEnd, 'evening', MINUTES_PER_DAY - eveningStart],
+    [0, 'evening', MINUTES_PER_DAY - eveningStart, 'morning', morningEnd],
+  ];
+
+  for (const [at, before, beforeLength, after, afterLength] of boundaries) {
+    const half = Math.min(beforeLength, afterLength) / 2;
+    // Signed distance from the boundary, the short way round the clock.
+    const offset = ((now - at + MINUTES_PER_DAY * 1.5) % MINUTES_PER_DAY) - MINUTES_PER_DAY / 2;
+    if (half > 0 && Math.abs(offset) < half) {
+      return value(zones[before], zones[after], (offset + half) / (2 * half));
+    }
+  }
+
+  // Outside every window: holding a zone's own value.
+  const key: ZoneKey = now < morningEnd ? 'morning' : now < eveningStart ? 'midday' : 'evening';
+  return value(zones[key], zones[key], 0);
 }
 
 function wrap(minute: number): number {
@@ -282,6 +344,7 @@ export function expandSimplePlan(plan: SimpleCircadianPlan): CircadianPlan {
     points,
     zones: plan.zones,
     adjustBrightness: points.every(p => p.brightness !== undefined),
+    transition: plan.transition,
     preStage: plan.preStage,
     // Field by field above, so a new stored field has to be carried here by
     // name or the runtime never sees it.
@@ -336,6 +399,7 @@ export function foldBackSimplePlan(
 export function sanitiseZones(raw: unknown): {
   zones: CircadianZones;
   adjustBrightness: boolean;
+  transition: Transition;
   corrected: string[];
 } {
   const source = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
@@ -389,9 +453,11 @@ export function sanitiseZones(raw: unknown): {
       && morning.brightness !== undefined
       && midday.brightness !== undefined
       && evening.brightness !== undefined,
+    transition: sanitiseTransition(source.transition, corrected),
     corrected,
   };
 }
+
 
 /**
  * One boundary offset: a whole number of quarter hours, inside the range.

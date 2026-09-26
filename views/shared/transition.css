@@ -1,0 +1,38 @@
+/* ==== shared transition card: identical wherever it appears ====
+   GENERATED. Spliced by `npm run sync:views` from views/shared/transition.css,
+   where ROOT-ID stands in for each view's own root element id. **Edit that
+   file, not this one.**
+
+   "Transition": how a value moves between two points, as three single-select
+   rows with a picture of each curve at the end. The rows are the review
+   screen's control choice in shape — a 22px round mark, a 15/500 title and a
+   13px line under it — because a single choice from a short list is one thing
+   in this system, wherever it is drawn. Prefixed `tr-` because `.pick` and
+   `.box` already mean other things on the screens that carry it. */
+#ROOT .tr-card { background: var(--lk-surface); border: 1px solid var(--lk-edge);
+                 border-radius: 16px; box-shadow: var(--lk-shadow);
+                 padding: 0 14px; margin-bottom: 16px; }
+#ROOT .tr-row + .tr-row { border-top: 1px solid var(--lk-line); }
+#ROOT .tr-pick { display: flex; align-items: center; gap: 12px; width: 100%;
+                 padding: 12px 0; min-height: 44px; box-sizing: border-box;
+                 background: none; border: none; font: inherit; color: inherit;
+                 text-align: left; cursor: pointer; }
+#ROOT .tr-box { flex: none; width: 22px; height: 22px; border-radius: 50%;
+                border: 1.5px solid var(--lk-box); box-sizing: border-box;
+                display: flex; align-items: center; justify-content: center;
+                font-size: 13px; font-weight: 700; color: transparent; }
+#ROOT .tr-pick[aria-checked="true"] .tr-box { background: var(--lk-accent);
+                                              border-color: var(--lk-accent);
+                                              color: var(--lk-accent-ink); }
+#ROOT .tr-text { flex: 1; min-width: 0; }
+#ROOT .tr-what { font-size: 15px; font-weight: 500; line-height: 22px; }
+#ROOT .tr-why { font-size: 13px; color: var(--lk-muted); line-height: 1.45;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The curve itself, high on the left and low on the right — a value moving
+   from one point to the next, which is the one thing the three words cannot
+   show. Drawn by transitionCard() from the same maths the engine uses. */
+#ROOT .tr-thumb { flex: none; width: 64px; height: 40px; border-radius: 8px;
+                  background: var(--lk-flat-bg); display: block; }
+#ROOT .tr-line { fill: none; stroke: var(--lk-accent); stroke-width: 2;
+                 stroke-linecap: round; stroke-linejoin: round; }
+/* ==== end shared transition card ==== */

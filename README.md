@@ -99,7 +99,9 @@ Moves your lights through the colours of the day by itself. You describe three p
 **morning**, **midday** and **evening** — and how warm the light should be in each, and Lightkeeper
 fades between them. Morning ends a little after sunrise and evening begins a little before sunset,
 both worked out from your Homey's own location, so the day follows the real one through the year
-instead of a fixed clock. You can move either boundary in quarter-hour steps.
+instead of a fixed clock. You can move either boundary in quarter-hour steps, and choose how the
+colour moves between the parts: **Gradual**, **Balanced** or **Quick**. The Colour Curve Light and
+the Room-sensing Light offer the same choice.
 
 Brightness is optional: leave it off and only the colour changes.
 
@@ -337,24 +339,23 @@ reads, what it stores, and for how long.
 
 ## Changelog
 
-**0.6.5** — the current release:
+**0.6.6** — the current release:
 
-- **Choose how a device controls your lights** — change them after they turn on (the default), set
-  them before they turn on so they come on already right, or leave them alone and only work out the
-  values. **A device that set colours before lights came on stops doing so until you run the new light
-  test once from Repair.**
-- **A remote button can turn lights on the way the rest of the house knows they should look**, taking
-  colour from one Lightkeeper device and brightness from another at the moment you press.
-- **Lightkeeper's values in your own Flows** — as tags, a card that sets a room from two devices in
-  one change, and an *It is dark enough* condition. [What that looks like](#using-lightkeeper-in-your-own-flows).
-- **Redrawn setup screens** with a new colour picker, colours for schedule blocks, and a shorter
-  Room-sensing Light setup; plus fixes for lights left alone for hours when nobody had touched them, a
-  Light Remote with a colour button arriving unavailable, and a dozen more.
+- **Change how a device controls your lights from the device itself** — after they turn on, before
+  they turn on, or not at all — without opening Repair. The setup screen's answer and the device's
+  picker are one setting.
+- **Choosing *before* still needs the light test**, and a device that has not had one now says so on
+  its own page.
+- **Transition — Gradual, Balanced or Quick** — on every circadian, Colour Curve and Room-sensing
+  Light. Circadian lights now blend from one part of the day into the next; existing ones are set to
+  *Quick*, the closest to how they behaved.
+- **Icons on every value a device shows**, Homey's own.
 
 Earlier releases, one line each:
 
 | Version | What changed |
 |---|---|
+| **0.6.5** | Choose how a device controls your lights, a remote button that follows your other devices, Lightkeeper's values in your own Flows, and redrawn setup screens |
 | **0.6.0** | A fifth device type that reads a room's own light, every setup screen redrawn, circadian lights that follow the real sun, and three device types renamed |
 | **0.5.2** | Four fixes to the colour-following lights, and the dimmest brightness no longer meant off |
 | **0.5.1** | A shorter App Store listing, prose release notes, and icons legible at 24 px |

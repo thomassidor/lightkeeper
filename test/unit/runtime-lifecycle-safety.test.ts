@@ -75,8 +75,8 @@ function house() {
   schedules.timeCard = async () => ({ card: null, candidates: [] });
   const target = { kind: 'zone' as const, zoneId: 'room', includeSubzones: false };
   const response = { ...DEFAULT_RESPONSE, sensor: 'sensor' };
-  const curve: CircadianPlan = { schemaVersion: 1, enabled: true, target,
-    adjustBrightness: true, preStage: false,
+  const curve: CircadianPlan = { schemaVersion: 2, enabled: true, target,
+    adjustBrightness: true, transition: 'balanced', preStage: false,
     points: [0, 720].map(at => ({ id: String(at), anchor: { kind: 'clock', at },
       warmth: 0.5, brightness: 0.8 })) };
   const schedule: SchedulePlan = { schemaVersion: 1, enabled: true, target, days: null,

@@ -84,7 +84,26 @@ describe('the Colour Curve Light', () => {
     assert.equal(review.hero.bars.length, 24);
     assert.equal(review.rows[1].value, `${DEFAULT_POINTS.length} · 06:30–22:30`);
     assert.equal(review.rows[2].value, translate('review.brightnessRange', { min: 36, max: 94 }));
+    assert.equal(review.rows[3].label, translate('review.transition'));
+    assert.equal(review.rows[3].value, translate('transition.balanced'));
+    assert.equal(review.rows[3].view, 'curve');
     assert.deepEqual(review.control.modes, ['after', 'before', 'none']);
+  });
+
+  test('the transition the curve screen chose is what the device stores, and repair reads it back', async () => {
+    const { session: s } = await session(CurveDriver);
+    await s.call('selectTargets', { kind: 'devices', deviceIds: ['l1'] });
+    const reply = await s.call('setCurve', { points: [...DEFAULT_POINTS], adjustBrightness: true, transition: 'quick' });
+    assert.equal(reply.transition, 'quick');
+    const saved = await s.call('save', '');
+    assert.equal(saved.device.store.curve.transition, 'quick');
+
+    const repair = await session(CurveDriver, { repair: { key: 'curve', plan: saved.device.store.curve } });
+    assert.equal((await repair.session.call('getCurve')).transition, 'quick');
+
+    // Junk from a scripted session is corrected, not stored.
+    const junk = await s.call('setCurve', { points: [...DEFAULT_POINTS], transition: 'snap' });
+    assert.equal(junk.transition, 'balanced');
   });
 
   test('brightness off reads as "not changed"', async () => {

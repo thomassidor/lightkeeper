@@ -133,6 +133,22 @@ const BLOCKS = [
     optional: true,
   },
   { source: 'week-grid.js', kind: 'function', name: 'weekGrid', scoped: false, optional: true },
+  /**
+   * The "Transition" card, on the three engine device types' editing screens,
+   * and the curve maths it draws — which the Colour Curve screen's own chart
+   * also reads, so the chart and the thumbnails can never disagree with each
+   * other. Optional for the same reason as the week grid.
+   */
+  {
+    source: 'transition.css',
+    kind: 'delimited',
+    start: '/* ==== shared transition card:',
+    end: '/* ==== end shared transition card ==== */',
+    scoped: true,
+    optional: true,
+  },
+  { source: 'transition-shape.js', kind: 'function', name: 'transitionShape', scoped: false, optional: true },
+  { source: 'transition-card.js', kind: 'function', name: 'transitionCard', scoped: false, optional: true },
 ];
 
 /**

@@ -812,11 +812,12 @@ function __lkBootTi(Homey) {
   }
 
   /**
-   * The warmth at a minute, read off the RESOLVED points the driver sent.
+   * The warmth at a minute, read off the SAMPLES the driver sent.
    *
-   * The same cyclic interpolation the engine does, over the same six points —
-   * so what this screen draws and what the device will do are the same curve
-   * rather than two that agree today.
+   * The driver samples the real engine every ten minutes against today's sun
+   * (`getPreview`), so this reads between neighbouring samples in a straight
+   * line and carries no copy of the curve's maths at all: what this screen
+   * draws and what the device will do are one curve, whatever the transition.
    */
   function warmthAt(minute) {
     var points = state.points;
@@ -832,10 +833,7 @@ function __lkBootTi(Homey) {
     var span = ((after.minute - before.minute) + 1440) % 1440 || 1440;
     var elapsed = ((minute - before.minute) + 1440) % 1440;
     var fraction = Math.min(1, elapsed / span);
-    // A raised cosine, so segments meet with zero gradient — the same easing
-    // `lib/support/interpolate.ts` applies.
-    var eased = 0.5 - 0.5 * Math.cos(Math.PI * fraction);
-    return before.warmth + (after.warmth - before.warmth) * eased;
+    return before.warmth + (after.warmth - before.warmth) * fraction;
   }
 
   function warmthWord(value) {

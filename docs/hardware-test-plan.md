@@ -82,6 +82,10 @@ The script cannot do these. Report each by its number.
 
 ## 4. This release
 
+**0.6.6 — capability icons, the control picker and the Transition choice, on top of the 0.6.5 and
+0.6.0 passes that are still owed.** 0.6.6's ten lines are first: T181–T186 take ten minutes with a
+phone, and T187–T190 want an afternoon of the day going by.
+
 **0.6.5 — the Flow surface, a tenth job on a remote button, and a general code review, on top of an
 0.6.0 pass that is still owed.**
 
@@ -96,6 +100,63 @@ screen. **It does answer the machine-readable half of several**, and says which 
 `control` T166–T173, `flowcards` T147 and T149–T151, `jobs` T152–T154, `settings` T137. A line the
 script answers in part is still yours — the end of `full` lists it with a `*` — and its report line
 says what it left for you.
+
+### 0.6.6 — icons on the value rows, and the control choice on the tile
+
+Two things the suite cannot see: what Homey draws, and whether a narrowed enum reaches the phone.
+None of these is answered by `verify-hardware.mjs`. Use one device of each engine type — a circadian
+light, a Colour Curve Light, a Room-sensing Light — paired BEFORE this build, so T186 comes free.
+
+- [ ] **T181** **The icons, on a PUBLISHED build.** The value rows (*Brightness now*, *Colour
+      temperature now*, *Colour now*, *Daylight outside*) and the new picker each carry Homey's own
+      icon — dim, light temperature, hue, luminance, light mode. **A blank icon on a `homey app
+      install` is expected and not a failure** (platform §10: icons come from Athom's CDN, which only
+      holds published builds), so run this on the test channel. On a dev install, check only that the
+      rows are there.
+- [ ] **T182** **The picker changes the mode, and a restart keeps it.** On the circadian light, pick
+      *Don't change lights automatically* on the tile. Switch one of its lamps off and on: the lamp
+      comes on where it was left and stays there, and `node scripts/diagnostics.mjs` shows no writes
+      from that device. Restart the app: the tile still says *Don't change*. Pick *Change lights after
+      they turn on* and repeat the switch-on: the lamp is changed a moment after it comes on.
+- [ ] **T183** **A Room-sensing Light offers two.** Open its picker on the phone: exactly *Change
+      lights after they turn on* and *Don't change lights automatically*. This is the line that proves
+      `capabilitiesOptions.values` narrows an app's own enum on the device — `validate` accepts it but
+      says nothing about what is drawn. If all three appear, pick the third and confirm the tile
+      refuses it and snaps back; then record the finding in platform §18.
+- [ ] **T184** **"Before", chosen on the tile of a device never tested, says so.** On a Colour Curve
+      Light whose review-screen test has never run, pick *Set lights before they turn on*. The device's
+      page shows the warning telling you to run the test in Repair, and its lights behave as *after*.
+      Run the test in Repair, save, and the warning is gone.
+- [ ] **T185** **A Repair moves the picker.** Change the choice on the review screen in Repair and
+      save: the tile's picker follows without a restart.
+- [ ] **T186** **An old device gains the row.** Every device paired before this build shows the picker
+      after the update, on the right value, with no Repair — and the Light Remote and the schedule do
+      not show one at all.
+
+### 0.6.6 — Transition: Gradual, Balanced or Quick
+
+The shape itself is proved by the suite, against the engine and against the screens' own copies.
+What it cannot see is a stored device crossing the migration, and a real day on real lamps. Use the
+same three pre-existing devices as T186.
+
+- [ ] **T187** **The migration chose what it says.** After the update, open each device in Repair and
+      go to the editing step: the circadian light's *Transition* card has **Quick** checked, the
+      Colour Curve Light and the Room-sensing Light have **Balanced**. None of them came up
+      unavailable. `node scripts/diagnostics.mjs` shows each plan at `schemaVersion` 2.
+- [ ] **T188** **A circadian light blends, and the boundary is the halfway point.** On the circadian
+      light, choose *Gradual* and save. Over the next hour its published *Colour temperature now*
+      moves every few minutes rather than holding — the day is no longer flat between boundaries. At
+      the minute its morning boundary falls (the review's *Follows the sun* row), the published
+      warmth is halfway between the morning and midday values, whichever transition is chosen.
+- [ ] **T189** **The Room-sensing Light's shape reaches the lamps.** With a sensor, set the two
+      thresholds either side of what the room reads now, then switch between *Gradual* and *Quick*
+      and save each: the published *Brightness now* moves between the two and the lamps follow
+      within a minute. Readings below *dark* and above *bright* give the same brightness under all
+      three.
+- [ ] **T190** **The card and the row look like the design.** On a phone: the card sits where the
+      handoff puts it on all three editing steps (below *When the room is bright*, below the zone
+      rows, below *Add a time*), one line of description per row with the curve at the end, and the
+      last row of *Ready to add* reads *Transition — Balanced* and taps back to that step.
 
 ### 0.6.5 — the Flow surface, the switch-on work, and the code review's three
 

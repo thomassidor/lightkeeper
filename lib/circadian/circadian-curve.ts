@@ -4,7 +4,7 @@ import {
   type CircadianPoint,
 } from './circadian-types';
 import { mixColors, paletteColor } from './palette';
-import { ease, mix } from '../support/interpolate';
+import { DEFAULT_TRANSITION, mix, shape, type Transition } from '../support/interpolate';
 
 /**
  * The curve itself: where the day's warmth is at any given minute.
@@ -22,11 +22,12 @@ import { ease, mix } from '../support/interpolate';
  *    pinned flat at the last value, which is precisely the half of the day this
  *    feature exists for. Same family of bug as a schedule window belonging to the
  *    day it STARTED on (platform §9).
- *  - **Interpolation is EASED, not linear.** A raised cosine has zero gradient at
- *    each anchor, so segments meet without a kink. Linear interpolation is
- *    perfectly accurate and still wrong here: the output is the colour of a room,
- *    and a change of gradient at 20:00 sharp is visible as a "step" that people
- *    read as the app twitching.
+ *  - **Interpolation is SHAPED, and the device chooses the shape.** Balanced
+ *    and Quick settle into each anchor, so segments meet without a kink; a
+ *    change of gradient at 20:00 sharp is visible on a wall as a "step" that
+ *    people read as the app twitching. Gradual is linear and does have that kink
+ *    — it is offered because "changes evenly throughout" is what some people
+ *    want, and it is their room. See lib/support/interpolate.ts.
  */
 
 /**
@@ -117,6 +118,7 @@ export function valueAt(
   points: readonly CircadianPoint[],
   minutesOfDay: number,
   context: AnchorContext = {},
+  transition: Transition = DEFAULT_TRANSITION,
 ): CurveValue {
   const resolved = resolvePoints(points, context);
   if (resolved.length === 0) throw new Error('A circadian curve needs at least one point');
@@ -132,7 +134,7 @@ export function valueAt(
 
   const now = wrap(minutesOfDay);
   const { from, to, fraction } = bracket(resolved, now);
-  const eased = ease(fraction);
+  const eased = shape(transition, fraction);
 
   return {
     warmth: mix(from.warmth, to.warmth, eased),
@@ -151,9 +153,9 @@ export function valueAt(
  *
  * Three cases, and the middle one is the interesting decision:
  *
- *  - **Both ends coloured** → blend, hue the short way round the wheel. Amber at
- *    21:00 and rose at 23:00 passes through the shades between them, which is
- *    what a curve is for.
+ *  - **Both ends coloured** → blend, in a straight line across the colour disc
+ *    (`mixColors`). Amber at 21:00 and rose at 23:00 passes through the shades
+ *    between them, which is what a curve is for.
  *  - **One end coloured** → that colour, held flat across the whole segment. NOT
  *    blended towards the temperature end, because there is nothing to blend
  *    towards: a colour temperature is a point on a different axis, and fading

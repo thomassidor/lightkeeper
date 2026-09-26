@@ -3,6 +3,7 @@ import { VALUE_CAPABILITIES } from '../../lib/runtime/published-values';
 import { migrateDaylightPlan } from '../../lib/daylight/daylight-migrations';
 import type { DaylightPlan } from '../../lib/daylight/daylight-types';
 import type { DaylightRuntime } from '../../lib/daylight/daylight-runtime';
+import type { ControlMode } from '../../lib/pairing/control-choice';
 
 /**
  * One virtual device per Room-sensing Light.
@@ -42,6 +43,12 @@ module.exports = class DaylightDevice extends LightkeeperDevice<DaylightPlan, Da
   override readonly withPauseSwitch = true;
   /** No colour temperature: this device type only ever decides a brightness. */
   override readonly valueCapabilities = [VALUE_CAPABILITIES.brightness, VALUE_CAPABILITIES.daylight];
+  /**
+   * Two of the three: a `dim` write switches a lamp on (platform §12), so there
+   * is nothing to set before one does. The manifest narrows the picker to match;
+   * this list is what refuses the third when something sends it anyway.
+   */
+  override readonly controlModes: readonly ControlMode[] = ['after', 'none'];
 
   migrate(raw: unknown): PlanMigration<DaylightPlan> {
     return migrateDaylightPlan(raw);

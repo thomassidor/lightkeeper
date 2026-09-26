@@ -312,6 +312,15 @@
     "checkIt": "Check it over",
     "checkItWhy": "Everything is changeable later"
   },
+  "transition": {
+    "title": "Transition",
+    "gradual": "Gradual",
+    "gradualWhy": "Changes evenly throughout",
+    "balanced": "Balanced",
+    "balancedWhy": "Changes mostly in the middle",
+    "quick": "Quick",
+    "quickWhy": "Changes all at once"
+  },
   "review": {
     "title": "Ready to add",
     "add": "Add device",
@@ -346,6 +355,7 @@
     "brightness": "Brightness",
     "brightnessRange": "__min__–__max__%, per colour",
     "notChanged": "Not changed",
+    "transition": "Transition",
     "control": {
       "title": "How Lightkeeper controls your lights",
       "after": "Change lights after they turn on",
@@ -666,5 +676,8 @@
     "5": "Fri",
     "6": "Sat",
     "7": "Sun"
+  },
+  "warnings": {
+    "preStageUntested": "Set to change lights before they turn on, but no light has been tested for it yet, so none are. Open Repair and run the light test on the last screen."
   }
 }

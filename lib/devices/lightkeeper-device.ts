@@ -8,6 +8,7 @@ import {
   type PlanMigration,
 } from './device-lifecycle';
 import type { ControllerState } from '../profiles/controller-profile';
+import { CONTROL_CAPABILITY, type ControlMode } from '../pairing/control-choice';
 
 /**
  * The `Homey.Device` half of a Lightkeeper virtual device: the SDK entry points,
@@ -44,6 +45,11 @@ export abstract class LightkeeperDevice<
    * list exists at all when `driver.compose.json` already names them.
    */
   readonly valueCapabilities: readonly string[] = [];
+  /**
+   * Empty here, and overridden by the three engine device types — the only ones
+   * with a "How Lightkeeper controls your lights" choice to put on the tile.
+   */
+  readonly controlModes: readonly ControlMode[] = [];
 
   abstract migrate(raw: unknown): PlanMigration<TPlan>;
   abstract registry(): DeviceRegistry<TPlan, TRuntime>;
@@ -98,6 +104,9 @@ export abstract class LightkeeperDevice<
   override async onInit(): Promise<void> {
     if (this.withPauseSwitch) {
       this.registerCapabilityListener('onoff', async (value: boolean) => this.lifecycle.setEnabled(value));
+    }
+    if (this.controlModes.length > 0) {
+      this.registerCapabilityListener(CONTROL_CAPABILITY, async (value: unknown) => this.lifecycle.setControlMode(value));
     }
     await this.lifecycle.init();
   }

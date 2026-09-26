@@ -25,25 +25,27 @@ import { sharedLightCount, sourceRows, type SourceDevice } from '../../lib/pairi
  */
 
 const circadian = () => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   enabled: true,
   target: { kind: 'devices', deviceIds: ['l1'] },
   points: DEFAULT_POINTS.map(p => ({ ...p })),
   adjustBrightness: false,
+  transition: 'balanced' as const,
   preStage: false,
 });
 
 const simple = () => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   enabled: true,
   target: { kind: 'devices' as const, deviceIds: ['l1'] },
   zones: DEFAULT_ZONES,
   adjustBrightness: false,
+  transition: 'balanced' as const,
   preStage: false,
 });
 
 const daylight = () => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   enabled: true,
   target: { kind: 'devices', deviceIds: ['l1'] },
   response: { ...DEFAULT_RESPONSE },

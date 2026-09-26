@@ -601,6 +601,44 @@
                          line-height: 1.45; }
 
   /* ==== end shared base ==== */
+/* ==== shared transition card: identical wherever it appears ====
+   GENERATED. Spliced by `npm run sync:views` from views/shared/transition.css,
+   where ROOT-ID stands in for each view's own root element id. **Edit that
+   file, not this one.**
+
+   "Transition": how a value moves between two points, as three single-select
+   rows with a picture of each curve at the end. The rows are the review
+   screen's control choice in shape — a 22px round mark, a 15/500 title and a
+   13px line under it — because a single choice from a short list is one thing
+   in this system, wherever it is drawn. Prefixed `tr-` because `.pick` and
+   `.box` already mean other things on the screens that carry it. */
+#rs-root .tr-card { background: var(--lk-surface); border: 1px solid var(--lk-edge);
+                 border-radius: 16px; box-shadow: var(--lk-shadow);
+                 padding: 0 14px; margin-bottom: 16px; }
+#rs-root .tr-row + .tr-row { border-top: 1px solid var(--lk-line); }
+#rs-root .tr-pick { display: flex; align-items: center; gap: 12px; width: 100%;
+                 padding: 12px 0; min-height: 44px; box-sizing: border-box;
+                 background: none; border: none; font: inherit; color: inherit;
+                 text-align: left; cursor: pointer; }
+#rs-root .tr-box { flex: none; width: 22px; height: 22px; border-radius: 50%;
+                border: 1.5px solid var(--lk-box); box-sizing: border-box;
+                display: flex; align-items: center; justify-content: center;
+                font-size: 13px; font-weight: 700; color: transparent; }
+#rs-root .tr-pick[aria-checked="true"] .tr-box { background: var(--lk-accent);
+                                              border-color: var(--lk-accent);
+                                              color: var(--lk-accent-ink); }
+#rs-root .tr-text { flex: 1; min-width: 0; }
+#rs-root .tr-what { font-size: 15px; font-weight: 500; line-height: 22px; }
+#rs-root .tr-why { font-size: 13px; color: var(--lk-muted); line-height: 1.45;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The curve itself, high on the left and low on the right — a value moving
+   from one point to the next, which is the one thing the three words cannot
+   show. Drawn by transitionCard() from the same maths the engine uses. */
+#rs-root .tr-thumb { flex: none; width: 64px; height: 40px; border-radius: 8px;
+                  background: var(--lk-flat-bg); display: block; }
+#rs-root .tr-line { fill: none; stroke: var(--lk-accent); stroke-width: 2;
+                 stroke-linecap: round; stroke-linejoin: round; }
+/* ==== end shared transition card ==== */
 
           /* ==== shared week grid: identical wherever it appears ====
    GENERATED. Spliced by `npm run sync:views` from views/shared/week-grid.css,
@@ -854,6 +892,9 @@
   </div>
 
   <div class="others" id="rs-others"></div>
+
+  <!-- How the brightness moves between the two ends. views/shared/transition-card.js. -->
+  <div id="rs-transition"></div>
 
   <div class="card rows">
     <button class="row" id="rs-try" type="button">
@@ -1188,6 +1229,87 @@ function __lkBootRs(Homey) {
 
   function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 
+  function transitionShape(kind, t) {
+    /**
+     * How far a value has moved at fraction `t` of the way between two points.
+     *
+     * GENERATED. Spliced into every carrier by `npm run sync:views` from
+     * views/shared/transition-shape.js. **Edit that file, not this one.**
+     *
+     * The same maths as `shape()` in lib/support/interpolate.ts, which a pair
+     * view cannot import: Gradual is linear, Balanced and Quick are a logistic
+     * normalised so that 0 → 0 and 1 → 1, with k = 6 and k = 16. Change one,
+     * change both.
+     */
+    var x = Math.max(0, Math.min(1, t));
+    if (kind === 'gradual') return x;
+    var k = kind === 'quick' ? 16 : 6;
+    var s = function (v) { return 1 / (1 + Math.exp(-k * (v - 0.5))); };
+    return (s(x) - s(0)) / (s(1) - s(0));
+  }
+
+  function transitionCard(host, selected, onChoose) {
+    /**
+     * The "Transition" heading and card, drawn into an element.
+     *
+     * GENERATED. Spliced into every carrier by `npm run sync:views` from
+     * views/shared/transition-card.js. **Edit that file, not this one.**
+     *
+     * Nodes only, never markup: no view assigns innerHTML. It closes over the
+     * `node` and `transitionShape` every carrier already has, and calls
+     * `onChoose(kind)` when a row is tapped — the carrier owns what that
+     * changes and how it reaches the driver. The locale keys are written out
+     * literally so locales.test.ts sees them used.
+     */
+    var KINDS = [
+      { kind: 'gradual', what: 'transition.gradual', why: 'transition.gradualWhy' },
+      { kind: 'balanced', what: 'transition.balanced', why: 'transition.balancedWhy' },
+      { kind: 'quick', what: 'transition.quick', why: 'transition.quickWhy' },
+    ];
+    var SVG = 'http://www.w3.org/2000/svg';
+
+    while (host.firstChild) host.removeChild(host.firstChild);
+    host.appendChild(node('div', 'section-title', Homey.__('transition.title')));
+    var card = node('div', 'tr-card');
+    card.setAttribute('role', 'radiogroup');
+
+    KINDS.forEach(function (option) {
+      var row = node('div', 'tr-row');
+      var pick = node('button', 'tr-pick');
+      pick.type = 'button';
+      pick.setAttribute('role', 'radio');
+      pick.setAttribute('data-transition', option.kind);
+      pick.setAttribute('aria-checked', option.kind === selected ? 'true' : 'false');
+      pick.appendChild(node('span', 'tr-box', '✓'));
+      var text = node('span', 'tr-text');
+      text.appendChild(node('div', 'tr-what', Homey.__(option.what)));
+      text.appendChild(node('div', 'tr-why', Homey.__(option.why)));
+      pick.appendChild(text);
+
+      // 64 x 40, the curve inset 8px from the sides and 9px from the top and
+      // bottom so a round cap never touches the edge of its tile.
+      var svg = document.createElementNS(SVG, 'svg');
+      svg.setAttribute('class', 'tr-thumb');
+      svg.setAttribute('viewBox', '0 0 64 40');
+      svg.setAttribute('aria-hidden', 'true');
+      var coords = [];
+      for (var i = 0; i <= 24; i++) {
+        var t = i / 24;
+        coords.push((8 + t * 48).toFixed(1) + ',' + (9 + transitionShape(option.kind, t) * 22).toFixed(1));
+      }
+      var line = document.createElementNS(SVG, 'polyline');
+      line.setAttribute('class', 'tr-line');
+      line.setAttribute('points', coords.join(' '));
+      svg.appendChild(line);
+      pick.appendChild(svg);
+
+      pick.addEventListener('click', function () { onChoose(option.kind); });
+      row.appendChild(pick);
+      card.appendChild(row);
+    });
+    host.appendChild(card);
+  }
+
   var el = {
     steps: document.getElementById('rs-steps'),
     error: document.getElementById('rs-error'),
@@ -1207,6 +1329,7 @@ function __lkBootRs(Homey) {
     bright: document.getElementById('rs-bright'),
     brightKnob: document.getElementById('rs-brightKnob'),
     others: document.getElementById('rs-others'),
+    transition: document.getElementById('rs-transition'),
     try: document.getElementById('rs-try'),
     msg: document.getElementById('rs-msg'),
   };
@@ -1416,6 +1539,11 @@ function __lkBootRs(Homey) {
     setSlider(el.brightKnob, brightness);
 
     renderOther();
+    transitionCard(el.transition, state.response.transition || 'balanced', function (kind) {
+      state.response.transition = kind;
+      render();
+      push();
+    });
   }
 
   function renderOther() {

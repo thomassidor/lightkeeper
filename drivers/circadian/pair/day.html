@@ -601,6 +601,44 @@
                          line-height: 1.45; }
 
   /* ==== end shared base ==== */
+/* ==== shared transition card: identical wherever it appears ====
+   GENERATED. Spliced by `npm run sync:views` from views/shared/transition.css,
+   where ROOT-ID stands in for each view's own root element id. **Edit that
+   file, not this one.**
+
+   "Transition": how a value moves between two points, as three single-select
+   rows with a picture of each curve at the end. The rows are the review
+   screen's control choice in shape — a 22px round mark, a 15/500 title and a
+   13px line under it — because a single choice from a short list is one thing
+   in this system, wherever it is drawn. Prefixed `tr-` because `.pick` and
+   `.box` already mean other things on the screens that carry it. */
+#dy-root .tr-card { background: var(--lk-surface); border: 1px solid var(--lk-edge);
+                 border-radius: 16px; box-shadow: var(--lk-shadow);
+                 padding: 0 14px; margin-bottom: 16px; }
+#dy-root .tr-row + .tr-row { border-top: 1px solid var(--lk-line); }
+#dy-root .tr-pick { display: flex; align-items: center; gap: 12px; width: 100%;
+                 padding: 12px 0; min-height: 44px; box-sizing: border-box;
+                 background: none; border: none; font: inherit; color: inherit;
+                 text-align: left; cursor: pointer; }
+#dy-root .tr-box { flex: none; width: 22px; height: 22px; border-radius: 50%;
+                border: 1.5px solid var(--lk-box); box-sizing: border-box;
+                display: flex; align-items: center; justify-content: center;
+                font-size: 13px; font-weight: 700; color: transparent; }
+#dy-root .tr-pick[aria-checked="true"] .tr-box { background: var(--lk-accent);
+                                              border-color: var(--lk-accent);
+                                              color: var(--lk-accent-ink); }
+#dy-root .tr-text { flex: 1; min-width: 0; }
+#dy-root .tr-what { font-size: 15px; font-weight: 500; line-height: 22px; }
+#dy-root .tr-why { font-size: 13px; color: var(--lk-muted); line-height: 1.45;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The curve itself, high on the left and low on the right — a value moving
+   from one point to the next, which is the one thing the three words cannot
+   show. Drawn by transitionCard() from the same maths the engine uses. */
+#dy-root .tr-thumb { flex: none; width: 64px; height: 40px; border-radius: 8px;
+                  background: var(--lk-flat-bg); display: block; }
+#dy-root .tr-line { fill: none; stroke: var(--lk-accent); stroke-width: 2;
+                 stroke-linecap: round; stroke-linejoin: round; }
+/* ==== end shared transition card ==== */
 
   /* ---- this view only ---------------------------------------------------- */
 
@@ -741,6 +779,9 @@
 
   <div class="others" id="dy-others"></div>
 
+  <!-- How each zone blends into the next. views/shared/transition-card.js. -->
+  <div id="dy-transition"></div>
+
   <div class="card rows">
     <button class="row" id="dy-tryit" type="button">
       <span class="label" data-i18n="day.tryIt"></span>
@@ -865,6 +906,87 @@ function __lkBootDy(Homey) {
 
   function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 
+  function transitionShape(kind, t) {
+    /**
+     * How far a value has moved at fraction `t` of the way between two points.
+     *
+     * GENERATED. Spliced into every carrier by `npm run sync:views` from
+     * views/shared/transition-shape.js. **Edit that file, not this one.**
+     *
+     * The same maths as `shape()` in lib/support/interpolate.ts, which a pair
+     * view cannot import: Gradual is linear, Balanced and Quick are a logistic
+     * normalised so that 0 → 0 and 1 → 1, with k = 6 and k = 16. Change one,
+     * change both.
+     */
+    var x = Math.max(0, Math.min(1, t));
+    if (kind === 'gradual') return x;
+    var k = kind === 'quick' ? 16 : 6;
+    var s = function (v) { return 1 / (1 + Math.exp(-k * (v - 0.5))); };
+    return (s(x) - s(0)) / (s(1) - s(0));
+  }
+
+  function transitionCard(host, selected, onChoose) {
+    /**
+     * The "Transition" heading and card, drawn into an element.
+     *
+     * GENERATED. Spliced into every carrier by `npm run sync:views` from
+     * views/shared/transition-card.js. **Edit that file, not this one.**
+     *
+     * Nodes only, never markup: no view assigns innerHTML. It closes over the
+     * `node` and `transitionShape` every carrier already has, and calls
+     * `onChoose(kind)` when a row is tapped — the carrier owns what that
+     * changes and how it reaches the driver. The locale keys are written out
+     * literally so locales.test.ts sees them used.
+     */
+    var KINDS = [
+      { kind: 'gradual', what: 'transition.gradual', why: 'transition.gradualWhy' },
+      { kind: 'balanced', what: 'transition.balanced', why: 'transition.balancedWhy' },
+      { kind: 'quick', what: 'transition.quick', why: 'transition.quickWhy' },
+    ];
+    var SVG = 'http://www.w3.org/2000/svg';
+
+    while (host.firstChild) host.removeChild(host.firstChild);
+    host.appendChild(node('div', 'section-title', Homey.__('transition.title')));
+    var card = node('div', 'tr-card');
+    card.setAttribute('role', 'radiogroup');
+
+    KINDS.forEach(function (option) {
+      var row = node('div', 'tr-row');
+      var pick = node('button', 'tr-pick');
+      pick.type = 'button';
+      pick.setAttribute('role', 'radio');
+      pick.setAttribute('data-transition', option.kind);
+      pick.setAttribute('aria-checked', option.kind === selected ? 'true' : 'false');
+      pick.appendChild(node('span', 'tr-box', '✓'));
+      var text = node('span', 'tr-text');
+      text.appendChild(node('div', 'tr-what', Homey.__(option.what)));
+      text.appendChild(node('div', 'tr-why', Homey.__(option.why)));
+      pick.appendChild(text);
+
+      // 64 x 40, the curve inset 8px from the sides and 9px from the top and
+      // bottom so a round cap never touches the edge of its tile.
+      var svg = document.createElementNS(SVG, 'svg');
+      svg.setAttribute('class', 'tr-thumb');
+      svg.setAttribute('viewBox', '0 0 64 40');
+      svg.setAttribute('aria-hidden', 'true');
+      var coords = [];
+      for (var i = 0; i <= 24; i++) {
+        var t = i / 24;
+        coords.push((8 + t * 48).toFixed(1) + ',' + (9 + transitionShape(option.kind, t) * 22).toFixed(1));
+      }
+      var line = document.createElementNS(SVG, 'polyline');
+      line.setAttribute('class', 'tr-line');
+      line.setAttribute('points', coords.join(' '));
+      svg.appendChild(line);
+      pick.appendChild(svg);
+
+      pick.addEventListener('click', function () { onChoose(option.kind); });
+      row.appendChild(pick);
+      card.appendChild(row);
+    });
+    host.appendChild(card);
+  }
+
   function pad(value) { return (value < 10 ? '0' : '') + value; }
 
   function clock(minutes) { return pad(Math.floor(minutes / 60)) + ':' + pad(minutes % 60); }
@@ -895,6 +1017,7 @@ function __lkBootDy(Homey) {
     bright: document.getElementById('dy-bright'),
     brightKnob: document.getElementById('dy-brightKnob'),
     others: document.getElementById('dy-others'),
+    transition: document.getElementById('dy-transition'),
     tryit: document.getElementById('dy-tryit')
   };
 
@@ -916,6 +1039,7 @@ function __lkBootDy(Homey) {
   var state = {
     zones: null,
     adjustBrightness: false,
+    transition: 'balanced',
     selected: 'morning',
     bounds: null,
     sun: { sunriseMinute: null, sunsetMinute: null },
@@ -949,23 +1073,40 @@ function __lkBootDy(Homey) {
     return 'rgb(' + rgb.join(',') + ')';
   }
 
-  /** The warmth at any minute, which is exactly what `zonePoints` produces. */
-  var RAMP = 50;
-  function warmthAt(minute) {
-    var a = state.bounds.morningEndMinute;
-    var b = state.bounds.eveningStartMinute;
-    var z = state.zones;
-    if (minute < RAMP) return mix(z.evening.temperature, z.morning.temperature, (minute + RAMP) / (2 * RAMP));
-    if (minute < a - RAMP) return z.morning.temperature;
-    if (minute < a + RAMP) return mix(z.morning.temperature, z.midday.temperature, (minute - (a - RAMP)) / (2 * RAMP));
-    if (minute < b - RAMP) return z.midday.temperature;
-    if (minute < b + RAMP) return mix(z.midday.temperature, z.evening.temperature, (minute - (b - RAMP)) / (2 * RAMP));
-    if (minute < 1440 - RAMP) return z.evening.temperature;
-    return mix(z.evening.temperature, z.morning.temperature, (minute - (1440 - RAMP)) / (2 * RAMP));
+  /**
+   * The warmth at any minute: `zoneValueAt` in lib/circadian/simple-curve.ts,
+   * copied because the strip redraws under a finger mid-drag and cannot wait a
+   * round trip. An OPTIMISTIC copy, like `localBounds` below — and held to the
+   * engine by pair-view-zone-copy.test.ts, because the copy this replaced had
+   * quietly gone linear where the engine eased.
+   *
+   * Each zone's value sits at its centre; each boundary is the middle of a
+   * blend as wide as the shorter of its two zones allows, shaped by the chosen
+   * transition. Pure, so the test can run it on its own.
+   */
+  function zoneWarmthAt(zones, bounds, kind, minute) {
+    var a = bounds.morningEndMinute;
+    var b = bounds.eveningStartMinute;
+    var edges = [
+      [a, zones.morning, a, zones.midday, b - a],
+      [b, zones.midday, b - a, zones.evening, 1440 - b],
+      [0, zones.evening, 1440 - b, zones.morning, a]
+    ];
+    var now = ((minute % 1440) + 1440) % 1440;
+    for (var i = 0; i < edges.length; i++) {
+      var edge = edges[i];
+      var half = Math.min(edge[2], edge[4]) / 2;
+      var offset = ((now - edge[0] + 2160) % 1440) - 720;
+      if (half > 0 && Math.abs(offset) < half) {
+        var f = transitionShape(kind, (offset + half) / (2 * half));
+        return edge[1].temperature + (edge[3].temperature - edge[1].temperature) * f;
+      }
+    }
+    return (now < a ? zones.morning : now < b ? zones.midday : zones.evening).temperature;
   }
 
-  function mix(from, to, fraction) {
-    return from + (to - from) * Math.max(0, Math.min(1, fraction));
+  function warmthAt(minute) {
+    return zoneWarmthAt(state.zones, state.bounds, state.transition, minute);
   }
 
   function drawStrip() {
@@ -1050,6 +1191,11 @@ function __lkBootDy(Homey) {
 
     renderOthers();
     drawStrip();
+    transitionCard(el.transition, state.transition, function (kind) {
+      state.transition = kind;
+      renderZone();
+      push();
+    });
   }
 
   function offsetText(sunrise, offset) {
@@ -1189,7 +1335,8 @@ function __lkBootDy(Homey) {
    * optimistic copy rather than a second implementation with its own opinion.
    */
   function localBounds() {
-    var slack = 3 * RAMP;
+    // MIN_ZONE_MINUTES in lib/circadian/simple-curve.ts.
+    var slack = 150;
     var sunrise = state.sun.sunriseMinute === null ? 360 : state.sun.sunriseMinute;
     var sunset = state.sun.sunsetMinute === null ? 1260 : state.sun.sunsetMinute;
     var a = Math.max(slack, Math.min(1440 - 2 * slack, sunrise + state.zones.morningEnd));
@@ -1232,13 +1379,15 @@ function __lkBootDy(Homey) {
       evening: state.zones.evening,
       morningEnd: state.zones.morningEnd,
       eveningStart: state.zones.eveningStart,
-      adjustBrightness: state.adjustBrightness
+      adjustBrightness: state.adjustBrightness,
+      transition: state.transition
     }).then(function (reply) {
       // The driver's clamp is the one that counts. Snapping to it visibly beats
       // leaving a handle where the finger stopped while the device goes
       // somewhere else.
       state.zones = reply.zones;
       state.adjustBrightness = reply.adjustBrightness;
+      state.transition = reply.transition || state.transition;
       state.bounds = reply.boundaries;
       renderZone();
     }).catch(show);
@@ -1264,6 +1413,7 @@ function __lkBootDy(Homey) {
   emit('getDay').then(function (payload) {
     state.zones = payload.zones;
     state.adjustBrightness = payload.adjustBrightness;
+    state.transition = payload.transition || 'balanced';
     state.bounds = payload.boundaries;
     state.sun = payload.sun;
     state.limits = payload.limits;

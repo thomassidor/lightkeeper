@@ -1,6 +1,7 @@
 import { sanitiseUnitInterval } from '../validation/unit-interval';
 import { MINIMUM_BRIGHTNESS } from '../outputs/light-intent';
 import type { TargetSpec } from '../outputs/light-intent';
+import { DEFAULT_TRANSITION, sanitiseTransition, type Transition } from '../support/interpolate';
 
 /**
  * What a daylight response is, as persisted — in FOUR different stores.
@@ -142,6 +143,17 @@ export interface DaylightResponse {
    * needs no model of it.
    */
   sunPeak: SunPeak;
+  /**
+   * How the brightness moves between the two ends — see
+   * lib/support/interpolate.ts. It shapes both ramps: log lux with a sensor,
+   * elevation without one.
+   *
+   * INSIDE the response, unlike `writesLights` below, and on purpose: it changes
+   * how the room is read. Quick is a steeper ramp through the middle, so it
+   * raises the loop's gain where a sensor sees its own lamps, and the evidence
+   * `updatePlan` wipes on a response change was gathered at the old gain.
+   */
+  transition: Transition;
 }
 
 export interface DaylightPlan {
@@ -185,6 +197,7 @@ export const DEFAULT_RESPONSE: DaylightResponse = {
   // told us about: it models a little rather than nothing and rather than a full
   // south-facing cosine.
   sunPeak: 'flat',
+  transition: DEFAULT_TRANSITION,
 };
 
 export interface SanitisedResponse {
@@ -266,8 +279,12 @@ export function sanitiseResponse(raw: unknown): SanitisedResponse {
     else corrected.push('sunPeak');
   }
 
+  const transition = sanitiseTransition(source.transition, corrected);
+
   return {
-    response: { sensor, darkLux, brightLux, dark, bright, darkElevation, brightElevation, sunPeak },
+    response: {
+      sensor, darkLux, brightLux, dark, bright, darkElevation, brightElevation, sunPeak, transition,
+    },
     corrected,
   };
 }

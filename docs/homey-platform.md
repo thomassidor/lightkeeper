@@ -1845,6 +1845,22 @@ both because Homey's own frontend special-cases it. A value meant to be dropped 
 stay on the 0..1 axis — that is what the built-in card takes — so the honest choice is to keep the
 axis and drop the units, and say what the number is in the title.
 
+**One custom capability is a control, and it is an enum.** `lightkeeper_control` (0.6.6) is
+`type: enum`, `setable: true`, `uiComponent: picker`, with a `registerCapabilityListener` behind it on
+the three engine device types — the tile's copy of the review screen's "How Lightkeeper controls your
+lights". An enum has none of the slider problem above: there is no system capability it could be
+mistaken for, and its values are the app's own. A Room-sensing Light narrows it to two through
+`capabilitiesOptions.<id>.values`; `homey-lib` validates that key only for `target_power_mode`, so
+`validate` accepting it says nothing about the phone drawing two, which is what T183 checks. The
+device layer refuses the third value regardless.
+
+**A custom capability's icon is a file, and Homey's own are borrowable as files only.** `icon` takes
+an app path and `validate` checks it exists case-exactly (`lib/App/index.js`); there is no way to
+name a system capability's icon, and `capabilitiesOptions` has none (§10). Athom's capability
+reference serves every system icon at
+`athombv.github.io/athom-cloud-driver-reference/icons/<capability id>.svg` — 64×64, single-colour,
+which is what a mask wants — and `assets/capabilities/` ships five of them unmodified.
+
 **`titleShort` needs `compatibility >=13.2.1`**, which is above this app's floor of `>=12.9.0`. It
 fails `validate` at publish level with `capabilities.<id>.titleShort requires a compatibility of at
 least >=13.2.1` — one of the few places the validator is stricter than the schema.

@@ -1,7 +1,7 @@
 {
   "_comment": "This file is generated. Please edit .homeycompose/app.json instead.",
   "id": "com.thomassidor.lightkeeper",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "compatibility": ">=12.9.0",
   "runtime": "nodejs",
   "sdk": 3,
@@ -351,7 +351,8 @@
       "capabilities": [
         "onoff",
         "lightkeeper_brightness",
-        "lightkeeper_temperature"
+        "lightkeeper_temperature",
+        "lightkeeper_control"
       ],
       "capabilitiesOptions": {
         "onoff": {
@@ -575,7 +576,8 @@
         "onoff",
         "lightkeeper_brightness",
         "lightkeeper_temperature",
-        "lightkeeper_colour"
+        "lightkeeper_colour",
+        "lightkeeper_control"
       ],
       "capabilitiesOptions": {
         "onoff": {
@@ -661,13 +663,30 @@
       "capabilities": [
         "onoff",
         "lightkeeper_brightness",
-        "lightkeeper_daylight"
+        "lightkeeper_daylight",
+        "lightkeeper_control"
       ],
       "capabilitiesOptions": {
         "onoff": {
           "title": {
             "en": "Daylight active"
           }
+        },
+        "lightkeeper_control": {
+          "values": [
+            {
+              "id": "after",
+              "title": {
+                "en": "Change lights after they turn on"
+              }
+            },
+            {
+              "id": "none",
+              "title": {
+                "en": "Don’t change lights automatically"
+              }
+            }
+          ]
         }
       },
       "platforms": [
@@ -869,7 +888,8 @@
       "chartType": "stepLine",
       "min": 0,
       "max": 1,
-      "decimals": 2
+      "decimals": 2,
+      "icon": "/assets/capabilities/dim.svg"
     },
     "lightkeeper_colour": {
       "type": "string",
@@ -881,7 +901,42 @@
       },
       "getable": true,
       "setable": false,
-      "uiComponent": "sensor"
+      "uiComponent": "sensor",
+      "icon": "/assets/capabilities/light_hue.svg"
+    },
+    "lightkeeper_control": {
+      "type": "enum",
+      "title": {
+        "en": "Lightkeeper control"
+      },
+      "desc": {
+        "en": "How Lightkeeper controls this device's lights: after they turn on, before they turn on, or not at all."
+      },
+      "getable": true,
+      "setable": true,
+      "uiComponent": "picker",
+      "insights": false,
+      "values": [
+        {
+          "id": "after",
+          "title": {
+            "en": "Change lights after they turn on"
+          }
+        },
+        {
+          "id": "before",
+          "title": {
+            "en": "Set lights before they turn on"
+          }
+        },
+        {
+          "id": "none",
+          "title": {
+            "en": "Don’t change lights automatically"
+          }
+        }
+      ],
+      "icon": "/assets/capabilities/light_mode.svg"
     },
     "lightkeeper_daylight": {
       "type": "number",
@@ -898,7 +953,8 @@
       "chartType": "spline",
       "min": 0,
       "max": 1,
-      "decimals": 2
+      "decimals": 2,
+      "icon": "/assets/capabilities/measure_luminance.svg"
     },
     "lightkeeper_temperature": {
       "type": "number",
@@ -915,7 +971,8 @@
       "chartType": "stepLine",
       "min": 0,
       "max": 1,
-      "decimals": 2
+      "decimals": 2,
+      "icon": "/assets/capabilities/light_temperature.svg"
     }
   }
 }

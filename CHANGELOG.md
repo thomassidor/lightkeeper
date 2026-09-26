@@ -9,6 +9,79 @@ entry before updating — a device may need Homey's **Repair** run on it, or in 
 deleting and adding again. [`FAQ.md` → Is this finished?](FAQ.md#is-this-finished) has the longer
 answer.
 
+## 0.6.6
+
+Nothing needs redoing. Every existing circadian light, Colour Curve Light and Room-sensing Light
+gains the new picker on its own the first time the app starts. **One thing looks different:** a
+circadian light now blends from one part of the day into the next rather than holding each part
+steady and changing only around the boundary. Existing ones are set to *Quick*, the closest of the
+three new choices to how they behaved; choose *Balanced* or *Gradual* in Repair for a slower day.
+
+### New
+
+- **Change how a device controls your lights from the device itself.** The question the last setup
+  screen asks since 0.6.5 — *Change lights after they turn on*, *Set lights before they turn on*,
+  *Don't change lights automatically* — is now also a picker on the device, so switching a room to
+  "only work out the values" for an evening no longer means opening Repair. A Room-sensing Light's
+  picker has the first and last only, as its setup screen does. The picker and the setup screen are
+  the same setting: change one and the other follows.
+- **Icons on every value a device shows.** *Brightness now*, *Colour temperature now*, *Colour now*,
+  *Daylight outside* and the new picker carry Homey's own icons for dim, light temperature, hue,
+  luminance and light mode, instead of a generic one.
+
+- **Transition: Gradual, Balanced or Quick.** A new card on the editing step of all three — *Colour
+  through the day*, *Your colours through the day* and *How bright should the lamps be?* — and a
+  *Transition* row at the end of *Ready to add* that taps back to it. It sets how a value moves
+  between two points: evenly throughout, mostly in the middle (the default), or nearly all at once.
+  It shapes the brightness and the colour alike; on a Room-sensing Light it shapes the ramp between
+  the dark and bright thresholds, whether the lamps follow a sensor or the sun, and outside the two
+  thresholds nothing changes.
+
+### Changed
+
+- **A circadian light blends zone to zone.** Each part of the day's colour now belongs to the
+  middle of that part, and the day blends from one into the next with the boundary you set as the
+  halfway point. It used to hold each part flat and blend only across the 100 minutes around each
+  boundary — which made a transition choice meaningless, since there was hardly any blend to shape.
+  **Existing circadian lights are set to Quick**, which does most of its changing near the boundary
+  as the old shape did; the change is real, and this is where it is said.
+- **Colour Curve Lights and Room-sensing Lights do not visibly change.** They used to ease every
+  change with a raised cosine; they are set to *Balanced*, which is within 0.016 of it everywhere.
+- **"Set lights before they turn on" still needs the light test, and now says so.** The test blinks
+  each light, so it is not something a picker — or a Flow — should set off. Choose *before* on the
+  device and it sets in advance only the lights a test has already proven. If none has been tested,
+  the device's page carries a warning saying to run the test from Repair, and until then it behaves as
+  *after*. This also flags a device that pre-staged before 0.6.5 and has not been re-tested.
+
+### Under the hood
+
+- The raised cosine `ease()` is gone from `lib/support/interpolate.ts`; `shape(transition, t)` is
+  linear, or a logistic normalised to 0 → 0 and 1 → 1 with k = 6 (Balanced) or k = 16 (Quick).
+  `transition` is stored at the root of the circadian and curve plans and INSIDE a Room-sensing
+  Light's `response` — it changes the loop's gain, so changing it rightly resets the feedback
+  evidence a response change resets. Each of the three chains gets its first step, 1 → 2: circadian
+  to `quick`, curve and daylight to `balanced`. The validators require the field; the sanitisers
+  correct junk to `balanced`.
+- `zoneValueAt()` in `lib/circadian/simple-curve.ts` is what a circadian runtime evaluates now;
+  `zonePoints()` is three zone centres, for diagnostics and "next point" only. `ZONE_RAMP` is gone
+  and its 150-minute clamp lives on as `MIN_ZONE_MINUTES`, so no stored offset resolves differently.
+- The pairing screens' own copies of the maths are one fewer and tested. `views/shared/` gains the
+  card (`transition.css`, `transition-card.js`) and `transition-shape.js`, spliced by
+  `sync:views`. The try-it screen is sent engine samples rather than easing points itself. The day
+  screen keeps a copy, because its strip redraws mid-drag — and that copy had gone linear where the
+  engine eased; `pair-view-zone-copy.test.ts` now runs it against the engine.
+- `lightkeeper_control` is the app's one SETTABLE custom capability: an enum whose values are the
+  three `ControlMode`s verbatim, handed to `DeviceLifecycle.setControlMode`. That method has
+  `setEnabled`'s shape — store first, then `updatePlan` through `planForRuntime` — and refuses a
+  mode the device type does not list in `controlModes`, because a capability value is as scriptable
+  as a pair session (platform §14). No new stored shape: `planWithControlMode()` in
+  `lib/pairing/control-choice.ts` writes the same two flags the review screen does, `writesLights`
+  only when false.
+- The icons are Athom's own, from the capability reference, shipped under `assets/capabilities/`. A
+  system capability's icon cannot be borrowed by name — `capabilitiesOptions` has no `icon` (platform
+  §10) — and using the system capabilities themselves would draw a working slider nothing honours
+  (§18). Like every icon, they only appear on a published build.
+
 ## 0.6.5
 
 **Read this before updating** if you have a circadian light or a Colour Curve Light that set the

@@ -4,6 +4,7 @@ import { sanitiseUnitInterval } from '../validation/unit-interval';
 import { isPaletteColor } from './palette';
 import type { TargetSpec } from '../outputs/light-intent';
 import type { CircadianZones } from './simple-curve';
+import type { Transition } from '../support/interpolate';
 
 /**
  * What a circadian light is, as persisted in its virtual device's store.
@@ -108,6 +109,12 @@ export interface CircadianPlan {
    * for someone's living room is the one thing this feature must not do.
    */
   adjustBrightness: boolean;
+  /**
+   * How the curve moves between neighbouring points — see
+   * lib/support/interpolate.ts. On a circadian light, how each zone blends into
+   * the next (`zoneValueAt`).
+   */
+  transition: Transition;
   /**
    * The three zones a CIRCADIAN light stores, when this plan came from one.
    *

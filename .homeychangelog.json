@@ -1,4 +1,7 @@
 {
+  "0.6.6": {
+    "en": "New: you can now change how a circadian light, Colour Curve Light or Room-sensing Light controls your lights straight from the device, without opening Repair. New: a Transition choice (Gradual, Balanced or Quick) sets how a circadian light, Colour Curve Light or Room-sensing Light moves between its settings. Circadian lights now blend from one part of the day into the next instead of holding each part and changing near the boundary; existing ones are set to Quick, which is closest to how they behaved before. The values each device shows now have icons. If you choose to set lights before they turn on and no light has been tested for it yet, the device tells you to run the light test in Repair."
+  },
   "0.6.5": {
     "en": "New: you now choose on the last setup screen how Lightkeeper controls your lights. If a device used to set colours before lights turn on, run the new light test once from Repair to turn that back on. A remote button can now turn lights on with the colour and brightness your other Lightkeeper devices want, and those values can be used in your own Flows. The setup screens have been redrawn, and lights no longer get left alone for hours when nobody touched them."
   },

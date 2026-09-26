@@ -6,13 +6,30 @@
   "capabilities": [
     "onoff",
     "lightkeeper_brightness",
-    "lightkeeper_daylight"
+    "lightkeeper_daylight",
+    "lightkeeper_control"
   ],
   "capabilitiesOptions": {
     "onoff": {
       "title": {
         "en": "Daylight active"
       }
+    },
+    "lightkeeper_control": {
+      "values": [
+        {
+          "id": "after",
+          "title": {
+            "en": "Change lights after they turn on"
+          }
+        },
+        {
+          "id": "none",
+          "title": {
+            "en": "Don’t change lights automatically"
+          }
+        }
+      ]
     }
   },
   "platforms": [

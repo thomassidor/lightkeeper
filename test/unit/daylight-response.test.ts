@@ -31,7 +31,7 @@ import { DEFAULT_RESPONSE, SUN_PEAKS, type DaylightResponse } from '../../lib/da
 const COMPENSATE: DaylightResponse = {
   sensor: 'sensor-a', darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25,
   darkElevation: DARK_ELEVATION, brightElevation: BRIGHT_ELEVATION,
-  sunPeak: 'flat',
+  sunPeak: 'flat', transition: 'balanced',
 };
 /** The same response with its ends swapped: the room follows the day instead. */
 const FOLLOW: DaylightResponse = { ...COMPENSATE, dark: 0.25, bright: 0.9 };
@@ -83,12 +83,36 @@ describe('levelFromLux', () => {
     assert.equal(levelFromLux(inverted, 50), 0);
   });
 
-  test('it is eased, so it settles into both ends', () => {
-    // A raised cosine is flat at the ends: a decade of lux just above the dark
-    // end must move the level less than a decade in the middle does.
+  test('Balanced is eased, so it settles into both ends', () => {
+    // Flat at the ends: a decade of lux just above the dark end must move the
+    // level less than a decade in the middle does.
     const nearEnd = levelFromLux(COMPENSATE, 5 * 1.2) - levelFromLux(COMPENSATE, 5);
     const middle = levelFromLux(COMPENSATE, 50 * 1.2) - levelFromLux(COMPENSATE, 50);
     assert.ok(nearEnd < middle, `expected easing, got ${nearEnd} at the end and ${middle} mid-ramp`);
+  });
+
+  test('Gradual is a straight line on log lux, and Quick does its moving in the middle', () => {
+    const gradual: DaylightResponse = { ...COMPENSATE, transition: 'gradual' };
+    const quick: DaylightResponse = { ...COMPENSATE, transition: 'quick' };
+    // A quarter of the way from 5 to 500 lx on a log axis.
+    const quarter = 5 * 100 ** 0.25;
+    assert.ok(Math.abs(levelFromLux(gradual, quarter) - 0.25) < 1e-9);
+    assert.ok(levelFromLux(quick, quarter) < levelFromLux(COMPENSATE, quarter));
+    assert.ok(levelFromLux(COMPENSATE, quarter) < levelFromLux(gradual, quarter));
+    // Every shape agrees on the midpoint, and on the two ends.
+    for (const response of [gradual, COMPENSATE, quick]) {
+      assert.ok(Math.abs(levelFromLux(response, Math.sqrt(5 * 500)) - 0.5) < 1e-9, response.transition);
+      assert.equal(levelFromLux(response, 2), 0, `${response.transition}: below dark stays flat`);
+      assert.equal(levelFromLux(response, 2000), 1, `${response.transition}: above bright stays flat`);
+    }
+  });
+
+  test('the sun ramp takes the same shape as the lux one', () => {
+    const gradual: DaylightResponse = { ...COMPENSATE, transition: 'gradual' };
+    const quick: DaylightResponse = { ...COMPENSATE, transition: 'quick' };
+    const quarter = DARK_ELEVATION + (BRIGHT_ELEVATION - DARK_ELEVATION) / 4;
+    assert.ok(Math.abs(levelFromElevation(gradual, quarter) - 0.25) < 1e-9);
+    assert.ok(levelFromElevation(quick, quarter) < levelFromElevation(gradual, quarter));
   });
 
   test('it is monotonic across the whole plausible range', () => {
@@ -247,6 +271,7 @@ describe('which way the room faces', () => {
   const ROOM: DaylightResponse = {
     sensor: null, darkLux: 5, brightLux: 500, dark: 0.9, bright: 0.25,
     darkElevation: DARK_ELEVATION, brightElevation: BRIGHT_ELEVATION, sunPeak: 'flat',
+    transition: 'balanced',
   };
 
   /** Sun due east, due south, due west — the bearings, not times. */

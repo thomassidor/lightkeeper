@@ -6,6 +6,7 @@ import type { CircadianPlan } from '../../lib/circadian/circadian-types';
 import type { CircadianRuntime } from '../../lib/circadian/circadian-runtime';
 import type { CircadianRuntimeManager } from '../../lib/circadian/circadian-runtime-manager';
 import type { ControllerState, StateDetail } from '../../lib/profiles/controller-profile';
+import type { ControlMode } from '../../lib/pairing/control-choice';
 
 /**
  * One virtual device per circadian light.
@@ -50,6 +51,7 @@ module.exports = class CircadianDevice
   override readonly withPauseSwitch = true;
   /** Three zones of the day are a colour TEMPERATURE each — never a colour. */
   override readonly valueCapabilities = [VALUE_CAPABILITIES.brightness, VALUE_CAPABILITIES.temperature];
+  override readonly controlModes: readonly ControlMode[] = ['after', 'before', 'none'];
 
   migrate(raw: unknown): PlanMigration<SimpleCircadianPlan> {
     return migrateCircadianPlan(raw);

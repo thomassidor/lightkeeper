@@ -6,7 +6,7 @@ import type { HomeyApiService } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
 import { sunTimes } from '../daylight/solar-elevation';
 import { usableLocation } from '../daylight/daylight-types';
-import { zonePoints } from './simple-curve';
+import { zonePoints, zoneValueAt } from './simple-curve';
 import type { AnchorContext } from './circadian-curve';
 import { CommandScheduler, type WriteOutcome } from '../outputs/command-scheduler';
 import { LightTargetAdapter, type WriteRecord } from '../outputs/light-target-adapter';
@@ -1066,7 +1066,15 @@ export class CircadianRuntime {
   currentValue(): CurveValue | null {
     if (this.plan.points.length === 0) return null;
     const resolved = localNowResolved(this.deps.timezone(), this.now());
-    return resolved.resolved ? valueAt(this.resolvedPoints(), resolved.clock.minutesOfDay) : null;
+    if (!resolved.resolved) return null;
+    const minute = resolved.clock.minutesOfDay;
+    // A circadian light is evaluated from its zones, not from the three centre
+    // points `resolvedPoints` reads back for diagnostics — those would put each
+    // change halfway between two centres rather than at the boundary.
+    const zones = this.plan.zones;
+    return zones !== undefined
+      ? zoneValueAt(zones, this.sunContext(), this.plan.adjustBrightness, this.plan.transition, minute)
+      : valueAt(this.plan.points, minute, {}, this.plan.transition);
   }
 
   /**
@@ -1080,7 +1088,7 @@ export class CircadianRuntime {
    * so a snapshot taken in March is an hour out by June.
    *
    * Called on every tick, and cheap — `sunContext` memoises the day's solar
-   * arithmetic and `zonePoints` is six object literals.
+   * arithmetic and `zonePoints` is three object literals.
    */
   private resolvedPoints(): CircadianPoint[] {
     const zones = this.plan.zones;

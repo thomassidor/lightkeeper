@@ -136,10 +136,13 @@ export interface FakeDeviceState {
   listeners: Map<string, (value: unknown, opts?: unknown) => unknown>;
   /** Make the next store write of this key reject, the way a full disk does. */
   failStoreWrites: Set<string>;
+  /** The device page's warning banner, and every change to it: text, or null. */
+  warning: string | null;
+  warnings: Array<string | null>;
 }
 
 /**
- * `Homey.Device`, as the eleven members the device layer uses.
+ * `Homey.Device`, as the thirteen members the device layer uses.
  *
  * `setCapabilityValue` on a capability the device does not have REJECTS, like
  * the SDK — `DeviceLifecycle` relies on that (its first-init `onoff` write has a
@@ -194,6 +197,15 @@ export class Device extends Recorder {
     this.fake.available = false;
     this.fake.unavailableMessage = message ?? '';
     this.fake.availability.push(message ?? '');
+  }
+
+  async setWarning(message: string | null): Promise<void> {
+    this.fake.warning = message;
+    this.fake.warnings.push(message);
+  }
+  async unsetWarning(): Promise<void> {
+    this.fake.warning = null;
+    this.fake.warnings.push(null);
   }
 
   async onInit(): Promise<void> { /* overridden */ }
@@ -410,6 +422,8 @@ export function makeDevice<C extends new () => Device>(
     storeWrites: [],
     listeners: new Map(),
     failStoreWrites: new Set(),
+    warning: null,
+    warnings: [],
   };
   return device;
 }

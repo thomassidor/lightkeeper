@@ -229,6 +229,11 @@ describe('review, control and save', () => {
     assert.equal(review.rows[2].value, `${translate('review.underLux', { lux: SUGGESTED.darkLux })} → 90%`);
     // Two of the three: a brightness written to an off lamp switches it on.
     assert.deepEqual(review.control.modes, ['after', 'none']);
+    // The last row, after "Right now", taps back to the response step.
+    const last = review.rows[review.rows.length - 1];
+    assert.equal(last.label, translate('review.transition'));
+    assert.equal(last.value, translate('transition.balanced'));
+    assert.equal(last.view, 'response');
   });
 
   test('following the sun, the review reads in degrees', async () => {
@@ -257,6 +262,8 @@ describe('review, control and save', () => {
     assert.match(saved.device.data.id, /^lk-dayl-/);
     assert.equal(saved.device.name, 'Desk lamp daylight');
     assert.deepEqual(saved.device.store.daylight.target, { kind: 'devices', deviceIds: ['l1'] });
+
+    assert.equal(saved.device.store.daylight.response.transition, 'balanced');
 
     const repair = await repaired(storedPlan({ sensor: 's1' }));
     assert.deepEqual(await repair.session.call('save', 'x'), { updated: true });
