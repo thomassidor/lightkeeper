@@ -1,4 +1,15 @@
 {
+  "meta": {
+    "language": "en",
+    "direction": "ltr"
+  },
+  "common": {
+    "timeout": "Homey did not respond in time. Close this screen and try again. (__event__)"
+  },
+  "unit": {
+    "percent": "__n__%",
+    "listSeparator": ", "
+  },
   "credential": {
     "title": "One-time setup",
     "why": "Homey does not let an app create Flows on its own, so Lightkeeper needs an API key from you. It uses the key only to build and maintain the Flows behind this device — nothing else.",
@@ -22,12 +33,18 @@
   },
   "source": {
     "reattach": "__name__ looks like the same remote, re-added. Re-attaching keeps every mapping and target exactly as they were.",
-    "reattachAmbiguous": "__count__ remotes look like this one, so Lightkeeper cannot tell which it was. Open repair and choose the right one — your mappings and lights are kept either way."
+    "reattachAmbiguous": {
+      "one": "__count__ remote looks like this one, so Lightkeeper cannot tell which it was. Open repair and choose the right one — your mappings and lights are kept either way.",
+      "other": "__count__ remotes look like this one, so Lightkeeper cannot tell which it was. Open repair and choose the right one — your mappings and lights are kept either way."
+    }
   },
   "targets": {
     "allCount": "all __count__",
     "pair": "__first__ and __second__",
-    "someLights": "__count__ lights",
+    "someLights": {
+      "one": "__count__ light",
+      "other": "__count__ lights"
+    },
     "noneOfThem": "no lights any more",
     "subtitleController": "The lights this remote will control.",
     "subtitleSchedule": "The lights this schedule turns on and off.",
@@ -37,7 +54,14 @@
   },
   "mapping": {
     "allLights": "All lights",
-    "unsupportedControl": "Lightkeeper cannot build a Flow for __controls__. Assign that control to something else, or leave it unassigned."
+    "unsupportedControl": "Lightkeeper cannot build a Flow for __controls__. Assign that control to something else, or leave it unassigned.",
+    "declinedControl": "__label__ (__reason__)",
+    "declineTooMany": {
+      "one": "it would need __count__ Flow, above the limit of __ceiling__",
+      "other": "it would need __count__ Flows, above the limit of __ceiling__"
+    },
+    "declineNoValues": "it lists no values",
+    "declineNotANumber": "one of its values is not a number"
   },
   "schedule": {
     "mon": "Mon",
@@ -127,9 +151,18 @@
     "sourceGone": "The remote this device listens to is no longer paired.",
     "surfaceChanged": "This remote now exposes different events. Open repair to remap it.",
     "noTargets": "None of this device's lights are available.",
-    "someTargets": "__count__ of __total__ lights unavailable.",
-    "noTargetsResponding": "__count__ light(s) are not responding to Lightkeeper. Check that they are powered on.",
-    "someTargetsNotResponding": "__count__ of __total__ lights are not responding. Check that they are powered on.",
+    "someTargets": {
+      "one": "__unavailable__ of __count__ light unavailable.",
+      "other": "__unavailable__ of __count__ lights unavailable."
+    },
+    "noTargetsResponding": {
+      "one": "__count__ light is not responding to Lightkeeper. Check that it is powered on.",
+      "other": "__count__ lights are not responding to Lightkeeper. Check that they are powered on."
+    },
+    "someTargetsNotResponding": {
+      "one": "__notResponding__ of __count__ light is not responding. Check that it is powered on.",
+      "other": "__notResponding__ of __count__ lights are not responding. Check that they are powered on."
+    },
     "unsupportedMapping": "Lightkeeper could not build a Flow for __controls__. Open Repair and assign that control to something else.",
     "flowEdited": "A Flow this app generated has been edited by hand. Open repair to rebuild it.",
     "noSchedule": "This schedule has no configuration. Repair it to set it up again.",
@@ -140,7 +173,10 @@
     "noDaylight": "This light has no configuration. Repair it to set it up again.",
     "noDimTargets": "None of this device's lights can change their brightness, so there is nothing for it to do.",
     "daylightFeedback": "These lamps are brightening the sensor this device reads, so they keep raising their own brightness. Move the sensor away from their light, or lower the brightness at the bright end.",
-    "daylightSensorStale": "__name__ has not reported for __hours__ hours, so these lights are held where they are. A few quiet hours are normal, but a sensor silent this long has probably stopped — check its battery, or repair this device to pick another sensor.",
+    "daylightSensorStale": {
+      "one": "__name__ has not reported for __count__ hour, so these lights are held where they are. A few quiet hours are normal, but a sensor silent this long has probably stopped — check its battery, or repair this device to pick another sensor.",
+      "other": "__name__ has not reported for __count__ hours, so these lights are held where they are. A few quiet hours are normal, but a sensor silent this long has probably stopped — check its battery, or repair this device to pick another sensor."
+    },
     "noDaylightSource": "Lightkeeper cannot tell how light it is: no light sensor is reporting, and this Homey has not told it where it is. Add a light sensor in Repair, or set your Homey's location.",
     "persistFailed": "Lightkeeper could not save what it learned about its Flows. Open repair to try again.",
     "invalidConfiguration": "This device's stored configuration is not one Lightkeeper can read. Repair it to set it up again.",
@@ -182,7 +218,7 @@
     "stateNeedsRepair": "Needs repair",
     "stateNeedsCredential": "Needs API key",
     "stateDisabled": "Disabled",
-    "mappingsAndFlows": "__mappings__ mapping(s), __flows__ managed Flow(s)",
+    "mappingsAndFlows": "__mappings__, __flows__",
     "diagnostics": "Diagnostics",
     "showDiagnostics": "Show diagnostics",
     "downloadDiagnostics": "Copy for a bug report",
@@ -193,14 +229,26 @@
     "notStarted": "not started",
     "flowsTitle": "Generated Flows",
     "flowsExplain": "Lightkeeper creates a Flow for each mapped button, and two for each schedule window. Flows whose Lightkeeper device no longer exists are orphans and can be deleted safely — only Flows this app created for a device that no longer exists are touched.",
-    "noneOrphaned": "__total__ generated Flow(s), none orphaned.",
-    "orphansFound": "__orphans__ orphaned Flow(s) out of __total__ generated, across __live__ live Lightkeeper device(s).",
-    "deleteOrphans": "Delete __count__ orphaned Flow(s)",
-    "sweepRefused": "__total__ generated Flow(s) found, but no Lightkeeper device is running right now. Every Flow would look orphaned, so nothing will be deleted. Check your Lightkeeper devices first.",
+    "noneOrphaned": {
+      "one": "__count__ generated Flow, none orphaned.",
+      "other": "__count__ generated Flows, none orphaned."
+    },
+    "orphansFound": "__orphans__ of __total__ generated Flows are orphaned, across __devices__.",
+    "deleteOrphans": {
+      "one": "Delete __count__ orphaned Flow",
+      "other": "Delete __count__ orphaned Flows"
+    },
+    "sweepRefused": {
+      "one": "__count__ generated Flow found, but no Lightkeeper device is running right now. It would look orphaned, so nothing will be deleted. Check your Lightkeeper devices first.",
+      "other": "__count__ generated Flows found, but no Lightkeeper device is running right now. Every Flow would look orphaned, so nothing will be deleted. Check your Lightkeeper devices first."
+    },
     "sweepStale": "The list changed while it was on screen, so nothing was deleted. Here it is again.",
     "sweepUnreadable": "Lightkeeper could not list its own devices just now, so it cannot tell which Flows are orphaned. Nothing was deleted. Reload this page in a moment.",
     "sweepNotApproved": "That request did not name which Flows to delete, so nothing was deleted. Reload this page and use the button.",
-    "sweepUnmanaged": "__unmanaged__ Flow(s) use a Lightkeeper card but were not created by this app, so they are left alone.",
+    "sweepUnmanaged": {
+      "one": "__count__ Flow uses a Lightkeeper card but was not created by this app, so it is left alone.",
+      "other": "__count__ Flows use a Lightkeeper card but were not created by this app, so they are left alone."
+    },
     "sweeping": "Deleting… this can take a while for hundreds of Flows.",
     "swept": "Deleted __deleted__, kept __kept__.",
     "sweptWithFailures": "Deleted __deleted__, kept __kept__, __failed__ failed.",
@@ -227,7 +275,6 @@
     "scheduleWindow": "__on__ → __off__",
     "scheduleActiveNow": "on now",
     "scheduleEveryDay": "every day",
-    "scheduleFlows": "__flows__ managed Flow(s)",
     "scheduleClock": "Homey clock: __local__ (__zone__)",
     "circadian": "Circadian and Colour Curve Lights",
     "daylight": "Room-sensing Lights",
@@ -242,7 +289,10 @@
     "daylightAgeNow": "just now",
     "daylightAgeMinutes": "__minutes__ min ago",
     "daylightAgeHours": "__hours__ h ago",
-    "daylightAgeDays": "__days__ days ago",
+    "daylightAgeDays": {
+      "one": "__count__ day ago",
+      "other": "__count__ days ago"
+    },
     "daylightNow": "Holding these lights at __percent__%, from the __source__.",
     "daylightFromSensors": "light sensors",
     "daylightFromSky": "sun",
@@ -255,17 +305,39 @@
     "circadianNow": "Now at __warmth__% warmth, next point at __next__",
     "circadianNowColour": "Now showing __colour__, next point at __next__",
     "circadianNowBetween": "Now between __from__ and __to__, next point at __next__",
-    "circadianOverridden": "__count__ light(s) changed by hand",
+    "circadianOverridden": {
+      "one": "__count__ light changed by hand",
+      "other": "__count__ lights changed by hand"
+    },
     "circadianPreStageOff": "Setting the colour before the lights come on was turned off automatically: one of these lights switched itself on.",
-    "publishOnly": "Works out what its lights should be, and leaves them alone until a remote or a Flow asks."
+    "publishOnly": "Works out what its lights should be, and leaves them alone until a remote or a Flow asks.",
+    "mappingCount": {
+      "one": "__count__ mapping",
+      "other": "__count__ mappings"
+    },
+    "managedFlowCount": {
+      "one": "__count__ managed Flow",
+      "other": "__count__ managed Flows"
+    },
+    "liveDeviceCount": {
+      "one": "__count__ live Lightkeeper device",
+      "other": "__count__ live Lightkeeper devices"
+    },
+    "writeMs": "__ms__ ms"
   },
   "lights": {
     "title": "Which lights?",
     "step": "Step __index__ of __count__",
-    "search": "Search __count__ lights",
+    "search": {
+      "one": "Search __count__ light",
+      "other": "Search __count__ lights"
+    },
     "selectAll": "Select all",
     "selectNone": "Clear",
-    "chosen": "__count__ chosen",
+    "chosen": {
+      "one": "__count__ chosen",
+      "other": "__count__ chosen"
+    },
     "roomCount": "__picked__ of __total__",
     "noRoom": "No room",
     "noneChosen": "Pick at least one light",
@@ -339,7 +411,10 @@
     "onTheseDays": "On these days",
     "buttonsWithAJob": "Buttons with a job",
     "wholeRoom": "__count__ in __room__",
-    "someLights": "__count__ picked",
+    "someLights": {
+      "one": "__count__ picked",
+      "other": "__count__ picked"
+    },
     "followsSun": "Follows the sun",
     "fixedHours": "Fixed hours",
     "theSun": "The sun",
@@ -365,19 +440,27 @@
       "beforeWhy": "Lights turn on in the right colour. Needs a quick test first, as some lights turn on when they are set.",
       "none": "Don’t change lights automatically",
       "noneWhy": "Lightkeeper calculates colour and brightness but leaves your lights alone. Use the values in your own flows.",
-      "test": "Test my __count__ lights",
-      "testOne": "Test my light",
+      "test": {
+        "one": "Test my light",
+        "other": "Test my __count__ lights"
+      },
       "testing": "Testing…",
       "testNote": "Takes about 15 seconds. Each light blinks once, then goes back to how it was.",
       "passed": "Turns on in the right colour",
       "fallback": "Turned on when set, so it is changed after it turns on",
-      "testedNow": "Tested just now · __count__ lights back to how they were",
-      "testedNowOne": "Tested just now · the light is back to how it was",
-      "testedNowSome": "Tested just now · __restored__ of __count__ lights back to how they were",
+      "testedNow": {
+        "one": "Tested just now · the light is back to how it was",
+        "other": "Tested just now · __count__ lights back to how they were"
+      },
+      "testedNowSome": {
+        "one": "Tested just now · __restored__ of __count__ light back to how it was",
+        "other": "Tested just now · __restored__ of __count__ lights back to how they were"
+      },
       "testedBefore": "From the last test. Lights added since then are changed after they turn on until they are tested.",
       "testAgain": "Test again",
       "testFailed": "The test could not be run. Check that the lights are reachable and try again."
-    }
+    },
+    "thresholdTo": "__threshold__ → __percent__"
   },
   "tip": {
     "daylight": "Want more control? Use the Room-sensing light from Lightkeeper."
@@ -420,18 +503,32 @@
     "step": "Step __index__ of __count__",
     "none": "No remotes or switches found. Add one to Homey first.",
     "noMatch": "No device of that name. Check the spelling, or clear the search.",
-    "search": "Search __count__ devices",
+    "search": {
+      "one": "Search __count__ device",
+      "other": "Search __count__ devices"
+    },
     "otherWhy": "Homey has heard no button press from the rest of the house.",
     "showOther": "Show every other device",
     "hideOther": "Hide the other devices",
     "unavailable": "Not responding",
-    "events": "__count__ separate presses",
+    "events": {
+      "one": "__count__ separate press",
+      "other": "__count__ separate presses"
+    },
     "noEvents": "Nothing heard from it yet",
-    "found": "__name__ · __buttons__ buttons, __events__ events",
+    "found": "__name__ · __buttons__, __events__",
     "unusable": "Nothing can be read from __name__, so it cannot drive anything. Pick another.",
     "reattach": "Use this one instead",
     "reattaching": "Using this one…",
-    "reattachText": "The remote this device used has gone. __name__ looks like the same kind of device."
+    "reattachText": "The remote this device used has gone. __name__ looks like the same kind of device.",
+    "buttonCount": {
+      "one": "__count__ button",
+      "other": "__count__ buttons"
+    },
+    "eventCount": {
+      "one": "__count__ event",
+      "other": "__count__ events"
+    }
   },
   "blocks": {
     "title": "When are they on?",
@@ -477,7 +574,8 @@
     "putBack": "Stop preview",
     "puttingBack": "Stopping…",
     "set": "Set",
-    "leftAlone": "Off, left alone"
+    "leftAlone": "Off, left alone",
+    "zoneAndWarmth": "__zone__ · __warmth__"
   },
   "sensor": {
     "title": "Where should the reading come from?",
@@ -486,7 +584,10 @@
     "aSensorWhy": "Measures the light in the room itself.",
     "theSun": "The sun",
     "theSunWhy": "No sensor needed. Works perfectly well on its own.",
-    "countAvailable": "__count__ found",
+    "countAvailable": {
+      "one": "__count__ found",
+      "other": "__count__ found"
+    },
     "chosenNow": "__name__ · __lux__ lx",
     "noneAvailable": "None found",
     "sunsetAt": "Sunset at __time__ today",
@@ -498,7 +599,10 @@
     "justNow": "just now",
     "minutesAgo": "__minutes__ min ago",
     "hoursAgo": "__hours__ h ago",
-    "daysAgo": "__days__ days ago",
+    "daysAgo": {
+      "one": "__count__ day ago",
+      "other": "__count__ days ago"
+    },
     "neverReported": "never reported"
   },
   "response": {
@@ -539,7 +643,10 @@
     "sixAm": "6am",
     "sixPm": "6pm",
     "tryIt": "Try it now",
-    "tried": "Set __writes__ light(s) to what the room asks for right now."
+    "tried": {
+      "one": "Set __count__ light to what the room asks for right now.",
+      "other": "Set __count__ lights to what the room asks for right now."
+    }
   },
   "week": {
     "lastSevenDays": "Last 7 days",
@@ -563,7 +670,10 @@
     "nothingReported": "Nothing reported",
     "less": "Less",
     "more": "More",
-    "quiet": "__name__ has not reported for __hours__ hours",
+    "quiet": {
+      "one": "__name__ has not reported for __count__ hour",
+      "other": "__name__ has not reported for __count__ hours"
+    },
     "quietMeans": "It reported normally until __when__, then stopped — and a stopped sensor holds your lights at one brightness. Try a different sensor, or have the lights follow the sun instead."
   },
   "buttons": {
@@ -572,26 +682,14 @@
     "notSet": "Not set",
     "detail": "__job__ · __lights__"
   },
-  "count": {
-    "zero": "zero",
-    "one": "one",
-    "two": "two",
-    "three": "three",
-    "four": "four",
-    "five": "five",
-    "six": "six",
-    "seven": "seven",
-    "eight": "eight",
-    "nine": "nine",
-    "ten": "ten",
-    "eleven": "eleven",
-    "twelve": "twelve"
-  },
   "job": {
     "does": "Does",
     "doNothing": "Do nothing",
     "to": "To",
-    "allLights": "All __count__ lights",
+    "allLights": {
+      "one": "The one light",
+      "other": "All __count__ lights"
+    },
     "colour": "Colour",
     "moreColours": "More colours",
     "fewerColours": "Fewer colours",
@@ -603,7 +701,10 @@
     "candlelight": "Candlelight",
     "daylight": "Daylight",
     "tryIt": "Try it now",
-    "tried": "Sent __writes__ write(s) to your lights.",
+    "tried": {
+      "one": "Sent __count__ write to your lights.",
+      "other": "Sent __count__ writes to your lights."
+    },
     "lightkeeperBlurb": "Turn on with level and warmth from other Lightkeeper devices.",
     "lightkeeperChosen": "Reads these setups at the moment of the press",
     "colourAndWarmth": "Colour and warmth",
@@ -617,14 +718,17 @@
     "needASource": "Choose at least one setup to take a colour or a brightness from."
   },
   "ordinal": {
-    "st": "st",
-    "nd": "nd",
-    "rd": "rd",
-    "th": "th"
+    "one": "__n__st",
+    "two": "__n__nd",
+    "few": "__n__rd",
+    "other": "__n__th"
   },
   "sourceWarn": {
     "keepsUpdated": "__name__ keeps its own lights up to date as well.",
-    "sharedMeans": "__count__ of this button’s lights are also driven by __name__, so both will set them when they come on and they may step between the two. Choose “Don’t change lights automatically” on __name__, or give this button a plain On.",
+    "sharedMeans": {
+      "one": "__count__ of this button’s lights is also driven by __name__, so both will set them when they come on and they may step between the two. Choose “Don’t change lights automatically” on __name__, or give this button a plain On.",
+      "other": "__count__ of this button’s lights are also driven by __name__, so both will set them when they come on and they may step between the two. Choose “Don’t change lights automatically” on __name__, or give this button a plain On."
+    },
     "ownMeans": "It will go on setting its own lights through the day, whatever this button does."
   },
   "flow": {
@@ -644,7 +748,10 @@
     "jobNotUsable": "That job cannot be used here.",
     "notASourceKind": "That is not a source this button takes.",
     "noSourceChoosing": "No source is being chosen.",
-    "curveNeedsPoints": "A curve needs at least __count__ points.",
+    "curveNeedsPoints": {
+      "one": "A curve needs at least __count__ point.",
+      "other": "A curve needs at least __count__ points."
+    },
     "addASchedule": "Add at least one schedule.",
     "targetSelectionChanged": "The lights you chose changed while this was being checked. Choose them again.",
     "notAControlMode": "“__mode__” is not a way Lightkeeper can control lights.",
@@ -679,5 +786,50 @@
   },
   "warnings": {
     "preStageUntested": "Set to change lights before they turn on, but no light has been tested for it yet, so none are. Open Repair and run the light test on the last screen."
+  },
+  "names": {
+    "suffixed": "__place__ __suffix__",
+    "controller": "__source__ → __lights__",
+    "pair": "__first__ + __second__",
+    "lightCount": {
+      "one": "__count__ light",
+      "other": "__count__ lights"
+    },
+    "zone": "Zone",
+    "remote": "Remote",
+    "previousRemote": "the previous remote",
+    "circadian": "Circadian light",
+    "circadianSuffix": "circadian",
+    "curve": "Colour Curve Light",
+    "curveSuffix": "curve",
+    "daylight": "Room-sensing Light",
+    "daylightSuffix": "daylight",
+    "schedule": "Light schedule",
+    "scheduleSuffix": "schedule"
+  },
+  "input": {
+    "line": "__control__ · __action__",
+    "controlNamed": "__control__ __name__",
+    "gestureDirection": "__gesture__ __direction__",
+    "control": {
+      "dial": "Dial",
+      "button": "Button",
+      "control": "Control"
+    },
+    "gesture": {
+      "press": "Press",
+      "longPress": "Long press",
+      "release": "Release",
+      "turnRight": "Turn right",
+      "turnLeft": "Turn left",
+      "turn": "Turn",
+      "startTurning": "Start turning",
+      "stopTurning": "Stop turning",
+      "select": "Select"
+    },
+    "direction": {
+      "up": "up",
+      "down": "down"
+    }
   }
 }

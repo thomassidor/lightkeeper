@@ -284,7 +284,7 @@
                        color: var(--lk-ink); margin: 0 0 9px; }
 
   /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
-  #ti-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+  #ti-root .tile { display: block; width: 100%; text-align: start; background: var(--lk-surface);
               border: 1.5px solid var(--lk-edge); border-radius: 12px; padding: 13px 14px;
               margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
               color: var(--lk-ink);
@@ -303,7 +303,10 @@
      written twice, and the two copies have to move together. */
   #ti-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
                background-repeat: no-repeat; background-position: right 13px center;
-               background-size: 11px; padding-right: 34px; }
+               background-size: 11px; padding-inline-end: 34px; }
+  /* Arabic reads right to left, so the chevron sits on the other end — where
+     `padding-inline-end` has already made room for it. */
+  #ti-root[dir="rtl"] select { background-position: left 13px center; }
   #ti-root input:focus, #ti-root select:focus { outline: none; border-color: var(--lk-accent);
                                       box-shadow: 0 0 0 3px var(--lk-ring); }
 
@@ -403,7 +406,7 @@
      unrelated body copy. */
   #ti-root .msg .lead { font-weight: 600; margin-bottom: 3px; }
 
-  #ti-root ol { font-size: 15px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+  #ti-root ol { font-size: 15px; line-height: 1.75; padding-inline-start: 20px; margin: 0 0 16px;
            color: var(--lk-body); }
   #ti-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
   @media (max-width: 380px) { #ti-root .grid { grid-template-columns: 1fr; } }
@@ -424,7 +427,7 @@
      device types. */
   #ti-root .steps.tight i { width: 16px; }
   #ti-root .steps i.on { background: var(--lk-accent); }
-  #ti-root .steps span { margin-left: 4px; font-size: 13px; color: var(--lk-muted); }
+  #ti-root .steps span { margin-inline-start: 4px; font-size: 13px; color: var(--lk-muted); }
 
   /* `label · value · chevron`. The one shape everything secondary takes:
      a row that says what it is, what it is set to, and that it can be opened.
@@ -436,10 +439,10 @@
   #ti-root .row { display: flex; align-items: center; gap: 10px; width: 100%;
                padding: 13px 0; min-height: 44px; box-sizing: border-box;
                background: none; border: none; font: inherit; color: inherit;
-               text-align: left; cursor: pointer; }
+               text-align: start; cursor: pointer; }
   #ti-root .row + .row { border-top: 1px solid var(--lk-line); }
   #ti-root .row .label { flex: 1; font-size: 15px; }
-  #ti-root .row .value { font-size: 15px; color: var(--lk-muted); text-align: right; }
+  #ti-root .row .value { font-size: 15px; color: var(--lk-muted); text-align: end; }
   #ti-root .row .chev { flex: none; font-size: 16px; color: var(--lk-chev); }
   #ti-root .row .sub { font-size: 13px; color: var(--lk-muted); margin: 2px 0 0; }
   /* The card a list of rows lives in. 4px top and bottom rather than 14:
@@ -458,7 +461,7 @@
                   min-height: 44px; box-sizing: border-box;
                   background: none; border-left: none; border-right: none;
                   border-bottom: none; font: inherit; color: inherit;
-                  text-align: left; cursor: pointer; }
+                  text-align: start; cursor: pointer; }
   #ti-root .toggle .label { flex: 1; font-size: 15px; }
   #ti-root .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
                          position: relative; background: var(--lk-line);
@@ -730,6 +733,76 @@ function __lkBootTi(Homey) {
     });
   })();
 
+  function i18n(homey) {
+    /**
+     * Plural-aware translation, and the language's own number and date rules.
+     *
+     * GENERATED. Spliced into every pair view, and into the settings page, by
+     * `npm run sync:views` from views/shared/i18n.js. **Edit that file, not
+     * this one.**
+     *
+     * The twin of `lib/support/i18n.ts`, and it must choose the same forms:
+     * a counted string is a group of CLDR plural categories, the count is the
+     * `count` token, and `Intl.PluralRules` in the locale file's OWN language
+     * (`meta.language`) picks the form. `t()` is `Homey.__` with that one
+     * extra step, so a view calls it exactly where it called `Homey.__`.
+     *
+     * `dir` is `meta.direction`: every view puts it on its own root, because
+     * the screens share one document and only the root is ours.
+     */
+    var raw = function (key, tokens) { return homey.__(key, tokens || {}); };
+    var found = function (value, key) { return typeof value === 'string' && value !== '' && value !== key; };
+    var lang = raw('meta.language');
+    // Deliberately no memo: the views share one document, and a cache on it
+    // would outlive a language change. Two lookups per call are nothing.
+    if (!/^[a-z]{2}$/.test(String(lang))) lang = 'en';
+    var select = function (n, type) {
+      try { return new Intl.PluralRules(lang, { type: type || 'cardinal' }).select(n); }
+      catch (e) { return n === 1 ? 'one' : 'other'; }
+    };
+    var pick = function (key, form, tokens) {
+      var chosen = raw(key + '.' + form, tokens);
+      if (found(chosen, key + '.' + form)) return chosen;
+      var other = raw(key + '.other', tokens);
+      return found(other, key + '.other') ? other : null;
+    };
+    var t = function (key, tokens) {
+      tokens = tokens || {};
+      if (typeof tokens.count === 'number' && isFinite(tokens.count)) {
+        var form = pick(key, select(tokens.count), tokens);
+        if (form !== null) return form;
+      }
+      var plain = raw(key, tokens);
+      return typeof plain === 'string' ? plain : key;
+    };
+    return {
+      lang: lang,
+      dir: raw('meta.direction') === 'rtl' ? 'rtl' : 'ltr',
+      t: t,
+      /** "1st", "1.", "1er" — the language's own ordinal, from `ordinal.*`. */
+      ordinal: function (n) { return pick('ordinal', select(n, 'ordinal'), { n: n }) || String(n); },
+      /**
+       * "a, b, c" with the language's own comma — "،" in Arabic. A key, not
+       * `Intl.ListFormat`, whose unit style drops the commas altogether in
+       * Korean and Russian and adds an "and" in German.
+       */
+      list: function (items) { return items.join(raw('unit.listSeparator')); },
+      /** A percentage: "40%", "40 %" — the space is the language's, not ours. */
+      percent: function (n) { return t('unit.percent', { n: n }); },
+      /** A date and time, in the app's language rather than the phone's. */
+      dateTime: function (value, options) {
+        var date = new Date(value);
+        try { return date.toLocaleString(lang, options); } catch (e) { return date.toLocaleString(); }
+      },
+      time: function (value) {
+        var date = new Date(value);
+        try { return date.toLocaleTimeString(lang); } catch (e) { return date.toLocaleTimeString(); }
+      }
+    };
+  }
+  var lk = i18n(Homey);
+  __root.dir = lk.dir;
+
   function emit(event, data) {
     /**
      * Homey.emit, as a promise that always settles.
@@ -740,7 +813,8 @@ function __lkBootTi(Homey) {
      * Both call styles are handled because the pairing bridge has used a
      * callback and a promise at different times, and the 20 s timeout is what
      * keeps a dropped callback from leaving the screen spinning with no message
-     * forever.
+     * forever. Its message comes from `lk`, the view's `i18n()` translator,
+     * which every view sets up before anything can emit.
      *
      * Inside the function, like `stabiliseScrollbar()`'s, and that is not a
      * style choice: `spliceFunction` matches from the `function` keyword, so a
@@ -757,7 +831,7 @@ function __lkBootTi(Homey) {
         if (err) reject(err instanceof Error ? err : new Error(String(err)));
         else resolve(result);
       };
-      var timer = setTimeout(function () { finish(new Error('Homey did not respond in time. Close this screen and try again. (' + event + ')')); }, 20000);
+      var timer = setTimeout(function () { finish(new Error(lk.t('common.timeout', { event: event }))); }, 20000);
       var done = function (err, result) { clearTimeout(timer); finish(err, result); };
       try {
         var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
@@ -840,11 +914,11 @@ function __lkBootTi(Homey) {
     // HIGH is warm: `warmth` is homey-lib's axis, where 1 is the WARMEST end
     // (platform §6). The first render of this screen had it the other way and
     // showed "Warm" beside a blue swatch.
-    if (value >= 0.82) return Homey.__('warmth.deepAmber');
-    if (value >= 0.62) return Homey.__('warmth.warm');
-    if (value >= 0.44) return Homey.__('warmth.softWarm');
-    if (value >= 0.24) return Homey.__('warmth.softWhite');
-    return Homey.__('warmth.coolWhite');
+    if (value >= 0.82) return lk.t('warmth.deepAmber');
+    if (value >= 0.62) return lk.t('warmth.warm');
+    if (value >= 0.44) return lk.t('warmth.softWarm');
+    if (value >= 0.24) return lk.t('warmth.softWhite');
+    return lk.t('warmth.coolWhite');
   }
 
   function drawStrip() {
@@ -862,9 +936,12 @@ function __lkBootTi(Homey) {
     el.time.textContent = clock(state.minute);
     // "Evening · warm": which of the three zones, then what it looks like.
     // The zone is the half that says where on the day this is.
-    el.what.textContent = zoneWord(state.minute) + ' · '
-      + warmthWord(warmthAt(state.minute)).toLowerCase();
-    el.show.textContent = Homey.__('tryit.showAt', { time: clock(state.minute) });
+    // One key rather than two words glued: lower-casing a translated word is
+    // wrong in German, where the warmth word is a noun.
+    el.what.textContent = lk.t('tryit.zoneAndWarmth', {
+      zone: zoneWord(state.minute), warmth: warmthWord(warmthAt(state.minute))
+    });
+    el.show.textContent = lk.t('tryit.showAt', { time: clock(state.minute) });
     el.restore.style.display = state.touched ? '' : 'none';
     drawStrip();
   }
@@ -872,9 +949,9 @@ function __lkBootTi(Homey) {
   /** Which of the three zones a minute falls in, named. */
   function zoneWord(minute) {
     if (!state.bounds) return '';
-    if (minute < state.bounds.morningEndMinute) return Homey.__('day.morning');
-    if (minute < state.bounds.eveningStartMinute) return Homey.__('day.midday');
-    return Homey.__('day.evening');
+    if (minute < state.bounds.morningEndMinute) return lk.t('day.morning');
+    if (minute < state.bounds.eveningStartMinute) return lk.t('day.midday');
+    return lk.t('day.evening');
   }
 
   var dragging = false;
@@ -909,7 +986,7 @@ function __lkBootTi(Homey) {
       var row = node('div', 'row');
       row.appendChild(node('span', 'label', lamp.name));
       row.appendChild(node('span', 'value',
-        lamp.written ? Homey.__('tryit.set') : Homey.__('tryit.leftAlone')));
+        lamp.written ? lk.t('tryit.set') : lk.t('tryit.leftAlone')));
       el.lamps.appendChild(row);
     }
   }
@@ -928,7 +1005,7 @@ function __lkBootTi(Homey) {
   function inFlight(button, key) {
     var was = button.textContent;
     button.disabled = true;
-    button.textContent = Homey.__(key);
+    button.textContent = lk.t(key);
     return function () {
       button.disabled = false;
       button.textContent = was;

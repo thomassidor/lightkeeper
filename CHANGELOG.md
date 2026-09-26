@@ -19,6 +19,14 @@ three new choices to how they behaved; choose *Balanced* or *Gradual* in Repair 
 
 ### New
 
+- **Every language Homey speaks.** Lightkeeper is now in Dutch, German, French, Italian, Swedish,
+  Norwegian, Spanish, Danish, Russian, Polish, Korean and Arabic as well as English — every setup
+  screen, every device's status text, the settings page, the Flow cards, the values on a device's
+  tile and the App Store listing. Counted phrases use each language's own plural forms (Polish and
+  Russian have three, Arabic six), percentages, lists and dates follow its own conventions, and the
+  setup screens read right to left in Arabic. Remote buttons' own labels — *Dial · Turn right* — are
+  translated too; the names of Flows Lightkeeper has already generated stay as they are, because
+  renaming one would read as your own edit. Logs and diagnostics stay in English.
 - **Change how a device controls your lights from the device itself.** The question the last setup
   screen asks since 0.6.5 — *Change lights after they turn on*, *Set lights before they turn on*,
   *Don't change lights automatically* — is now also a picker on the device, so switching a room to
@@ -38,6 +46,12 @@ three new choices to how they behaved; choose *Balanced* or *Gradual* in Repair 
   thresholds nothing changes.
 
 ### Changed
+
+- **Counts read as numbers.** "All three lights" is now "All 3 lights": a number word needs a
+  different form per language and per grammatical gender, and a numeral does not.
+- **A few English phrasings changed with the plural work** — "1 light is not responding" rather than
+  "1 light(s) are not responding", and the same for every "(s)" the app used to print. *Try it now*
+  on a circadian light reads "Evening · Warm" rather than "Evening · warm".
 
 - **A circadian light blends zone to zone.** Each part of the day's colour now belongs to the
   middle of that part, and the day blends from one into the next with the boundary you set as the

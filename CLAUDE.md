@@ -118,7 +118,9 @@ lib/
   flow-card-catalogue.ts        the ONE reader of the flow card catalogues, and the ONE place
                                 that knows homey-api retains every getAll result (platform §15)
   source-discovery-service.ts   trigger card discovery, event-surface fingerprints
-  inputs/                       input contract, normalizer, magnitude collapse
+  inputs/                       input contract, normalizer, magnitude collapse, and input-label.ts
+                                — the stored English gesture label ("Dial — Turn right") read
+                                back into the user's language, from the normalizer's own words
   mapping/                      mapping engine, supersede gate, behaviour types
   outputs/                      intents, perceptual curve, planner, scheduler, ramp engine,
                                 target resolver, target-state cache, and
@@ -193,7 +195,8 @@ lib/
   support/                      the primitives every layer uses: the per-KEY mutex and the
                                 single-flight coalescer, the bounded ring log, the migration-chain
                                 runner, the injectable Timers seam, error-shape classification,
-                                field-wise equality, fire-and-forget, and interpolate.ts — the
+                                field-wise equality, fire-and-forget, i18n.ts — `homey.__` made
+                                plural-aware, which every driver's `tr()` is — and interpolate.ts — the
                                 Transition shapes (Gradual, Balanced, Quick) every engine
                                 interpolates with. NOT the queue that gates
                                 lamp writes: that is DeviceQueue, inside command-scheduler.ts.
@@ -308,13 +311,16 @@ scripts/dump-card-fixtures.mjs  writes test/fixtures/cards/*.json from the hand-
 scripts/hardware-env.json       GITIGNORED. A Homey address and two Personal API Keys, read by
                                 verify-hardware.mjs when the env vars are not set
 views/shared/                   NOT bundled. The one authored copy of each block that appears
-                                in more than one pair view — the CSS base, emit() and
-                                stabiliseScrollbar() in all 54, the week grid's CSS and weekGrid()
+                                in more than one pair view — the CSS base, emit(), i18n() and
+                                stabiliseScrollbar() in all 54 (i18n() in the settings page too),
+                                the week grid's CSS and weekGrid()
                                 in the one daylight screen that draws it, and the Transition card
                                 and transitionShape() on the three engine editing screens.
                                 `npm run sync:views` splices them in
 settings/index.html             app settings page
-locales/en.json                 all user-facing strings
+locales/                        all user-facing strings, one file per language — thirteen, Homey's
+                                own list. en.json is the reference; meta.language and
+                                meta.direction say which language a file is and which way it reads
 .homeycompose/                  the manifest's SOURCE; app.json is generated from it
   capabilities/                 the four READ-ONLY capabilities the engines publish into. Custom
                                 because every `dim` and `light_*` in homey-lib is setable, which
@@ -326,7 +332,8 @@ locales/en.json                 all user-facing strings
                                 this app offers rather than writes
 assets/                         the app's own icon and store images, all generated — except
                                 capabilities/, Athom's stock capability icons, copied unmodified
-README.txt                      the App Store long description — not README.md
+README.txt                      the App Store long description — not README.md. README.<lang>.txt
+                                is the same listing in each of the other twelve languages
 test/                           unit tests and hand-transcribed fixtures
   support/                      the shared fakes. fake-homey.ts is the SDK stand-in that lets a test
                                 load app.ts, a driver or a device (platform §13); fake-homey-api.ts a
@@ -338,7 +345,8 @@ docs/                           NOT bundled. `docs/README.md` indexes it
   homey-platform.md             the platform reference, cited in code as `platform §n`
   privacy.md                    the privacy notice
   homey-review-notes.md         for Athom's reviewer
-  localisation.md               English-only on purpose; how to add a language back
+  localisation.md               the thirteen languages, how plurals / ordinals / RTL work, what
+                                is deliberately English, and the glossary every language uses
   hardware-test-plan.md         the standing pass on a real Homey: what to DO, and how to report
   hardware-test-coverage.md     what covers what — the script, the suite, and the retired lines
   commands.md                   every command in one place, with the trap that goes with each
@@ -504,7 +512,8 @@ repo stopped saying.
 1. Bump `.homeycompose/app.json` and `package.json` to the same version — **only when the bump was
    asked for**; see above. Patch for fixes, minor for new capability; pre-1.0 means no major bumps
    for breaking changes, so say it in the changelog instead.
-2. Add a `.homeychangelog.json` entry under that exact version.
+2. Add a `.homeychangelog.json` entry under that exact version — **in all thirteen languages**
+   (`manifest-locales.test.ts` fails otherwise).
 3. Add the full entry to `CHANGELOG.md` as `## <version>`, newest first.
 4. Condense it into `README.md`'s `## Changelog`: the new release in about four bullets, and the
    previous one demoted to a single line in the table below it.
@@ -521,7 +530,8 @@ repo stopped saying.
    evidence for that one dependency; hardware is.
 6. Run `npm run validate` — this is what regenerates `app.json`, so it is a required step and not
    just a check. Commit the regenerated `app.json` with the rest.
-7. Re-read `README.txt` if anything about what the app *is* changed.
+7. Re-read `README.txt` if anything about what the app *is* changed — and then every
+   `README.<lang>.txt`, which is the same listing in the other twelve languages.
 8. `npm test`. `test/unit/release-metadata.test.ts` fails if the four versions disagree
    (`package-lock.json` counts), if any of the three changelogs is missing the current version, or if
    `README.md`, `FAQ.md` or `docs/hardware-test-plan.md` states a test count that no longer matches
@@ -530,7 +540,7 @@ repo stopped saying.
    which `validate` would otherwise repair silently in step 6.
 
 `.homeychangelog.json` keeps the `{ "en": … }` object form for the same reason every other
-user-facing string does: adding a language stays a sibling key (see the localisation note below).
+user-facing string does: each language is a sibling key (see the localisation note below).
 
 ## Pinned versions, and why each one is pinned
 
@@ -668,19 +678,43 @@ type declarations. Everything of ours is strict — `strict: true`, `noImplicitO
 user-facing produced there returns a locale key plus tokens — `StateDetail` in
 `lib/profiles/controller-profile.ts`, `labelKey` on a `PaletteColor` — and the driver or device layer
 resolves it. A string hardcoded in `lib/` can never be translated, no matter what the locale files
-say. `DeviceOwner.translate()` is that boundary for the device layer; a driver calls `homey.__`
-directly.
+say. `DeviceOwner.translate()` is that boundary for the device layer; a driver calls its own
+`this.tr()`, and a view or the settings page calls `lk.t()` — never `homey.__` / `Homey.__` directly,
+because both wrappers add the plural step below and a direct call skips it.
 `test/unit/locales.test.ts` enforces the invariant in both directions: no defined key unused, no
 referenced key undefined.
 
-**The app ships English only, and the machinery to change that is intact.** Danish was removed
-(0.1.0) because maintaining two languages doubled the cost of every copy change before anyone had
-asked for the second one. What was *not* removed: the `StateDetail` key-passing above, every
-`data-i18n` attribute, and the `{ "en": … }` object form of every manifest field — so adding a
-language is a sibling key, never a reshape. `locales.test.ts` discovers `locales/*.json` from disk
-rather than importing a second language by name, so its key-parity and `__token__` checks re-arm by
-themselves the moment a file is added. See `docs/localisation.md` for the full re-add list and the
-English–Danish glossary kept from the removed translation.
+**The app ships in all thirteen languages Homey supports, and every copy change ships in all
+thirteen.** en, nl, de, fr, it, sv, no, es, da, ru, pl, ko, ar — `test/support/languages.ts`, which
+is Homey's own list. **When you add or change a user-facing string, you translate it in the same
+change**: the key in all thirteen `locales/<lang>.json`, the language in every `{ "en": … }` object
+you touched in a manifest, and the current version's `.homeychangelog.json` entry in all thirteen.
+Translate it yourself — it is part of writing the string, not a follow-up — using the glossary in
+[`docs/localisation.md`](docs/localisation.md) so a term stays the same term on every screen. Nothing
+is left in English "for now": `locales.test.ts` fails on a key missing from any language, and
+`manifest-locales.test.ts` on a manifest object, a `README.<lang>.txt` or a changelog entry missing
+one.
+
+Four rules make a translation possible at all, and the tests enforce the ones they can see:
+
+- **Counted strings are plural groups** — `{ "one": "__count__ light", "other": "__count__ lights" }` —
+  and the count is always the `count` token. `lib/support/i18n.ts` and `views/shared/i18n.js` pick
+  the form with `Intl.PluralRules`, and `locales.test.ts` requires each language to supply exactly
+  the categories `Intl` says it has (Polish four, Arabic six, Korean one). Never write `(s)`; never
+  choose a key with `count === 1 ? …`.
+- **Never build a sentence from translated fragments**, and never `.toLowerCase()` one. Word order
+  belongs to the translator: a phrase with a variable in it is one key with a token.
+- **Numbers, percentages, lists and dates go through the helpers** — `lk.percent`, `lk.list`,
+  `lk.ordinal`, `lk.dateTime` in a view; `tr('unit.percent', …)` in a driver — because the space
+  before `%`, the comma and the ordinal suffix are all the language's.
+- **Text flow uses logical CSS** (`text-align: start`, `padding-inline-end`), so Arabic mirrors;
+  every view sets its root's `dir` from `meta.direction`.
+
+Deliberately English, and documented as such in `docs/localisation.md`: logs and diagnostics,
+generated Flow names (renaming a Flow reads as the user's edit), a remote's STORED gesture label —
+`lib/inputs/input-label.ts` translates it on its way to a screen — and the "could not reach Homey"
+banner, which fires exactly when there is no translator. `npm run render:views -- --lang de` draws
+every screen in one language, which is how to check a long German label or the Arabic layout.
 
 **Pair views share ONE document.** The views under `drivers/*/pair/` are injected into the pairing
 container's document rather than getting their own iframe. They must not load `homey.js` themselves,
@@ -688,7 +722,8 @@ every CSS rule is scoped to the view's root id, and the boot guard lives on the 
 than in a global. Each file's header explains this.
 
 **The shared blocks are GENERATED, and `views/shared/` is where they are authored.** The CSS base,
-`emit()` and `stabiliseScrollbar()` appear in every view file; the week grid — its own CSS and
+`emit()`, `i18n()` and `stabiliseScrollbar()` appear in every view file (and `i18n()` in the settings
+page, which is the one non-view the splicer writes); the week grid — its own CSS and
 `weekGrid()` — appears in the one daylight screen that draws a sensor's history, the response
 step (it had a second carrier until the sensor detail screen was folded into it); the Transition
 card — `transition.css` and `transitionCard()` — and `transitionShape()` appear on the three engine
@@ -700,7 +735,7 @@ once carried three stale numbers.) All of it used to be authored by hand in ever
 in-file instruction to "edit this block in all files, or in none of them", with
 `test/unit/pair-view-styles.test.ts` asserting they stayed identical. `npm run sync:views` now
 splices them from
-`views/shared/{base.css,emit.js,stabilise-scrollbar.js,week-grid.css,week-grid.js,transition.css,`
+`views/shared/{base.css,emit.js,i18n.js,stabilise-scrollbar.js,week-grid.css,week-grid.js,transition.css,`
 `transition-card.js,transition-shape.js}`, substituting
 each view's own root id for `#ROOT` — the same normalisation that test does in reverse.
 **Edit the source, never the view.** `npm run sync:views:check` fails in CI until they agree.

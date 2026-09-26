@@ -284,7 +284,7 @@
                        color: var(--lk-ink); margin: 0 0 9px; }
 
   /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
-  #bl-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+  #bl-root .tile { display: block; width: 100%; text-align: start; background: var(--lk-surface);
               border: 1.5px solid var(--lk-edge); border-radius: 12px; padding: 13px 14px;
               margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
               color: var(--lk-ink);
@@ -303,7 +303,10 @@
      written twice, and the two copies have to move together. */
   #bl-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
                background-repeat: no-repeat; background-position: right 13px center;
-               background-size: 11px; padding-right: 34px; }
+               background-size: 11px; padding-inline-end: 34px; }
+  /* Arabic reads right to left, so the chevron sits on the other end — where
+     `padding-inline-end` has already made room for it. */
+  #bl-root[dir="rtl"] select { background-position: left 13px center; }
   #bl-root input:focus, #bl-root select:focus { outline: none; border-color: var(--lk-accent);
                                       box-shadow: 0 0 0 3px var(--lk-ring); }
 
@@ -403,7 +406,7 @@
      unrelated body copy. */
   #bl-root .msg .lead { font-weight: 600; margin-bottom: 3px; }
 
-  #bl-root ol { font-size: 15px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+  #bl-root ol { font-size: 15px; line-height: 1.75; padding-inline-start: 20px; margin: 0 0 16px;
            color: var(--lk-body); }
   #bl-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
   @media (max-width: 380px) { #bl-root .grid { grid-template-columns: 1fr; } }
@@ -424,7 +427,7 @@
      device types. */
   #bl-root .steps.tight i { width: 16px; }
   #bl-root .steps i.on { background: var(--lk-accent); }
-  #bl-root .steps span { margin-left: 4px; font-size: 13px; color: var(--lk-muted); }
+  #bl-root .steps span { margin-inline-start: 4px; font-size: 13px; color: var(--lk-muted); }
 
   /* `label · value · chevron`. The one shape everything secondary takes:
      a row that says what it is, what it is set to, and that it can be opened.
@@ -436,10 +439,10 @@
   #bl-root .row { display: flex; align-items: center; gap: 10px; width: 100%;
                padding: 13px 0; min-height: 44px; box-sizing: border-box;
                background: none; border: none; font: inherit; color: inherit;
-               text-align: left; cursor: pointer; }
+               text-align: start; cursor: pointer; }
   #bl-root .row + .row { border-top: 1px solid var(--lk-line); }
   #bl-root .row .label { flex: 1; font-size: 15px; }
-  #bl-root .row .value { font-size: 15px; color: var(--lk-muted); text-align: right; }
+  #bl-root .row .value { font-size: 15px; color: var(--lk-muted); text-align: end; }
   #bl-root .row .chev { flex: none; font-size: 16px; color: var(--lk-chev); }
   #bl-root .row .sub { font-size: 13px; color: var(--lk-muted); margin: 2px 0 0; }
   /* The card a list of rows lives in. 4px top and bottom rather than 14:
@@ -458,7 +461,7 @@
                   min-height: 44px; box-sizing: border-box;
                   background: none; border-left: none; border-right: none;
                   border-bottom: none; font: inherit; color: inherit;
-                  text-align: left; cursor: pointer; }
+                  text-align: start; cursor: pointer; }
   #bl-root .toggle .label { flex: 1; font-size: 15px; }
   #bl-root .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
                          position: relative; background: var(--lk-line);
@@ -871,6 +874,76 @@ function __lkBootBl(Homey) {
     });
   })();
 
+  function i18n(homey) {
+    /**
+     * Plural-aware translation, and the language's own number and date rules.
+     *
+     * GENERATED. Spliced into every pair view, and into the settings page, by
+     * `npm run sync:views` from views/shared/i18n.js. **Edit that file, not
+     * this one.**
+     *
+     * The twin of `lib/support/i18n.ts`, and it must choose the same forms:
+     * a counted string is a group of CLDR plural categories, the count is the
+     * `count` token, and `Intl.PluralRules` in the locale file's OWN language
+     * (`meta.language`) picks the form. `t()` is `Homey.__` with that one
+     * extra step, so a view calls it exactly where it called `Homey.__`.
+     *
+     * `dir` is `meta.direction`: every view puts it on its own root, because
+     * the screens share one document and only the root is ours.
+     */
+    var raw = function (key, tokens) { return homey.__(key, tokens || {}); };
+    var found = function (value, key) { return typeof value === 'string' && value !== '' && value !== key; };
+    var lang = raw('meta.language');
+    // Deliberately no memo: the views share one document, and a cache on it
+    // would outlive a language change. Two lookups per call are nothing.
+    if (!/^[a-z]{2}$/.test(String(lang))) lang = 'en';
+    var select = function (n, type) {
+      try { return new Intl.PluralRules(lang, { type: type || 'cardinal' }).select(n); }
+      catch (e) { return n === 1 ? 'one' : 'other'; }
+    };
+    var pick = function (key, form, tokens) {
+      var chosen = raw(key + '.' + form, tokens);
+      if (found(chosen, key + '.' + form)) return chosen;
+      var other = raw(key + '.other', tokens);
+      return found(other, key + '.other') ? other : null;
+    };
+    var t = function (key, tokens) {
+      tokens = tokens || {};
+      if (typeof tokens.count === 'number' && isFinite(tokens.count)) {
+        var form = pick(key, select(tokens.count), tokens);
+        if (form !== null) return form;
+      }
+      var plain = raw(key, tokens);
+      return typeof plain === 'string' ? plain : key;
+    };
+    return {
+      lang: lang,
+      dir: raw('meta.direction') === 'rtl' ? 'rtl' : 'ltr',
+      t: t,
+      /** "1st", "1.", "1er" — the language's own ordinal, from `ordinal.*`. */
+      ordinal: function (n) { return pick('ordinal', select(n, 'ordinal'), { n: n }) || String(n); },
+      /**
+       * "a, b, c" with the language's own comma — "،" in Arabic. A key, not
+       * `Intl.ListFormat`, whose unit style drops the commas altogether in
+       * Korean and Russian and adds an "and" in German.
+       */
+      list: function (items) { return items.join(raw('unit.listSeparator')); },
+      /** A percentage: "40%", "40 %" — the space is the language's, not ours. */
+      percent: function (n) { return t('unit.percent', { n: n }); },
+      /** A date and time, in the app's language rather than the phone's. */
+      dateTime: function (value, options) {
+        var date = new Date(value);
+        try { return date.toLocaleString(lang, options); } catch (e) { return date.toLocaleString(); }
+      },
+      time: function (value) {
+        var date = new Date(value);
+        try { return date.toLocaleTimeString(lang); } catch (e) { return date.toLocaleTimeString(); }
+      }
+    };
+  }
+  var lk = i18n(Homey);
+  __root.dir = lk.dir;
+
   function emit(event, data) {
     /**
      * Homey.emit, as a promise that always settles.
@@ -881,7 +954,8 @@ function __lkBootBl(Homey) {
      * Both call styles are handled because the pairing bridge has used a
      * callback and a promise at different times, and the 20 s timeout is what
      * keeps a dropped callback from leaving the screen spinning with no message
-     * forever.
+     * forever. Its message comes from `lk`, the view's `i18n()` translator,
+     * which every view sets up before anything can emit.
      *
      * Inside the function, like `stabiliseScrollbar()`'s, and that is not a
      * style choice: `spliceFunction` matches from the `function` keyword, so a
@@ -898,7 +972,7 @@ function __lkBootBl(Homey) {
         if (err) reject(err instanceof Error ? err : new Error(String(err)));
         else resolve(result);
       };
-      var timer = setTimeout(function () { finish(new Error('Homey did not respond in time. Close this screen and try again. (' + event + ')')); }, 20000);
+      var timer = setTimeout(function () { finish(new Error(lk.t('common.timeout', { event: event }))); }, 20000);
       var done = function (err, result) { clearTimeout(timer); finish(err, result); };
       try {
         var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
@@ -987,7 +1061,7 @@ function __lkBootBl(Homey) {
   function renderSteps() {
     clear(el.steps);
     for (var i = 1; i <= 3; i++) el.steps.appendChild(node('i', i <= 2 ? 'on' : null));
-    el.steps.appendChild(node('span', null, Homey.__('blocks.step', { index: 2, count: 3 })));
+    el.steps.appendChild(node('span', null, lk.t('blocks.step', { index: 2, count: 3 })));
   }
 
   function renderTimeline() {
@@ -1042,7 +1116,7 @@ function __lkBootBl(Homey) {
   }
 
   function dayChip(iso) {
-    var chip = node('button', 'chip', Homey.__(DAY_KEYS[iso - 1]));
+    var chip = node('button', 'chip', lk.t(DAY_KEYS[iso - 1]));
     chip.type = 'button';
     var on = state.days === null || state.days.indexOf(iso) !== -1;
     chip.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -1076,15 +1150,15 @@ function __lkBootBl(Homey) {
 
     var minutes = lengthOf(entry);
     var hours = Math.floor(minutes / 60);
-    el.length.textContent = Homey.__('blocks.length', {
+    el.length.textContent = lk.t('blocks.length', {
       hours: hours, minutes: minutes % 60
-    }) + (entry.onAt + minutes > 1440 ? ' · ' + Homey.__('blocks.crossesMidnight') : '');
+    }) + (entry.onAt + minutes > 1440 ? ' · ' + lk.t('blocks.crossesMidnight') : '');
 
     var hasBrightness = entry.brightness !== undefined;
     el.brightToggle.setAttribute('aria-checked', hasBrightness ? 'true' : 'false');
     el.brightBlock.style.display = hasBrightness ? '' : 'none';
     if (hasBrightness) {
-      el.brightPct.textContent = Math.round(entry.brightness * 100) + '%';
+      el.brightPct.textContent = lk.percent(Math.round(entry.brightness * 100));
       setSlider(el.brightKnob, entry.brightness);
     }
 
@@ -1106,7 +1180,7 @@ function __lkBootBl(Homey) {
     appendSwatches(el.rest, state.layout.more, entry);
     el.rest.style.display = state.showMore ? '' : 'none';
     el.more.style.display = state.layout.more.length > 0 ? '' : 'none';
-    el.more.textContent = Homey.__(state.showMore ? 'blocks.fewerColours' : 'blocks.moreColours');
+    el.more.textContent = lk.t(state.showMore ? 'blocks.fewerColours' : 'blocks.moreColours');
   }
 
   function appendSwatches(host, ids, entry) {
@@ -1206,15 +1280,15 @@ function __lkBootBl(Homey) {
      * 12px gap. Its length is the thing there is to say about it.
      */
     if (entry.brightness !== undefined || entry.color !== undefined) {
-      if (entry.brightness !== undefined) bits.push(Math.round(entry.brightness * 100) + '%');
+      if (entry.brightness !== undefined) bits.push(lk.percent(Math.round(entry.brightness * 100)));
       if (entry.color !== undefined) bits.push(colourName(entry.color));
     } else {
       var span = lengthOf(entry);
-      bits.push(Homey.__('blocks.offAfter', {
+      bits.push(lk.t('blocks.offAfter', {
         hours: Math.floor(span / 60), minutes: span % 60
       }));
     }
-    if (entry.onAt + lengthOf(entry) > 1440) bits.push(Homey.__('blocks.crossesMidnight'));
+    if (entry.onAt + lengthOf(entry) > 1440) bits.push(lk.t('blocks.crossesMidnight'));
     text.appendChild(node('div', 'sub', bits.join(' · ')));
     row.appendChild(text);
     row.appendChild(node('span', 'chev', '›'));
@@ -1239,10 +1313,10 @@ function __lkBootBl(Homey) {
     var from = Math.max(a.onAt, b.onAt);
     var to = Math.min(a.onAt + lengthOf(a), b.onAt + lengthOf(b));
     clear(el.overlap);
-    el.overlap.appendChild(node('div', 'lead', Homey.__('blocks.overlap', {
+    el.overlap.appendChild(node('div', 'lead', lk.t('blocks.overlap', {
       from: clock(from % 1440), until: clock(to % 1440)
     })));
-    el.overlap.appendChild(node('div', null, Homey.__('blocks.overlapMeans')));
+    el.overlap.appendChild(node('div', null, lk.t('blocks.overlapMeans')));
     el.overlap.style.display = '';
     el.fix.style.display = state.overlapAnswered ? 'none' : '';
   }

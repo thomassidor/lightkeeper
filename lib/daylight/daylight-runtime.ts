@@ -1098,7 +1098,7 @@ export class DaylightRuntime {
       this.setState('partial', {
         key: 'state.daylightSensorStale',
         text: 'Its light sensor has stopped reporting, so its lights are held where they are.',
-        tokens: { name: stale.name, hours: Math.floor(stale.ageMs / 3_600_000) },
+        tokens: { name: stale.name, count: Math.floor(stale.ageMs / 3_600_000) },
       });
       return;
     }

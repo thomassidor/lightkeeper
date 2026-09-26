@@ -1,10 +1,34 @@
 {
   "type": "string",
   "title": {
-    "en": "Colour now"
+    "en": "Colour now",
+    "nl": "Kleur nu",
+    "de": "Farbe jetzt",
+    "fr": "Couleur actuelle",
+    "it": "Colore attuale",
+    "sv": "Färg nu",
+    "no": "Farge nå",
+    "es": "Color ahora",
+    "da": "Farve nu",
+    "ru": "Цвет сейчас",
+    "pl": "Barwa teraz",
+    "ko": "현재 색상",
+    "ar": "اللون الآن"
   },
   "desc": {
-    "en": "The colour this device wants its colour-capable lights at right now, by name. Empty on a stretch of the curve that sets a colour temperature instead."
+    "en": "The colour this device wants its colour-capable lights at right now, by name. Empty on a stretch of the curve that sets a colour temperature instead.",
+    "nl": "De kleur die dit apparaat nu voor zijn kleurlampen wil, bij naam. Leeg op een stuk van de curve dat in plaats daarvan een kleurtemperatuur instelt.",
+    "de": "Die Farbe, die dieses Gerät gerade für seine farbfähigen Lichter möchte, mit Namen. Leer auf einem Abschnitt der Kurve, der stattdessen eine Farbtemperatur einstellt.",
+    "fr": "La couleur que cet appareil veut pour ses lumières compatibles couleur en ce moment, par son nom. Vide sur une portion de la courbe qui règle plutôt une température de couleur.",
+    "it": "Il colore che questo dispositivo vuole per le sue luci a colori in questo momento, per nome. Vuoto in un tratto della curva che imposta invece una temperatura colore.",
+    "sv": "Färgen som den här enheten vill ha på sina färgkapabla lampor just nu, med namn. Tom på en del av kurvan som i stället ställer in en färgtemperatur.",
+    "no": "Fargen denne enheten vil ha på fargelysene sine akkurat nå, med navn. Tom på en del av kurven som stiller inn en fargetemperatur i stedet.",
+    "es": "El color que este dispositivo quiere ahora mismo para sus luces que admiten color, por su nombre. Vacío en un tramo de la curva que ajusta una temperatura de color en su lugar.",
+    "da": "Den farve, denne enhed vil have sine farvelys på lige nu, med navn. Tom på et stykke af kurven, der i stedet indstiller en farvetemperatur.",
+    "ru": "Цвет, который это устройство хочет задать своим цветным светильникам прямо сейчас, по названию. Пусто на участке кривой, где вместо цвета задаётся цветовая температура.",
+    "pl": "Barwa, jaką to urządzenie chce teraz nadać swoim kolorowym światłom, podana z nazwy. Puste na odcinku krzywej, który zamiast barwy ustawia temperaturę barwową.",
+    "ko": "이 기기가 지금 색상을 지원하는 조명에 원하는 색상의 이름이에요. 곡선에서 색온도를 대신 설정하는 구간에서는 비어 있어요.",
+    "ar": "اللون الذي يريده هذا الجهاز لأضوائه الملونة الآن، باسمه. يكون فارغًا في أجزاء المنحنى التي تضبط درجة حرارة اللون بدلًا منه."
   },
   "getable": true,
   "setable": false,

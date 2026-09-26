@@ -83,8 +83,9 @@ The script cannot do these. Report each by its number.
 ## 4. This release
 
 **0.6.6 — capability icons, the control picker and the Transition choice, on top of the 0.6.5 and
-0.6.0 passes that are still owed.** 0.6.6's ten lines are first: T181–T186 take ten minutes with a
-phone, and T187–T190 want an afternoon of the day going by.
+0.6.0 passes that are still owed.** 0.6.6's fourteen lines are first: T181–T186 take ten minutes
+with a phone, T187–T190 want an afternoon of the day going by, and T191–T194 want the Homey switched
+to another language for a few minutes.
 
 **0.6.5 — the Flow surface, a tenth job on a remote button, and a general code review, on top of an
 0.6.0 pass that is still owed.**
@@ -157,6 +158,28 @@ same three pre-existing devices as T186.
       handoff puts it on all three editing steps (below *When the room is bright*, below the zone
       rows, below *Add a time*), one line of description per row with the curve at the end, and the
       last row of *Ready to add* reads *Transition — Balanced* and taps back to that step.
+
+### 0.6.6 — thirteen languages
+
+The suite proves every string exists in every language with the right plural forms; it cannot see a
+phone set to Arabic. `npm run render:views -- --lang de` (and `ar`, `pl`) draws the screens first —
+look at those before picking the phone up. None of these is answered by `verify-hardware.mjs`.
+
+- [ ] **T191** **A second language, end to end.** Set the Homey to Danish (or any language you read
+      besides English). Pair one Room-sensing Light: every screen, the review, the default device
+      name ("Stue – rumfølende lys" or similar — not "Stue daylight") and the device page are in
+      that language, and the counts read correctly for 1 and for several lights.
+- [ ] **T192** **Arabic reads right to left.** Set the Homey to Arabic and open a Light Remote's
+      pairing flow as far as the buttons screen: text is right-aligned, the select chevron sits on
+      the left, and the timeline, sliders and charts still run left to right (by design —
+      `docs/localisation.md`). Nothing overlaps or is cut off.
+- [ ] **T193** **Polish or Russian plurals.** Set the Homey to Polish or Russian and look at a count
+      of 2, of 5 and of 22 lights — the light picker's "chosen" line and the review's lights row show
+      three different noun forms where the language needs them.
+- [ ] **T194** **The Flow cards and the tile.** Still in a non-English language: the *Set lights*
+      card's title and its three argument labels, the *It is dark enough* condition, and a device
+      tile's four value rows and control picker are all translated. The settings page follows too,
+      apart from the event and write logs, which are English on purpose.
 
 ### 0.6.5 — the Flow surface, the switch-on work, and the code review's three
 

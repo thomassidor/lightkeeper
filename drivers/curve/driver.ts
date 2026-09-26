@@ -30,6 +30,7 @@ import {
   timezoneOf,
   type PairSessionHost,
 } from '../../lib/pairing/pair-session';
+import { translatorFor } from '../../lib/support/i18n';
 
 /**
  * The curve controller's driver: pair/repair session handlers, the data its two
@@ -85,6 +86,15 @@ function brightnessRange(points: readonly CircadianPoint[]): { min: number; max:
 }
 
 module.exports = class CurveDriver extends Homey.Driver {
+  /**
+   * `homey.__`, plural-aware: a key that is a plural group picks its form from
+   * the numeric `count` token (lib/support/i18n.ts). Every string this driver
+   * resolves goes through here, so a counted one cannot be missed.
+   */
+  private tr(key: string, tokens?: Record<string, string | number>): string {
+    return translatorFor(this.homey)(key, tokens);
+  }
+
 
   /**
    * What `lib/pairing/pair-session.ts` needs of this driver.
@@ -98,7 +108,7 @@ module.exports = class CurveDriver extends Homey.Driver {
       log: (...args: unknown[]) => this.log(...args),
       error: (...args: unknown[]) => this.error(...args),
       translate: (key: string, tokens?: Record<string, string | number>) =>
-        this.homey.__(key, tokens),
+        this.tr(key, tokens),
       clock: this.homey.clock,
       app: this.app,
     };
@@ -191,7 +201,7 @@ module.exports = class CurveDriver extends Homey.Driver {
     // ---------------------------------------------------------------- curve
 
     handler('getCurve', async () => {
-      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+      if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
       const [summary, lights] = await Promise.all([
         resolveSummary(this.app.catalog, state.target),
         targetLights(this.app.catalog, state.target),
@@ -215,7 +225,7 @@ module.exports = class CurveDriver extends Homey.Driver {
         // The palette and where each swatch goes. Ids and locale keys come from
         // `lib/`, and the driver layer turns them into words — the same rule as
         // every other user-facing string produced there.
-        ...paletteForScreen(key => this.homey.__(key)),
+        ...paletteForScreen(key => this.tr(key)),
         adjustBrightness: state.adjustBrightness,
         transition: state.transition,
         // Shown on screen, because "warm at 20:00" is meaningless without saying
@@ -323,7 +333,7 @@ module.exports = class CurveDriver extends Homey.Driver {
       device,
       idPrefix: 'curv',
       storeKey: 'curve',
-      naming: { fallback: 'Colour Curve Light', suffix: 'curve' },
+      naming: { fallbackKey: 'names.curve', suffixKey: 'names.curveSuffix' },
       buildPlan: () => this.buildPlan(state),
     });
 
@@ -350,9 +360,9 @@ module.exports = class CurveDriver extends Homey.Driver {
   }
 
   private buildPlan(state: SessionState): CircadianPlan {
-    if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+    if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
     if (state.points.length < MIN_POINTS) {
-      throw new Error(this.homey.__('errors.curveNeedsPoints', { count: MIN_POINTS }));
+      throw new Error(this.tr('errors.curveNeedsPoints', { count: MIN_POINTS }));
     }
 
     return {

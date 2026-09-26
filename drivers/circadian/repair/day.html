@@ -284,7 +284,7 @@
                        color: var(--lk-ink); margin: 0 0 9px; }
 
   /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
-  #dy-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+  #dy-root .tile { display: block; width: 100%; text-align: start; background: var(--lk-surface);
               border: 1.5px solid var(--lk-edge); border-radius: 12px; padding: 13px 14px;
               margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
               color: var(--lk-ink);
@@ -303,7 +303,10 @@
      written twice, and the two copies have to move together. */
   #dy-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
                background-repeat: no-repeat; background-position: right 13px center;
-               background-size: 11px; padding-right: 34px; }
+               background-size: 11px; padding-inline-end: 34px; }
+  /* Arabic reads right to left, so the chevron sits on the other end — where
+     `padding-inline-end` has already made room for it. */
+  #dy-root[dir="rtl"] select { background-position: left 13px center; }
   #dy-root input:focus, #dy-root select:focus { outline: none; border-color: var(--lk-accent);
                                       box-shadow: 0 0 0 3px var(--lk-ring); }
 
@@ -403,7 +406,7 @@
      unrelated body copy. */
   #dy-root .msg .lead { font-weight: 600; margin-bottom: 3px; }
 
-  #dy-root ol { font-size: 15px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+  #dy-root ol { font-size: 15px; line-height: 1.75; padding-inline-start: 20px; margin: 0 0 16px;
            color: var(--lk-body); }
   #dy-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
   @media (max-width: 380px) { #dy-root .grid { grid-template-columns: 1fr; } }
@@ -424,7 +427,7 @@
      device types. */
   #dy-root .steps.tight i { width: 16px; }
   #dy-root .steps i.on { background: var(--lk-accent); }
-  #dy-root .steps span { margin-left: 4px; font-size: 13px; color: var(--lk-muted); }
+  #dy-root .steps span { margin-inline-start: 4px; font-size: 13px; color: var(--lk-muted); }
 
   /* `label · value · chevron`. The one shape everything secondary takes:
      a row that says what it is, what it is set to, and that it can be opened.
@@ -436,10 +439,10 @@
   #dy-root .row { display: flex; align-items: center; gap: 10px; width: 100%;
                padding: 13px 0; min-height: 44px; box-sizing: border-box;
                background: none; border: none; font: inherit; color: inherit;
-               text-align: left; cursor: pointer; }
+               text-align: start; cursor: pointer; }
   #dy-root .row + .row { border-top: 1px solid var(--lk-line); }
   #dy-root .row .label { flex: 1; font-size: 15px; }
-  #dy-root .row .value { font-size: 15px; color: var(--lk-muted); text-align: right; }
+  #dy-root .row .value { font-size: 15px; color: var(--lk-muted); text-align: end; }
   #dy-root .row .chev { flex: none; font-size: 16px; color: var(--lk-chev); }
   #dy-root .row .sub { font-size: 13px; color: var(--lk-muted); margin: 2px 0 0; }
   /* The card a list of rows lives in. 4px top and bottom rather than 14:
@@ -458,7 +461,7 @@
                   min-height: 44px; box-sizing: border-box;
                   background: none; border-left: none; border-right: none;
                   border-bottom: none; font: inherit; color: inherit;
-                  text-align: left; cursor: pointer; }
+                  text-align: start; cursor: pointer; }
   #dy-root .toggle .label { flex: 1; font-size: 15px; }
   #dy-root .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
                          position: relative; background: var(--lk-line);
@@ -619,7 +622,7 @@
 #dy-root .tr-pick { display: flex; align-items: center; gap: 12px; width: 100%;
                  padding: 12px 0; min-height: 44px; box-sizing: border-box;
                  background: none; border: none; font: inherit; color: inherit;
-                 text-align: left; cursor: pointer; }
+                 text-align: start; cursor: pointer; }
 #dy-root .tr-box { flex: none; width: 22px; height: 22px; border-radius: 50%;
                 border: 1.5px solid var(--lk-box); box-sizing: border-box;
                 display: flex; align-items: center; justify-content: center;
@@ -859,6 +862,76 @@ function __lkBootDy(Homey) {
     });
   })();
 
+  function i18n(homey) {
+    /**
+     * Plural-aware translation, and the language's own number and date rules.
+     *
+     * GENERATED. Spliced into every pair view, and into the settings page, by
+     * `npm run sync:views` from views/shared/i18n.js. **Edit that file, not
+     * this one.**
+     *
+     * The twin of `lib/support/i18n.ts`, and it must choose the same forms:
+     * a counted string is a group of CLDR plural categories, the count is the
+     * `count` token, and `Intl.PluralRules` in the locale file's OWN language
+     * (`meta.language`) picks the form. `t()` is `Homey.__` with that one
+     * extra step, so a view calls it exactly where it called `Homey.__`.
+     *
+     * `dir` is `meta.direction`: every view puts it on its own root, because
+     * the screens share one document and only the root is ours.
+     */
+    var raw = function (key, tokens) { return homey.__(key, tokens || {}); };
+    var found = function (value, key) { return typeof value === 'string' && value !== '' && value !== key; };
+    var lang = raw('meta.language');
+    // Deliberately no memo: the views share one document, and a cache on it
+    // would outlive a language change. Two lookups per call are nothing.
+    if (!/^[a-z]{2}$/.test(String(lang))) lang = 'en';
+    var select = function (n, type) {
+      try { return new Intl.PluralRules(lang, { type: type || 'cardinal' }).select(n); }
+      catch (e) { return n === 1 ? 'one' : 'other'; }
+    };
+    var pick = function (key, form, tokens) {
+      var chosen = raw(key + '.' + form, tokens);
+      if (found(chosen, key + '.' + form)) return chosen;
+      var other = raw(key + '.other', tokens);
+      return found(other, key + '.other') ? other : null;
+    };
+    var t = function (key, tokens) {
+      tokens = tokens || {};
+      if (typeof tokens.count === 'number' && isFinite(tokens.count)) {
+        var form = pick(key, select(tokens.count), tokens);
+        if (form !== null) return form;
+      }
+      var plain = raw(key, tokens);
+      return typeof plain === 'string' ? plain : key;
+    };
+    return {
+      lang: lang,
+      dir: raw('meta.direction') === 'rtl' ? 'rtl' : 'ltr',
+      t: t,
+      /** "1st", "1.", "1er" — the language's own ordinal, from `ordinal.*`. */
+      ordinal: function (n) { return pick('ordinal', select(n, 'ordinal'), { n: n }) || String(n); },
+      /**
+       * "a, b, c" with the language's own comma — "،" in Arabic. A key, not
+       * `Intl.ListFormat`, whose unit style drops the commas altogether in
+       * Korean and Russian and adds an "and" in German.
+       */
+      list: function (items) { return items.join(raw('unit.listSeparator')); },
+      /** A percentage: "40%", "40 %" — the space is the language's, not ours. */
+      percent: function (n) { return t('unit.percent', { n: n }); },
+      /** A date and time, in the app's language rather than the phone's. */
+      dateTime: function (value, options) {
+        var date = new Date(value);
+        try { return date.toLocaleString(lang, options); } catch (e) { return date.toLocaleString(); }
+      },
+      time: function (value) {
+        var date = new Date(value);
+        try { return date.toLocaleTimeString(lang); } catch (e) { return date.toLocaleTimeString(); }
+      }
+    };
+  }
+  var lk = i18n(Homey);
+  __root.dir = lk.dir;
+
   function emit(event, data) {
     /**
      * Homey.emit, as a promise that always settles.
@@ -869,7 +942,8 @@ function __lkBootDy(Homey) {
      * Both call styles are handled because the pairing bridge has used a
      * callback and a promise at different times, and the 20 s timeout is what
      * keeps a dropped callback from leaving the screen spinning with no message
-     * forever.
+     * forever. Its message comes from `lk`, the view's `i18n()` translator,
+     * which every view sets up before anything can emit.
      *
      * Inside the function, like `stabiliseScrollbar()`'s, and that is not a
      * style choice: `spliceFunction` matches from the `function` keyword, so a
@@ -886,7 +960,7 @@ function __lkBootDy(Homey) {
         if (err) reject(err instanceof Error ? err : new Error(String(err)));
         else resolve(result);
       };
-      var timer = setTimeout(function () { finish(new Error('Homey did not respond in time. Close this screen and try again. (' + event + ')')); }, 20000);
+      var timer = setTimeout(function () { finish(new Error(lk.t('common.timeout', { event: event }))); }, 20000);
       var done = function (err, result) { clearTimeout(timer); finish(err, result); };
       try {
         var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
@@ -946,7 +1020,7 @@ function __lkBootDy(Homey) {
     var SVG = 'http://www.w3.org/2000/svg';
 
     while (host.firstChild) host.removeChild(host.firstChild);
-    host.appendChild(node('div', 'section-title', Homey.__('transition.title')));
+    host.appendChild(node('div', 'section-title', lk.t('transition.title')));
     var card = node('div', 'tr-card');
     card.setAttribute('role', 'radiogroup');
 
@@ -959,8 +1033,8 @@ function __lkBootDy(Homey) {
       pick.setAttribute('aria-checked', option.kind === selected ? 'true' : 'false');
       pick.appendChild(node('span', 'tr-box', '✓'));
       var text = node('span', 'tr-text');
-      text.appendChild(node('div', 'tr-what', Homey.__(option.what)));
-      text.appendChild(node('div', 'tr-why', Homey.__(option.why)));
+      text.appendChild(node('div', 'tr-what', lk.t(option.what)));
+      text.appendChild(node('div', 'tr-why', lk.t(option.why)));
       pick.appendChild(text);
 
       // 64 x 40, the curve inset 8px from the sides and 9px from the top and
@@ -1046,7 +1120,7 @@ function __lkBootDy(Homey) {
     limits: { maxOffset: 150, offsetStep: 15 }
   };
 
-  function t(key) { return Homey.__(key); }
+  function t(key) { return lk.t(key); }
 
   /**
    * The colour a warmth reads as on the strip.
@@ -1144,9 +1218,9 @@ function __lkBootDy(Homey) {
   function spanText(key) {
     var a = clock(state.bounds.morningEndMinute);
     var b = clock(state.bounds.eveningStartMinute);
-    if (key === 'morning') return Homey.__('day.spanMorning', { until: a });
-    if (key === 'midday') return Homey.__('day.spanMidday', { from: a, until: b });
-    return Homey.__('day.spanEvening', { from: b });
+    if (key === 'morning') return lk.t('day.spanMorning', { until: a });
+    if (key === 'midday') return lk.t('day.spanMidday', { from: a, until: b });
+    return lk.t('day.spanEvening', { from: b });
   }
 
   function warmthWord(value) {
@@ -1185,7 +1259,7 @@ function __lkBootDy(Homey) {
     el.brightBlock.style.display = state.adjustBrightness ? '' : 'none';
     if (state.adjustBrightness) {
       var brightness = zone.brightness === undefined ? 0 : zone.brightness;
-      el.brightPct.textContent = Math.round(brightness * 100) + '%';
+      el.brightPct.textContent = lk.percent(Math.round(brightness * 100));
       setSlider(el.brightKnob, brightness);
     }
 
@@ -1247,7 +1321,7 @@ function __lkBootDy(Homey) {
 
     var value = warmthWord(zone.temperature);
     if (state.adjustBrightness) {
-      value += ' · ' + Math.round((zone.brightness || 0) * 100) + '%';
+      value += ' · ' + lk.percent(Math.round((zone.brightness || 0) * 100));
     }
     row.appendChild(node('span', 'value', value));
     row.appendChild(node('span', 'chev', '›'));
@@ -1407,7 +1481,7 @@ function __lkBootDy(Homey) {
       el.steps.appendChild(node('i', i <= payload.stepIndex ? 'on' : null));
     }
     el.steps.appendChild(node('span', null,
-      Homey.__('day.step', { index: payload.stepIndex, count: payload.stepCount })));
+      lk.t('day.step', { index: payload.stepIndex, count: payload.stepCount })));
   }
 
   emit('getDay').then(function (payload) {
@@ -1421,11 +1495,11 @@ function __lkBootDy(Homey) {
     renderSteps({ stepIndex: 2, stepCount: 3 });
 
     el.today.textContent = payload.boundaries.fromSun
-      ? Homey.__('day.todaySun', {
+      ? lk.t('day.todaySun', {
         sunrise: clock(payload.sun.sunriseMinute),
         sunset: clock(payload.sun.sunsetMinute)
       })
-      : Homey.__('day.todayFixed', {
+      : lk.t('day.todayFixed', {
         sunrise: clock(payload.limits.fallbackSunrise),
         sunset: clock(payload.limits.fallbackSunset)
       });

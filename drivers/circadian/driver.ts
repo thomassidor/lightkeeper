@@ -32,6 +32,7 @@ import {
   timezoneOf,
   type PairSessionHost,
 } from '../../lib/pairing/pair-session';
+import { translatorFor } from '../../lib/support/i18n';
 
 /**
  * The circadian light's driver: two screens, and the second one asks two
@@ -143,6 +144,15 @@ function restoreOrder(values: Record<string, unknown>): string[] {
 
 
 module.exports = class CircadianDriver extends Homey.Driver {
+  /**
+   * `homey.__`, plural-aware: a key that is a plural group picks its form from
+   * the numeric `count` token (lib/support/i18n.ts). Every string this driver
+   * resolves goes through here, so a counted one cannot be missed.
+   */
+  private tr(key: string, tokens?: Record<string, string | number>): string {
+    return translatorFor(this.homey)(key, tokens);
+  }
+
 
   /**
    * What `lib/pairing/pair-session.ts` needs of this driver.
@@ -156,7 +166,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
       log: (...args: unknown[]) => this.log(...args),
       error: (...args: unknown[]) => this.error(...args),
       translate: (key: string, tokens?: Record<string, string | number>) =>
-        this.homey.__(key, tokens),
+        this.tr(key, tokens),
       clock: this.homey.clock,
       app: this.app,
     };
@@ -251,7 +261,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
      * somewhere the device will not actually go.
      */
     handler('getDay', async () => {
-      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+      if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
       const [summary, lights] = await Promise.all([
         resolveSummary(this.app.catalog, state.target),
         targetLights(this.app.catalog, state.target),
@@ -361,7 +371,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
      * strip draws and the screen reads between samples linearly.
      */
     handler('getPreview', async () => {
-      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+      if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
       const context = this.sunContext();
       const bounds = resolveBoundaries(state.zones, context);
 
@@ -401,9 +411,9 @@ module.exports = class CircadianDriver extends Homey.Driver {
      * everywhere.
      */
     handler('previewAt', async (payload: unknown) => {
-      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+      if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
       const minute = Number((payload as { minute?: unknown })?.minute);
-      if (!Number.isFinite(minute)) throw new Error(this.homey.__('errors.notATimeOfDay'));
+      if (!Number.isFinite(minute)) throw new Error(this.tr('errors.notATimeOfDay'));
 
       const context = this.sunContext();
       const value = this.valueAt(state, context, minute);
@@ -480,7 +490,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
         const warmth = host.translate(warmthKey(state.zones[key].temperature));
         if (!state.adjustBrightness) return warmth;
         const percent = Math.round((state.zones[key].brightness ?? 0) * 100);
-        return `${warmth} · ${percent}%`;
+        return `${warmth} · ${this.tr('unit.percent', { n: percent })}`;
       };
 
       /**
@@ -523,7 +533,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
       device,
       idPrefix: 'circ',
       storeKey: 'circadian',
-      naming: { fallback: 'Circadian light', suffix: 'circadian' },
+      naming: { fallbackKey: 'names.circadian', suffixKey: 'names.circadianSuffix' },
       buildPlan: () => this.buildPlan(state),
     });
 
@@ -661,7 +671,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
   }
 
   private buildPlan(state: SessionState): SimpleCircadianPlan {
-    if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+    if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
 
     return {
       schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION,

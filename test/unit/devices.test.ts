@@ -471,11 +471,14 @@ describe('LightkeeperDevice, the SDK shell', () => {
     return { instance, reg, events };
   }
 
-  test('the device id is data.id, and translate is homey.__', async () => {
+  test('the device id is data.id, and translate is homey.__ made plural-aware', async () => {
     const { instance } = await curveDevice();
     assert.equal(instance.deviceId, 'lk-curv-1');
     assert.equal(instance.translate('state.noCurve'), translate('state.noCurve'));
-    assert.equal(instance.translate('review.someLights', { count: 3 }), translate('review.someLights', { count: 3 }));
+    // A plural group picks its form by `count` (lib/support/i18n.ts), so a
+    // counted StateDetail from lib/ is grammatical without knowing it is one.
+    assert.equal(instance.translate('review.someLights', { count: 3 }), translate('review.someLights.other', { count: 3 }));
+    assert.equal(instance.translate('targets.someLights', { count: 1 }), '1 light');
     assert.equal(instance.translate('no.such.key'), 'no.such.key');
   });
 

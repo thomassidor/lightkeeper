@@ -284,7 +284,7 @@
                        color: var(--lk-ink); margin: 0 0 9px; }
 
   /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
-  #jb-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+  #jb-root .tile { display: block; width: 100%; text-align: start; background: var(--lk-surface);
               border: 1.5px solid var(--lk-edge); border-radius: 12px; padding: 13px 14px;
               margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
               color: var(--lk-ink);
@@ -303,7 +303,10 @@
      written twice, and the two copies have to move together. */
   #jb-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
                background-repeat: no-repeat; background-position: right 13px center;
-               background-size: 11px; padding-right: 34px; }
+               background-size: 11px; padding-inline-end: 34px; }
+  /* Arabic reads right to left, so the chevron sits on the other end — where
+     `padding-inline-end` has already made room for it. */
+  #jb-root[dir="rtl"] select { background-position: left 13px center; }
   #jb-root input:focus, #jb-root select:focus { outline: none; border-color: var(--lk-accent);
                                       box-shadow: 0 0 0 3px var(--lk-ring); }
 
@@ -403,7 +406,7 @@
      unrelated body copy. */
   #jb-root .msg .lead { font-weight: 600; margin-bottom: 3px; }
 
-  #jb-root ol { font-size: 15px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+  #jb-root ol { font-size: 15px; line-height: 1.75; padding-inline-start: 20px; margin: 0 0 16px;
            color: var(--lk-body); }
   #jb-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
   @media (max-width: 380px) { #jb-root .grid { grid-template-columns: 1fr; } }
@@ -424,7 +427,7 @@
      device types. */
   #jb-root .steps.tight i { width: 16px; }
   #jb-root .steps i.on { background: var(--lk-accent); }
-  #jb-root .steps span { margin-left: 4px; font-size: 13px; color: var(--lk-muted); }
+  #jb-root .steps span { margin-inline-start: 4px; font-size: 13px; color: var(--lk-muted); }
 
   /* `label · value · chevron`. The one shape everything secondary takes:
      a row that says what it is, what it is set to, and that it can be opened.
@@ -436,10 +439,10 @@
   #jb-root .row { display: flex; align-items: center; gap: 10px; width: 100%;
                padding: 13px 0; min-height: 44px; box-sizing: border-box;
                background: none; border: none; font: inherit; color: inherit;
-               text-align: left; cursor: pointer; }
+               text-align: start; cursor: pointer; }
   #jb-root .row + .row { border-top: 1px solid var(--lk-line); }
   #jb-root .row .label { flex: 1; font-size: 15px; }
-  #jb-root .row .value { font-size: 15px; color: var(--lk-muted); text-align: right; }
+  #jb-root .row .value { font-size: 15px; color: var(--lk-muted); text-align: end; }
   #jb-root .row .chev { flex: none; font-size: 16px; color: var(--lk-chev); }
   #jb-root .row .sub { font-size: 13px; color: var(--lk-muted); margin: 2px 0 0; }
   /* The card a list of rows lives in. 4px top and bottom rather than 14:
@@ -458,7 +461,7 @@
                   min-height: 44px; box-sizing: border-box;
                   background: none; border-left: none; border-right: none;
                   border-bottom: none; font: inherit; color: inherit;
-                  text-align: left; cursor: pointer; }
+                  text-align: start; cursor: pointer; }
   #jb-root .toggle .label { flex: 1; font-size: 15px; }
   #jb-root .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
                          position: relative; background: var(--lk-line);
@@ -619,7 +622,7 @@
   #jb-root .lk .head { display: flex; align-items: flex-start; gap: 11px;
                        width: 100%; padding: 13px 14px; box-sizing: border-box;
                        background: none; border: none; font: inherit; color: inherit;
-                       text-align: left; cursor: pointer; }
+                       text-align: start; cursor: pointer; }
   #jb-root .lk .head .what { flex: 1; }
   #jb-root .lk .head .sub { display: block; font-size: 13px; color: var(--lk-muted);
                             margin-top: 3px; line-height: 1.35; }
@@ -645,14 +648,14 @@
   #jb-root .lk .row { display: flex; align-items: center; gap: 10px; width: 100%;
                       padding: 11px 0; min-height: 44px; box-sizing: border-box;
                       background: none; border: none; border-top: 1px solid var(--lk-tint-rule);
-                      font: inherit; color: inherit; text-align: left; cursor: pointer; }
+                      font: inherit; color: inherit; text-align: start; cursor: pointer; }
   #jb-root .lk .rows > :first-child { border-top: none; }
   #jb-root .lk .row .label { flex: none; font-size: 13px; }
   /* The chosen setup's NAME, at the end of the line and in the accent, because
      it is the answer rather than a caption. Truncated rather than wrapped: a
      device called "Evening curve, upstairs landing" must not make this row two
      lines taller than the one below it. */
-  #jb-root .lk .row .value { flex: 1; text-align: right; font-size: 13px;
+  #jb-root .lk .row .value { flex: 1; text-align: end; font-size: 13px;
                              font-weight: 500;
                              color: var(--lk-accent-strong); overflow: hidden;
                              text-overflow: ellipsis; white-space: nowrap; }
@@ -691,7 +694,7 @@
      job rather than a tenth kind of one, and it is what an unmapped button
      already says. Same tile, same chosen state, different shape. */
   #jb-root .none { display: flex; align-items: center; gap: 11px; margin: 0 0 16px;
-                   text-align: left; }
+                   text-align: start; }
   /* The grid centres its own icons with `margin: auto`, which in a row pushes
      the label to the far end. Here the icon leads the line. */
   #jb-root .none .ico { margin: 0; }
@@ -824,7 +827,7 @@
   #jb-root .pick { display: flex; align-items: center; gap: 12px; width: 100%;
                    padding: 12px 0; min-height: 44px; box-sizing: border-box;
                    background: none; border: none; border-bottom: 1px solid var(--lk-line);
-                   font: inherit; color: inherit; text-align: left; cursor: pointer; }
+                   font: inherit; color: inherit; text-align: start; cursor: pointer; }
   #jb-root .pick:last-child { border-bottom: none; }
   #jb-root .pick .box { flex: none; width: 20px; height: 20px; border-radius: 8px;
                         border: 1.5px solid var(--lk-box); box-sizing: border-box;
@@ -1022,6 +1025,76 @@ function __lkBootJb(Homey) {
     });
   })();
 
+  function i18n(homey) {
+    /**
+     * Plural-aware translation, and the language's own number and date rules.
+     *
+     * GENERATED. Spliced into every pair view, and into the settings page, by
+     * `npm run sync:views` from views/shared/i18n.js. **Edit that file, not
+     * this one.**
+     *
+     * The twin of `lib/support/i18n.ts`, and it must choose the same forms:
+     * a counted string is a group of CLDR plural categories, the count is the
+     * `count` token, and `Intl.PluralRules` in the locale file's OWN language
+     * (`meta.language`) picks the form. `t()` is `Homey.__` with that one
+     * extra step, so a view calls it exactly where it called `Homey.__`.
+     *
+     * `dir` is `meta.direction`: every view puts it on its own root, because
+     * the screens share one document and only the root is ours.
+     */
+    var raw = function (key, tokens) { return homey.__(key, tokens || {}); };
+    var found = function (value, key) { return typeof value === 'string' && value !== '' && value !== key; };
+    var lang = raw('meta.language');
+    // Deliberately no memo: the views share one document, and a cache on it
+    // would outlive a language change. Two lookups per call are nothing.
+    if (!/^[a-z]{2}$/.test(String(lang))) lang = 'en';
+    var select = function (n, type) {
+      try { return new Intl.PluralRules(lang, { type: type || 'cardinal' }).select(n); }
+      catch (e) { return n === 1 ? 'one' : 'other'; }
+    };
+    var pick = function (key, form, tokens) {
+      var chosen = raw(key + '.' + form, tokens);
+      if (found(chosen, key + '.' + form)) return chosen;
+      var other = raw(key + '.other', tokens);
+      return found(other, key + '.other') ? other : null;
+    };
+    var t = function (key, tokens) {
+      tokens = tokens || {};
+      if (typeof tokens.count === 'number' && isFinite(tokens.count)) {
+        var form = pick(key, select(tokens.count), tokens);
+        if (form !== null) return form;
+      }
+      var plain = raw(key, tokens);
+      return typeof plain === 'string' ? plain : key;
+    };
+    return {
+      lang: lang,
+      dir: raw('meta.direction') === 'rtl' ? 'rtl' : 'ltr',
+      t: t,
+      /** "1st", "1.", "1er" — the language's own ordinal, from `ordinal.*`. */
+      ordinal: function (n) { return pick('ordinal', select(n, 'ordinal'), { n: n }) || String(n); },
+      /**
+       * "a, b, c" with the language's own comma — "،" in Arabic. A key, not
+       * `Intl.ListFormat`, whose unit style drops the commas altogether in
+       * Korean and Russian and adds an "and" in German.
+       */
+      list: function (items) { return items.join(raw('unit.listSeparator')); },
+      /** A percentage: "40%", "40 %" — the space is the language's, not ours. */
+      percent: function (n) { return t('unit.percent', { n: n }); },
+      /** A date and time, in the app's language rather than the phone's. */
+      dateTime: function (value, options) {
+        var date = new Date(value);
+        try { return date.toLocaleString(lang, options); } catch (e) { return date.toLocaleString(); }
+      },
+      time: function (value) {
+        var date = new Date(value);
+        try { return date.toLocaleTimeString(lang); } catch (e) { return date.toLocaleTimeString(); }
+      }
+    };
+  }
+  var lk = i18n(Homey);
+  __root.dir = lk.dir;
+
   function emit(event, data) {
     /**
      * Homey.emit, as a promise that always settles.
@@ -1032,7 +1105,8 @@ function __lkBootJb(Homey) {
      * Both call styles are handled because the pairing bridge has used a
      * callback and a promise at different times, and the 20 s timeout is what
      * keeps a dropped callback from leaving the screen spinning with no message
-     * forever.
+     * forever. Its message comes from `lk`, the view's `i18n()` translator,
+     * which every view sets up before anything can emit.
      *
      * Inside the function, like `stabiliseScrollbar()`'s, and that is not a
      * style choice: `spliceFunction` matches from the `function` keyword, so a
@@ -1049,7 +1123,7 @@ function __lkBootJb(Homey) {
         if (err) reject(err instanceof Error ? err : new Error(String(err)));
         else resolve(result);
       };
-      var timer = setTimeout(function () { finish(new Error('Homey did not respond in time. Close this screen and try again. (' + event + ')')); }, 20000);
+      var timer = setTimeout(function () { finish(new Error(lk.t('common.timeout', { event: event }))); }, 20000);
       var done = function (err, result) { clearTimeout(timer); finish(err, result); };
       try {
         var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
@@ -1251,7 +1325,7 @@ function __lkBootJb(Homey) {
     el.lk.className = chosen ? 'tile lk sel' : 'tile lk';
     el.lkHead.setAttribute('aria-pressed', chosen ? 'true' : 'false');
     el.lkName.textContent = job.label;
-    el.lkSub.textContent = Homey.__(chosen ? 'job.lightkeeperChosen' : 'job.lightkeeperBlurb');
+    el.lkSub.textContent = lk.t(chosen ? 'job.lightkeeperChosen' : 'job.lightkeeperBlurb');
 
     el.lkRows.style.display = chosen ? '' : 'none';
     if (!chosen) return;
@@ -1274,7 +1348,7 @@ function __lkBootJb(Homey) {
       el.lkWarn.style.display = 'none';
       return;
     }
-    el.lkWarn.textContent = Homey.__('sourceWarn.keepsUpdated', { name: first.name });
+    el.lkWarn.textContent = lk.t('sourceWarn.keepsUpdated', { name: first.name });
     el.lkWarn.style.display = '';
   }
 
@@ -1314,7 +1388,7 @@ function __lkBootJb(Homey) {
     if (state.presetKind === 'colour') renderColours();
     if (state.presetKind !== 'brightness') return;
 
-    el.brightPct.textContent = Math.round(state.brightness.brightness * 100) + '%';
+    el.brightPct.textContent = lk.percent(Math.round(state.brightness.brightness * 100));
     setSlider(el.brightKnob, state.brightness.brightness);
 
     var hasWarmth = state.brightness.temperature !== undefined;
@@ -1329,7 +1403,7 @@ function __lkBootJb(Homey) {
     appendSwatches(el.featured, state.layout.featured);
     appendSwatches(el.rest, state.layout.more);
     el.rest.style.display = state.showAllColours ? '' : 'none';
-    el.more.textContent = Homey.__(state.showAllColours ? 'job.fewerColours' : 'job.moreColours');
+    el.more.textContent = lk.t(state.showAllColours ? 'job.fewerColours' : 'job.moreColours');
 
     var chosen = colourById(state.colour);
     el.colourName.textContent = chosen ? chosen.label : '';
@@ -1444,11 +1518,11 @@ function __lkBootJb(Homey) {
 
   function valueText(job) {
     if (job.preset === 'brightness') {
-      var parts = [Math.round(state.brightness.brightness * 100) + '%'];
+      var parts = [lk.percent(Math.round(state.brightness.brightness * 100))];
       if (state.brightness.temperature !== undefined) {
-        parts.push(Homey.__(warmthKey(state.brightness.temperature)));
+        parts.push(lk.t(warmthKey(state.brightness.temperature)));
       }
-      return parts.join(', ');
+      return lk.list(parts);
     }
     if (job.preset === 'colour') {
       var colour = colourById(state.colour);
@@ -1556,7 +1630,7 @@ function __lkBootJb(Homey) {
     el.msg.style.display = 'none';
     emit('test', { func: state.chosen, deviceIds: state.chosenLights }).then(function (result) {
       el.msg.className = 'msg ok';
-      el.msg.textContent = Homey.__('job.tried', { writes: result.writes });
+      el.msg.textContent = lk.t('job.tried', { count: result.writes });
       el.msg.style.display = '';
     }).catch(function (err) {
       el.msg.className = 'msg bad';

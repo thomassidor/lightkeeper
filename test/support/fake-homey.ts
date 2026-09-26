@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { FakeTimers } from './fake-timers';
+import { localise } from '../../lib/support/i18n';
 
 /**
  * A fake Homey SDK, installed the moment this file is imported.
@@ -86,6 +87,14 @@ export function translate(key: string, tokens: Record<string, unknown> = {}): st
   if (typeof node !== 'string') return key;
   return node.replace(/__(\w+)__/g, (whole, name: string) =>
     (Object.prototype.hasOwnProperty.call(tokens, name) ? String(tokens[name]) : whole));
+}
+
+/**
+ * `translate`, made plural-aware exactly as the drivers make `homey.__` —
+ * lib/support/i18n.ts. What a `lib/` helper that takes a translator is handed.
+ */
+export function localised(key: string, tokens: Record<string, string | number> = {}): string {
+  return localise(translate, key, tokens);
 }
 
 // ------------------------------------------------------------ the SDK

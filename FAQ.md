@@ -90,6 +90,16 @@ offers more through the Philips Hue app than through Matter. **Support is not a 
 on the box.** The pairing screen shows a count of the events Homey exposes for each device, so you
 can see before you commit.
 
+### Which languages does it speak?
+
+Every language Homey itself supports: English, Dutch, German, French, Italian, Swedish, Norwegian,
+Spanish, Danish, Russian, Polish, Korean and Arabic. Lightkeeper follows your Homey's language — the
+setup screens, the device pages, the settings page, the Flow cards and the App Store listing all
+change with it. Three things stay in English on purpose: logs and diagnostics (so a problem report
+reads the same whoever sends it), the names of the Flows a Light Remote or a light schedule
+generates (renaming one would look like your own edit, and Lightkeeper leaves those alone), and your
+remote's own names for its buttons, which come from the remote's app.
+
 ### Can I use Homey Cloud, or a Homey Pro 2019?
 
 No to both. Homey Cloud does not offer the local Web API access the design depends on, and **Homey

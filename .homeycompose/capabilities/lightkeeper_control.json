@@ -1,10 +1,34 @@
 {
   "type": "enum",
   "title": {
-    "en": "Lightkeeper control"
+    "en": "Lightkeeper control",
+    "nl": "Lightkeeper-bediening",
+    "de": "Lightkeeper-Steuerung",
+    "fr": "Contrôle Lightkeeper",
+    "it": "Controllo Lightkeeper",
+    "sv": "Lightkeeper-styrning",
+    "no": "Lightkeeper-styring",
+    "es": "Control de Lightkeeper",
+    "da": "Lightkeeper-styring",
+    "ru": "Управление Lightkeeper",
+    "pl": "Sterowanie Lightkeeper",
+    "ko": "Lightkeeper 제어",
+    "ar": "تحكم Lightkeeper"
   },
   "desc": {
-    "en": "How Lightkeeper controls this device's lights: after they turn on, before they turn on, or not at all."
+    "en": "How Lightkeeper controls this device's lights: after they turn on, before they turn on, or not at all.",
+    "nl": "Hoe Lightkeeper de lampen van dit apparaat bedient: nadat ze aangaan, voordat ze aangaan, of helemaal niet.",
+    "de": "Wie Lightkeeper die Lichter dieses Geräts steuert: nach dem Einschalten, vor dem Einschalten oder gar nicht.",
+    "fr": "Comment Lightkeeper contrôle les lumières de cet appareil : après leur allumage, avant leur allumage, ou pas du tout.",
+    "it": "Come Lightkeeper controlla le luci di questo dispositivo: dopo l'accensione, prima dell'accensione o per niente.",
+    "sv": "Hur Lightkeeper styr enhetens lampor: efter att de tänts, innan de tänds eller inte alls.",
+    "no": "Slik styrer Lightkeeper lysene til denne enheten: etter at de slås på, før de slås på, eller ikke i det hele tatt.",
+    "es": "Cómo controla Lightkeeper las luces de este dispositivo: después de encenderse, antes de encenderse o no las controla.",
+    "da": "Sådan styrer Lightkeeper denne enheds lys: efter de tænder, før de tænder eller slet ikke.",
+    "ru": "Как Lightkeeper управляет светильниками этого устройства: после включения, до включения или никак.",
+    "pl": "Jak Lightkeeper steruje światłami tego urządzenia: po ich włączeniu, przed włączeniem albo wcale.",
+    "ko": "Lightkeeper가 이 기기의 조명을 제어하는 방법: 켜진 후, 켜지기 전, 또는 제어하지 않음.",
+    "ar": "كيف يتحكم Lightkeeper بأضواء هذا الجهاز: بعد تشغيلها، أو قبل تشغيلها، أو لا يتحكم بها إطلاقًا."
   },
   "getable": true,
   "setable": true,
@@ -14,19 +38,55 @@
     {
       "id": "after",
       "title": {
-        "en": "Change lights after they turn on"
+        "en": "Change lights after they turn on",
+        "nl": "Lampen aanpassen nadat ze aangaan",
+        "de": "Lichter nach dem Einschalten anpassen",
+        "fr": "Modifier les lumières après leur allumage",
+        "it": "Cambia le luci dopo l'accensione",
+        "sv": "Ändra lamporna efter att de tänts",
+        "no": "Endre lys etter at de slås på",
+        "es": "Cambiar las luces después de encenderse",
+        "da": "Ændr lys, efter de tænder",
+        "ru": "Менять свет после включения",
+        "pl": "Zmieniaj światła po włączeniu",
+        "ko": "조명이 켜진 후 바꾸기",
+        "ar": "تغيير الأضواء بعد تشغيلها"
       }
     },
     {
       "id": "before",
       "title": {
-        "en": "Set lights before they turn on"
+        "en": "Set lights before they turn on",
+        "nl": "Lampen instellen voordat ze aangaan",
+        "de": "Lichter vor dem Einschalten einstellen",
+        "fr": "Régler les lumières avant leur allumage",
+        "it": "Imposta le luci prima dell'accensione",
+        "sv": "Ställ in lamporna innan de tänds",
+        "no": "Still inn lys før de slås på",
+        "es": "Ajustar las luces antes de encenderse",
+        "da": "Indstil lys, før de tænder",
+        "ru": "Настраивать свет до включения",
+        "pl": "Ustawiaj światła przed włączeniem",
+        "ko": "조명이 켜지기 전에 설정하기",
+        "ar": "ضبط الأضواء قبل تشغيلها"
       }
     },
     {
       "id": "none",
       "title": {
-        "en": "Don’t change lights automatically"
+        "en": "Don’t change lights automatically",
+        "nl": "Lampen niet automatisch aanpassen",
+        "de": "Lichter nicht automatisch ändern",
+        "fr": "Ne pas modifier les lumières automatiquement",
+        "it": "Non cambiare le luci automaticamente",
+        "sv": "Ändra inte lamporna automatiskt",
+        "no": "Ikke endre lys automatisk",
+        "es": "No cambiar las luces automáticamente",
+        "da": "Ændr ikke lys automatisk",
+        "ru": "Не менять свет автоматически",
+        "pl": "Nie zmieniaj świateł automatycznie",
+        "ko": "조명을 자동으로 바꾸지 않기",
+        "ar": "عدم تغيير الأضواء تلقائيًا"
       }
     }
   ],

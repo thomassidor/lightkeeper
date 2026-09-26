@@ -1,6 +1,18 @@
 {
   "name": {
-    "en": "Circadian light"
+    "en": "Circadian light",
+    "nl": "Circadiaans licht",
+    "de": "Zirkadianes Licht",
+    "fr": "Éclairage circadien",
+    "it": "Luce circadiana",
+    "sv": "Dygnsrytmsljus",
+    "no": "Døgnrytmelys",
+    "es": "Luz circadiana",
+    "da": "Døgnrytmelys",
+    "ru": "Циркадный свет",
+    "pl": "Światło okołodobowe",
+    "ko": "생체리듬 조명",
+    "ar": "إضاءة الإيقاع اليومي"
   },
   "class": "service",
   "capabilities": [
@@ -12,7 +24,19 @@
   "capabilitiesOptions": {
     "onoff": {
       "title": {
-        "en": "Circadian active"
+        "en": "Circadian active",
+        "nl": "Circadiaans actief",
+        "de": "Zirkadian aktiv",
+        "fr": "Circadien actif",
+        "it": "Circadiana attiva",
+        "sv": "Dygnsrytm aktiv",
+        "no": "Døgnrytme aktiv",
+        "es": "Circadiana activa",
+        "da": "Døgnrytme aktiv",
+        "ru": "Циркадный режим включён",
+        "pl": "Rytm dobowy aktywny",
+        "ko": "생체리듬 활성",
+        "ar": "الإيقاع اليومي نشط"
       }
     }
   },

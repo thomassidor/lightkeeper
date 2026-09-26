@@ -1,12 +1,48 @@
 {
   "title": {
-    "en": "Receive Lightkeeper event"
+    "en": "Receive Lightkeeper event",
+    "nl": "Lightkeeper-gebeurtenis ontvangen",
+    "de": "Lightkeeper-Ereignis empfangen",
+    "fr": "Recevoir un événement Lightkeeper",
+    "it": "Ricevi evento Lightkeeper",
+    "sv": "Ta emot Lightkeeper-händelse",
+    "no": "Motta Lightkeeper-hendelse",
+    "es": "Recibir evento de Lightkeeper",
+    "da": "Modtag Lightkeeper-hændelse",
+    "ru": "Получить событие Lightkeeper",
+    "pl": "Odbierz zdarzenie Lightkeeper",
+    "ko": "Lightkeeper 이벤트 받기",
+    "ar": "استقبال حدث Lightkeeper"
   },
   "titleFormatted": {
-    "en": "Send event [[event_key]] to Lightkeeper device [[controller]]"
+    "en": "Send event [[event_key]] to Lightkeeper device [[controller]]",
+    "nl": "Stuur gebeurtenis [[event_key]] naar Lightkeeper-apparaat [[controller]]",
+    "de": "Ereignis [[event_key]] an Lightkeeper-Gerät [[controller]] senden",
+    "fr": "Envoyer l'événement [[event_key]] à l'appareil Lightkeeper [[controller]]",
+    "it": "Invia l'evento [[event_key]] al dispositivo Lightkeeper [[controller]]",
+    "sv": "Skicka händelsen [[event_key]] till Lightkeeper-enheten [[controller]]",
+    "no": "Send hendelse [[event_key]] til Lightkeeper-enhet [[controller]]",
+    "es": "Enviar el evento [[event_key]] al dispositivo de Lightkeeper [[controller]]",
+    "da": "Send hændelse [[event_key]] til Lightkeeper-enhed [[controller]]",
+    "ru": "Отправить событие [[event_key]] устройству Lightkeeper [[controller]]",
+    "pl": "Wyślij zdarzenie [[event_key]] do urządzenia Lightkeeper [[controller]]",
+    "ko": "이벤트 [[event_key]]을(를) Lightkeeper 기기 [[controller]]에 보내기",
+    "ar": "إرسال الحدث [[event_key]] إلى جهاز Lightkeeper [[controller]]"
   },
   "hint": {
-    "en": "Used internally by Lightkeeper. These cards appear in Flows that Lightkeeper creates and maintains for you — you do not need to add them by hand, and editing them will disconnect the device they belong to."
+    "en": "Used internally by Lightkeeper. These cards appear in Flows that Lightkeeper creates and maintains for you — you do not need to add them by hand, and editing them will disconnect the device they belong to.",
+    "nl": "Intern gebruikt door Lightkeeper. Deze kaarten staan in Flows die Lightkeeper voor je maakt en bijhoudt — je hoeft ze niet met de hand toe te voegen, en als je ze bewerkt, raakt het apparaat waar ze bij horen losgekoppeld.",
+    "de": "Wird intern von Lightkeeper verwendet. Diese Karten erscheinen in Flows, die Lightkeeper für dich erstellt und pflegt – du musst sie nicht von Hand hinzufügen, und wenn du sie bearbeitest, wird das Gerät getrennt, zu dem sie gehören.",
+    "fr": "Utilisée en interne par Lightkeeper. Ces cartes apparaissent dans les Flows que Lightkeeper crée et entretient pour vous — inutile de les ajouter à la main, et les modifier déconnectera l'appareil auquel elles appartiennent.",
+    "it": "Usata internamente da Lightkeeper. Queste schede compaiono nei Flow che Lightkeeper crea e mantiene per te: non devi aggiungerle a mano, e modificarle scollegherà il dispositivo a cui appartengono.",
+    "sv": "Används internt av Lightkeeper. De här korten finns i Flows som Lightkeeper skapar och underhåller åt dig – du behöver inte lägga till dem för hand, och om du redigerar dem kopplas enheten de hör till bort.",
+    "no": "Brukes internt av Lightkeeper. Disse kortene finnes i Flows som Lightkeeper lager og vedlikeholder for deg — du trenger ikke legge dem til selv, og hvis du redigerer dem, mister enheten de hører til forbindelsen.",
+    "es": "Uso interno de Lightkeeper. Estas tarjetas aparecen en los Flows que Lightkeeper crea y mantiene por ti: no hace falta que las añadas a mano, y si las editas se desconectará el dispositivo al que pertenecen.",
+    "da": "Bruges internt af Lightkeeper. Disse kort findes i Flows, som Lightkeeper opretter og vedligeholder for dig — du behøver ikke tilføje dem selv, og hvis du redigerer dem, mister den enhed, de hører til, forbindelsen.",
+    "ru": "Используется внутри Lightkeeper. Эти карточки встречаются во Flow, которые Lightkeeper создаёт и поддерживает за вас, — добавлять их вручную не нужно, а изменение отключит устройство, которому они принадлежат.",
+    "pl": "Używane wewnętrznie przez Lightkeeper. Te karty pojawiają się we Flow, które Lightkeeper tworzy i utrzymuje za ciebie — nie trzeba ich dodawać ręcznie, a ich edycja odłączy urządzenie, do którego należą.",
+    "ko": "Lightkeeper가 내부적으로 사용해요. 이 카드는 Lightkeeper가 대신 만들고 관리하는 Flow에 나타나요. 직접 추가할 필요가 없으며, 수정하면 해당 기기와의 연결이 끊어져요.",
+    "ar": "يستخدمها Lightkeeper داخليًا. تظهر هذه البطاقات في Flow التي ينشئها Lightkeeper ويصونها لك — لا حاجة لإضافتها يدويًا، وتعديلها سيفصل الجهاز الذي تنتمي إليه."
   },
   "deprecated": true,
   "args": [
@@ -14,14 +50,38 @@
       "type": "text",
       "name": "controller",
       "title": {
-        "en": "Device"
+        "en": "Device",
+        "nl": "Apparaat",
+        "de": "Gerät",
+        "fr": "Appareil",
+        "it": "Dispositivo",
+        "sv": "Enhet",
+        "no": "Enhet",
+        "es": "Dispositivo",
+        "da": "Enhed",
+        "ru": "Устройство",
+        "pl": "Urządzenie",
+        "ko": "기기",
+        "ar": "الجهاز"
       }
     },
     {
       "type": "text",
       "name": "event_key",
       "title": {
-        "en": "Event"
+        "en": "Event",
+        "nl": "Gebeurtenis",
+        "de": "Ereignis",
+        "fr": "Événement",
+        "it": "Evento",
+        "sv": "Händelse",
+        "no": "Hendelse",
+        "es": "Evento",
+        "da": "Hændelse",
+        "ru": "Событие",
+        "pl": "Zdarzenie",
+        "ko": "이벤트",
+        "ar": "الحدث"
       }
     }
   ]

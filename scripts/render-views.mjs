@@ -55,7 +55,7 @@ import { DRIVER_REPLIES, RENDER_REPLIES } from './pair-view-fixtures.mjs';
 const here = dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
 const ROOT = join(here, '..');
 const DRIVERS = join(ROOT, 'drivers');
-const OUT = join(ROOT, '.views');
+let OUT = join(ROOT, '.views');
 
 /** Same list as artwork/export-assets.py, for the same reason. */
 const CHROME_CANDIDATES = [
@@ -201,8 +201,10 @@ function views() {
  * which is not a page anybody can judge. Tokens are substituted the same way
  * Homey's own `__` does — `__token__` — so a missing token shows up as the
  * marker rather than as a plausible blank.
+ *
+ * @param {string} lang which `locales/<lang>.json` to read
  */
-function locales() {
+function locales(lang) {
   /** @type {Map<string, string>} */
   const flat = new Map();
   /** @param {any} node @param {string} prefix */
@@ -213,7 +215,9 @@ function locales() {
       else flat.set(path, String(value));
     }
   };
-  walk(JSON.parse(readFileSync(join(ROOT, 'locales', 'en.json'), 'utf8')), '');
+  // Plural groups flatten to `key.one`, `key.other` — exactly the keys
+  // views/shared/i18n.js asks the stub for.
+  walk(JSON.parse(readFileSync(join(ROOT, 'locales', `${lang}.json`), 'utf8')), '');
   return Object.fromEntries(flat);
 }
 
@@ -407,7 +411,13 @@ function main() {
   const shotWidth = width + CHROME.gutter * 2;
 
   const chrome = findChrome();
-  const strings = locales();
+  // `--lang de` draws every screen in German, into .views/lang-de/ — for
+  // overflow in the long languages and mirroring in Arabic. Default English.
+  const langAt = argv.indexOf('--lang');
+  const lang = langAt >= 0 ? String(argv[langAt + 1]) : 'en';
+  if (!existsSync(join(ROOT, 'locales', `${lang}.json`))) throw new Error(`no locales/${lang}.json`);
+  if (lang !== 'en') OUT = join(ROOT, '.views', `lang-${lang}`);
+  const strings = locales(lang);
   const all = views();
   /* The word Homey puts in the sheet header is the APP's name, not the
      driver's: a phone pairing a Colour Curve Light still says Lightkeeper. */

@@ -19,7 +19,7 @@ function transitionCard(host, selected, onChoose) {
     var SVG = 'http://www.w3.org/2000/svg';
 
     while (host.firstChild) host.removeChild(host.firstChild);
-    host.appendChild(node('div', 'section-title', Homey.__('transition.title')));
+    host.appendChild(node('div', 'section-title', lk.t('transition.title')));
     var card = node('div', 'tr-card');
     card.setAttribute('role', 'radiogroup');
 
@@ -32,8 +32,8 @@ function transitionCard(host, selected, onChoose) {
       pick.setAttribute('aria-checked', option.kind === selected ? 'true' : 'false');
       pick.appendChild(node('span', 'tr-box', '✓'));
       var text = node('span', 'tr-text');
-      text.appendChild(node('div', 'tr-what', Homey.__(option.what)));
-      text.appendChild(node('div', 'tr-why', Homey.__(option.why)));
+      text.appendChild(node('div', 'tr-what', lk.t(option.what)));
+      text.appendChild(node('div', 'tr-why', lk.t(option.why)));
       pick.appendChild(text);
 
       // 64 x 40, the curve inset 8px from the sides and 9px from the top and

@@ -1,6 +1,18 @@
 {
   "name": {
-    "en": "Colour Curve Light"
+    "en": "Colour Curve Light",
+    "nl": "Kleurcurvelicht",
+    "de": "Farbkurvenlicht",
+    "fr": "Éclairage à courbe de couleur",
+    "it": "Luce a curva di colore",
+    "sv": "Färgkurvljus",
+    "no": "Fargekurvelys",
+    "es": "Luz con curva de color",
+    "da": "Farvekurvelys",
+    "ru": "Свет по цветовой кривой",
+    "pl": "Światło z krzywą barw",
+    "ko": "색상 곡선 조명",
+    "ar": "إضاءة منحنى الألوان"
   },
   "class": "service",
   "capabilities": [
@@ -13,7 +25,19 @@
   "capabilitiesOptions": {
     "onoff": {
       "title": {
-        "en": "Curve active"
+        "en": "Curve active",
+        "nl": "Curve actief",
+        "de": "Kurve aktiv",
+        "fr": "Courbe active",
+        "it": "Curva attiva",
+        "sv": "Kurva aktiv",
+        "no": "Kurve aktiv",
+        "es": "Curva activa",
+        "da": "Kurve aktiv",
+        "ru": "Кривая включена",
+        "pl": "Krzywa aktywna",
+        "ko": "곡선 활성",
+        "ar": "المنحنى نشط"
       }
     }
   },

@@ -219,6 +219,9 @@ lamp's own app.
   sun. Homey asks for it during setup, so you almost certainly have one already; the app reads it to
   work out sunrise, sunset and how high the sun is, and it never leaves the Homey. Without one, a
   circadian light falls back to 06:00 and 21:00 and says so while you are setting it up.
+- **Any language Homey speaks.** Lightkeeper follows your Homey's language, in all thirteen Homey
+  supports. Logs, diagnostics and the names of the Flows it generates stay in English —
+  [why](FAQ.md#which-languages-does-it-speak).
 
 ## Getting started
 
@@ -350,6 +353,8 @@ reads, what it stores, and for how long.
   Light. Circadian lights now blend from one part of the day into the next; existing ones are set to
   *Quick*, the closest to how they behaved.
 - **Icons on every value a device shows**, Homey's own.
+- **Every language Homey speaks** — Dutch, German, French, Italian, Swedish, Norwegian, Spanish,
+  Danish, Russian, Polish, Korean and Arabic, as well as English.
 
 Earlier releases, one line each:
 

@@ -284,7 +284,7 @@
                        color: var(--lk-ink); margin: 0 0 9px; }
 
   /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
-  #sn-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+  #sn-root .tile { display: block; width: 100%; text-align: start; background: var(--lk-surface);
               border: 1.5px solid var(--lk-edge); border-radius: 12px; padding: 13px 14px;
               margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
               color: var(--lk-ink);
@@ -303,7 +303,10 @@
      written twice, and the two copies have to move together. */
   #sn-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
                background-repeat: no-repeat; background-position: right 13px center;
-               background-size: 11px; padding-right: 34px; }
+               background-size: 11px; padding-inline-end: 34px; }
+  /* Arabic reads right to left, so the chevron sits on the other end — where
+     `padding-inline-end` has already made room for it. */
+  #sn-root[dir="rtl"] select { background-position: left 13px center; }
   #sn-root input:focus, #sn-root select:focus { outline: none; border-color: var(--lk-accent);
                                       box-shadow: 0 0 0 3px var(--lk-ring); }
 
@@ -403,7 +406,7 @@
      unrelated body copy. */
   #sn-root .msg .lead { font-weight: 600; margin-bottom: 3px; }
 
-  #sn-root ol { font-size: 15px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+  #sn-root ol { font-size: 15px; line-height: 1.75; padding-inline-start: 20px; margin: 0 0 16px;
            color: var(--lk-body); }
   #sn-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
   @media (max-width: 380px) { #sn-root .grid { grid-template-columns: 1fr; } }
@@ -424,7 +427,7 @@
      device types. */
   #sn-root .steps.tight i { width: 16px; }
   #sn-root .steps i.on { background: var(--lk-accent); }
-  #sn-root .steps span { margin-left: 4px; font-size: 13px; color: var(--lk-muted); }
+  #sn-root .steps span { margin-inline-start: 4px; font-size: 13px; color: var(--lk-muted); }
 
   /* `label · value · chevron`. The one shape everything secondary takes:
      a row that says what it is, what it is set to, and that it can be opened.
@@ -436,10 +439,10 @@
   #sn-root .row { display: flex; align-items: center; gap: 10px; width: 100%;
                padding: 13px 0; min-height: 44px; box-sizing: border-box;
                background: none; border: none; font: inherit; color: inherit;
-               text-align: left; cursor: pointer; }
+               text-align: start; cursor: pointer; }
   #sn-root .row + .row { border-top: 1px solid var(--lk-line); }
   #sn-root .row .label { flex: 1; font-size: 15px; }
-  #sn-root .row .value { font-size: 15px; color: var(--lk-muted); text-align: right; }
+  #sn-root .row .value { font-size: 15px; color: var(--lk-muted); text-align: end; }
   #sn-root .row .chev { flex: none; font-size: 16px; color: var(--lk-chev); }
   #sn-root .row .sub { font-size: 13px; color: var(--lk-muted); margin: 2px 0 0; }
   /* The card a list of rows lives in. 4px top and bottom rather than 14:
@@ -458,7 +461,7 @@
                   min-height: 44px; box-sizing: border-box;
                   background: none; border-left: none; border-right: none;
                   border-bottom: none; font: inherit; color: inherit;
-                  text-align: left; cursor: pointer; }
+                  text-align: start; cursor: pointer; }
   #sn-root .toggle .label { flex: 1; font-size: 15px; }
   #sn-root .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
                          position: relative; background: var(--lk-line);
@@ -608,7 +611,7 @@
      top. Picking no sensor is not a failure — it is the sun, and the option
      says so rather than the screen warning about an absence. */
   #sn-root .choices { display: flex; flex-direction: column; gap: 7px; margin-bottom: 16px; }
-  #sn-root .choice { display: block; width: 100%; text-align: left; padding: 14px;
+  #sn-root .choice { display: block; width: 100%; text-align: start; padding: 14px;
                      border-radius: 12px; box-sizing: border-box;
                      border: 1.5px solid var(--lk-edge); background: var(--lk-surface);
                      font: inherit; color: inherit; cursor: pointer; min-height: 44px; }
@@ -630,7 +633,7 @@
      choice with nothing saying which had been made. */
   #sn-root .choice .what { flex: 1; font-size: 15px; font-weight: 500; }
   #sn-root .choice[aria-pressed="true"] .what { font-weight: 600; }
-  #sn-root .choice .now { font-size: 13px; color: var(--lk-muted); text-align: right; }
+  #sn-root .choice .now { font-size: 13px; color: var(--lk-muted); text-align: end; }
   #sn-root .choice .why { font-size: 13px; color: var(--lk-muted); margin-top: 3px;
                           line-height: 1.4; }
   #sn-root .choice[aria-pressed="true"] .now,
@@ -647,7 +650,7 @@
   /* The open room's own header closes it, which is the gesture the light
      picker's header already carries. The chevron turns to point down, so the
      two states of a room are one mark rotated rather than two marks. */
-  #sn-root .sensors .room-title .close { margin-left: auto; background: none; border: none;
+  #sn-root .sensors .room-title .close { margin-inline-start: auto; background: none; border: none;
                                          padding: 0 0 0 10px; font: inherit; cursor: pointer; }
   #sn-root .sensors .room-title .close .chev { display: inline-block; font-size: 15px;
                                                color: var(--lk-chev); transform: rotate(90deg); }
@@ -787,6 +790,76 @@ function __lkBootSn(Homey) {
     });
   })();
 
+  function i18n(homey) {
+    /**
+     * Plural-aware translation, and the language's own number and date rules.
+     *
+     * GENERATED. Spliced into every pair view, and into the settings page, by
+     * `npm run sync:views` from views/shared/i18n.js. **Edit that file, not
+     * this one.**
+     *
+     * The twin of `lib/support/i18n.ts`, and it must choose the same forms:
+     * a counted string is a group of CLDR plural categories, the count is the
+     * `count` token, and `Intl.PluralRules` in the locale file's OWN language
+     * (`meta.language`) picks the form. `t()` is `Homey.__` with that one
+     * extra step, so a view calls it exactly where it called `Homey.__`.
+     *
+     * `dir` is `meta.direction`: every view puts it on its own root, because
+     * the screens share one document and only the root is ours.
+     */
+    var raw = function (key, tokens) { return homey.__(key, tokens || {}); };
+    var found = function (value, key) { return typeof value === 'string' && value !== '' && value !== key; };
+    var lang = raw('meta.language');
+    // Deliberately no memo: the views share one document, and a cache on it
+    // would outlive a language change. Two lookups per call are nothing.
+    if (!/^[a-z]{2}$/.test(String(lang))) lang = 'en';
+    var select = function (n, type) {
+      try { return new Intl.PluralRules(lang, { type: type || 'cardinal' }).select(n); }
+      catch (e) { return n === 1 ? 'one' : 'other'; }
+    };
+    var pick = function (key, form, tokens) {
+      var chosen = raw(key + '.' + form, tokens);
+      if (found(chosen, key + '.' + form)) return chosen;
+      var other = raw(key + '.other', tokens);
+      return found(other, key + '.other') ? other : null;
+    };
+    var t = function (key, tokens) {
+      tokens = tokens || {};
+      if (typeof tokens.count === 'number' && isFinite(tokens.count)) {
+        var form = pick(key, select(tokens.count), tokens);
+        if (form !== null) return form;
+      }
+      var plain = raw(key, tokens);
+      return typeof plain === 'string' ? plain : key;
+    };
+    return {
+      lang: lang,
+      dir: raw('meta.direction') === 'rtl' ? 'rtl' : 'ltr',
+      t: t,
+      /** "1st", "1.", "1er" — the language's own ordinal, from `ordinal.*`. */
+      ordinal: function (n) { return pick('ordinal', select(n, 'ordinal'), { n: n }) || String(n); },
+      /**
+       * "a, b, c" with the language's own comma — "،" in Arabic. A key, not
+       * `Intl.ListFormat`, whose unit style drops the commas altogether in
+       * Korean and Russian and adds an "and" in German.
+       */
+      list: function (items) { return items.join(raw('unit.listSeparator')); },
+      /** A percentage: "40%", "40 %" — the space is the language's, not ours. */
+      percent: function (n) { return t('unit.percent', { n: n }); },
+      /** A date and time, in the app's language rather than the phone's. */
+      dateTime: function (value, options) {
+        var date = new Date(value);
+        try { return date.toLocaleString(lang, options); } catch (e) { return date.toLocaleString(); }
+      },
+      time: function (value) {
+        var date = new Date(value);
+        try { return date.toLocaleTimeString(lang); } catch (e) { return date.toLocaleTimeString(); }
+      }
+    };
+  }
+  var lk = i18n(Homey);
+  __root.dir = lk.dir;
+
   function emit(event, data) {
     /**
      * Homey.emit, as a promise that always settles.
@@ -797,7 +870,8 @@ function __lkBootSn(Homey) {
      * Both call styles are handled because the pairing bridge has used a
      * callback and a promise at different times, and the 20 s timeout is what
      * keeps a dropped callback from leaving the screen spinning with no message
-     * forever.
+     * forever. Its message comes from `lk`, the view's `i18n()` translator,
+     * which every view sets up before anything can emit.
      *
      * Inside the function, like `stabiliseScrollbar()`'s, and that is not a
      * style choice: `spliceFunction` matches from the `function` keyword, so a
@@ -814,7 +888,7 @@ function __lkBootSn(Homey) {
         if (err) reject(err instanceof Error ? err : new Error(String(err)));
         else resolve(result);
       };
-      var timer = setTimeout(function () { finish(new Error('Homey did not respond in time. Close this screen and try again. (' + event + ')')); }, 20000);
+      var timer = setTimeout(function () { finish(new Error(lk.t('common.timeout', { event: event }))); }, 20000);
       var done = function (err, result) { clearTimeout(timer); finish(err, result); };
       try {
         var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
@@ -854,7 +928,7 @@ function __lkBootSn(Homey) {
     rooms: [], chosen: null, sky: null, anySensors: false, openZone: undefined,
   };
 
-  function t(key) { return Homey.__(key); }
+  function t(key) { return lk.t(key); }
 
   function fail(err) {
     el.error.textContent = err && err.message ? err.message : String(err);
@@ -867,7 +941,7 @@ function __lkBootSn(Homey) {
     // flow has three or four of them.
     el.steps.className = 'steps tight';
     for (var i = 1; i <= 4; i++) el.steps.appendChild(node('i', i <= 2 ? 'on' : null));
-    el.steps.appendChild(node('span', null, Homey.__('sensor.step', { index: 2, count: 4 })));
+    el.steps.appendChild(node('span', null, lk.t('sensor.step', { index: 2, count: 4 })));
   }
 
   /**
@@ -879,13 +953,13 @@ function __lkBootSn(Homey) {
    * (platform §16).
    */
   function ageOf(at) {
-    if (at === null || at === undefined) return Homey.__('sensor.neverReported');
+    if (at === null || at === undefined) return lk.t('sensor.neverReported');
     var minutes = Math.round((Date.now() - at) / 60000);
-    if (minutes < 2) return Homey.__('sensor.justNow');
-    if (minutes < 60) return Homey.__('sensor.minutesAgo', { minutes: minutes });
+    if (minutes < 2) return lk.t('sensor.justNow');
+    if (minutes < 60) return lk.t('sensor.minutesAgo', { minutes: minutes });
     var hours = Math.round(minutes / 60);
-    if (hours < 48) return Homey.__('sensor.hoursAgo', { hours: hours });
-    return Homey.__('sensor.daysAgo', { days: Math.round(hours / 24) });
+    if (hours < 48) return lk.t('sensor.hoursAgo', { hours: hours });
+    return lk.t('sensor.daysAgo', { count: Math.round(hours / 24) });
   }
 
   function render() {
@@ -897,12 +971,12 @@ function __lkBootSn(Homey) {
     // a question nobody is still asking. Re-rendered on every pick, because
     // picking a different sensor changes it.
     el.sensorNow.textContent = chosen
-      ? Homey.__('sensor.chosenNow', {
+      ? lk.t('sensor.chosenNow', {
         name: chosen.name, lux: chosen.lux === null ? '—' : chosen.lux
       })
       : (state.anySensors
-        ? Homey.__('sensor.countAvailable', { count: countSensors() })
-        : Homey.__('sensor.noneAvailable'));
+        ? lk.t('sensor.countAvailable', { count: countSensors() })
+        : lk.t('sensor.noneAvailable'));
 
     el.useSensor.setAttribute('aria-pressed', usingSensor ? 'true' : 'false');
     el.useSun.setAttribute('aria-pressed', usingSensor ? 'false' : 'true');
@@ -1067,8 +1141,8 @@ function __lkBootSn(Homey) {
     var text = node('div', 'text');
     text.appendChild(node('div', 'sensor-name', sensor.name));
     text.appendChild(node('div', 'sub', sensor.available === false
-      ? Homey.__('sensor.notResponding')
-      : Homey.__('sensor.reading', { lux: Math.round(sensor.lux || 0) }) + ' · ' + ageOf(sensor.at)));
+      ? lk.t('sensor.notResponding')
+      : lk.t('sensor.reading', { lux: Math.round(sensor.lux || 0) }) + ' · ' + ageOf(sensor.at)));
     row.appendChild(text);
     row.appendChild(node('span', 'chev', '›'));
 
@@ -1132,8 +1206,8 @@ function __lkBootSn(Homey) {
 
     el.none.style.display = state.anySensors ? 'none' : '';
     el.sunNow.textContent = payload.sunsetAt
-      ? Homey.__('sensor.sunsetAt', { time: payload.sunsetAt })
-      : Homey.__('sensor.noPosition');
+      ? lk.t('sensor.sunsetAt', { time: payload.sunsetAt })
+      : lk.t('sensor.noPosition');
 
     render();
   }).catch(fail);

@@ -150,7 +150,7 @@ describe('controller health states', () => {
     // schedule calls too. HealthMonitor kept its own copy of it for a while, and
     // two copies of a locale key plus its tokens is how they drift apart.
     assert.equal(assessment.detail?.key, 'state.someTargets');
-    assert.deepEqual(assessment.detail?.tokens, { count: 1, total: 2 });
+    assert.deepEqual(assessment.detail?.tokens, { unavailable: 1, count: 2 });
   });
 
   test('no reachable targets is needs_repair, with the shared verdict', async () => {

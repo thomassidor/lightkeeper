@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 import { deriveControllerName, deriveSuffixedName } from '../../lib/pairing/derive-name';
+import { localised } from '../support/fake-homey';
 import {
   mappingGroups, mappingRuleRows, ruleTargetFrom, singleLightOf, storedRuleFrom,
 } from '../../lib/pairing/mapping-screen';
@@ -63,7 +64,7 @@ const devicesTarget = (ids: string[]) => ({ kind: 'devices' as const, deviceIds:
 // ------------------------------------------------------------- derive a name
 
 describe('the name a new device gets', () => {
-  const PARTS = { fallback: 'Light schedule', suffix: 'schedule', zoneFallback: 'Zone' };
+  const PARTS = { fallback: 'Light schedule', suffix: 'schedule', translate: localised };
 
   test('one lamp is named after the lamp', async () => {
     const name = await deriveSuffixedName(catalog([CEILING]), devicesTarget(['l1']), PARTS);
@@ -169,32 +170,32 @@ describe('the name a new device gets', () => {
 describe('a controller is named after both halves of what it is', () => {
   test('the remote and the one lamp', async () => {
     const name = await deriveControllerName(
-      catalog([CEILING]), devicesTarget(['l1']), 'Hall remote');
+      catalog([CEILING]), devicesTarget(['l1']), 'Hall remote', localised);
     assert.equal(name, 'Hall remote → Ceiling');
   });
 
   test('two lamps are both named, because "2 lights" says less', async () => {
     const name = await deriveControllerName(
-      catalog([CEILING, WORKTOP]), devicesTarget(['l1', 'l3']), 'Hall remote');
+      catalog([CEILING, WORKTOP]), devicesTarget(['l1', 'l3']), 'Hall remote', localised);
     assert.equal(name, 'Hall remote → Ceiling + Worktop');
   });
 
   test('but a shared room beats naming them', async () => {
     const name = await deriveControllerName(
-      catalog([CEILING, READING]), devicesTarget(['l1', 'l2']), 'Hall remote');
+      catalog([CEILING, READING]), devicesTarget(['l1', 'l2']), 'Hall remote', localised);
     assert.equal(name, 'Hall remote → Living room');
   });
 
   test('three or more from different rooms is a count', async () => {
     const extra = LIGHT('l4', 'Hall light', 'Hall');
     const name = await deriveControllerName(
-      catalog([CEILING, WORKTOP, extra]), devicesTarget(['l1', 'l3', 'l4']), 'Hall remote');
+      catalog([CEILING, WORKTOP, extra]), devicesTarget(['l1', 'l3', 'l4']), 'Hall remote', localised);
     assert.equal(name, 'Hall remote → 3 lights');
   });
 
   test('with no lights it is still named after the remote', async () => {
     assert.equal(
-      await deriveControllerName(catalog([]), devicesTarget([]), 'Hall remote'),
+      await deriveControllerName(catalog([]), devicesTarget([]), 'Hall remote', localised),
       'Hall remote',
     );
   });

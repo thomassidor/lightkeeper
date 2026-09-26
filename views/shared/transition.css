@@ -16,7 +16,7 @@
 #ROOT .tr-pick { display: flex; align-items: center; gap: 12px; width: 100%;
                  padding: 12px 0; min-height: 44px; box-sizing: border-box;
                  background: none; border: none; font: inherit; color: inherit;
-                 text-align: left; cursor: pointer; }
+                 text-align: start; cursor: pointer; }
 #ROOT .tr-box { flex: none; width: 22px; height: 22px; border-radius: 50%;
                 border: 1.5px solid var(--lk-box); box-sizing: border-box;
                 display: flex; align-items: center; justify-content: center;

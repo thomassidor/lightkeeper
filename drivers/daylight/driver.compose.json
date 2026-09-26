@@ -1,6 +1,18 @@
 {
   "name": {
-    "en": "Room-sensing Light"
+    "en": "Room-sensing Light",
+    "nl": "Ruimtebewust licht",
+    "de": "Raumsensitives Licht",
+    "fr": "Éclairage selon la pièce",
+    "it": "Luce sensibile all'ambiente",
+    "sv": "Rumskännande ljus",
+    "no": "Romfølende lys",
+    "es": "Luz que percibe la habitación",
+    "da": "Rumfølende lys",
+    "ru": "Свет по освещённости комнаты",
+    "pl": "Światło czujące pomieszczenie",
+    "ko": "실내 감지 조명",
+    "ar": "إضاءة تستشعر الغرفة"
   },
   "class": "service",
   "capabilities": [
@@ -12,7 +24,19 @@
   "capabilitiesOptions": {
     "onoff": {
       "title": {
-        "en": "Daylight active"
+        "en": "Daylight active",
+        "nl": "Daglicht actief",
+        "de": "Tageslicht aktiv",
+        "fr": "Lumière du jour active",
+        "it": "Luce diurna attiva",
+        "sv": "Dagsljus aktivt",
+        "no": "Dagslys aktivt",
+        "es": "Luz diurna activa",
+        "da": "Dagslys aktivt",
+        "ru": "Режим по освещённости включён",
+        "pl": "Światło dzienne aktywne",
+        "ko": "일광 활성",
+        "ar": "ضوء النهار نشط"
       }
     },
     "lightkeeper_control": {
@@ -20,13 +44,37 @@
         {
           "id": "after",
           "title": {
-            "en": "Change lights after they turn on"
+            "en": "Change lights after they turn on",
+            "nl": "Lampen aanpassen nadat ze aangaan",
+            "de": "Lichter nach dem Einschalten anpassen",
+            "fr": "Modifier les lumières après leur allumage",
+            "it": "Cambia le luci dopo l'accensione",
+            "sv": "Ändra lamporna efter att de tänts",
+            "no": "Endre lys etter at de slås på",
+            "es": "Cambiar las luces después de encenderse",
+            "da": "Ændr lys, efter de tænder",
+            "ru": "Менять свет после включения",
+            "pl": "Zmieniaj światła po włączeniu",
+            "ko": "조명이 켜진 후 바꾸기",
+            "ar": "تغيير الأضواء بعد تشغيلها"
           }
         },
         {
           "id": "none",
           "title": {
-            "en": "Don’t change lights automatically"
+            "en": "Don’t change lights automatically",
+            "nl": "Lampen niet automatisch aanpassen",
+            "de": "Lichter nicht automatisch ändern",
+            "fr": "Ne pas modifier les lumières automatiquement",
+            "it": "Non cambiare le luci automaticamente",
+            "sv": "Ändra inte lamporna automatiskt",
+            "no": "Ikke endre lys automatisk",
+            "es": "No cambiar las luces automáticamente",
+            "da": "Ændr ikke lys automatisk",
+            "ru": "Не менять свет автоматически",
+            "pl": "Nie zmieniaj świateł automatycznie",
+            "ko": "조명을 자동으로 바꾸지 않기",
+            "ar": "عدم تغيير الأضواء تلقائيًا"
           }
         }
       ]

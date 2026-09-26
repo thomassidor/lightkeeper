@@ -284,7 +284,7 @@
                        color: var(--lk-ink); margin: 0 0 9px; }
 
   /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
-  #rs-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+  #rs-root .tile { display: block; width: 100%; text-align: start; background: var(--lk-surface);
               border: 1.5px solid var(--lk-edge); border-radius: 12px; padding: 13px 14px;
               margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
               color: var(--lk-ink);
@@ -303,7 +303,10 @@
      written twice, and the two copies have to move together. */
   #rs-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
                background-repeat: no-repeat; background-position: right 13px center;
-               background-size: 11px; padding-right: 34px; }
+               background-size: 11px; padding-inline-end: 34px; }
+  /* Arabic reads right to left, so the chevron sits on the other end — where
+     `padding-inline-end` has already made room for it. */
+  #rs-root[dir="rtl"] select { background-position: left 13px center; }
   #rs-root input:focus, #rs-root select:focus { outline: none; border-color: var(--lk-accent);
                                       box-shadow: 0 0 0 3px var(--lk-ring); }
 
@@ -403,7 +406,7 @@
      unrelated body copy. */
   #rs-root .msg .lead { font-weight: 600; margin-bottom: 3px; }
 
-  #rs-root ol { font-size: 15px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+  #rs-root ol { font-size: 15px; line-height: 1.75; padding-inline-start: 20px; margin: 0 0 16px;
            color: var(--lk-body); }
   #rs-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
   @media (max-width: 380px) { #rs-root .grid { grid-template-columns: 1fr; } }
@@ -424,7 +427,7 @@
      device types. */
   #rs-root .steps.tight i { width: 16px; }
   #rs-root .steps i.on { background: var(--lk-accent); }
-  #rs-root .steps span { margin-left: 4px; font-size: 13px; color: var(--lk-muted); }
+  #rs-root .steps span { margin-inline-start: 4px; font-size: 13px; color: var(--lk-muted); }
 
   /* `label · value · chevron`. The one shape everything secondary takes:
      a row that says what it is, what it is set to, and that it can be opened.
@@ -436,10 +439,10 @@
   #rs-root .row { display: flex; align-items: center; gap: 10px; width: 100%;
                padding: 13px 0; min-height: 44px; box-sizing: border-box;
                background: none; border: none; font: inherit; color: inherit;
-               text-align: left; cursor: pointer; }
+               text-align: start; cursor: pointer; }
   #rs-root .row + .row { border-top: 1px solid var(--lk-line); }
   #rs-root .row .label { flex: 1; font-size: 15px; }
-  #rs-root .row .value { font-size: 15px; color: var(--lk-muted); text-align: right; }
+  #rs-root .row .value { font-size: 15px; color: var(--lk-muted); text-align: end; }
   #rs-root .row .chev { flex: none; font-size: 16px; color: var(--lk-chev); }
   #rs-root .row .sub { font-size: 13px; color: var(--lk-muted); margin: 2px 0 0; }
   /* The card a list of rows lives in. 4px top and bottom rather than 14:
@@ -458,7 +461,7 @@
                   min-height: 44px; box-sizing: border-box;
                   background: none; border-left: none; border-right: none;
                   border-bottom: none; font: inherit; color: inherit;
-                  text-align: left; cursor: pointer; }
+                  text-align: start; cursor: pointer; }
   #rs-root .toggle .label { flex: 1; font-size: 15px; }
   #rs-root .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
                          position: relative; background: var(--lk-line);
@@ -619,7 +622,7 @@
 #rs-root .tr-pick { display: flex; align-items: center; gap: 12px; width: 100%;
                  padding: 12px 0; min-height: 44px; box-sizing: border-box;
                  background: none; border: none; font: inherit; color: inherit;
-                 text-align: left; cursor: pointer; }
+                 text-align: start; cursor: pointer; }
 #rs-root .tr-box { flex: none; width: 22px; height: 22px; border-radius: 50%;
                 border: 1.5px solid var(--lk-box); box-sizing: border-box;
                 display: flex; align-items: center; justify-content: center;
@@ -974,6 +977,76 @@ function __lkBootRs(Homey) {
     });
   })();
 
+  function i18n(homey) {
+    /**
+     * Plural-aware translation, and the language's own number and date rules.
+     *
+     * GENERATED. Spliced into every pair view, and into the settings page, by
+     * `npm run sync:views` from views/shared/i18n.js. **Edit that file, not
+     * this one.**
+     *
+     * The twin of `lib/support/i18n.ts`, and it must choose the same forms:
+     * a counted string is a group of CLDR plural categories, the count is the
+     * `count` token, and `Intl.PluralRules` in the locale file's OWN language
+     * (`meta.language`) picks the form. `t()` is `Homey.__` with that one
+     * extra step, so a view calls it exactly where it called `Homey.__`.
+     *
+     * `dir` is `meta.direction`: every view puts it on its own root, because
+     * the screens share one document and only the root is ours.
+     */
+    var raw = function (key, tokens) { return homey.__(key, tokens || {}); };
+    var found = function (value, key) { return typeof value === 'string' && value !== '' && value !== key; };
+    var lang = raw('meta.language');
+    // Deliberately no memo: the views share one document, and a cache on it
+    // would outlive a language change. Two lookups per call are nothing.
+    if (!/^[a-z]{2}$/.test(String(lang))) lang = 'en';
+    var select = function (n, type) {
+      try { return new Intl.PluralRules(lang, { type: type || 'cardinal' }).select(n); }
+      catch (e) { return n === 1 ? 'one' : 'other'; }
+    };
+    var pick = function (key, form, tokens) {
+      var chosen = raw(key + '.' + form, tokens);
+      if (found(chosen, key + '.' + form)) return chosen;
+      var other = raw(key + '.other', tokens);
+      return found(other, key + '.other') ? other : null;
+    };
+    var t = function (key, tokens) {
+      tokens = tokens || {};
+      if (typeof tokens.count === 'number' && isFinite(tokens.count)) {
+        var form = pick(key, select(tokens.count), tokens);
+        if (form !== null) return form;
+      }
+      var plain = raw(key, tokens);
+      return typeof plain === 'string' ? plain : key;
+    };
+    return {
+      lang: lang,
+      dir: raw('meta.direction') === 'rtl' ? 'rtl' : 'ltr',
+      t: t,
+      /** "1st", "1.", "1er" — the language's own ordinal, from `ordinal.*`. */
+      ordinal: function (n) { return pick('ordinal', select(n, 'ordinal'), { n: n }) || String(n); },
+      /**
+       * "a, b, c" with the language's own comma — "،" in Arabic. A key, not
+       * `Intl.ListFormat`, whose unit style drops the commas altogether in
+       * Korean and Russian and adds an "and" in German.
+       */
+      list: function (items) { return items.join(raw('unit.listSeparator')); },
+      /** A percentage: "40%", "40 %" — the space is the language's, not ours. */
+      percent: function (n) { return t('unit.percent', { n: n }); },
+      /** A date and time, in the app's language rather than the phone's. */
+      dateTime: function (value, options) {
+        var date = new Date(value);
+        try { return date.toLocaleString(lang, options); } catch (e) { return date.toLocaleString(); }
+      },
+      time: function (value) {
+        var date = new Date(value);
+        try { return date.toLocaleTimeString(lang); } catch (e) { return date.toLocaleTimeString(); }
+      }
+    };
+  }
+  var lk = i18n(Homey);
+  __root.dir = lk.dir;
+
   function emit(event, data) {
     /**
      * Homey.emit, as a promise that always settles.
@@ -984,7 +1057,8 @@ function __lkBootRs(Homey) {
      * Both call styles are handled because the pairing bridge has used a
      * callback and a promise at different times, and the 20 s timeout is what
      * keeps a dropped callback from leaving the screen spinning with no message
-     * forever.
+     * forever. Its message comes from `lk`, the view's `i18n()` translator,
+     * which every view sets up before anything can emit.
      *
      * Inside the function, like `stabiliseScrollbar()`'s, and that is not a
      * style choice: `spliceFunction` matches from the `function` keyword, so a
@@ -1001,7 +1075,7 @@ function __lkBootRs(Homey) {
         if (err) reject(err instanceof Error ? err : new Error(String(err)));
         else resolve(result);
       };
-      var timer = setTimeout(function () { finish(new Error('Homey did not respond in time. Close this screen and try again. (' + event + ')')); }, 20000);
+      var timer = setTimeout(function () { finish(new Error(lk.t('common.timeout', { event: event }))); }, 20000);
       var done = function (err, result) { clearTimeout(timer); finish(err, result); };
       try {
         var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
@@ -1039,7 +1113,7 @@ function __lkBootRs(Homey) {
     if (!payload || !payload.week) {
       // No readable history is not an error — the screen falls back to the
       // defaults, which is exactly what every screen did before this existed.
-      host.appendChild(node('div', 'week-verdict', Homey.__('week.noHistory')));
+      host.appendChild(node('div', 'week-verdict', lk.t('week.noHistory')));
       return;
     }
 
@@ -1050,7 +1124,7 @@ function __lkBootRs(Homey) {
     // detail screen is titled with the sensor, and repeating it directly under
     // its own heading reads as two different sensors.
     if (payload.sensorName) head.appendChild(node('div', 'name', payload.sensorName));
-    head.appendChild(node('span', 'span', Homey.__('week.lastSevenDays')));
+    head.appendChild(node('span', 'span', lk.t('week.lastSevenDays')));
     host.appendChild(head);
 
     /**
@@ -1092,7 +1166,7 @@ function __lkBootRs(Homey) {
     var anyGap = false;
     for (var row = 0; row < week.cells.length; row++) {
       var line = node('div', 'week-row');
-      line.appendChild(node('span', 'week-day', Homey.__(DAY_KEYS[(week.days[row] || 1) - 1])));
+      line.appendChild(node('span', 'week-day', lk.t(DAY_KEYS[(week.days[row] || 1) - 1])));
       for (var column = 0; column < week.cells[row].length; column++) {
         var value = shade(week.cells[row][column]);
         var cell = node('i', value === null ? 'gap' : null);
@@ -1109,7 +1183,7 @@ function __lkBootRs(Homey) {
     host.appendChild(hours);
 
     var scale = node('div', 'week-scale');
-    scale.appendChild(node('span', null, Homey.__('week.lux', { lux: round(low) })));
+    scale.appendChild(node('span', null, lk.t('week.lux', { lux: round(low) })));
     var bar = node('span', 'bar');
     // No "now" tick on a sensor that has stopped: its last reading is hours
     // old, and a tick labelled "now" would be the one false thing on a card
@@ -1120,12 +1194,12 @@ function __lkBootRs(Homey) {
       var tick = node('span', 'tick');
       tick.style.left = (at * 100) + '%';
       bar.appendChild(tick);
-      var label = node('span', 'tickLabel', Homey.__('week.nowLux', { lux: round(payload.nowLux) }));
+      var label = node('span', 'tickLabel', lk.t('week.nowLux', { lux: round(payload.nowLux) }));
       label.style.left = (at * 100) + '%';
       bar.appendChild(label);
     }
     scale.appendChild(bar);
-    scale.appendChild(node('span', null, Homey.__('week.lux', { lux: round(high) })));
+    scale.appendChild(node('span', null, lk.t('week.lux', { lux: round(high) })));
     host.appendChild(scale);
 
     /**
@@ -1145,19 +1219,19 @@ function __lkBootRs(Homey) {
      * never do.
      */
     var key = node('div', 'week-key');
-    key.appendChild(node('span', null, Homey.__('week.less')));
+    key.appendChild(node('span', null, lk.t('week.less')));
     for (var k = SHADES.length - 1; k >= 0; k--) {
       var chip = node('i');
       chip.style.background = SHADES[k];
       key.appendChild(chip);
     }
-    key.appendChild(node('span', null, Homey.__('week.more')));
+    key.appendChild(node('span', null, lk.t('week.more')));
     host.appendChild(key);
 
     if (anyGap) {
       var legend = node('div', 'week-legend');
       legend.appendChild(node('i'));
-      legend.appendChild(node('span', null, Homey.__('week.nothingReported')));
+      legend.appendChild(node('span', null, lk.t('week.nothingReported')));
       host.appendChild(legend);
     }
 
@@ -1183,30 +1257,30 @@ function __lkBootRs(Homey) {
 
     if (quiet) {
       host.appendChild(finding('msg bad',
-        Homey.__('week.quiet', { name: payload.sensorName || '', hours: payload.staleFor }),
-        Homey.__('week.quietMeans', { when: payload.lastReport || '' })));
+        lk.t('week.quiet', { name: payload.sensorName || '', hours: payload.staleFor }),
+        lk.t('week.quietMeans', { when: payload.lastReport || '' })));
       return;
     }
     if (verdict.kind === 'flat') {
       host.appendChild(finding('msg warn',
-        Homey.__('week.flat'),
-        Homey.__('week.flatDetail', { low: round(verdict.low), high: round(verdict.high) })));
+        lk.t('week.flat'),
+        lk.t('week.flatDetail', { low: round(verdict.low), high: round(verdict.high) })));
       return;
     }
 
     var sentence = node('div', 'week-verdict');
     if (verdict.kind === 'usable') {
-      sentence.appendChild(node('b', null, Homey.__('week.usable')));
-      sentence.appendChild(document.createTextNode(' ' + Homey.__('week.usableDetail', {
+      sentence.appendChild(node('b', null, lk.t('week.usable')));
+      sentence.appendChild(document.createTextNode(' ' + lk.t('week.usableDetail', {
         night: round(verdict.nightLux), noon: round(verdict.noonLux)
       })));
     } else if (verdict.kind === 'stopped') {
-      sentence.appendChild(node('b', null, Homey.__('week.stopped')));
-      sentence.appendChild(document.createTextNode(' ' + Homey.__('week.stoppedDetail', {
-        when: new Date(verdict.lastAt).toLocaleString()
+      sentence.appendChild(node('b', null, lk.t('week.stopped')));
+      sentence.appendChild(document.createTextNode(' ' + lk.t('week.stoppedDetail', {
+        when: lk.dateTime(verdict.lastAt)
       })));
     } else {
-      sentence.appendChild(node('b', null, Homey.__('week.nothing')));
+      sentence.appendChild(node('b', null, lk.t('week.nothing')));
     }
     host.appendChild(sentence);
 
@@ -1269,7 +1343,7 @@ function __lkBootRs(Homey) {
     var SVG = 'http://www.w3.org/2000/svg';
 
     while (host.firstChild) host.removeChild(host.firstChild);
-    host.appendChild(node('div', 'section-title', Homey.__('transition.title')));
+    host.appendChild(node('div', 'section-title', lk.t('transition.title')));
     var card = node('div', 'tr-card');
     card.setAttribute('role', 'radiogroup');
 
@@ -1282,8 +1356,8 @@ function __lkBootRs(Homey) {
       pick.setAttribute('aria-checked', option.kind === selected ? 'true' : 'false');
       pick.appendChild(node('span', 'tr-box', '✓'));
       var text = node('span', 'tr-text');
-      text.appendChild(node('div', 'tr-what', Homey.__(option.what)));
-      text.appendChild(node('div', 'tr-why', Homey.__(option.why)));
+      text.appendChild(node('div', 'tr-what', lk.t(option.what)));
+      text.appendChild(node('div', 'tr-why', lk.t(option.why)));
       pick.appendChild(text);
 
       // 64 x 40, the curve inset 8px from the sides and 9px from the top and
@@ -1389,7 +1463,7 @@ function __lkBootRs(Homey) {
     // flow has three or four of them.
     el.steps.className = 'steps tight';
     for (var i = 1; i <= 4; i++) el.steps.appendChild(node('i', i <= 3 ? 'on' : null));
-    el.steps.appendChild(node('span', null, Homey.__('response.step', { index: 3, count: 4 })));
+    el.steps.appendChild(node('span', null, lk.t('response.step', { index: 3, count: 4 })));
   }
 
   /**
@@ -1407,9 +1481,9 @@ function __lkBootRs(Homey) {
 
     var bits = [];
     for (var p = 0; p < PEAKS.length; p++) {
-      if (PEAKS[p].id === state.response.sunPeak) bits.push(Homey.__(PEAKS[p].sentenceKey));
+      if (PEAKS[p].id === state.response.sunPeak) bits.push(lk.t(PEAKS[p].sentenceKey));
     }
-    if (state.sun.sunset) bits.push(Homey.__('response.andSunset', { time: state.sun.sunset }));
+    if (state.sun.sunset) bits.push(lk.t('response.andSunset', { time: state.sun.sunset }));
     el.sunSpan.textContent = bits.join(' · ');
 
     var floor = -18;
@@ -1419,7 +1493,7 @@ function __lkBootRs(Homey) {
     var tick = node('span', 'tick');
     tick.style.left = (at * 100) + '%';
     el.sunBar.appendChild(tick);
-    var label = node('span', 'tickLabel', Homey.__('response.nowAt', { time: state.sun.now }));
+    var label = node('span', 'tickLabel', lk.t('response.nowAt', { time: state.sun.now }));
     label.style.left = (at * 100) + '%';
     el.sunBar.appendChild(label);
   }
@@ -1445,11 +1519,11 @@ function __lkBootRs(Homey) {
     tile.appendChild(shape);
 
     var hours = node('div', 'hours');
-    hours.appendChild(node('span', null, Homey.__('response.sixAm')));
-    hours.appendChild(node('span', null, Homey.__('response.sixPm')));
+    hours.appendChild(node('span', null, lk.t('response.sixAm')));
+    hours.appendChild(node('span', null, lk.t('response.sixPm')));
     tile.appendChild(hours);
 
-    tile.appendChild(node('div', 'name', Homey.__(peak.nameKey)));
+    tile.appendChild(node('div', 'name', lk.t(peak.nameKey)));
 
     tile.addEventListener('click', function () {
       state.response.sunPeak = peak.id;
@@ -1469,7 +1543,7 @@ function __lkBootRs(Homey) {
   function thresholdText(which) {
     var value = thresholdOf(which);
     if (state.usingSensor) {
-      return Homey.__(which === 'dark' ? 'response.underLux' : 'response.overLux', {
+      return lk.t(which === 'dark' ? 'response.underLux' : 'response.overLux', {
         lux: value >= 10 ? Math.round(value) : Math.round(value * 10) / 10
       });
     }
@@ -1483,26 +1557,17 @@ function __lkBootRs(Homey) {
     var at = which === 'dark' ? state.atDark : state.atBright;
     var degrees = Math.round(value * 10) / 10;
     return at
-      ? Homey.__('response.degreesAt', { degrees: degrees, time: at })
-      : Homey.__('response.degrees', { degrees: degrees });
+      ? lk.t('response.degreesAt', { degrees: degrees, time: at })
+      : lk.t('response.degrees', { degrees: degrees });
   }
 
   /**
-   * "1st", "2nd", "3rd", "22nd" — the suffix from the locale, never a literal.
-   *
-   * 11 to 13 are the exception every implementation of this gets wrong once:
-   * they take "th" despite ending in 1, 2 and 3.
+   * "1st", "2nd", "1.", "1er" — the language's own ordinal. `lk.ordinal()`
+   * asks `Intl.PluralRules` for the ordinal category, which knows English's
+   * 11th-13th exception and every other language's rules, and the locale's
+   * `ordinal.*` group says how each category is written.
    */
-  function ordinal(n) {
-    var tens = n % 100;
-    var key = 'ordinal.th';
-    if (tens < 11 || tens > 13) {
-      if (n % 10 === 1) key = 'ordinal.st';
-      else if (n % 10 === 2) key = 'ordinal.nd';
-      else if (n % 10 === 3) key = 'ordinal.rd';
-    }
-    return n + Homey.__(key);
-  }
+  function ordinal(n) { return lk.ordinal(n); }
 
   function render() {
     el.sunBlock.style.display = state.usingSensor ? 'none' : '';
@@ -1522,20 +1587,20 @@ function __lkBootRs(Homey) {
     }
 
     var which = state.selected;
-    el.endName.textContent = Homey.__(which === 'dark'
+    el.endName.textContent = lk.t(which === 'dark'
       ? (state.usingSensor ? 'response.whenDark' : 'response.afterDark')
       : (state.usingSensor ? 'response.whenBright' : 'response.middleOfDay'));
-    el.endWhich.textContent = Homey.__('response.which', {
+    el.endWhich.textContent = lk.t('response.which', {
       index: ordinal(which === 'dark' ? 1 : 2), count: 2
     });
 
-    el.thresholdCap.textContent = Homey.__(which === 'dark'
+    el.thresholdCap.textContent = lk.t(which === 'dark'
       ? (state.usingSensor ? 'response.darkMeans' : 'response.darkFrom')
       : (state.usingSensor ? 'response.brightMeans' : 'response.brightFrom'));
     el.thresholdVal.textContent = thresholdText(which);
 
     var brightness = which === 'dark' ? state.response.dark : state.response.bright;
-    el.pct.textContent = Math.round(brightness * 100) + '%';
+    el.pct.textContent = lk.percent(Math.round(brightness * 100));
     setSlider(el.brightKnob, brightness);
 
     renderOther();
@@ -1567,13 +1632,13 @@ function __lkBootRs(Homey) {
     row.appendChild(swatch);
 
     var text = node('div', 'text');
-    text.appendChild(node('div', 'end-name', Homey.__(other === 'dark'
+    text.appendChild(node('div', 'end-name', lk.t(other === 'dark'
       ? (state.usingSensor ? 'response.whenDark' : 'response.afterDark')
       : (state.usingSensor ? 'response.whenBright' : 'response.middleOfDay'))));
     text.appendChild(node('div', 'sub', thresholdText(other)));
     row.appendChild(text);
 
-    row.appendChild(node('span', 'value', Math.round(brightness * 100) + '%'));
+    row.appendChild(node('span', 'value', lk.percent(Math.round(brightness * 100))));
     row.appendChild(node('span', 'chev', '›'));
 
     row.addEventListener('click', function () {
@@ -1650,7 +1715,7 @@ function __lkBootRs(Homey) {
     el.msg.style.display = 'none';
     emit('previewNow').then(function (outcome) {
       el.msg.className = 'msg ok';
-      el.msg.textContent = Homey.__('response.tried', { writes: outcome.writes });
+      el.msg.textContent = lk.t('response.tried', { count: outcome.writes });
       el.msg.style.display = '';
     }).catch(function (err) {
       el.msg.className = 'msg bad';

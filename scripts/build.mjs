@@ -106,6 +106,14 @@ export const EXPECTED_ROOTS = new Set([
 ]);
 
 /**
+ * `README.<lang>.txt` — the App Store listing in each language beside English,
+ * which `homey app publish` uploads per language exactly as it does README.txt.
+ * A pattern rather than twelve entries above, because the language list is
+ * test/support/languages.ts's to own.
+ */
+export const STORE_LISTING = /^README\.[a-z]{2}\.txt$/;
+
+/**
  * Fail the build on anything at the root of `.homeybuild/` that is not expected.
  *
  * Runs for dev and launch builds alike: a stray file is not a recorder problem,
@@ -116,7 +124,7 @@ export const EXPECTED_ROOTS = new Set([
 export function verifyNoStrays(build = BUILD) {
   if (!existsSync(build)) return;
   const strays = readdirSync(build)
-    .filter(entry => !entry.startsWith('.') && !EXPECTED_ROOTS.has(entry));
+    .filter(entry => !entry.startsWith('.') && !EXPECTED_ROOTS.has(entry) && !STORE_LISTING.test(entry));
   if (strays.length > 0) {
     const label = strays.length === 1 ? 'entry' : 'entries';
     throw new Error(

@@ -24,6 +24,7 @@ import {
   timezoneOf,
   type PairSessionHost,
 } from '../../lib/pairing/pair-session';
+import { translatorFor } from '../../lib/support/i18n';
 
 /**
  * The schedule driver owns: pair/repair session handlers, the data its two
@@ -43,6 +44,15 @@ interface SessionState {
 }
 
 module.exports = class ScheduleDriver extends Homey.Driver {
+  /**
+   * `homey.__`, plural-aware: a key that is a plural group picks its form from
+   * the numeric `count` token (lib/support/i18n.ts). Every string this driver
+   * resolves goes through here, so a counted one cannot be missed.
+   */
+  private tr(key: string, tokens?: Record<string, string | number>): string {
+    return translatorFor(this.homey)(key, tokens);
+  }
+
 
   /**
    * What `lib/pairing/pair-session.ts` needs of this driver.
@@ -56,7 +66,7 @@ module.exports = class ScheduleDriver extends Homey.Driver {
       log: (...args: unknown[]) => this.log(...args),
       error: (...args: unknown[]) => this.error(...args),
       translate: (key: string, tokens?: Record<string, string | number>) =>
-        this.homey.__(key, tokens),
+        this.tr(key, tokens),
       clock: this.homey.clock,
       app: this.app,
     };
@@ -142,7 +152,7 @@ module.exports = class ScheduleDriver extends Homey.Driver {
     // ------------------------------------------------------------ schedules
 
     handler('getSchedule', async () => {
-      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+      if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
       const [summary, lights] = await Promise.all([
         resolveSummary(this.app.catalog, state.target),
         targetLights(this.app.catalog, state.target),
@@ -163,7 +173,7 @@ module.exports = class ScheduleDriver extends Homey.Driver {
          * derives a colour temperature from whichever swatch is chosen, and
          * that is what they get.
          */
-        ...paletteForScreen(key => this.homey.__(key)),
+        ...paletteForScreen(key => this.tr(key)),
         lights,
         entries: state.entries,
         days: state.days,
@@ -218,7 +228,7 @@ module.exports = class ScheduleDriver extends Homey.Driver {
      * primary defence against a schedule that looks configured and does nothing.
      */
     handler('test', async ({ entryId, boundary }: { entryId: string; boundary: ScheduleBoundary }) => {
-      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+      if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
       const runtime = await this.app.schedules.ephemeral(this.buildPlan(state));
       try {
         return await runtime.testEntry(entryId, boundary === 'off' ? 'off' : 'on');
@@ -250,7 +260,7 @@ module.exports = class ScheduleDriver extends Homey.Driver {
           },
           {
             labelKey: 'review.onTheseDays',
-            value: daysLabelKeys(state.days).map(key => this.homey.__(key)).join(', '),
+            value: daysLabelKeys(state.days).map(key => this.tr(key)).join(', '),
             view: 'blocks',
           },
         ],
@@ -261,7 +271,7 @@ module.exports = class ScheduleDriver extends Homey.Driver {
       device,
       idPrefix: 'sched',
       storeKey: 'schedule',
-      naming: { fallback: 'Light schedule', suffix: 'schedule' },
+      naming: { fallbackKey: 'names.schedule', suffixKey: 'names.scheduleSuffix' },
       buildPlan: () => this.buildPlan(state),
     });
 
@@ -317,8 +327,8 @@ module.exports = class ScheduleDriver extends Homey.Driver {
   }
 
   private buildPlan(state: SessionState): SchedulePlan {
-    if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
-    if (state.entries.length === 0) throw new Error(this.homey.__('errors.addASchedule'));
+    if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
+    if (state.entries.length === 0) throw new Error(this.tr('errors.addASchedule'));
 
     return {
       schemaVersion: CURRENT_SCHEDULE_SCHEMA_VERSION,

@@ -30,6 +30,7 @@ import {
   timezoneOf,
   type PairSessionHost,
 } from '../../lib/pairing/pair-session';
+import { translatorFor } from '../../lib/support/i18n';
 
 /**
  * The Room-sensing Light's driver: two screens, and the second one is the daylight
@@ -88,6 +89,15 @@ function newest(a: number | null, b: number | null): number | null {
 }
 
 module.exports = class DaylightDriver extends Homey.Driver {
+  /**
+   * `homey.__`, plural-aware: a key that is a plural group picks its form from
+   * the numeric `count` token (lib/support/i18n.ts). Every string this driver
+   * resolves goes through here, so a counted one cannot be missed.
+   */
+  private tr(key: string, tokens?: Record<string, string | number>): string {
+    return translatorFor(this.homey)(key, tokens);
+  }
+
 
   /**
    * What `lib/pairing/pair-session.ts` needs of this driver.
@@ -101,7 +111,7 @@ module.exports = class DaylightDriver extends Homey.Driver {
       log: (...args: unknown[]) => this.log(...args),
       error: (...args: unknown[]) => this.error(...args),
       translate: (key: string, tokens?: Record<string, string | number>) =>
-        this.homey.__(key, tokens),
+        this.tr(key, tokens),
       clock: this.homey.clock,
       app: this.app,
     };
@@ -262,7 +272,7 @@ module.exports = class DaylightDriver extends Homey.Driver {
      * judgement before showing what to judge it on.
      */
     handler('getResponse', async () => {
-      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+      if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
       const sensor = state.response.sensor;
       const reading = sensor === null
         ? undefined
@@ -383,7 +393,7 @@ module.exports = class DaylightDriver extends Homey.Driver {
        * is only true for today and this row outlives it.
        */
       const end = (threshold: string, brightness: number) =>
-        `${threshold} → ${Math.round(brightness * 100)}%`;
+        this.tr('review.thresholdTo', { threshold, percent: this.tr('unit.percent', { n: Math.round(brightness * 100) }) });
 
       const usingSensor = response.sensor !== null;
 
@@ -397,7 +407,7 @@ module.exports = class DaylightDriver extends Homey.Driver {
        */
       const hero = {
         kind: 'now' as const,
-        percent: `${Math.round(verdict.brightness * 100)}%`,
+        percent: this.tr('unit.percent', { n: Math.round(verdict.brightness * 100) }),
         detail: host.translate(usingSensor ? 'review.nowFromSensor' : 'review.nowFromSun', {
           lux: Math.round((this.app.daylight.sensors() as WatchedSensor[])
             .find(watched => watched.deviceId === response.sensor)?.lux ?? 0),
@@ -437,7 +447,7 @@ module.exports = class DaylightDriver extends Homey.Driver {
             // What it would do RIGHT NOW. Two thresholds are abstract until the
             // screen says where the room currently sits between them.
             labelKey: 'review.rightNow',
-            value: `${Math.round(verdict.brightness * 100)}%`,
+            value: this.tr('unit.percent', { n: Math.round(verdict.brightness * 100) }),
           },
           {
             labelKey: 'review.transition',
@@ -456,7 +466,7 @@ module.exports = class DaylightDriver extends Homey.Driver {
       device,
       idPrefix: 'dayl',
       storeKey: 'daylight',
-      naming: { fallback: 'Room-sensing Light', suffix: 'daylight' },
+      naming: { fallbackKey: 'names.daylight', suffixKey: 'names.daylightSuffix' },
       buildPlan: () => this.buildPlan(state),
     });
 
@@ -603,11 +613,11 @@ module.exports = class DaylightDriver extends Homey.Driver {
   private reportedAt(at: number): string {
     const local = localNow(this.timezone() ?? undefined, at);
     const day = WEEKDAY_KEYS[(local.isoWeekday - 1) % 7]!;
-    return `${this.homey.__(day)} ${formatMinutes(local.minutesOfDay)}`;
+    return `${this.tr(day)} ${formatMinutes(local.minutesOfDay)}`;
   }
 
   private buildPlan(state: SessionState): DaylightPlan {
-    if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+    if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
 
     return {
       schemaVersion: CURRENT_DAYLIGHT_SCHEMA_VERSION,

@@ -25,7 +25,7 @@ function weekGrid(host, payload) {
     if (!payload || !payload.week) {
       // No readable history is not an error — the screen falls back to the
       // defaults, which is exactly what every screen did before this existed.
-      host.appendChild(node('div', 'week-verdict', Homey.__('week.noHistory')));
+      host.appendChild(node('div', 'week-verdict', lk.t('week.noHistory')));
       return;
     }
 
@@ -36,7 +36,7 @@ function weekGrid(host, payload) {
     // detail screen is titled with the sensor, and repeating it directly under
     // its own heading reads as two different sensors.
     if (payload.sensorName) head.appendChild(node('div', 'name', payload.sensorName));
-    head.appendChild(node('span', 'span', Homey.__('week.lastSevenDays')));
+    head.appendChild(node('span', 'span', lk.t('week.lastSevenDays')));
     host.appendChild(head);
 
     /**
@@ -78,7 +78,7 @@ function weekGrid(host, payload) {
     var anyGap = false;
     for (var row = 0; row < week.cells.length; row++) {
       var line = node('div', 'week-row');
-      line.appendChild(node('span', 'week-day', Homey.__(DAY_KEYS[(week.days[row] || 1) - 1])));
+      line.appendChild(node('span', 'week-day', lk.t(DAY_KEYS[(week.days[row] || 1) - 1])));
       for (var column = 0; column < week.cells[row].length; column++) {
         var value = shade(week.cells[row][column]);
         var cell = node('i', value === null ? 'gap' : null);
@@ -95,7 +95,7 @@ function weekGrid(host, payload) {
     host.appendChild(hours);
 
     var scale = node('div', 'week-scale');
-    scale.appendChild(node('span', null, Homey.__('week.lux', { lux: round(low) })));
+    scale.appendChild(node('span', null, lk.t('week.lux', { lux: round(low) })));
     var bar = node('span', 'bar');
     // No "now" tick on a sensor that has stopped: its last reading is hours
     // old, and a tick labelled "now" would be the one false thing on a card
@@ -106,12 +106,12 @@ function weekGrid(host, payload) {
       var tick = node('span', 'tick');
       tick.style.left = (at * 100) + '%';
       bar.appendChild(tick);
-      var label = node('span', 'tickLabel', Homey.__('week.nowLux', { lux: round(payload.nowLux) }));
+      var label = node('span', 'tickLabel', lk.t('week.nowLux', { lux: round(payload.nowLux) }));
       label.style.left = (at * 100) + '%';
       bar.appendChild(label);
     }
     scale.appendChild(bar);
-    scale.appendChild(node('span', null, Homey.__('week.lux', { lux: round(high) })));
+    scale.appendChild(node('span', null, lk.t('week.lux', { lux: round(high) })));
     host.appendChild(scale);
 
     /**
@@ -131,19 +131,19 @@ function weekGrid(host, payload) {
      * never do.
      */
     var key = node('div', 'week-key');
-    key.appendChild(node('span', null, Homey.__('week.less')));
+    key.appendChild(node('span', null, lk.t('week.less')));
     for (var k = SHADES.length - 1; k >= 0; k--) {
       var chip = node('i');
       chip.style.background = SHADES[k];
       key.appendChild(chip);
     }
-    key.appendChild(node('span', null, Homey.__('week.more')));
+    key.appendChild(node('span', null, lk.t('week.more')));
     host.appendChild(key);
 
     if (anyGap) {
       var legend = node('div', 'week-legend');
       legend.appendChild(node('i'));
-      legend.appendChild(node('span', null, Homey.__('week.nothingReported')));
+      legend.appendChild(node('span', null, lk.t('week.nothingReported')));
       host.appendChild(legend);
     }
 
@@ -169,30 +169,30 @@ function weekGrid(host, payload) {
 
     if (quiet) {
       host.appendChild(finding('msg bad',
-        Homey.__('week.quiet', { name: payload.sensorName || '', hours: payload.staleFor }),
-        Homey.__('week.quietMeans', { when: payload.lastReport || '' })));
+        lk.t('week.quiet', { name: payload.sensorName || '', hours: payload.staleFor }),
+        lk.t('week.quietMeans', { when: payload.lastReport || '' })));
       return;
     }
     if (verdict.kind === 'flat') {
       host.appendChild(finding('msg warn',
-        Homey.__('week.flat'),
-        Homey.__('week.flatDetail', { low: round(verdict.low), high: round(verdict.high) })));
+        lk.t('week.flat'),
+        lk.t('week.flatDetail', { low: round(verdict.low), high: round(verdict.high) })));
       return;
     }
 
     var sentence = node('div', 'week-verdict');
     if (verdict.kind === 'usable') {
-      sentence.appendChild(node('b', null, Homey.__('week.usable')));
-      sentence.appendChild(document.createTextNode(' ' + Homey.__('week.usableDetail', {
+      sentence.appendChild(node('b', null, lk.t('week.usable')));
+      sentence.appendChild(document.createTextNode(' ' + lk.t('week.usableDetail', {
         night: round(verdict.nightLux), noon: round(verdict.noonLux)
       })));
     } else if (verdict.kind === 'stopped') {
-      sentence.appendChild(node('b', null, Homey.__('week.stopped')));
-      sentence.appendChild(document.createTextNode(' ' + Homey.__('week.stoppedDetail', {
-        when: new Date(verdict.lastAt).toLocaleString()
+      sentence.appendChild(node('b', null, lk.t('week.stopped')));
+      sentence.appendChild(document.createTextNode(' ' + lk.t('week.stoppedDetail', {
+        when: lk.dateTime(verdict.lastAt)
       })));
     } else {
-      sentence.appendChild(node('b', null, Homey.__('week.nothing')));
+      sentence.appendChild(node('b', null, lk.t('week.nothing')));
     }
     host.appendChild(sentence);
 

@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { fakeHomey, makeDriver, translate, FakePairSession, type FakeHomey } from '../support/fake-homey';
+import { fakeHomey, makeDriver, translate, localised, FakePairSession, type FakeHomey } from '../support/fake-homey';
 import { fakeApiClient, lamp, type RawDeviceFixture } from '../support/fake-homey-api';
 import { driverApp, stubSource, type DriverAppOptions } from '../support/fake-lightkeeper-app';
 import type { SelectableInput } from '../../lib/inputs/selectable-input';
@@ -121,7 +121,7 @@ describe('the two shared screens', () => {
     assert.deepEqual([review.stepIndex, review.stepCount], [4, 4]);
     assert.deepEqual(review.rows.map((row: { view?: string }) => row.view), ['remote', 'lights', 'buttons']);
     assert.equal(review.rows[0].value, 'Kitchen STYRBAR');
-    assert.equal(review.rows[1].value, translate('review.someLights', { count: 2 }));
+    assert.equal(review.rows[1].value, localised('review.someLights', { count: 2 }));
     // One of three gestures has a job — both numbers, so a half-done remote shows.
     assert.equal(review.rows[2].value, '1 / 3');
     assert.equal('control' in review, false, 'a remote has no "how Lightkeeper controls" choice');
@@ -240,13 +240,13 @@ describe('the buttons screen', () => {
       translate('buttons.detail', { job: translate('functions.off'), lights: 'Sofa lamp' }));
   });
 
-  test('a job aimed at every light says "all two", not the names', async () => {
+  test('a job aimed at every light says "all 2", not the names', async () => {
     const { session } = await readyForButtons();
     await session.call('editGesture', ON.key);
     await session.call('setGesture', { job: 'on' });
     const buttons = await session.call('getButtons');
     assert.equal(buttons.jobs[ON.key].detail, translate('buttons.detail', {
-      job: translate('functions.on'), lights: translate('targets.allCount', { count: translate('count.two') }),
+      job: translate('functions.on'), lights: localised('targets.allCount', { count: 2 }),
     }));
   });
 
@@ -307,7 +307,7 @@ describe('one gesture\'s job', () => {
     await withCurve.session.call('editGesture', ON.key);
     const some = await withCurve.session.call('getGesture');
     assert.equal(some.jobs.some((job: { id: string }) => job.id === 'lightkeeper_on'), true);
-    assert.equal(some.allLabel, translate('job.allLights', { count: translate('count.two') }));
+    assert.equal(some.allLabel, localised('job.allLights', { count: 2 }));
     assert.deepEqual(some.lights, [{ id: 'l1', name: 'Sofa lamp' }, { id: 'l2', name: 'Floor lamp' }]);
   });
 });
@@ -492,7 +492,7 @@ describe('save', () => {
     await session.call('setGesture', { job: 'brightness_up' });
 
     await assert.rejects(session.call('save', 'x'), (error: Error) => {
-      assert.match(error.message, /Dial — Turn/);
+      assert.match(error.message, /Dial · Turn/);
       assert.ok(error.message.startsWith(translate('mapping.unsupportedControl', { controls: '' }).slice(0, 12)));
       return true;
     });

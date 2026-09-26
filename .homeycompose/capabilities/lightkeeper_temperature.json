@@ -1,10 +1,34 @@
 {
   "type": "number",
   "title": {
-    "en": "Colour temperature now"
+    "en": "Colour temperature now",
+    "nl": "Kleurtemperatuur nu",
+    "de": "Farbtemperatur jetzt",
+    "fr": "Température de couleur actuelle",
+    "it": "Temperatura colore attuale",
+    "sv": "Färgtemperatur nu",
+    "no": "Fargetemperatur nå",
+    "es": "Temperatura de color ahora",
+    "da": "Farvetemperatur nu",
+    "ru": "Цветовая температура сейчас",
+    "pl": "Temperatura barwowa teraz",
+    "ko": "현재 색온도",
+    "ar": "درجة حرارة اللون الآن"
   },
   "desc": {
-    "en": "The colour temperature this device wants its lights at right now: 0 to 1, where 1 is the warmest, the same scale Homey's \"Set a temperature\" card takes."
+    "en": "The colour temperature this device wants its lights at right now: 0 to 1, where 1 is the warmest, the same scale Homey's \"Set a temperature\" card takes.",
+    "nl": "De kleurtemperatuur die dit apparaat nu voor zijn lampen wil: 0 tot 1, waarbij 1 het warmst is, dezelfde schaal als de kaart \"Stel een temperatuur in\" van Homey.",
+    "de": "Die Farbtemperatur, die dieses Gerät gerade für seine Lichter möchte: 0 bis 1, wobei 1 am wärmsten ist, dieselbe Skala wie Homeys Karte „Temperatur einstellen“.",
+    "fr": "La température de couleur que cet appareil veut pour ses lumières en ce moment : de 0 à 1, où 1 est la plus chaude, la même échelle que la carte « Régler une température » de Homey.",
+    "it": "La temperatura colore che questo dispositivo vuole per le sue luci in questo momento: da 0 a 1, dove 1 è la più calda, la stessa scala della scheda \"Imposta una temperatura\" di Homey.",
+    "sv": "Färgtemperaturen som den här enheten vill ha på sina lampor just nu: 0 till 1, där 1 är varmast, samma skala som Homeys kort ”Ställ in en temperatur” använder.",
+    "no": "Fargetemperaturen denne enheten vil ha på lysene sine akkurat nå: 0 til 1, der 1 er varmest, samme skala som Homeys «Still inn en temperatur»-kort bruker.",
+    "es": "La temperatura de color que este dispositivo quiere para sus luces ahora mismo: de 0 a 1, donde 1 es la más cálida, la misma escala que usa la tarjeta \"Ajustar una temperatura\" de Homey.",
+    "da": "Den farvetemperatur, denne enhed vil have sine lys på lige nu: 0 til 1, hvor 1 er varmest, samme skala som Homeys kort »Indstil en temperatur«.",
+    "ru": "Цветовая температура, которую это устройство хочет задать своим светильникам прямо сейчас: от 0 до 1, где 1 — самый тёплый свет; та же шкала, что у карточки Homey «Задать температуру».",
+    "pl": "Temperatura barwowa, jaką to urządzenie chce teraz nadać swoim światłom: od 0 do 1, gdzie 1 to najcieplejsza — ta sama skala, którą przyjmuje karta Homey „Ustaw temperaturę”.",
+    "ko": "이 기기가 지금 조명에 원하는 색온도예요. 0부터 1까지이며 1이 가장 따뜻하고, Homey의 \"색온도 설정\" 카드와 같은 척도예요.",
+    "ar": "درجة حرارة اللون التي يريدها هذا الجهاز لأضوائه الآن: من 0 إلى 1، حيث 1 هو الأدفأ، وهو المقياس نفسه الذي تأخذه بطاقة \"ضبط درجة الحرارة\" في Homey."
   },
   "getable": true,
   "setable": false,

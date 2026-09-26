@@ -38,6 +38,8 @@ import {
   registerTargetHandlers,
   type PairSessionHost,
 } from '../../lib/pairing/pair-session';
+import { translatorFor } from '../../lib/support/i18n';
+import { localiseInputLabel, localisedInputLine } from '../../lib/inputs/input-label';
 
 /**
  * The Driver owns: pair/repair session handlers, UI data
@@ -86,6 +88,18 @@ interface SessionState {
 }
 
 module.exports = class ControllerDriver extends Homey.Driver {
+  /**
+   * `homey.__`, plural-aware: a key that is a plural group picks its form from
+   * the numeric `count` token (lib/support/i18n.ts). Every string this driver
+   * resolves goes through here, so a counted one cannot be missed.
+   */
+  private tr(key: string, tokens?: Record<string, string | number>): string {
+    return translatorFor(this.homey)(key, tokens);
+  }
+
+  /** `tr`, as a value — for the lib/ helpers that take a translator. */
+  private readonly trFn = (key: string, tokens?: Record<string, string | number>): string => this.tr(key, tokens);
+
 
   /**
    * What `lib/pairing/pair-session.ts` needs of this driver.
@@ -99,7 +113,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
       log: (...args: unknown[]) => this.log(...args),
       error: (...args: unknown[]) => this.error(...args),
       translate: (key: string, tokens?: Record<string, string | number>) =>
-        this.homey.__(key, tokens),
+        this.tr(key, tokens),
       clock: this.homey.clock,
       app: this.app,
     };
@@ -205,21 +219,21 @@ module.exports = class ControllerDriver extends Homey.Driver {
       const candidate = await this.app.health.findReattachCandidate(profile);
       if (!candidate) return null;
 
-      return { ...candidate, currentName: profile.source.name ?? 'the previous remote' };
+      return { ...candidate, currentName: profile.source.name ?? this.tr('names.previousRemote') };
     });
 
     handler('applyReattach', async () => {
-      if (!device) throw new Error(this.homey.__('errors.reattachOnlyInRepair'));
+      if (!device) throw new Error(this.tr('errors.reattachOnlyInRepair'));
       const profile: ControllerProfile = device.getStoreValue('profile');
       const candidate = await this.app.health.findReattachCandidate(profile);
-      if (!candidate) throw new Error(this.homey.__('errors.remoteGone'));
+      if (!candidate) throw new Error(this.tr('errors.remoteGone'));
 
       const newSource = await this.app.catalog.device(candidate.deviceId);
       // The candidate came from a health check that ran a moment ago, and a
       // device can be removed between the two — in which case re-attaching to
       // it would discover an empty surface and silently produce a controller
       // with no mappings.
-      if (!newSource) throw new Error(this.homey.__('errors.remoteGone'));
+      if (!newSource) throw new Error(this.tr('errors.remoteGone'));
       const discovered = await this.app.discovery.discover(newSource);
 
       // The whole discovery result, not just its inputs: a re-attach must adopt
@@ -256,7 +270,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
     handler('selectSource', async (deviceId: string) => {
       const device = await this.app.catalog.device(deviceId);
-      if (!device) throw new Error(this.homey.__('errors.deviceGone'));
+      if (!device) throw new Error(this.tr('errors.deviceGone'));
 
       const result = await this.app.discovery.discover(device);
 
@@ -282,8 +296,8 @@ module.exports = class ControllerDriver extends Homey.Driver {
         eventCount: result.inputs.length,
         controls: groupByControl(result.inputs).map(g => ({
           controlId: g.controlId,
-          label: g.label,
-          inputs: g.inputs.map(i => ({ key: i.key, label: i.label, action: i.action })),
+          label: localiseInputLabel(g.label, this.trFn).control,
+          inputs: g.inputs.map(i => ({ key: i.key, label: localisedInputLine(i.label, this.trFn), action: i.action })),
         })),
         // Allow selection but block completion, rather than hiding it.
         usable: result.inputs.length > 0,
@@ -378,7 +392,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
      * paths this screen is not the only way in through.
      */
     handler('getButtons', async () => {
-      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+      if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
 
       /**
        * The job AND the lights it drives, on the row, as one line.
@@ -395,13 +409,13 @@ module.exports = class ControllerDriver extends Homey.Driver {
       const jobs: Record<string, { label: string; detail: string }> = {};
       for (const rule of state.mappings) {
         if (rule.inputKey === null) continue;
-        const label = this.homey.__(`functions.${rule.function}`);
+        const label = this.tr(`functions.${rule.function}`);
         const aimed = await this.lightsPhrase(rule.target, lights);
         jobs[rule.inputKey] = {
           label,
           // One light in the whole device and the second half says nothing: it
           // is the same lamp on every row, and the row is shorter without it.
-          detail: aimed === null ? label : this.homey.__('buttons.detail', { job: label, lights: aimed }),
+          detail: aimed === null ? label : this.tr('buttons.detail', { job: label, lights: aimed }),
         };
       }
 
@@ -411,7 +425,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
           // "Top · Press" as ONE line, because the row's second line now carries
           // the job and its lights. Split on the normalizer's own separator so a
           // control with no action of its own ("1 up rotary") stays as it is.
-          label: input.label.split(' — ').join(' · '),
+          label: localisedInputLine(input.label, this.trFn),
         })),
         jobs,
       };
@@ -424,15 +438,15 @@ module.exports = class ControllerDriver extends Homey.Driver {
       // scriptable Web API surface (platform §14), and a rule naming an event
       // the remote does not have is a rule that can never fire.
       if (!state.catalogue.some(input => input.key === wanted)) {
-        throw new Error(this.homey.__('errors.notThisRemotesButton'));
+        throw new Error(this.tr('errors.notThisRemotesButton'));
       }
       state.editing = wanted;
       return { editing: wanted };
     });
 
     handler('getGesture', async () => {
-      if (!state.editing) throw new Error(this.homey.__('errors.noButtonEditing'));
-      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+      if (!state.editing) throw new Error(this.tr('errors.noButtonEditing'));
+      if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
 
       const summary = await resolveSummary(this.app.catalog, state.target);
       const offered = availableFunctions(summary.support);
@@ -477,10 +491,10 @@ module.exports = class ControllerDriver extends Homey.Driver {
       const offerable = composable || rule?.function === 'lightkeeper_on'
         ? tiles
         : tiles.filter(fn => fn !== 'lightkeeper_on');
-      const palette = paletteForScreen(key => this.homey.__(key));
+      const palette = paletteForScreen(key => this.tr(key));
 
       return {
-        title: input ? input.label.split(' — ').join(' · ') : '',
+        title: input ? localisedInputLine(input.label, this.trFn) : '',
         /**
          * Nine jobs as a grid, and "do nothing" is NOT one of them.
          *
@@ -491,7 +505,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
          */
         jobs: offerable.map(fn => ({
           id: fn,
-          label: this.homey.__(`functions.${fn}`),
+          label: this.tr(`functions.${fn}`),
           /**
            * 'none' | 'brightness' | 'colour' | 'lightkeeper' — which editor the
            * tile opens, AND how the screen tells a grid cell from the card
@@ -520,11 +534,11 @@ module.exports = class ControllerDriver extends Homey.Driver {
         /**
          * "All three lights", as a phrase rather than as a field.
          *
-         * Composed here because the view cannot: a count as a WORD is a locale
-         * lookup per number, and `lib/` and the views are both the wrong side
-         * of `homey.__` for that.
+         * Composed here because `lib/` is the wrong side of `homey.__`. A
+         * numeral, not a word: "all three" needs a number word per language
+         * and per grammatical gender, and a plural form covers the rest.
          */
-        allLabel: this.homey.__('job.allLights', { count: this.countWord(lights.length) }),
+        allLabel: this.tr('job.allLights', { count: lights.length }),
         /** null means all of them, and keeps meaning that as the room changes. */
         chosenLights: aimed,
         /**
@@ -555,7 +569,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
     const applyGesture = async (
       asked: { job?: unknown; preset?: unknown; lights?: unknown } | undefined,
     ) => {
-      if (!state.editing) throw new Error(this.homey.__('errors.noButtonEditing'));
+      if (!state.editing) throw new Error(this.tr('errors.noButtonEditing'));
       const job = typeof asked?.job === 'string' ? asked.job : null;
 
       const kept = state.mappings.filter(rule => rule.inputKey !== state.editing);
@@ -595,7 +609,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
       if (rules.length === 0) {
         const why = dropped[0]?.detail;
-        throw new Error(why ? this.homey.__(why.key, why.tokens) : this.homey.__('errors.jobNotUsable'));
+        throw new Error(why ? this.tr(why.key, why.tokens) : this.tr('errors.jobNotUsable'));
       }
 
       state.mappings = [...kept, storedRuleFrom(rules[0]!)];
@@ -610,19 +624,19 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
     /** Which of the two questions the pushed picker is about to ask. */
     handler('editSource', async (kind: unknown) => {
-      if (!state.editing) throw new Error(this.homey.__('errors.noButtonEditing'));
+      if (!state.editing) throw new Error(this.tr('errors.noButtonEditing'));
       // Checked against the two literals for the same reason `editGesture`
       // checks its key: a pair session is a scriptable Web API surface
       // (platform §14), and a third kind would open a screen for a question
       // this app does not ask.
-      if (!isSourceKind(kind)) throw new Error(this.homey.__('errors.notASourceKind'));
+      if (!isSourceKind(kind)) throw new Error(this.tr('errors.notASourceKind'));
       state.editingSource = kind;
       return { editing: kind };
     });
 
     handler('getSource', async () => {
       const kind = state.editingSource;
-      if (!kind) throw new Error(this.homey.__('errors.noSourceChoosing'));
+      if (!kind) throw new Error(this.tr('errors.noSourceChoosing'));
 
       const rule = state.mappings.find(candidate => candidate.inputKey === state.editing);
       const preset = rule?.preset;
@@ -632,20 +646,20 @@ module.exports = class ControllerDriver extends Homey.Driver {
 
       return {
         kind,
-        title: this.homey.__(kind === 'colour' ? 'job.takeColourTitle' : 'job.takeBrightnessTitle'),
-        blurb: this.homey.__('job.takeBlurb'),
+        title: this.tr(kind === 'colour' ? 'job.takeColourTitle' : 'job.takeBrightnessTitle'),
+        blurb: this.tr('job.takeBlurb'),
         /**
          * What the swatches and the levels ARE, under the list rather than over
          * it. Both say the same thing in different words — these are live
          * readings, not the values this button will be fixed at — and the
          * screen's own subtitle has already said the important half.
          */
-        note: this.homey.__(kind === 'colour' ? 'job.swatchNote' : 'job.levelNote'),
-        empty: this.homey.__('job.noSources'),
+        note: this.tr(kind === 'colour' ? 'job.swatchNote' : 'job.levelNote'),
+        empty: this.tr('job.noSources'),
         chosen,
         sources: sourceRows(kind, await this.sourceDevices(kind, await this.buttonLights(state, rule)), {
-          name: this.homey.__('flow.leaveAlone'),
-          subtitle: this.homey.__('flow.leaveAloneHint'),
+          name: this.tr('flow.leaveAlone'),
+          subtitle: this.tr('flow.leaveAloneHint'),
         }),
       };
     });
@@ -660,7 +674,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
      */
     handler('setSource', async (payload: unknown) => {
       const kind = state.editingSource;
-      if (!kind) throw new Error(this.homey.__('errors.noSourceChoosing'));
+      if (!kind) throw new Error(this.tr('errors.noSourceChoosing'));
       const asked = payload as { id?: unknown } | undefined;
       const id = typeof asked?.id === 'string' && asked.id.length > 0 ? asked.id : LEAVE_ALONE;
 
@@ -688,7 +702,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
        * "On" wearing a name that promises more); only the wording was not.
        */
       if (preset.colourSource === LEAVE_ALONE && preset.brightnessSource === LEAVE_ALONE) {
-        throw new Error(this.homey.__('job.needASource'));
+        throw new Error(this.tr('job.needASource'));
       }
 
       await applyGesture({
@@ -702,7 +716,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
     // -------------------------------------------------------------- mapping
 
     handler('getMapping', async () => {
-      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+      if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
       const summary = await resolveSummary(this.app.catalog, state.target);
       const offered = availableFunctions(summary.support);
       const lights = await targetLights(this.app.catalog, state.target);
@@ -710,7 +724,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
       return {
         functions: offered.map(fn => ({
           function: fn,
-          label: this.homey.__(`functions.${fn}`),
+          label: this.tr(`functions.${fn}`),
           capability: FUNCTION_CAPABILITY[fn],
         })),
         // The lights chosen on the previous screen, so each rule can be aimed
@@ -718,21 +732,21 @@ module.exports = class ControllerDriver extends Homey.Driver {
         lights,
         controls: groupByControl(state.catalogue).map(g => ({
           controlId: g.controlId,
-          label: g.label,
+          label: localiseInputLabel(g.label, this.trFn).control,
           inputs: g.inputs.map(i => ({
             key: i.key,
             // Split so the UI can drop the action when a control has only one,
             // and avoid "1 up rotary — Press".
-            controlLabel: i.label.split(' — ')[0],
-            actionLabel: i.label.split(' — ').slice(1).join(' — '),
-            label: i.label,
+            controlLabel: localiseInputLabel(i.label, this.trFn).control,
+            actionLabel: localiseInputLabel(i.label, this.trFn).action,
+            label: localisedInputLine(i.label, this.trFn),
           })),
         })),
         // Sections and rows, and the one-light collapse that binds them. Both
         // in lib/pairing/mapping-screen.ts, where they can be tested together:
         // the two halves have to agree about `groupKey` or a saved rule lands
         // in a section that is not on the page.
-        groups: mappingGroups(lights, this.homey.__('mapping.allLights')),
+        groups: mappingGroups(lights, this.tr('mapping.allLights')),
         rules: mappingRuleRows(state.mappings, lights),
       };
     });
@@ -745,7 +759,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
      * "inherit" — all of them.
      */
     handler('setRules', async (raw: unknown) => {
-      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+      if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
 
       /**
        * Checked against what is ALREADY chosen, not against the whole Homey.
@@ -805,7 +819,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
      * silent failure.
      */
     handler('test', async ({ func, deviceIds }: { func: LightFunction; deviceIds: string[] | null }) => {
-      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+      if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
       const runtime = await this.app.controllers.ephemeral(this.buildProfile(state));
       try {
         return await runtime.testFunction(func, deviceIds && deviceIds.length ? deviceIds : undefined);
@@ -880,8 +894,13 @@ module.exports = class ControllerDriver extends Homey.Driver {
     // Thrown, not returned: the pair view surfaces a rejected save as an error
     // next to the button, which is where this belongs.
     throw new Error(
-      this.homey.__('mapping.unsupportedControl', {
-        controls: declined.map(item => `${item.label} (${item.reason})`).join('; '),
+      this.tr('mapping.unsupportedControl', {
+        controls: declined
+          .map(item => this.tr('mapping.declinedControl', {
+            label: localisedInputLine(item.label, this.trFn),
+            reason: this.tr(item.detail.key, item.detail.tokens),
+          }))
+          .join(this.tr('unit.listSeparator')),
       }),
     );
   }
@@ -904,7 +923,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
    * null when there is nothing worth saying — a device with one light says the
    * same name on every row, and a row is clearer without it.
    *
-   * The shape of the answer is the whole point: "all three" for the default
+   * The shape of the answer is the whole point: "all 3" for the default
    * stays short whether the device has three lights or thirty, a subset of one
    * or two is worth naming outright, and past that a count beats a list that
    * would wrap onto a third line. The alternative — naming every light — is
@@ -917,24 +936,24 @@ module.exports = class ControllerDriver extends Homey.Driver {
     if (lights.length <= 1) return null;
 
     if (target === null) {
-      return this.homey.__('targets.allCount', { count: this.countWord(lights.length) });
+      return this.tr('targets.allCount', { count: lights.length });
     }
 
     const aimed = new Set(await targetDeviceIds(this.app.catalog, target));
     const names = lights.filter(light => aimed.has(light.id)).map(light => light.name);
 
     if (names.length === lights.length) {
-      return this.homey.__('targets.allCount', { count: this.countWord(lights.length) });
+      return this.tr('targets.allCount', { count: lights.length });
     }
     // Every named light has gone. Not reachable from the screens — narrowing the
     // selection re-aims the rule first — but this reads a STORED profile, and
     // saying so beats an empty half-sentence.
-    if (names.length === 0) return this.homey.__('targets.noneOfThem');
+    if (names.length === 0) return this.tr('targets.noneOfThem');
     if (names.length === 1) return names[0]!;
     if (names.length === 2) {
-      return this.homey.__('targets.pair', { first: names[0]!, second: names[1]! });
+      return this.tr('targets.pair', { first: names[0]!, second: names[1]! });
     }
-    return this.homey.__('targets.someLights', { count: this.countWord(names.length) });
+    return this.tr('targets.someLights', { count: names.length });
   }
 
   /**
@@ -960,7 +979,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
    * person reading it, and the press degrades to plain "on" anyway.
    */
   private sourceNames(preset: MappingRule['preset']): { colour: string; brightness: string } {
-    const leaveAlone = this.homey.__('flow.leaveAlone');
+    const leaveAlone = this.tr('flow.leaveAlone');
     if (preset === undefined || !isLightkeeperPreset(preset)) {
       return { colour: leaveAlone, brightness: leaveAlone };
     }
@@ -1114,19 +1133,6 @@ module.exports = class ControllerDriver extends Homey.Driver {
     return typeof english === 'string' ? english : '';
   }
 
-  /**
-   * A small count as a word, because "all three" is a phrase and "all 3" is a
-   * field. Past twelve the digits read better than the words do.
-   */
-  private countWord(count: number): string {
-    const words = [
-      'zero', 'one', 'two', 'three', 'four', 'five', 'six',
-      'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',
-    ];
-    const word = words[count];
-    return word === undefined ? String(count) : this.homey.__(`count.${word}`);
-  }
-
   private async lightsSummary(
     target: TargetSpec,
     summary: { count: number },
@@ -1135,12 +1141,15 @@ module.exports = class ControllerDriver extends Homey.Driver {
   }
 
   private async deriveName(state: SessionState): Promise<string> {
-    return deriveControllerName(this.app.catalog, state.target, state.sourceName ?? 'Remote');
+    return deriveControllerName(
+      this.app.catalog, state.target, state.sourceName ?? this.tr('names.remote'),
+      (key, tokens) => this.tr(key, tokens),
+    );
   }
 
   private buildProfile(state: SessionState): ControllerProfile {
     if (!state.sourceDeviceId || !state.target) {
-      throw new Error(this.homey.__('errors.chooseRemoteAndLights'));
+      throw new Error(this.tr('errors.chooseRemoteAndLights'));
     }
     return {
       schemaVersion: CURRENT_SCHEMA_VERSION,

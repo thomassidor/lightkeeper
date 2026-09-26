@@ -1,10 +1,34 @@
 {
   "type": "number",
   "title": {
-    "en": "Brightness now"
+    "en": "Brightness now",
+    "nl": "Helderheid nu",
+    "de": "Helligkeit jetzt",
+    "fr": "Luminosité actuelle",
+    "it": "Luminosità attuale",
+    "sv": "Ljusstyrka nu",
+    "no": "Lysstyrke nå",
+    "es": "Brillo ahora",
+    "da": "Lysstyrke nu",
+    "ru": "Яркость сейчас",
+    "pl": "Jasność teraz",
+    "ko": "현재 밝기",
+    "ar": "السطوع الآن"
   },
   "desc": {
-    "en": "The brightness this device wants its lights at right now, as a light is addressed: 0 to 1, the same scale Homey's \"Dim to\" card takes."
+    "en": "The brightness this device wants its lights at right now, as a light is addressed: 0 to 1, the same scale Homey's \"Dim to\" card takes.",
+    "nl": "De helderheid die dit apparaat nu voor zijn lampen wil, zoals je een lamp aanstuurt: 0 tot 1, dezelfde schaal als de kaart \"Dimmen naar\" van Homey.",
+    "de": "Die Helligkeit, die dieses Gerät gerade für seine Lichter möchte, so wie ein Licht angesteuert wird: 0 bis 1, dieselbe Skala wie Homeys Karte „Dimmen auf“.",
+    "fr": "La luminosité que cet appareil veut pour ses lumières en ce moment, telle qu'on la donne à une lumière : de 0 à 1, la même échelle que la carte « Tamiser à » de Homey.",
+    "it": "La luminosità che questo dispositivo vuole per le sue luci in questo momento, nel formato in cui la si dà a una luce: da 0 a 1, la stessa scala della scheda \"Regola a\" di Homey.",
+    "sv": "Ljusstyrkan som den här enheten vill ha på sina lampor just nu, så som en lampa styrs: 0 till 1, samma skala som Homeys kort ”Dimma till” använder.",
+    "no": "Lysstyrken denne enheten vil ha på lysene sine akkurat nå, slik et lys angis: 0 til 1, samme skala som Homeys «Demp til»-kort bruker.",
+    "es": "El brillo que este dispositivo quiere para sus luces ahora mismo, tal como se le indica a una luz: de 0 a 1, la misma escala que usa la tarjeta \"Atenuar a\" de Homey.",
+    "da": "Den lysstyrke, denne enhed vil have sine lys på lige nu, angivet som til et lys: 0 til 1, samme skala som Homeys kort »Dæmp til«.",
+    "ru": "Яркость, которую это устройство хочет задать своим светильникам прямо сейчас, в шкале светильника: от 0 до 1 — та же шкала, что у карточки Homey «Диммировать до».",
+    "pl": "Jasność, jaką to urządzenie chce teraz nadać swoim światłom, w skali światła: od 0 do 1 — tej samej, którą przyjmuje karta Homey „Przyciemnij do”.",
+    "ko": "이 기기가 지금 조명에 원하는 밝기예요. 조명과 같은 방식으로 0부터 1까지, Homey의 \"밝기 조절\" 카드와 같은 척도예요.",
+    "ar": "السطوع الذي يريده هذا الجهاز لأضوائه الآن، بالطريقة التي يُخاطَب بها الضوء: من 0 إلى 1، وهو المقياس نفسه الذي تأخذه بطاقة \"التعتيم إلى\" في Homey."
   },
   "getable": true,
   "setable": false,

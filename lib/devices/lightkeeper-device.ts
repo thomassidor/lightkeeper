@@ -9,6 +9,7 @@ import {
 } from './device-lifecycle';
 import type { ControllerState } from '../profiles/controller-profile';
 import { CONTROL_CAPABILITY, type ControlMode } from '../pairing/control-choice';
+import { translatorFor } from '../support/i18n';
 
 /**
  * The `Homey.Device` half of a Lightkeeper virtual device: the SDK entry points,
@@ -87,8 +88,9 @@ export abstract class LightkeeperDevice<
 
   // ---- the two SDK spellings lib/ cannot reach on its own -------------------
 
+  /** Plural-aware: a counted StateDetail picks its form here (lib/support/i18n.ts). */
   translate(key: string, tokens?: Record<string, string | number>): string {
-    return this.homey.__(key, tokens ?? {});
+    return translatorFor(this.homey)(key, tokens);
   }
 
   async removeFlows(refs: unknown[]): Promise<number> {

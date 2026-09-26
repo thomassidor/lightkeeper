@@ -1,28 +1,90 @@
 {
   "title": {
-    "en": "Receive Lightkeeper event with a token value"
+    "en": "Receive Lightkeeper event with a token value",
+    "nl": "Lightkeeper-gebeurtenis met een tagwaarde ontvangen",
+    "de": "Lightkeeper-Ereignis mit einem Tag-Wert empfangen",
+    "fr": "Recevoir un événement Lightkeeper avec une valeur de jeton",
+    "it": "Ricevi evento Lightkeeper con un valore token",
+    "sv": "Ta emot Lightkeeper-händelse med ett token-värde",
+    "no": "Motta Lightkeeper-hendelse med en tag-verdi",
+    "es": "Recibir evento de Lightkeeper con un valor de token",
+    "da": "Modtag Lightkeeper-hændelse med en tag-værdi",
+    "ru": "Получить событие Lightkeeper со значением из тега",
+    "pl": "Odbierz zdarzenie Lightkeeper z wartością ze znacznika",
+    "ko": "토큰 값이 있는 Lightkeeper 이벤트 받기",
+    "ar": "استقبال حدث Lightkeeper بقيمة رمز"
   },
   "titleFormatted": {
-    "en": "Send event [[event_key]] with value [[droptoken]] to Lightkeeper device [[controller]]"
+    "en": "Send event [[event_key]] with value [[droptoken]] to Lightkeeper device [[controller]]",
+    "nl": "Stuur gebeurtenis [[event_key]] met waarde [[droptoken]] naar Lightkeeper-apparaat [[controller]]",
+    "de": "Ereignis [[event_key]] mit Wert [[droptoken]] an Lightkeeper-Gerät [[controller]] senden",
+    "fr": "Envoyer l'événement [[event_key]] avec la valeur [[droptoken]] à l'appareil Lightkeeper [[controller]]",
+    "it": "Invia l'evento [[event_key]] con valore [[droptoken]] al dispositivo Lightkeeper [[controller]]",
+    "sv": "Skicka händelsen [[event_key]] med värdet [[droptoken]] till Lightkeeper-enheten [[controller]]",
+    "no": "Send hendelse [[event_key]] med verdi [[droptoken]] til Lightkeeper-enhet [[controller]]",
+    "es": "Enviar el evento [[event_key]] con el valor [[droptoken]] al dispositivo de Lightkeeper [[controller]]",
+    "da": "Send hændelse [[event_key]] med værdi [[droptoken]] til Lightkeeper-enhed [[controller]]",
+    "ru": "Отправить событие [[event_key]] со значением [[droptoken]] устройству Lightkeeper [[controller]]",
+    "pl": "Wyślij zdarzenie [[event_key]] z wartością [[droptoken]] do urządzenia Lightkeeper [[controller]]",
+    "ko": "이벤트 [[event_key]]을(를) 값 [[droptoken]]와(과) 함께 Lightkeeper 기기 [[controller]]에 보내기",
+    "ar": "إرسال الحدث [[event_key]] بالقيمة [[droptoken]] إلى جهاز Lightkeeper [[controller]]"
   },
   "hint": {
-    "en": "Used internally by Lightkeeper, for events whose amount arrives as a Flow token — for example a dial reporting how far it turned. Do not add or edit these by hand."
+    "en": "Used internally by Lightkeeper, for events whose amount arrives as a Flow token — for example a dial reporting how far it turned. Do not add or edit these by hand.",
+    "nl": "Intern gebruikt door Lightkeeper, voor gebeurtenissen waarvan de hoeveelheid binnenkomt als Flow-tag — bijvoorbeeld een draaiknop die meldt hoe ver hij is gedraaid. Voeg deze niet met de hand toe en bewerk ze niet.",
+    "de": "Wird intern von Lightkeeper verwendet, für Ereignisse, deren Menge als Flow-Tag ankommt – zum Beispiel ein Drehregler, der meldet, wie weit er gedreht wurde. Nicht von Hand hinzufügen oder bearbeiten.",
+    "fr": "Utilisée en interne par Lightkeeper, pour les événements dont la quantité arrive sous forme de jeton Flow — par exemple une molette qui indique de combien elle a tourné. Ne les ajoutez pas et ne les modifiez pas à la main.",
+    "it": "Usata internamente da Lightkeeper, per eventi la cui quantità arriva come token Flow, per esempio una manopola che indica di quanto è stata ruotata. Non aggiungerle né modificarle a mano.",
+    "sv": "Används internt av Lightkeeper, för händelser vars mängd kommer som en Flow-token – till exempel en vridratt som rapporterar hur långt den vreds. Lägg inte till eller redigera dem för hand.",
+    "no": "Brukes internt av Lightkeeper, for hendelser der mengden kommer som en Flow-tag — for eksempel en dreieknapp som melder hvor langt den ble vridd. Ikke legg til eller rediger disse selv.",
+    "es": "Uso interno de Lightkeeper, para eventos cuya cantidad llega como token de Flow; por ejemplo, una rueda que indica cuánto ha girado. No las añadas ni las edites a mano.",
+    "da": "Bruges internt af Lightkeeper til hændelser, hvor mængden kommer som et Flow-tag — for eksempel en drejeknap, der melder, hvor langt den blev drejet. Tilføj eller redigér dem ikke selv.",
+    "ru": "Используется внутри Lightkeeper для событий, значение которых приходит как тег Flow, — например, когда поворотный регулятор сообщает, насколько его повернули. Не добавляйте и не изменяйте их вручную.",
+    "pl": "Używane wewnętrznie przez Lightkeeper dla zdarzeń, których wartość przychodzi jako znacznik Flow — na przykład pokrętło zgłaszające, jak daleko je obrócono. Nie dodawaj ani nie edytuj ich ręcznie.",
+    "ko": "Lightkeeper가 내부적으로 사용해요. 양이 Flow 토큰으로 전달되는 이벤트용이에요(예: 다이얼이 얼마나 돌았는지 알려 줄 때). 직접 추가하거나 수정하지 마세요.",
+    "ar": "يستخدمها Lightkeeper داخليًا، للأحداث التي يصل مقدارها كرمز Flow — مثل قرص دوّار يُبلغ عن مقدار دورانه. لا تضفها ولا تعدّلها يدويًا."
   },
-  "droptoken": ["number"],
+  "droptoken": [
+    "number"
+  ],
   "deprecated": true,
   "args": [
     {
       "type": "text",
       "name": "controller",
       "title": {
-        "en": "Device"
+        "en": "Device",
+        "nl": "Apparaat",
+        "de": "Gerät",
+        "fr": "Appareil",
+        "it": "Dispositivo",
+        "sv": "Enhet",
+        "no": "Enhet",
+        "es": "Dispositivo",
+        "da": "Enhed",
+        "ru": "Устройство",
+        "pl": "Urządzenie",
+        "ko": "기기",
+        "ar": "الجهاز"
       }
     },
     {
       "type": "text",
       "name": "event_key",
       "title": {
-        "en": "Event"
+        "en": "Event",
+        "nl": "Gebeurtenis",
+        "de": "Ereignis",
+        "fr": "Événement",
+        "it": "Evento",
+        "sv": "Händelse",
+        "no": "Hendelse",
+        "es": "Evento",
+        "da": "Hændelse",
+        "ru": "Событие",
+        "pl": "Zdarzenie",
+        "ko": "이벤트",
+        "ar": "الحدث"
       }
     }
   ]

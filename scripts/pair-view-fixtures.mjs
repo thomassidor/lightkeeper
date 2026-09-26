@@ -29,11 +29,20 @@
  */
 import { readFileSync } from 'node:fs';
 
+/**
+ * Which language to resolve in: `--lang <code>`, the same flag render-views.mjs
+ * takes, read here because this module's fixtures are built at import time.
+ */
+const LANG_AT = process.argv.indexOf('--lang');
+export const RENDER_LANG = LANG_AT >= 0 ? String(process.argv[LANG_AT + 1]) : 'en';
+
 const EN = JSON.parse(
-  readFileSync(new URL('../locales/en.json', import.meta.url), 'utf8'));
+  readFileSync(new URL(`../locales/${RENDER_LANG}.json`, import.meta.url), 'utf8'));
 
 /**
- * `Homey.__`, near enough: a dotted key and `__token__` substitution.
+ * `Homey.__`, near enough: a dotted key and `__token__` substitution — and the
+ * plural step `lib/support/i18n.ts` adds, so a counted fixture reads as the
+ * driver would send it.
  *
  * @param {string} key
  * @param {Record<string, string | number>} [tokens]
@@ -41,6 +50,10 @@ const EN = JSON.parse(
 function say(key, tokens) {
   let node = EN;
   for (const part of key.split('.')) node = node?.[part];
+  if (node && typeof node === 'object' && typeof tokens?.count === 'number') {
+    const form = new Intl.PluralRules(RENDER_LANG).select(tokens.count);
+    node = node[form] ?? node.other;
+  }
   let text = typeof node === 'string' ? node : key;
   for (const [name, value] of Object.entries(tokens ?? {})) {
     text = text.split(`__${name}__`).join(String(value));
@@ -611,7 +624,7 @@ export const RENDER_REPLIES = {
           label: say('functions.toggle'),
           detail: say('buttons.detail', {
             job: say('functions.toggle'),
-            lights: say('targets.allCount', { count: say('count.three') }),
+            lights: say('targets.allCount', { count: 3 }),
           }),
         },
         'button.top|hold': {
@@ -625,7 +638,7 @@ export const RENDER_REPLIES = {
           label: say('functions.off'),
           detail: say('buttons.detail', {
             job: say('functions.off'),
-            lights: say('targets.allCount', { count: say('count.three') }),
+            lights: say('targets.allCount', { count: 3 }),
           }),
         },
       },
@@ -669,7 +682,7 @@ export const RENDER_REPLIES = {
       colors: PALETTE_SWATCHES,
       layout: LAYOUT,
       lights: RULE_LIGHTS,
-      allLabel: say('job.allLights', { count: say('count.three') }),
+      allLabel: say('job.allLights', { count: 3 }),
       chosenLights: ['light-1'],
       /**
        * The two rows of the card, in the words the driver resolves for them.

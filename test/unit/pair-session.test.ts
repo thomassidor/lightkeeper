@@ -406,7 +406,7 @@ describe('the save handler', () => {
     registerSaveHandler(host, handler, state, {
       idPrefix: 'dayl',
       storeKey: 'daylight',
-      naming: { fallback: 'Room-sensing Light', suffix: 'daylight' },
+      naming: { fallbackKey: 'names.daylight', suffixKey: 'names.daylightSuffix' },
       buildPlan: () => ({ schemaVersion: 1 }),
     });
     const result = await call('save', '') as {
@@ -431,12 +431,13 @@ describe('the save handler', () => {
     registerSaveHandler(host, handler, {}, {
       idPrefix: 'circ',
       storeKey: 'circadian',
-      naming: { fallback: 'Circadian light', suffix: 'circadian' },
+      naming: { fallbackKey: 'names.circadian', suffixKey: 'names.circadianSuffix' },
       buildPlan: () => ({}),
     });
     const result = await call('save', '') as { device: { name: string } };
 
-    assert.equal(result.device.name, 'Circadian light');
+    // The rig's translate brackets the key, so this is the fallback KEY resolved.
+    assert.equal(result.device.name, '[names.circadian]');
   });
 
   test('a name typed by the user wins over the derived one', async () => {
@@ -445,7 +446,7 @@ describe('the save handler', () => {
     registerSaveHandler(host, handler, {}, {
       idPrefix: 'curv',
       storeKey: 'curve',
-      naming: { fallback: 'Colour Curve Light', suffix: 'curve' },
+      naming: { fallbackKey: 'names.curve', suffixKey: 'names.curveSuffix' },
       buildPlan: () => ({}),
     });
     const result = await call('save', 'Kitchen curve') as { device: { name: string } };
@@ -462,7 +463,7 @@ describe('the save handler', () => {
       device: { applyPlan: async (plan: unknown) => { applied.push(plan); } },
       idPrefix: 'sched',
       storeKey: 'schedule',
-      naming: { fallback: 'Light schedule', suffix: 'schedule' },
+      naming: { fallbackKey: 'names.schedule', suffixKey: 'names.scheduleSuffix' },
       buildPlan: () => ({ entries: [] }),
     });
     const result = await call('save', '') as { updated: boolean; created?: boolean };

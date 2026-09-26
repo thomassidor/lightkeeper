@@ -112,7 +112,7 @@ export async function assessTargets(
       state: 'partial',
       detail: {
         key: 'state.someTargetsNotResponding',
-        tokens: { count: count.unwritable, total: count.total },
+        tokens: { notResponding: count.unwritable, count: count.total },
         text: `${count.unwritable} of ${count.total} lights are not responding.`,
       },
       count,
@@ -125,7 +125,7 @@ export async function assessTargets(
       state: 'partial',
       detail: {
         key: 'state.someTargets',
-        tokens: { count: missing, total: count.total },
+        tokens: { unavailable: missing, count: count.total },
         text: `${missing} of ${count.total} lights unavailable.`,
       },
       count,

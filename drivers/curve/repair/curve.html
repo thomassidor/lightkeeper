@@ -284,7 +284,7 @@
                        color: var(--lk-ink); margin: 0 0 9px; }
 
   /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
-  #cv-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+  #cv-root .tile { display: block; width: 100%; text-align: start; background: var(--lk-surface);
               border: 1.5px solid var(--lk-edge); border-radius: 12px; padding: 13px 14px;
               margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
               color: var(--lk-ink);
@@ -303,7 +303,10 @@
      written twice, and the two copies have to move together. */
   #cv-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
                background-repeat: no-repeat; background-position: right 13px center;
-               background-size: 11px; padding-right: 34px; }
+               background-size: 11px; padding-inline-end: 34px; }
+  /* Arabic reads right to left, so the chevron sits on the other end — where
+     `padding-inline-end` has already made room for it. */
+  #cv-root[dir="rtl"] select { background-position: left 13px center; }
   #cv-root input:focus, #cv-root select:focus { outline: none; border-color: var(--lk-accent);
                                       box-shadow: 0 0 0 3px var(--lk-ring); }
 
@@ -403,7 +406,7 @@
      unrelated body copy. */
   #cv-root .msg .lead { font-weight: 600; margin-bottom: 3px; }
 
-  #cv-root ol { font-size: 15px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+  #cv-root ol { font-size: 15px; line-height: 1.75; padding-inline-start: 20px; margin: 0 0 16px;
            color: var(--lk-body); }
   #cv-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
   @media (max-width: 380px) { #cv-root .grid { grid-template-columns: 1fr; } }
@@ -424,7 +427,7 @@
      device types. */
   #cv-root .steps.tight i { width: 16px; }
   #cv-root .steps i.on { background: var(--lk-accent); }
-  #cv-root .steps span { margin-left: 4px; font-size: 13px; color: var(--lk-muted); }
+  #cv-root .steps span { margin-inline-start: 4px; font-size: 13px; color: var(--lk-muted); }
 
   /* `label · value · chevron`. The one shape everything secondary takes:
      a row that says what it is, what it is set to, and that it can be opened.
@@ -436,10 +439,10 @@
   #cv-root .row { display: flex; align-items: center; gap: 10px; width: 100%;
                padding: 13px 0; min-height: 44px; box-sizing: border-box;
                background: none; border: none; font: inherit; color: inherit;
-               text-align: left; cursor: pointer; }
+               text-align: start; cursor: pointer; }
   #cv-root .row + .row { border-top: 1px solid var(--lk-line); }
   #cv-root .row .label { flex: 1; font-size: 15px; }
-  #cv-root .row .value { font-size: 15px; color: var(--lk-muted); text-align: right; }
+  #cv-root .row .value { font-size: 15px; color: var(--lk-muted); text-align: end; }
   #cv-root .row .chev { flex: none; font-size: 16px; color: var(--lk-chev); }
   #cv-root .row .sub { font-size: 13px; color: var(--lk-muted); margin: 2px 0 0; }
   /* The card a list of rows lives in. 4px top and bottom rather than 14:
@@ -458,7 +461,7 @@
                   min-height: 44px; box-sizing: border-box;
                   background: none; border-left: none; border-right: none;
                   border-bottom: none; font: inherit; color: inherit;
-                  text-align: left; cursor: pointer; }
+                  text-align: start; cursor: pointer; }
   #cv-root .toggle .label { flex: 1; font-size: 15px; }
   #cv-root .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
                          position: relative; background: var(--lk-line);
@@ -619,7 +622,7 @@
 #cv-root .tr-pick { display: flex; align-items: center; gap: 12px; width: 100%;
                  padding: 12px 0; min-height: 44px; box-sizing: border-box;
                  background: none; border: none; font: inherit; color: inherit;
-                 text-align: left; cursor: pointer; }
+                 text-align: start; cursor: pointer; }
 #cv-root .tr-box { flex: none; width: 22px; height: 22px; border-radius: 50%;
                 border: 1.5px solid var(--lk-box); box-sizing: border-box;
                 display: flex; align-items: center; justify-content: center;
@@ -675,7 +678,7 @@
   #cv-root .axis { display: flex; justify-content: space-between;
                    font-size: 11px; color: var(--lk-body); margin: 0 2px 14px; }
   /* Indented past the gutter, so midnight sits under the first bar. */
-  #cv-root .axis.axed { margin-left: 42px; }
+  #cv-root .axis.axed { margin-inline-start: 42px; }
 
   /* The point being edited, and its accent border is what says so: the others
      are rows in the card below, and this is one of them opened. A hairline like
@@ -861,6 +864,76 @@ function __lkBootCv(Homey) {
     });
   })();
 
+  function i18n(homey) {
+    /**
+     * Plural-aware translation, and the language's own number and date rules.
+     *
+     * GENERATED. Spliced into every pair view, and into the settings page, by
+     * `npm run sync:views` from views/shared/i18n.js. **Edit that file, not
+     * this one.**
+     *
+     * The twin of `lib/support/i18n.ts`, and it must choose the same forms:
+     * a counted string is a group of CLDR plural categories, the count is the
+     * `count` token, and `Intl.PluralRules` in the locale file's OWN language
+     * (`meta.language`) picks the form. `t()` is `Homey.__` with that one
+     * extra step, so a view calls it exactly where it called `Homey.__`.
+     *
+     * `dir` is `meta.direction`: every view puts it on its own root, because
+     * the screens share one document and only the root is ours.
+     */
+    var raw = function (key, tokens) { return homey.__(key, tokens || {}); };
+    var found = function (value, key) { return typeof value === 'string' && value !== '' && value !== key; };
+    var lang = raw('meta.language');
+    // Deliberately no memo: the views share one document, and a cache on it
+    // would outlive a language change. Two lookups per call are nothing.
+    if (!/^[a-z]{2}$/.test(String(lang))) lang = 'en';
+    var select = function (n, type) {
+      try { return new Intl.PluralRules(lang, { type: type || 'cardinal' }).select(n); }
+      catch (e) { return n === 1 ? 'one' : 'other'; }
+    };
+    var pick = function (key, form, tokens) {
+      var chosen = raw(key + '.' + form, tokens);
+      if (found(chosen, key + '.' + form)) return chosen;
+      var other = raw(key + '.other', tokens);
+      return found(other, key + '.other') ? other : null;
+    };
+    var t = function (key, tokens) {
+      tokens = tokens || {};
+      if (typeof tokens.count === 'number' && isFinite(tokens.count)) {
+        var form = pick(key, select(tokens.count), tokens);
+        if (form !== null) return form;
+      }
+      var plain = raw(key, tokens);
+      return typeof plain === 'string' ? plain : key;
+    };
+    return {
+      lang: lang,
+      dir: raw('meta.direction') === 'rtl' ? 'rtl' : 'ltr',
+      t: t,
+      /** "1st", "1.", "1er" — the language's own ordinal, from `ordinal.*`. */
+      ordinal: function (n) { return pick('ordinal', select(n, 'ordinal'), { n: n }) || String(n); },
+      /**
+       * "a, b, c" with the language's own comma — "،" in Arabic. A key, not
+       * `Intl.ListFormat`, whose unit style drops the commas altogether in
+       * Korean and Russian and adds an "and" in German.
+       */
+      list: function (items) { return items.join(raw('unit.listSeparator')); },
+      /** A percentage: "40%", "40 %" — the space is the language's, not ours. */
+      percent: function (n) { return t('unit.percent', { n: n }); },
+      /** A date and time, in the app's language rather than the phone's. */
+      dateTime: function (value, options) {
+        var date = new Date(value);
+        try { return date.toLocaleString(lang, options); } catch (e) { return date.toLocaleString(); }
+      },
+      time: function (value) {
+        var date = new Date(value);
+        try { return date.toLocaleTimeString(lang); } catch (e) { return date.toLocaleTimeString(); }
+      }
+    };
+  }
+  var lk = i18n(Homey);
+  __root.dir = lk.dir;
+
   function emit(event, data) {
     /**
      * Homey.emit, as a promise that always settles.
@@ -871,7 +944,8 @@ function __lkBootCv(Homey) {
      * Both call styles are handled because the pairing bridge has used a
      * callback and a promise at different times, and the 20 s timeout is what
      * keeps a dropped callback from leaving the screen spinning with no message
-     * forever.
+     * forever. Its message comes from `lk`, the view's `i18n()` translator,
+     * which every view sets up before anything can emit.
      *
      * Inside the function, like `stabiliseScrollbar()`'s, and that is not a
      * style choice: `spliceFunction` matches from the `function` keyword, so a
@@ -888,7 +962,7 @@ function __lkBootCv(Homey) {
         if (err) reject(err instanceof Error ? err : new Error(String(err)));
         else resolve(result);
       };
-      var timer = setTimeout(function () { finish(new Error('Homey did not respond in time. Close this screen and try again. (' + event + ')')); }, 20000);
+      var timer = setTimeout(function () { finish(new Error(lk.t('common.timeout', { event: event }))); }, 20000);
       var done = function (err, result) { clearTimeout(timer); finish(err, result); };
       try {
         var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
@@ -948,7 +1022,7 @@ function __lkBootCv(Homey) {
     var SVG = 'http://www.w3.org/2000/svg';
 
     while (host.firstChild) host.removeChild(host.firstChild);
-    host.appendChild(node('div', 'section-title', Homey.__('transition.title')));
+    host.appendChild(node('div', 'section-title', lk.t('transition.title')));
     var card = node('div', 'tr-card');
     card.setAttribute('role', 'radiogroup');
 
@@ -961,8 +1035,8 @@ function __lkBootCv(Homey) {
       pick.setAttribute('aria-checked', option.kind === selected ? 'true' : 'false');
       pick.appendChild(node('span', 'tr-box', '✓'));
       var text = node('span', 'tr-text');
-      text.appendChild(node('div', 'tr-what', Homey.__(option.what)));
-      text.appendChild(node('div', 'tr-why', Homey.__(option.why)));
+      text.appendChild(node('div', 'tr-what', lk.t(option.what)));
+      text.appendChild(node('div', 'tr-why', lk.t(option.why)));
       pick.appendChild(text);
 
       // 64 x 40, the curve inset 8px from the sides and 9px from the top and
@@ -1075,7 +1149,7 @@ function __lkBootCv(Homey) {
   function renderSteps() {
     clear(el.steps);
     for (var i = 1; i <= 3; i++) el.steps.appendChild(node('i', i <= 2 ? 'on' : null));
-    el.steps.appendChild(node('span', null, Homey.__('curve.step', { index: 2, count: 3 })));
+    el.steps.appendChild(node('span', null, lk.t('curve.step', { index: 2, count: 3 })));
   }
 
   /**
@@ -1087,21 +1161,12 @@ function __lkBootCv(Homey) {
    * device will then do.
    */
   /**
-   * "1st", "2nd", "3rd", "22nd" — the suffix from the locale, never a literal.
-   *
-   * 11 to 13 are the exception every implementation of this gets wrong once:
-   * they take "th" despite ending in 1, 2 and 3.
+   * "1st", "2nd", "1.", "1er" — the language's own ordinal. `lk.ordinal()`
+   * asks `Intl.PluralRules` for the ordinal category, which knows English's
+   * 11th-13th exception and every other language's rules, and the locale's
+   * `ordinal.*` group says how each category is written.
    */
-  function ordinal(n) {
-    var tens = n % 100;
-    var key = 'ordinal.th';
-    if (tens < 11 || tens > 13) {
-      if (n % 10 === 1) key = 'ordinal.st';
-      else if (n % 10 === 2) key = 'ordinal.nd';
-      else if (n % 10 === 3) key = 'ordinal.rd';
-    }
-    return n + Homey.__(key);
-  }
+  function ordinal(n) { return lk.ordinal(n); }
 
   function renderChart() {
     clear(el.chart);
@@ -1228,12 +1293,12 @@ function __lkBootCv(Homey) {
 
     var colour = colourOf(point.color);
     el.pointSwatch.style.background = css(colour);
-    el.pointName.textContent = colour ? colour.label : Homey.__('curve.noColour');
+    el.pointName.textContent = colour ? colour.label : lk.t('curve.noColour');
 
     var order = sorted();
     var index = 0;
     for (var i = 0; i < order.length; i++) if (order[i] === point) index = i;
-    el.pointWhich.textContent = Homey.__('curve.which', {
+    el.pointWhich.textContent = lk.t('curve.which', {
       index: ordinal(index + 1), count: order.length
     });
 
@@ -1245,7 +1310,7 @@ function __lkBootCv(Homey) {
     el.brightBlock.style.display = state.adjustBrightness ? '' : 'none';
     if (state.adjustBrightness) {
       var brightness = point.brightness === undefined ? 0.8 : point.brightness;
-      el.brightPct.textContent = Math.round(brightness * 100) + '%';
+      el.brightPct.textContent = lk.percent(Math.round(brightness * 100));
       setSlider(el.brightKnob, brightness);
     }
   }
@@ -1259,7 +1324,7 @@ function __lkBootCv(Homey) {
     appendSwatches(el.rest, state.layout.more, point);
 
     el.rest.style.display = state.showMore ? '' : 'none';
-    el.more.textContent = Homey.__(state.showMore ? 'curve.fewerColours' : 'curve.moreColours');
+    el.more.textContent = lk.t(state.showMore ? 'curve.fewerColours' : 'curve.moreColours');
     el.more.style.display = state.layout.more.length > 0 ? '' : 'none';
   }
 
@@ -1351,7 +1416,7 @@ function __lkBootCv(Homey) {
     row.appendChild(text);
 
     if (state.adjustBrightness && point.brightness !== undefined) {
-      row.appendChild(node('span', 'value', Math.round(point.brightness * 100) + '%'));
+      row.appendChild(node('span', 'value', lk.percent(Math.round(point.brightness * 100))));
     }
     row.appendChild(node('span', 'chev', '›'));
 
@@ -1485,7 +1550,7 @@ function __lkBootCv(Homey) {
       transition: state.transition
     }).then(function (reply) {
       if (reply.dropped && reply.dropped.length > 0) {
-        el.error.textContent = Homey.__('curve.dropped', { reason: reply.dropped[0].reason });
+        el.error.textContent = lk.t('curve.dropped', { reason: reply.dropped[0].reason });
         el.error.style.display = '';
       } else {
         el.error.style.display = 'none';
