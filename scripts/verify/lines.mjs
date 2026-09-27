@@ -124,6 +124,7 @@ export const RETIRED = Object.freeze({
   T117: 'a 0.6.0 pairing line removed before it was ever run',
   T138: 'colour on arrival through the old switch — replaced by T166-T168',
   T140: 'the old one-lamp pre-stage test — replaced by T167',
+  ...range(182, 186, 'the 0.6.6 control PICKER on the tile, removed unrun when it moved into Settings — replaced by T195-T199'),
 });
 
 /**

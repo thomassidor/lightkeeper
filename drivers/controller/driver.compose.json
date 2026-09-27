@@ -1,6 +1,18 @@
 {
   "name": {
-    "en": "Light Remote"
+    "en": "Light Remote",
+    "nl": "Lichtafstandsbediening",
+    "de": "Licht-Fernbedienung",
+    "fr": "Télécommande d'éclairage",
+    "it": "Telecomando luci",
+    "sv": "Ljusfjärrkontroll",
+    "no": "Lysfjernkontroll",
+    "es": "Mando de luces",
+    "da": "Lysfjernbetjening",
+    "ru": "Пульт освещения",
+    "pl": "Pilot oświetlenia",
+    "ko": "조명 리모컨",
+    "ar": "جهاز التحكم بالإضاءة"
   },
   "class": "service",
   "capabilities": [],

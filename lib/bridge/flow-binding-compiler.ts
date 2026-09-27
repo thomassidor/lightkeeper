@@ -93,7 +93,7 @@ export class RangeExpansionTooLargeError extends Error {
  * device reports repair and names the control.
  */
 export class InvalidRangeError extends Error {
-  constructor(readonly reason: string) {
+  constructor(readonly reason: string, readonly code: 'no_values' | 'not_a_number') {
     super(`This control's range cannot be expanded into flows: ${reason}`);
     this.name = 'InvalidRangeError';
   }
@@ -147,9 +147,9 @@ function compileRange(
   const ceiling = request.ceiling ?? RANGE_EXPANSION_CEILING;
   const values = binding.values ?? [];
 
-  if (values.length === 0) throw new InvalidRangeError('it lists no values');
+  if (values.length === 0) throw new InvalidRangeError('it lists no values', 'no_values');
   if (values.some(value => !Number.isFinite(value))) {
-    throw new InvalidRangeError('one of its values is not a number');
+    throw new InvalidRangeError('one of its values is not a number', 'not_a_number');
   }
 
   // Beyond the ceiling, mark unsupported and log — silently generating fifty
@@ -238,15 +238,36 @@ export function managedKey(controllerId: string, bindingKey: string, variantKey:
  * `lib/` has no access to `homey.__`, so a message built here could never be
  * translated. The caller phrases it.
  */
+/**
+ * A control declined at pairing. `reason` is English, for the log; `detail` is
+ * the same thing as a locale key, for the screen — `lib/` cannot translate.
+ */
+export interface DeclinedBinding {
+  bindingKey: string;
+  label: string;
+  reason: string;
+  detail: { key: string; tokens: Record<string, string | number> };
+}
+
+function declineDetail(error: RangeExpansionTooLargeError | InvalidRangeError): DeclinedBinding['detail'] {
+  if (error instanceof RangeExpansionTooLargeError) {
+    return { key: 'mapping.declineTooMany', tokens: { count: error.variants, ceiling: error.ceiling } };
+  }
+  return {
+    key: error.code === 'no_values' ? 'mapping.declineNoValues' : 'mapping.declineNotANumber',
+    tokens: {},
+  };
+}
+
 export function findUncompilableBindings(
   inputs: Array<{ key: string; label: string; binding: LogicalSourceBinding }>,
   mappedKeys: Set<string>,
   sourceName: string,
-): Array<{ bindingKey: string; label: string; reason: string }> {
+): DeclinedBinding[] {
   const placeholder = { id: 'preflight', uri: 'preflight' };
   const cards: BridgeCardRefs = { event: placeholder, numeric: placeholder, token: placeholder };
 
-  const declined: Array<{ bindingKey: string; label: string; reason: string }> = [];
+  const declined: DeclinedBinding[] = [];
   for (const input of inputs) {
     // Discovery offers every event surface it finds; only what the user
     // actually assigned has to compile.
@@ -262,7 +283,7 @@ export function findUncompilableBindings(
       });
     } catch (error) {
       if (error instanceof RangeExpansionTooLargeError || error instanceof InvalidRangeError) {
-        declined.push({ bindingKey: input.key, label: input.label, reason: error.message });
+        declined.push({ bindingKey: input.key, label: input.label, reason: error.message, detail: declineDetail(error) });
         continue;
       }
       // Anything else is a bug in the compiler rather than a control we are

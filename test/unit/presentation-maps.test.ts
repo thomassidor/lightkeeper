@@ -60,10 +60,13 @@ function allCopies(): Copy[] {
   ];
 }
 
-/** `case 'x': return Homey.__('a.b')` / `HomeyRef.__('a.b')`, in either spelling. */
+/**
+ * `case 'x': return Homey.__('a.b')` / `HomeyRef.__('a.b')` / `lk.t('a.b')` —
+ * `lk.t` being the plural-aware translator every screen now calls.
+ */
 function failureMapOf(source: string): Map<string, string> {
   return new Map(
-    [...source.matchAll(/case '([a-z_]+)': return (?:HomeyRef|Homey)\.__\('([\w.]+)'\)/g)]
+    [...source.matchAll(/case '([a-z_]+)': return (?:HomeyRef\.__|Homey\.__|lk\.t)\('([\w.]+)'\)/g)]
       .map(match => [match[1]!, match[2]!]),
   );
 }

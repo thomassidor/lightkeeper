@@ -284,7 +284,7 @@
                        color: var(--lk-ink); margin: 0 0 9px; }
 
   /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
-  #lt-root .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+  #lt-root .tile { display: block; width: 100%; text-align: start; background: var(--lk-surface);
               border: 1.5px solid var(--lk-edge); border-radius: 12px; padding: 13px 14px;
               margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
               color: var(--lk-ink);
@@ -303,7 +303,10 @@
      written twice, and the two copies have to move together. */
   #lt-root select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
                background-repeat: no-repeat; background-position: right 13px center;
-               background-size: 11px; padding-right: 34px; }
+               background-size: 11px; padding-inline-end: 34px; }
+  /* Arabic reads right to left, so the chevron sits on the other end — where
+     `padding-inline-end` has already made room for it. */
+  #lt-root[dir="rtl"] select { background-position: left 13px center; }
   #lt-root input:focus, #lt-root select:focus { outline: none; border-color: var(--lk-accent);
                                       box-shadow: 0 0 0 3px var(--lk-ring); }
 
@@ -403,7 +406,7 @@
      unrelated body copy. */
   #lt-root .msg .lead { font-weight: 600; margin-bottom: 3px; }
 
-  #lt-root ol { font-size: 15px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+  #lt-root ol { font-size: 15px; line-height: 1.75; padding-inline-start: 20px; margin: 0 0 16px;
            color: var(--lk-body); }
   #lt-root .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
   @media (max-width: 380px) { #lt-root .grid { grid-template-columns: 1fr; } }
@@ -424,7 +427,7 @@
      device types. */
   #lt-root .steps.tight i { width: 16px; }
   #lt-root .steps i.on { background: var(--lk-accent); }
-  #lt-root .steps span { margin-left: 4px; font-size: 13px; color: var(--lk-muted); }
+  #lt-root .steps span { margin-inline-start: 4px; font-size: 13px; color: var(--lk-muted); }
 
   /* `label · value · chevron`. The one shape everything secondary takes:
      a row that says what it is, what it is set to, and that it can be opened.
@@ -436,10 +439,10 @@
   #lt-root .row { display: flex; align-items: center; gap: 10px; width: 100%;
                padding: 13px 0; min-height: 44px; box-sizing: border-box;
                background: none; border: none; font: inherit; color: inherit;
-               text-align: left; cursor: pointer; }
+               text-align: start; cursor: pointer; }
   #lt-root .row + .row { border-top: 1px solid var(--lk-line); }
   #lt-root .row .label { flex: 1; font-size: 15px; }
-  #lt-root .row .value { font-size: 15px; color: var(--lk-muted); text-align: right; }
+  #lt-root .row .value { font-size: 15px; color: var(--lk-muted); text-align: end; }
   #lt-root .row .chev { flex: none; font-size: 16px; color: var(--lk-chev); }
   #lt-root .row .sub { font-size: 13px; color: var(--lk-muted); margin: 2px 0 0; }
   /* The card a list of rows lives in. 4px top and bottom rather than 14:
@@ -458,7 +461,7 @@
                   min-height: 44px; box-sizing: border-box;
                   background: none; border-left: none; border-right: none;
                   border-bottom: none; font: inherit; color: inherit;
-                  text-align: left; cursor: pointer; }
+                  text-align: start; cursor: pointer; }
   #lt-root .toggle .label { flex: 1; font-size: 15px; }
   #lt-root .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
                          position: relative; background: var(--lk-line);
@@ -648,7 +651,7 @@
      house of 54 lights. */
   #lt-root .room-head .toggle { flex: 1; min-width: 0; display: flex; align-items: center;
                                 gap: 10px; background: none; border: none; padding: 0;
-                                margin: 0; font: inherit; color: inherit; text-align: left;
+                                margin: 0; font: inherit; color: inherit; text-align: start;
                                 cursor: pointer; }
   /* The same chevron every other row in the app uses, turned a quarter when the
      room is open: one glyph means "there is more here" throughout, and its
@@ -660,7 +663,7 @@
   #lt-root .light { display: flex; align-items: center; gap: 12px; width: 100%;
                     padding: 12px 0; min-height: 44px; box-sizing: border-box;
                     background: none; border: none; border-bottom: 1px solid var(--lk-line);
-                    font: inherit; color: inherit; text-align: left; cursor: pointer; }
+                    font: inherit; color: inherit; text-align: start; cursor: pointer; }
   #lt-root .light:last-child { border-bottom: none; }
   #lt-root .light .box { flex: none; width: 22px; height: 22px; border-radius: 8px;
                          border: 1.5px solid var(--lk-box); box-sizing: border-box;
@@ -797,6 +800,76 @@ function __lkBootLt(Homey) {
     });
   })();
 
+  function i18n(homey) {
+    /**
+     * Plural-aware translation, and the language's own number and date rules.
+     *
+     * GENERATED. Spliced into every pair view, and into the settings page, by
+     * `npm run sync:views` from views/shared/i18n.js. **Edit that file, not
+     * this one.**
+     *
+     * The twin of `lib/support/i18n.ts`, and it must choose the same forms:
+     * a counted string is a group of CLDR plural categories, the count is the
+     * `count` token, and `Intl.PluralRules` in the locale file's OWN language
+     * (`meta.language`) picks the form. `t()` is `Homey.__` with that one
+     * extra step, so a view calls it exactly where it called `Homey.__`.
+     *
+     * `dir` is `meta.direction`: every view puts it on its own root, because
+     * the screens share one document and only the root is ours.
+     */
+    var raw = function (key, tokens) { return homey.__(key, tokens || {}); };
+    var found = function (value, key) { return typeof value === 'string' && value !== '' && value !== key; };
+    var lang = raw('meta.language');
+    // Deliberately no memo: the views share one document, and a cache on it
+    // would outlive a language change. Two lookups per call are nothing.
+    if (!/^[a-z]{2}$/.test(String(lang))) lang = 'en';
+    var select = function (n, type) {
+      try { return new Intl.PluralRules(lang, { type: type || 'cardinal' }).select(n); }
+      catch (e) { return n === 1 ? 'one' : 'other'; }
+    };
+    var pick = function (key, form, tokens) {
+      var chosen = raw(key + '.' + form, tokens);
+      if (found(chosen, key + '.' + form)) return chosen;
+      var other = raw(key + '.other', tokens);
+      return found(other, key + '.other') ? other : null;
+    };
+    var t = function (key, tokens) {
+      tokens = tokens || {};
+      if (typeof tokens.count === 'number' && isFinite(tokens.count)) {
+        var form = pick(key, select(tokens.count), tokens);
+        if (form !== null) return form;
+      }
+      var plain = raw(key, tokens);
+      return typeof plain === 'string' ? plain : key;
+    };
+    return {
+      lang: lang,
+      dir: raw('meta.direction') === 'rtl' ? 'rtl' : 'ltr',
+      t: t,
+      /** "1st", "1.", "1er" — the language's own ordinal, from `ordinal.*`. */
+      ordinal: function (n) { return pick('ordinal', select(n, 'ordinal'), { n: n }) || String(n); },
+      /**
+       * "a, b, c" with the language's own comma — "،" in Arabic. A key, not
+       * `Intl.ListFormat`, whose unit style drops the commas altogether in
+       * Korean and Russian and adds an "and" in German.
+       */
+      list: function (items) { return items.join(raw('unit.listSeparator')); },
+      /** A percentage: "40%", "40 %" — the space is the language's, not ours. */
+      percent: function (n) { return t('unit.percent', { n: n }); },
+      /** A date and time, in the app's language rather than the phone's. */
+      dateTime: function (value, options) {
+        var date = new Date(value);
+        try { return date.toLocaleString(lang, options); } catch (e) { return date.toLocaleString(); }
+      },
+      time: function (value) {
+        var date = new Date(value);
+        try { return date.toLocaleTimeString(lang); } catch (e) { return date.toLocaleTimeString(); }
+      }
+    };
+  }
+  var lk = i18n(Homey);
+  __root.dir = lk.dir;
+
   function emit(event, data) {
     /**
      * Homey.emit, as a promise that always settles.
@@ -807,7 +880,8 @@ function __lkBootLt(Homey) {
      * Both call styles are handled because the pairing bridge has used a
      * callback and a promise at different times, and the 20 s timeout is what
      * keeps a dropped callback from leaving the screen spinning with no message
-     * forever.
+     * forever. Its message comes from `lk`, the view's `i18n()` translator,
+     * which every view sets up before anything can emit.
      *
      * Inside the function, like `stabiliseScrollbar()`'s, and that is not a
      * style choice: `spliceFunction` matches from the `function` keyword, so a
@@ -824,7 +898,7 @@ function __lkBootLt(Homey) {
         if (err) reject(err instanceof Error ? err : new Error(String(err)));
         else resolve(result);
       };
-      var timer = setTimeout(function () { finish(new Error('Homey did not respond in time. Close this screen and try again. (' + event + ')')); }, 20000);
+      var timer = setTimeout(function () { finish(new Error(lk.t('common.timeout', { event: event }))); }, 20000);
       var done = function (err, result) { clearTimeout(timer); finish(err, result); };
       try {
         var returned = Homey.emit(event, data, function (err, result) { done(err, result); });
@@ -874,7 +948,7 @@ function __lkBootLt(Homey) {
     support: null
   };
 
-  function t(key) { return Homey.__(key); }
+  function t(key) { return lk.t(key); }
 
   /**
    * Which spec the current ticks amount to.
@@ -946,7 +1020,7 @@ function __lkBootLt(Homey) {
     for (var i = 0; i < room.lights.length; i++) {
       if (state.selected[room.lights[i].id]) picked += 1;
     }
-    toggle.appendChild(node('span', 'count', Homey.__('lights.roomCount', {
+    toggle.appendChild(node('span', 'count', lk.t('lights.roomCount', {
       picked: picked, total: room.lights.length
     })));
     toggle.addEventListener('click', function () {
@@ -1041,7 +1115,7 @@ function __lkBootLt(Homey) {
     var count = selectedCount();
     el.count.textContent = count === 0
       ? t('lights.noneChosen')
-      : Homey.__('lights.chosen', { count: count });
+      : lk.t('lights.chosen', { count: count });
   }
 
   function scrollToTop() {
@@ -1088,7 +1162,7 @@ function __lkBootLt(Homey) {
     for (var i = 0; i < room.lights.length; i++) {
       if (state.selected[room.lights[i].id]) picked += 1;
     }
-    row.appendChild(node('span', 'value', Homey.__('lights.roomCount', {
+    row.appendChild(node('span', 'value', lk.t('lights.roomCount', {
       picked: picked, total: room.lights.length
     })));
     row.appendChild(node('span', 'chev', '›'));
@@ -1141,7 +1215,7 @@ function __lkBootLt(Homey) {
       el.steps.appendChild(dot);
     }
     el.steps.appendChild(node('span', null,
-      Homey.__('lights.step', { index: payload.stepIndex, count: total })));
+      lk.t('lights.step', { index: payload.stepIndex, count: total })));
   }
 
   el.search.addEventListener('input', function () {
@@ -1176,7 +1250,7 @@ function __lkBootLt(Homey) {
         el.sub.textContent = payload.subtitle;
         el.sub.style.display = '';
       }
-      el.search.placeholder = Homey.__('lights.search', { count: payload.total || 0 });
+      el.search.placeholder = lk.t('lights.search', { count: payload.total || 0 });
       renderSteps(payload);
 
       var any = state.rooms.length > 0;
@@ -1189,7 +1263,7 @@ function __lkBootLt(Homey) {
        * and there is no question — so the screen states the situation instead,
        * and numbering it would promise a flow that cannot continue.
        */
-      el.title.textContent = Homey.__(any ? 'lights.title' : 'lights.emptyTitle');
+      el.title.textContent = lk.t(any ? 'lights.title' : 'lights.emptyTitle');
       if (!any) el.steps.style.display = 'none';
 
       if (any) push();

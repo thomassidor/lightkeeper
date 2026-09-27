@@ -93,7 +93,7 @@
        and burying the one that is not. */
     .ready { background: var(--lk-flat-bg); color: var(--lk-ink); }
     .ready::before { content: ''; display: inline-block; width: 8px; height: 8px;
-                     margin-right: 6px; border-radius: 50%;
+                     margin-inline-end: 6px; border-radius: 50%;
                      background: var(--lk-ok-dot); vertical-align: middle; }
     .partial { background: var(--lk-warn-bg); color: var(--lk-warn-ink); }
     .broken { background: var(--lk-bad-bg); color: var(--lk-bad-ink); }
@@ -244,15 +244,89 @@
     });
   }
 
-  /** Shorthand for a translated string with optional __token__ substitutions. */
+  function i18n(homey) {
+    /**
+     * Plural-aware translation, and the language's own number and date rules.
+     *
+     * GENERATED. Spliced into every pair view, and into the settings page, by
+     * `npm run sync:views` from views/shared/i18n.js. **Edit that file, not
+     * this one.**
+     *
+     * The twin of `lib/support/i18n.ts`, and it must choose the same forms:
+     * a counted string is a group of CLDR plural categories, the count is the
+     * `count` token, and `Intl.PluralRules` in the locale file's OWN language
+     * (`meta.language`) picks the form. `t()` is `Homey.__` with that one
+     * extra step, so a view calls it exactly where it called `Homey.__`.
+     *
+     * `dir` is `meta.direction`: every view puts it on its own root, because
+     * the screens share one document and only the root is ours.
+     */
+    var raw = function (key, tokens) { return homey.__(key, tokens || {}); };
+    var found = function (value, key) { return typeof value === 'string' && value !== '' && value !== key; };
+    var lang = raw('meta.language');
+    // Deliberately no memo: the views share one document, and a cache on it
+    // would outlive a language change. Two lookups per call are nothing.
+    if (!/^[a-z]{2}$/.test(String(lang))) lang = 'en';
+    var select = function (n, type) {
+      try { return new Intl.PluralRules(lang, { type: type || 'cardinal' }).select(n); }
+      catch (e) { return n === 1 ? 'one' : 'other'; }
+    };
+    var pick = function (key, form, tokens) {
+      var chosen = raw(key + '.' + form, tokens);
+      if (found(chosen, key + '.' + form)) return chosen;
+      var other = raw(key + '.other', tokens);
+      return found(other, key + '.other') ? other : null;
+    };
+    var t = function (key, tokens) {
+      tokens = tokens || {};
+      if (typeof tokens.count === 'number' && isFinite(tokens.count)) {
+        var form = pick(key, select(tokens.count), tokens);
+        if (form !== null) return form;
+      }
+      var plain = raw(key, tokens);
+      return typeof plain === 'string' ? plain : key;
+    };
+    return {
+      lang: lang,
+      dir: raw('meta.direction') === 'rtl' ? 'rtl' : 'ltr',
+      t: t,
+      /** "1st", "1.", "1er" — the language's own ordinal, from `ordinal.*`. */
+      ordinal: function (n) { return pick('ordinal', select(n, 'ordinal'), { n: n }) || String(n); },
+      /**
+       * "a, b, c" with the language's own comma — "،" in Arabic. A key, not
+       * `Intl.ListFormat`, whose unit style drops the commas altogether in
+       * Korean and Russian and adds an "and" in German.
+       */
+      list: function (items) { return items.join(raw('unit.listSeparator')); },
+      /** A percentage: "40%", "40 %" — the space is the language's, not ours. */
+      percent: function (n) { return t('unit.percent', { n: n }); },
+      /** A date and time, in the app's language rather than the phone's. */
+      dateTime: function (value, options) {
+        var date = new Date(value);
+        try { return date.toLocaleString(lang, options); } catch (e) { return date.toLocaleString(); }
+      },
+      time: function (value) {
+        var date = new Date(value);
+        try { return date.toLocaleTimeString(lang); } catch (e) { return date.toLocaleTimeString(); }
+      }
+    };
+  }
+
+  /** The page's translator, set once Homey is ready. See `i18n()` above. */
+  var lk = null;
+
+  /**
+   * Shorthand for a translated string with optional __token__ substitutions.
+   * Plural-aware: a numeric `count` token picks the form (views/shared/i18n.js).
+   */
   function t(key, tokens) {
-    return HomeyRef.__('settings.' + key, tokens || {});
+    return lk.t('settings.' + key, tokens || {});
   }
 
   /** What stands in for a reading the app does not have yet. A bare "?" inside
    *  "Homey clock: ? (?)" reads as a typo rather than as an honest blank. */
   function unknown() {
-    return HomeyRef.__('schedule.notKnownYet');
+    return lk.t('schedule.notKnownYet');
   }
 
   /**
@@ -324,10 +398,10 @@
    */
   function failureText(cred) {
     switch (cred.failure) {
-      case 'malformed': return HomeyRef.__('credential.malformed');
-      case 'session_expired': return HomeyRef.__('credential.expired');
-      case 'insufficient_scope': return HomeyRef.__('credential.noScope');
-      case 'unknown': return HomeyRef.__('credential.unreachable');
+      case 'malformed': return lk.t('credential.malformed');
+      case 'session_expired': return lk.t('credential.expired');
+      case 'insufficient_scope': return lk.t('credential.noScope');
+      case 'unknown': return lk.t('credential.unreachable');
       default: return cred.hint || t('keyBroken');
     }
   }
@@ -354,7 +428,7 @@
           var row = node('div', 'entry');
           row.appendChild(node('span', 'state ' + (e.accepted ? 'ready' : 'broken'),
             e.accepted ? t('eventHandled') : t('eventIgnored')));
-          row.appendChild(document.createTextNode(' ' + new Date(e.at).toLocaleTimeString()));
+          row.appendChild(document.createTextNode(' ' + lk.time(e.at)));
           row.appendChild(separator());
           row.appendChild(node('code', null, e.eventKey));
           if (e.magnitude !== undefined) {
@@ -374,11 +448,11 @@
           var row = node('div', 'entry');
           row.appendChild(node('span', 'state ' + (w.ok ? 'ready' : 'broken'),
             w.ok ? t('writeSent') : t('writeFailed')));
-          row.appendChild(document.createTextNode(' ' + new Date(w.at).toLocaleTimeString()));
+          row.appendChild(document.createTextNode(' ' + lk.time(w.at)));
           row.appendChild(separator());
           row.appendChild(node('code', null, w.capability + ' = ' + String(w.value)));
           row.appendChild(separator());
-          row.appendChild(document.createTextNode(String(w.ms) + ' ms'));
+          row.appendChild(document.createTextNode(t('writeMs', { ms: w.ms })));
           if (w.error) row.appendChild(node('div', 'entry-error', w.error));
           writes.appendChild(row);
         });
@@ -441,15 +515,15 @@
   /** The line every card carries: which lights this device drives. */
   function controlsLine(device) {
     return t('controls', {
-      names: (device.targetNames || []).join(', ') || t('noLights'),
+      names: lk.list(device.targetNames || []) || t('noLights'),
     });
   }
 
   function renderControllers(controllers) {
     renderDeviceSection('controllers', controllers, t('noControllers'), function (el, controller) {
       var meta = node('p', 'entry-meta', t('mappingsAndFlows', {
-        mappings: controller.mappings,
-        flows: controller.managedFlows,
+        mappings: t('mappingCount', { count: controller.mappings }),
+        flows: t('managedFlowCount', { count: controller.managedFlows }),
       }));
       if (controller.schedulerReady === false) {
         meta.appendChild(separator());
@@ -464,11 +538,24 @@
   var DAY_KEYS = ['schedule.mon', 'schedule.tue', 'schedule.wed', 'schedule.thu',
                   'schedule.fri', 'schedule.sat', 'schedule.sun'];
 
+  /**
+   * "Mon 14:05" from the runtime, in this page's language. The runtime's own
+   * string is English on purpose — it is also a log line — so the weekday is
+   * swapped for the schedule screen's key here rather than there.
+   */
+  var CLOCK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  function clockText(value) {
+    if (!value) return unknown();
+    var match = /^(\w{3}) (\d{2}:\d{2})$/.exec(value);
+    var day = match ? CLOCK_DAYS.indexOf(match[1]) : -1;
+    return day === -1 ? value : lk.t(DAY_KEYS[day]) + ' ' + match[2];
+  }
+
   function daysText(days) {
     // The runtime sends the string 'every day' for an unrestricted schedule and
     // an array of ISO weekdays otherwise.
     if (!days || typeof days === 'string') return t('scheduleEveryDay');
-    return days.map(function (day) { return HomeyRef.__(DAY_KEYS[day - 1]); }).join(', ');
+    return lk.list(days.map(function (day) { return lk.t(DAY_KEYS[day - 1]); }));
   }
 
   function renderSchedules(schedules) {
@@ -489,13 +576,13 @@
       el.appendChild(meta);
 
       el.appendChild(node('p', 'entry-sub',
-        controlsLine(schedule) + ' \u00b7 ' + t('scheduleFlows', { flows: schedule.managedFlows })));
+        controlsLine(schedule) + ' \u00b7 ' + t('managedFlowCount', { count: schedule.managedFlows })));
 
       // Which clock the times above are read against. "It fired an hour out" is
       // almost always this line — and `timezoneResolved: false` means the app
       // could not use the Homey's own zone, which blocks a schedule outright.
       var clock = t('scheduleClock', {
-        local: schedule.localTime || unknown(), zone: schedule.timezone || unknown(),
+        local: clockText(schedule.localTime), zone: schedule.timezone || unknown(),
       });
       if (schedule.timezoneResolved === false) clock += ' \u00b7 ' + t('clockUnresolved');
       el.appendChild(node('p', 'entry-sub', clock));
@@ -524,11 +611,11 @@
     var keys = now.colorLabelKeys || [];
     if (keys.length > 1) {
       return t('circadianNowBetween', {
-        from: HomeyRef.__(keys[0]), to: HomeyRef.__(keys[1]), next: next,
+        from: lk.t(keys[0]), to: lk.t(keys[1]), next: next,
       });
     }
     if (keys.length === 1) {
-      return t('circadianNowColour', { colour: HomeyRef.__(keys[0]), next: next });
+      return t('circadianNowColour', { colour: lk.t(keys[0]), next: next });
     }
     return t('circadianNow', { warmth: Math.round(now.warmth * 100), next: next });
   }
@@ -559,7 +646,7 @@
         el.appendChild(node('p', 'entry-sub', t('circadianPreStageOff')));
       }
       el.appendChild(node('p', 'entry-sub', t('scheduleClock', {
-        local: device.localTime || unknown(), zone: device.timezone || unknown(),
+        local: clockText(device.localTime), zone: device.timezone || unknown(),
       })));
     });
   }
@@ -581,7 +668,7 @@
     if (minutes < 60 * 48) return t('daylightAgeHours', { hours: Math.floor(minutes / 60) });
     // See the same branch in the shared daylight card: past two days, hours
     // stop being legible and a dead sensor reads as noise.
-    return t('daylightAgeDays', { days: Math.floor(minutes / 1440) });
+    return t('daylightAgeDays', { count: Math.floor(minutes / 1440) });
   }
 
   /**
@@ -663,7 +750,7 @@
       // explains its brightness.
       var mine = device.sensors || [];
       el.appendChild(node('p', 'entry-sub', mine.length
-        ? t('daylightUsing', { names: mine.map(function (s) { return s.name; }).join(', ') })
+        ? t('daylightUsing', { names: lk.list(mine.map(function (s) { return s.name; })) })
         : t('daylightUsingSky')));
 
       /**
@@ -694,16 +781,19 @@
 
   function onHomeyReady(Homey) {
     HomeyRef = Homey;
+    lk = i18n(Homey);
+    document.documentElement.dir = lk.dir;
+    document.documentElement.lang = lk.lang;
     Homey.ready();
     refresh().catch(function (e) { showMsg('broken', e.message); });
 
     document.getElementById('save').addEventListener('click', function () {
       var key = document.getElementById('key').value.trim();
-      if (!key) return showMsg('broken', Homey.__('credential.pasteFirst'));
-      showMsg('partial', Homey.__('credential.checking'));
+      if (!key) return showMsg('broken', lk.t('credential.pasteFirst'));
+      showMsg('partial', lk.t('credential.checking'));
       api('POST', '/credential', { token: key }).then(function (status) {
         if (status.valid) {
-          showMsg('ready', Homey.__('credential.accepted'));
+          showMsg('ready', lk.t('credential.accepted'));
           document.getElementById('key').value = '';
         } else {
           showMsg('broken', failureText(status));
@@ -736,7 +826,7 @@
     function refusalText(reason, total) {
       if (reason === 'devices_unreadable') return t('sweepUnreadable');
       if (reason === 'no_approval') return t('sweepNotApproved');
-      return t('sweepRefused', { total: total });
+      return t('sweepRefused', { count: total });
     }
 
     function refreshOrphans() {
@@ -759,11 +849,11 @@
         // Flows that call a Lightkeeper card but were not built by this app.
         // Mentioned so the totals add up on screen — they are never deleted.
         var aside = info.unmanaged
-          ? ' ' + t('sweepUnmanaged', { unmanaged: info.unmanaged })
+          ? ' ' + t('sweepUnmanaged', { count: info.unmanaged })
           : '';
 
         if (info.orphans === 0) {
-          text.textContent = t('noneOrphaned', { total: info.total }) + aside;
+          text.textContent = t('noneOrphaned', { count: info.total }) + aside;
           button.style.display = 'none';
           return;
         }
@@ -773,7 +863,7 @@
         text.textContent = t('orphansFound', {
           orphans: info.orphans,
           total: info.total,
-          live: info.liveControllers,
+          devices: t('liveDeviceCount', { count: info.liveControllers }),
         }) + aside;
         button.style.display = 'inline-block';
         button.textContent = t('deleteOrphans', { count: info.orphans });
@@ -825,7 +915,7 @@
       document.getElementById('evidence-status').textContent = t('evidenceSummary', {
         state: states[data.state] || data.state,
         records: String(data.records), megabytes: (data.bytes / 1048576).toFixed(2), dropped: String(data.dropped),
-        end: data.endsAt ? new Date(data.endsAt).toLocaleString() : '—'
+        end: data.endsAt ? lk.dateTime(data.endsAt) : '—'
       }) + (data.error ? ' ' + data.error : '');
       document.getElementById('evidence-start').disabled = data.state !== 'idle';
       document.getElementById('evidence-stop').disabled = data.state !== 'recording';

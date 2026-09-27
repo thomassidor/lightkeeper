@@ -9,6 +9,7 @@ import { driverApp } from '../support/fake-lightkeeper-app';
 import { settle } from '../support/deferred';
 import { FlowBridgeManager } from '../../lib/bridge/flow-bridge-manager';
 import { VALUE_CAPABILITIES } from '../../lib/runtime/published-values';
+import { RETIRED_CONTROL_CAPABILITY } from '../../lib/pairing/control-choice';
 import type { HomeyApiService } from '../../lib/homey-api-service';
 import { CURRENT_SCHEMA_VERSION } from '../../lib/profiles/controller-profile';
 import { DEFAULT_BEHAVIOR } from '../../lib/mapping/mapping-types';
@@ -353,6 +354,68 @@ for (const kind of SWITCHABLE) {
       assert.ok(instance.valueCapabilities.includes(VALUE_CAPABILITIES.brightness));
     });
 
+    /**
+     * The device's Settings, on the REAL plan shapes: whatever they store has to
+     * be something this device type's own validator reads back, or the next
+     * restart quarantines the device they were meant to adjust.
+     */
+    test(kind.name === 'schedule'
+      ? 'it has no control or Transition setting'
+      : 'its Settings store a mode and a Transition its own validator reads back', async () => {
+      const reg = registry([]);
+      const instance = device(kind.Cls, `lk-${kind.name}-1`, { [kind.storeKey]: await kind.plan() },
+        { [kind.registryKey]: reg }, ['onoff']);
+      await instance.onInit();
+
+      if (kind.name === 'schedule') {
+        assert.deepEqual(instance.fake.settingsWrites, []);
+        const plan = structuredClone(instance.getStoreValue(kind.storeKey));
+        await instance.onSettings({ oldSettings: {}, newSettings: { control: 'none' }, changedKeys: ['control'] });
+        assert.deepEqual(instance.getStoreValue(kind.storeKey), plan, 'a type with no choice changes nothing');
+        return;
+      }
+      assert.equal(instance.fake.settings.control, 'after');
+      assert.equal(instance.fake.settings.transition, 'balanced');
+
+      const change = (newSettings: Record<string, unknown>, changedKeys: string[]) =>
+        instance.onSettings({ oldSettings: instance.getSettings(), newSettings, changedKeys });
+
+      await change({ control: 'none', transition: 'quick' }, ['control', 'transition']);
+      const stored = instance.getStoreValue(kind.storeKey);
+      assert.equal(stored.writesLights, false);
+      assert.equal(instance.transitionOf(stored), 'quick');
+      assert.deepEqual(instance.migrate(stored).plan, stored, 'the validator reads it back unchanged');
+
+      if (kind.name === 'daylight') {
+        await assert.rejects(change({ control: 'before', transition: 'quick' }, ['control']));
+        assert.equal(instance.getStoreValue(kind.storeKey).writesLights, false);
+      } else {
+        await change({ control: 'before', transition: 'quick' }, ['control']);
+        assert.equal(instance.getStoreValue(kind.storeKey).preStage, true);
+        assert.equal(instance.fake.warning, translate('warnings.preStageUntested'));
+      }
+    });
+
+    if (kind.name !== 'schedule') {
+      test('a device that carried the retired picker loses it, and still starts', async () => {
+        const instance = device(kind.Cls, `lk-${kind.name}-1`, { [kind.storeKey]: await kind.plan() },
+          { [kind.registryKey]: registry([]) }, ['onoff', RETIRED_CONTROL_CAPABILITY]);
+        await instance.onInit();
+        assert.equal(instance.hasCapability(RETIRED_CONTROL_CAPABILITY), false);
+        assert.equal(instance.fake.available, true);
+      });
+
+      test('a device whose Settings already agree with its plan is not written to', async () => {
+        const homey: FakeHomey = fakeHomey({ app: { [kind.registryKey]: registry([]) } });
+        const instance = makeDevice(kind.Cls, homey, {
+          id: `lk-${kind.name}-1`, store: { [kind.storeKey]: await kind.plan() },
+          capabilities: ['onoff'], settings: { control: 'after', transition: 'balanced' },
+        }) as Device & Record<string, any>;
+        await instance.onInit();
+        assert.deepEqual(instance.fake.settingsWrites, []);
+      });
+    }
+
     test('with nothing stored it says so, and registers nothing', async () => {
       const events: Event[] = [];
       const instance = device(kind.Cls, `lk-${kind.name}-1`, {}, { [kind.registryKey]: registry(events) }, ['onoff']);
@@ -382,6 +445,27 @@ describe('the circadian registry adapter', () => {
     assert.deepEqual(persisted.zones, stored.zones, 'still two ends, not points');
     assert.deepEqual(persisted.preStageLights, ['l1']);
     assert.equal(persisted.points, undefined);
+  });
+
+  test('a runtime change folds onto the CURRENT store, so a Settings change is not written back', async () => {
+    // Settings moves the plan through `updatePlan`, never re-registering, so
+    // the plan captured at register time goes stale. Folding onto it put the
+    // old Transition back the next time a lamp was struck off preStageLights.
+    const reg = registry([]);
+    const stored = { ...await plans.circadian(), transition: 'quick' };
+    const instance = device(CircadianDevice, 'lk-circ-1', { circadian: stored }, { curves: reg }, ['onoff']);
+    await instance.onInit();
+    const call = reg.registered[0]!;
+
+    await instance.onSettings({ oldSettings: {}, newSettings: { transition: 'gradual' }, changedKeys: ['transition'] });
+    assert.equal(instance.getStoreValue('circadian').transition, 'gradual');
+    assert.equal(reg.registered.length, 1, 'Settings restarts the runtime, it does not register again');
+
+    await call.onPlanChange({ ...call.plan, preStage: true, preStageLights: ['l1'] });
+    await settle(2);
+    const persisted = instance.getStoreValue('circadian');
+    assert.equal(persisted.transition, 'gradual');
+    assert.deepEqual(persisted.preStageLights, ['l1']);
   });
 
   test('the pause switch hands the runtime POINTS, never the stored two ends', async () => {
@@ -432,11 +516,14 @@ describe('LightkeeperDevice, the SDK shell', () => {
     return { instance, reg, events };
   }
 
-  test('the device id is data.id, and translate is homey.__', async () => {
+  test('the device id is data.id, and translate is homey.__ made plural-aware', async () => {
     const { instance } = await curveDevice();
     assert.equal(instance.deviceId, 'lk-curv-1');
     assert.equal(instance.translate('state.noCurve'), translate('state.noCurve'));
-    assert.equal(instance.translate('review.someLights', { count: 3 }), translate('review.someLights', { count: 3 }));
+    // A plural group picks its form by `count` (lib/support/i18n.ts), so a
+    // counted StateDetail from lib/ is grammatical without knowing it is one.
+    assert.equal(instance.translate('review.someLights', { count: 3 }), translate('review.someLights.other', { count: 3 }));
+    assert.equal(instance.translate('targets.someLights', { count: 1 }), '1 light');
     assert.equal(instance.translate('no.such.key'), 'no.such.key');
   });
 

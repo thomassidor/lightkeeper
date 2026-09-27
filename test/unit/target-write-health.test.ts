@@ -249,7 +249,7 @@ describe('what not responding does to the verdict', () => {
     );
     assert.equal(verdict.state, 'partial');
     assert.equal(verdict.detail?.key, 'state.someTargetsNotResponding');
-    assert.deepEqual(verdict.detail?.tokens, { count: 1, total: 3 });
+    assert.deepEqual(verdict.detail?.tokens, { notResponding: 1, count: 3 });
   });
 
   test('all of them not responding is needs_repair', async () => {

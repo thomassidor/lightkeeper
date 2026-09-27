@@ -1,6 +1,7 @@
 import type { PairSessionHost, HandlerRegistrar } from './pair-session';
 import type { ReviewControl } from './control-choice';
 import { PALETTE, PALETTE_LAYOUT } from '../circadian/palette';
+import type { Transition } from '../support/interpolate';
 
 /**
  * The two screens every flow now opens and closes with, as data.
@@ -230,6 +231,17 @@ export function registerReviewHandler(
       ...(screen.control !== undefined ? { control: screen.control } : {}),
     };
   });
+}
+
+/**
+ * The Transition choice as the name the editing screen showed, for the review's
+ * last row. A locale KEY, for the same reason `warmthKey` below returns one; each
+ * is written out literally so locales.test.ts can see it used.
+ */
+export function transitionKey(transition: Transition): string {
+  if (transition === 'gradual') return 'transition.gradual';
+  if (transition === 'quick') return 'transition.quick';
+  return 'transition.balanced';
 }
 
 /**

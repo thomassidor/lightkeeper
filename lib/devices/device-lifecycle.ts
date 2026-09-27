@@ -5,6 +5,20 @@ import type { ControllerState, StateDetail, ManagedFlowReference } from '../prof
 import { messageOf } from '../support/homey-errors';
 import { ALL_VALUE_CAPABILITIES, isTranslatable } from '../runtime/published-values';
 import type { PublishedValue, PublishedValues } from '../runtime/published-values';
+import {
+  CONTROL_SETTING,
+  RETIRED_CONTROL_CAPABILITY,
+  controlModeOfPlan,
+  controlWarningKey,
+  isControlMode,
+  planWithControlMode,
+  type ControlMode,
+  type ControlPlan,
+} from '../pairing/control-choice';
+import { isTransition, type Transition } from '../support/interpolate';
+
+/** The device setting beside `CONTROL_SETTING`, on the same three device types. */
+export const TRANSITION_SETTING = 'transition';
 
 /**
  * Everything a Lightkeeper virtual device does that is not the SDK.
@@ -125,6 +139,13 @@ export interface DeviceOwner<
   hasCapability(capabilityId: string): boolean;
   addCapability(capabilityId: string): Promise<void>;
   removeCapability(capabilityId: string): Promise<void>;
+  /** The device's own Settings — the gear on its page. */
+  getSettings(): Record<string, unknown>;
+  /** Never from inside `onSettings`: Homey saves what the user sent over it. */
+  setSettings(settings: Record<string, unknown>): Promise<void>;
+  /** The banner on the device's own page. A warning, never an availability. */
+  setWarning(message: string | null): Promise<unknown>;
+  unsetWarning(): Promise<unknown>;
   log(...args: unknown[]): void;
   error(...args: unknown[]): void;
   /** `homey.__`, which `lib/` cannot reach on its own. */
@@ -166,6 +187,26 @@ export interface DeviceOwner<
    * manifest also leaves the tiles it is already on.
    */
   readonly valueCapabilities: readonly string[];
+  /**
+   * The modes the "How Lightkeeper controls your lights" setting offers, or
+   * none for a device type that has no such choice.
+   *
+   * Empty is the answer for a Light Remote and a schedule, whose drivers declare
+   * no such setting. A Room-sensing Light lists two (it has nothing to
+   * pre-stage), and this list — not the driver's own `values` — is what
+   * `applySettings` refuses against.
+   */
+  readonly controlModes: readonly ControlMode[];
+  /**
+   * The plan's Transition, or null for a device type that has none.
+   *
+   * A pair of hooks rather than a path, because the three engine types keep it
+   * in two different places: at the root of a circadian or curve plan, inside
+   * the `response` of a Room-sensing Light's.
+   */
+  transitionOf(plan: TPlan): Transition | null;
+  /** A copy of the plan with the Transition moved. Never called where the above is null. */
+  withTransition(plan: TPlan, transition: Transition): TPlan;
 
   migrate(raw: unknown): PlanMigration<TPlan>;
   registry(): DeviceRegistry<TPlan, TRuntime>;
@@ -311,6 +352,7 @@ export class DeviceLifecycle<
       // that message and could not be resumed from its own tile.
       if (!this.owner.planEnabled(plan)) await this.owner.setAvailable();
     }
+    await this.showSettings(plan);
 
     await this.registerPlan(plan);
   }
@@ -484,6 +526,8 @@ export class DeviceLifecycle<
         await this.owner.setCapabilityValue('onoff', this.owner.planEnabled(merged))
           .catch(() => { /* not yet initialised */ });
       }
+      // A Repair can change the choice too, and Settings must follow it.
+      await this.showSettings(merged);
 
       // The runtime's own verdict is the final word, not an unconditional
       // setAvailable(): a controller whose remote has vanished must not read as
@@ -557,6 +601,135 @@ export class DeviceLifecycle<
 
       this.owner.log(enabled ? 'Resumed' : 'Paused');
     });
+  }
+
+  /**
+   * The device's own Settings: "How Lightkeeper controls your lights" and the
+   * Transition, on the three engine device types.
+   *
+   * `setEnabled`'s shape exactly, and for the same reasons: the store first, then
+   * the runtime restarted through `planForRuntime` — never with the stored plan,
+   * which on a circadian light is not the shape its runtime takes. The restart is
+   * what makes "Don't change lights automatically" take effect properly: a
+   * publish-only runtime subscribes to no lamp (lib/runtime/writes-lights.ts),
+   * and only a fresh `start()` decides that. A Transition moved on a Room-sensing
+   * Light is a change to its `response`, and the restart is also what wipes the
+   * feedback evidence gathered at the old gain.
+   *
+   * It REFUSES rather than coerces, and refuses the whole save: a setting arrives
+   * over the Web API as readily as from the phone (platform §14), and a
+   * Room-sensing Light set to "before" would be a mode it has no test for and no
+   * write to pre-stage. A throw from `onSettings` keeps Homey from saving the
+   * values and shows the user the message, so the error is translated HERE —
+   * a `LocalisedError`'s message is only its key.
+   *
+   * It never calls `setSettings`: Homey saves `newSettings` itself once this
+   * resolves, and a write from inside would be overwritten by it.
+   *
+   * "Before" is accepted with no lamp ever tested, and pre-stages nothing until
+   * one has been — the same rule the review screen's option has always had.
+   * `showWarning` puts a banner on the device saying so.
+   */
+  async applySettings(newSettings: Record<string, unknown>, changedKeys: readonly string[]): Promise<void> {
+    const changed = new Set(changedKeys);
+    // A type that offers no choice has no such setting in its driver, so a key
+    // by that name is not about anything here: ignored, not refused.
+    const offersControl = this.owner.controlModes.length > 0;
+    const mode = offersControl && changed.has(CONTROL_SETTING) ? newSettings[CONTROL_SETTING] : undefined;
+    const transition = changed.has(TRANSITION_SETTING) ? newSettings[TRANSITION_SETTING] : undefined;
+
+    if (mode !== undefined) {
+      if (!isControlMode(mode)) {
+        throw new Error(this.owner.translate('errors.notAControlMode', { mode: String(mode) }));
+      }
+      if (!this.owner.controlModes.includes(mode)) {
+        throw new Error(this.owner.translate('errors.cannotSetBefore'));
+      }
+    }
+    if (transition !== undefined && !isTransition(transition)) {
+      throw new Error(this.owner.translate('errors.notATransition', { transition: String(transition) }));
+    }
+    if (mode === undefined && transition === undefined) return;
+
+    return this.operations.run(OPS, async () => {
+      // Nothing to change it ON. Refused rather than accepted, or Settings would
+      // go on showing a choice no plan holds.
+      //
+      // Through the migration chain, not `storedPlan()` alone: a QUARANTINED
+      // device still has a store — from a newer build, or a shape its validator
+      // refused — and `storedPlan()` hands that back raw. Accepting it here
+      // overwrote the store `loadPlan` promises to leave alone, and registered
+      // a runtime on a plan nobody had validated.
+      const raw = this.storedPlan();
+      if (!raw) throw new Error(this.owner.translate(this.quarantineKey));
+      let plan: TPlan;
+      try {
+        plan = this.owner.migrate(raw).plan;
+      } catch (error) {
+        throw new Error(this.owner.translate(quarantineKeyFor(error) ?? this.owner.missingKey));
+      }
+
+      let updated: TPlan = plan;
+      if (mode !== undefined) updated = planWithControlMode(updated as ControlPlan, mode) as TPlan;
+      if (transition !== undefined && this.owner.transitionOf(updated) !== null) {
+        updated = this.owner.withTransition(updated, transition);
+      }
+      await this.owner.setStoreValue(this.owner.storeKey, updated);
+
+      const runtime = this.owner.registry().get(this.deviceId);
+      if (runtime?.updatePlan) {
+        await runtime.updatePlan(this.owner.planForRuntime(updated));
+      } else {
+        await this.registerPlan(updated);
+      }
+      await this.showWarning(updated);
+
+      if (mode !== undefined) this.owner.log(`Control mode set to ${mode}`);
+      if (transition !== undefined) this.owner.log(`Transition set to ${transition}`);
+    });
+  }
+
+  /**
+   * What Settings should say, from a plan — on init and after every apply.
+   *
+   * The plan is the source of truth and Settings only a view of it: Homey keeps
+   * its own copy of every setting, and that copy says `after` and `balanced` on
+   * a device paired before Settings existed, whatever its plan holds. Compared
+   * before it is written, because this runs on every init.
+   *
+   * Nothing here may fail the caller. A device that stopped starting over its
+   * Settings page would stop driving the lights, which is its whole job.
+   */
+  private async showSettings(plan: TPlan): Promise<void> {
+    const wanted: Record<string, unknown> = {};
+    if (this.owner.controlModes.length > 0) {
+      wanted[CONTROL_SETTING] = controlModeOfPlan(plan as ControlPlan);
+    }
+    const transition = this.owner.transitionOf(plan);
+    if (transition !== null) wanted[TRANSITION_SETTING] = transition;
+
+    if (Object.keys(wanted).length > 0) {
+      try {
+        const current = this.owner.getSettings() ?? {};
+        const differs = Object.entries(wanted).some(([key, value]) => current[key] !== value);
+        if (differs) await this.owner.setSettings(wanted);
+      } catch (error) {
+        this.owner.error('Could not update the device settings:', messageOf(error));
+      }
+    }
+    await this.showWarning(plan);
+  }
+
+  /** The untested-"before" banner. A warning is a banner: it cannot fail anything. */
+  private async showWarning(plan: TPlan): Promise<void> {
+    if (this.owner.controlModes.length === 0) return;
+    const warning = controlWarningKey(plan as ControlPlan);
+    try {
+      if (warning) await this.owner.setWarning(this.owner.translate(warning));
+      else await this.owner.unsetWarning();
+    } catch (error) {
+      this.owner.error('Could not update the device warning:', messageOf(error));
+    }
   }
 
   /**
@@ -730,7 +903,9 @@ export class DeviceLifecycle<
       }
     }
 
-    for (const capabilityId of ALL_VALUE_CAPABILITIES) {
+    // The retired picker is listed so it leaves every tile it reached: no device
+    // type wants it any more, so this removes it wherever it is.
+    for (const capabilityId of [...ALL_VALUE_CAPABILITIES, RETIRED_CONTROL_CAPABILITY]) {
       if (wanted.has(capabilityId) || !this.owner.hasCapability(capabilityId)) continue;
       try {
         await this.owner.removeCapability(capabilityId);

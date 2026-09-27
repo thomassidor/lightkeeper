@@ -1,4 +1,4 @@
-import { ease, mix } from '../support/interpolate';
+import { mix, shape } from '../support/interpolate';
 import type { DaylightResponse, SunPeak } from './daylight-types';
 
 /**
@@ -55,8 +55,9 @@ export const BRIGHT_ELEVATION = 25;
  * — every value a person can tell apart — is squeezed into the bottom tenth, so
  * the lamps would sit at one end until a window did something dramatic.
  *
- * Eased with the shared raised cosine, so the response settles into both ends
- * instead of arriving at them still moving.
+ * Shaped by the response's own transition (lib/support/interpolate.ts), on the
+ * log-lux fraction: below `darkLux` and above `brightLux` it stays flat whatever
+ * the shape.
  */
 export function levelFromLux(response: DaylightResponse, lux: number): number {
   // log10 of a non-positive number is -Infinity or NaN. A sensor reporting 0 in a
@@ -70,7 +71,7 @@ export function levelFromLux(response: DaylightResponse, lux: number): number {
   // fixtures, and a NaN level would reach a lamp as no write at all.
   if (!(to > from)) return 0;
 
-  return ease(clamp01((Math.log10(lux) - from) / (to - from)));
+  return shape(response.transition, (Math.log10(lux) - from) / (to - from));
 }
 
 /**
@@ -164,7 +165,7 @@ export function levelFromElevation(response: DaylightResponse, degrees: number):
   // sanitiseResponse and the validator both guarantee a span; guarded anyway,
   // because a NaN level reaches a lamp as no write at all.
   if (!(span > 0)) return 0;
-  return ease(clamp01((degrees - response.darkElevation) / span));
+  return shape(response.transition, (degrees - response.darkElevation) / span);
 }
 
 /**

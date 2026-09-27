@@ -1,12 +1,48 @@
 {
   "title": {
-    "en": "Receive numeric Lightkeeper event"
+    "en": "Receive numeric Lightkeeper event",
+    "nl": "Numerieke Lightkeeper-gebeurtenis ontvangen",
+    "de": "Numerisches Lightkeeper-Ereignis empfangen",
+    "fr": "Recevoir un événement numérique Lightkeeper",
+    "it": "Ricevi evento numerico Lightkeeper",
+    "sv": "Ta emot numerisk Lightkeeper-händelse",
+    "no": "Motta numerisk Lightkeeper-hendelse",
+    "es": "Recibir evento numérico de Lightkeeper",
+    "da": "Modtag numerisk Lightkeeper-hændelse",
+    "ru": "Получить числовое событие Lightkeeper",
+    "pl": "Odbierz liczbowe zdarzenie Lightkeeper",
+    "ko": "숫자 Lightkeeper 이벤트 받기",
+    "ar": "استقبال حدث Lightkeeper رقمي"
   },
   "titleFormatted": {
-    "en": "Send event [[event_key]] with value [[value]] to Lightkeeper device [[controller]]"
+    "en": "Send event [[event_key]] with value [[value]] to Lightkeeper device [[controller]]",
+    "nl": "Stuur gebeurtenis [[event_key]] met waarde [[value]] naar Lightkeeper-apparaat [[controller]]",
+    "de": "Ereignis [[event_key]] mit Wert [[value]] an Lightkeeper-Gerät [[controller]] senden",
+    "fr": "Envoyer l'événement [[event_key]] avec la valeur [[value]] à l'appareil Lightkeeper [[controller]]",
+    "it": "Invia l'evento [[event_key]] con valore [[value]] al dispositivo Lightkeeper [[controller]]",
+    "sv": "Skicka händelsen [[event_key]] med värdet [[value]] till Lightkeeper-enheten [[controller]]",
+    "no": "Send hendelse [[event_key]] med verdi [[value]] til Lightkeeper-enhet [[controller]]",
+    "es": "Enviar el evento [[event_key]] con el valor [[value]] al dispositivo de Lightkeeper [[controller]]",
+    "da": "Send hændelse [[event_key]] med værdi [[value]] til Lightkeeper-enhed [[controller]]",
+    "ru": "Отправить событие [[event_key]] со значением [[value]] устройству Lightkeeper [[controller]]",
+    "pl": "Wyślij zdarzenie [[event_key]] z wartością [[value]] do urządzenia Lightkeeper [[controller]]",
+    "ko": "이벤트 [[event_key]]을(를) 값 [[value]]와(과) 함께 Lightkeeper 기기 [[controller]]에 보내기",
+    "ar": "إرسال الحدث [[event_key]] بالقيمة [[value]] إلى جهاز Lightkeeper [[controller]]"
   },
   "hint": {
-    "en": "Used internally by Lightkeeper, for events that carry an amount as a fixed value — for example one Flow per dial detent. Do not add or edit these by hand."
+    "en": "Used internally by Lightkeeper, for events that carry an amount as a fixed value — for example one Flow per dial detent. Do not add or edit these by hand.",
+    "nl": "Intern gebruikt door Lightkeeper, voor gebeurtenissen die een hoeveelheid als vaste waarde meedragen — bijvoorbeeld één Flow per klik van een draaiknop. Voeg deze niet met de hand toe en bewerk ze niet.",
+    "de": "Wird intern von Lightkeeper verwendet, für Ereignisse, die eine Menge als festen Wert mitbringen – zum Beispiel ein Flow pro Raststufe eines Drehreglers. Nicht von Hand hinzufügen oder bearbeiten.",
+    "fr": "Utilisée en interne par Lightkeeper, pour les événements qui portent une quantité sous forme de valeur fixe — par exemple un Flow par cran de molette. Ne les ajoutez pas et ne les modifiez pas à la main.",
+    "it": "Usata internamente da Lightkeeper, per eventi che portano una quantità come valore fisso, per esempio un Flow per ogni scatto della manopola. Non aggiungerle né modificarle a mano.",
+    "sv": "Används internt av Lightkeeper, för händelser som bär en mängd som ett fast värde – till exempel ett Flow per steg på en vridratt. Lägg inte till eller redigera dem för hand.",
+    "no": "Brukes internt av Lightkeeper, for hendelser som har en mengde som fast verdi — for eksempel én Flow per hakk på en dreieknapp. Ikke legg til eller rediger disse selv.",
+    "es": "Uso interno de Lightkeeper, para eventos que llevan una cantidad como valor fijo; por ejemplo, un Flow por cada paso de una rueda. No las añadas ni las edites a mano.",
+    "da": "Bruges internt af Lightkeeper til hændelser, der har en mængde som fast værdi — for eksempel ét Flow pr. hak på en drejeknap. Tilføj eller redigér dem ikke selv.",
+    "ru": "Используется внутри Lightkeeper для событий с фиксированным значением — например, по одному Flow на каждый щелчок поворотного регулятора. Не добавляйте и не изменяйте их вручную.",
+    "pl": "Używane wewnętrznie przez Lightkeeper dla zdarzeń niosących stałą wartość — na przykład jeden Flow na każdy skok pokrętła. Nie dodawaj ani nie edytuj ich ręcznie.",
+    "ko": "Lightkeeper가 내부적으로 사용해요. 양을 고정값으로 전달하는 이벤트용이에요(예: 다이얼 한 칸마다 Flow 하나). 직접 추가하거나 수정하지 마세요.",
+    "ar": "يستخدمها Lightkeeper داخليًا، للأحداث التي تحمل مقدارًا بقيمة ثابتة — مثل Flow واحد لكل درجة في القرص الدوّار. لا تضفها ولا تعدّلها يدويًا."
   },
   "deprecated": true,
   "args": [
@@ -14,21 +50,57 @@
       "type": "text",
       "name": "controller",
       "title": {
-        "en": "Device"
+        "en": "Device",
+        "nl": "Apparaat",
+        "de": "Gerät",
+        "fr": "Appareil",
+        "it": "Dispositivo",
+        "sv": "Enhet",
+        "no": "Enhet",
+        "es": "Dispositivo",
+        "da": "Enhed",
+        "ru": "Устройство",
+        "pl": "Urządzenie",
+        "ko": "기기",
+        "ar": "الجهاز"
       }
     },
     {
       "type": "text",
       "name": "event_key",
       "title": {
-        "en": "Event"
+        "en": "Event",
+        "nl": "Gebeurtenis",
+        "de": "Ereignis",
+        "fr": "Événement",
+        "it": "Evento",
+        "sv": "Händelse",
+        "no": "Hendelse",
+        "es": "Evento",
+        "da": "Hændelse",
+        "ru": "Событие",
+        "pl": "Zdarzenie",
+        "ko": "이벤트",
+        "ar": "الحدث"
       }
     },
     {
       "type": "number",
       "name": "value",
       "title": {
-        "en": "Value"
+        "en": "Value",
+        "nl": "Waarde",
+        "de": "Wert",
+        "fr": "Valeur",
+        "it": "Valore",
+        "sv": "Värde",
+        "no": "Verdi",
+        "es": "Valor",
+        "da": "Værdi",
+        "ru": "Значение",
+        "pl": "Wartość",
+        "ko": "값",
+        "ar": "القيمة"
       },
       "min": -1000000,
       "max": 1000000,

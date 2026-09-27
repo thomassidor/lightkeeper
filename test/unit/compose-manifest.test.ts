@@ -4,6 +4,9 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { ALL_VALUE_CAPABILITIES, PUBLISHED_DECIMALS } from '../../lib/runtime/published-values';
+import { CONTROL_SETTING, RETIRED_CONTROL_CAPABILITY } from '../../lib/pairing/control-choice';
+import { TRANSITION_SETTING } from '../../lib/devices/device-lifecycle';
+import { TRANSITIONS } from '../../lib/support/interpolate';
 
 /**
  * `app.json` is GENERATED from `.homeycompose/` and must never be hand-edited.
@@ -205,13 +208,69 @@ describe('app.json is generated from .homeycompose/', () => {
    * Homey then rounded away, once a minute, forever.
    */
   test('every value capability is read-only, at the resolution the gate assumes', () => {
-    for (const [id, capability] of Object.entries(manifest.capabilities ?? {}) as Array<[string, any]>) {
+    for (const id of ALL_VALUE_CAPABILITIES) {
+      const capability = manifest.capabilities[id];
       assert.equal(capability.setable, false, `${id} must not be setable`);
       assert.equal(capability.getable, true, `${id} must be getable`);
       if (capability.type === 'number') {
         assert.equal(capability.decimals, PUBLISHED_DECIMALS, `${id} must match PUBLISHED_DECIMALS`);
       }
     }
+  });
+
+  /**
+   * "How Lightkeeper controls your lights" and the Transition are SETTINGS.
+   *
+   * They were a picker capability for one pre-release build, and Homey opened
+   * every engine device on it, ahead of the values the device exists to show.
+   * Their values are `ControlMode`s and `Transition`s verbatim, which is what
+   * lets the device layer hand a saved value straight to the rules the review
+   * screen uses — and a Room-sensing Light's list is two, because a choice its
+   * device refuses is a Settings page that cannot be saved.
+   */
+  test('the three engine drivers carry the control and Transition settings, and no picker', () => {
+    const drivers = manifest.drivers as Array<Record<string, any>>;
+    const ids = (values: Array<{ id: string }>) => values.map(v => v.id);
+    for (const driver of drivers) {
+      assert.equal((driver.capabilities as string[]).includes(RETIRED_CONTROL_CAPABILITY), false, driver.id);
+    }
+    assert.equal(manifest.capabilities[RETIRED_CONTROL_CAPABILITY], undefined);
+
+    const carriers = drivers.filter(d => Array.isArray(d.settings) && d.settings.length > 0);
+    assert.deepEqual(carriers.map(d => d.id).sort(), ['circadian', 'curve', 'daylight']);
+    for (const driver of carriers) {
+      const settings = driver.settings as Array<Record<string, any>>;
+      assert.deepEqual(settings.map(s => s.id), [CONTROL_SETTING, TRANSITION_SETTING], driver.id);
+      const [control, transition] = settings;
+      assert.equal(control!.type, 'dropdown');
+      assert.equal(control!.value, 'after');
+      assert.deepEqual(ids(control!.values),
+        driver.id === 'daylight' ? ['after', 'none'] : ['after', 'before', 'none'], driver.id);
+      assert.equal(transition!.type, 'dropdown');
+      assert.equal(transition!.value, 'balanced');
+      assert.deepEqual(ids(transition!.values), [...TRANSITIONS], driver.id);
+    }
+  });
+
+  /**
+   * Every custom capability carries an icon, and every icon file is one of them.
+   *
+   * Homey's own default icons (platform §10): a system capability's icon cannot
+   * be borrowed by name, so the files ship under `assets/capabilities/`. The
+   * validator checks the path exists case-exactly; this checks it first, and
+   * that the folder holds nothing no capability names.
+   */
+  test('every custom capability has an icon, and no icon is orphaned', () => {
+    const dir = join(ROOT, 'assets', 'capabilities');
+    const files = new Set(readdirSync(dir));
+    const named = new Set<string>();
+    for (const [id, capability] of Object.entries(manifest.capabilities ?? {}) as Array<[string, any]>) {
+      assert.match(String(capability.icon), /^\/assets\/capabilities\/[a-z_]+\.svg$/, `${id} has no icon`);
+      const file = String(capability.icon).split('/').pop()!;
+      assert.ok(files.has(file), `${id}: ${capability.icon} does not exist (case-exact)`);
+      named.add(file);
+    }
+    for (const file of files) assert.ok(named.has(file), `assets/capabilities/${file} is named by no capability`);
   });
 
   test('every driver matches its driver.compose.json', () => {
@@ -230,11 +289,31 @@ describe('app.json is generated from .homeycompose/', () => {
     );
 
     for (const id of driverIds) {
-      const source = readJson('drivers', id, 'driver.compose.json');
+      const source = withSettingTemplates(readJson('drivers', id, 'driver.compose.json'));
       const generated = drivers.find(d => d.id === id);
       assert.deepEqual(generated, { ...source, id }, `driver "${id}" drifted`);
     }
   });
+
+  /**
+   * A setting that says `$extends` is a template from `.homeycompose/drivers/settings/`
+   * with the driver's own keys laid over it, and the `$` keys stripped — what
+   * `extendSetting()` in node_modules/homey/lib/HomeyCompose.js does. The three
+   * engine drivers share their two settings that way, so a label is translated
+   * once rather than three times; a Room-sensing Light overrides `values` only.
+   */
+  function withSettingTemplates(source: Record<string, any>): Record<string, any> {
+    if (!Array.isArray(source.settings)) return source;
+    const settings = source.settings.map((setting: Record<string, any>) => {
+      if (setting.$extends === undefined) return setting;
+      const templateIds: string[] = [].concat(setting.$extends);
+      const template = Object.assign({}, ...templateIds.map(t => readJson('.homeycompose', 'drivers', 'settings', `${t}.json`)));
+      const merged: Record<string, any> = { id: setting.$id ?? templateIds[templateIds.length - 1], ...template, ...setting };
+      for (const key of Object.keys(merged)) if (key.startsWith('$')) delete merged[key];
+      return merged;
+    });
+    return { ...source, settings };
+  }
 });
 
 /**

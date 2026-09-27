@@ -242,9 +242,10 @@ function harness(options: {
  */
 function plan(over: Partial<CircadianPlan> = {}): CircadianPlan {
   const built: CircadianPlan = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     enabled: true,
     target: { kind: 'devices', deviceIds: ['l1', 'l2'] },
+    transition: 'balanced',
     // Deliberately steep, so a few hours of simulated time is a visible change.
     points: [
       { id: 'day', anchor: { kind: 'clock', at: 12 * 60 }, warmth: 0.2 },
@@ -379,6 +380,28 @@ describe('circadian writes', () => {
 
     assert.deepEqual(h.writes, []);
     assert.equal(h.runtime.currentState, 'disabled');
+  });
+
+  test('a paused device watches no lamp, so a hand on one is never filed as an override', async () => {
+    // Seen on the reference Homey: two paused Living Room devices filing every
+    // report as an override with nothing written to compare it with.
+    const h = harness({ plan: plan({ enabled: false }) });
+    await h.runtime.start();
+
+    assert.equal(h.isSubscribed('l1', 'onoff'), false);
+    assert.equal(h.isSubscribed('l1', 'light_temperature'), false);
+    h.report('l1', 'light_temperature', 0.05);
+    assert.equal(h.runtime.diagnostics().targets.some(t => t.overridden), false);
+  });
+
+  test('resumed, it subscribes again', async () => {
+    const h = harness({ plan: plan({ enabled: false }) });
+    await h.runtime.start();
+    await h.runtime.updatePlan(plan());
+    await settle();
+
+    assert.equal(h.isSubscribed('l1', 'onoff'), true);
+    assert.equal(temperatures(h.writes).length, 2);
   });
 });
 
@@ -1807,7 +1830,20 @@ describe('what the week-long recording found', () => {
   });
 
   test('a bridge exactly one tolerance away is forgiven wherever it sits on the axis', async () => {
-    const h = harness({ now: MORNING });
+    // 08:00 is the MIDPOINT of 06:00 → 10:00, so the value written is 0.25
+    // whatever the curve's shape — every transition passes through halfway at
+    // halfway. It used to ride on the default plan's eased value at 08:00,
+    // which moved when the raised cosine gave way to Balanced and landed on
+    // 0.26, where neither direction is a floating-point boundary case.
+    const h = harness({
+      now: MORNING,
+      plan: plan({
+        points: [
+          { id: 'a', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.2 },
+          { id: 'b', anchor: { kind: 'clock', at: 10 * 60 }, warmth: 0.3 },
+        ],
+      }),
+    });
     await h.runtime.start();
     await settle();
     const written = temperatures(h.writes)[0].value as number;

@@ -1,13 +1,58 @@
 # Changelog
 
-Every release, in full. [`README.md`](README.md#changelog) carries the short version — the current
-release in a few bullets and one line for each older one; this is where the detail lives.
+Every release in full; [`README.md`](README.md#changelog) has the short version. Newest first.
 
-Newest first. **Lightkeeper is in early development**, and pre-1.0 there are no major bumps for
-breaking changes: a change that would break something says so in its own entry instead. Read the
-entry before updating — a device may need Homey's **Repair** run on it, or in the worst case
-deleting and adding again. [`FAQ.md` → Is this finished?](FAQ.md#is-this-finished) has the longer
-answer.
+**Lightkeeper is in early development.** Before 1.0 there are no major version bumps, so a breaking
+change is named in its own entry. Read it before updating — a device may need Homey's **Repair**, or
+deleting and adding again. [More in the FAQ](FAQ.md#is-this-finished).
+
+## 0.6.6
+
+Nothing needs redoing: existing devices get the new settings automatically. **One visible change:**
+circadian lights now blend smoothly between parts of the day. Existing ones are set to *Quick*, the
+closest to the old behaviour.
+
+### New
+
+- **Control and Transition in the device's Settings.** How a circadian, Colour Curve or Room-sensing
+  Light controls your lights, and its Transition, can now be changed from the device's gear icon
+  instead of Repair. Settings and setup are the same setting.
+- **Transition: Gradual, Balanced or Quick.** Sets how a value moves between two points — evenly,
+  mostly in the middle (the default), or nearly all at once. On the editing step and the review of
+  all three engine device types.
+- **Every language Homey speaks.** Dutch, German, French, Italian, Swedish, Norwegian, Spanish,
+  Danish, Russian, Polish, Korean and Arabic, with each language's own plurals and number formats,
+  and right-to-left in Arabic. Logs and generated Flow names stay in English.
+- **Icons on every value a device shows**, Homey's own.
+
+### Changed
+
+- **Circadian lights blend zone to zone**, with the boundary you set as the halfway point, instead
+  of holding each part flat and blending only near the boundary.
+- **Colour Curve and Room-sensing Lights look the same as before** — they are set to *Balanced*,
+  within 0.016 of the old easing.
+- **"Set lights before they turn on" still needs the light test.** A device with no tested lights
+  now says so on its page, and behaves as *after* until the test is run from Repair.
+- **Counts read as numbers**: "All 3 lights", "1 light is not responding".
+
+### Fixed
+
+- **A switched-off device no longer reports lights as overridden.** It stopped watching its lights
+  while paused, so changes made with another app no longer filled its history.
+
+### Under the hood
+
+- `shape(transition, t)` in `lib/support/interpolate.ts` replaces the raised-cosine `ease()`: linear,
+  or a normalised logistic with k = 6 (Balanced) or 16 (Quick). Each of the three plan chains gains
+  step 1 → 2.
+- A circadian runtime evaluates `zoneValueAt()`; `ZONE_RAMP` is gone, its clamp kept as
+  `MIN_ZONE_MINUTES`.
+- `control` and `transition` are driver settings templated in `.homeycompose/drivers/settings/`,
+  applied through `DeviceLifecycle.applySettings()`. The short-lived `lightkeeper_control` picker
+  capability is removed from any device that gained it.
+- `views/shared/` gains the Transition card and `transition-shape.js`;
+  `pair-view-zone-copy.test.ts` runs the view copies against the engine.
+- Capability icons are Athom's own, in `assets/capabilities/` (platform §10, §18).
 
 ## 0.6.5
 

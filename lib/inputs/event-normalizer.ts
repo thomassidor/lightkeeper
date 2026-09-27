@@ -11,6 +11,7 @@ import {
   directionOf,
   numericValuesOf,
 } from './magnitude-collapser';
+import { CONTROL_WORDS, DIRECTION_WORDS, GESTURE_WORDS, LABEL_SEPARATOR } from './input-label';
 
 export interface CardToken {
   /** Token identity is `id`, not `name` — using `name` produces broken flows. */
@@ -271,11 +272,13 @@ function buildSelectables(ctx: BuildContext): SelectableInput[] {
       const gesture = actionLabel(action, dirValue?.dir ?? undefined);
       const directionNamed = dirValue?.dir !== undefined && dirValue?.dir !== null
         && !DIRECTIONAL_ACTIONS.has(action);
+      // English, and stored: lib/inputs/input-label.ts translates it for the
+      // screens by parsing these same words back out.
       const label = gestureNamed
-        ? (directionNamed ? `${controlLabel} — ${directionWord(dirValue!.dir!)}` : controlLabel)
+        ? (directionNamed ? `${controlLabel}${LABEL_SEPARATOR}${directionWord(dirValue!.dir!)}` : controlLabel)
         : directionNamed
-          ? `${controlLabel} — ${gesture} ${directionWord(dirValue!.dir!)}`
-          : `${controlLabel} — ${gesture}`;
+          ? `${controlLabel}${LABEL_SEPARATOR}${gesture} ${directionWord(dirValue!.dir!)}`
+          : `${controlLabel}${LABEL_SEPARATOR}${gesture}`;
 
       const binding = bindingFor(ctx, selectorValue?.id ?? null, dirValue?.id ?? null, magnitude, tokenMagnitude);
 
@@ -420,7 +423,7 @@ export function controlIdentityOf(
   // happens to contain "dial" — four buttons vanished into the dial control.
   const isRotation = action !== undefined && ROTATION_ACTIONS.has(action);
   if (isRotation || (action === undefined && ROTARY_HINT.test(card.title ?? ''))) {
-    return { id: 'dial', label: 'Dial' };
+    return { id: 'dial', label: CONTROL_WORDS.dial };
   }
 
   const match = TITLE_CONTROL.exec(card.title ?? '');
@@ -431,7 +434,7 @@ export function controlIdentityOf(
     if (!/^(a|an|the)\s/i.test(label)) {
       return { id: slug(label), label: capitalise(label) };
     }
-    return { id: 'button', label: 'Button' };
+    return { id: 'button', label: CONTROL_WORDS.button };
   }
 
   const stripped = card.shortId
@@ -439,7 +442,7 @@ export function controlIdentityOf(
     .replace(/_/g, ' ')
     .trim();
 
-  const label = stripped.length ? capitalise(stripped) : 'Control';
+  const label = stripped.length ? capitalise(stripped) : CONTROL_WORDS.control;
   return { id: slug(label), label };
 }
 
@@ -526,18 +529,20 @@ const DIRECTIONAL_ACTIONS = new Set<InputAction>(['rotate_delta', 'rotate_stop']
 
 /** The direction, as a word, for an action whose label does not carry one. */
 function directionWord(direction: -1 | 1): string {
-  return direction === 1 ? 'up' : 'down';
+  return direction === 1 ? DIRECTION_WORDS.up : DIRECTION_WORDS.down;
 }
 
 function actionLabel(action: InputAction, direction?: -1 | 1): string {
   switch (action) {
-    case 'press': return 'Press';
-    case 'long_press': return 'Long press';
-    case 'release': return 'Release';
-    case 'rotate_delta': return direction === 1 ? 'Turn right' : direction === -1 ? 'Turn left' : 'Turn';
-    case 'rotate_start': return 'Start turning';
-    case 'rotate_stop': return direction === 1 ? 'Turn right' : direction === -1 ? 'Turn left' : 'Stop turning';
-    case 'selection': return 'Select';
+    case 'press': return GESTURE_WORDS.press;
+    case 'long_press': return GESTURE_WORDS.longPress;
+    case 'release': return GESTURE_WORDS.release;
+    case 'rotate_delta':
+      return direction === 1 ? GESTURE_WORDS.turnRight : direction === -1 ? GESTURE_WORDS.turnLeft : GESTURE_WORDS.turn;
+    case 'rotate_start': return GESTURE_WORDS.startTurning;
+    case 'rotate_stop':
+      return direction === 1 ? GESTURE_WORDS.turnRight : direction === -1 ? GESTURE_WORDS.turnLeft : GESTURE_WORDS.stopTurning;
+    case 'selection': return GESTURE_WORDS.select;
   }
 }
 

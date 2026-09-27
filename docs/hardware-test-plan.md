@@ -82,6 +82,13 @@ The script cannot do these. Report each by its number.
 
 ## 4. This release
 
+**0.6.6 — capability icons, the control and Transition settings, and the Transition choice, on top
+of the 0.6.5 and 0.6.0 passes that are still owed.** 0.6.6's fifteen lines are first: T181 and
+T195–T200 take ten minutes with a phone, T187–T190 want an afternoon of the day going by, and
+T191–T194 want the Homey switched to another language for a few minutes. T182–T186 are retired
+unrun: they tested a picker on the tile, which moved into the device's Settings before anything was
+published.
+
 **0.6.5 — the Flow surface, a tenth job on a remote button, and a general code review, on top of an
 0.6.0 pass that is still owed.**
 
@@ -96,6 +103,89 @@ screen. **It does answer the machine-readable half of several**, and says which 
 `control` T166–T173, `flowcards` T147 and T149–T151, `jobs` T152–T154, `settings` T137. A line the
 script answers in part is still yours — the end of `full` lists it with a `*` — and its report line
 says what it left for you.
+
+### 0.6.6 — icons on the value rows, and two choices in the device's Settings
+
+Two things the suite cannot see: what Homey draws, and what the phone's Settings page does with a
+driver's settings. None of these is answered by `verify-hardware.mjs`. Use one device of each engine
+type — a circadian light, a Colour Curve Light, a Room-sensing Light — paired BEFORE this build, so
+T199 comes free.
+
+- [ ] **T181** **The icons, on a PUBLISHED build.** The value rows (*Brightness now*, *Colour
+      temperature now*, *Colour now*, *Daylight outside*) each carry Homey's own icon — dim, light
+      temperature, hue, luminance. **A blank icon on a `homey app install` is expected and not a
+      failure** (platform §10: icons come from Athom's CDN, which only holds published builds), so run
+      this on the test channel. On a dev install, check only that the rows are there.
+- [ ] **T195** **The device opens on its values, and Settings changes the mode.** Tap the circadian
+      light: the first thing shown is its value rows and switch, not a choice. Open its Settings
+      (the gear): *How Lightkeeper controls your lights* and *Transition* are there. Choose *Don't
+      change lights automatically* and save. Switch one of its lamps off and on: the lamp comes on
+      where it was left and stays there, and `node scripts/diagnostics.mjs` shows no writes from that
+      device. Restart the app: Settings still say *Don't change*. Choose *Change lights after they
+      turn on* and repeat the switch-on: the lamp is changed a moment after it comes on.
+- [ ] **T196** **A Room-sensing Light offers two.** Its Settings list exactly *Change lights after
+      they turn on* and *Don't change lights automatically*.
+- [ ] **T197** **"Before", chosen in Settings on a device never tested, says so.** On a Colour Curve
+      Light whose review-screen test has never run, choose *Set lights before they turn on* and save.
+      The device's page shows the warning telling you to run the test in Repair, and its lights behave
+      as *after*. Run the test in Repair, save, and the warning is gone.
+- [ ] **T198** **A Repair moves Settings.** Change the choice and the Transition on Repair's screens
+      and save: the device's Settings show both new values without a restart.
+- [ ] **T199** **An old device loses the picker and shows its own values.** Every engine device
+      paired before this build no longer has the picker row after the update, and its Settings show
+      what its plan holds rather than the defaults — an existing circadian light reads *Quick*. The
+      Light Remote and the schedule have no such settings at all.
+- [ ] **T200** **A Transition chosen in Settings reaches the lights.** On the Colour Curve Light,
+      change *Transition* from *Balanced* to *Gradual* and save. Open Repair: its curve screen and the
+      *Transition* row on *Ready to add* both say *Gradual*, and the next minute's write follows the
+      new shape (`node scripts/diagnostics.mjs` — the target moves steadily rather than easing).
+
+### 0.6.6 — Transition: Gradual, Balanced or Quick
+
+The shape itself is proved by the suite, against the engine and against the screens' own copies.
+What it cannot see is a stored device crossing the migration, and a real day on real lamps. Use the
+same three pre-existing devices as T199.
+
+- [ ] **T187** **The migration chose what it says.** After the update, open each device in Repair and
+      go to the editing step: the circadian light's *Transition* card has **Quick** checked, the
+      Colour Curve Light and the Room-sensing Light have **Balanced**. None of them came up
+      unavailable. `node scripts/diagnostics.mjs` shows each plan at `schemaVersion` 2.
+- [ ] **T188** **A circadian light blends, and the boundary is the halfway point.** On the circadian
+      light, choose *Gradual* and save. Over the next hour its published *Colour temperature now*
+      moves every few minutes rather than holding — the day is no longer flat between boundaries. At
+      the minute its morning boundary falls (the review's *Follows the sun* row), the published
+      warmth is halfway between the morning and midday values, whichever transition is chosen.
+- [ ] **T189** **The Room-sensing Light's shape reaches the lamps.** With a sensor, set the two
+      thresholds either side of what the room reads now, then switch between *Gradual* and *Quick*
+      and save each: the published *Brightness now* moves between the two and the lamps follow
+      within a minute. Readings below *dark* and above *bright* give the same brightness under all
+      three.
+- [ ] **T190** **The card and the row look like the design.** On a phone: the card sits where the
+      handoff puts it on all three editing steps (below *When the room is bright*, below the zone
+      rows, below *Add a time*), one line of description per row with the curve at the end, and the
+      last row of *Ready to add* reads *Transition — Balanced* and taps back to that step.
+
+### 0.6.6 — thirteen languages
+
+The suite proves every string exists in every language with the right plural forms; it cannot see a
+phone set to Arabic. `npm run render:views -- --lang de` (and `ar`, `pl`) draws the screens first —
+look at those before picking the phone up. None of these is answered by `verify-hardware.mjs`.
+
+- [ ] **T191** **A second language, end to end.** Set the Homey to Danish (or any language you read
+      besides English). Pair one Room-sensing Light: every screen, the review, the default device
+      name ("Stue – rumfølende lys" or similar — not "Stue daylight") and the device page are in
+      that language, and the counts read correctly for 1 and for several lights.
+- [ ] **T192** **Arabic reads right to left.** Set the Homey to Arabic and open a Light Remote's
+      pairing flow as far as the buttons screen: text is right-aligned, the select chevron sits on
+      the left, and the timeline, sliders and charts still run left to right (by design —
+      `docs/localisation.md`). Nothing overlaps or is cut off.
+- [ ] **T193** **Polish or Russian plurals.** Set the Homey to Polish or Russian and look at a count
+      of 2, of 5 and of 22 lights — the light picker's "chosen" line and the review's lights row show
+      three different noun forms where the language needs them.
+- [ ] **T194** **The Flow cards and the tile.** Still in a non-English language: the *Set lights*
+      card's title and its three argument labels, the *It is dark enough* condition, and a device
+      tile's four value rows and its two Settings are all translated. The settings page follows too,
+      apart from the event and write logs, which are English on purpose.
 
 ### 0.6.5 — the Flow surface, the switch-on work, and the code review's three
 

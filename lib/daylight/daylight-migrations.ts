@@ -11,15 +11,7 @@ import { validateDaylightPlan } from '../validation/plans';
  * neither shape can supply. Same rules: add an entry, never edit one, and refuse
  * a plan from a newer build rather than guessing at it.
  *
- * A note for whoever adds the second step. The `daylight` field the other three
- * device types now carry holds the SAME `DaylightResponse` as this plan's
- * `response`, so a change to that shape needs a step in FOUR chains rather than
- * this one. That is the cost of the response being inline in each store rather
- * than referenced from one place, and it is a cost that was chosen: a device that
- * depends on another device existing is a device that breaks when somebody
- * deletes the other one.
- *
- * **The table is empty, and that is a deliberate reset rather than an omission.**
+ * **Version 1 began with an empty table, and that was a deliberate reset.**
  * The pairing rewrite changed this stored shape in ways no honest step could
  * carry an old plan across. Nothing had shipped, so the installed base was one
  * Homey and its owner chose the clean slate over a migration inventing values
@@ -30,14 +22,29 @@ import { validateDaylightPlan } from '../validation/plans';
  * `DeviceLifecycle` quarantines the device with its store untouched, so it comes
  * up unavailable with a reason rather than running on a plan nobody can vouch
  * for. Delete it and add it again.
+ *
+ * **1 → 2 (0.6.6): the Transition choice, and existing devices get BALANCED.**
+ * Both ramps used to be eased with a raised cosine; Balanced is within 0.016 of
+ * it everywhere (interpolate.test.ts), so a migrated room does not visibly
+ * change. It goes INSIDE `response` — see `DaylightResponse.transition`. A
+ * response that is not an object is left for the validator to refuse with its
+ * own path, rather than replaced here by one that would pass.
  */
 
-export const CURRENT_DAYLIGHT_SCHEMA_VERSION = 1;
+export const CURRENT_DAYLIGHT_SCHEMA_VERSION = 2;
 
 export type DaylightMigration = MigrationStep;
 
-/** Keyed by the version being migrated FROM. Empty: see the header. */
-const DAYLIGHT_MIGRATIONS: Record<number, DaylightMigration> = {};
+/** Keyed by the version being migrated FROM. See the header for each step. */
+const DAYLIGHT_MIGRATIONS: Record<number, DaylightMigration> = {
+  1: raw => ({
+    ...raw,
+    response: raw.response && typeof raw.response === 'object'
+      ? { ...raw.response as Record<string, unknown>, transition: 'balanced' }
+      : raw.response,
+    schemaVersion: 2,
+  }),
+};
 
 export function migrateDaylightPlan(raw: unknown): MigrationResult<DaylightPlan> {
   return runMigrationChain(raw, {

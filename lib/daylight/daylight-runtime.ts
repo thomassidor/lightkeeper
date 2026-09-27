@@ -419,8 +419,10 @@ export class DaylightRuntime {
   private async subscribeAll(): Promise<void> {
     // Nothing to watch on a device that writes to no lamp, and worse than idle
     // if left: `noteOverride` files every report it has no write of ours to
-    // compare with as an override. The same argument as the circadian runtime's.
-    if (!keepsLightsUpdated(this.plan)) return;
+    // compare with as an override. The same argument as the circadian runtime's,
+    // and it covers a PAUSED device too: resuming restarts the runtime through
+    // `updatePlan`, which subscribes again.
+    if (!this.plan.enabled || !keepsLightsUpdated(this.plan)) return;
     for (const deviceId of this.targetIds) {
       await this.adapter.subscribe(deviceId, WATCHED, (id, capability, value, external) =>
         this.onCapabilityChange(id, capability, value, external));
@@ -1098,7 +1100,7 @@ export class DaylightRuntime {
       this.setState('partial', {
         key: 'state.daylightSensorStale',
         text: 'Its light sensor has stopped reporting, so its lights are held where they are.',
-        tokens: { name: stale.name, hours: Math.floor(stale.ageMs / 3_600_000) },
+        tokens: { name: stale.name, count: Math.floor(stale.ageMs / 3_600_000) },
       });
       return;
     }

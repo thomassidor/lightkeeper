@@ -255,7 +255,7 @@ describe('the settings page mirrors the failure map', () => {
   );
 
   const mirrored = new Map(
-    [...page.matchAll(/case '([a-z_]+)': return HomeyRef\.__\('([\w.]+)'\)/g)]
+    [...page.matchAll(/case '([a-z_]+)': return (?:HomeyRef\.__|lk\.t)\('([\w.]+)'\)/g)]
       .map(m => [m[1], m[2]]),
   );
 

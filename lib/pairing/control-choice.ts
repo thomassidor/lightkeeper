@@ -3,6 +3,7 @@ import type { HandlerRegistrar, PairSessionHost } from './pair-session';
 import { LocalisedError } from '../support/localised-error';
 import type { PreStageLampResult } from '../circadian/circadian-runtime';
 import type { TargetSpec } from '../outputs/light-intent';
+import { keepsLightsUpdated, writesLightsField } from '../runtime/writes-lights';
 
 /**
  * "How Lightkeeper controls your lights": the one choice on the review screen
@@ -37,6 +38,82 @@ import type { TargetSpec } from '../outputs/light-intent';
  */
 
 export type ControlMode = 'after' | 'before' | 'none';
+
+/**
+ * The same choice as a dropdown in the device's own Settings, so it can be
+ * changed without opening Repair.
+ *
+ * Its values are the three `ControlMode`s verbatim, which is what lets the
+ * settings and the review screen share every rule below rather than translate
+ * between two vocabularies. A Room-sensing Light's driver lists two, and
+ * `DeviceLifecycle.applySettings` refuses the third regardless — a setting
+ * arrives over the Web API as readily as from the phone (platform §14).
+ *
+ * A SETTING, not a capability. It was a `picker` capability for one pre-release
+ * build, and Homey opened the device on it: the picker page came before the
+ * value rows whatever the order of the capability list, so the first thing a
+ * household saw on tapping a Room-sensing Light was a configuration choice
+ * rather than how bright it wanted the room. A choice made once belongs behind
+ * the gear.
+ */
+export const CONTROL_SETTING = 'control';
+
+/**
+ * The capability that picker was, kept only so `reconcileCapabilities` can take
+ * it off every tile it reached. Nothing declares it any more.
+ */
+export const RETIRED_CONTROL_CAPABILITY = 'lightkeeper_control';
+
+/** A stored plan's slice of the choice: every engine plan has this shape. */
+export interface ControlPlan {
+  preStage?: boolean;
+  preStageLights?: string[];
+  writesLights?: boolean;
+}
+
+/** Anything that is one of the three, and nothing else. */
+export function isControlMode(value: unknown): value is ControlMode {
+  return value === 'after' || value === 'before' || value === 'none';
+}
+
+/** Which of the three a STORED plan amounts to — `writesLights` absent is on. */
+export function controlModeOfPlan(plan: ControlPlan): ControlMode {
+  return controlModeOf({ preStage: plan.preStage, writesLights: keepsLightsUpdated(plan) });
+}
+
+/**
+ * A copy of a stored plan with the choice moved, for the device's Settings.
+ *
+ * The pure twin of `applyControlMode` below, which moves a pairing SESSION.
+ * Two rules it must keep that the session's version does not have to: the
+ * `writesLights` key is stored only when false (see `writesLightsField`), and
+ * `preStage` is written only where the plan already has one — a Room-sensing
+ * Light's plan has none, and growing one would be a flag its validator never
+ * stores. `preStageLights` is kept, for the reason `applyControlMode` gives.
+ */
+export function planWithControlMode<T extends ControlPlan>(plan: T, mode: ControlMode): T {
+  const { writesLights: _dropped, ...rest } = plan;
+  return {
+    ...rest,
+    ...writesLightsField(mode !== 'none'),
+    ...(plan.preStage !== undefined ? { preStage: mode === 'before' } : {}),
+  } as T;
+}
+
+/**
+ * The warning a device should carry for its choice, or null.
+ *
+ * "Before" chosen with no lamp ever proven pre-stages nothing — the design's
+ * "until the test has run, the device behaves as option 1". That is the right
+ * behaviour and an invisible one, and the device's Settings make it easy to reach:
+ * the review screen runs the test beside the option, Settings cannot (it would
+ * blink every lamp that is on, from a Flow as readily as from a finger). So the
+ * device says so instead.
+ */
+export function controlWarningKey(plan: ControlPlan): string | null {
+  if (controlModeOfPlan(plan) !== 'before') return null;
+  return (plan.preStageLights ?? []).length === 0 ? 'warnings.preStageUntested' : null;
+}
 
 /** The slice of a driver's session state the choice moves. */
 export interface ControlState {
@@ -97,7 +174,7 @@ export function registerControlHandlers(
 ): void {
   handler('setControl', async (payload: unknown) => {
     const mode = (payload as { mode?: unknown } | null)?.mode;
-    if (mode !== 'after' && mode !== 'before' && mode !== 'none') {
+    if (!isControlMode(mode)) {
       throw new LocalisedError('errors.notAControlMode', { mode: String(mode) });
     }
     if (mode === 'before' && !options.offerBefore) {

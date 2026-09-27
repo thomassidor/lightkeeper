@@ -397,6 +397,7 @@ describe('the curve plan has its own store and its own chain', () => {
       { id: 'p2', anchor: { kind: 'clock', at: 21 * 60 }, warmth: 1, color: 'amber' },
     ],
     adjustBrightness: false,
+    transition: 'balanced',
     preStage: false,
   });
 
@@ -404,6 +405,22 @@ describe('the curve plan has its own store and its own chain', () => {
     const { plan, migrated } = migrateCurvePlan(validPlan());
     assert.equal(migrated, false);
     assert.deepEqual(plan, validPlan());
+  });
+
+  test('a version 1 plan gains a transition, and it is BALANCED', () => {
+    // The raised cosine every segment used to be eased with is within 0.016 of
+    // Balanced everywhere (interpolate.test.ts), so the migrated curve does not
+    // visibly change.
+    const { transition: _new, ...v1 } = { ...validPlan(), schemaVersion: 1 };
+    const { plan, migrated } = migrateCurvePlan(v1);
+    assert.equal(migrated, true);
+    assert.equal(plan.schemaVersion, 2);
+    assert.equal(plan.transition, 'balanced');
+    assert.deepEqual(plan.points, validPlan().points, 'and nothing else moves');
+  });
+
+  test('a stored transition that is not one of the three is refused, not defaulted', () => {
+    assert.throws(() => migrateCurvePlan({ ...validPlan(), transition: 'eased' }), /transition/);
   });
 
   test('a plan from before the reset is quarantined, not guessed at', () => {

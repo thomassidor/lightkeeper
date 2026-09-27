@@ -3,6 +3,8 @@ import { VALUE_CAPABILITIES } from '../../lib/runtime/published-values';
 import { migrateCurvePlan } from '../../lib/circadian/curve-migrations';
 import type { CircadianPlan } from '../../lib/circadian/circadian-types';
 import type { CircadianRuntime } from '../../lib/circadian/circadian-runtime';
+import type { ControlMode } from '../../lib/pairing/control-choice';
+import type { Transition } from '../../lib/support/interpolate';
 
 /**
  * One virtual device per Colour Curve Light.
@@ -37,6 +39,7 @@ module.exports = class CurveDevice extends LightkeeperDevice<CircadianPlan, Circ
     VALUE_CAPABILITIES.temperature,
     VALUE_CAPABILITIES.colour,
   ];
+  override readonly controlModes: readonly ControlMode[] = ['after', 'before', 'none'];
 
   migrate(raw: unknown): PlanMigration<CircadianPlan> {
     return migrateCurvePlan(raw);
@@ -60,6 +63,14 @@ module.exports = class CurveDevice extends LightkeeperDevice<CircadianPlan, Circ
 
   override withEnabled(plan: CircadianPlan, enabled: boolean): CircadianPlan {
     return { ...plan, enabled };
+  }
+
+  override transitionOf(plan: CircadianPlan): Transition {
+    return plan.transition;
+  }
+
+  override withTransition(plan: CircadianPlan, transition: Transition): CircadianPlan {
+    return { ...plan, transition };
   }
 
   override async prepareApply(

@@ -346,7 +346,7 @@ describe('the generated-Flow count, and its refusal (T2, T52)', () => {
     const view = open(EMPTY, NO_ORPHANS);
     await view.settle();
 
-    assert.equal(view.byId('orphanText')!.textContent, 'settings.noneOrphaned(0)');
+    assert.equal(view.byId('orphanText')!.textContent, 'settings.noneOrphaned.other(0)');
     assert.equal(view.byId('sweep')!.style.display, 'none');
   });
 
@@ -363,7 +363,7 @@ describe('the generated-Flow count, and its refusal (T2, T52)', () => {
     });
     await view.settle();
 
-    assert.equal(view.byId('orphanText')!.textContent, 'settings.sweepRefused(7)');
+    assert.equal(view.byId('orphanText')!.textContent, 'settings.sweepRefused.other(7)');
     assert.equal(view.byId('sweep')!.style.display, 'none',
       'a delete that the API will refuse must not be offered');
   });
@@ -375,12 +375,12 @@ describe('the generated-Flow count, and its refusal (T2, T52)', () => {
     });
     await view.settle();
 
-    assert.ok(view.byId('orphanText')!.textContent.startsWith('settings.orphansFound(2, 9, 1)'));
+    assert.ok(view.byId('orphanText')!.textContent.startsWith('settings.orphansFound(2, 9, settings.liveDeviceCount.one(1))'));
     // Flows that call our card but were not built by us are mentioned so the
     // totals add up on screen. They are never deleted.
-    assert.ok(view.byId('orphanText')!.textContent.includes('settings.sweepUnmanaged(1)'));
+    assert.ok(view.byId('orphanText')!.textContent.includes('settings.sweepUnmanaged.one(1)'));
     assert.equal(view.byId('sweep')!.style.display, 'inline-block');
-    assert.equal(view.byId('sweep')!.textContent, 'settings.deleteOrphans(2)');
+    assert.equal(view.byId('sweep')!.textContent, 'settings.deleteOrphans.other(2)');
   });
 
   test('the sweep sends back the exact list it showed, not just a count', async () => {

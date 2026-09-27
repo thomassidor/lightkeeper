@@ -310,8 +310,11 @@ export function registerSaveHandler<TPlan>(
     idPrefix: Parameters<typeof mintDeviceId>[0];
     /** Where the plan lands in the device store, and the migration chain's key. */
     storeKey: string;
-    /** The two words that make the default name this device type's own. */
-    naming: { fallback: string; suffix: string };
+    /**
+     * The two locale keys that make the default name this device type's own:
+     * the name with no lights to go on, and the word after a room or lamp.
+     */
+    naming: { fallbackKey: string; suffixKey: string };
     buildPlan: () => TPlan;
   },
 ): void {
@@ -334,9 +337,9 @@ export function registerSaveHandler<TPlan>(
         // have no name at all. The derivation below is the answer to "the user
         // gave us nothing", and a name of spaces IS nothing.
         name: name?.trim() || await deriveSuffixedName(host.app.catalog, state.target, {
-          fallback: options.naming.fallback,
-          suffix: options.naming.suffix,
-          zoneFallback: 'Zone',
+          fallback: host.translate(options.naming.fallbackKey),
+          suffix: host.translate(options.naming.suffixKey),
+          translate: (key, tokens) => host.translate(key, tokens),
         }),
         data: { id: mintDeviceId(options.idPrefix) },
         store: { [options.storeKey]: plan },

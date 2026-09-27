@@ -4,6 +4,18 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { runPairView } from '../support/pair-view-harness';
+
+/**
+ * `Homey.__` over `locales/en.json`: a dotted key, `__token__` substituted. A
+ * key that names a GROUP rather than a string comes back as the key, as it does
+ * on a Homey — which is the failure a counted string's wrong token produces.
+ */
+const EN = JSON.parse(readFileSync(join(import.meta.dirname, '..', '..', 'locales', 'en.json'), 'utf8'));
+const english = (key: string, tokens: Record<string, unknown> = {}): string => {
+  const value = key.split('.').reduce<any>((node, part) => node?.[part], EN);
+  if (typeof value !== 'string') return key;
+  return value.replace(/__(\w+)__/g, (whole, name: string) => (name in tokens ? String(tokens[name]) : whole));
+};
 import { valueAt as curveValueAt } from '../../lib/circadian/circadian-curve';
 import { DEFAULT_POINTS as REAL_POINTS } from '../../lib/circadian/circadian-types';
 import { PALETTE as REAL_PALETTE } from '../../lib/circadian/palette';
@@ -412,6 +424,33 @@ describe('the circadian day screen', () => {
     },
   });
 
+  test('the Transition card: three rows, the stored one checked, a curve drawn in each', async () => {
+    const view = run({ transition: 'quick' });
+    await view.settle();
+
+    const host = view.byId('dy-transition')!;
+    const rows = host.querySelectorAll('[role="radio"]');
+    assert.equal(rows.length, 3);
+    assert.deepEqual(rows.map(row => row.getAttribute('data-transition')), ['gradual', 'balanced', 'quick']);
+    assert.deepEqual(rows.map(row => row.getAttribute('aria-checked')), ['false', 'false', 'true']);
+    assert.equal(host.querySelectorAll('polyline').length, 3, 'one thumbnail per row');
+  });
+
+  test('tapping a Transition row checks it and sends it to the driver', async () => {
+    const view = run();
+    await view.settle();
+
+    view.fire(view.byId('dy-transition')!.querySelector('[data-transition="gradual"]')!, 'click');
+    await view.settle();
+
+    const pushed = [...view.emitted].reverse()
+      .find(call => call.event === 'setDay')?.data as Record<string, any>;
+    assert.equal(pushed.transition, 'gradual');
+    const checked = view.byId('dy-transition')!.querySelector('[aria-checked="true"]');
+    assert.equal(checked?.getAttribute('data-transition'), 'gradual');
+  });
+
+
   test('the morning is open and the other two are rows', async () => {
     const view = run();
     await view.settle();
@@ -522,6 +561,33 @@ describe('the curve screen', () => {
       setCurve: { count: 2, adjustBrightness: false, dropped: [] },
     },
   });
+
+  test('the Transition card: three rows, the stored one checked, a curve drawn in each', async () => {
+    const view = run({ transition: 'quick' });
+    await view.settle();
+
+    const host = view.byId('cv-transition')!;
+    const rows = host.querySelectorAll('[role="radio"]');
+    assert.equal(rows.length, 3);
+    assert.deepEqual(rows.map(row => row.getAttribute('data-transition')), ['gradual', 'balanced', 'quick']);
+    assert.deepEqual(rows.map(row => row.getAttribute('aria-checked')), ['false', 'false', 'true']);
+    assert.equal(host.querySelectorAll('polyline').length, 3, 'one thumbnail per row');
+  });
+
+  test('tapping a Transition row checks it and sends it to the driver', async () => {
+    const view = run();
+    await view.settle();
+
+    view.fire(view.byId('cv-transition')!.querySelector('[data-transition="gradual"]')!, 'click');
+    await view.settle();
+
+    const pushed = [...view.emitted].reverse()
+      .find(call => call.event === 'setCurve')?.data as Record<string, any>;
+    assert.equal(pushed.transition, 'gradual');
+    const checked = view.byId('cv-transition')!.querySelector('[aria-checked="true"]');
+    assert.equal(checked?.getAttribute('data-transition'), 'gradual');
+  });
+
 
   test('ten colours are shown and the rest fold out in place, as the layout says', async () => {
     // A set is a decision; everything shown at once is a tuning session.
@@ -905,7 +971,11 @@ describe('the daylight response screen', () => {
     darkElevation: -6, brightElevation: 25, sunPeak: 'flat',
   };
 
-  const run = (over: Record<string, unknown> = {}) => runPairView(read('daylight/response.html'), {
+  const run = (
+    over: Record<string, unknown> = {},
+    translate?: (key: string, tokens?: Record<string, unknown>) => string,
+  ) => runPairView(read('daylight/response.html'), {
+    translate,
     respond: {
       getResponse: {
         response: RESPONSE,
@@ -920,6 +990,33 @@ describe('the daylight response screen', () => {
       setDaylight: { response: RESPONSE, corrected: [], atDark: '20:18', atBright: '12:04' },
     },
   });
+
+  test('the Transition card: three rows, the stored one checked, a curve drawn in each', async () => {
+    const view = run({ response: { ...RESPONSE, transition: 'quick' } });
+    await view.settle();
+
+    const host = view.byId('rs-transition')!;
+    const rows = host.querySelectorAll('[role="radio"]');
+    assert.equal(rows.length, 3);
+    assert.deepEqual(rows.map(row => row.getAttribute('data-transition')), ['gradual', 'balanced', 'quick']);
+    assert.deepEqual(rows.map(row => row.getAttribute('aria-checked')), ['false', 'false', 'true']);
+    assert.equal(host.querySelectorAll('polyline').length, 3, 'one thumbnail per row');
+  });
+
+  test('tapping a Transition row checks it and sends it to the driver', async () => {
+    const view = run();
+    await view.settle();
+
+    view.fire(view.byId('rs-transition')!.querySelector('[data-transition="gradual"]')!, 'click');
+    await view.settle();
+
+    const pushed = [...view.emitted].reverse()
+      .find(call => call.event === 'setDaylight')?.data as Record<string, any>;
+    assert.equal(pushed.response.transition, 'gradual');
+    const checked = view.byId('rs-transition')!.querySelector('[aria-checked="true"]');
+    assert.equal(checked?.getAttribute('data-transition'), 'gradual');
+  });
+
 
   test('with a sensor the thresholds are lux, and the week is the evidence', async () => {
     const view = run();
@@ -963,16 +1060,20 @@ describe('the daylight response screen', () => {
     // Half a day of silence, not an hour: a still room legitimately goes quiet
     // for hours, but a stopped sensor holds the lights at one brightness. It
     // used to be a screen of its own; now it is the week card's own block.
+    //
+    // Real English, not the harness's echoed keys: `week.quiet` is a plural
+    // group, and a call that passes the hours as anything but `count` resolves
+    // to the bare key — which an echoing translator returns either way.
     const view = run({
       staleFor: 9, lastReport: 'Sat 12:40',
       week: weekOf({ kind: 'stopped', lastAt: Date.now() - 9 * 3_600_000 }, 6),
-    });
+    }, english);
     await view.settle();
 
     const block = finding(view);
     assert.ok(block, 'the quiet sensor is named in its own week');
     assert.ok(block!.className.split(' ').includes('bad'), 'on the error ground');
-    assert.equal(block!.children[0]!.textContent, 'week.quiet');
+    assert.equal(block!.children[0]!.textContent, 'Kitchen motion has not reported for 9 hours');
     assert.equal(view.byId('rs-week')!.querySelector('.tick'), null, 'no "now" on a sensor with no now');
     assert.ok(view.byId('rs-week')!.querySelector('.week-legend'), 'and the hatched hours are explained');
   });

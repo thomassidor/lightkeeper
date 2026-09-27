@@ -4,6 +4,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import en from '../../locales/en.json' with { type: 'json' };
+import { LANGUAGES, RTL_LANGUAGES, categoriesFor, isPluralGroup } from '../support/languages';
 
 /**
  * Localisation regressions are silent: a missing translation falls back to
@@ -43,13 +44,31 @@ import en from '../../locales/en.json' with { type: 'json' };
 const ROOT = join(import.meta.dirname, '..', '..');
 const LOCALES = join(ROOT, 'locales');
 
-/** Every leaf path in a nested locale object, as `a.b.c`. */
+/**
+ * Every leaf path in a nested locale object, as `a.b.c`.
+ *
+ * A PLURAL GROUP is a leaf: `targets.someLights` is one key whose forms differ
+ * by language — Polish has four, Korean one — so parity is about the group and
+ * the forms are checked separately, against `Intl.PluralRules`.
+ */
 function keysOf(object: Record<string, unknown>, prefix = ''): string[] {
   return Object.entries(object).flatMap(([key, value]) =>
-    value !== null && typeof value === 'object'
+    value !== null && typeof value === 'object' && !isPluralGroup(value)
       ? keysOf(value as Record<string, unknown>, `${prefix}${key}.`)
       : [`${prefix}${key}`]);
 }
+
+/** Every plural group in a locale object, as `[path, forms]`. */
+function pluralGroupsOf(object: Record<string, unknown>, prefix = ''): [string, Record<string, string>][] {
+  return Object.entries(object).flatMap(([key, value]): [string, Record<string, string>][] => {
+    if (isPluralGroup(value)) return [[`${prefix}${key}`, value]];
+    return value !== null && typeof value === 'object'
+      ? pluralGroupsOf(value as Record<string, unknown>, `${prefix}${key}.`)
+      : [];
+  });
+}
+
+const tokensIn = (value: string) => [...value.matchAll(/__(\w+)__/g)].map(m => m[1]!).sort();
 
 /**
  * Every locale other than English, as `[language, contents]`.
@@ -58,6 +77,11 @@ function keysOf(object: Record<string, unknown>, prefix = ''): string[] {
  * no new import statement — an import would have to name the file, which is
  * exactly the coupling this avoids.
  */
+/** Every locale file on disk, English included, as `[language, contents]`. */
+function allLocales(): [string, Record<string, unknown>][] {
+  return [['en', en as Record<string, unknown>], ...translations()];
+}
+
 function translations(): [string, Record<string, unknown>][] {
   return readdirSync(LOCALES)
     .filter(name => name.endsWith('.json') && name !== 'en.json')
@@ -130,7 +154,11 @@ function referencedKeys(): Set<string> {
   // 'state.noTargets' | "state.noTargets" | `state.noTargets`
   const literal = new RegExp(`['"\`](${groupPattern})\\.([\\w.]+)['"\`]`, 'g');
   // `functions.${fn}` — a dynamic lookup that uses the whole group.
-  const dynamic = new RegExp(`['"\`](${groupPattern})\\.\\$\\{`, 'g');
+  // `input.gesture.${key}` — the same, for the part of it after the prefix.
+  const dynamic = new RegExp(`['"\`](${groupPattern})\\.([\\w.]*?)\\$\\{`, 'g');
+  // 'ordinal' — a whole top-level group that is itself ONE key, because it is
+  // a plural group (views/shared/i18n.js picks its form).
+  const whole = new RegExp(`['"\`](${groupPattern})['"\`]`, 'g');
   // The settings page's helper: t('keyValid') means settings.keyValid.
   const helper = /(?<![\w.])t\(\s*'([\w]+)'/g;
 
@@ -140,8 +168,12 @@ function referencedKeys(): Set<string> {
     for (const m of text.matchAll(literal)) referenced.add(`${m[1]}.${m[2]}`);
 
     for (const m of text.matchAll(dynamic)) {
-      const prefix = `${m[1]}.`;
+      const prefix = `${m[1]}.${m[2]}`;
       for (const key of allKeys) if (key.startsWith(prefix)) referenced.add(key);
+    }
+
+    for (const m of text.matchAll(whole)) {
+      if (allKeys.includes(m[1]!)) referenced.add(m[1]!);
     }
 
     if (file.endsWith(join('settings', 'index.html'))) {
@@ -195,13 +227,12 @@ describe('locales', () => {
   });
 
   test('token placeholders match between English and every translation', () => {
-    const tokensIn = (value: string) =>
-      [...value.matchAll(/__(\w+)__/g)].map(m => m[1]).sort();
-
     for (const [language, contents] of translations()) {
       const walk = (a: Record<string, any>, b: Record<string, any>, path = '') => {
         for (const [key, value] of Object.entries(a)) {
           const here = `${path}${key}`;
+          // Plural groups have their own test below: their forms differ by language.
+          if (isPluralGroup(value)) continue;
           if (value !== null && typeof value === 'object') {
             walk(value, b[key] ?? {}, `${here}.`);
           } else if (typeof value === 'string' && typeof b[key] === 'string') {
@@ -215,5 +246,64 @@ describe('locales', () => {
 
       walk(en as Record<string, any>, contents as Record<string, any>);
     }
+  });
+
+  test('every language Homey supports has a locale file, and nothing else does', () => {
+    const onDisk = readdirSync(LOCALES)
+      .filter(name => name.endsWith('.json'))
+      .map(name => name.replace(/\.json$/, ''));
+    assert.deepEqual([...onDisk].sort(), [...LANGUAGES].sort(),
+      'locales/ must hold exactly the languages in test/support/languages.ts');
+  });
+
+  test('each locale says which language it is, and which way it reads', () => {
+    for (const [language, contents] of allLocales()) {
+      const meta = contents.meta as { language?: unknown; direction?: unknown } | undefined;
+      assert.equal(meta?.language, language, `${language}.json: meta.language`);
+      assert.equal(meta?.direction, RTL_LANGUAGES.has(language) ? 'rtl' : 'ltr', `${language}.json: meta.direction`);
+    }
+  });
+
+  test('every plural group has exactly the forms its language needs', () => {
+    for (const [language, contents] of allLocales()) {
+      for (const [path, forms] of pluralGroupsOf(contents)) {
+        const needed = categoriesFor(language, path === 'ordinal' ? 'ordinal' : 'cardinal');
+        assert.deepEqual(Object.keys(forms).sort(), needed, `${language}.json ${path}: plural forms`);
+      }
+    }
+  });
+
+  test('a plural group counts with __count__, and every form keeps to its tokens', () => {
+    const english = new Map(pluralGroupsOf(en as Record<string, unknown>));
+    for (const [path, forms] of english) {
+      if (path === 'ordinal') continue;
+      assert.ok(tokensIn(forms.other!).includes('count'),
+        `en.json ${path}: a plural group picks its form by the count token, so "other" must use __count__`);
+    }
+    for (const [language, contents] of allLocales()) {
+      for (const [path, forms] of pluralGroupsOf(contents)) {
+        const allowed = tokensIn(english.get(path)?.other ?? '');
+        for (const [form, text] of Object.entries(forms)) {
+          const extra = tokensIn(text).filter(token => !allowed.includes(token));
+          assert.deepEqual(extra, [], `${language}.json ${path}.${form} uses tokens English does not`);
+        }
+        // Only a form for exactly one thing may leave the number out ("the
+        // light"); "other" must carry every token English does.
+        assert.deepEqual(tokensIn(forms.other!), allowed, `${language}.json ${path}.other: tokens`);
+      }
+    }
+  });
+
+  test('no string is left empty', () => {
+    const walk = (node: unknown, path: string, language: string) => {
+      if (typeof node === 'string') {
+        assert.ok(node.trim().length > 0, `${language}.json ${path} is empty`);
+        return;
+      }
+      if (node !== null && typeof node === 'object') {
+        for (const [key, value] of Object.entries(node)) walk(value, path ? `${path}.${key}` : key, language);
+      }
+    };
+    for (const [language, contents] of allLocales()) walk(contents, '', language);
   });
 });

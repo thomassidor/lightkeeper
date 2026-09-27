@@ -82,7 +82,10 @@ artwork/              every graphic's source, and the script that exports them
 - `npm run lint` passes.
 - `npm run validate` passes, and the `app.json` it regenerates is committed.
 - If you edited a pair view: `npm run sync:views`, and no diff afterwards.
-- New user-facing strings are in `locales/en.json` — never inline in HTML, never in `lib/`.
+- New or changed user-facing strings are in `locales/` — never inline in HTML, never in `lib/` —
+  and in **all thirteen** language files, plus any manifest `{ "en": … }` object you touched. The
+  app ships every language Homey supports, and a string you add in English only is a test failure.
+  Use the glossary in [`docs/localisation.md`](docs/localisation.md).
 - If it is user-visible, it has a changelog entry — see [Releasing](#releasing) below.
 
 ## House rules
@@ -101,8 +104,15 @@ is why.
 
 **Strings that reach a user leave `lib/` as a locale key.** `lib/` has no access to `homey.__`, so
 it returns a `StateDetail` and the driver layer resolves it. `test/unit/locales.test.ts` enforces it
-in both directions; [`docs/localisation.md`](docs/localisation.md) has the rest, including what to do
-when a language is added back.
+in both directions; [`docs/localisation.md`](docs/localisation.md) has the rest.
+
+**Every string ships in thirteen languages.** English, Dutch, German, French, Italian, Swedish,
+Norwegian, Spanish, Danish, Russian, Polish, Korean and Arabic — Homey's own list. A counted string
+is a plural group (`{ "one": …, "other": … }`, the count in `__count__`), never `(s)`; a sentence
+with a variable in it is one key with a token, never fragments glued together; a percentage, a list
+or a date goes through the view's `lk` helpers. `locales.test.ts` and `manifest-locales.test.ts`
+check that every language has every string, with the plural forms `Intl.PluralRules` says it needs.
+If you cannot write a language yourself, say so on the PR rather than leaving English in its file.
 
 **Pair views are byte copies on disk, and `npm run sync:views` is what makes them.** Homey needs a
 real file in each place and will not follow a reference. Edit the controller's copy of a shared view,

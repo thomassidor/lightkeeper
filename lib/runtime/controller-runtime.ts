@@ -554,8 +554,8 @@ export class ControllerRuntime {
         detail: {
           key: 'state.someTargets',
           tokens: {
-            count: resolved.missing.length,
-            total: resolved.devices.length + resolved.missing.length,
+            unavailable: resolved.missing.length,
+            count: resolved.devices.length + resolved.missing.length,
           },
         },
       };

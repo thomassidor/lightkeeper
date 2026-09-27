@@ -27,7 +27,7 @@ Every document in this repository, and who it is for. None of `docs/` is bundled
 | [`homey-platform.md`](homey-platform.md) | **Eighteen sections on how Homey actually behaves**, established against real hardware and documented nowhere else. The code cites it as `platform §n`. §15 is also where the memory number lives — an empty Homey app is 30.6 MB, so read it before optimising for memory |
 | [`hardware-test-plan.md`](hardware-test-plan.md) | **The standing pass on a real Homey, run before every release.** What to do and how to report it, and nothing else |
 | [`hardware-test-coverage.md`](hardware-test-coverage.md) | What the script covers, what the suite covers instead, and which old test-plan lines were retired |
-| [`localisation.md`](localisation.md) | The app is English-only on purpose; how to add a language back, and the glossary kept from the removed Danish |
+| [`localisation.md`](localisation.md) | The thirteen languages the app ships, how plurals, ordinals and right-to-left work, what is deliberately English, and the glossary every language uses |
 
 ## If you review the app
 

@@ -6,6 +6,8 @@ import type { CircadianPlan } from '../../lib/circadian/circadian-types';
 import type { CircadianRuntime } from '../../lib/circadian/circadian-runtime';
 import type { CircadianRuntimeManager } from '../../lib/circadian/circadian-runtime-manager';
 import type { ControllerState, StateDetail } from '../../lib/profiles/controller-profile';
+import type { ControlMode } from '../../lib/pairing/control-choice';
+import type { Transition } from '../../lib/support/interpolate';
 
 /**
  * One virtual device per circadian light.
@@ -50,6 +52,7 @@ module.exports = class CircadianDevice
   override readonly withPauseSwitch = true;
   /** Three zones of the day are a colour TEMPERATURE each — never a colour. */
   override readonly valueCapabilities = [VALUE_CAPABILITIES.brightness, VALUE_CAPABILITIES.temperature];
+  override readonly controlModes: readonly ControlMode[] = ['after', 'before', 'none'];
 
   migrate(raw: unknown): PlanMigration<SimpleCircadianPlan> {
     return migrateCircadianPlan(raw);
@@ -92,7 +95,18 @@ module.exports = class CircadianDevice
         onStateChange,
         // What comes back is the EXPANDED plan, and only two of its fields can
         // have changed at runtime — see planOf.
-        async expanded => onPlanChange(foldBackSimplePlan(plan, expanded)),
+        //
+        // Folded onto the STORE, not onto the `plan` this was registered with.
+        // Settings and the pause switch move the plan through `updatePlan`
+        // without registering again, so the registered plan goes stale: folding
+        // onto it wrote a Transition or control choice changed in Settings back
+        // to its old value the next time a lamp was struck off `preStageLights`.
+        // The store is the current plan whenever this is persisted — during
+        // `apply()`, the one moment it is not, the lifecycle discards it.
+        async expanded => onPlanChange(foldBackSimplePlan(
+          (this.getStoreValue(this.storeKey) as SimpleCircadianPlan | undefined) ?? plan,
+          expanded,
+        )),
         displayName,
         // So diagnostics and the settings page can tell a circadian light from a
         // curve one; they share the registry.
@@ -133,6 +147,15 @@ module.exports = class CircadianDevice
 
   override withEnabled(plan: SimpleCircadianPlan, enabled: boolean): SimpleCircadianPlan {
     return { ...plan, enabled };
+  }
+
+  /** Stored at the root, beside the zones it blends; `expandSimplePlan` carries it on. */
+  override transitionOf(plan: SimpleCircadianPlan): Transition {
+    return plan.transition;
+  }
+
+  override withTransition(plan: SimpleCircadianPlan, transition: Transition): SimpleCircadianPlan {
+    return { ...plan, transition };
   }
 
   override async prepareApply(

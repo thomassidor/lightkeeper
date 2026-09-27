@@ -1,7 +1,7 @@
 import Homey from 'homey';
 import {
   colourSwatch, lightsSummary, paletteForScreen, registerIntroHandler, registerReviewHandler,
-  warmthSwatch,
+  transitionKey, warmthSwatch,
 } from '../../lib/pairing/flow-screens';
 
 import {
@@ -9,6 +9,9 @@ import {
 } from '../../lib/pairing/target-picker';
 import type { LightkeeperApp } from '../../lib/app-contract';
 import { valueAt } from '../../lib/circadian/circadian-curve';
+import {
+  DEFAULT_TRANSITION, sanitiseTransition, type Transition,
+} from '../../lib/support/interpolate';
 import { CURRENT_CURVE_SCHEMA_VERSION } from '../../lib/circadian/curve-migrations';
 import {
   DEFAULT_POINTS, MAX_POINTS, MIN_POINTS, sanitiseCurve,
@@ -27,6 +30,7 @@ import {
   timezoneOf,
   type PairSessionHost,
 } from '../../lib/pairing/pair-session';
+import { translatorFor } from '../../lib/support/i18n';
 
 /**
  * The curve controller's driver: pair/repair session handlers, the data its two
@@ -51,6 +55,8 @@ interface SessionState {
   target?: TargetSpec;
   points: CircadianPoint[];
   adjustBrightness: boolean;
+  /** How the curve moves between neighbouring points. */
+  transition: Transition;
   /** "Set lights before they turn on" — see lib/pairing/control-choice.ts. */
   preStage: boolean;
   /** The lamps the review screen's test proved. Absent = never tested. */
@@ -80,6 +86,15 @@ function brightnessRange(points: readonly CircadianPoint[]): { min: number; max:
 }
 
 module.exports = class CurveDriver extends Homey.Driver {
+  /**
+   * `homey.__`, plural-aware: a key that is a plural group picks its form from
+   * the numeric `count` token (lib/support/i18n.ts). Every string this driver
+   * resolves goes through here, so a counted one cannot be missed.
+   */
+  private tr(key: string, tokens?: Record<string, string | number>): string {
+    return translatorFor(this.homey)(key, tokens);
+  }
+
 
   /**
    * What `lib/pairing/pair-session.ts` needs of this driver.
@@ -93,7 +108,7 @@ module.exports = class CurveDriver extends Homey.Driver {
       log: (...args: unknown[]) => this.log(...args),
       error: (...args: unknown[]) => this.error(...args),
       translate: (key: string, tokens?: Record<string, string | number>) =>
-        this.homey.__(key, tokens),
+        this.tr(key, tokens),
       clock: this.homey.clock,
       app: this.app,
     };
@@ -137,6 +152,7 @@ module.exports = class CurveDriver extends Homey.Driver {
       target: plan?.target,
       points: plan?.points?.length ? plan.points : [...DEFAULT_POINTS],
       adjustBrightness: plan?.adjustBrightness ?? false,
+      transition: plan?.transition ?? DEFAULT_TRANSITION,
       preStage: plan?.preStage ?? false,
       preStageLights: plan?.preStageLights,
       // Absent means ON, the opposite of `preStage` above.
@@ -149,7 +165,8 @@ module.exports = class CurveDriver extends Homey.Driver {
       // "Change lights after they turn on" for a NEW device — the review
       // screen's default, argued at DEFAULT_SIMPLE_PLAN. A repair's `initial`
       // carries the stored plan's own choice and overwrites this.
-      points: [...DEFAULT_POINTS], adjustBrightness: false, preStage: false, writesLights: true,
+      points: [...DEFAULT_POINTS], adjustBrightness: false, transition: DEFAULT_TRANSITION,
+      preStage: false, writesLights: true,
       ...initial,
     };
 
@@ -184,7 +201,7 @@ module.exports = class CurveDriver extends Homey.Driver {
     // ---------------------------------------------------------------- curve
 
     handler('getCurve', async () => {
-      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+      if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
       const [summary, lights] = await Promise.all([
         resolveSummary(this.app.catalog, state.target),
         targetLights(this.app.catalog, state.target),
@@ -208,8 +225,9 @@ module.exports = class CurveDriver extends Homey.Driver {
         // The palette and where each swatch goes. Ids and locale keys come from
         // `lib/`, and the driver layer turns them into words — the same rule as
         // every other user-facing string produced there.
-        ...paletteForScreen(key => this.homey.__(key)),
+        ...paletteForScreen(key => this.tr(key)),
         adjustBrightness: state.adjustBrightness,
+        transition: state.transition,
         // Shown on screen, because "warm at 20:00" is meaningless without saying
         // whose 20:00 — and a Homey in the wrong timezone is a real support case.
         timezone: this.timezone(),
@@ -226,18 +244,22 @@ module.exports = class CurveDriver extends Homey.Driver {
      * than repairing it into a curve the user never asked for.
      */
     handler('setCurve', async (payload: {
-      points: unknown; adjustBrightness?: boolean;
+      points: unknown; adjustBrightness?: boolean; transition?: unknown;
     }) => {
       const result = sanitiseCurve(payload?.points, payload?.adjustBrightness === true);
       for (const drop of result.dropped) {
         this.log(`Dropped point ${drop.index + 1}: ${drop.reason}`);
       }
+      const corrected: string[] = [];
       state.points = result.points;
       state.adjustBrightness = result.adjustBrightness;
+      state.transition = sanitiseTransition(payload?.transition, corrected);
+      if (corrected.length > 0) this.log('Corrected transition to its default: the screen sent something unusable');
 
       return {
         count: result.points.length,
         adjustBrightness: result.adjustBrightness,
+        transition: state.transition,
         dropped: result.dropped,
       };
     });
@@ -259,7 +281,7 @@ module.exports = class CurveDriver extends Homey.Driver {
        * many points and when, and neither says what the day looks like.
        */
       const bars = Array.from({ length: 24 }, (_, hour) => {
-        const at = valueAt(state.points, hour * 60);
+        const at = valueAt(state.points, hour * 60, {}, state.transition);
         return {
           // `valueAt` has already resolved the palette id to hue and saturation
           // — and to the FLAT hold a segment with one coloured end produces, so
@@ -294,6 +316,7 @@ module.exports = class CurveDriver extends Homey.Driver {
               : host.translate('review.notChanged'),
             view: 'curve',
           },
+          { labelKey: 'review.transition', value: host.translate(transitionKey(state.transition)), view: 'curve' },
         ],
         control: await reviewControl(host, state, true),
       };
@@ -310,7 +333,7 @@ module.exports = class CurveDriver extends Homey.Driver {
       device,
       idPrefix: 'curv',
       storeKey: 'curve',
-      naming: { fallback: 'Colour Curve Light', suffix: 'curve' },
+      naming: { fallbackKey: 'names.curve', suffixKey: 'names.curveSuffix' },
       buildPlan: () => this.buildPlan(state),
     });
 
@@ -337,9 +360,9 @@ module.exports = class CurveDriver extends Homey.Driver {
   }
 
   private buildPlan(state: SessionState): CircadianPlan {
-    if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+    if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
     if (state.points.length < MIN_POINTS) {
-      throw new Error(this.homey.__('errors.curveNeedsPoints', { count: MIN_POINTS }));
+      throw new Error(this.tr('errors.curveNeedsPoints', { count: MIN_POINTS }));
     }
 
     return {
@@ -348,6 +371,7 @@ module.exports = class CurveDriver extends Homey.Driver {
       target: state.target,
       points: state.points,
       adjustBrightness: state.adjustBrightness,
+      transition: state.transition,
       preStage: state.preStage,
       ...(state.preStageLights !== undefined ? { preStageLights: [...state.preStageLights] } : {}),
       ...writesLightsField(state.writesLights),

@@ -20,14 +20,21 @@ import type { TargetSpec } from '../outputs/light-intent';
  * caller supplies the vocabulary, and the shapes differ.
  */
 
+/** The caller's `translate`, plural-aware: `names.lightCount` is a plural group. */
+export type NameTranslate = (key: string, tokens?: Record<string, string | number>) => string;
+
 /** What a name is built from, so the caller does not have to fetch it twice. */
 export interface NameParts {
   /** Used when there is no target at all, or no light in it. */
   fallback: string;
-  /** Appended after the room or lamp: "Reading lamp <suffix>". */
+  /** Joined to the room or lamp by `names.suffixed`: "Reading lamp <suffix>". */
   suffix: string;
-  /** Stands in for a zone whose name cannot be read. */
-  zoneFallback: string;
+  /**
+   * Every other word, and the WORD ORDER: "Kitchen schedule" is "Planning
+   * cuisine" in French, so the join is a locale template (`names.suffixed`),
+   * never a `${place} ${suffix}` here.
+   */
+  translate: NameTranslate;
 }
 
 /**
@@ -57,22 +64,25 @@ export async function deriveSuffixedName(
   parts: NameParts,
 ): Promise<string> {
   if (!target) return parts.fallback;
+  const { translate, suffix } = parts;
+  const zoneFallback = translate('names.zone');
+  const suffixed = (place: string) => translate('names.suffixed', { place, suffix });
 
   if (target.kind === 'zone') {
     const zones = await catalog.allZones();
     const zone = zones.find(candidate => candidate.id === target.zoneId);
-    return `${named(zone?.name, parts.zoneFallback)} ${parts.suffix}`;
+    return suffixed(named(zone?.name, zoneFallback));
   }
 
   const lights = await targetLights(catalog, target);
   if (lights.length === 0) return parts.fallback;
-  if (lights.length === 1) return `${named(lights[0]!.name, parts.zoneFallback)} ${parts.suffix}`;
+  if (lights.length === 1) return suffixed(named(lights[0]!.name, zoneFallback));
 
   // Where every light shares a room, the room reads better than a list.
   const zoneNames = new Set(lights.map(light => (light.zoneName ?? '').trim()).filter(Boolean));
-  if (zoneNames.size === 1) return `${[...zoneNames][0]} ${parts.suffix}`;
+  if (zoneNames.size === 1) return suffixed([...zoneNames][0]!);
 
-  return `${lights.length} lights ${parts.suffix}`;
+  return suffixed(translate('names.lightCount', { count: lights.length }));
 }
 
 /**
@@ -86,27 +96,32 @@ export async function deriveControllerName(
   catalog: DeviceCatalog,
   target: TargetSpec | undefined,
   source: string,
-  zoneFallback = 'zone',
+  translate: NameTranslate,
 ): Promise<string> {
   if (!target) return source;
+  const zoneFallback = translate('names.zone');
+  const to = (lights: string) => translate('names.controller', { source, lights });
 
   if (target.kind === 'zone') {
     const zones = await catalog.allZones();
     const zone = zones.find(candidate => candidate.id === target.zoneId);
-    return `${source} → ${named(zone?.name, zoneFallback)}`;
+    return to(named(zone?.name, zoneFallback));
   }
 
   const lights = await targetLights(catalog, target);
   if (lights.length === 0) return source;
-  if (lights.length === 1) return `${source} → ${named(lights[0]!.name, zoneFallback)}`;
+  if (lights.length === 1) return to(named(lights[0]!.name, zoneFallback));
 
   const zoneNames = new Set(lights.map(light => (light.zoneName ?? '').trim()).filter(Boolean));
-  if (zoneNames.size === 1) return `${source} → ${[...zoneNames][0]}`;
+  if (zoneNames.size === 1) return to([...zoneNames][0]!);
 
   // Two is short enough to name both, and "2 lights" would be strictly less
   // informative than the two names it replaces.
   if (lights.length === 2) {
-    return `${source} → ${named(lights[0]!.name, zoneFallback)} + ${named(lights[1]!.name, zoneFallback)}`;
+    return to(translate('names.pair', {
+      first: named(lights[0]!.name, zoneFallback),
+      second: named(lights[1]!.name, zoneFallback),
+    }));
   }
-  return `${source} → ${lights.length} lights`;
+  return to(translate('names.lightCount', { count: lights.length }));
 }

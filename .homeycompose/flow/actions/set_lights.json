@@ -1,33 +1,207 @@
 {
-  "title": { "en": "Set lights the Lightkeeper way" },
-  "titleFormatted": { "en": "Set [[lights]] — colour from [[colour]], brightness from [[brightness]], [[power]]" },
-  "hint": { "en": "Puts lights where your Lightkeeper devices want them right now, in one go. Use it when something else decides the moment — motion, a door, a button — and you want Lightkeeper to decide the light. The colour and the brightness can come from two different Lightkeeper devices, so a Room-sensing Light can set the level while a Circadian Light sets the white." },
+  "title": {
+    "en": "Set lights the Lightkeeper way",
+    "nl": "Lampen instellen op de Lightkeeper-manier",
+    "de": "Lichter auf die Lightkeeper-Art einstellen",
+    "fr": "Régler les lumières à la façon Lightkeeper",
+    "it": "Imposta le luci alla maniera di Lightkeeper",
+    "sv": "Ställ in lamporna på Lightkeepers sätt",
+    "no": "Still inn lys på Lightkeeper-måten",
+    "es": "Ajustar las luces al estilo Lightkeeper",
+    "da": "Indstil lys på Lightkeeper-måden",
+    "ru": "Настроить свет по правилам Lightkeeper",
+    "pl": "Ustaw światła według Lightkeeper",
+    "ko": "Lightkeeper 방식으로 조명 설정",
+    "ar": "ضبط الأضواء بطريقة Lightkeeper"
+  },
+  "titleFormatted": {
+    "en": "Set [[lights]] — colour from [[colour]], brightness from [[brightness]], [[power]]",
+    "nl": "Stel [[lights]] in — kleur van [[colour]], helderheid van [[brightness]], [[power]]",
+    "de": "[[lights]] einstellen – Farbe von [[colour]], Helligkeit von [[brightness]], [[power]]",
+    "fr": "Régler [[lights]] — couleur depuis [[colour]], luminosité depuis [[brightness]], [[power]]",
+    "it": "Imposta [[lights]] — colore da [[colour]], luminosità da [[brightness]], [[power]]",
+    "sv": "Ställ in [[lights]] – färg från [[colour]], ljusstyrka från [[brightness]], [[power]]",
+    "no": "Still inn [[lights]] — farge fra [[colour]], lysstyrke fra [[brightness]], [[power]]",
+    "es": "Ajustar [[lights]]: color de [[colour]], brillo de [[brightness]], [[power]]",
+    "da": "Indstil [[lights]] — farve fra [[colour]], lysstyrke fra [[brightness]], [[power]]",
+    "ru": "Настроить [[lights]] — цвет из [[colour]], яркость из [[brightness]], [[power]]",
+    "pl": "Ustaw [[lights]] — barwa z [[colour]], jasność z [[brightness]], [[power]]",
+    "ko": "[[lights]] 설정 — 색상은 [[colour]]에서, 밝기는 [[brightness]]에서, [[power]]",
+    "ar": "ضبط [[lights]] — اللون من [[colour]]، والسطوع من [[brightness]]، [[power]]"
+  },
+  "hint": {
+    "en": "Puts lights where your Lightkeeper devices want them right now, in one go. Use it when something else decides the moment — motion, a door, a button — and you want Lightkeeper to decide the light. The colour and the brightness can come from two different Lightkeeper devices, so a Room-sensing Light can set the level while a Circadian Light sets the white.",
+    "nl": "Zet lampen in één keer waar je Lightkeeper-apparaten ze nu willen hebben. Gebruik dit als iets anders het moment bepaalt — beweging, een deur, een knop — en je Lightkeeper het licht wilt laten bepalen. De kleur en de helderheid kunnen van twee verschillende Lightkeeper-apparaten komen, zodat een ruimtebewust licht het niveau kan bepalen terwijl een circadiaans licht het wit bepaalt.",
+    "de": "Stellt Lichter in einem Schritt so ein, wie deine Lightkeeper-Geräte sie gerade haben möchten. Verwende das, wenn etwas anderes den Moment bestimmt – Bewegung, eine Tür, eine Taste – und Lightkeeper das Licht bestimmen soll. Farbe und Helligkeit können von zwei verschiedenen Lightkeeper-Geräten kommen, sodass ein raumsensitives Licht die Helligkeit festlegt, während ein zirkadianes Licht das Weiß festlegt.",
+    "fr": "Met les lumières là où vos appareils Lightkeeper les veulent en ce moment, en une seule fois. Utilisez-la quand autre chose décide du moment — un mouvement, une porte, un bouton — et que vous voulez que Lightkeeper décide de la lumière. La couleur et la luminosité peuvent venir de deux appareils Lightkeeper différents : un éclairage selon la pièce peut régler le niveau pendant qu'un éclairage circadien règle le blanc.",
+    "it": "Porta le luci dove i tuoi dispositivi Lightkeeper le vogliono in questo momento, in un colpo solo. Usala quando qualcos'altro decide il momento (un movimento, una porta, un pulsante) e vuoi che sia Lightkeeper a decidere la luce. Colore e luminosità possono venire da due dispositivi Lightkeeper diversi, così una luce sensibile all'ambiente può impostare il livello mentre una luce circadiana imposta il bianco.",
+    "sv": "Ställer lamporna där dina Lightkeeper-enheter vill ha dem just nu, i ett svep. Använd det när något annat bestämmer ögonblicket – rörelse, en dörr, en knapp – och du vill att Lightkeeper ska bestämma ljuset. Färgen och ljusstyrkan kan komma från två olika Lightkeeper-enheter, så ett rumskännande ljus kan ställa in nivån medan ett dygnsrytmsljus ställer in det vita.",
+    "no": "Setter lysene der Lightkeeper-enhetene dine vil ha dem akkurat nå, i én operasjon. Bruk det når noe annet bestemmer øyeblikket — bevegelse, en dør, en knapp — og du vil at Lightkeeper skal bestemme lyset. Fargen og lysstyrken kan komme fra to forskjellige Lightkeeper-enheter, så et Romfølende lys kan bestemme nivået mens et døgnrytmelys bestemmer det hvite lyset.",
+    "es": "Pone las luces como las quieren ahora mismo tus dispositivos de Lightkeeper, de una vez. Úsala cuando otra cosa decide el momento (movimiento, una puerta, un botón) y quieres que Lightkeeper decida la luz. El color y el brillo pueden venir de dos dispositivos de Lightkeeper distintos, así que una Luz que percibe la habitación puede fijar el nivel mientras una luz circadiana fija el blanco.",
+    "da": "Sætter lys, hvor dine Lightkeeper-enheder vil have dem lige nu, i ét hug. Brug det, når noget andet bestemmer tidspunktet — bevægelse, en dør, en knap — og du vil have Lightkeeper til at bestemme lyset. Farven og lysstyrken kan komme fra to forskellige Lightkeeper-enheder, så et Rumfølende lys kan bestemme niveauet, mens et døgnrytmelys bestemmer det hvide lys.",
+    "ru": "Выставляет светильники так, как этого прямо сейчас хотят ваши устройства Lightkeeper, за один раз. Используйте, когда момент определяет что-то другое — движение, дверь, кнопка, — а свет пусть выбирает Lightkeeper. Цвет и яркость можно брать из двух разных устройств Lightkeeper: например, свет по освещённости комнаты задаёт уровень, а циркадный свет — оттенок белого.",
+    "pl": "Ustawia światła tak, jak twoje urządzenia Lightkeeper chcą ich teraz, za jednym razem. Użyj tej karty, gdy o chwili decyduje coś innego — ruch, drzwi, przycisk — a o świetle ma zdecydować Lightkeeper. Barwa i jasność mogą pochodzić z dwóch różnych urządzeń Lightkeeper, więc światło czujące pomieszczenie może ustawiać poziom, a światło okołodobowe odcień bieli.",
+    "ko": "Lightkeeper 기기가 지금 원하는 상태로 조명을 한 번에 맞춰요. 동작 감지, 문, 버튼처럼 다른 무언가가 시점을 정하고 조명은 Lightkeeper가 정하게 하고 싶을 때 사용하세요. 색상과 밝기는 서로 다른 Lightkeeper 기기에서 가져올 수 있어서, 실내 감지 조명이 밝기를 정하고 생체리듬 조명이 흰색을 정할 수 있어요.",
+    "ar": "يضع الأضواء حيث تريدها أجهزة Lightkeeper الآن، دفعة واحدة. استخدمها حين يحدد شيء آخر اللحظة — حركة أو باب أو زر — وتريد أن يحدد Lightkeeper الإضاءة. يمكن أن يأتي اللون والسطوع من جهازَي Lightkeeper مختلفين، فتضبط الإضاءة التي تستشعر الغرفة المستوى بينما تضبط إضاءة الإيقاع اليومي درجة البياض."
+  },
   "args": [
     {
       "type": "autocomplete",
       "name": "lights",
-      "title": { "en": "Lights" },
-      "placeholder": { "en": "A room, or one light" }
+      "title": {
+        "en": "Lights",
+        "nl": "Lampen",
+        "de": "Lichter",
+        "fr": "Lumières",
+        "it": "Luci",
+        "sv": "Lampor",
+        "no": "Lys",
+        "es": "Luces",
+        "da": "Lys",
+        "ru": "Светильники",
+        "pl": "Światła",
+        "ko": "조명",
+        "ar": "الأضواء"
+      },
+      "placeholder": {
+        "en": "A room, or one light",
+        "nl": "Een kamer, of één lamp",
+        "de": "Ein Raum oder ein Licht",
+        "fr": "Une pièce, ou une lumière",
+        "it": "Una stanza, o una luce",
+        "sv": "Ett rum eller en lampa",
+        "no": "Et rom, eller ett lys",
+        "es": "Una habitación o una luz",
+        "da": "Et rum eller ét lys",
+        "ru": "Комната или один светильник",
+        "pl": "Pomieszczenie albo jedno światło",
+        "ko": "방 또는 조명 하나",
+        "ar": "غرفة، أو ضوء واحد"
+      }
     },
     {
       "type": "autocomplete",
       "name": "colour",
-      "title": { "en": "Colour from" },
-      "placeholder": { "en": "A circadian or Colour Curve Light" }
+      "title": {
+        "en": "Colour from",
+        "nl": "Kleur van",
+        "de": "Farbe von",
+        "fr": "Couleur depuis",
+        "it": "Colore da",
+        "sv": "Färg från",
+        "no": "Farge fra",
+        "es": "Color de",
+        "da": "Farve fra",
+        "ru": "Цвет из",
+        "pl": "Barwa z",
+        "ko": "색상 가져올 곳",
+        "ar": "اللون من"
+      },
+      "placeholder": {
+        "en": "A circadian or Colour Curve Light",
+        "nl": "Een circadiaans licht of kleurcurvelicht",
+        "de": "Ein zirkadianes Licht oder Farbkurvenlicht",
+        "fr": "Un éclairage circadien ou à courbe de couleur",
+        "it": "Una luce circadiana o a curva di colore",
+        "sv": "Ett dygnsrytmsljus eller färgkurvljus",
+        "no": "Et døgnrytmelys eller Fargekurvelys",
+        "es": "Una luz circadiana o una Luz con curva de color",
+        "da": "Et døgnrytmelys eller Farvekurvelys",
+        "ru": "Циркадный свет или свет по цветовой кривой",
+        "pl": "Światło okołodobowe albo z krzywą barw",
+        "ko": "생체리듬 조명 또는 색상 곡선 조명",
+        "ar": "إضاءة إيقاع يومي أو إضاءة منحنى ألوان"
+      }
     },
     {
       "type": "autocomplete",
       "name": "brightness",
-      "title": { "en": "Brightness from" },
-      "placeholder": { "en": "A Room-sensing Light, schedule or curve" }
+      "title": {
+        "en": "Brightness from",
+        "nl": "Helderheid van",
+        "de": "Helligkeit von",
+        "fr": "Luminosité depuis",
+        "it": "Luminosità da",
+        "sv": "Ljusstyrka från",
+        "no": "Lysstyrke fra",
+        "es": "Brillo de",
+        "da": "Lysstyrke fra",
+        "ru": "Яркость из",
+        "pl": "Jasność z",
+        "ko": "밝기 가져올 곳",
+        "ar": "السطوع من"
+      },
+      "placeholder": {
+        "en": "A Room-sensing Light, schedule or curve",
+        "nl": "Een ruimtebewust licht, schema of curve",
+        "de": "Ein raumsensitives Licht, ein Zeitplan oder eine Kurve",
+        "fr": "Un éclairage selon la pièce, un programme ou une courbe",
+        "it": "Una luce sensibile all'ambiente, una programmazione o una curva",
+        "sv": "Ett rumskännande ljus, schema eller en kurva",
+        "no": "Et Romfølende lys, en tidsplan eller en kurve",
+        "es": "Una Luz que percibe la habitación, un horario o una curva",
+        "da": "Et Rumfølende lys, en tidsplan eller en kurve",
+        "ru": "Свет по освещённости комнаты, расписание или кривая",
+        "pl": "Światło czujące pomieszczenie, harmonogram albo krzywa",
+        "ko": "실내 감지 조명, 일정 또는 곡선",
+        "ar": "إضاءة تستشعر الغرفة، أو جدول، أو منحنى"
+      }
     },
     {
       "type": "dropdown",
       "name": "power",
-      "title": { "en": "The switch" },
+      "title": {
+        "en": "The switch",
+        "nl": "De schakelaar",
+        "de": "Der Schalter",
+        "fr": "L'allumage",
+        "it": "L'accensione",
+        "sv": "Strömbrytaren",
+        "no": "Av/på",
+        "es": "El encendido",
+        "da": "Tænd/sluk",
+        "ru": "Включение",
+        "pl": "Włączanie",
+        "ko": "전원",
+        "ar": "التشغيل"
+      },
       "values": [
-        { "id": "on", "title": { "en": "Switch them on" } },
-        { "id": "only_on", "title": { "en": "Only lights already on" } }
+        {
+          "id": "on",
+          "title": {
+            "en": "Switch them on",
+            "nl": "Zet ze aan",
+            "de": "Einschalten",
+            "fr": "Les allumer",
+            "it": "Accendile",
+            "sv": "Tänd dem",
+            "no": "Slå dem på",
+            "es": "Encenderlas",
+            "da": "Tænd dem",
+            "ru": "Включить их",
+            "pl": "Włącz je",
+            "ko": "조명 켜기",
+            "ar": "تشغيلها"
+          }
+        },
+        {
+          "id": "only_on",
+          "title": {
+            "en": "Only lights already on",
+            "nl": "Alleen lampen die al aan zijn",
+            "de": "Nur Lichter, die schon an sind",
+            "fr": "Seulement les lumières déjà allumées",
+            "it": "Solo le luci già accese",
+            "sv": "Bara lampor som redan är tända",
+            "no": "Bare lys som allerede er på",
+            "es": "Solo las luces ya encendidas",
+            "da": "Kun lys, der allerede er tændt",
+            "ru": "Только уже включённые",
+            "pl": "Tylko światła już włączone",
+            "ko": "이미 켜진 조명만",
+            "ar": "الأضواء المضاءة فقط"
+          }
+        }
       ]
     }
   ]

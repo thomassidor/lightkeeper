@@ -90,6 +90,16 @@ offers more through the Philips Hue app than through Matter. **Support is not a 
 on the box.** The pairing screen shows a count of the events Homey exposes for each device, so you
 can see before you commit.
 
+### Which languages does it speak?
+
+Every language Homey itself supports: English, Dutch, German, French, Italian, Swedish, Norwegian,
+Spanish, Danish, Russian, Polish, Korean and Arabic. Lightkeeper follows your Homey's language — the
+setup screens, the device pages, the settings page, the Flow cards and the App Store listing all
+change with it. Three things stay in English on purpose: logs and diagnostics (so a problem report
+reads the same whoever sends it), the names of the Flows a Light Remote or a light schedule
+generates (renaming one would look like your own edit, and Lightkeeper leaves those alone), and your
+remote's own names for its buttons, which come from the remote's app.
+
 ### Can I use Homey Cloud, or a Homey Pro 2019?
 
 No to both. Homey Cloud does not offer the local Web API access the design depends on, and **Homey
@@ -101,10 +111,11 @@ Pro 2023.
 The same engine, two ways of asking.
 
 A **circadian light** asks about three parts of the day — morning, midday and evening — and supplies
-the shape itself: each part held steady, fading from one into the next, and round again across
-midnight. Morning ends a little after sunrise and evening starts a little before sunset, both worked
-out from your Homey's own location, so the day moves with the real one through the year. You choose
-those two offsets; the shape between them is deliberately not a setting.
+the shape itself: each part's colour at its middle, blending into the next with the boundary as the
+halfway point, and round again across midnight. Morning ends a little after sunrise and evening
+starts a little before sunset, both worked out from your Homey's own location, so the day moves with
+the real one through the year. You choose those two offsets, and a **Transition** — *Gradual*
+changes evenly all day, *Quick* changes mostly around each boundary, *Balanced* is between the two.
 
 A **Colour Curve Light** hands you the whole curve: every point, every time, and a colour from a
 closed palette instead of a warmth at any point.
@@ -249,7 +260,10 @@ alone, and a button or a Flow is what puts them on the lights. A device that dri
 button that sets them too means two devices setting the same bulbs at every switch-on: two
 brightnesses, the colour twice, and lights that visibly step between them. The source picker warns
 when the device you pick drives its own lights, and says how many of the button's lights it shares.
-Run **Repair** on the device to change its answer.
+Change the answer from the device itself: its Settings (the gear on its page) carry the same
+choices. Only
+*Set lights before they turn on* still wants **Repair** once, for the light test — until a light has
+passed it, the device sets nothing in advance, and its page says so.
 
 A Homey **device group** counts as the lamps inside it. A remote driving a group called "Ceiling"
 and a curve driving the three spots in that group are driving the same three bulbs, and the warning

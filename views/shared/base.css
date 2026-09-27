@@ -283,7 +283,7 @@
                        color: var(--lk-ink); margin: 0 0 9px; }
 
   /* Tappable rows: 44px minimum, which is the smallest comfortable touch target. */
-  #ROOT .tile { display: block; width: 100%; text-align: left; background: var(--lk-surface);
+  #ROOT .tile { display: block; width: 100%; text-align: start; background: var(--lk-surface);
               border: 1.5px solid var(--lk-edge); border-radius: 12px; padding: 13px 14px;
               margin-bottom: 7px; cursor: pointer; min-height: 44px; box-sizing: border-box;
               color: var(--lk-ink);
@@ -302,7 +302,10 @@
      written twice, and the two copies have to move together. */
   #ROOT select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236a7180' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
                background-repeat: no-repeat; background-position: right 13px center;
-               background-size: 11px; padding-right: 34px; }
+               background-size: 11px; padding-inline-end: 34px; }
+  /* Arabic reads right to left, so the chevron sits on the other end — where
+     `padding-inline-end` has already made room for it. */
+  #ROOT[dir="rtl"] select { background-position: left 13px center; }
   #ROOT input:focus, #ROOT select:focus { outline: none; border-color: var(--lk-accent);
                                       box-shadow: 0 0 0 3px var(--lk-ring); }
 
@@ -402,7 +405,7 @@
      unrelated body copy. */
   #ROOT .msg .lead { font-weight: 600; margin-bottom: 3px; }
 
-  #ROOT ol { font-size: 15px; line-height: 1.75; padding-left: 20px; margin: 0 0 16px;
+  #ROOT ol { font-size: 15px; line-height: 1.75; padding-inline-start: 20px; margin: 0 0 16px;
            color: var(--lk-body); }
   #ROOT .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
   @media (max-width: 380px) { #ROOT .grid { grid-template-columns: 1fr; } }
@@ -423,7 +426,7 @@
      device types. */
   #ROOT .steps.tight i { width: 16px; }
   #ROOT .steps i.on { background: var(--lk-accent); }
-  #ROOT .steps span { margin-left: 4px; font-size: 13px; color: var(--lk-muted); }
+  #ROOT .steps span { margin-inline-start: 4px; font-size: 13px; color: var(--lk-muted); }
 
   /* `label · value · chevron`. The one shape everything secondary takes:
      a row that says what it is, what it is set to, and that it can be opened.
@@ -435,10 +438,10 @@
   #ROOT .row { display: flex; align-items: center; gap: 10px; width: 100%;
                padding: 13px 0; min-height: 44px; box-sizing: border-box;
                background: none; border: none; font: inherit; color: inherit;
-               text-align: left; cursor: pointer; }
+               text-align: start; cursor: pointer; }
   #ROOT .row + .row { border-top: 1px solid var(--lk-line); }
   #ROOT .row .label { flex: 1; font-size: 15px; }
-  #ROOT .row .value { font-size: 15px; color: var(--lk-muted); text-align: right; }
+  #ROOT .row .value { font-size: 15px; color: var(--lk-muted); text-align: end; }
   #ROOT .row .chev { flex: none; font-size: 16px; color: var(--lk-chev); }
   #ROOT .row .sub { font-size: 13px; color: var(--lk-muted); margin: 2px 0 0; }
   /* The card a list of rows lives in. 4px top and bottom rather than 14:
@@ -457,7 +460,7 @@
                   min-height: 44px; box-sizing: border-box;
                   background: none; border-left: none; border-right: none;
                   border-bottom: none; font: inherit; color: inherit;
-                  text-align: left; cursor: pointer; }
+                  text-align: start; cursor: pointer; }
   #ROOT .toggle .label { flex: 1; font-size: 15px; }
   #ROOT .toggle .track { flex: none; width: 44px; height: 26px; border-radius: 999px;
                          position: relative; background: var(--lk-line);

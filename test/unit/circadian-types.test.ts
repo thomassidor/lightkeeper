@@ -8,10 +8,10 @@ import {
   migrateCircadianPlan, CURRENT_CIRCADIAN_SCHEMA_VERSION,
 } from '../../lib/circadian/circadian-migrations';
 import {
-  DEFAULT_ZONES, MAX_OFFSET, ZONE_RAMP,
-  expandSimplePlan, foldBackSimplePlan, resolveBoundaries, sanitiseZones, zonePoints,
+  DEFAULT_ZONES, MAX_OFFSET, MIN_ZONE_MINUTES,
+  expandSimplePlan, foldBackSimplePlan, resolveBoundaries, sanitiseZones, zonePoints, zoneValueAt,
 } from '../../lib/circadian/simple-curve';
-import { valueAt } from '../../lib/circadian/circadian-curve';
+import { TRANSITIONS, type Transition } from '../../lib/support/interpolate';
 
 /**
  * Everything the curve screen sends arrives from a webview and is therefore
@@ -211,56 +211,102 @@ describe('the three zones', () => {
       `evening ${eveningStartMinute} must stay after morning ${morningEndMinute}`,
     );
     assert.ok(
-      eveningStartMinute - morningEndMinute > 2 * ZONE_RAMP,
-      'and with room for both ramps, or the middle zone never holds',
+      eveningStartMinute - morningEndMinute >= MIN_ZONE_MINUTES,
+      'and with the middle zone still a zone, or it is never reached at all',
     );
   });
 
-  test('six points: three zones held flat, and three ramps between them', () => {
+  test('three points, one at the centre of each zone', () => {
+    // For reading only — diagnostics and "next point". Sunrise 06:30 + 30m and
+    // sunset 20:00 - 60m put the boundaries at 07:00 and 19:00.
     const points = zonePoints(
       { ...DEFAULT_ZONES, morningEnd: 30, eveningStart: -60 }, CONTEXT,
     );
-    assert.equal(points.length, 6);
-
-    const at = (id: string) => points.find(point => point.id === id)!;
-    assert.equal(at('morning-hold').anchor.kind, 'clock');
+    assert.deepEqual(points.map(point => point.id), ['morning', 'midday', 'evening']);
     assert.deepEqual(
       points.map(point => (point.anchor.kind === 'clock' ? point.anchor.at : -1)),
-      [ZONE_RAMP, 7 * 60 - ZONE_RAMP, 7 * 60 + ZONE_RAMP,
-        19 * 60 - ZONE_RAMP, 19 * 60 + ZONE_RAMP, 24 * 60 - ZONE_RAMP],
+      [3 * 60 + 30, 13 * 60, 21 * 60 + 30],
     );
-
-    // Each zone is held at its own temperature at both of its own points.
-    assert.equal(at('night-end').warmth, DEFAULT_ZONES.morning.temperature);
-    assert.equal(at('morning-hold').warmth, DEFAULT_ZONES.morning.temperature);
-    assert.equal(at('midday-start').warmth, DEFAULT_ZONES.midday.temperature);
-    assert.equal(at('midday-hold').warmth, DEFAULT_ZONES.midday.temperature);
-    assert.equal(at('evening-start').warmth, DEFAULT_ZONES.evening.temperature);
-    assert.equal(at('night-start').warmth, DEFAULT_ZONES.evening.temperature);
+    assert.deepEqual(
+      points.map(point => point.warmth),
+      [DEFAULT_ZONES.morning.temperature, DEFAULT_ZONES.midday.temperature,
+        DEFAULT_ZONES.evening.temperature],
+    );
   });
 
-  test('the night ramps across midnight rather than stepping at it', () => {
-    // Not in the design canvas, and deliberate: the canvas reads morning from
-    // midnight and evening up to it, which became a step change the moment the
-    // two stopped being the same value. Interpolation is cyclic, so a ramp
-    // across midnight is the same rule applied a third time.
+  describe('zone to zone: what the runtime evaluates', () => {
+    // Boundaries at 07:00 and 19:00, so the zones are 7 h, 12 h and 5 h long.
     const zones = {
       ...DEFAULT_ZONES,
-      morning: { temperature: 0.2 },
+      morning: { temperature: 0.8 },
+      midday: { temperature: 0.2 },
       evening: { temperature: 0.9 },
+      morningEnd: 30,
+      eveningStart: -60,
     };
-    const points = zonePoints(zones, CONTEXT);
+    const warmth = (transition: Transition, minute: number) =>
+      zoneValueAt(zones, CONTEXT, false, transition, minute).warmth;
 
-    const justBefore = valueAt(points, 24 * 60 - 1).warmth;
-    const justAfter = valueAt(points, 1).warmth;
-    assert.ok(
-      Math.abs(justBefore - justAfter) < 0.05,
-      `midnight must not jump: ${justBefore} then ${justAfter}`,
-    );
+    test('the boundary somebody set is the halfway point, whatever the transition', () => {
+      for (const transition of TRANSITIONS) {
+        assert.ok(Math.abs(warmth(transition, 7 * 60) - 0.5) < 1e-9, `${transition} at 07:00`);
+        assert.ok(Math.abs(warmth(transition, 19 * 60) - 0.55) < 1e-9, `${transition} at 19:00`);
+        // Midnight too: the morning starts there and the evening ends there.
+        assert.ok(Math.abs(warmth(transition, 0) - 0.85) < 1e-9, `${transition} at 00:00`);
+      }
+    });
 
-    // And both ends are still genuinely held well away from it.
-    assert.equal(valueAt(points, 22 * 60).warmth, 0.9);
-    assert.equal(valueAt(points, 4 * 60).warmth, 0.2);
+    test('the blend is as wide as the shorter zone allows, and centred on the boundary', () => {
+      // 07:00 sits between a 7 h morning and a 12 h midday: 3.5 h either side.
+      assert.ok(Math.abs(warmth('balanced', 3 * 60 + 30) - 0.8) < 1e-9, 'the morning centre is the morning');
+      assert.ok(Math.abs(warmth('balanced', 10 * 60 + 30) - 0.2) < 1e-9, 'the far end of the blend is midday');
+      // The longer zone holds flat for the difference.
+      assert.equal(warmth('balanced', 13 * 60), 0.2);
+      // Gradual is a straight line through it.
+      assert.ok(Math.abs(warmth('gradual', 8 * 60 + 45) - (0.8 + (0.2 - 0.8) * 0.75)) < 1e-9);
+    });
+
+    test('Quick does more of its changing near the boundary than Gradual', () => {
+      // Half an hour after 07:00, on the way from 0.8 down to 0.2.
+      const gradual = warmth('gradual', 7 * 60 + 30);
+      const balanced = warmth('balanced', 7 * 60 + 30);
+      const quick = warmth('quick', 7 * 60 + 30);
+      assert.ok(quick < balanced && balanced < gradual, `${quick} < ${balanced} < ${gradual}`);
+      // And less of it far from the boundary.
+      assert.ok(warmth('quick', 4 * 60) > warmth('gradual', 4 * 60));
+    });
+
+    test('the night blends across midnight rather than stepping at it', () => {
+      // Not in the design canvas, and deliberate: the canvas reads morning from
+      // midnight and evening up to it, which is a step change the moment the
+      // two stop being the same value.
+      for (const transition of TRANSITIONS) {
+        const justBefore = warmth(transition, 24 * 60 - 1);
+        const justAfter = warmth(transition, 1);
+        assert.ok(Math.abs(justBefore - justAfter) < 0.02, `${transition}: ${justBefore} then ${justAfter}`);
+      }
+    });
+
+    test('every minute of the day is defined, and inside the three values', () => {
+      for (const transition of TRANSITIONS) {
+        for (let minute = 0; minute < 1440; minute += 5) {
+          const value = warmth(transition, minute);
+          assert.ok(value >= 0.2 - 1e-9 && value <= 0.9 + 1e-9, `${transition} at ${minute}: ${value}`);
+        }
+      }
+    });
+
+    test('brightness follows the same blend, and only when every zone has one', () => {
+      const lit = {
+        ...zones,
+        morning: { temperature: 0.8, brightness: 0.4 },
+        midday: { temperature: 0.2, brightness: 1 },
+        evening: { temperature: 0.9, brightness: 0.3 },
+      };
+      assert.ok(Math.abs(zoneValueAt(lit, CONTEXT, true, 'quick', 7 * 60).brightness! - 0.7) < 1e-9);
+      assert.equal(zoneValueAt(lit, CONTEXT, false, 'quick', 7 * 60).brightness, undefined);
+      assert.equal(zoneValueAt(zones, CONTEXT, true, 'quick', 7 * 60).brightness, undefined);
+    });
   });
 
   test('brightness is all-or-nothing across the expansion', () => {
@@ -285,20 +331,22 @@ describe('the three zones', () => {
     // every tick against the day's real sunrise. Storing the snapshot alone
     // would freeze the boundaries at whatever the sun was doing at registration.
     const plan = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       enabled: true,
       target: { kind: 'devices' as const, deviceIds: ['l1'] },
       zones: DEFAULT_ZONES,
       adjustBrightness: false,
+      transition: 'quick' as const,
       preStage: false,
     };
     const expanded = expandSimplePlan(plan);
 
     assert.deepEqual(expanded.zones, DEFAULT_ZONES);
-    assert.equal(expanded.points.length, 6);
+    assert.equal(expanded.transition, 'quick', 'carried by name, or the runtime never sees it');
+    assert.equal(expanded.points.length, 3);
     assert.equal(
-      (expanded.points[1]!.anchor as { at: number }).at,
-      6 * 60 + DEFAULT_ZONES.morningEnd - ZONE_RAMP,
+      (expanded.points[0]!.anchor as { at: number }).at,
+      Math.round((6 * 60 + DEFAULT_ZONES.morningEnd) / 2),
       'the snapshot uses the fallback sunrise, plus the stored offset',
     );
   });
@@ -307,17 +355,19 @@ describe('the three zones', () => {
     // A repair applies the NEW plan and then persists; folding onto whatever the
     // store held would write back the plan the user had just replaced.
     const edited = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       enabled: true,
       target: { kind: 'devices' as const, deviceIds: ['l1'] },
       zones: { ...DEFAULT_ZONES, morningEnd: 90 },
       adjustBrightness: true,
+      transition: 'gradual' as const,
       preStage: true,
     };
     const folded = foldBackSimplePlan(edited, { enabled: false, preStage: false });
 
     assert.equal(folded.zones.morningEnd, 90, 'the edit survives');
     assert.equal(folded.adjustBrightness, true);
+    assert.equal(folded.transition, 'gradual');
     assert.equal(folded.enabled, false, 'and the two runtime fields come back');
     assert.equal(folded.preStage, false);
   });
@@ -325,10 +375,21 @@ describe('the three zones', () => {
 
 describe('sanitiseZones — a screen sending nonsense falls back per FIELD', () => {
   test('nothing droppable: three zones are not a list', () => {
-    const { zones, corrected } = sanitiseZones({});
+    const { zones, transition, corrected } = sanitiseZones({});
     assert.deepEqual(zones, DEFAULT_ZONES);
+    // Absent is the default and not a correction: a session that never
+    // mentions the transition has sent nothing wrong.
+    assert.equal(transition, 'balanced');
+    assert.equal(corrected.includes('transition'), false);
     assert.ok(corrected.includes('morning temperature'));
     assert.ok(corrected.includes('evening temperature'));
+  });
+
+  test('a transition is one of the three, or corrected to Balanced and said so', () => {
+    assert.equal(sanitiseZones({ transition: 'quick' }).transition, 'quick');
+    const junk = sanitiseZones({ transition: 'instant' });
+    assert.equal(junk.transition, 'balanced');
+    assert.ok(junk.corrected.includes('transition'));
   });
 
   test('a good zone survives beside a bad one', () => {
@@ -382,8 +443,26 @@ describe('the circadian chain, after the reset', () => {
     target: { kind: 'devices', deviceIds: ['l1'] },
     zones: DEFAULT_ZONES,
     adjustBrightness: false,
+    transition: 'balanced',
     preStage: false,
   };
+
+  test('a version 1 plan gains a transition, and it is QUICK', () => {
+    // The zones used to hold flat and blend over 100 minutes at each boundary.
+    // Quick is the nearest of the three to that; see circadian-migrations.ts.
+    const { transition: _new, ...v1 } = { ...CURRENT, schemaVersion: 1 };
+    const { plan, migrated, fromVersion } = migrateCircadianPlan(v1);
+    assert.equal(migrated, true);
+    assert.equal(fromVersion, 1);
+    assert.equal(plan.schemaVersion, 2);
+    assert.equal(plan.transition, 'quick');
+    assert.deepEqual(plan.zones, DEFAULT_ZONES, 'and nothing else moves');
+  });
+
+  test('a stored transition that is not one of the three is refused, not defaulted', () => {
+    assert.throws(() => migrateCircadianPlan({ ...CURRENT, transition: 'slow' }), /transition/);
+    assert.throws(() => migrateCircadianPlan({ ...CURRENT, transition: undefined }), /transition/);
+  });
 
   test('a current plan passes through untouched', () => {
     const { plan, migrated, steps } = migrateCircadianPlan(CURRENT);

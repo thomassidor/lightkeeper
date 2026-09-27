@@ -59,6 +59,7 @@ const validCircadian = () => ({
   target: { kind: 'devices', deviceIds: ['l1'] },
   points: DEFAULT_POINTS.map(p => ({ ...p })),
   adjustBrightness: false,
+  transition: 'balanced',
   preStage: false,
 });
 
@@ -211,6 +212,14 @@ describe('every rejection names the field', () => {
       ],
       adjustBrightness: false,
     }), /CircadianPlan\.points contains more than one entry with id "same"/],
+    ['a transition that is not one of the three, or none at all', () => ({
+      ...validCircadian(),
+      transition: 'slow',
+    }), /CircadianPlan\.transition is not one of gradual, balanced or quick/],
+    ['a daylight response with no transition, which the migration always supplies', () => ({
+      ...validDaylight(),
+      response: { ...DEFAULT_RESPONSE, transition: undefined },
+    }), /DaylightPlan\.response\.transition is not one of gradual, balanced or quick/],
     ['a schedule id the event-key format cannot survive', () => ({
       ...validSchedule(),
       entries: [{ ...validSchedule().entries[0], id: 'evening:lights' }],
@@ -455,6 +464,7 @@ describe('pre-staging is chosen, then proven lamp by lamp', () => {
       target: { kind: 'devices', deviceIds: ['l1', 'l2'] },
       points: DEFAULT_POINTS,
       adjustBrightness: false,
+      transition: 'balanced',
       preStage: true,
       preStageLights: ['l1', 'l1', '', 7, null, 'l2'],
     });
@@ -468,6 +478,7 @@ describe('pre-staging is chosen, then proven lamp by lamp', () => {
       target: { kind: 'devices', deviceIds: ['l1'] },
       points: DEFAULT_POINTS,
       adjustBrightness: false,
+      transition: 'balanced',
       preStage: true,
     });
     assert.equal('preStageLights' in plan, false, 'absent in, absent out');
@@ -492,6 +503,7 @@ describe('pre-staging is chosen, then proven lamp by lamp', () => {
       target: { kind: 'devices', deviceIds: ['l1'] },
       points: DEFAULT_POINTS,
       adjustBrightness: false,
+      transition: 'balanced',
       // No `preStage`: written by a version that had no such thing.
     });
     assert.equal(plan.preStage, false, 'an absent key is not consent');
@@ -504,6 +516,7 @@ describe('pre-staging is chosen, then proven lamp by lamp', () => {
       target: { kind: 'devices', deviceIds: ['l1'] },
       points: DEFAULT_POINTS,
       adjustBrightness: false,
+      transition: 'balanced',
       preStage: false,
     });
     assert.equal(plan.preStage, false);
@@ -516,6 +529,7 @@ describe('pre-staging is chosen, then proven lamp by lamp', () => {
       target: { kind: 'devices', deviceIds: ['l1'] },
       points: DEFAULT_POINTS,
       adjustBrightness: false,
+      transition: 'balanced',
       preStage: true,
     });
     assert.equal(plan.preStage, true);
@@ -529,6 +543,7 @@ describe('pre-staging is chosen, then proven lamp by lamp', () => {
         target: { kind: 'devices', deviceIds: ['l1'] },
         points: DEFAULT_POINTS,
         adjustBrightness: false,
+        transition: 'balanced',
         preStage: value,
       });
       assert.equal(plan.preStage, false, `${JSON.stringify(value)} is not consent either`);

@@ -90,7 +90,7 @@ export const SHARED_DIR = join(ROOT, 'views', 'shared');
  * finding out on a phone.
  */
 /**
- * @typedef {{ source: string; scoped: boolean; optional?: boolean }} SharedBlockBase
+ * @typedef {{ source: string; scoped: boolean; optional?: boolean; settings?: boolean }} SharedBlockBase
  * @typedef {SharedBlockBase & { kind: 'delimited'; start: string; end: string }} DelimitedBlock
  * @typedef {SharedBlockBase & { kind: 'function'; name: string }} FunctionBlock
  * @typedef {DelimitedBlock | FunctionBlock} SharedBlock
@@ -117,6 +117,13 @@ const BLOCKS = [
    */
   { source: 'stabilise-scrollbar.js', kind: 'function', name: 'stabiliseScrollbar', scoped: false },
   /**
+   * Plural-aware translation and the language's own direction, in every view
+   * AND in the settings page (`settings: true`), because both render counted
+   * copy and both must choose the same plural form `lib/support/i18n.ts` does.
+   * Required, because every view sets its root's `dir` from it.
+   */
+  { source: 'i18n.js', kind: 'function', name: 'i18n', scoped: false, settings: true },
+  /**
    * The sensor's-week grid, on the two daylight screens that draw it.
    *
    * Optional, because only two views carry it. Same mechanism the daylight card
@@ -133,6 +140,22 @@ const BLOCKS = [
     optional: true,
   },
   { source: 'week-grid.js', kind: 'function', name: 'weekGrid', scoped: false, optional: true },
+  /**
+   * The "Transition" card, on the three engine device types' editing screens,
+   * and the curve maths it draws — which the Colour Curve screen's own chart
+   * also reads, so the chart and the thumbnails can never disagree with each
+   * other. Optional for the same reason as the week grid.
+   */
+  {
+    source: 'transition.css',
+    kind: 'delimited',
+    start: '/* ==== shared transition card:',
+    end: '/* ==== end shared transition card ==== */',
+    scoped: true,
+    optional: true,
+  },
+  { source: 'transition-shape.js', kind: 'function', name: 'transitionShape', scoped: false, optional: true },
+  { source: 'transition-card.js', kind: 'function', name: 'transitionCard', scoped: false, optional: true },
 ];
 
 /**
@@ -276,6 +299,29 @@ export function sync(options = {}) {
       writeFileSync(path, after);
       copies += 1;
       console.log(label);
+    }
+  }
+
+  // 0b. The blocks the settings page carries too. It is not a pair view and has
+  //     no root id, so only unscoped FUNCTION blocks can go there.
+  {
+    const path = join(ROOT, 'settings', 'index.html');
+    const before = readFileSync(path, 'utf8');
+    let after = before;
+    for (const block of BLOCKS) {
+      if (!block.settings || block.kind !== 'function') continue;
+      const next = spliceFunction(after, block.name, /** @type {string} */ (sources.get(block.source)));
+      if (next === null) throw new Error(`settings/index.html is missing the shared block "${block.source}"`);
+      after = next;
+    }
+    if (after !== before) {
+      const label = 'settings/index.html <- views/shared/';
+      copies += 1;
+      if (CHECK_ONLY) drifted.push(label);
+      else {
+        writeFileSync(path, after);
+        console.log(label);
+      }
     }
   }
 

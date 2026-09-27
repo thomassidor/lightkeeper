@@ -29,11 +29,20 @@
  */
 import { readFileSync } from 'node:fs';
 
+/**
+ * Which language to resolve in: `--lang <code>`, the same flag render-views.mjs
+ * takes, read here because this module's fixtures are built at import time.
+ */
+const LANG_AT = process.argv.indexOf('--lang');
+export const RENDER_LANG = LANG_AT >= 0 ? String(process.argv[LANG_AT + 1]) : 'en';
+
 const EN = JSON.parse(
-  readFileSync(new URL('../locales/en.json', import.meta.url), 'utf8'));
+  readFileSync(new URL(`../locales/${RENDER_LANG}.json`, import.meta.url), 'utf8'));
 
 /**
- * `Homey.__`, near enough: a dotted key and `__token__` substitution.
+ * `Homey.__`, near enough: a dotted key and `__token__` substitution — and the
+ * plural step `lib/support/i18n.ts` adds, so a counted fixture reads as the
+ * driver would send it.
  *
  * @param {string} key
  * @param {Record<string, string | number>} [tokens]
@@ -41,6 +50,10 @@ const EN = JSON.parse(
 function say(key, tokens) {
   let node = EN;
   for (const part of key.split('.')) node = node?.[part];
+  if (node && typeof node === 'object' && typeof tokens?.count === 'number') {
+    const form = new Intl.PluralRules(RENDER_LANG).select(tokens.count);
+    node = node[form] ?? node.other;
+  }
   let text = typeof node === 'string' ? node : key;
   for (const [name, value] of Object.entries(tokens ?? {})) {
     text = text.split(`__${name}__`).join(String(value));
@@ -220,6 +233,7 @@ const RESPONSE = {
   darkElevation: -6,
   brightElevation: 25,
   sunPeak: 'flat',
+  transition: 'balanced',
 };
 
 const ZONES = {
@@ -356,6 +370,7 @@ export const RENDER_REPLIES = {
         { label: 'Midday', value: 'Cool white · 90%', view: 'day' },
         { label: 'Evening', value: 'Deep amber · 45%', view: 'day' },
         { label: 'Follows the sun', value: '06:51 – 18:48', view: 'day' },
+        { label: 'Transition', value: 'Balanced', view: 'day' },
       ],
       control: CONTROL,
       // The rows above are a circadian light's, so the hero is its day. Three
@@ -391,19 +406,28 @@ export const RENDER_REPLIES = {
       nextView: 'review',
       limits: { maxOffset: 150, offsetStep: 15, fallbackSunrise: 360, fallbackSunset: 1260 },
       timezone: TIMEZONE,
+      transition: 'balanced',
     },
-    setDay: { zones: ZONES, adjustBrightness: true, corrected: [], boundaries: BOUNDARIES },
+    setDay: {
+      zones: ZONES, adjustBrightness: true, transition: 'balanced', corrected: [], boundaries: BOUNDARIES,
+    },
   },
 
   'tryit.html': {
     getPreview: {
+      // Samples of the engine, as getPreview sends them (every ten minutes in
+      // the real payload; a few are enough to draw the same day).
       points: [
-        { minute: 50, warmth: 0.78 },
-        { minute: 361, warmth: 0.78 },
-        { minute: 461, warmth: 0.18 },
-        { minute: 1078, warmth: 0.18 },
-        { minute: 1178, warmth: 0.86 },
-        { minute: 1390, warmth: 0.86 },
+        { minute: 0, warmth: 0.82 },
+        { minute: 200, warmth: 0.78 },
+        { minute: 300, warmth: 0.74 },
+        { minute: 411, warmth: 0.48 },
+        { minute: 520, warmth: 0.22 },
+        { minute: 620, warmth: 0.18 },
+        { minute: 1040, warmth: 0.18 },
+        { minute: 1128, warmth: 0.52 },
+        { minute: 1220, warmth: 0.85 },
+        { minute: 1300, warmth: 0.86 },
       ],
       boundaries: { morningEndMinute: 411, eveningStartMinute: 1128 },
       nowMinute: 1180,
@@ -430,8 +454,9 @@ export const RENDER_REPLIES = {
       minPoints: 2,
       maxPoints: 8,
       timezone: TIMEZONE,
+      transition: 'balanced',
     },
-    setCurve: { count: 5, adjustBrightness: true, dropped: [] },
+    setCurve: { count: 5, adjustBrightness: true, transition: 'balanced', dropped: [] },
   },
 
   // ---- daylight -----------------------------------------------------------
@@ -599,7 +624,7 @@ export const RENDER_REPLIES = {
           label: say('functions.toggle'),
           detail: say('buttons.detail', {
             job: say('functions.toggle'),
-            lights: say('targets.allCount', { count: say('count.three') }),
+            lights: say('targets.allCount', { count: 3 }),
           }),
         },
         'button.top|hold': {
@@ -613,7 +638,7 @@ export const RENDER_REPLIES = {
           label: say('functions.off'),
           detail: say('buttons.detail', {
             job: say('functions.off'),
-            lights: say('targets.allCount', { count: say('count.three') }),
+            lights: say('targets.allCount', { count: 3 }),
           }),
         },
       },
@@ -657,7 +682,7 @@ export const RENDER_REPLIES = {
       colors: PALETTE_SWATCHES,
       layout: LAYOUT,
       lights: RULE_LIGHTS,
-      allLabel: say('job.allLights', { count: say('count.three') }),
+      allLabel: say('job.allLights', { count: 3 }),
       chosenLights: ['light-1'],
       /**
        * The two rows of the card, in the words the driver resolves for them.
@@ -789,6 +814,7 @@ export const DRIVER_REPLIES = {
         { label: say('review.morning'), value: 'Warm · 55%', view: 'day' },
         { label: say('review.midday'), value: 'Cool white · 90%', view: 'day' },
         { label: say('review.evening'), value: 'Deep amber · 45%', view: 'day' },
+        { label: say('review.transition'), value: say('transition.balanced'), view: 'day' },
       ],
       // The default, as a new device pairs: nothing unfolds.
       control: { modes: ['after', 'before', 'none'], selected: 'after', lightCount: 2 },
@@ -820,6 +846,7 @@ export const DRIVER_REPLIES = {
         { label: say('review.lights'), value: 'Ceiling, Reading lamp', view: 'lights' },
         { label: say('review.colourChanges'), value: '5 · 06:30–22:30', view: 'curve' },
         { label: say('review.brightness'), value: say('review.brightnessRange', { min: 36, max: 94 }), view: 'curve' },
+        { label: say('review.transition'), value: say('transition.balanced'), view: 'curve' },
       ],
       control: CONTROL,
     },
@@ -850,6 +877,7 @@ export const DRIVER_REPLIES = {
           value: `${say('review.underLux', { lux: 8 })} → 92%`, view: 'response' },
         { label: say('review.brightRoom'),
           value: `${say('review.overLux', { lux: 160 })} → 22%`, view: 'response' },
+        { label: say('review.transition'), value: say('transition.balanced'), view: 'response' },
       ],
       // Two of the three: a Room-sensing Light has nothing to set in advance.
       control: { modes: ['after', 'none'], selected: 'after', lightCount: 2 },

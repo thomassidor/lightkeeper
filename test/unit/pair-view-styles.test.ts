@@ -648,6 +648,43 @@ describe('pair view script helpers', () => {
     }
   });
 
+  test('i18n() is identical everywhere it appears', () => {
+    assertIdentical('i18n');
+  });
+
+  /**
+   * Every screen translates through `lk`, and reads in its language's direction.
+   *
+   * `lk.t` is `Homey.__` plus the plural step (views/shared/i18n.js), so a view
+   * that called `Homey.__` directly would render a counted string as its key —
+   * silently, in exactly the languages nobody here reads. And `dir` has to be on
+   * the root because the screens share one document and only the root is ours.
+   */
+  test('every view translates through i18n() and sets its direction', () => {
+    for (const view of Object.keys(VIEWS)) {
+      const text = read(view);
+      assert.ok(helper(view, 'i18n'), `${view} has no i18n() helper`);
+      assert.match(text, /var lk = i18n\(Homey\);\s*__root\.dir = lk\.dir;/, `${view} does not set its root's dir`);
+      const direct = text.split('\n').filter(line => /Homey\.__\(/.test(line) && !/^\s*(\*|\/\/)/.test(line));
+      assert.deepEqual(direct, [], `${view} calls Homey.__ directly — use lk.t, which picks plural forms`);
+    }
+  });
+
+  test('the settings page carries the same i18n() as the views', () => {
+    const page = readFileSync(join(ROOT, 'settings', 'index.html'), 'utf8');
+    const first = Object.keys(VIEWS)[0]!;
+    const extract = (text: string) => {
+      const at = text.indexOf('function i18n(');
+      let depth = 0;
+      for (let i = text.indexOf('{', at); i < text.length; i += 1) {
+        if (text[i] === '{') depth += 1;
+        else if (text[i] === '}' && --depth === 0) return text.slice(at, i + 1);
+      }
+      return '';
+    };
+    assert.equal(extract(page), extract(read(first)), 'run npm run sync:views');
+  });
+
   /**
    * A spliced function carries no docblock ABOVE it, in any carrier.
    *
@@ -668,7 +705,7 @@ describe('pair view script helpers', () => {
   test('no spliced helper has a docblock above it, which is how copies accumulate', () => {
     for (const view of Object.keys(VIEWS)) {
       const text = read(view);
-      for (const name of ['emit', 'weekGrid', 'stabiliseScrollbar']) {
+      for (const name of ['emit', 'weekGrid', 'stabiliseScrollbar', 'i18n']) {
         const at = text.indexOf(`function ${name}(`);
         if (at === -1) continue;
 

@@ -5,6 +5,7 @@ import {
 } from './guards';
 import { MINUTES_PER_DAY } from '../time/wall-clock';
 import { isPaletteColor } from '../circadian/palette';
+import { isTransition, type Transition } from '../support/interpolate';
 import type { TargetSpec } from '../outputs/light-intent';
 import {
   FUNCTION_PRESET, namesASource,
@@ -665,6 +666,7 @@ export function validateCircadianPlan(raw: unknown): CircadianPlan {
     ...planRoot(plan, ROOT.circadian),
     points,
     adjustBrightness,
+    transition: requireTransition(plan.transition, `${ROOT.circadian}.transition`),
     ...(zones !== undefined ? { zones } : {}),
     // Opt-in, so anything other than a real `true` is a no — and a device that
     // predates the key must keep reading "no".
@@ -718,8 +720,8 @@ function validateZones(raw: unknown, path: string): CircadianZones {
 /**
  * The three-zone plan a circadian light stores.
  *
- * The SHAPE is not validated because it is not stored: `zonePoints` derives the
- * six points from the zones and the day's sun every tick (see `simple-curve.ts`
+ * The SHAPE is not validated because it is not stored: `zoneValueAt` derives the
+ * day from the zones, the transition and the day's sun every tick (see `simple-curve.ts`
  * for why). What is here is the answers only the user can give.
  */
 export function validateSimpleCircadianPlan(raw: unknown): SimpleCircadianPlan {
@@ -741,6 +743,7 @@ export function validateSimpleCircadianPlan(raw: unknown): SimpleCircadianPlan {
     ...planRoot(plan, ROOT.simple),
     zones,
     adjustBrightness,
+    transition: requireTransition(plan.transition, `${ROOT.simple}.transition`),
     // Opt-in, so anything other than a real `true` is a no.
     preStage: plan.preStage === true,
     ...storedPreStageLights(plan),
@@ -818,6 +821,17 @@ function requireSunPeak(value: unknown, path: string): SunPeak {
 }
 
 /**
+ * Required on every engine plan, and refused rather than defaulted — the same
+ * policy as `sunPeak`. Every stored plan older than the field is given one by
+ * its migration chain before it gets here, so an absent value at this point is
+ * a partial write, not an old device.
+ */
+function requireTransition(value: unknown, path: string): Transition {
+  if (!isTransition(value)) fail(path, 'is not one of gradual, balanced or quick');
+  return value;
+}
+
+/**
  * One daylight response, validated at whichever of FOUR paths holds it.
  *
  * The `path` argument is what makes one function serve four stores: a
@@ -876,6 +890,7 @@ function validateDaylightResponse(raw: unknown, path: string): DaylightResponse 
     // a downgrade — and quarantining it with a named path is what tells somebody
     // which device to repair.
     sunPeak: requireSunPeak(response.sunPeak, `${path}.sunPeak`),
+    transition: requireTransition(response.transition, `${path}.transition`),
   };
 }
 

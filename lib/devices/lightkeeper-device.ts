@@ -8,6 +8,9 @@ import {
   type PlanMigration,
 } from './device-lifecycle';
 import type { ControllerState } from '../profiles/controller-profile';
+import type { ControlMode } from '../pairing/control-choice';
+import type { Transition } from '../support/interpolate';
+import { translatorFor } from '../support/i18n';
 
 /**
  * The `Homey.Device` half of a Lightkeeper virtual device: the SDK entry points,
@@ -44,6 +47,11 @@ export abstract class LightkeeperDevice<
    * list exists at all when `driver.compose.json` already names them.
    */
   readonly valueCapabilities: readonly string[] = [];
+  /**
+   * Empty here, and overridden by the three engine device types — the only ones
+   * with a "How Lightkeeper controls your lights" choice in their Settings.
+   */
+  readonly controlModes: readonly ControlMode[] = [];
 
   abstract migrate(raw: unknown): PlanMigration<TPlan>;
   abstract registry(): DeviceRegistry<TPlan, TRuntime>;
@@ -61,6 +69,9 @@ export abstract class LightkeeperDevice<
   planForRuntime(plan: TPlan): TRuntimePlan { return plan as unknown as TRuntimePlan; }
 
   planEnabled(_plan: TPlan): boolean { return true; }
+  /** Overridden by the three engine types, whose Settings carry a Transition. */
+  transitionOf(_plan: TPlan): Transition | null { return null; }
+  withTransition(plan: TPlan, _transition: Transition): TPlan { return plan; }
   withEnabled(plan: TPlan, _enabled: boolean): TPlan { return plan; }
   /** Overridden by the two types that own Flows. See DeviceOwner.rawFlowRefs. */
   rawFlowRefs(): unknown { return []; }
@@ -81,8 +92,9 @@ export abstract class LightkeeperDevice<
 
   // ---- the two SDK spellings lib/ cannot reach on its own -------------------
 
+  /** Plural-aware: a counted StateDetail picks its form here (lib/support/i18n.ts). */
   translate(key: string, tokens?: Record<string, string | number>): string {
-    return this.homey.__(key, tokens ?? {});
+    return translatorFor(this.homey)(key, tokens);
   }
 
   async removeFlows(refs: unknown[]): Promise<number> {
@@ -100,6 +112,19 @@ export abstract class LightkeeperDevice<
       this.registerCapabilityListener('onoff', async (value: boolean) => this.lifecycle.setEnabled(value));
     }
     await this.lifecycle.init();
+  }
+
+  /**
+   * The gear on the device's page. Only the three engine drivers declare any
+   * settings, so a Light Remote or a schedule never gets here — and would change
+   * nothing if it did, since neither lists a control mode or a Transition.
+   */
+  override async onSettings({ newSettings, changedKeys }: {
+    oldSettings: Record<string, unknown>;
+    newSettings: Record<string, unknown>;
+    changedKeys: string[];
+  }): Promise<string | void> {
+    await this.lifecycle.applySettings(newSettings, changedKeys);
   }
 
   /** Called by the pair/repair session when the user saves. */

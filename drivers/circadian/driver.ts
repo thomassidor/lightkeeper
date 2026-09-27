@@ -7,20 +7,20 @@ import type { LightkeeperApp } from '../../lib/app-contract';
 import { CURRENT_CIRCADIAN_SCHEMA_VERSION } from '../../lib/circadian/circadian-migrations';
 import {
   DEFAULT_SIMPLE_PLAN, FALLBACK_SUNRISE, FALLBACK_SUNSET, MAX_OFFSET, OFFSET_STEP,
-  expandSimplePlan, resolveBoundaries, sanitiseZones, zonePoints,
+  expandSimplePlan, resolveBoundaries, sanitiseZones, zoneValueAt,
   type CircadianZones, type SimpleCircadianPlan,
 } from '../../lib/circadian/simple-curve';
 import { formatMinutes } from '../../lib/time/wall-clock';
-import { resolvePoints, valueAt } from '../../lib/circadian/circadian-curve';
 import { messageOf } from '../../lib/support/homey-errors';
 import { localNow } from '../../lib/time/local-clock';
 import { sunTimes } from '../../lib/daylight/solar-elevation';
 import { usableLocation } from '../../lib/daylight/daylight-types';
-import type { AnchorContext } from '../../lib/circadian/circadian-curve';
+import type { AnchorContext, CurveValue } from '../../lib/circadian/circadian-curve';
+import type { Transition } from '../../lib/support/interpolate';
 import { keepsLightsUpdated, writesLightsField } from '../../lib/runtime/writes-lights';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
 import {
-  lightsSummary, registerIntroHandler, registerReviewHandler, warmthKey, warmthSwatch,
+  lightsSummary, registerIntroHandler, registerReviewHandler, transitionKey, warmthKey, warmthSwatch,
 } from '../../lib/pairing/flow-screens';
 import { registerControlHandlers, reviewControl } from '../../lib/pairing/control-choice';
 import {
@@ -32,6 +32,7 @@ import {
   timezoneOf,
   type PairSessionHost,
 } from '../../lib/pairing/pair-session';
+import { translatorFor } from '../../lib/support/i18n';
 
 /**
  * The circadian light's driver: two screens, and the second one asks two
@@ -59,6 +60,8 @@ interface SessionState {
   target?: TargetSpec;
   zones: CircadianZones;
   adjustBrightness: boolean;
+  /** How each zone blends into the next. See `zoneValueAt`. */
+  transition: Transition;
   /** "Set lights before they turn on" — see lib/pairing/control-choice.ts. */
   preStage: boolean;
   /** The lamps the review screen's test proved. Absent = never tested. */
@@ -141,6 +144,15 @@ function restoreOrder(values: Record<string, unknown>): string[] {
 
 
 module.exports = class CircadianDriver extends Homey.Driver {
+  /**
+   * `homey.__`, plural-aware: a key that is a plural group picks its form from
+   * the numeric `count` token (lib/support/i18n.ts). Every string this driver
+   * resolves goes through here, so a counted one cannot be missed.
+   */
+  private tr(key: string, tokens?: Record<string, string | number>): string {
+    return translatorFor(this.homey)(key, tokens);
+  }
+
 
   /**
    * What `lib/pairing/pair-session.ts` needs of this driver.
@@ -154,7 +166,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
       log: (...args: unknown[]) => this.log(...args),
       error: (...args: unknown[]) => this.error(...args),
       translate: (key: string, tokens?: Record<string, string | number>) =>
-        this.homey.__(key, tokens),
+        this.tr(key, tokens),
       clock: this.homey.clock,
       app: this.app,
     };
@@ -189,6 +201,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
       target: plan?.target,
       zones: plan?.zones ?? DEFAULT_SIMPLE_PLAN.zones,
       adjustBrightness: plan?.adjustBrightness ?? false,
+      transition: plan?.transition ?? DEFAULT_SIMPLE_PLAN.transition,
       preStage: plan?.preStage ?? false,
       preStageLights: plan?.preStageLights,
       // Absent means ON, the opposite of `preStage` above.
@@ -200,6 +213,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
     const state: SessionState = {
       zones: DEFAULT_SIMPLE_PLAN.zones,
       adjustBrightness: DEFAULT_SIMPLE_PLAN.adjustBrightness,
+      transition: DEFAULT_SIMPLE_PLAN.transition,
       preStage: DEFAULT_SIMPLE_PLAN.preStage,
       writesLights: true,
       ...initial,
@@ -247,7 +261,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
      * somewhere the device will not actually go.
      */
     handler('getDay', async () => {
-      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+      if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
       const [summary, lights] = await Promise.all([
         resolveSummary(this.app.catalog, state.target),
         targetLights(this.app.catalog, state.target),
@@ -263,6 +277,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
         lights,
         zones: state.zones,
         adjustBrightness: state.adjustBrightness,
+        transition: state.transition,
         /** Today's sun, or nulls where there is none to anchor to. */
         sun: {
           sunriseMinute: sun.sunriseMinute ?? null,
@@ -316,11 +331,13 @@ module.exports = class CircadianDriver extends Homey.Driver {
       }
       state.zones = result.zones;
       state.adjustBrightness = result.adjustBrightness;
+      state.transition = result.transition;
 
       const bounds = resolveBoundaries(state.zones, this.sunContext());
       return {
         zones: state.zones,
         adjustBrightness: state.adjustBrightness,
+        transition: state.transition,
         corrected: result.corrected,
         // Echoed back so a handle the clamp moved snaps visibly rather than
         // sitting where the user dropped it and behaving as if it were elsewhere.
@@ -345,20 +362,23 @@ module.exports = class CircadianDriver extends Homey.Driver {
     /**
      * The day as the try-it screen scrubs through it.
      *
-     * The RESOLVED points, against today's sun — the same six the runtime would
-     * evaluate — so what the screen draws and what the device will do are one
-     * curve rather than two that happen to agree today.
+     * SAMPLES of the real engine, every ten minutes against today's sun, not
+     * points for the screen to interpolate itself. The screen used to be sent
+     * the six points and ease between them with its own copy of the maths; with
+     * the zones blended boundary-centred and shaped by the chosen transition
+     * (`zoneValueAt`) that copy would be a second engine, and the day screen's
+     * copy had already drifted from the first. Ten minutes is finer than the
+     * strip draws and the screen reads between samples linearly.
      */
     handler('getPreview', async () => {
-      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+      if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
       const context = this.sunContext();
-      const points = zonePoints(state.zones, context, state.adjustBrightness);
       const bounds = resolveBoundaries(state.zones, context);
 
       return {
-        points: resolvePoints(points, context).map(point => ({
-          minute: point.minute,
-          warmth: point.warmth,
+        points: Array.from({ length: 144 }, (_, i) => ({
+          minute: i * 10,
+          warmth: this.valueAt(state, context, i * 10).warmth,
         })),
         /**
          * Where the two boundaries fall today, so the screen can name the ZONE
@@ -391,12 +411,12 @@ module.exports = class CircadianDriver extends Homey.Driver {
      * everywhere.
      */
     handler('previewAt', async (payload: unknown) => {
-      if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+      if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
       const minute = Number((payload as { minute?: unknown })?.minute);
-      if (!Number.isFinite(minute)) throw new Error(this.homey.__('errors.notATimeOfDay'));
+      if (!Number.isFinite(minute)) throw new Error(this.tr('errors.notATimeOfDay'));
 
       const context = this.sunContext();
-      const value = valueAt(zonePoints(state.zones, context, state.adjustBrightness), minute);
+      const value = this.valueAt(state, context, minute);
 
       const flat = expandSimplePlan(this.buildPlan(state));
       const frozen = {
@@ -470,7 +490,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
         const warmth = host.translate(warmthKey(state.zones[key].temperature));
         if (!state.adjustBrightness) return warmth;
         const percent = Math.round((state.zones[key].brightness ?? 0) * 100);
-        return `${warmth} · ${percent}%`;
+        return `${warmth} · ${this.tr('unit.percent', { n: percent })}`;
       };
 
       /**
@@ -481,11 +501,8 @@ module.exports = class CircadianDriver extends Homey.Driver {
        * so the last screen before "Add device" shows it rather than describing
        * it. Forty-nine stops is the same sampling the day screen uses.
        */
-      const points = zonePoints(state.zones, this.sunContext(), state.adjustBrightness);
-      const stops = Array.from({ length: 49 }, (_, i) => {
-        const percent = (i / 48) * 100;
-        return `${warmthSwatch(valueAt(points, (i / 48) * 1440).warmth)} ${percent.toFixed(2)}%`;
-      });
+      const stops = this.strip(state, this.sunContext()).map((warmth, i) =>
+        `${warmthSwatch(warmth)} ${((i / 48) * 100).toFixed(2)}%`);
 
       return {
         stepIndex: 3,
@@ -504,6 +521,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
             value: `${formatMinutes(bounds.morningEndMinute)} – ${formatMinutes(bounds.eveningStartMinute)}`,
             view: 'day',
           },
+          { labelKey: 'review.transition', value: host.translate(transitionKey(state.transition)), view: 'day' },
         ],
         control: await reviewControl(host, state, true),
       };
@@ -515,7 +533,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
       device,
       idPrefix: 'circ',
       storeKey: 'circadian',
-      naming: { fallback: 'Circadian light', suffix: 'circadian' },
+      naming: { fallbackKey: 'names.circadian', suffixKey: 'names.circadianSuffix' },
       buildPlan: () => this.buildPlan(state),
     });
 
@@ -637,8 +655,23 @@ module.exports = class CircadianDriver extends Homey.Driver {
     };
   }
 
+  /** The real engine at one minute of today, for the screens that draw it. */
+  private valueAt(state: SessionState, context: AnchorContext, minute: number): CurveValue {
+    return zoneValueAt(state.zones, context, state.adjustBrightness, state.transition, minute);
+  }
+
+  /**
+   * The day as 49 warmths, midnight to midnight — the review's hero. Computed
+   * by the engine. The day screen draws the same strip from its own copy,
+   * because it redraws under a finger mid-drag; pair-view-zone-copy.test.ts
+   * holds that copy to this.
+   */
+  private strip(state: SessionState, context: AnchorContext): number[] {
+    return Array.from({ length: 49 }, (_, i) => this.valueAt(state, context, (i / 48) * 1440).warmth);
+  }
+
   private buildPlan(state: SessionState): SimpleCircadianPlan {
-    if (!state.target) throw new Error(this.homey.__('errors.chooseLightsFirst'));
+    if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
 
     return {
       schemaVersion: CURRENT_CIRCADIAN_SCHEMA_VERSION,
@@ -646,6 +679,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
       target: state.target,
       zones: state.zones,
       adjustBrightness: state.adjustBrightness,
+      transition: state.transition,
       preStage: state.preStage,
       ...(state.preStageLights !== undefined ? { preStageLights: [...state.preStageLights] } : {}),
       ...writesLightsField(state.writesLights),

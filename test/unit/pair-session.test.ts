@@ -18,6 +18,9 @@ import {
 } from '../../lib/pairing/pair-session';
 import {
   controlModeOf, registerControlHandlers, reviewControl, type ControlState,
+  planWithControlMode,
+  controlModeOfPlan,
+  controlWarningKey,
 } from '../../lib/pairing/control-choice';
 
 /**
@@ -403,7 +406,7 @@ describe('the save handler', () => {
     registerSaveHandler(host, handler, state, {
       idPrefix: 'dayl',
       storeKey: 'daylight',
-      naming: { fallback: 'Room-sensing Light', suffix: 'daylight' },
+      naming: { fallbackKey: 'names.daylight', suffixKey: 'names.daylightSuffix' },
       buildPlan: () => ({ schemaVersion: 1 }),
     });
     const result = await call('save', '') as {
@@ -428,12 +431,13 @@ describe('the save handler', () => {
     registerSaveHandler(host, handler, {}, {
       idPrefix: 'circ',
       storeKey: 'circadian',
-      naming: { fallback: 'Circadian light', suffix: 'circadian' },
+      naming: { fallbackKey: 'names.circadian', suffixKey: 'names.circadianSuffix' },
       buildPlan: () => ({}),
     });
     const result = await call('save', '') as { device: { name: string } };
 
-    assert.equal(result.device.name, 'Circadian light');
+    // The rig's translate brackets the key, so this is the fallback KEY resolved.
+    assert.equal(result.device.name, '[names.circadian]');
   });
 
   test('a name typed by the user wins over the derived one', async () => {
@@ -442,7 +446,7 @@ describe('the save handler', () => {
     registerSaveHandler(host, handler, {}, {
       idPrefix: 'curv',
       storeKey: 'curve',
-      naming: { fallback: 'Colour Curve Light', suffix: 'curve' },
+      naming: { fallbackKey: 'names.curve', suffixKey: 'names.curveSuffix' },
       buildPlan: () => ({}),
     });
     const result = await call('save', 'Kitchen curve') as { device: { name: string } };
@@ -459,7 +463,7 @@ describe('the save handler', () => {
       device: { applyPlan: async (plan: unknown) => { applied.push(plan); } },
       idPrefix: 'sched',
       storeKey: 'schedule',
-      naming: { fallback: 'Light schedule', suffix: 'schedule' },
+      naming: { fallbackKey: 'names.schedule', suffixKey: 'names.scheduleSuffix' },
       buildPlan: () => ({ entries: [] }),
     });
     const result = await call('save', '') as { updated: boolean; created?: boolean };
@@ -622,5 +626,36 @@ describe('"How Lightkeeper controls your lights"', () => {
     assert.deepEqual(control.modes, ['after', 'none']);
     assert.equal(control.selected, 'none');
     assert.equal(control.tested, undefined);
+  });
+});
+
+/**
+ * The same choice as a pure function of a STORED plan, which is what the tile's
+ * picker moves. The session's version has a live `writesLights: boolean`; a
+ * stored plan carries the key only when it is false.
+ */
+describe('the control choice on a stored plan', () => {
+  test('every mode round-trips, and the default is never stored', () => {
+    const plan = { enabled: true, preStage: false, preStageLights: ['l1'] };
+    for (const mode of ['after', 'before', 'none'] as const) {
+      assert.equal(controlModeOfPlan(planWithControlMode(plan, mode)), mode);
+    }
+    assert.equal('writesLights' in planWithControlMode({ ...plan, writesLights: false as const }, 'after'), false);
+    assert.deepEqual(planWithControlMode(plan, 'none').preStageLights, ['l1'], 'the tested lamps are kept');
+  });
+
+  test('a plan with nothing to pre-stage never grows the flag', () => {
+    // A Room-sensing Light's plan: `writesLights` and nothing to pre-stage.
+    const daylightShaped: { enabled: boolean; writesLights?: false } = { enabled: true };
+    assert.equal('preStage' in planWithControlMode(daylightShaped, 'none'), false);
+    assert.equal(controlModeOfPlan({}), 'after', 'a plan from before either flag existed');
+  });
+
+  test('"before" warns only when no lamp was ever proven', () => {
+    assert.equal(controlWarningKey({ preStage: true }), 'warnings.preStageUntested');
+    assert.equal(controlWarningKey({ preStage: true, preStageLights: [] }), 'warnings.preStageUntested');
+    assert.equal(controlWarningKey({ preStage: true, preStageLights: ['l1'] }), null);
+    assert.equal(controlWarningKey({ preStage: true, writesLights: false }), null, 'publish-only pre-stages nothing anyway');
+    assert.equal(controlWarningKey({ preStage: false }), null);
   });
 });

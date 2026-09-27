@@ -1,6 +1,18 @@
 {
   "name": {
-    "en": "Light schedule"
+    "en": "Light schedule",
+    "nl": "Lichtschema",
+    "de": "Lichtzeitplan",
+    "fr": "Programme d'éclairage",
+    "it": "Programmazione luci",
+    "sv": "Ljusschema",
+    "no": "Lystidsplan",
+    "es": "Horario de luces",
+    "da": "Lystidsplan",
+    "ru": "Расписание освещения",
+    "pl": "Harmonogram oświetlenia",
+    "ko": "조명 일정",
+    "ar": "جدول الإضاءة"
   },
   "class": "service",
   "capabilities": [
@@ -12,7 +24,19 @@
   "capabilitiesOptions": {
     "onoff": {
       "title": {
-        "en": "Schedule active"
+        "en": "Schedule active",
+        "nl": "Schema actief",
+        "de": "Zeitplan aktiv",
+        "fr": "Programme actif",
+        "it": "Programmazione attiva",
+        "sv": "Schema aktivt",
+        "no": "Tidsplan aktiv",
+        "es": "Horario activo",
+        "da": "Tidsplan aktiv",
+        "ru": "Расписание включено",
+        "pl": "Harmonogram aktywny",
+        "ko": "일정 활성",
+        "ar": "الجدول نشط"
       }
     }
   },
