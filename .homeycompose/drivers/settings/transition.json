@@ -1,0 +1,90 @@
+{
+  "type": "dropdown",
+  "label": {
+    "en": "Transition",
+    "nl": "Overgang",
+    "de": "Übergang",
+    "fr": "Transition",
+    "it": "Transizione",
+    "sv": "Övergång",
+    "no": "Overgang",
+    "es": "Transición",
+    "da": "Overgang",
+    "ru": "Переход",
+    "pl": "Przejście",
+    "ko": "전환",
+    "ar": "الانتقال"
+  },
+  "hint": {
+    "en": "How a value moves between two points: evenly throughout (Gradual), mostly in the middle (Balanced) or nearly all at once (Quick).",
+    "nl": "Hoe een waarde tussen twee punten verloopt: gelijkmatig (Geleidelijk), vooral in het midden (Gebalanceerd) of bijna in één keer (Snel).",
+    "de": "Wie sich ein Wert zwischen zwei Punkten bewegt: gleichmäßig (Allmählich), vor allem in der Mitte (Ausgewogen) oder fast auf einmal (Schnell).",
+    "fr": "Comment une valeur évolue entre deux points : régulièrement (Progressive), surtout au milieu (Équilibrée) ou presque d’un coup (Rapide).",
+    "it": "Come un valore si muove tra due punti: in modo uniforme (Graduale), soprattutto a metà (Bilanciata) o quasi tutto in una volta (Rapida).",
+    "sv": "Hur ett värde rör sig mellan två punkter: jämnt hela vägen (Gradvis), mest i mitten (Balanserad) eller nästan på en gång (Snabb).",
+    "no": "Hvordan en verdi beveger seg mellom to punkter: jevnt hele veien (Gradvis), mest i midten (Balansert) eller nesten på én gang (Rask).",
+    "es": "Cómo se mueve un valor entre dos puntos: de forma uniforme (Gradual), sobre todo en el medio (Equilibrada) o casi de golpe (Rápida).",
+    "da": "Hvordan en værdi bevæger sig mellem to punkter: jævnt hele vejen (Gradvis), mest i midten (Balanceret) eller næsten på én gang (Hurtig).",
+    "ru": "Как значение меняется между двумя точками: равномерно (Плавный), в основном посередине (Сбалансированный) или почти сразу (Быстрый).",
+    "pl": "Jak wartość zmienia się między dwoma punktami: równomiernie (Stopniowe), głównie w środku (Zrównoważone) lub niemal od razu (Szybkie).",
+    "ko": "두 지점 사이에서 값이 바뀌는 방식: 고르게(천천히), 주로 중간에서(균형), 거의 한 번에(빠르게).",
+    "ar": "كيف تتغير القيمة بين نقطتين: بالتساوي طوال الوقت (تدريجي)، أو في المنتصف غالبًا (متوازن)، أو دفعة واحدة تقريبًا (سريع)."
+  },
+  "value": "balanced",
+  "values": [
+    {
+      "id": "gradual",
+      "label": {
+        "en": "Gradual",
+        "nl": "Geleidelijk",
+        "de": "Allmählich",
+        "fr": "Progressive",
+        "it": "Graduale",
+        "sv": "Gradvis",
+        "no": "Gradvis",
+        "es": "Gradual",
+        "da": "Gradvis",
+        "ru": "Плавный",
+        "pl": "Stopniowe",
+        "ko": "천천히",
+        "ar": "تدريجي"
+      }
+    },
+    {
+      "id": "balanced",
+      "label": {
+        "en": "Balanced",
+        "nl": "Gebalanceerd",
+        "de": "Ausgewogen",
+        "fr": "Équilibrée",
+        "it": "Bilanciata",
+        "sv": "Balanserad",
+        "no": "Balansert",
+        "es": "Equilibrada",
+        "da": "Balanceret",
+        "ru": "Сбалансированный",
+        "pl": "Zrównoważone",
+        "ko": "균형",
+        "ar": "متوازن"
+      }
+    },
+    {
+      "id": "quick",
+      "label": {
+        "en": "Quick",
+        "nl": "Snel",
+        "de": "Schnell",
+        "fr": "Rapide",
+        "it": "Rapida",
+        "sv": "Snabb",
+        "no": "Rask",
+        "es": "Rápida",
+        "da": "Hurtig",
+        "ru": "Быстрый",
+        "pl": "Szybkie",
+        "ko": "빠르게",
+        "ar": "سريع"
+      }
+    }
+  ]
+}

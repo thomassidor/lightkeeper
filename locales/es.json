@@ -786,7 +786,8 @@
     "addASchedule": "Añade al menos un horario.",
     "targetSelectionChanged": "Las luces elegidas cambiaron mientras se comprobaban. Vuelve a elegirlas.",
     "notAControlMode": "“__mode__” no es una forma en que Lightkeeper pueda controlar las luces.",
-    "cannotSetBefore": "Este dispositivo no puede ajustar las luces antes de que se enciendan."
+    "cannotSetBefore": "Este dispositivo no puede ajustar las luces antes de que se enciendan.",
+    "notATransition": "“__transition__” no es una transición que Lightkeeper conozca."
   },
   "mappingDropped": {
     "notOneOfTheLights": "Ese botón indica una luz que este mando no controla.",

@@ -150,10 +150,13 @@ export interface FakeDeviceState {
   /** The device page's warning banner, and every change to it: text, or null. */
   warning: string | null;
   warnings: Array<string | null>;
+  /** The device's Settings, and every `setSettings` call, in order. */
+  settings: Record<string, unknown>;
+  settingsWrites: Array<Record<string, unknown>>;
 }
 
 /**
- * `Homey.Device`, as the fifteen members the device layer uses.
+ * `Homey.Device`, as the members the device layer uses.
  *
  * `setCapabilityValue` on a capability the device does not have REJECTS, like
  * the SDK — `DeviceLifecycle` relies on that (its first-init `onoff` write has a
@@ -216,6 +219,13 @@ export class Device extends Recorder {
     this.fake.capabilityOptions.set(id, structuredClone(options));
   }
 
+  getSettings(): Record<string, unknown> { return { ...this.fake.settings }; }
+  /** Merges, as the SDK does: a key left out keeps its value. */
+  async setSettings(settings: Record<string, unknown>): Promise<void> {
+    this.fake.settings = { ...this.fake.settings, ...settings };
+    this.fake.settingsWrites.push({ ...settings });
+  }
+
   getAvailable(): boolean { return this.fake.available; }
   async setAvailable(): Promise<void> {
     this.fake.available = true;
@@ -238,6 +248,9 @@ export class Device extends Recorder {
   }
 
   async onInit(): Promise<void> { /* overridden */ }
+  async onSettings(_event: {
+    oldSettings: Record<string, unknown>; newSettings: Record<string, unknown>; changedKeys: string[];
+  }): Promise<string | void> { /* overridden */ }
   async onRenamed(): Promise<void> { /* overridden */ }
   async onDeleted(): Promise<void> { /* overridden */ }
   async onUninit(): Promise<void> { /* overridden */ }
@@ -427,6 +440,8 @@ export interface FakeDeviceOptions {
   /** Capability id -> options, as a driver's `capabilitiesOptions` gives a device it pairs. */
   capabilityOptions?: Record<string, Record<string, unknown>>;
   available?: boolean;
+  /** What Homey holds for the device's Settings — a fresh pair gets the driver's defaults. */
+  settings?: Record<string, unknown>;
 }
 
 /**
@@ -456,6 +471,8 @@ export function makeDevice<C extends new () => Device>(
     failStoreWrites: new Set(),
     warning: null,
     warnings: [],
+    settings: { ...(options.settings ?? {}) },
+    settingsWrites: [],
   };
   return device;
 }

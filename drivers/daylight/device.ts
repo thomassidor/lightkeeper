@@ -4,6 +4,7 @@ import { migrateDaylightPlan } from '../../lib/daylight/daylight-migrations';
 import type { DaylightPlan } from '../../lib/daylight/daylight-types';
 import type { DaylightRuntime } from '../../lib/daylight/daylight-runtime';
 import type { ControlMode } from '../../lib/pairing/control-choice';
+import type { Transition } from '../../lib/support/interpolate';
 
 /**
  * One virtual device per Room-sensing Light.
@@ -45,9 +46,8 @@ module.exports = class DaylightDevice extends LightkeeperDevice<DaylightPlan, Da
   override readonly valueCapabilities = [VALUE_CAPABILITIES.brightness, VALUE_CAPABILITIES.daylight];
   /**
    * Two of the three: a `dim` write switches a lamp on (platform §12), so there
-   * is nothing to set before one does. The manifest narrows the picker to match
-   * on a device paired since, `narrowControlPicker` on one paired before; this
-   * list is what refuses the third when something sends it anyway.
+   * is nothing to set before one does. The driver's setting lists the same two;
+   * this list is what refuses the third when something sends it anyway.
    */
   override readonly controlModes: readonly ControlMode[] = ['after', 'none'];
 
@@ -77,6 +77,18 @@ module.exports = class DaylightDevice extends LightkeeperDevice<DaylightPlan, Da
 
   override withEnabled(plan: DaylightPlan, enabled: boolean): DaylightPlan {
     return { ...plan, enabled };
+  }
+
+  /**
+   * INSIDE the response, unlike the other two: it changes how the room is read
+   * (see `DaylightResponse.transition`), so moving it is a response change.
+   */
+  override transitionOf(plan: DaylightPlan): Transition {
+    return plan.response.transition;
+  }
+
+  override withTransition(plan: DaylightPlan, transition: Transition): DaylightPlan {
+    return { ...plan, response: { ...plan.response, transition } };
   }
 
   override async prepareApply(

@@ -820,7 +820,8 @@
     "addASchedule": "Dodaj co najmniej jeden blok harmonogramu.",
     "targetSelectionChanged": "Wybrane światła zmieniły się podczas sprawdzania. Wybierz je ponownie.",
     "notAControlMode": "„__mode__” nie jest sposobem, w jaki Lightkeeper może sterować światłami.",
-    "cannotSetBefore": "To urządzenie nie może ustawiać świateł przed ich włączeniem."
+    "cannotSetBefore": "To urządzenie nie może ustawiać świateł przed ich włączeniem.",
+    "notATransition": "„__transition__” nie jest przejściem, które zna Lightkeeper."
   },
   "mappingDropped": {
     "notOneOfTheLights": "Ten przycisk wskazuje światło, którym ten pilot nie steruje.",

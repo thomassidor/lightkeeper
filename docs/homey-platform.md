@@ -1845,21 +1845,32 @@ both because Homey's own frontend special-cases it. A value meant to be dropped 
 stay on the 0..1 axis — that is what the built-in card takes — so the honest choice is to keep the
 axis and drop the units, and say what the number is in the title.
 
-**One custom capability is a control, and it is an enum.** `lightkeeper_control` (0.6.6) is
-`type: enum`, `setable: true`, `uiComponent: picker`, with a `registerCapabilityListener` behind it on
-the three engine device types — the tile's copy of the review screen's "How Lightkeeper controls your
-lights". An enum has none of the slider problem above: there is no system capability it could be
-mistaken for, and its values are the app's own. A Room-sensing Light narrows it to two through
-`capabilitiesOptions.<id>.values`; `homey-lib` validates that key only for `target_power_mode`, so
-`validate` accepting it says nothing about the phone drawing two, which is what T183 checks. The
-device layer refuses the third value regardless.
+**A choice made once is a device SETTING, not a capability.** 0.6.6 briefly shipped
+`lightkeeper_control`, a setable `type: enum` capability with `uiComponent: picker`, as the tile's copy
+of the review screen's "How Lightkeeper controls your lights". It worked, and it was the wrong place:
+on the phone, opening the device showed the picker first and the value rows only behind it — even
+though the picker was LAST in the capability list, so the order of that list is not what decides
+which component a device opens on (observed by hand, 27 September 2026; nothing in the SDK docs says
+what does). A configuration choice in front of the values the device exists to show is backwards, so
+the choice and the Transition moved to the driver's `settings`, where a Room-sensing Light's two
+options are simply its own `values` — no `capabilitiesOptions` narrowing, and no question of whether
+the phone honours one. Two consequences worth knowing:
+
+- **Homey keeps its own copy of every setting**, separate from the device store, and a device paired
+  before the settings existed carries the driver's defaults there. The plan is the truth and the
+  setting a view of it, so `DeviceLifecycle.showSettings()` writes Homey's copy from the plan on init
+  and after every apply. Whether a setting added to a driver in a release reaches an already-paired
+  device at all is what T199 checks.
+- **`setSettings` is never called from inside `onSettings`.** Homey saves `newSettings` itself once
+  the handler resolves, and a throw from it refuses the save and shows the message — which is how a
+  mode the device type cannot take is refused, translated in the device layer.
 
 **A custom capability's icon is a file, and Homey's own are borrowable as files only.** `icon` takes
 an app path and `validate` checks it exists case-exactly (`lib/App/index.js`); there is no way to
 name a system capability's icon, and `capabilitiesOptions` has none (§10). Athom's capability
 reference serves every system icon at
 `athombv.github.io/athom-cloud-driver-reference/icons/<capability id>.svg` — 64×64, single-colour,
-which is what a mask wants — and `assets/capabilities/` ships five of them unmodified.
+which is what a mask wants — and `assets/capabilities/` ships four of them unmodified.
 
 **`titleShort` needs `compatibility >=13.2.1`**, which is above this app's floor of `>=12.9.0`. It
 fails `validate` at publish level with `capabilities.<id>.titleShort requires a compatibility of at

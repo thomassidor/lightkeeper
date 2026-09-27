@@ -7,6 +7,7 @@ import type { CircadianRuntime } from '../../lib/circadian/circadian-runtime';
 import type { CircadianRuntimeManager } from '../../lib/circadian/circadian-runtime-manager';
 import type { ControllerState, StateDetail } from '../../lib/profiles/controller-profile';
 import type { ControlMode } from '../../lib/pairing/control-choice';
+import type { Transition } from '../../lib/support/interpolate';
 
 /**
  * One virtual device per circadian light.
@@ -135,6 +136,15 @@ module.exports = class CircadianDevice
 
   override withEnabled(plan: SimpleCircadianPlan, enabled: boolean): SimpleCircadianPlan {
     return { ...plan, enabled };
+  }
+
+  /** Stored at the root, beside the zones it blends; `expandSimplePlan` carries it on. */
+  override transitionOf(plan: SimpleCircadianPlan): Transition {
+    return plan.transition;
+  }
+
+  override withTransition(plan: SimpleCircadianPlan, transition: Transition): SimpleCircadianPlan {
+    return { ...plan, transition };
   }
 
   override async prepareApply(

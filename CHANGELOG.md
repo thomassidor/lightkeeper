@@ -12,7 +12,8 @@ answer.
 ## 0.6.6
 
 Nothing needs redoing. Every existing circadian light, Colour Curve Light and Room-sensing Light
-gains the new picker on its own the first time the app starts. **One thing looks different:** a
+gains the two new settings on its own the first time the app starts, already set to what its setup
+says. **One thing looks different:** a
 circadian light now blends from one part of the day into the next rather than holding each part
 steady and changing only around the boundary. Existing ones are set to *Quick*, the closest of the
 three new choices to how they behaved; choose *Balanced* or *Gradual* in Repair for a slower day.
@@ -27,15 +28,17 @@ three new choices to how they behaved; choose *Balanced* or *Gradual* in Repair 
   setup screens read right to left in Arabic. Remote buttons' own labels — *Dial · Turn right* — are
   translated too; the names of Flows Lightkeeper has already generated stay as they are, because
   renaming one would read as your own edit. Logs and diagnostics stay in English.
-- **Change how a device controls your lights from the device itself.** The question the last setup
-  screen asks since 0.6.5 — *Change lights after they turn on*, *Set lights before they turn on*,
-  *Don't change lights automatically* — is now also a picker on the device, so switching a room to
-  "only work out the values" for an evening no longer means opening Repair. A Room-sensing Light's
-  picker has the first and last only, as its setup screen does. The picker and the setup screen are
-  the same setting: change one and the other follows.
-- **Icons on every value a device shows.** *Brightness now*, *Colour temperature now*, *Colour now*,
-  *Daylight outside* and the new picker carry Homey's own icons for dim, light temperature, hue,
-  luminance and light mode, instead of a generic one.
+- **Change how a device controls your lights, and its Transition, from the device's Settings.** The
+  question the last setup screen asks since 0.6.5 — *Change lights after they turn on*, *Set lights
+  before they turn on*, *Don't change lights automatically* — and the new *Transition* are both in
+  the device's own Settings (the gear on its page), so switching a room to "only work out the values"
+  for an evening no longer means opening Repair. A Room-sensing Light offers the first and last
+  only, as its setup screen does. Settings and the setup screens are the same setting: change one and
+  the other follows. Opening the device still shows what it is doing first — its values and its
+  switch — rather than a choice you make once.
+- **Icons on every value a device shows.** *Brightness now*, *Colour temperature now*, *Colour now*
+  and *Daylight outside* carry Homey's own icons for dim, light temperature, hue and luminance,
+  instead of a generic one.
 
 - **Transition: Gradual, Balanced or Quick.** A new card on the editing step of all three — *Colour
   through the day*, *Your colours through the day* and *How bright should the lamps be?* — and a
@@ -62,10 +65,19 @@ three new choices to how they behaved; choose *Balanced* or *Gradual* in Repair 
 - **Colour Curve Lights and Room-sensing Lights do not visibly change.** They used to ease every
   change with a raised cosine; they are set to *Balanced*, which is within 0.016 of it everywhere.
 - **"Set lights before they turn on" still needs the light test, and now says so.** The test blinks
-  each light, so it is not something a picker — or a Flow — should set off. Choose *before* on the
+  each light, so it is not something a setting — or a Flow — should set off. Choose *before* on the
   device and it sets in advance only the lights a test has already proven. If none has been tested,
   the device's page carries a warning saying to run the test from Repair, and until then it behaves as
   *after*. This also flags a device that pre-staged before 0.6.5 and has not been re-tested.
+- **A switched-off device no longer marks lights as overridden.** A circadian light, Colour Curve
+  Light or Room-sensing Light that was switched off on its tile still watched its lights, so every
+  change somebody made to one with the vendor's app or a scene was recorded as an override of a
+  device that was not controlling anything. Nothing about how the lights behaved changed, because
+  switching the device back on starts it afresh, but the settings page and diagnostics showed lights
+  as overridden that were not. On the reference Homey that was two paused Living Room devices, every
+  item in the diagnostics digest's "worth a look" list, and 112 of one device's 120 event slots.
+  A paused device now subscribes to none of its lights, as a publish-only device already did, and
+  subscribes again when it is switched back on.
 
 ### Under the hood
 
@@ -84,13 +96,19 @@ three new choices to how they behaved; choose *Balanced* or *Gradual* in Repair 
   `sync:views`. The try-it screen is sent engine samples rather than easing points itself. The day
   screen keeps a copy, because its strip redraws mid-drag — and that copy had gone linear where the
   engine eased; `pair-view-zone-copy.test.ts` now runs it against the engine.
-- `lightkeeper_control` is the app's one SETTABLE custom capability: an enum whose values are the
-  three `ControlMode`s verbatim, handed to `DeviceLifecycle.setControlMode`. That method has
-  `setEnabled`'s shape — store first, then `updatePlan` through `planForRuntime` — and refuses a
-  mode the device type does not list in `controlModes`, because a capability value is as scriptable
-  as a pair session (platform §14). No new stored shape: `planWithControlMode()` in
-  `lib/pairing/control-choice.ts` writes the same two flags the review screen does, `writesLights`
-  only when false.
+- The control choice and the Transition are two driver **settings**, `control` and `transition`,
+  authored once as templates in `.homeycompose/drivers/settings/` and `$extends`-ed by the three
+  engine drivers (a Room-sensing Light overrides `values` to two). They were briefly a `picker`
+  capability, `lightkeeper_control`, and Homey opened every engine device on that picker ahead of
+  its value rows whatever the capability order — so it is gone, and `reconcileCapabilities()`
+  removes it from any device that gained it. `DeviceLifecycle.applySettings()` has `setEnabled`'s
+  shape — store first, then `updatePlan` through `planForRuntime` — and refuses the whole save on a
+  mode the device type does not list in `controlModes` or a value that is not a `Transition`,
+  because a setting is as scriptable as a pair session (platform §14). The plan stays the source of
+  truth: `showSettings()` writes Homey's copy from it on every init and after every apply, compared
+  first, and never from inside `onSettings`. No new stored shape: `planWithControlMode()` writes the
+  same two flags the review screen does, and `withTransition()` moves the one field each plan
+  already has — at the root, or inside a Room-sensing Light's `response`.
 - The icons are Athom's own, from the capability reference, shipped under `assets/capabilities/`. A
   system capability's icon cannot be borrowed by name — `capabilitiesOptions` has no `icon` (platform
   §10) — and using the system capabilities themselves would draw a working slider nothing honours

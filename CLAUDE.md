@@ -324,10 +324,11 @@ locales/                        all user-facing strings, one file per language �
 .homeycompose/                  the manifest's SOURCE; app.json is generated from it
   capabilities/                 the four READ-ONLY capabilities the engines publish into. Custom
                                 because every `dim` and `light_*` in homey-lib is setable, which
-                                would draw a slider nothing honours (platform §18). Plus ONE
-                                setable enum, `lightkeeper_control`: the review screen's control
-                                choice as a picker on the tile. Each names its icon — Athom's
-                                own, shipped as files in assets/capabilities/
+                                would draw a slider nothing honours (platform §18). Each names
+                                its icon — Athom's own, shipped as files in assets/capabilities/
+  drivers/settings/             the two device SETTINGS the three engine drivers `$extends`: the
+                                review screen's control choice and the Transition. Settings, not
+                                a picker capability: Homey opened the device on the picker
   flow/actions/                 the three internal bridge cards, plus set_lights — the one card
                                 this app offers rather than writes
 assets/                         the app's own icon and store images, all generated — except

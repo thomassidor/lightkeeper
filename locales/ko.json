@@ -718,7 +718,8 @@
     "addASchedule": "일정을 하나 이상 추가하세요.",
     "targetSelectionChanged": "확인하는 동안 선택한 조명이 바뀌었어요. 다시 고르세요.",
     "notAControlMode": "“__mode__”은(는) Lightkeeper가 조명을 제어하는 방법이 아니에요.",
-    "cannotSetBefore": "이 기기는 조명이 켜지기 전에 설정할 수 없어요."
+    "cannotSetBefore": "이 기기는 조명이 켜지기 전에 설정할 수 없어요.",
+    "notATransition": "“__transition__”은(는) Lightkeeper가 아는 전환이 아니에요."
   },
   "mappingDropped": {
     "notOneOfTheLights": "그 버튼이 이 리모컨이 제어하지 않는 조명을 가리켜요.",

@@ -260,7 +260,8 @@ alone, and a button or a Flow is what puts them on the lights. A device that dri
 button that sets them too means two devices setting the same bulbs at every switch-on: two
 brightnesses, the colour twice, and lights that visibly step between them. The source picker warns
 when the device you pick drives its own lights, and says how many of the button's lights it shares.
-Change the answer from the device itself: its page carries the same three choices as a picker. Only
+Change the answer from the device itself: its Settings (the gear on its page) carry the same
+choices. Only
 *Set lights before they turn on* still wants **Repair** once, for the light test — until a light has
 passed it, the device sets nothing in advance, and its page says so.
 

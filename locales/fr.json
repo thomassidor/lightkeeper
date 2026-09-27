@@ -787,7 +787,8 @@
     "addASchedule": "Ajoutez au moins un programme.",
     "targetSelectionChanged": "Les lumières choisies ont changé pendant la vérification. Choisissez-les à nouveau.",
     "notAControlMode": "« __mode__ » n'est pas une façon dont Lightkeeper peut contrôler des lumières.",
-    "cannotSetBefore": "Cet appareil ne peut pas régler les lumières avant leur allumage."
+    "cannotSetBefore": "Cet appareil ne peut pas régler les lumières avant leur allumage.",
+    "notATransition": "« __transition__ » n'est pas une transition connue de Lightkeeper."
   },
   "mappingDropped": {
     "notOneOfTheLights": "Ce bouton désigne une lumière que cette télécommande ne contrôle pas.",

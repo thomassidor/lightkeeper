@@ -344,9 +344,9 @@ reads, what it stores, and for how long.
 
 **0.6.6** — the current release:
 
-- **Change how a device controls your lights from the device itself** — after they turn on, before
-  they turn on, or not at all — without opening Repair. The setup screen's answer and the device's
-  picker are one setting.
+- **Change how a device controls your lights, and its Transition, from the device's Settings** —
+  after they turn on, before they turn on, or not at all — without opening Repair. The setup screen's
+  answer and the device's Settings are one setting.
 - **Choosing *before* still needs the light test**, and a device that has not had one now says so on
   its own page.
 - **Transition — Gradual, Balanced or Quick** — on every circadian, Colour Curve and Room-sensing

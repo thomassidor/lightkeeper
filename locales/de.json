@@ -752,7 +752,8 @@
     "addASchedule": "Füge mindestens einen Zeitplan hinzu.",
     "targetSelectionChanged": "Die gewählten Lichter haben sich während der Prüfung geändert. Wähle sie erneut.",
     "notAControlMode": "„__mode__“ ist keine Art, wie Lightkeeper Lichter steuern kann.",
-    "cannotSetBefore": "Dieses Gerät kann Lichter nicht vor dem Einschalten einstellen."
+    "cannotSetBefore": "Dieses Gerät kann Lichter nicht vor dem Einschalten einstellen.",
+    "notATransition": "„__transition__“ ist kein Übergang, den Lightkeeper kennt."
   },
   "mappingDropped": {
     "notOneOfTheLights": "Diese Taste nennt ein Licht, das diese Fernbedienung nicht steuert.",

@@ -636,6 +636,27 @@ describe('DaylightRuntime - health', () => {
     assert.equal(h.runtime.diagnostics().lastAction?.detail, 'the plan is switched off');
   });
 
+  test('a paused device watches no lamp, so a hand on one is never filed as an override', async () => {
+    const h = harness({ plan: plan({}, false) });
+    await h.runtime.start();
+    await h.runtime.drain();
+
+    assert.equal(h.subscribed('l1', 'onoff'), false);
+    assert.equal(h.subscribed('l1', 'dim'), false);
+    h.advance(SETTLE_PAST);
+    h.report('l1', 'dim', 0.95);
+    assert.equal(h.runtime.diagnostics().targets.some(t => t.overridden), false);
+  });
+
+  test('resumed, it subscribes again', async () => {
+    const h = harness({ plan: plan({}, false) });
+    await h.runtime.start();
+    await h.runtime.updatePlan(plan());
+    await h.runtime.drain();
+
+    assert.equal(h.subscribed('l1', 'onoff'), true);
+  });
+
   test('lamps that cannot dim are needs_repair, because it can do nothing at all', async () => {
     const h = harness({ devices: [light('l1', ['onoff']), light('l2', ['onoff'])] });
     await h.runtime.start();

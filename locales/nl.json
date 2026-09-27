@@ -752,7 +752,8 @@
     "addASchedule": "Voeg minstens één schema toe.",
     "targetSelectionChanged": "De gekozen lampen veranderden terwijl dit werd gecontroleerd. Kies ze opnieuw.",
     "notAControlMode": "“__mode__” is geen manier waarop Lightkeeper lampen kan bedienen.",
-    "cannotSetBefore": "Dit apparaat kan lampen niet instellen voordat ze aangaan."
+    "cannotSetBefore": "Dit apparaat kan lampen niet instellen voordat ze aangaan.",
+    "notATransition": "“__transition__” is geen overgang die Lightkeeper kent."
   },
   "mappingDropped": {
     "notOneOfTheLights": "Die knop noemt een lamp die deze afstandsbediening niet bedient.",

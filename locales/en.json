@@ -755,7 +755,8 @@
     "addASchedule": "Add at least one schedule.",
     "targetSelectionChanged": "The lights you chose changed while this was being checked. Choose them again.",
     "notAControlMode": "“__mode__” is not a way Lightkeeper can control lights.",
-    "cannotSetBefore": "This device cannot set lights before they turn on."
+    "cannotSetBefore": "This device cannot set lights before they turn on.",
+    "notATransition": "“__transition__” is not a Transition Lightkeeper knows."
   },
   "mappingDropped": {
     "notOneOfTheLights": "That button names a light this remote does not control.",

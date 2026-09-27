@@ -787,7 +787,8 @@
     "addASchedule": "Aggiungi almeno una programmazione.",
     "targetSelectionChanged": "Le luci scelte sono cambiate durante la verifica. Sceglile di nuovo.",
     "notAControlMode": "“__mode__” non è un modo in cui Lightkeeper può controllare le luci.",
-    "cannotSetBefore": "Questo dispositivo non può impostare le luci prima dell'accensione."
+    "cannotSetBefore": "Questo dispositivo non può impostare le luci prima dell'accensione.",
+    "notATransition": "“__transition__” non è una transizione che Lightkeeper conosce."
   },
   "mappingDropped": {
     "notOneOfTheLights": "Questo pulsante indica una luce che questo telecomando non controlla.",

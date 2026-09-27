@@ -18,8 +18,7 @@
   "capabilities": [
     "onoff",
     "lightkeeper_brightness",
-    "lightkeeper_temperature",
-    "lightkeeper_control"
+    "lightkeeper_temperature"
   ],
   "capabilitiesOptions": {
     "onoff": {
@@ -40,6 +39,14 @@
       }
     }
   },
+  "settings": [
+    {
+      "$extends": "control"
+    },
+    {
+      "$extends": "transition"
+    }
+  ],
   "platforms": [
     "local"
   ],

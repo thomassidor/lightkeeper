@@ -773,8 +773,15 @@ export class CircadianRuntime {
      * filed as somebody taking the lamp over from a device that never had it.
      * The one-time refresh in `buildRuntime` stays, so a preview still knows
      * which lamps are on.
+     *
+     * A PAUSED device is the same case. Seen on the reference Homey: both
+     * Living Room devices switched off on their tiles, and every hand on every
+     * lamp filed as an override with `expected: null` — all seven of the
+     * diagnostics digest's "worth a look" items, and 112 of one device's 120
+     * event slots. Resuming goes through `updatePlan`, which restarts the
+     * runtime, so the subscriptions come back with it.
      */
-    if (!keepsLightsUpdated(this.plan)) return;
+    if (!this.plan.enabled || !keepsLightsUpdated(this.plan)) return;
     const capabilities = this.watchedCapabilities();
     for (const deviceId of this.targetIds) {
       await this.adapter.subscribe(deviceId, capabilities, (id, capability, value, external) =>

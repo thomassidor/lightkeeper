@@ -18,8 +18,7 @@
   "capabilities": [
     "onoff",
     "lightkeeper_brightness",
-    "lightkeeper_daylight",
-    "lightkeeper_control"
+    "lightkeeper_daylight"
   ],
   "capabilitiesOptions": {
     "onoff": {
@@ -38,12 +37,15 @@
         "ko": "일광 활성",
         "ar": "ضوء النهار نشط"
       }
-    },
-    "lightkeeper_control": {
+    }
+  },
+  "settings": [
+    {
+      "$extends": "control",
       "values": [
         {
           "id": "after",
-          "title": {
+          "label": {
             "en": "Change lights after they turn on",
             "nl": "Lampen aanpassen nadat ze aangaan",
             "de": "Lichter nach dem Einschalten anpassen",
@@ -61,7 +63,7 @@
         },
         {
           "id": "none",
-          "title": {
+          "label": {
             "en": "Don’t change lights automatically",
             "nl": "Lampen niet automatisch aanpassen",
             "de": "Lichter nicht automatisch ändern",
@@ -78,8 +80,11 @@
           }
         }
       ]
+    },
+    {
+      "$extends": "transition"
     }
-  },
+  ],
   "platforms": [
     "local"
   ],

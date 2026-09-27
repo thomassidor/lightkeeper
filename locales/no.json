@@ -752,7 +752,8 @@
     "addASchedule": "Legg til minst én tidsplan.",
     "targetSelectionChanged": "Lysene du valgte, endret seg mens dette ble sjekket. Velg dem på nytt.",
     "notAControlMode": "«__mode__» er ikke en måte Lightkeeper kan styre lys på.",
-    "cannotSetBefore": "Denne enheten kan ikke stille inn lys før de slås på."
+    "cannotSetBefore": "Denne enheten kan ikke stille inn lys før de slås på.",
+    "notATransition": "«__transition__» er ikke en overgang Lightkeeper kjenner til."
   },
   "mappingDropped": {
     "notOneOfTheLights": "Den knappen nevner et lys som denne fjernkontrollen ikke styrer.",

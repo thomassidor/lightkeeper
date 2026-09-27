@@ -39,21 +39,30 @@ import { keepsLightsUpdated, writesLightsField } from '../runtime/writes-lights'
 
 export type ControlMode = 'after' | 'before' | 'none';
 
-/** All three, in the capability's own order — what an un-narrowed picker offers. */
-export const ALL_CONTROL_MODES: readonly ControlMode[] = ['after', 'before', 'none'];
+/**
+ * The same choice as a dropdown in the device's own Settings, so it can be
+ * changed without opening Repair.
+ *
+ * Its values are the three `ControlMode`s verbatim, which is what lets the
+ * settings and the review screen share every rule below rather than translate
+ * between two vocabularies. A Room-sensing Light's driver lists two, and
+ * `DeviceLifecycle.applySettings` refuses the third regardless — a setting
+ * arrives over the Web API as readily as from the phone (platform §14).
+ *
+ * A SETTING, not a capability. It was a `picker` capability for one pre-release
+ * build, and Homey opened the device on it: the picker page came before the
+ * value rows whatever the order of the capability list, so the first thing a
+ * household saw on tapping a Room-sensing Light was a configuration choice
+ * rather than how bright it wanted the room. A choice made once belongs behind
+ * the gear.
+ */
+export const CONTROL_SETTING = 'control';
 
 /**
- * The same choice as a picker on the device itself, so it can be changed
- * without opening Repair.
- *
- * Its values are the three `ControlMode`s verbatim, which is what lets the tile
- * and the review screen share every rule below rather than translate between
- * two vocabularies. A Room-sensing Light narrows the picker to two through
- * `capabilitiesOptions` — and, on a device paired before the picker existed,
- * through `DeviceLifecycle.narrowControlPicker` (platform §18) — and `DeviceLifecycle.setControlMode` refuses the third
- * regardless — a capability value is as scriptable as a pair session.
+ * The capability that picker was, kept only so `reconcileCapabilities` can take
+ * it off every tile it reached. Nothing declares it any more.
  */
-export const CONTROL_CAPABILITY = 'lightkeeper_control';
+export const RETIRED_CONTROL_CAPABILITY = 'lightkeeper_control';
 
 /** A stored plan's slice of the choice: every engine plan has this shape. */
 export interface ControlPlan {
@@ -73,7 +82,7 @@ export function controlModeOfPlan(plan: ControlPlan): ControlMode {
 }
 
 /**
- * A copy of a stored plan with the choice moved, for the tile's picker.
+ * A copy of a stored plan with the choice moved, for the device's Settings.
  *
  * The pure twin of `applyControlMode` below, which moves a pairing SESSION.
  * Two rules it must keep that the session's version does not have to: the
@@ -96,8 +105,8 @@ export function planWithControlMode<T extends ControlPlan>(plan: T, mode: Contro
  *
  * "Before" chosen with no lamp ever proven pre-stages nothing — the design's
  * "until the test has run, the device behaves as option 1". That is the right
- * behaviour and an invisible one, and the tile's picker makes it easy to reach:
- * the review screen runs the test beside the option, the tile cannot (it would
+ * behaviour and an invisible one, and the device's Settings make it easy to reach:
+ * the review screen runs the test beside the option, Settings cannot (it would
  * blink every lamp that is on, from a Flow as readily as from a finger). So the
  * device says so instead.
  */

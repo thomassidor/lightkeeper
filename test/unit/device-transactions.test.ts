@@ -13,7 +13,8 @@ import {
 import type { ControllerState, ManagedFlowReference, StateDetail } from '../../lib/profiles/controller-profile';
 import { deferred, settle } from '../support/deferred';
 import { ValueBoard, VALUE_CAPABILITIES, type PublishedValues } from '../../lib/runtime/published-values';
-import { CONTROL_CAPABILITY, type ControlMode } from '../../lib/pairing/control-choice';
+import { RETIRED_CONTROL_CAPABILITY, type ControlMode } from '../../lib/pairing/control-choice';
+import type { Transition } from '../../lib/support/interpolate';
 
 /**
  * The device layer's transactions.
@@ -39,6 +40,8 @@ interface Plan {
   preStage?: boolean;
   preStageLights?: string[];
   writesLights?: false;
+  /** Absent on a type with no Transition — see `FakeOwner.transitionOf`. */
+  transition?: Transition;
 }
 
 interface FakeRuntime extends DeviceRuntime {
@@ -202,9 +205,17 @@ class FakeOwner implements DeviceOwner<Plan, FakeRuntime> {
     this.removedCapabilities.push(id);
   }
 
-  getCapabilityOptions(_id: string): Record<string, unknown> { return {}; }
-  async setCapabilityOptions(_id: string, _options: object): Promise<void> { /* no picker here */ }
-  controlPickerValues(): unknown[] { return []; }
+  /** What Homey holds for the device's Settings, and every write to it. */
+  settings: Record<string, unknown> = {};
+  readonly settingsWrites: Array<Record<string, unknown>> = [];
+  getSettings(): Record<string, unknown> { return { ...this.settings }; }
+  async setSettings(settings: Record<string, unknown>): Promise<void> {
+    this.settings = { ...this.settings, ...settings };
+    this.settingsWrites.push({ ...settings });
+  }
+
+  transitionOf(plan: Plan): Transition | null { return plan.transition ?? null; }
+  withTransition(plan: Plan, transition: Transition): Plan { return { ...plan, transition }; }
 
   async setWarning(message: string | null): Promise<void> {
     this.warning = message;
@@ -999,15 +1010,17 @@ describe('capability rows', () => {
 });
 
 /**
- * "How Lightkeeper controls your lights", as a picker on the tile.
+ * "How Lightkeeper controls your lights" and the Transition, in the device's
+ * Settings.
  *
- * The review screen has owned this choice since 0.6.5; the picker is a second
- * way in to the SAME two stored flags, so what matters is that it writes them
- * exactly as the review would — `writesLights` stored only when false, `preStage`
- * only where the plan has one — and reaches the runtime the way the pause switch
- * does, through `planForRuntime`.
+ * The review screen has owned both since 0.6.5; Settings is a second way in to
+ * the SAME stored fields, so what matters is that it writes them exactly as the
+ * review would — `writesLights` stored only when false, `preStage` only where
+ * the plan has one — and reaches the runtime the way the pause switch does,
+ * through `planForRuntime`. And that the plan stays the source of truth: Homey
+ * keeps its own copy of every setting, and it is the one that follows.
  */
-describe('control mode on the tile', () => {
+describe('control mode and Transition in Settings', () => {
   const ENGINE_MODES: readonly ControlMode[] = ['after', 'before', 'none'];
 
   function engine(plan: Plan) {
@@ -1017,44 +1030,75 @@ describe('control mode on the tile', () => {
     return h;
   }
 
-  test('the picker row is added only to a type with a choice to offer', async () => {
-    const withChoice = engine({ enabled: true, value: 'v', preStage: false });
-    await withChoice.lifecycle.init();
-    assert.ok(withChoice.owner.addedCapabilities.includes(CONTROL_CAPABILITY));
+  const setControl = (h: ReturnType<typeof harness>, control: unknown) =>
+    h.lifecycle.applySettings({ ...h.owner.settings, control }, ['control']);
 
-    const without = harness();
-    without.owner.capabilities.add(CONTROL_CAPABILITY);
-    without.owner.store.set('plan', { enabled: true, value: 'v' });
-    await without.lifecycle.init();
-    // A Light Remote or a schedule that somehow carries it has it taken away.
-    assert.deepEqual(without.owner.removedCapabilities, [CONTROL_CAPABILITY]);
+  test('the retired picker capability leaves every tile it reached', async () => {
+    const withChoice = engine({ enabled: true, value: 'v', preStage: false });
+    withChoice.owner.capabilities.add(RETIRED_CONTROL_CAPABILITY);
+    await withChoice.lifecycle.init();
+    assert.deepEqual(withChoice.owner.removedCapabilities, [RETIRED_CONTROL_CAPABILITY]);
+    assert.equal(withChoice.owner.addedCapabilities.includes(RETIRED_CONTROL_CAPABILITY), false);
   });
 
-  test('init shows the stored choice', async () => {
-    const h = engine({ enabled: true, value: 'v', preStage: false, writesLights: false });
+  test('init shows the stored choice and Transition, and writes nothing already right', async () => {
+    const h = engine({ enabled: true, value: 'v', preStage: false, writesLights: false, transition: 'quick' });
+    // What a device paired before Settings existed carries: the driver's defaults.
+    h.owner.settings = { control: 'after', transition: 'balanced' };
     await h.lifecycle.init();
-    assert.equal(h.owner.capabilityValues.get(CONTROL_CAPABILITY), 'none');
+    assert.deepEqual(h.owner.settings, { control: 'none', transition: 'quick' });
+
+    const again = engine({ enabled: true, value: 'v', preStage: false, transition: 'balanced' });
+    again.owner.settings = { control: 'after', transition: 'balanced' };
+    await again.lifecycle.init();
+    assert.deepEqual(again.owner.settingsWrites, [], 'compared before it is written');
+  });
+
+  test('a type with no choice and no Transition has no Settings to write', async () => {
+    const h = harness();
+    h.owner.store.set('plan', { enabled: true, value: 'v' });
+    await h.lifecycle.init();
+    assert.deepEqual(h.owner.settingsWrites, []);
   });
 
   test('choosing a mode stores both flags and restarts the runtime through planForRuntime', async () => {
     const h = engine({ enabled: true, value: 'v', preStage: false, preStageLights: ['lamp-1'] });
     await h.lifecycle.init();
 
-    await h.lifecycle.setControlMode('none');
+    await setControl(h, 'none');
     const stored = h.owner.store.get('plan') as Plan;
     assert.equal(stored.writesLights, false);
     assert.equal(stored.preStage, false);
     // Kept, so coming back to "before" does not need the test again.
     assert.deepEqual(stored.preStageLights, ['lamp-1']);
     assert.equal(h.registry.get('lk-test-1')!.plan.expanded, true);
-    assert.equal(h.owner.capabilityValues.get(CONTROL_CAPABILITY), 'none');
 
-    await h.lifecycle.setControlMode('before');
+    await setControl(h, 'before');
     const back = h.owner.store.get('plan') as Plan;
     // Absent, never `true`: a plan written before the flag existed must round-trip.
     assert.equal('writesLights' in back, false);
     assert.equal(back.preStage, true);
-    assert.equal(h.owner.capabilityValues.get(CONTROL_CAPABILITY), 'before');
+  });
+
+  test('onSettings never writes Settings itself: Homey saves what the user sent', async () => {
+    const h = engine({ enabled: true, value: 'v', preStage: false, transition: 'balanced' });
+    await h.lifecycle.init();
+    const before = h.owner.settingsWrites.length;
+    await h.lifecycle.applySettings({ control: 'none', transition: 'gradual' }, ['control', 'transition']);
+    assert.equal(h.owner.settingsWrites.length, before);
+  });
+
+  test('a Transition moves the plan and restarts the runtime', async () => {
+    const h = engine({ enabled: true, value: 'v', preStage: false, transition: 'balanced' });
+    await h.lifecycle.init();
+
+    await h.lifecycle.applySettings({ control: 'none', transition: 'quick' }, ['transition']);
+    assert.equal((h.owner.store.get('plan') as Plan).transition, 'quick');
+    const runtime = h.registry.get('lk-test-1')!;
+    assert.equal(runtime.plan.transition, 'quick');
+    assert.equal(runtime.plan.expanded, true);
+    // Only a key that CHANGED is read: the control above was not in changedKeys.
+    assert.equal('writesLights' in (h.owner.store.get('plan') as Plan), false);
   });
 
   test('a plan with no preStage does not grow one', async () => {
@@ -1063,20 +1107,32 @@ describe('control mode on the tile', () => {
     h.owner.store.set('plan', { enabled: true, value: 'v' });
     await h.lifecycle.init();
 
-    await h.lifecycle.setControlMode('none');
+    await setControl(h, 'none');
     assert.equal('preStage' in (h.owner.store.get('plan') as Plan), false);
   });
 
-  test('a mode this type does not offer is refused, and nothing is stored', async () => {
+  test('a value this type does not offer is refused, and nothing is stored', async () => {
     const h = harness();
     h.owner.controlModes = ['after', 'none'];
-    h.owner.store.set('plan', { enabled: true, value: 'v' });
+    h.owner.store.set('plan', { enabled: true, value: 'v', transition: 'balanced' });
     await h.lifecycle.init();
     const plan = structuredClone(h.owner.store.get('plan'));
 
-    await assert.rejects(h.lifecycle.setControlMode('before'), /errors\.cannotSetBefore/);
-    await assert.rejects(h.lifecycle.setControlMode('sometimes'), /errors\.notAControlMode/);
+    await assert.rejects(setControl(h, 'before'), /errors\.cannotSetBefore/);
+    await assert.rejects(setControl(h, 'sometimes'), /errors\.notAControlMode/);
+    // One bad key refuses the whole save, including a good one beside it.
+    await assert.rejects(
+      h.lifecycle.applySettings({ control: 'none', transition: 'jerky' }, ['control', 'transition']),
+      /errors\.notATransition/,
+    );
     assert.deepEqual(h.owner.store.get('plan'), plan);
+  });
+
+  test('a device with no plan refuses the save rather than showing a choice nothing holds', async () => {
+    const h = engine({ enabled: true, value: 'v' });
+    h.owner.store.delete('plan');
+    await h.lifecycle.init();
+    await assert.rejects(setControl(h, 'none'), /state\.noConfiguration/);
   });
 
   test('"before" with no lamp ever tested says so, and a tested one does not', async () => {
@@ -1084,10 +1140,10 @@ describe('control mode on the tile', () => {
     await h.lifecycle.init();
     assert.equal(h.owner.warning, null);
 
-    await h.lifecycle.setControlMode('before');
+    await setControl(h, 'before');
     assert.equal(h.owner.warning, 'warnings.preStageUntested');
 
-    await h.lifecycle.setControlMode('after');
+    await setControl(h, 'after');
     assert.equal(h.owner.warning, null);
 
     const tested = engine({ enabled: true, value: 'v', preStage: true, preStageLights: ['lamp-1'] });
@@ -1095,11 +1151,11 @@ describe('control mode on the tile', () => {
     assert.equal(tested.owner.warning, null);
   });
 
-  test('a Repair that changes the choice moves the picker', async () => {
-    const h = engine({ enabled: true, value: 'v', preStage: false });
+  test('a Repair that changes the choice or the Transition moves Settings', async () => {
+    const h = engine({ enabled: true, value: 'v', preStage: false, transition: 'balanced' });
     await h.lifecycle.init();
 
-    await h.lifecycle.apply({ enabled: true, value: 'v', preStage: false, writesLights: false });
-    assert.equal(h.owner.capabilityValues.get(CONTROL_CAPABILITY), 'none');
+    await h.lifecycle.apply({ enabled: true, value: 'v', preStage: false, writesLights: false, transition: 'gradual' });
+    assert.deepEqual(h.owner.settings, { control: 'none', transition: 'gradual' });
   });
 });

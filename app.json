@@ -963,8 +963,7 @@
       "capabilities": [
         "onoff",
         "lightkeeper_brightness",
-        "lightkeeper_temperature",
-        "lightkeeper_control"
+        "lightkeeper_temperature"
       ],
       "capabilitiesOptions": {
         "onoff": {
@@ -985,6 +984,175 @@
           }
         }
       },
+      "settings": [
+        {
+          "id": "control",
+          "type": "dropdown",
+          "label": {
+            "en": "How Lightkeeper controls your lights",
+            "nl": "Hoe Lightkeeper je lampen bedient",
+            "de": "Wie Lightkeeper deine Lichter steuert",
+            "fr": "Comment Lightkeeper contrôle vos lumières",
+            "it": "Come Lightkeeper controlla le tue luci",
+            "sv": "Hur Lightkeeper styr dina lampor",
+            "no": "Slik styrer Lightkeeper lysene dine",
+            "es": "Cómo controla Lightkeeper tus luces",
+            "da": "Sådan styrer Lightkeeper dine lys",
+            "ru": "Как Lightkeeper управляет светильниками",
+            "pl": "Jak Lightkeeper steruje twoimi światłami",
+            "ko": "Lightkeeper가 조명을 제어하는 방법",
+            "ar": "كيف يتحكم Lightkeeper بأضوائك"
+          },
+          "value": "after",
+          "values": [
+            {
+              "id": "after",
+              "label": {
+                "en": "Change lights after they turn on",
+                "nl": "Lampen aanpassen nadat ze aangaan",
+                "de": "Lichter nach dem Einschalten anpassen",
+                "fr": "Modifier les lumières après leur allumage",
+                "it": "Cambia le luci dopo l'accensione",
+                "sv": "Ändra lamporna efter att de tänts",
+                "no": "Endre lys etter at de slås på",
+                "es": "Cambiar las luces después de encenderse",
+                "da": "Ændr lys, efter de tænder",
+                "ru": "Менять свет после включения",
+                "pl": "Zmieniaj światła po włączeniu",
+                "ko": "조명이 켜진 후 바꾸기",
+                "ar": "تغيير الأضواء بعد تشغيلها"
+              }
+            },
+            {
+              "id": "before",
+              "label": {
+                "en": "Set lights before they turn on",
+                "nl": "Lampen instellen voordat ze aangaan",
+                "de": "Lichter vor dem Einschalten einstellen",
+                "fr": "Régler les lumières avant leur allumage",
+                "it": "Imposta le luci prima dell'accensione",
+                "sv": "Ställ in lamporna innan de tänds",
+                "no": "Still inn lys før de slås på",
+                "es": "Ajustar las luces antes de encenderse",
+                "da": "Indstil lys, før de tænder",
+                "ru": "Настраивать свет до включения",
+                "pl": "Ustawiaj światła przed włączeniem",
+                "ko": "조명이 켜지기 전에 설정하기",
+                "ar": "ضبط الأضواء قبل تشغيلها"
+              }
+            },
+            {
+              "id": "none",
+              "label": {
+                "en": "Don’t change lights automatically",
+                "nl": "Lampen niet automatisch aanpassen",
+                "de": "Lichter nicht automatisch ändern",
+                "fr": "Ne pas modifier les lumières automatiquement",
+                "it": "Non cambiare le luci automaticamente",
+                "sv": "Ändra inte lamporna automatiskt",
+                "no": "Ikke endre lys automatisk",
+                "es": "No cambiar las luces automáticamente",
+                "da": "Ændr ikke lys automatisk",
+                "ru": "Не менять свет автоматически",
+                "pl": "Nie zmieniaj świateł automatycznie",
+                "ko": "조명을 자동으로 바꾸지 않기",
+                "ar": "عدم تغيير الأضواء تلقائيًا"
+              }
+            }
+          ]
+        },
+        {
+          "id": "transition",
+          "type": "dropdown",
+          "label": {
+            "en": "Transition",
+            "nl": "Overgang",
+            "de": "Übergang",
+            "fr": "Transition",
+            "it": "Transizione",
+            "sv": "Övergång",
+            "no": "Overgang",
+            "es": "Transición",
+            "da": "Overgang",
+            "ru": "Переход",
+            "pl": "Przejście",
+            "ko": "전환",
+            "ar": "الانتقال"
+          },
+          "hint": {
+            "en": "How a value moves between two points: evenly throughout (Gradual), mostly in the middle (Balanced) or nearly all at once (Quick).",
+            "nl": "Hoe een waarde tussen twee punten verloopt: gelijkmatig (Geleidelijk), vooral in het midden (Gebalanceerd) of bijna in één keer (Snel).",
+            "de": "Wie sich ein Wert zwischen zwei Punkten bewegt: gleichmäßig (Allmählich), vor allem in der Mitte (Ausgewogen) oder fast auf einmal (Schnell).",
+            "fr": "Comment une valeur évolue entre deux points : régulièrement (Progressive), surtout au milieu (Équilibrée) ou presque d’un coup (Rapide).",
+            "it": "Come un valore si muove tra due punti: in modo uniforme (Graduale), soprattutto a metà (Bilanciata) o quasi tutto in una volta (Rapida).",
+            "sv": "Hur ett värde rör sig mellan två punkter: jämnt hela vägen (Gradvis), mest i mitten (Balanserad) eller nästan på en gång (Snabb).",
+            "no": "Hvordan en verdi beveger seg mellom to punkter: jevnt hele veien (Gradvis), mest i midten (Balansert) eller nesten på én gang (Rask).",
+            "es": "Cómo se mueve un valor entre dos puntos: de forma uniforme (Gradual), sobre todo en el medio (Equilibrada) o casi de golpe (Rápida).",
+            "da": "Hvordan en værdi bevæger sig mellem to punkter: jævnt hele vejen (Gradvis), mest i midten (Balanceret) eller næsten på én gang (Hurtig).",
+            "ru": "Как значение меняется между двумя точками: равномерно (Плавный), в основном посередине (Сбалансированный) или почти сразу (Быстрый).",
+            "pl": "Jak wartość zmienia się między dwoma punktami: równomiernie (Stopniowe), głównie w środku (Zrównoważone) lub niemal od razu (Szybkie).",
+            "ko": "두 지점 사이에서 값이 바뀌는 방식: 고르게(천천히), 주로 중간에서(균형), 거의 한 번에(빠르게).",
+            "ar": "كيف تتغير القيمة بين نقطتين: بالتساوي طوال الوقت (تدريجي)، أو في المنتصف غالبًا (متوازن)، أو دفعة واحدة تقريبًا (سريع)."
+          },
+          "value": "balanced",
+          "values": [
+            {
+              "id": "gradual",
+              "label": {
+                "en": "Gradual",
+                "nl": "Geleidelijk",
+                "de": "Allmählich",
+                "fr": "Progressive",
+                "it": "Graduale",
+                "sv": "Gradvis",
+                "no": "Gradvis",
+                "es": "Gradual",
+                "da": "Gradvis",
+                "ru": "Плавный",
+                "pl": "Stopniowe",
+                "ko": "천천히",
+                "ar": "تدريجي"
+              }
+            },
+            {
+              "id": "balanced",
+              "label": {
+                "en": "Balanced",
+                "nl": "Gebalanceerd",
+                "de": "Ausgewogen",
+                "fr": "Équilibrée",
+                "it": "Bilanciata",
+                "sv": "Balanserad",
+                "no": "Balansert",
+                "es": "Equilibrada",
+                "da": "Balanceret",
+                "ru": "Сбалансированный",
+                "pl": "Zrównoważone",
+                "ko": "균형",
+                "ar": "متوازن"
+              }
+            },
+            {
+              "id": "quick",
+              "label": {
+                "en": "Quick",
+                "nl": "Snel",
+                "de": "Schnell",
+                "fr": "Rapide",
+                "it": "Rapida",
+                "sv": "Snabb",
+                "no": "Rask",
+                "es": "Rápida",
+                "da": "Hurtig",
+                "ru": "Быстрый",
+                "pl": "Szybkie",
+                "ko": "빠르게",
+                "ar": "سريع"
+              }
+            }
+          ]
+        }
+      ],
       "platforms": [
         "local"
       ],
@@ -1224,8 +1392,7 @@
         "onoff",
         "lightkeeper_brightness",
         "lightkeeper_temperature",
-        "lightkeeper_colour",
-        "lightkeeper_control"
+        "lightkeeper_colour"
       ],
       "capabilitiesOptions": {
         "onoff": {
@@ -1246,6 +1413,175 @@
           }
         }
       },
+      "settings": [
+        {
+          "id": "control",
+          "type": "dropdown",
+          "label": {
+            "en": "How Lightkeeper controls your lights",
+            "nl": "Hoe Lightkeeper je lampen bedient",
+            "de": "Wie Lightkeeper deine Lichter steuert",
+            "fr": "Comment Lightkeeper contrôle vos lumières",
+            "it": "Come Lightkeeper controlla le tue luci",
+            "sv": "Hur Lightkeeper styr dina lampor",
+            "no": "Slik styrer Lightkeeper lysene dine",
+            "es": "Cómo controla Lightkeeper tus luces",
+            "da": "Sådan styrer Lightkeeper dine lys",
+            "ru": "Как Lightkeeper управляет светильниками",
+            "pl": "Jak Lightkeeper steruje twoimi światłami",
+            "ko": "Lightkeeper가 조명을 제어하는 방법",
+            "ar": "كيف يتحكم Lightkeeper بأضوائك"
+          },
+          "value": "after",
+          "values": [
+            {
+              "id": "after",
+              "label": {
+                "en": "Change lights after they turn on",
+                "nl": "Lampen aanpassen nadat ze aangaan",
+                "de": "Lichter nach dem Einschalten anpassen",
+                "fr": "Modifier les lumières après leur allumage",
+                "it": "Cambia le luci dopo l'accensione",
+                "sv": "Ändra lamporna efter att de tänts",
+                "no": "Endre lys etter at de slås på",
+                "es": "Cambiar las luces después de encenderse",
+                "da": "Ændr lys, efter de tænder",
+                "ru": "Менять свет после включения",
+                "pl": "Zmieniaj światła po włączeniu",
+                "ko": "조명이 켜진 후 바꾸기",
+                "ar": "تغيير الأضواء بعد تشغيلها"
+              }
+            },
+            {
+              "id": "before",
+              "label": {
+                "en": "Set lights before they turn on",
+                "nl": "Lampen instellen voordat ze aangaan",
+                "de": "Lichter vor dem Einschalten einstellen",
+                "fr": "Régler les lumières avant leur allumage",
+                "it": "Imposta le luci prima dell'accensione",
+                "sv": "Ställ in lamporna innan de tänds",
+                "no": "Still inn lys før de slås på",
+                "es": "Ajustar las luces antes de encenderse",
+                "da": "Indstil lys, før de tænder",
+                "ru": "Настраивать свет до включения",
+                "pl": "Ustawiaj światła przed włączeniem",
+                "ko": "조명이 켜지기 전에 설정하기",
+                "ar": "ضبط الأضواء قبل تشغيلها"
+              }
+            },
+            {
+              "id": "none",
+              "label": {
+                "en": "Don’t change lights automatically",
+                "nl": "Lampen niet automatisch aanpassen",
+                "de": "Lichter nicht automatisch ändern",
+                "fr": "Ne pas modifier les lumières automatiquement",
+                "it": "Non cambiare le luci automaticamente",
+                "sv": "Ändra inte lamporna automatiskt",
+                "no": "Ikke endre lys automatisk",
+                "es": "No cambiar las luces automáticamente",
+                "da": "Ændr ikke lys automatisk",
+                "ru": "Не менять свет автоматически",
+                "pl": "Nie zmieniaj świateł automatycznie",
+                "ko": "조명을 자동으로 바꾸지 않기",
+                "ar": "عدم تغيير الأضواء تلقائيًا"
+              }
+            }
+          ]
+        },
+        {
+          "id": "transition",
+          "type": "dropdown",
+          "label": {
+            "en": "Transition",
+            "nl": "Overgang",
+            "de": "Übergang",
+            "fr": "Transition",
+            "it": "Transizione",
+            "sv": "Övergång",
+            "no": "Overgang",
+            "es": "Transición",
+            "da": "Overgang",
+            "ru": "Переход",
+            "pl": "Przejście",
+            "ko": "전환",
+            "ar": "الانتقال"
+          },
+          "hint": {
+            "en": "How a value moves between two points: evenly throughout (Gradual), mostly in the middle (Balanced) or nearly all at once (Quick).",
+            "nl": "Hoe een waarde tussen twee punten verloopt: gelijkmatig (Geleidelijk), vooral in het midden (Gebalanceerd) of bijna in één keer (Snel).",
+            "de": "Wie sich ein Wert zwischen zwei Punkten bewegt: gleichmäßig (Allmählich), vor allem in der Mitte (Ausgewogen) oder fast auf einmal (Schnell).",
+            "fr": "Comment une valeur évolue entre deux points : régulièrement (Progressive), surtout au milieu (Équilibrée) ou presque d’un coup (Rapide).",
+            "it": "Come un valore si muove tra due punti: in modo uniforme (Graduale), soprattutto a metà (Bilanciata) o quasi tutto in una volta (Rapida).",
+            "sv": "Hur ett värde rör sig mellan två punkter: jämnt hela vägen (Gradvis), mest i mitten (Balanserad) eller nästan på en gång (Snabb).",
+            "no": "Hvordan en verdi beveger seg mellom to punkter: jevnt hele veien (Gradvis), mest i midten (Balansert) eller nesten på én gang (Rask).",
+            "es": "Cómo se mueve un valor entre dos puntos: de forma uniforme (Gradual), sobre todo en el medio (Equilibrada) o casi de golpe (Rápida).",
+            "da": "Hvordan en værdi bevæger sig mellem to punkter: jævnt hele vejen (Gradvis), mest i midten (Balanceret) eller næsten på én gang (Hurtig).",
+            "ru": "Как значение меняется между двумя точками: равномерно (Плавный), в основном посередине (Сбалансированный) или почти сразу (Быстрый).",
+            "pl": "Jak wartość zmienia się między dwoma punktami: równomiernie (Stopniowe), głównie w środku (Zrównoważone) lub niemal od razu (Szybkie).",
+            "ko": "두 지점 사이에서 값이 바뀌는 방식: 고르게(천천히), 주로 중간에서(균형), 거의 한 번에(빠르게).",
+            "ar": "كيف تتغير القيمة بين نقطتين: بالتساوي طوال الوقت (تدريجي)، أو في المنتصف غالبًا (متوازن)، أو دفعة واحدة تقريبًا (سريع)."
+          },
+          "value": "balanced",
+          "values": [
+            {
+              "id": "gradual",
+              "label": {
+                "en": "Gradual",
+                "nl": "Geleidelijk",
+                "de": "Allmählich",
+                "fr": "Progressive",
+                "it": "Graduale",
+                "sv": "Gradvis",
+                "no": "Gradvis",
+                "es": "Gradual",
+                "da": "Gradvis",
+                "ru": "Плавный",
+                "pl": "Stopniowe",
+                "ko": "천천히",
+                "ar": "تدريجي"
+              }
+            },
+            {
+              "id": "balanced",
+              "label": {
+                "en": "Balanced",
+                "nl": "Gebalanceerd",
+                "de": "Ausgewogen",
+                "fr": "Équilibrée",
+                "it": "Bilanciata",
+                "sv": "Balanserad",
+                "no": "Balansert",
+                "es": "Equilibrada",
+                "da": "Balanceret",
+                "ru": "Сбалансированный",
+                "pl": "Zrównoważone",
+                "ko": "균형",
+                "ar": "متوازن"
+              }
+            },
+            {
+              "id": "quick",
+              "label": {
+                "en": "Quick",
+                "nl": "Snel",
+                "de": "Schnell",
+                "fr": "Rapide",
+                "it": "Rapida",
+                "sv": "Snabb",
+                "no": "Rask",
+                "es": "Rápida",
+                "da": "Hurtig",
+                "ru": "Быстрый",
+                "pl": "Szybkie",
+                "ko": "빠르게",
+                "ar": "سريع"
+              }
+            }
+          ]
+        }
+      ],
       "platforms": [
         "local"
       ],
@@ -1335,8 +1671,7 @@
       "capabilities": [
         "onoff",
         "lightkeeper_brightness",
-        "lightkeeper_daylight",
-        "lightkeeper_control"
+        "lightkeeper_daylight"
       ],
       "capabilitiesOptions": {
         "onoff": {
@@ -1355,12 +1690,14 @@
             "ko": "일광 활성",
             "ar": "ضوء النهار نشط"
           }
-        },
-        "lightkeeper_control": {
+        }
+      },
+      "settings": [
+        {
           "values": [
             {
               "id": "after",
-              "title": {
+              "label": {
                 "en": "Change lights after they turn on",
                 "nl": "Lampen aanpassen nadat ze aangaan",
                 "de": "Lichter nach dem Einschalten anpassen",
@@ -1378,7 +1715,7 @@
             },
             {
               "id": "none",
-              "title": {
+              "label": {
                 "en": "Don’t change lights automatically",
                 "nl": "Lampen niet automatisch aanpassen",
                 "de": "Lichter nicht automatisch ändern",
@@ -1394,9 +1731,118 @@
                 "ar": "عدم تغيير الأضواء تلقائيًا"
               }
             }
+          ],
+          "id": "control",
+          "type": "dropdown",
+          "label": {
+            "en": "How Lightkeeper controls your lights",
+            "nl": "Hoe Lightkeeper je lampen bedient",
+            "de": "Wie Lightkeeper deine Lichter steuert",
+            "fr": "Comment Lightkeeper contrôle vos lumières",
+            "it": "Come Lightkeeper controlla le tue luci",
+            "sv": "Hur Lightkeeper styr dina lampor",
+            "no": "Slik styrer Lightkeeper lysene dine",
+            "es": "Cómo controla Lightkeeper tus luces",
+            "da": "Sådan styrer Lightkeeper dine lys",
+            "ru": "Как Lightkeeper управляет светильниками",
+            "pl": "Jak Lightkeeper steruje twoimi światłami",
+            "ko": "Lightkeeper가 조명을 제어하는 방법",
+            "ar": "كيف يتحكم Lightkeeper بأضوائك"
+          },
+          "value": "after"
+        },
+        {
+          "id": "transition",
+          "type": "dropdown",
+          "label": {
+            "en": "Transition",
+            "nl": "Overgang",
+            "de": "Übergang",
+            "fr": "Transition",
+            "it": "Transizione",
+            "sv": "Övergång",
+            "no": "Overgang",
+            "es": "Transición",
+            "da": "Overgang",
+            "ru": "Переход",
+            "pl": "Przejście",
+            "ko": "전환",
+            "ar": "الانتقال"
+          },
+          "hint": {
+            "en": "How a value moves between two points: evenly throughout (Gradual), mostly in the middle (Balanced) or nearly all at once (Quick).",
+            "nl": "Hoe een waarde tussen twee punten verloopt: gelijkmatig (Geleidelijk), vooral in het midden (Gebalanceerd) of bijna in één keer (Snel).",
+            "de": "Wie sich ein Wert zwischen zwei Punkten bewegt: gleichmäßig (Allmählich), vor allem in der Mitte (Ausgewogen) oder fast auf einmal (Schnell).",
+            "fr": "Comment une valeur évolue entre deux points : régulièrement (Progressive), surtout au milieu (Équilibrée) ou presque d’un coup (Rapide).",
+            "it": "Come un valore si muove tra due punti: in modo uniforme (Graduale), soprattutto a metà (Bilanciata) o quasi tutto in una volta (Rapida).",
+            "sv": "Hur ett värde rör sig mellan två punkter: jämnt hela vägen (Gradvis), mest i mitten (Balanserad) eller nästan på en gång (Snabb).",
+            "no": "Hvordan en verdi beveger seg mellom to punkter: jevnt hele veien (Gradvis), mest i midten (Balansert) eller nesten på én gang (Rask).",
+            "es": "Cómo se mueve un valor entre dos puntos: de forma uniforme (Gradual), sobre todo en el medio (Equilibrada) o casi de golpe (Rápida).",
+            "da": "Hvordan en værdi bevæger sig mellem to punkter: jævnt hele vejen (Gradvis), mest i midten (Balanceret) eller næsten på én gang (Hurtig).",
+            "ru": "Как значение меняется между двумя точками: равномерно (Плавный), в основном посередине (Сбалансированный) или почти сразу (Быстрый).",
+            "pl": "Jak wartość zmienia się między dwoma punktami: równomiernie (Stopniowe), głównie w środku (Zrównoważone) lub niemal od razu (Szybkie).",
+            "ko": "두 지점 사이에서 값이 바뀌는 방식: 고르게(천천히), 주로 중간에서(균형), 거의 한 번에(빠르게).",
+            "ar": "كيف تتغير القيمة بين نقطتين: بالتساوي طوال الوقت (تدريجي)، أو في المنتصف غالبًا (متوازن)، أو دفعة واحدة تقريبًا (سريع)."
+          },
+          "value": "balanced",
+          "values": [
+            {
+              "id": "gradual",
+              "label": {
+                "en": "Gradual",
+                "nl": "Geleidelijk",
+                "de": "Allmählich",
+                "fr": "Progressive",
+                "it": "Graduale",
+                "sv": "Gradvis",
+                "no": "Gradvis",
+                "es": "Gradual",
+                "da": "Gradvis",
+                "ru": "Плавный",
+                "pl": "Stopniowe",
+                "ko": "천천히",
+                "ar": "تدريجي"
+              }
+            },
+            {
+              "id": "balanced",
+              "label": {
+                "en": "Balanced",
+                "nl": "Gebalanceerd",
+                "de": "Ausgewogen",
+                "fr": "Équilibrée",
+                "it": "Bilanciata",
+                "sv": "Balanserad",
+                "no": "Balansert",
+                "es": "Equilibrada",
+                "da": "Balanceret",
+                "ru": "Сбалансированный",
+                "pl": "Zrównoważone",
+                "ko": "균형",
+                "ar": "متوازن"
+              }
+            },
+            {
+              "id": "quick",
+              "label": {
+                "en": "Quick",
+                "nl": "Snel",
+                "de": "Schnell",
+                "fr": "Rapide",
+                "it": "Rapida",
+                "sv": "Snabb",
+                "no": "Rask",
+                "es": "Rápida",
+                "da": "Hurtig",
+                "ru": "Быстрый",
+                "pl": "Szybkie",
+                "ko": "빠르게",
+                "ar": "سريع"
+              }
+            }
           ]
         }
-      },
+      ],
       "platforms": [
         "local"
       ],
@@ -1683,100 +2129,6 @@
       "setable": false,
       "uiComponent": "sensor",
       "icon": "/assets/capabilities/light_hue.svg"
-    },
-    "lightkeeper_control": {
-      "type": "enum",
-      "title": {
-        "en": "Lightkeeper control",
-        "nl": "Lightkeeper-bediening",
-        "de": "Lightkeeper-Steuerung",
-        "fr": "Contrôle Lightkeeper",
-        "it": "Controllo Lightkeeper",
-        "sv": "Lightkeeper-styrning",
-        "no": "Lightkeeper-styring",
-        "es": "Control de Lightkeeper",
-        "da": "Lightkeeper-styring",
-        "ru": "Управление Lightkeeper",
-        "pl": "Sterowanie Lightkeeper",
-        "ko": "Lightkeeper 제어",
-        "ar": "تحكم Lightkeeper"
-      },
-      "desc": {
-        "en": "How Lightkeeper controls this device's lights: after they turn on, before they turn on, or not at all.",
-        "nl": "Hoe Lightkeeper de lampen van dit apparaat bedient: nadat ze aangaan, voordat ze aangaan, of helemaal niet.",
-        "de": "Wie Lightkeeper die Lichter dieses Geräts steuert: nach dem Einschalten, vor dem Einschalten oder gar nicht.",
-        "fr": "Comment Lightkeeper contrôle les lumières de cet appareil : après leur allumage, avant leur allumage, ou pas du tout.",
-        "it": "Come Lightkeeper controlla le luci di questo dispositivo: dopo l'accensione, prima dell'accensione o per niente.",
-        "sv": "Hur Lightkeeper styr enhetens lampor: efter att de tänts, innan de tänds eller inte alls.",
-        "no": "Slik styrer Lightkeeper lysene til denne enheten: etter at de slås på, før de slås på, eller ikke i det hele tatt.",
-        "es": "Cómo controla Lightkeeper las luces de este dispositivo: después de encenderse, antes de encenderse o no las controla.",
-        "da": "Sådan styrer Lightkeeper denne enheds lys: efter de tænder, før de tænder eller slet ikke.",
-        "ru": "Как Lightkeeper управляет светильниками этого устройства: после включения, до включения или никак.",
-        "pl": "Jak Lightkeeper steruje światłami tego urządzenia: po ich włączeniu, przed włączeniem albo wcale.",
-        "ko": "Lightkeeper가 이 기기의 조명을 제어하는 방법: 켜진 후, 켜지기 전, 또는 제어하지 않음.",
-        "ar": "كيف يتحكم Lightkeeper بأضواء هذا الجهاز: بعد تشغيلها، أو قبل تشغيلها، أو لا يتحكم بها إطلاقًا."
-      },
-      "getable": true,
-      "setable": true,
-      "uiComponent": "picker",
-      "insights": false,
-      "values": [
-        {
-          "id": "after",
-          "title": {
-            "en": "Change lights after they turn on",
-            "nl": "Lampen aanpassen nadat ze aangaan",
-            "de": "Lichter nach dem Einschalten anpassen",
-            "fr": "Modifier les lumières après leur allumage",
-            "it": "Cambia le luci dopo l'accensione",
-            "sv": "Ändra lamporna efter att de tänts",
-            "no": "Endre lys etter at de slås på",
-            "es": "Cambiar las luces después de encenderse",
-            "da": "Ændr lys, efter de tænder",
-            "ru": "Менять свет после включения",
-            "pl": "Zmieniaj światła po włączeniu",
-            "ko": "조명이 켜진 후 바꾸기",
-            "ar": "تغيير الأضواء بعد تشغيلها"
-          }
-        },
-        {
-          "id": "before",
-          "title": {
-            "en": "Set lights before they turn on",
-            "nl": "Lampen instellen voordat ze aangaan",
-            "de": "Lichter vor dem Einschalten einstellen",
-            "fr": "Régler les lumières avant leur allumage",
-            "it": "Imposta le luci prima dell'accensione",
-            "sv": "Ställ in lamporna innan de tänds",
-            "no": "Still inn lys før de slås på",
-            "es": "Ajustar las luces antes de encenderse",
-            "da": "Indstil lys, før de tænder",
-            "ru": "Настраивать свет до включения",
-            "pl": "Ustawiaj światła przed włączeniem",
-            "ko": "조명이 켜지기 전에 설정하기",
-            "ar": "ضبط الأضواء قبل تشغيلها"
-          }
-        },
-        {
-          "id": "none",
-          "title": {
-            "en": "Don’t change lights automatically",
-            "nl": "Lampen niet automatisch aanpassen",
-            "de": "Lichter nicht automatisch ändern",
-            "fr": "Ne pas modifier les lumières automatiquement",
-            "it": "Non cambiare le luci automaticamente",
-            "sv": "Ändra inte lamporna automatiskt",
-            "no": "Ikke endre lys automatisk",
-            "es": "No cambiar las luces automáticamente",
-            "da": "Ændr ikke lys automatisk",
-            "ru": "Не менять свет автоматически",
-            "pl": "Nie zmieniaj świateł automatycznie",
-            "ko": "조명을 자동으로 바꾸지 않기",
-            "ar": "عدم تغيير الأضواء تلقائيًا"
-          }
-        }
-      ],
-      "icon": "/assets/capabilities/light_mode.svg"
     },
     "lightkeeper_daylight": {
       "type": "number",

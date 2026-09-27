@@ -82,10 +82,12 @@ The script cannot do these. Report each by its number.
 
 ## 4. This release
 
-**0.6.6 — capability icons, the control picker and the Transition choice, on top of the 0.6.5 and
-0.6.0 passes that are still owed.** 0.6.6's fourteen lines are first: T181–T186 take ten minutes
-with a phone, T187–T190 want an afternoon of the day going by, and T191–T194 want the Homey switched
-to another language for a few minutes.
+**0.6.6 — capability icons, the control and Transition settings, and the Transition choice, on top
+of the 0.6.5 and 0.6.0 passes that are still owed.** 0.6.6's fifteen lines are first: T181 and
+T195–T200 take ten minutes with a phone, T187–T190 want an afternoon of the day going by, and
+T191–T194 want the Homey switched to another language for a few minutes. T182–T186 are retired
+unrun: they tested a picker on the tile, which moved into the device's Settings before anything was
+published.
 
 **0.6.5 — the Flow surface, a tenth job on a remote button, and a general code review, on top of an
 0.6.0 pass that is still owed.**
@@ -102,43 +104,47 @@ screen. **It does answer the machine-readable half of several**, and says which 
 script answers in part is still yours — the end of `full` lists it with a `*` — and its report line
 says what it left for you.
 
-### 0.6.6 — icons on the value rows, and the control choice on the tile
+### 0.6.6 — icons on the value rows, and two choices in the device's Settings
 
-Two things the suite cannot see: what Homey draws, and whether a narrowed enum reaches the phone.
-None of these is answered by `verify-hardware.mjs`. Use one device of each engine type — a circadian
-light, a Colour Curve Light, a Room-sensing Light — paired BEFORE this build, so T186 comes free.
+Two things the suite cannot see: what Homey draws, and what the phone's Settings page does with a
+driver's settings. None of these is answered by `verify-hardware.mjs`. Use one device of each engine
+type — a circadian light, a Colour Curve Light, a Room-sensing Light — paired BEFORE this build, so
+T199 comes free.
 
 - [ ] **T181** **The icons, on a PUBLISHED build.** The value rows (*Brightness now*, *Colour
-      temperature now*, *Colour now*, *Daylight outside*) and the new picker each carry Homey's own
-      icon — dim, light temperature, hue, luminance, light mode. **A blank icon on a `homey app
-      install` is expected and not a failure** (platform §10: icons come from Athom's CDN, which only
-      holds published builds), so run this on the test channel. On a dev install, check only that the
-      rows are there.
-- [ ] **T182** **The picker changes the mode, and a restart keeps it.** On the circadian light, pick
-      *Don't change lights automatically* on the tile. Switch one of its lamps off and on: the lamp
-      comes on where it was left and stays there, and `node scripts/diagnostics.mjs` shows no writes
-      from that device. Restart the app: the tile still says *Don't change*. Pick *Change lights after
-      they turn on* and repeat the switch-on: the lamp is changed a moment after it comes on.
-- [ ] **T183** **A Room-sensing Light offers two.** Open its picker on the phone: exactly *Change
-      lights after they turn on* and *Don't change lights automatically*. This is the line that proves
-      `capabilitiesOptions.values` narrows an app's own enum on the device — `validate` accepts it but
-      says nothing about what is drawn. If all three appear, pick the third and confirm the tile
-      refuses it and snaps back; then record the finding in platform §18.
-- [ ] **T184** **"Before", chosen on the tile of a device never tested, says so.** On a Colour Curve
-      Light whose review-screen test has never run, pick *Set lights before they turn on*. The device's
-      page shows the warning telling you to run the test in Repair, and its lights behave as *after*.
-      Run the test in Repair, save, and the warning is gone.
-- [ ] **T185** **A Repair moves the picker.** Change the choice on the review screen in Repair and
-      save: the tile's picker follows without a restart.
-- [ ] **T186** **An old device gains the row.** Every device paired before this build shows the picker
-      after the update, on the right value, with no Repair — and the Light Remote and the schedule do
-      not show one at all.
+      temperature now*, *Colour now*, *Daylight outside*) each carry Homey's own icon — dim, light
+      temperature, hue, luminance. **A blank icon on a `homey app install` is expected and not a
+      failure** (platform §10: icons come from Athom's CDN, which only holds published builds), so run
+      this on the test channel. On a dev install, check only that the rows are there.
+- [ ] **T195** **The device opens on its values, and Settings changes the mode.** Tap the circadian
+      light: the first thing shown is its value rows and switch, not a choice. Open its Settings
+      (the gear): *How Lightkeeper controls your lights* and *Transition* are there. Choose *Don't
+      change lights automatically* and save. Switch one of its lamps off and on: the lamp comes on
+      where it was left and stays there, and `node scripts/diagnostics.mjs` shows no writes from that
+      device. Restart the app: Settings still say *Don't change*. Choose *Change lights after they
+      turn on* and repeat the switch-on: the lamp is changed a moment after it comes on.
+- [ ] **T196** **A Room-sensing Light offers two.** Its Settings list exactly *Change lights after
+      they turn on* and *Don't change lights automatically*.
+- [ ] **T197** **"Before", chosen in Settings on a device never tested, says so.** On a Colour Curve
+      Light whose review-screen test has never run, choose *Set lights before they turn on* and save.
+      The device's page shows the warning telling you to run the test in Repair, and its lights behave
+      as *after*. Run the test in Repair, save, and the warning is gone.
+- [ ] **T198** **A Repair moves Settings.** Change the choice and the Transition on Repair's screens
+      and save: the device's Settings show both new values without a restart.
+- [ ] **T199** **An old device loses the picker and shows its own values.** Every engine device
+      paired before this build no longer has the picker row after the update, and its Settings show
+      what its plan holds rather than the defaults — an existing circadian light reads *Quick*. The
+      Light Remote and the schedule have no such settings at all.
+- [ ] **T200** **A Transition chosen in Settings reaches the lights.** On the Colour Curve Light,
+      change *Transition* from *Balanced* to *Gradual* and save. Open Repair: its curve screen and the
+      *Transition* row on *Ready to add* both say *Gradual*, and the next minute's write follows the
+      new shape (`node scripts/diagnostics.mjs` — the target moves steadily rather than easing).
 
 ### 0.6.6 — Transition: Gradual, Balanced or Quick
 
 The shape itself is proved by the suite, against the engine and against the screens' own copies.
 What it cannot see is a stored device crossing the migration, and a real day on real lamps. Use the
-same three pre-existing devices as T186.
+same three pre-existing devices as T199.
 
 - [ ] **T187** **The migration chose what it says.** After the update, open each device in Repair and
       go to the editing step: the circadian light's *Transition* card has **Quick** checked, the
@@ -178,7 +184,7 @@ look at those before picking the phone up. None of these is answered by `verify-
       three different noun forms where the language needs them.
 - [ ] **T194** **The Flow cards and the tile.** Still in a non-English language: the *Set lights*
       card's title and its three argument labels, the *It is dark enough* condition, and a device
-      tile's four value rows and control picker are all translated. The settings page follows too,
+      tile's four value rows and its two Settings are all translated. The settings page follows too,
       apart from the event and write logs, which are English on purpose.
 
 ### 0.6.5 — the Flow surface, the switch-on work, and the code review's three

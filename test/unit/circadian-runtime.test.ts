@@ -381,6 +381,28 @@ describe('circadian writes', () => {
     assert.deepEqual(h.writes, []);
     assert.equal(h.runtime.currentState, 'disabled');
   });
+
+  test('a paused device watches no lamp, so a hand on one is never filed as an override', async () => {
+    // Seen on the reference Homey: two paused Living Room devices filing every
+    // report as an override with nothing written to compare it with.
+    const h = harness({ plan: plan({ enabled: false }) });
+    await h.runtime.start();
+
+    assert.equal(h.isSubscribed('l1', 'onoff'), false);
+    assert.equal(h.isSubscribed('l1', 'light_temperature'), false);
+    h.report('l1', 'light_temperature', 0.05);
+    assert.equal(h.runtime.diagnostics().targets.some(t => t.overridden), false);
+  });
+
+  test('resumed, it subscribes again', async () => {
+    const h = harness({ plan: plan({ enabled: false }) });
+    await h.runtime.start();
+    await h.runtime.updatePlan(plan());
+    await settle();
+
+    assert.equal(h.isSubscribed('l1', 'onoff'), true);
+    assert.equal(temperatures(h.writes).length, 2);
+  });
 });
 
 describe('brightness', () => {

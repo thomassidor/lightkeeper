@@ -8,7 +8,8 @@ import {
   type PlanMigration,
 } from './device-lifecycle';
 import type { ControllerState } from '../profiles/controller-profile';
-import { CONTROL_CAPABILITY, type ControlMode } from '../pairing/control-choice';
+import type { ControlMode } from '../pairing/control-choice';
+import type { Transition } from '../support/interpolate';
 import { translatorFor } from '../support/i18n';
 
 /**
@@ -48,7 +49,7 @@ export abstract class LightkeeperDevice<
   readonly valueCapabilities: readonly string[] = [];
   /**
    * Empty here, and overridden by the three engine device types — the only ones
-   * with a "How Lightkeeper controls your lights" choice to put on the tile.
+   * with a "How Lightkeeper controls your lights" choice in their Settings.
    */
   readonly controlModes: readonly ControlMode[] = [];
 
@@ -68,6 +69,9 @@ export abstract class LightkeeperDevice<
   planForRuntime(plan: TPlan): TRuntimePlan { return plan as unknown as TRuntimePlan; }
 
   planEnabled(_plan: TPlan): boolean { return true; }
+  /** Overridden by the three engine types, whose Settings carry a Transition. */
+  transitionOf(_plan: TPlan): Transition | null { return null; }
+  withTransition(plan: TPlan, _transition: Transition): TPlan { return plan; }
   withEnabled(plan: TPlan, _enabled: boolean): TPlan { return plan; }
   /** Overridden by the two types that own Flows. See DeviceOwner.rawFlowRefs. */
   rawFlowRefs(): unknown { return []; }
@@ -107,30 +111,20 @@ export abstract class LightkeeperDevice<
     if (this.withPauseSwitch) {
       this.registerCapabilityListener('onoff', async (value: boolean) => this.lifecycle.setEnabled(value));
     }
-    try {
-      await this.lifecycle.init();
-    } finally {
-      // AFTER init, because init is what adds this capability to a device paired
-      // before it existed (platform §18) — and the SDK throws on a listener for a
-      // capability the device does not have, which failed `onInit` on every
-      // engine device paired before 0.6.6. `finally`, so a device whose plan
-      // could not be registered still answers its own picker; the guard, so one
-      // whose row could not be added still starts.
-      if (this.controlModes.length > 0 && this.hasCapability(CONTROL_CAPABILITY)) {
-        this.registerCapabilityListener(CONTROL_CAPABILITY, async (value: unknown) => this.lifecycle.setControlMode(value));
-      }
-    }
+    await this.lifecycle.init();
   }
 
   /**
-   * The picker's `values` for THIS device type: the capability's own, from the
-   * generated manifest, narrowed to `controlModes`. What `capabilitiesOptions`
-   * gives a device the driver pairs, rebuilt for one `addCapability` added.
+   * The gear on the device's page. Only the three engine drivers declare any
+   * settings, so a Light Remote or a schedule never gets here — and would change
+   * nothing if it did, since neither lists a control mode or a Transition.
    */
-  controlPickerValues(): unknown[] {
-    const values: unknown = this.homey.manifest?.capabilities?.[CONTROL_CAPABILITY]?.values;
-    if (!Array.isArray(values)) return [];
-    return values.filter(value => this.controlModes.includes((value as { id?: unknown })?.id as ControlMode));
+  override async onSettings({ newSettings, changedKeys }: {
+    oldSettings: Record<string, unknown>;
+    newSettings: Record<string, unknown>;
+    changedKeys: string[];
+  }): Promise<string | void> {
+    await this.lifecycle.applySettings(newSettings, changedKeys);
   }
 
   /** Called by the pair/repair session when the user saves. */
