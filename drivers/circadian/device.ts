@@ -95,7 +95,18 @@ module.exports = class CircadianDevice
         onStateChange,
         // What comes back is the EXPANDED plan, and only two of its fields can
         // have changed at runtime — see planOf.
-        async expanded => onPlanChange(foldBackSimplePlan(plan, expanded)),
+        //
+        // Folded onto the STORE, not onto the `plan` this was registered with.
+        // Settings and the pause switch move the plan through `updatePlan`
+        // without registering again, so the registered plan goes stale: folding
+        // onto it wrote a Transition or control choice changed in Settings back
+        // to its old value the next time a lamp was struck off `preStageLights`.
+        // The store is the current plan whenever this is persisted — during
+        // `apply()`, the one moment it is not, the lifecycle discards it.
+        async expanded => onPlanChange(foldBackSimplePlan(
+          (this.getStoreValue(this.storeKey) as SimpleCircadianPlan | undefined) ?? plan,
+          expanded,
+        )),
         displayName,
         // So diagnostics and the settings page can tell a circadian light from a
         // curve one; they share the registry.

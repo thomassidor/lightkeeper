@@ -652,10 +652,22 @@ export class DeviceLifecycle<
     if (mode === undefined && transition === undefined) return;
 
     return this.operations.run(OPS, async () => {
-      const plan = this.storedPlan();
       // Nothing to change it ON. Refused rather than accepted, or Settings would
       // go on showing a choice no plan holds.
-      if (!plan) throw new Error(this.owner.translate(this.quarantineKey));
+      //
+      // Through the migration chain, not `storedPlan()` alone: a QUARANTINED
+      // device still has a store — from a newer build, or a shape its validator
+      // refused — and `storedPlan()` hands that back raw. Accepting it here
+      // overwrote the store `loadPlan` promises to leave alone, and registered
+      // a runtime on a plan nobody had validated.
+      const raw = this.storedPlan();
+      if (!raw) throw new Error(this.owner.translate(this.quarantineKey));
+      let plan: TPlan;
+      try {
+        plan = this.owner.migrate(raw).plan;
+      } catch (error) {
+        throw new Error(this.owner.translate(quarantineKeyFor(error) ?? this.owner.missingKey));
+      }
 
       let updated: TPlan = plan;
       if (mode !== undefined) updated = planWithControlMode(updated as ControlPlan, mode) as TPlan;

@@ -1135,6 +1135,24 @@ describe('control mode and Transition in Settings', () => {
     await assert.rejects(setControl(h, 'none'), /state\.noConfiguration/);
   });
 
+  test('a QUARANTINED device refuses the save, and its store and registry are left alone', async () => {
+    // A quarantined device still has a store, and `storedPlan()` returns it
+    // raw: the guard used to pass, overwrite the store `loadPlan` promises to
+    // leave alone, and register a runtime on a plan nobody had validated.
+    const h = engine({ enabled: true, value: 'from-the-future', preStage: false, transition: 'balanced' });
+    h.owner.migrateResult = new MigrationError('newer', 'Plan schema version 9 is newer than this app understands (2).');
+    await h.lifecycle.init();
+    const stored = structuredClone(h.owner.store.get('plan'));
+
+    await assert.rejects(setControl(h, 'none'), /state\.configurationFromNewerVersion/);
+    await assert.rejects(
+      h.lifecycle.applySettings({ transition: 'quick' }, ['transition']),
+      /state\.configurationFromNewerVersion/,
+    );
+    assert.deepEqual(h.owner.store.get('plan'), stored);
+    assert.equal(h.registry.registers.length, 0);
+  });
+
   test('"before" with no lamp ever tested says so, and a tested one does not', async () => {
     const h = engine({ enabled: true, value: 'v', preStage: false });
     await h.lifecycle.init();

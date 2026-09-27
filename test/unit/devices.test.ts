@@ -447,6 +447,27 @@ describe('the circadian registry adapter', () => {
     assert.equal(persisted.points, undefined);
   });
 
+  test('a runtime change folds onto the CURRENT store, so a Settings change is not written back', async () => {
+    // Settings moves the plan through `updatePlan`, never re-registering, so
+    // the plan captured at register time goes stale. Folding onto it put the
+    // old Transition back the next time a lamp was struck off preStageLights.
+    const reg = registry([]);
+    const stored = { ...await plans.circadian(), transition: 'quick' };
+    const instance = device(CircadianDevice, 'lk-circ-1', { circadian: stored }, { curves: reg }, ['onoff']);
+    await instance.onInit();
+    const call = reg.registered[0]!;
+
+    await instance.onSettings({ oldSettings: {}, newSettings: { transition: 'gradual' }, changedKeys: ['transition'] });
+    assert.equal(instance.getStoreValue('circadian').transition, 'gradual');
+    assert.equal(reg.registered.length, 1, 'Settings restarts the runtime, it does not register again');
+
+    await call.onPlanChange({ ...call.plan, preStage: true, preStageLights: ['l1'] });
+    await settle(2);
+    const persisted = instance.getStoreValue('circadian');
+    assert.equal(persisted.transition, 'gradual');
+    assert.deepEqual(persisted.preStageLights, ['l1']);
+  });
+
   test('the pause switch hands the runtime POINTS, never the stored two ends', async () => {
     const reg = registry([]);
     const instance = device(CircadianDevice, 'lk-circ-1', { circadian: await plans.circadian() }, { curves: reg }, ['onoff']);
