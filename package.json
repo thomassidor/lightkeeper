@@ -54,5 +54,15 @@
     "tsx": "^4.23.15",
     "typescript": "^5.4.0",
     "typescript-eslint": "^8.72.0"
+  },
+  "overrides": {
+    "homey": {
+      "homey-lib": {
+        "image-size": "0.6.2"
+      },
+      "external-editor": {
+        "tmp": "^0.2.7"
+      }
+    }
   }
 }

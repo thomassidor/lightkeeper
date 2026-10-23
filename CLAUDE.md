@@ -591,13 +591,24 @@ Nothing else in the reference has been re-checked.
   permission will require a more thorough review"*. `lights` stays second for discoverability.
 - **`npm audit --omit=dev`: four moderate findings, zero high or critical, all accepted.** The
   `--omit=dev` matters: devDependencies are not bundled into a Homey app, and the pinned
-  `homey` CLI brings a large tool tree of its own (17 findings, 5 of them high, through `sharp`
-  and `libvips`) that never reaches a Homey. The four below are the SHIPPED tree, and they are
+  `homey` CLI brings a large tool tree of its own (12 findings at 4.6.1, two of them high: `sharp`
+  and the CLI that carries it) that never reaches a Homey. The four below are the SHIPPED tree, and they are
   one chain —
   `parseuri` → `engine.io-client` → `socket.io-client` — reached only through `homey-api`, which is
   our single runtime dependency. There is no upstream fix to take, the endpoint being parsed is the
   fixed `http://127.0.0.1:80` from `getLocalUrl()`, and npm's suggested remediation is a downgrade
   of `homey-api` itself. Leave it, and re-check at each dependency bump.
+- **`package.json` carries two scoped `overrides` inside the CLI's tree, and one of them is a
+  DOWNGRADE on purpose.** `external-editor`'s `tmp` 0.0.33 → `^0.2.7` (two advisories, fixed in
+  0.2.6; it only calls `tmpNameSync`, unchanged). `homey-lib`'s `image-size` 0.6.3 → **0.6.2**:
+  the ICNS infinite loop is in the `icns.js` parser 0.6.3 ADDED, and 0.6.2 has no ICNS parser at
+  all. The only forward fix is 2.0.3+, and **do not take it**: 2.x exports an object rather than a
+  function, and `homey-lib/helpers/index.js` requires it inside a `try/catch` that swallows every
+  error — so `util.promisify(imageSize)` throws, the catch eats it, and `validate` quietly loses
+  its image-dimension checks while still passing. `npm audit fix` is not the tool either: it
+  reaches the same 0.6.2 but also downgrades `dockerode` and pulls in `tar-fs` 2.0.1, which has
+  advisories of its own. `sharp` is left alone — the CLI only calls it for widget previews, this
+  app has no widgets, and npm 11 does not run its install script, so it is never built.
 - **`homey-api` is not MIT.** Its LICENSE reads: *may be used freely with Homey products; source
   proprietary to Athom B.V.; no warranty*. Bundling it in a Homey app is exactly the permitted use,
   but it does not inherit this repo's MIT licence and belongs in the rights register as its own line.
