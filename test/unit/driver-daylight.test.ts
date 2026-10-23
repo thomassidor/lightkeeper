@@ -170,7 +170,10 @@ describe('the response screen', () => {
   });
 
   test('following the sun it draws today\'s sun, and labels both ends with a clock time', async () => {
-    const { session } = await paired();
+    // At 40°N, not the default Copenhagen: there the sun peaks under the 25° bright end from
+    // mid-October to late February, so `atBright` is honestly null and the test failed by season.
+    // 40°N clears 25° on every day of the year (26.6° at the winter solstice).
+    const { session } = await paired({ sky: { elevation: 20, level: 0.8, location: { latitude: 40, longitude: 12.57 } } });
     const reply = await session.call('getResponse');
     assert.equal(reply.week, null);
     assert.ok(reply.sun && Number.isFinite(reply.sun.elevation) && reply.sun.peak >= reply.sun.elevation);

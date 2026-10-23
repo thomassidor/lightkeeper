@@ -61,6 +61,11 @@ const quiet = process.argv.includes('--quiet');
 const args = [
   '--import', 'tsx', '--test', '--experimental-test-coverage',
   ...SOURCES.map(source => `--test-coverage-include=${source.endsWith('.ts') ? source : `${source}/**`}`),
+  // Explicit, because Node's DEFAULT exclusion is its test-file patterns, and from Node 24 those
+  // match `.ts` too: `**/test-*.ts` swallowed lib/outputs/test-outcome.ts, which then read as
+  // "never loaded by any test" on Node 24 while CI on Node 22 passed. Passing any exclude
+  // replaces the default; the include list above already keeps test/ out.
+  '--test-coverage-exclude=test/**',
   '--test-reporter=tap', 'test/unit/**/*.test.ts',
 ];
 const run = spawnSync(process.execPath, args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });

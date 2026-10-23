@@ -563,9 +563,14 @@ Nothing else in the reference has been re-checked.
   A review recommended downgrading to `3.17.3` purely on the strength of that field — **do not**,
   on that evidence alone: it swaps a version proven on real hardware for one that never has been.
 - **CI runs Node 22**, to stay near current firmware. The CLI is a devDependency at exactly
-  `homey@4.4.3` and `validate` runs it from the lockfile: an unpinned `npx homey` changes what
-  "publish-level valid" means between two runs of one commit, and even a pinned `npx homey@4.4.3`
+  `homey@4.6.1` and `validate` runs it from the lockfile: an unpinned `npx homey` changes what
+  "publish-level valid" means between two runs of one commit, and even a pinned `npx homey@4.6.1`
   leaves the CLI's own transitive tree free to move.
+  **That CLI brings its own `homey-api` 3.21.0, and it is not the one the app ships.** It hoists to
+  the top of `node_modules`, which pushes OUR 3.19.2's `socket.io-client`, `socket.io-parser` and
+  `debug` down into `node_modules/homey-api/node_modules/` — so `npm ls homey-api` shows two and a
+  lockfile diff reads like a runtime change. It is not one: the CLI packs from `npm ls --omit=dev`,
+  and that list carries the same versions as before, at the nested paths.
 - **`eslint` is at `^10`, and its Node floor is stricter than the app's own.** It declares
   `^20.19.0 || ^22.13.0 || >=24`, so a local 22.12 gets an `EBADENGINE` warning on install (eslint
   10.9.1 then ran clean on 22.12 anyway — the warning is npm's, not a refusal). `package.json`'s
@@ -573,8 +578,8 @@ Nothing else in the reference has been re-checked.
   `node-version: 22` resolves to current 22.x and satisfies the floor. The bump was takeable because
   `typescript-eslint@8.69.0` already declares `eslint ^10.0.0` in its peers — unlike the TypeScript
   major that arrived in the same dependabot PR, which its peer range forbids outright.
-- **A `typescript` major is gated by `typescript-eslint`, not by us.** `typescript-eslint@8.69.0`
-  declares `typescript >=4.8.4 <6.1.0`, so TypeScript 7 cannot be installed beside it at all:
+- **A `typescript` major is gated by `typescript-eslint`, not by us.** `typescript-eslint@8.72.0`
+  still declares `typescript >=4.8.4 <6.1.0`, so TypeScript 7 cannot be installed beside it at all:
   `npm ci` fails on the peer conflict before a single file is compiled, which is what took
   dependabot's grouped PR #4 red. `.github/dependabot.yml` ignores typescript majors for that
   reason, and the signal to lift it is typescript-eslint's own next major saying it supports one.
