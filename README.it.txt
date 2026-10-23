@@ -1,5 +1,3 @@
-ACCESSO ANTICIPATO: Lightkeeper è un'app 0.x in fase iniziale di sviluppo. Un aggiornamento può cambiare o rompere un dispositivo che hai già configurato, che potrebbe poi richiedere Ripara o una nuova aggiunta. Leggi le novità prima di aggiornare.
-
 Lightkeeper fa quattro cose con le luci che hai già associato:
 Un Telecomando luci trasforma qualsiasi telecomando, interruttore o manopola in un comando per loro.
 Una programmazione luci le accende e le spegne agli orari e nei giorni che scegli.

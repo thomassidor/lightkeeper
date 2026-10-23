@@ -1,5 +1,3 @@
-WCZESNY DOSTĘP: Lightkeeper to aplikacja 0.x we wczesnej fazie rozwoju. Aktualizacja może zmienić lub zepsuć urządzenie, które już skonfigurowano; może ono wtedy wymagać funkcji Napraw lub ponownego dodania. Przeczytaj listę zmian przed aktualizacją.
-
 Lightkeeper robi cztery rzeczy ze światłami, które już sparowano:
 Pilot oświetlenia zamienia dowolny pilot, włącznik lub pokrętło w sterowanie nimi.
 Harmonogram oświetlenia włącza je i wyłącza o wybranych godzinach i w wybrane dni.

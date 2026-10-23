@@ -484,13 +484,16 @@ The version lives in **four** places and a release is only coherent when all of 
 | `package-lock.json` | must match it too, in BOTH the top-level `version` and the `""` package entry. `npm install` updates it; a hand-edited `package.json` alone leaves it behind |
 | `app.json` | **generated** — never hand-edit; the CLI rewrites it from `.homeycompose/` on every `validate`, `build` and `install` |
 
-**The app is documented as early access, and that is a promise to keep rather than a hedge.**
-`README.md`, `README.txt` (the store listing), `FAQ.md` ("Is this finished?"), `CHANGELOG.md`,
-`CONTRIBUTING.md` and `docs/README.md` all say that this is a 0.x app in early development and that
-an update can change or break a setup somebody already made. So a change that reshapes a stored
-shape is allowed — but it ships with a migration wherever one is possible, and it is named in plain
-user language in the changelog, because there are no major bumps before 1.0 and the entry is the
-only warning anybody gets.
+**From 1.0 the app follows semantic versioning, and that is a promise to keep rather than a
+hedge.** `FAQ.md` ("Is this finished?"), `CHANGELOG.md`, `CONTRIBUTING.md`, `docs/README.md` and the
+1.0.0 store entry all say that a minor or patch update keeps every device somebody already added
+working as they set it up. So a change that reshapes a stored shape is allowed in a minor only if a
+migration carries it forward silently and completely; anything that would need Repair, re-adding a
+device or losing a setting the user chose is a MAJOR bump — and it still ships with a migration
+wherever one is possible, and is named in plain user language in all three changelogs.
+Every 0.x release was documented as early access instead, with no major bumps before 1.0 and the
+changelog entry as the only warning; 1.0.0 retired that wording everywhere, including the banner
+that opened `README.txt` and all twelve `README.<lang>.txt`.
 
 Every user-visible change ships a changelog entry, in **three** places with three different
 audiences. Three is deliberate rather than sloppy: the store entry, the full record and the front
@@ -511,8 +514,8 @@ repo stopped saying.
 **The checklist, in one commit:**
 
 1. Bump `.homeycompose/app.json` and `package.json` to the same version — **only when the bump was
-   asked for**; see above. Patch for fixes, minor for new capability; pre-1.0 means no major bumps
-   for breaking changes, so say it in the changelog instead.
+   asked for**; see above. Patch for fixes, minor for new capability, major for anything that
+   would need Repair, re-adding a device or losing a setting — see the promise above.
 2. Add a `.homeychangelog.json` entry under that exact version — **in all thirteen languages**
    (`manifest-locales.test.ts` fails otherwise).
 3. Add the full entry to `CHANGELOG.md` as `## <version>`, newest first.

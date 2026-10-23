@@ -1,5 +1,3 @@
-EARLY ACCESS: Lightkeeper ist eine 0.x-App in früher Entwicklung. Ein Update kann ein Gerät, das du schon eingerichtet hast, verändern oder funktionsunfähig machen; dann ist Reparieren oder erneutes Hinzufügen nötig. Bitte lies vor dem Update die Änderungen.
-
 Lightkeeper macht vier Dinge mit Lichtern, die du schon gekoppelt hast:
 Eine Licht-Fernbedienung macht jede Fernbedienung, jeden Schalter und jeden Drehregler zur Steuerung für sie.
 Ein Lichtzeitplan schaltet sie zu den Zeiten und an den Tagen ein und aus, die du wählst.

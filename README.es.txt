@@ -1,5 +1,3 @@
-ACCESO ANTICIPADO: Lightkeeper es una app 0.x en fase inicial de desarrollo. Una actualización puede cambiar o romper un dispositivo que ya configuraste, que entonces puede necesitar Reparar o añadirse de nuevo. Lee el registro de cambios antes de actualizar.
-
 Lightkeeper hace cuatro cosas con las luces que ya has emparejado:
 Un Mando de luces convierte cualquier mando, interruptor o rueda en un control para ellas.
 Un horario de luces las enciende y apaga a las horas y en los días que elijas.

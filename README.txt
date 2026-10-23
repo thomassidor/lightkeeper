@@ -1,5 +1,3 @@
-EARLY ACCESS: Lightkeeper is a 0.x app in early development. An update can change or break a device you have already set up, which may then need Repair or adding again. Please read the changelog before updating.
-
 Lightkeeper does four things with lights you have already paired:
 A Light Remote turns any remote, switch or dial into a controller for them.
 A light schedule switches them on and off at the times and on the days you choose.

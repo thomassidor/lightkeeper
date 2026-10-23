@@ -1,5 +1,3 @@
-TIDIG ÅTKOMST: Lightkeeper är en 0.x-app under tidig utveckling. En uppdatering kan ändra eller förstöra en enhet du redan har ställt in, som då kan behöva Reparera eller läggas till igen. Läs ändringsloggen innan du uppdaterar.
-
 Lightkeeper gör fyra saker med lampor du redan har parkopplat:
 En Ljusfjärrkontroll gör vilken fjärrkontroll, strömbrytare eller vridratt som helst till en styrning för dem.
 Ett ljusschema tänder och släcker dem på de tider och dagar du väljer.

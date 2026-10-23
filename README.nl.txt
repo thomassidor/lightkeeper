@@ -1,5 +1,3 @@
-EARLY ACCESS: Lightkeeper is een 0.x-app in vroege ontwikkeling. Een update kan een apparaat dat je al hebt ingesteld veranderen of laten stoppen; dan is Repareren of opnieuw toevoegen nodig. Lees vóór het bijwerken de wijzigingen.
-
 Lightkeeper doet vier dingen met lampen die je al hebt gekoppeld:
 Een Lichtafstandsbediening maakt van elke afstandsbediening, schakelaar of draaiknop een bediening voor die lampen.
 Een lichtschema zet ze aan en uit op de tijden en dagen die jij kiest.

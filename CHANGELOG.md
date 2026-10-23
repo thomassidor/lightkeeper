@@ -2,9 +2,43 @@
 
 Every release in full; [`README.md`](README.md#changelog) has the short version. Newest first.
 
-**Lightkeeper is in early development.** Before 1.0 there are no major version bumps, so a breaking
-change is named in its own entry. Read it before updating — a device may need Homey's **Repair**, or
-deleting and adding again. [More in the FAQ](FAQ.md#is-this-finished).
+**From 1.0, the version number is the warning.** A minor or patch update keeps every device you
+already added working as you set it up. Anything that would need Homey's **Repair**, deleting and
+adding a device again, or losing a setting you chose arrives only as a new major version, and its
+entry here says exactly what. [More in the FAQ](FAQ.md#is-this-finished).
+
+## 1.0.0
+
+**Lightkeeper leaves early access.** Nothing changes in how the app behaves and nothing needs
+redoing: 1.0.0 runs exactly what 0.6.6 ran. What changes is the promise.
+
+Until now every release could reshape what a device stores, and the changelog entry was the only
+warning — there were no major bumps before 1.0, so a breaking change looked like any other minor or
+patch. From 1.0 the app follows semantic versioning:
+
+- **A minor or patch update** keeps every device you already added working as you set it up. A
+  stored setting may still be migrated to a new shape, but silently and completely — no Repair, no
+  re-adding, nothing you chose lost.
+- **A major update** is the only kind that may need any of those. It still ships with a migration
+  wherever one is possible, and says in its entry here and in what Homey shows you exactly which
+  devices are affected and what to do.
+
+New features and redrawn setup screens still arrive in minor versions; what they may not do is break
+a setup you already made.
+
+Under the hood, and none of it in the app a Homey runs:
+
+- **Development tools updated** — eslint 10.13, typescript-eslint 8.72, tsx 4.23.15 and the Homey
+  CLI 4.6.1, plus `actions/setup-node` 7.1.0 in CI. `homey-api`, the app's one runtime dependency,
+  stays at the 3.19.2 verified on hardware.
+- **Two vulnerable packages replaced inside the Homey CLI's own tree** with npm `overrides`: `tmp`
+  to 0.2.7, and `image-size` to 0.6.2 — a step back on purpose, to the release before the parser
+  with the bug existed. `CLAUDE.md` says why the forward fix (2.x) would silently switch off
+  `validate`'s image checks.
+- **Two test-tooling fixes.** A daylight driver test failed from mid-October to late February,
+  because Copenhagen's sun never reaches the 25° bright end then; it now runs at 40°N. And on Node
+  24 the coverage script lost `lib/outputs/test-outcome.ts` to the runner's default test-file
+  exclusion, which now matches `test-*.ts`.
 
 ## 0.6.6
 

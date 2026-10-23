@@ -94,11 +94,15 @@ describe('manifest strings, in every language', () => {
 
 describe('App Store texts, in every language', () => {
   test('a README.<lang>.txt listing for every language but English', () => {
+    // Relative to the English listing, not a fixed count of characters: Korean is dense enough
+    // that its complete listing came to 459 against English's 848 once 1.0.0 dropped the
+    // early-access banner, and a flat 500 then read a whole translation as a stub.
+    const english = readFileSync(join(ROOT, 'README.txt'), 'utf8').trim().length;
     for (const language of LANGUAGES) {
       if (language === 'en') continue;
       const path = join(ROOT, `README.${language}.txt`);
       assert.ok(existsSync(path), `README.${language}.txt is missing`);
-      assert.ok(readFileSync(path, 'utf8').trim().length > 500, `README.${language}.txt is too short to be the listing`);
+      assert.ok(readFileSync(path, 'utf8').trim().length > english * 0.4, `README.${language}.txt is too short to be the listing`);
     }
   });
 

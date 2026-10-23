@@ -2,9 +2,10 @@
 
 Every document in this repository, and who it is for. None of `docs/` is bundled into the app.
 
-> [!WARNING]
-> **Lightkeeper is in early development (0.x), and an update can break a setup somebody already
-> made.** Nothing below is frozen — stored shapes, settings and pairing screens all still move. See
+> [!NOTE]
+> **Lightkeeper is 1.0, and follows semantic versioning.** A minor or patch update keeps every
+> existing setup working; only a major version may need Repair, re-adding a device or cost a
+> setting. Stored shapes, settings and pairing screens still move — within that promise. See
 > [`../FAQ.md` → Is this finished?](../FAQ.md#is-this-finished) for what that means for a user, and
 > [`../CHANGELOG.md`](../CHANGELOG.md) for what actually changed.
 

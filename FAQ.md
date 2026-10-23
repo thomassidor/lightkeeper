@@ -3,10 +3,6 @@
 Everything that did not belong on the front page. [README.md](README.md) is the short version;
 this is where the answers live.
 
-> [!WARNING]
-> **Early access.** Lightkeeper is in early development, and an update can change or break a setup
-> you have already made — see [Is this finished?](#is-this-finished) below.
-
 - [Getting started](#getting-started)
 - [Everyday use](#everyday-use)
 - [When something is wrong](#when-something-is-wrong)
@@ -20,25 +16,26 @@ this is where the answers live.
 
 ### Is this finished?
 
-**No — it is in early development, and you should expect updates to break things.** Lightkeeper is a
-0.x app. What is here works and is covered by tests, and the four remotes, the schedules and the
-write path have all been verified on a real Homey Pro ([how well tested is this?](#how-well-tested-is-this)),
-but the app is still being shaped and nothing about its stored settings is frozen yet.
+**It is 1.0 — out of early access, and an update will not quietly break a setup you already made.**
+What is here works and is covered by tests, and the four remotes, the schedules and the write path
+have all been verified on a real Homey Pro ([how well tested is this?](#how-well-tested-is-this)).
+From 1.0 Lightkeeper follows semantic versioning, so the version number tells you what an update
+can do:
 
-In practice that means an update can:
+- **A minor or patch update** (1.1, 1.0.1) keeps every device you already added working as you set
+  it up. A stored setting may be migrated to a new shape, but silently and completely — no
+  **Repair**, no deleting and adding again, nothing you chose lost.
+- **A major update** (2.0) is the only kind that may need any of those. It ships with a migration
+  wherever a setting can be carried forward, and says in [CHANGELOG.md](CHANGELOG.md) and in what
+  Homey shows you when it updates exactly which devices are affected and what to do — so read that
+  one before updating rather than after.
 
-- **change what a device stores**, so a device you already added may need Homey's **Repair** run on
-  it, or in the worst case deleting and adding again;
-- **rename, move or drop a setting**, so a choice you made on a setup screen may not survive;
-- **change what a setup screen asks**, so the path you remember is not the path you get.
+Finished is not the same as done: new features and redrawn setup screens still arrive in minor
+versions, so the path through a setup screen you remember may not be the one you get next time.
+What a minor version may not do is break what you already set up.
 
-Migrations are written wherever a stored setting can be carried forward, and they have carried every
-release so far — but they are written per change, not guaranteed in advance. Every change that
-affects an existing device is stated in [CHANGELOG.md](CHANGELOG.md) and in what Homey shows you
-when it updates the app, so read that before updating rather than after.
-
-There are no major version bumps before 1.0, so a breaking change arrives as an ordinary-looking
-minor or patch version. The version number is not the warning; the changelog entry is.
+Before 1.0 none of this held — every release could reshape what a device stored, and the changelog
+was the only warning. If you set Lightkeeper up on a 0.x version, 1.0.0 needs nothing from you.
 
 ### Why does it need a Personal API Key?
 
@@ -462,8 +459,6 @@ Open repair on the device (Devices → the device → Repair):
 
 Stated plainly, because a limit you find out about later is worse than one you were told.
 
-- **It is early access, and an update can break a setup you already made.** See
-  [Is this finished?](#is-this-finished) — there is no compatibility promise before 1.0.
 - **"Any remote" means any remote Homey exposes something usable for**, and the same hardware can
   expose different things through different pairing paths. See
   [Will my remote work?](#will-my-remote-work) above.

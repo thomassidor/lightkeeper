@@ -1,5 +1,3 @@
-TIDLIG TILGANG: Lightkeeper er en 0.x-app i tidlig utvikling. En oppdatering kan endre eller ødelegge en enhet du allerede har satt opp, som da kan trenge Reparer eller å legges til på nytt. Les endringsloggen før du oppdaterer.
-
 Lightkeeper gjør fire ting med lys du allerede har paret:
 En Lysfjernkontroll gjør enhver fjernkontroll, bryter eller dreieknapp til en styring for dem.
 En lystidsplan slår dem av og på til tidene og på dagene du velger.

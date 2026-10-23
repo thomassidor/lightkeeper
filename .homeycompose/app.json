@@ -1,6 +1,6 @@
 {
   "id": "com.thomassidor.lightkeeper",
-  "version": "0.6.6",
+  "version": "1.0.0",
   "compatibility": ">=12.9.0",
   "runtime": "nodejs",
   "sdk": 3,

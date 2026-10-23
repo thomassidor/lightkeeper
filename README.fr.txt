@@ -1,5 +1,3 @@
-ACCÈS ANTICIPÉ : Lightkeeper est une application 0.x en début de développement. Une mise à jour peut modifier ou casser un appareil que vous avez déjà configuré, qui devra alors passer par Réparer ou être ajouté à nouveau. Lisez le journal des modifications avant de mettre à jour.
-
 Lightkeeper fait quatre choses avec des lumières déjà appairées :
 Une Télécommande d'éclairage transforme n'importe quelle télécommande, interrupteur ou molette en commande pour elles.
 Un programme d'éclairage les allume et les éteint aux heures et aux jours que vous choisissez.

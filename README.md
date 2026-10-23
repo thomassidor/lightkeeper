@@ -12,12 +12,6 @@ A Homey Pro app. Normally a remote drives a lamp through Flows — one per butto
 action. Lightkeeper asks a few questions instead, writes those Flows for you, and keeps them correct
 as your home changes.
 
-> [!WARNING]
-> **Early access.** Lightkeeper is a 0.x app, and an update can change or break a device you have
-> already set up — it may need Homey's **Repair**, or deleting and adding again. Migrations are
-> written wherever possible and every change is named in [the changelog](CHANGELOG.md), but there is
-> no compatibility promise before 1.0.
-
 ## Contents
 
 - [What it does](#what-it-does)
@@ -205,17 +199,17 @@ is shared only if you choose. [`docs/privacy.md`](docs/privacy.md) has the full 
 
 ## Changelog
 
-**0.6.6**
+**1.0.0**
 
-- **Control and Transition in the device's Settings** — no need to open Repair.
-- **Transition: Gradual, Balanced or Quick** on circadian, Colour Curve and Room-sensing Lights.
-  Circadian lights now blend between parts of the day; existing ones are set to *Quick*.
-- **Every language Homey speaks**, and icons on every value a device shows.
-- **Brightness scale** in the app's settings: *Same as Homey* makes 50% here 50% in Homey. A
-  remote's *Set brightness* button now follows it too, so on the default scale it is dimmer.
+- **Out of early access.** Nothing changes in how the app behaves, and nothing needs redoing.
+- **A minor or patch update keeps every device working as you set it up.** Anything that would need
+  Repair, re-adding a device or losing a setting comes only as a major version, and says so.
+- **Development tools updated**, and two vulnerable packages replaced in the Homey CLI's own tree.
+  The app a Homey runs is unchanged.
 
 | Version | What changed |
 |---|---|
+| **0.6.6** | Control and Transition in the device's Settings, Gradual / Balanced / Quick, every language Homey speaks, and the brightness scale |
 | **0.6.5** | Choose how a device controls your lights, a remote button that follows your other devices, Lightkeeper's values in your own Flows |
 
 **[CHANGELOG.md](CHANGELOG.md) has every release.**

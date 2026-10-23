@@ -82,6 +82,24 @@ The script cannot do these. Report each by its number.
 
 ## 4. This release
 
+**1.0.0 — out of early access, and nothing new to run but the install.** 1.0.0 is 0.6.6's code with
+updated development tools: the app a Homey runs is unchanged, so its two lines are about the new
+Homey CLI and about the promise itself. **The promise rests on the passes below it, and they are
+still owed** — 1.0 tells a household that an ordinary update keeps their setup working, and the
+0.6.6, 0.6.5 and 0.6.0 lines are what that claim has not yet been checked against. Run them before
+publishing 1.0.0, not after.
+
+### 1.0.0 — the install, and the promise
+
+- [ ] **T204** **A launch install with CLI 4.6.1.** With no `.dev-build` file, `npx homey app install`
+  succeeds (a bare `× Missing File` is retried plainly, never with `--clean`), the app starts, and
+  `node scripts/diagnostics.mjs` reports `credential: present=true valid=true` — the stored key
+  survived — and no evidence recorder.
+- [ ] **T205** **Devices made on 0.6.6 need nothing.** Every device that existed before the install
+  is still `ready` afterwards, with its lights, schedule, curve or response and its Settings exactly
+  as they were — no Repair, no re-adding. This is the 1.0 promise, run once against the release
+  that makes it.
+
 **0.6.6 — capability icons, the control and Transition settings, the Transition choice and the
 brightness scale, on top of the 0.6.5 and 0.6.0 passes that are still owed.** 0.6.6's eighteen lines
 are first: T181, T195–T200 and T201–T203 take ten minutes with a phone each, T187–T190 want an afternoon of the day going by, and
