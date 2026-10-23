@@ -8,9 +8,11 @@ deleting and adding again. [More in the FAQ](FAQ.md#is-this-finished).
 
 ## 0.6.6
 
-Nothing needs redoing: existing devices get the new settings automatically. **One visible change:**
-circadian lights now blend smoothly between parts of the day. Existing ones are set to *Quick*, the
-closest to the old behaviour.
+Nothing needs redoing: existing devices get the new settings automatically. **Two visible changes:**
+circadian lights now blend smoothly between parts of the day — existing ones are set to *Quick*, the
+closest to the old behaviour — and a remote's *Set brightness* button comes out dimmer than before,
+because it now uses the same brightness scale as everything else: 60% used to be sent as 60% and is
+now sent as about 33%. Raise the button's level, or choose *Same as Homey* (below).
 
 ### New
 
@@ -24,6 +26,13 @@ closest to the old behaviour.
   Danish, Russian, Polish, Korean and Arabic, with each language's own plurals and number formats,
   and right-to-left in Arabic. Logs and generated Flow names stay in English.
 - **Icons on every value a device shows**, Homey's own.
+- **Brightness scale, in the app's settings.** *Natural* (the default, and how it has always been)
+  spreads every slider the way the eye sees light, so 50% looks half as bright — and Homey's own
+  slider shows 22% for it. *Same as Homey* sends the number as it was set, so 50% here is 50% there.
+  Percentages already set keep their numbers and change what they mean; curves and Room-sensing
+  Lights follow within a minute, schedules at their next block. Under *Same as Homey* the lowest
+  setting, 10%, really is 10%, which is brighter than the natural scale's 10%. Steps and holds on a
+  remote feel the same on either scale.
 
 ### Changed
 
@@ -34,6 +43,9 @@ closest to the old behaviour.
 - **"Set lights before they turn on" still needs the light test.** A device with no tested lights
   now says so on its page, and behaves as *after* until the test is run from Repair.
 - **Counts read as numbers**: "All 3 lights", "1 light is not responding".
+- **A remote's *Set brightness* button uses the same scale as every other slider.** It used to send
+  its percentage straight to the lamp, so a button at 60% and a schedule at 60% gave two different
+  levels. On the natural scale the button is now dimmer; on *Same as Homey* it is unchanged.
 
 ### Fixed
 
@@ -53,6 +65,12 @@ closest to the old behaviour.
 - `views/shared/` gains the Transition card and `transition-shape.js`;
   `pair-view-zone-copy.test.ts` runs the view copies against the engine.
 - Capability icons are Athom's own, in `assets/capabilities/` (platform §10, §18).
+- `BrightnessScale` in `lib/outputs/light-intent.ts`: `toDevice` and `toPerceptual` take the scale as
+  a required argument (γ 2.2 or 1); `applyPerceptualDelta` stays on 2.2 under both. Every runtime
+  reads it through an optional `brightnessScale` getter, absent meaning natural; the app reads
+  `homey.settings` on every call. `POST /brightness-scale` stores it, `GET /` returns it, and
+  `/diagnostics`' `semantics` names it. `preset_absolute` is converted in
+  `ControllerRuntime.runIntents`, the one submit path a live press and the Test control share.
 
 ## 0.6.5
 

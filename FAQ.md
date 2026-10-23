@@ -230,7 +230,32 @@ put it.
 It will not match the percentage on the setup screen, and it is not meant to. Lightkeeper stores
 brightness the way it is *perceived* and sends it the way a lamp is *addressed*, and those are
 different numbers: a lamp set to 55% on the slider is sent 26%. The setup screens speak the first
-language and your Flows speak the second.
+language and your Flows speak the second — unless you choose *Same as Homey*, below, where the two
+are the same number.
+
+### Why does 74% in Lightkeeper show as 50% in Homey?
+
+Because on the default scale, *Natural*, Lightkeeper's sliders follow how the eye sees light rather
+than how much power the lamp is given. Your eye is far more sensitive at the dim end, so a lamp
+given half its power looks much brighter than half. Lightkeeper corrects for that: 50% on its
+sliders *looks* half as bright, and Homey's own slider, which shows the lamp's power, reads 22% for
+it. 74% reads 50%, and 83% reads 66%.
+
+If you would rather the two numbers matched, open Homey settings → Lightkeeper and set
+**Brightness scale** to **Same as Homey**. Then Lightkeeper sends the number you set: 50% is 50% in
+Homey, and 100% is still 100%.
+
+- **Nothing you set is converted.** A curve point at 74% stays 74% and is now sent as 74%, so your
+  lights get brighter wherever you set anything below 100%. Curves and Room-sensing Lights follow
+  within a minute, a schedule at its next block, a remote's *Set brightness* button at its next
+  press.
+- **The dim end gets coarser.** The sliders step in fives, and from 10% to 15% is a big jump in how
+  bright a lamp looks when those numbers are the lamp's own power.
+- **The lowest setting is brighter.** Every slider starts at 10%, which on the natural scale is
+  about 0.6% of a lamp's power and on *Same as Homey* is 10% of it. A night light that sat at the
+  bottom of a curve will be noticeably brighter.
+- **A remote's dimming feels the same.** Steps and holds always move along the natural curve, so
+  turning a dial is as even at the bottom of the range as at the top on either scale.
 
 ### What does "On – with Lightkeeper" on a remote button do?
 

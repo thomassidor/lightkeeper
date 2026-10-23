@@ -164,7 +164,7 @@ describe('the source picker warns about a device that drives its own lights', ()
   const leaveAlone = { name: 'Leave it alone', subtitle: '' };
 
   test('a device that keeps its lights up to date carries the warning, with the overlap', () => {
-    const [, row] = sourceRows('brightness', [device({ keepsLightsUpdated: true, sharedLights: 3 })], leaveAlone);
+    const [, row] = sourceRows('brightness', [device({ keepsLightsUpdated: true, sharedLights: 3 })], leaveAlone, 'natural');
     assert.deepEqual(row.warn, { sharedLights: 3 });
   });
 
@@ -172,12 +172,12 @@ describe('the source picker warns about a device that drives its own lights', ()
     const rows = sourceRows('brightness', [
       device({ id: 'a', keepsLightsUpdated: false, sharedLights: 3 }),
       device({ id: 'b' }),
-    ], leaveAlone);
+    ], leaveAlone, 'natural');
     assert.equal(rows.some(row => 'warn' in row), false);
   });
 
   test('"leave it alone" never warns', () => {
-    const [first] = sourceRows('colour', [device({ keepsLightsUpdated: true })], leaveAlone);
+    const [first] = sourceRows('colour', [device({ keepsLightsUpdated: true })], leaveAlone, 'natural');
     assert.equal('warn' in first, false);
   });
 });

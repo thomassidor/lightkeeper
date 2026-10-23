@@ -1,5 +1,5 @@
 import { colourSwatch, warmthSwatch } from './flow-screens';
-import { toPerceptual } from '../outputs/light-intent';
+import { toPerceptual, type BrightnessScale } from '../outputs/light-intent';
 import { LEAVE_ALONE } from '../outputs/lightkeeper-settings';
 import { VALUE_CAPABILITIES, type PublishedValues } from '../runtime/published-values';
 
@@ -88,20 +88,21 @@ export function sharedLightCount(
 }
 
 /**
- * The level a brightness source is calling for, as a PERCEPTUAL fraction.
+ * The level a brightness source is calling for, on the axis every slider uses.
  *
  * `lightkeeper_brightness` is published as a DEVICE value — the axis a lamp is
- * addressed on, through γ = 2.2 — and every percentage anywhere in pairing is
- * perceptual: the job screen's own brightness slider, the curve editor, the
- * daylight response. Drawing the raw published number as "%" beside them would
+ * addressed on, through the app's `BrightnessScale` — and every percentage
+ * anywhere in pairing is on the stored axis: the job screen's own brightness
+ * slider, the curve editor, the daylight response. Under the natural scale those
+ * two differ by a lot. Drawing the raw published number as "%" beside them would
  * put two different axes under one sign, so somebody who set a curve to 40%
  * would find this screen reporting 13% for the same device and have no way at
  * all to tell which was lying.
  */
-export function sourceLevel(values: PublishedValues): number | null {
+export function sourceLevel(values: PublishedValues, scale: BrightnessScale): number | null {
   const value = values[VALUE_CAPABILITIES.brightness];
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
-  return toPerceptual(value);
+  return toPerceptual(value, scale);
 }
 
 /**
@@ -168,6 +169,7 @@ export function sourceRows(
   kind: SourceKind,
   devices: readonly SourceDevice[],
   leaveAlone: { name: string; subtitle: string },
+  scale: BrightnessScale,
 ): SourceRow[] {
   const rows: SourceRow[] = [...devices]
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -176,7 +178,7 @@ export function sourceRows(
       name: device.name,
       subtitle: device.subtitle,
       ...(kind === 'brightness'
-        ? { level: sourceLevel(device.values) }
+        ? { level: sourceLevel(device.values, scale) }
         : { swatch: paintSwatch(device) }),
       ...(device.keepsLightsUpdated === true
         ? { warn: { sharedLights: device.sharedLights ?? 0 } }

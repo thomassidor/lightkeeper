@@ -12,6 +12,7 @@ const api = require('../../api') as {
   getDiagnostics(args: any): Promise<any>;
   setCredential(args: any): Promise<any>;
   deleteCredential(args: any): Promise<any>;
+  setBrightnessScale(args: any): Promise<any>;
 };
 
 /**
@@ -92,6 +93,8 @@ function homey(options: {
 }) {
   const swept: Array<Set<string>> = [];
   const deleted: string[] = [];
+  const stored = new Map<string, unknown>();
+  const settings = { get: (key: string) => stored.get(key), set: (key: string, value: unknown) => stored.set(key, value) };
 
   /**
    * The app-level write log every runtime's adapter feeds.
@@ -187,6 +190,11 @@ function homey(options: {
       app: {
         recentEvents: new BoundedLog<never>(40),
         recentWrites: writeLog,
+        // A real store behind the two calls, so the route test below reads
+        // back what it wrote rather than what a stub was told to say.
+        settings,
+        brightnessScale: () => (settings.get('brightnessScale') === 'linear' ? 'linear' : 'natural'),
+        setBrightnessScale: (scale: string) => settings.set('brightnessScale', scale),
         credentials: options.credentials ?? { getStatus: () => ({ present: true, valid: true }) },
         controllers: { all: () => (options.controllers ?? []).map(id => runtime(id, 'controller')) },
         schedules: {
@@ -499,6 +507,29 @@ describe('orphan counting across both device types', () => {
 
     const result = await api.countOrphans(h.args);
     assert.equal(result.refused, 'no_live_controllers');
+  });
+});
+
+describe('the brightness scale', () => {
+  test('is natural until somebody chooses, and the status says so', async () => {
+    const h = homey({});
+    assert.equal((await api.getStatus(h.args)).brightnessScale, 'natural');
+  });
+
+  test('a choice is stored, echoed, and read back by the next status', async () => {
+    const h = homey({});
+    assert.deepEqual(await api.setBrightnessScale({ ...h.args, body: { scale: 'linear' } }), { brightnessScale: 'linear' });
+    assert.equal((await api.getStatus(h.args)).brightnessScale, 'linear');
+    assert.equal((await api.getDiagnostics(h.args)).semantics.brightnessScale, 'linear');
+  });
+
+  test('anything that is not one of the two scales is refused, and nothing changes', async () => {
+    const h = homey({});
+    await api.setBrightnessScale({ ...h.args, body: { scale: 'linear' } });
+    for (const body of [{ scale: 'Linear' }, { scale: 1 }, {}, null]) {
+      await assert.rejects(api.setBrightnessScale({ ...h.args, body }), /natural.*linear/);
+    }
+    assert.equal((await api.getStatus(h.args)).brightnessScale, 'linear');
   });
 });
 

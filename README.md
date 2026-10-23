@@ -211,6 +211,8 @@ is shared only if you choose. [`docs/privacy.md`](docs/privacy.md) has the full 
 - **Transition: Gradual, Balanced or Quick** on circadian, Colour Curve and Room-sensing Lights.
   Circadian lights now blend between parts of the day; existing ones are set to *Quick*.
 - **Every language Homey speaks**, and icons on every value a device shows.
+- **Brightness scale** in the app's settings: *Same as Homey* makes 50% here 50% in Homey. A
+  remote's *Set brightness* button now follows it too, so on the default scale it is dimmer.
 
 | Version | What changed |
 |---|---|

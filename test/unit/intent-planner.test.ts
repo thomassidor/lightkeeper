@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import { planIntent } from '../../lib/outputs/intent-planner';
 import { TargetStateCache } from '../../lib/outputs/target-state-cache';
 import { DEFAULT_BEHAVIOR } from '../../lib/mapping/mapping-types';
-import { toPerceptual, toDevice, applyPerceptualDelta } from '../../lib/outputs/light-intent';
+import {
+  toPerceptual, toDevice, applyPerceptualDelta, sanitizeBrightnessScale,
+} from '../../lib/outputs/light-intent';
 
 const DIM = { min: 0, max: 1, decimals: 2 };
 const TEMP = { min: 0, max: 1, decimals: 2 };
@@ -365,14 +367,14 @@ describe('perceptual curve', () => {
     // itself, so a changed γ would move every expectation with it. Every
     // stored brightness in every house is a perceptual number read through this
     // curve, and `MINIMUM_BRIGHTNESS` / `litDim()` are argued at 2.2.
-    assert.ok(Math.abs(toDevice(0.5) - 0.5 ** 2.2) < 1e-12, `toDevice(0.5) = ${toDevice(0.5)}`);
-    assert.ok(Math.abs(toDevice(0.5) - 0.2176) < 1e-4, 'and 0.5 ** 2.2 is ~0.2176');
-    assert.ok(Math.abs(toPerceptual(0.2176) - 0.5) < 1e-4);
+    assert.ok(Math.abs(toDevice(0.5, 'natural') - 0.5 ** 2.2) < 1e-12, `toDevice(0.5, 'natural') = ${toDevice(0.5, 'natural')}`);
+    assert.ok(Math.abs(toDevice(0.5, 'natural') - 0.2176) < 1e-4, 'and 0.5 ** 2.2 is ~0.2176');
+    assert.ok(Math.abs(toPerceptual(0.2176, 'natural') - 0.5) < 1e-4);
   });
 
   test('round-trips', () => {
     for (const v of [0, 0.1, 0.25, 0.5, 0.75, 1]) {
-      assert.ok(Math.abs(toDevice(toPerceptual(v)) - v) < 1e-9);
+      assert.ok(Math.abs(toDevice(toPerceptual(v, 'natural'), 'natural') - v) < 1e-9);
     }
   });
 
@@ -387,6 +389,29 @@ describe('perceptual curve', () => {
   test('clamps at both ends', () => {
     assert.equal(applyPerceptualDelta(1, 0.5), 1);
     assert.equal(applyPerceptualDelta(0, -0.5), 0);
+  });
+
+  test('the linear scale sends the number as it was set, both ways', () => {
+    // "Same as Homey" on the settings page: 74% here is 74% in Homey's slider.
+    for (const v of [0, 0.1, 0.5, 0.74, 1]) {
+      assert.equal(toDevice(v, 'linear'), v);
+      assert.equal(toPerceptual(v, 'linear'), v);
+    }
+    assert.equal(toDevice(1.4, 'linear'), 1, 'and still clamps');
+  });
+
+  test('a step keeps the natural curve whichever scale is chosen', () => {
+    // The function takes no scale at all, which is the assertion: a remote's
+    // step shows no number to disagree with Homey's, and even feel at the
+    // bottom of the range is what the curve is for.
+    assert.equal(applyPerceptualDelta.length, 2);
+  });
+
+  test('a stored scale that is not one of the two reads as natural', () => {
+    assert.equal(sanitizeBrightnessScale('linear'), 'linear');
+    for (const junk of ['natural', undefined, null, 'Linear', 1, {}]) {
+      assert.equal(sanitizeBrightnessScale(junk), 'natural');
+    }
   });
 });
 

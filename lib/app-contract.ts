@@ -1,6 +1,6 @@
 import type { EvidenceStatus } from './support/evidence-recorder';
 import type { EvidenceFeature } from './support/evidence-feature';
-import { DIAGNOSTIC_SEMANTICS } from './runtime/control-diagnostics';
+import type { diagnosticSemantics } from './runtime/control-diagnostics';
 import type { CredentialService, CredentialStatus } from './credential-service';
 import type { IntakeRecord } from './bridge/bridge-event-intake';
 import type { HomeyApiService } from './homey-api-service';
@@ -17,6 +17,7 @@ import type { LuminanceSource } from './daylight/luminance-source';
 import type { BoundedLog } from './support/bounded-log';
 import type { HeapReport } from './support/heap-report';
 import type { WriteRecord } from './outputs/light-target-adapter';
+import type { BrightnessScale } from './outputs/light-intent';
 import type { ControllerDiagnostics } from './runtime/controller-runtime';
 import type { ScheduleDiagnostics } from './schedules/schedule-runtime';
 import type { CircadianDiagnostics } from './circadian/circadian-runtime';
@@ -64,6 +65,15 @@ export interface LightkeeperApp {
   readonly health: HealthMonitor;
   readonly recentEvents: BoundedLog<BridgeEventRecord>;
   readonly recentWrites: BoundedLog<WriteRecord>;
+  /** The app-wide `BrightnessScale`, as the settings page last stored it. */
+  brightnessScale(): BrightnessScale;
+  /**
+   * Store a new scale. Every runtime reads it at its next use — a curve or a
+   * Room-sensing Light at its next tick, a schedule at its next window, a
+   * remote at its next press — rather than being forced through a pass, so one
+   * click on the settings page is not a burst of writes across the house.
+   */
+  setBrightnessScale(scale: BrightnessScale): void;
   log(...args: unknown[]): void;
   error(...args: unknown[]): void;
 }
@@ -120,6 +130,8 @@ export interface StatusResponse {
    * but schedules. The per-device view is in `getDiagnostics`.
    */
   recentWrites: readonly WriteRecord[];
+  /** The settings page's "Brightness scale" choice. */
+  brightnessScale: BrightnessScale;
 }
 
 /**
@@ -199,7 +211,7 @@ export interface DiagnosticsResponse {
    * retention regression detectable at all.
    */
   heap: HeapReport;
-  semantics: typeof DIAGNOSTIC_SEMANTICS;
+  semantics: ReturnType<typeof diagnosticSemantics>;
   eventHistory: { capacity: number; retained: number; dropped: number };
   generatedAt: number;
   app: { id: string; version: string };

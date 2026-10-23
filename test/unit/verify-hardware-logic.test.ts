@@ -258,6 +258,10 @@ describe('flowcards: the published rows and the two cards', () => {
     assert.deepEqual(curve, { lightkeeper_temperature: 0.6, lightkeeper_brightness: null });
     const lit = expectedPublished('curve', { now: { warmth: 0.6, brightness: 0.5 }, adjustBrightness: true });
     assert.ok(Math.abs(Number(lit.lightkeeper_brightness) - Math.pow(0.5, 2.2)) < 1e-12);
+    // On "Same as Homey" the published value is the stored one, and the
+    // scale comes from the same /diagnostics document as the runtime.
+    const linear = expectedPublished('curve', { now: { warmth: 0.6, brightness: 0.5 }, adjustBrightness: true }, 'linear');
+    assert.equal(linear.lightkeeper_brightness, 0.5);
 
     const sky = expectedPublished('daylight', { now: { brightness: 0.5, level: 0.3, source: 'sky' } });
     assert.equal(sky.lightkeeper_daylight, 0.3);

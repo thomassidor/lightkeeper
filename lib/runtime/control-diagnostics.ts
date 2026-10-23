@@ -2,6 +2,7 @@ import { BoundedLog } from '../support/bounded-log';
 import type { Capability, PlannedWrite } from '../outputs/intent-planner';
 import type { WriteOutcome } from '../outputs/command-scheduler';
 import type { EvidenceSink } from '../support/evidence-sink';
+import type { BrightnessScale } from '../outputs/light-intent';
 
 export interface OverrideRecord {
   /** The FIRST report's time. The four-hour deadline is anchored to it. */
@@ -109,10 +110,29 @@ export class ControlHistory<T extends ControlAction> {
   }
 }
 
-export const DIAGNOSTIC_SEMANTICS = {
-  brightness: 'perceptual_0_1',
+/**
+ * What the numbers in a diagnostics document mean. A function of the app's
+ * `BrightnessScale` because one of them is: a capture read without knowing
+ * which scale wrote it would put every `dim` on the wrong curve.
+ */
+export function diagnosticSemantics(scale: BrightnessScale) {
+  return { brightnessScale: scale, ...BRIGHTNESS_SEMANTICS[scale], ...DIAGNOSTIC_SEMANTICS };
+}
+
+const BRIGHTNESS_SEMANTICS = {
+  natural: {
+    brightness: 'perceptual_0_1',
+    brightnessConversion: 'dim = brightness^2.2, then capability quantisation and minimum lit level',
+  },
+  linear: {
+    brightness: 'linear_0_1',
+    brightnessConversion: 'dim = brightness (linear scale), then capability quantisation and minimum lit level',
+  },
+} as const;
+
+const DIAGNOSTIC_SEMANTICS = {
   dim: 'device_0_1',
-  brightnessConversion: 'dim = brightness^2.2, then capability quantisation and minimum lit level',
+  brightnessSteps: 'remote steps and hold ramps move along gamma 2.2 under either scale',
   writes: 'planned capability commands; see outcomes for completion',
   skipped: 'excluded targets; unchanged targets are listed separately in action.targets',
   writeSuccess: 'API accepted the command; physical lamp state is not verified',

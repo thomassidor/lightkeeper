@@ -2,6 +2,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { ownsNothing, zoneLights } from '../support/fake-catalog';
+import { settle } from '../support/deferred';
 import { ControllerRuntimeManager } from '../../lib/runtime/controller-runtime-manager';
 import { HealthMonitor } from '../../lib/runtime/health-monitor';
 import { DEFAULT_BEHAVIOR, type LightkeeperPreset } from '../../lib/mapping/mapping-types';
@@ -99,7 +100,9 @@ function liveRegistry(): SourceRegistry {
 /** Every registry empty — a curve deleted, or an app that has not started one. */
 const EMPTY_REGISTRY: SourceRegistry = { colour: () => undefined, brightness: () => undefined };
 
-function harness(options: { sources?: SourceRegistry; lampOn?: boolean } = {}) {
+function harness(options: {
+  sources?: SourceRegistry; lampOn?: boolean; brightnessScale?: () => 'natural' | 'linear';
+} = {}) {
   const written: Array<{ capability: string; value: unknown }> = [];
 
   const devices = () => [
@@ -166,6 +169,7 @@ function harness(options: { sources?: SourceRegistry; lampOn?: boolean } = {}) {
     bridge,
     health,
     ...(options.sources ? { sources: options.sources } : {}),
+    ...(options.brightnessScale ? { brightnessScale: options.brightnessScale } : {}),
     log: (...args: unknown[]) => { logged.push(args.map(String).join(' ')); },
   });
 
@@ -178,6 +182,43 @@ function harness(options: { sources?: SourceRegistry; lampOn?: boolean } = {}) {
       manager.register(LIGHT_ID, profile(preset), () => { /* state ignored */ }),
   };
 }
+
+/**
+ * A "set brightness" button, through the same runtime and queue.
+ *
+ * Its preset is stored on the axis every slider uses and used to reach the
+ * planner raw — so a remote's 60% wrote dim 0.60 while a schedule's 60% wrote
+ * 0.33. It now goes through the app's `BrightnessScale` at the one submit path,
+ * which is why the live press and the buttons screen's Test are asserted alike.
+ */
+describe('a set-brightness press follows the app-wide scale', () => {
+  const presetProfile = (): ControllerProfile => ({
+    ...profile(PRESET),
+    mappings: [{
+      id: 'r1', function: 'brightness_set', inputKey: 'btn|press', target: null,
+      preset: { brightness: 0.6 },
+    }],
+  });
+  const dims = (h: ReturnType<typeof harness>) =>
+    h.written.filter(entry => entry.capability === 'dim').map(entry => entry.value);
+
+  for (const [scale, expected] of [['natural', 0.33], ['linear', 0.6]] as const) {
+    test(`60% is dim ${expected} on the ${scale} scale, from the Test control`, async () => {
+      const h = harness({ lampOn: true, brightnessScale: () => scale });
+      const runtime = await h.manager.register(LIGHT_ID, presetProfile(), () => { /* state ignored */ });
+      await runtime.testFunction('brightness_set');
+      assert.deepEqual(dims(h), [expected]);
+    });
+
+    test(`60% is dim ${expected} on the ${scale} scale, from a live press`, async () => {
+      const h = harness({ lampOn: true, brightnessScale: () => scale });
+      const runtime = await h.manager.register(LIGHT_ID, presetProfile(), () => { /* state ignored */ });
+      runtime.handleInput({ controlId: 'btn', action: 'press' }, 'btn|press');
+      await settle(12);
+      assert.deepEqual(dims(h), [expected]);
+    });
+  }
+});
 
 describe('a composed press, through the real queue', () => {
   test('the switch, the colour and the level land as one ordered burst', async () => {

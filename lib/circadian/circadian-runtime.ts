@@ -23,7 +23,7 @@ import {
   type LiveValues,
 } from '../outputs/target-state-cache';
 import { planIntent, type Capability, type PlannedWrite } from '../outputs/intent-planner';
-import { toDevice } from '../outputs/light-intent';
+import { DEFAULT_BRIGHTNESS_SCALE, toDevice, type BrightnessScale } from '../outputs/light-intent';
 import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
 import { assessTargets } from '../runtime/target-health';
@@ -107,6 +107,12 @@ export interface CircadianRuntimeDeps {
    * then.
    */
   location?: () => unknown;
+  /**
+   * The app-wide `BrightnessScale`, read every pass so a change on the settings
+   * page lands at the next tick without a restart. Absent means the natural
+   * scale; the app always supplies it, and most test rigs leave it out.
+   */
+  brightnessScale?: () => BrightnessScale;
 }
 
 export interface CircadianAction extends ControlAction {
@@ -614,7 +620,7 @@ export class CircadianRuntime {
   private publishValues(): void {
     const value = this.currentValue();
     const brightness = this.plan.adjustBrightness && value?.brightness !== undefined
-      ? toDevice(value.brightness)
+      ? toDevice(value.brightness, this.scale())
       : null;
 
     this.values.set({
@@ -640,6 +646,10 @@ export class CircadianRuntime {
 
   private now(): number {
     return this.timers.now();
+  }
+
+  private scale(): BrightnessScale {
+    return this.deps.brightnessScale?.() ?? DEFAULT_BRIGHTNESS_SCALE;
   }
 
   private setTimer(fn: () => void, ms: number): unknown {
@@ -1467,9 +1477,9 @@ export class CircadianRuntime {
 
     if (this.plan.adjustBrightness && value.brightness !== undefined && lit.length > 0) {
       const brightness = planIntent(
-        // Stored perceptually, written in device values — 40% means 40% of
-        // PERCEIVED brightness here as it does everywhere else in the app.
-        { type: 'brightness_absolute', value: toDevice(value.brightness) },
+        // Stored as the person set it, written in device values through the
+        // app's `BrightnessScale` — 40% means here what it means everywhere else.
+        { type: 'brightness_absolute', value: toDevice(value.brightness, this.scale()) },
         // `lit` is already a subset of `eligible`: the override check runs before
         // either list is built.
         lit, this.cache, DEFAULT_BEHAVIOR,

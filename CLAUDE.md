@@ -838,14 +838,18 @@ Load-bearing product guarantees, not implementation details:
   that owns it. Every one of them holds a reference to a device that may already be deleted, and a
   write that lands after teardown is a write nothing is left to attribute, cancel or report.
 - **A positive brightness is never written as darkness.** Brightness is stored perceptually and
-  written in device values through γ = 2.2, so the bottom of the axis is where quantisation bites:
+  written in device values through γ = 2.2 — under the default `BrightnessScale`; the settings page's
+  *Same as Homey* makes it γ = 1 for every stored brightness, though never for a remote's steps
+  (`lib/outputs/light-intent.ts`) — so the bottom of the axis is where quantisation bites:
   5% becomes `dim` 0.0014, which `decimals: 2` rounds to 0.00. `MINIMUM_BRIGHTNESS` (0.10) is the
   floor the three brightness sliders start at and the three migration chains that store a
   brightness lift stored plans to (the controller profile has none);
   `litDim()` in the intent planner is the safety net under both, writing one representable step
   wherever rounding would eat a positive request. Zero still means zero — only a request for light
   is kept as light. `advanceDim()` is the same guarantee for relative steps, and its docblock carries
-  the longer argument.
+  the longer argument. The floor is the same 0.10 under both scales, which on the linear one is a
+  10% `dim` — deliberately, because the sanitisers that apply it are pure and a stored plan must not
+  mean a different floor depending on a setting read at load time. The FAQ says so.
 - **A lamp is never sent a value the mode it is in makes it ignore.** Some lamps in colour mode
   refuse a colour temperature and vice versa — silently, reporting the write as accepted (platform
   §6) — so `planColor()` and `planTemperature()` each emit `light_mode` ahead of the value it

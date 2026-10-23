@@ -427,6 +427,36 @@ describe('the location', () => {
   });
 });
 
+describe('the brightness scale', () => {
+  test('a house that never chose is on the natural scale', async () => {
+    const { app } = await boot();
+    assert.equal(app.brightnessScale(), 'natural');
+    await app.onUninit();
+  });
+
+  /**
+   * Every one of the four managers is handed the app's own getter, and that is
+   * the wiring worth a test: each manager treats an absent getter as "natural",
+   * so one left unwired would ignore the setting silently on that device type.
+   */
+  test('the stored choice reaches all four engines, and a change is read live', async () => {
+    const { app, homey } = await boot({ settings: { brightnessScale: 'linear' } });
+    const managers = [app.controllers, app.schedules, app.curves, app.daylights];
+    for (const manager of managers) assert.equal(manager.deps.brightnessScale(), 'linear');
+
+    app.setBrightnessScale('natural');
+    assert.equal(homey.settings.get('brightnessScale'), 'natural');
+    for (const manager of managers) assert.equal(manager.deps.brightnessScale(), 'natural');
+    await app.onUninit();
+  });
+
+  test('a stored value that is neither scale reads as natural', async () => {
+    const { app } = await boot({ settings: { brightnessScale: 'loud' } });
+    assert.equal(app.brightnessScale(), 'natural');
+    await app.onUninit();
+  });
+});
+
 describe('onUninit', () => {
   test('tears every registry and service down, and survives running before onInit', async () => {
     const { app } = await boot();

@@ -44,6 +44,9 @@
          --lk-edge is every box, --lk-line is only ever a divider inside one. */
       --lk-edge: #dfe3e9;
       --lk-line: #eceef2;
+      /* The edge of an UNTICKED radio, and only that — the pair views' third
+         border role, here for the one radio group this page has. */
+      --lk-box: #d4d8e0;
       --lk-hover: #c9d2e0;
       --lk-shadow: 0 1px 2px rgba(16, 24, 40, .05);
 
@@ -141,6 +144,29 @@
     /* First child of a card, so the card's own padding is the only spacing. */
     .tight { margin: 0; }
 
+    /* "Brightness scale": one radio group, in the shape the review screen's
+       "How Lightkeeper controls your lights" draws — a 22px round mark, a
+       15/500 title and a 13px line under it — because a single choice from a
+       short list is one thing in this system wherever it appears. The page's
+       own `button` rule is undone here: a radio row is not a 48px button. */
+    .choice { padding: 0 14px; }
+    .choice .pick { display: flex; align-items: flex-start; gap: 12px; width: 100%;
+                    padding: 12px 0; min-height: 44px; box-sizing: border-box;
+                    background: none; border: none; border-radius: 0; font: inherit;
+                    color: inherit; text-align: start; cursor: pointer; }
+    .choice .pick + .pick { border-top: 1px solid var(--lk-line); }
+    .choice .box { flex: none; width: 22px; height: 22px; border-radius: 50%;
+                   border: 1.5px solid var(--lk-box); box-sizing: border-box;
+                   display: flex; align-items: center; justify-content: center;
+                   font-size: 13px; font-weight: 700; color: transparent; }
+    .choice .pick[aria-checked="true"] .box { background: var(--lk-accent);
+                                              border-color: var(--lk-accent);
+                                              color: var(--lk-accent-ink); }
+    .choice .text { flex: 1; min-width: 0; }
+    .choice .what { font-size: 15px; font-weight: 500; line-height: 22px; }
+    .choice .why { font-size: 13px; color: var(--lk-muted); line-height: 1.45;
+                   margin-top: 1px; }
+
     pre { margin-top: 14px; background: var(--lk-code-bg); color: var(--lk-code-ink);
           padding: 12px; border-radius: 12px; font-size: 11px; max-height: 320px;
           overflow: auto; white-space: pre-wrap; word-break: break-word;
@@ -172,6 +198,10 @@
   <div id="credMsg" class="msg" style="display:none;"></div>
 </div>
 <p data-i18n="settings.apiKeyExplain"></p>
+
+<h2 id="scale-title" data-i18n="settings.scaleTitle"></h2>
+<div id="scale" class="card choice" role="radiogroup" aria-labelledby="scale-title"></div>
+<p id="scale-note" data-i18n="settings.scaleExplain"></p>
 
 <h2 data-i18n="settings.controllers"></h2>
 <div id="controllers"></div>
@@ -419,6 +449,8 @@
       // setup simply is not finished. Red is reserved for a key that was
       // supposed to work and does not.
       credText.className = 'msg ' + (cred.valid ? 'ready' : cred.present ? 'broken' : 'partial');
+
+      renderScale(status.brightnessScale === 'linear' ? 'linear' : 'natural');
 
       var events = clear(document.getElementById('events'));
       if (!status.recentEvents || !status.recentEvents.length) {
@@ -769,6 +801,48 @@
       }
     }, function (list) {
       renderSky(list, sky, sensors);
+    });
+  }
+
+  /**
+   * The "Brightness scale" radio group, drawn from what the app has stored.
+   *
+   * The example in each option's line is computed, not written into the copy:
+   * 50% through γ = 2.2 is 22%, and a translator should not have to know that
+   * to keep the two numbers true.
+   */
+  function renderScale(selected) {
+    var el = clear(document.getElementById('scale'));
+    [
+      { scale: 'natural', what: t('scaleNatural'),
+        why: t('scaleNaturalWhy', { here: lk.percent(50), homey: lk.percent(Math.round(Math.pow(0.5, 2.2) * 100)) }) },
+      { scale: 'linear', what: t('scaleLinear'),
+        why: t('scaleLinearWhy', { here: lk.percent(50), floor: lk.percent(10) }) },
+    ].forEach(function (option) {
+      var scale = option.scale;
+      var pick = node('button', 'pick');
+      pick.type = 'button';
+      pick.setAttribute('role', 'radio');
+      pick.setAttribute('aria-checked', scale === selected ? 'true' : 'false');
+      pick.appendChild(node('span', 'box', '✓'));
+      var text = node('span', 'text');
+      text.appendChild(node('div', 'what', option.what));
+      text.appendChild(node('div', 'why', option.why));
+      pick.appendChild(text);
+      pick.addEventListener('click', function () {
+        if (scale === selected) return;
+        renderScale(scale);
+        api('POST', '/brightness-scale', { scale: scale }).then(function (result) {
+          renderScale(result.brightnessScale);
+        }).catch(function () {
+          // Back to what is stored, and say so: a radio that shows a choice
+          // the app never took would be the one lie this page can tell.
+          renderScale(selected);
+          var note = document.getElementById('scale-note');
+          note.textContent = t('requestFailed');
+        });
+      });
+      el.appendChild(pick);
     });
   }
 

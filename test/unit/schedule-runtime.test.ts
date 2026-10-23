@@ -59,6 +59,8 @@ function harness(options: {
   onlyOnBoundary?: boolean;
   /** A stand-in evaluator, for the windows that follow the daylight. */
   daylight?: { evaluate: () => { brightness: number; source: string } };
+  /** The app-wide brightness scale. Absent is natural. */
+  brightnessScale?: () => 'natural' | 'linear';
 } = { plan: plan() }) {
   const devices = options.devices ?? [light('l1'), light('l2')];
   const writes: Array<{ deviceId: string; capability: string; value: unknown }> = [];
@@ -135,6 +137,7 @@ function harness(options: {
     // Absent unless a test asks, which is the shape a schedule with no daylight
     // response runs in — and the shape every other test in this file runs in.
     ...(options.daylight ? { daylight: options.daylight as any } : {}),
+    ...(options.brightnessScale ? { brightnessScale: options.brightnessScale } : {}),
   });
 
   return { runtime, writes, states, synced, logs };
@@ -226,6 +229,25 @@ describe('schedule boundaries', () => {
     assert.equal(dim!.value, 0.22);
     const temperature = h.writes.find(w => w.capability === 'light_temperature');
     assert.equal(temperature!.value, 0.2);
+  });
+
+  test("on the linear scale a block's 50% is sent as 0.50", async () => {
+    const h = harness({
+      plan: plan({
+        entries: [{
+          id: 'a', onAt: 22 * 60,
+          end: { kind: 'duration', minutes: 90 },
+          brightness: 0.5,
+        }],
+      }),
+      now: TUESDAY_1000,
+      brightnessScale: () => 'linear',
+    });
+    await h.runtime.startWithoutFlows();
+    await h.runtime.testEntry('a', 'on');
+    await settle();
+
+    assert.equal(h.writes.find(w => w.deviceId === 'l1' && w.capability === 'dim')!.value, 0.5);
   });
 
   test('a light that cannot dim still gets switched on', async () => {

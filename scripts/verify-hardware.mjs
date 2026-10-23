@@ -5533,19 +5533,24 @@ async function commandFlowCards(api, room) {
  * pure, and the arithmetic is the app's own: a curve publishes its warmth, and
  * a brightness only when `adjustBrightness` is on; a Room-sensing Light
  * publishes `toDevice(brightness)` and its level, or no level when it cannot
- * tell (`publishValues()` in each runtime). γ = 2.2, as `toDevice` has it.
+ * tell (`publishValues()` in each runtime). γ = 2.2, as `toDevice` has it on
+ * the natural `BrightnessScale`, and 1 on the linear one — which is why the
+ * scale is read from the same diagnostics document as the runtime, rather than
+ * assumed: a Homey left on "Same as Homey" would fail every brightness here.
  *
  * @param {'curve' | 'daylight'} kind
  * @param {any} runtime
+ * @param {unknown} [scale] `semantics.brightnessScale` from `/diagnostics`
  * @returns {Record<string, number | null>}
  */
-function expectedPublished(kind, runtime) {
+function expectedPublished(kind, runtime, scale) {
+  const gamma = scale === 'linear' ? 1 : 2.2;
   const now = runtime?.now ?? null;
   /** @param {unknown} value */
   const finite = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
   /** @param {number | null} perceptual */
   const toDevice = (perceptual) => (perceptual === null
-    ? null : Math.pow(Math.min(1, Math.max(0, perceptual)), 2.2));
+    ? null : Math.pow(Math.min(1, Math.max(0, perceptual)), gamma));
 
   if (kind === 'daylight') {
     return {
@@ -5612,7 +5617,7 @@ async function flowPublishedValues(api, ours, diagnostics) {
     if (!device) continue;
     /** @type {any} */
     const live = await api.devices.getDevice({ id: device.homeyId, $cache: false, $updateCache: false });
-    const expected = expectedPublished(kind, r);
+    const expected = expectedPublished(kind, r, diagnostics?.semantics?.brightnessScale);
     /** @type {Record<string, unknown>} */
     const actual = {};
     for (const capability of Object.keys(expected)) {
@@ -5908,8 +5913,9 @@ async function flowSetLights(api, app, ours, diagnostics, room) {
     const fresh = await app.get('/diagnostics');
     const colourRuntime = /** @type {any[]} */ (fresh?.circadian ?? []).find(r => runtimeId(r) === colourFrom.dataId);
     const brightnessRuntime = /** @type {any[]} */ (fresh?.daylight ?? []).find(r => runtimeId(r) === brightnessFrom.dataId);
-    const wantTemperature = expectedPublished('curve', colourRuntime).lightkeeper_temperature;
-    const wantDim = expectedPublished('daylight', brightnessRuntime).lightkeeper_brightness;
+    const scale = fresh?.semantics?.brightnessScale;
+    const wantTemperature = expectedPublished('curve', colourRuntime, scale).lightkeeper_temperature;
+    const wantDim = expectedPublished('daylight', brightnessRuntime, scale).lightkeeper_brightness;
 
     const refusedOn = await run({ lights, ...sources, power: 'on' });
     /** @type {string[]} */

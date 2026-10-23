@@ -70,7 +70,7 @@ const SETTLE_PAST = 10_000;
 
 function dimFor(perceptual: number, decimals = 2): number {
   const factor = 10 ** decimals;
-  return Math.round(toDevice(perceptual) * factor) / factor;
+  return Math.round(toDevice(perceptual, 'natural') * factor) / factor;
 }
 
 function plan(response: Partial<DaylightResponse> = {}, enabled = true): DaylightPlan {
@@ -90,6 +90,8 @@ function harness(options: {
   reading?: { lux: number; deviceIds: string[] } | null;
   /** When the watched sensor last reported. Defaults to the moving `now`. */
   sensorAt?: () => number | null;
+  /** The app-wide brightness scale. Absent is natural. */
+  brightnessScale?: () => 'natural' | 'linear';
 } = {}) {
   /**
    * Which lamps refuse every write, settable after start.
@@ -173,6 +175,7 @@ function harness(options: {
     luminance,
     displayName: () => 'Kitchen daylight',
     now: () => now,
+    ...(options.brightnessScale ? { brightnessScale: options.brightnessScale } : {}),
     log: (...args) => logs.push(args.map(String).join(' ')),
     onStateChange: (state, detail) => states.push({ state, detail }),
   });
@@ -307,7 +310,7 @@ describe('DaylightRuntime - the rising edge of onoff is the feature', () => {
     // it an hour ago says nothing about where it is now. Easing up to the right
     // level over ninety seconds after somebody flicked a switch reads as broken.
     const h = harness({
-      devices: [light('l1', ['onoff', 'dim'], { onoff: false, dim: toDevice(0.1) })],
+      devices: [light('l1', ['onoff', 'dim'], { onoff: false, dim: toDevice(0.1, 'natural') })],
       verdict: { brightness: 0.95 },
     });
     await h.runtime.start();
@@ -418,11 +421,11 @@ describe('DaylightRuntime - the slew limit', () => {
     const h = harness({ devices: [light('l1', ['onoff', 'dim'], { dim: dimFor(0.1) })] });
     await h.runtime.start();
     await converge(h);
-    const settledAt = toPerceptual(h.dimWrites().at(-1)!.value as number);
+    const settledAt = toPerceptual(h.dimWrites().at(-1)!.value as number, 'natural');
 
     h.setVerdict({ brightness: 0.9 });
     await tick(h);
-    const afterOneTick = toPerceptual(h.dimWrites().at(-1)!.value as number);
+    const afterOneTick = toPerceptual(h.dimWrites().at(-1)!.value as number, 'natural');
 
     // One tick must not have arrived anywhere near the target. Measured from
     // where it had settled, not from where the lamp started: converge() has
@@ -443,7 +446,7 @@ describe('DaylightRuntime - the slew limit', () => {
     h.setVerdict({ brightness: 0.95 });
     await converge(h);
 
-    const levels = h.dimWrites().slice(from).map(w => toPerceptual(w.value as number));
+    const levels = h.dimWrites().slice(from).map(w => toPerceptual(w.value as number, 'natural'));
     for (let i = 1; i < levels.length; i += 1) {
       const step = Math.abs(levels[i] - levels[i - 1]);
       // A little headroom for the round trip through gamma and `decimals`: the
@@ -459,7 +462,7 @@ describe('DaylightRuntime - the slew limit', () => {
     h.setVerdict({ brightness: 0.15 });
     await converge(h);
 
-    const levels = h.dimWrites().map(w => toPerceptual(w.value as number));
+    const levels = h.dimWrites().map(w => toPerceptual(w.value as number, 'natural'));
     for (let i = 1; i < levels.length; i += 1) {
       assert.ok(levels[i] <= levels[i - 1] + 1e-9, `step ${i} went the wrong way`);
     }
@@ -477,7 +480,7 @@ describe('DaylightRuntime - the slew limit', () => {
     h.setVerdict({ brightness: 0.42 });
     await converge(h);
 
-    const landed = toPerceptual(h.dimWrites().at(-1)!.value as number);
+    const landed = toPerceptual(h.dimWrites().at(-1)!.value as number, 'natural');
     assert.ok(Math.abs(landed - 0.42) < 0.03, `stalled at ${landed} instead of reaching 0.42`);
   });
 
@@ -502,13 +505,33 @@ describe('DaylightRuntime - the slew limit', () => {
     // Unknown means unknown: with nothing to slew FROM, the aim is the target,
     // which is what `aimFor` already does for a genuinely absent level.
     assert.ok(
-      Math.abs(toPerceptual(first.value as number) - 0.6) < 0.02,
-      `first write was ${first.value} (perceptual ${toPerceptual(first.value as number)}), not the target`,
+      Math.abs(toPerceptual(first.value as number, 'natural') - 0.6) < 0.02,
+      `first write was ${first.value} (perceptual ${toPerceptual(first.value as number, 'natural')}), not the target`,
     );
     // The failure this pins: nothing near the floor, ever.
     for (const write of h.dimWrites()) {
       assert.ok((write.value as number) > 0.02, `wrote ${write.value} to a lit lamp`);
     }
+  });
+
+  /**
+   * The first pass slews from the lamp's own level, which has to be read back
+   * on the SAME scale it will be written on. A lamp at dim 0.50 is at 50% on
+   * the linear scale and at about 73% on the natural one — so reading it back
+   * naturally while writing linearly would step a lamp that wants to go UP by
+   * walking it down first.
+   */
+  test('on the linear scale it slews from the lamp’s level as Homey reports it', async () => {
+    const h = harness({
+      devices: [light('l1', ['onoff', 'dim'], { dim: 0.5 })],
+      verdict: { brightness: 0.6 },
+      brightnessScale: () => 'linear',
+    });
+    await h.runtime.start();
+    await tick(h);
+
+    assert.equal(h.dimWrites()[0]!.value, 0.55, 'one step of 0.05 up from 0.50, on the scale Homey shows');
+    assert.equal(h.runtime.publishedValues()['lightkeeper_brightness'], 0.6);
   });
 
   test('and it converges from the bottom of the axis, where quantisation bites', async () => {

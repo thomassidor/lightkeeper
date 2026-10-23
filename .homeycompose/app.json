@@ -308,6 +308,10 @@
       "method": "DELETE",
       "path": "/credential"
     },
+    "setBrightnessScale": {
+      "method": "POST",
+      "path": "/brightness-scale"
+    },
     "getDiagnostics": {
       "method": "GET",
       "path": "/diagnostics"

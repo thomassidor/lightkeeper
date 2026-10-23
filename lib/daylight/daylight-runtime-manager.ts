@@ -10,6 +10,7 @@ import type { LuminanceSource } from './luminance-source';
 import { fireAndForget } from '../support/async';
 import { RuntimeRegistry } from '../runtime/runtime-registry';
 import type { WriteRecord } from '../outputs/light-target-adapter';
+import type { BrightnessScale } from '../outputs/light-intent';
 import { messageOf } from '../support/homey-errors';
 
 /**
@@ -46,6 +47,12 @@ export interface DaylightManagerDeps {
   /** `homey.setInterval` in the app; a stub in the tests, which drive tickAll(). */
   setInterval?: (fn: () => void, ms: number) => unknown;
   clearInterval?: (handle: unknown) => void;
+  /**
+   * The app-wide `BrightnessScale`, handed to every runtime. Optional, and
+   * absent means the natural scale: every test rig leaves it out, app.ts never
+   * does.
+   */
+  brightnessScale?: () => BrightnessScale;
   log: (...args: unknown[]) => void;
 }
 
@@ -134,6 +141,7 @@ export class DaylightRuntimeManager {
       luminance: this.deps.luminance,
       ...(this.deps.onWriteResult ? { onWriteResult: this.deps.onWriteResult } : {}),
       ...(this.deps.onEvidence ? { onEvidence: this.deps.onEvidence } : {}),
+      ...(this.deps.brightnessScale ? { brightnessScale: this.deps.brightnessScale } : {}),
       log: this.deps.log,
     };
   }

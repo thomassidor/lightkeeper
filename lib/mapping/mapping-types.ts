@@ -89,7 +89,11 @@ export const FUNCTION_PRESET: Record<LightFunction, PresetKind> = {
 };
 
 export interface BrightnessPreset {
-  /** Perceptual brightness 0–1, on the same axis every other slider in the app uses. */
+  /**
+   * Brightness 0–1, on the same axis every other slider in the app uses —
+   * perceptual under the natural `BrightnessScale`, Homey's own under linear.
+   * Converted to a `dim` in `ControllerRuntime`, not here.
+   */
   brightness: number;
   /** Normalised colour temperature 0–1, where 1 is warmest. Absent = leave it alone. */
   temperature?: number;

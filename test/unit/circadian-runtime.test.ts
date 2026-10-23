@@ -94,6 +94,8 @@ function harness(options: {
    * the outcome pre-staging exists to rule out (platform §6).
    */
   turnsOnWhenSet?: string[];
+  /** The app-wide brightness scale, read per pass. Absent is natural. */
+  brightnessScale?: () => 'natural' | 'linear';
 } = {}) {
   const devices = options.devices ?? [light('l1'), light('l2')];
   /** Lamps refusing every write, settable after start. See setCapabilityValue. */
@@ -186,6 +188,7 @@ function harness(options: {
     // Absent unless a test asks, which is the shape a curve with no daylight
     // response runs in — and the shape every other test in this file runs in.
     ...(options.daylight ? { daylight: options.daylight as any } : {}),
+    ...(options.brightnessScale ? { brightnessScale: options.brightnessScale } : {}),
     onPlanChange: async p => { plans.push(p); },
   });
 
@@ -432,6 +435,38 @@ describe('brightness', () => {
       h.writes.filter(w => w.capability === 'dim').map(w => w.value),
       [1, 1],
     );
+  });
+
+  /**
+   * The settings page's "Same as Homey": a stored 74% is sent as dim 0.74 and
+   * published as 0.74, where the natural scale sends 0.74^2.2 ≈ 0.52. Read per
+   * pass, so a switch reaches the lamps at the next tick with no restart — and
+   * the published value, which a Flow tag and a remote's `lightkeeper_on` both
+   * read, moves with it.
+   */
+  test('follows the app-wide brightness scale, and a switch lands at the next tick', async () => {
+    let scale: 'natural' | 'linear' = 'linear';
+    const flat = plan({
+      adjustBrightness: true,
+      points: [
+        { id: 'day', anchor: { kind: 'clock', at: 12 * 60 }, warmth: 0.2, brightness: 0.74 },
+        { id: 'night', anchor: { kind: 'clock', at: 23 * 60 }, warmth: 0.2, brightness: 0.74 },
+      ],
+    });
+    const h = harness({ plan: flat, brightnessScale: () => scale });
+    await h.runtime.start();
+    await settle();
+
+    const dims = () => h.writes.filter(w => w.capability === 'dim').map(w => w.value);
+    assert.deepEqual(dims(), [0.74, 0.74]);
+    assert.equal(h.runtime.publishedValues()['lightkeeper_brightness'], 0.74);
+
+    scale = 'natural';
+    h.advance(60_000);
+    await h.runtime.tick();
+    await applied(h);
+    assert.deepEqual(dims().slice(2), [0.52, 0.52], '0.74^2.2 ≈ 0.515, at two decimals');
+    assert.ok(Math.abs((h.runtime.publishedValues()['lightkeeper_brightness'] as number) - 0.74 ** 2.2) < 0.01);
   });
 
   test('is never sent to a light that is off, even while pre-staging', async () => {

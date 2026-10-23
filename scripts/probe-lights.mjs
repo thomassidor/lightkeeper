@@ -143,7 +143,12 @@ const ENABLER_CAPABILITIES = new Set(['light_mode']);
  * comparing new lamps against old history.
  */
 export const THRESHOLDS = {
-  /** lib/outputs/light-intent.ts GAMMA — the perceptual curve's exponent. */
+  /**
+   * lib/outputs/light-intent.ts GAMMA — the perceptual curve's exponent. The
+   * natural `BrightnessScale` only: the probe asks lamps questions about their
+   * own axis and never reads the app's setting, so "Same as Homey" changes
+   * nothing it measures.
+   */
   GAMMA: 2.2,
   /** lib/outputs/light-intent.ts MINIMUM_BRIGHTNESS — the floor the brightness sliders start at. */
   MINIMUM_BRIGHTNESS: 0.1,

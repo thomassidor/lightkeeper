@@ -17,7 +17,7 @@ import {
   TargetStateCache,
 } from '../outputs/target-state-cache';
 import { planIntent, type Capability, type PlannedWrite } from '../outputs/intent-planner';
-import { toDevice, toPerceptual } from '../outputs/light-intent';
+import { DEFAULT_BRIGHTNESS_SCALE, toDevice, toPerceptual, type BrightnessScale } from '../outputs/light-intent';
 import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
 import { assessTargets } from '../runtime/target-health';
@@ -74,6 +74,16 @@ export interface DaylightRuntimeDeps {
   luminance: LuminanceSource;
   displayName: () => string;
   now?: () => number;
+  /**
+   * The app-wide `BrightnessScale`, read every pass so a change on the settings
+   * page lands at the next tick without a restart. Absent means the natural
+   * scale; the app always supplies it, and most test rigs leave it out.
+   *
+   * The aim and the slew stay on the stored axis whichever scale is chosen, so
+   * a switch moves the lamps once, to the same aim on the new scale, rather
+   * than walking there.
+   */
+  brightnessScale?: () => BrightnessScale;
   log: (...args: unknown[]) => void;
   onStateChange: (state: ControllerState, detail?: StateDetail) => void;
 }
@@ -350,12 +360,16 @@ export class DaylightRuntime {
   private publishValues(): void {
     const verdict = this.currentValue();
     this.values.set({
-      [VALUE_CAPABILITIES.brightness]: toDevice(verdict.brightness),
+      [VALUE_CAPABILITIES.brightness]: toDevice(verdict.brightness, this.scale()),
       [VALUE_CAPABILITIES.daylight]: verdict.source === 'none' ? null : verdict.level,
     });
   }
 
   private now(): number { return this.timers.now(); }
+
+  private scale(): BrightnessScale {
+    return this.deps.brightnessScale?.() ?? DEFAULT_BRIGHTNESS_SCALE;
+  }
 
   async start(): Promise<void> {
     return this.lifetime.start(async current => {
@@ -887,7 +901,7 @@ export class DaylightRuntime {
     if (current === undefined) {
       const reported = this.cache.currentDim(deviceId);
       if (reported === undefined) return wanted;
-      return this.step(toPerceptual(reported), wanted);
+      return this.step(toPerceptual(reported, this.scale()), wanted);
     }
 
     if (Math.abs(wanted - current) < DAYLIGHT_DEADBAND) return current;
@@ -919,7 +933,7 @@ export class DaylightRuntime {
     const planned: PlannedWrite[] = [];
     for (const [level, deviceIds] of byLevel) {
       const plan = planIntent(
-        { type: 'brightness_absolute', value: toDevice(level) },
+        { type: 'brightness_absolute', value: toDevice(level, this.scale()) },
         deviceIds, this.cache, DEFAULT_BEHAVIOR,
       );
       /**
@@ -954,7 +968,7 @@ export class DaylightRuntime {
    * Only the DEVICE value is recorded, and that is the point of the split: the
    * aim is already recorded by the pass that computed it, and reading a
    * perceptual value back out of `toPerceptual(outcome.value)` would be lossy —
-   * the round trip through γ = 2.2 and the capability's `decimals` means every
+   * the round trip through the scale's γ and the capability's `decimals` means every
    * pass would start a little short of where the last one finished.
    */
   private noteOutcomes(outcomes: WriteOutcome[]): void {

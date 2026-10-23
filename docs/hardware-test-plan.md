@@ -82,9 +82,9 @@ The script cannot do these. Report each by its number.
 
 ## 4. This release
 
-**0.6.6 — capability icons, the control and Transition settings, and the Transition choice, on top
-of the 0.6.5 and 0.6.0 passes that are still owed.** 0.6.6's fifteen lines are first: T181 and
-T195–T200 take ten minutes with a phone, T187–T190 want an afternoon of the day going by, and
+**0.6.6 — capability icons, the control and Transition settings, the Transition choice and the
+brightness scale, on top of the 0.6.5 and 0.6.0 passes that are still owed.** 0.6.6's eighteen lines
+are first: T181, T195–T200 and T201–T203 take ten minutes with a phone each, T187–T190 want an afternoon of the day going by, and
 T191–T194 want the Homey switched to another language for a few minutes. T182–T186 are retired
 unrun: they tested a picker on the tile, which moved into the device's Settings before anything was
 published.
@@ -139,6 +139,26 @@ T199 comes free.
       change *Transition* from *Balanced* to *Gradual* and save. Open Repair: its curve screen and the
       *Transition* row on *Ready to add* both say *Gradual*, and the next minute's write follows the
       new shape (`node scripts/diagnostics.mjs` — the target moves steadily rather than easing).
+
+### 0.6.6 — the brightness scale
+
+The suite proves each engine converts on the scale it is handed and that the app hands all four the
+stored one. What it cannot see is the settings page itself, and a lamp's own slider agreeing with
+the number on it. Use the Colour Curve Light from T200 and any Light Remote with a *Set brightness*
+button. None of these is answered by `verify-hardware.mjs`, which reads the scale from
+`/diagnostics` and expects published brightness on whichever one is set.
+
+- [ ] **T201** **The setting, on a phone.** Homey settings → Lightkeeper shows *Brightness scale*
+      under the API key, with *Natural* checked on a Homey that never chose. Its line reads "50% …
+      22%". Choose *Same as Homey*; leave the page and come back: it is still chosen.
+- [ ] **T202** **A curve follows within a minute.** Set every point of the Colour Curve Light to 74%
+      (brightness on). On *Natural* the lamp's own slider in the Homey app reads about 51%; switch to
+      *Same as Homey* and within a minute it reads 74%, and the device's *Brightness now* tag reads
+      74%. Switch back: about 51% again. `node scripts/diagnostics.mjs` names the scale in
+      `semantics`.
+- [ ] **T203** **A remote's preset follows on its next press.** A *Set brightness* button at 60%:
+      on *Natural* the lamp lands at about 33% in the Homey app, on *Same as Homey* at 60%. Turning a
+      dial or holding a dimmer button feels the same on both.
 
 ### 0.6.6 — Transition: Gradual, Balanced or Quick
 

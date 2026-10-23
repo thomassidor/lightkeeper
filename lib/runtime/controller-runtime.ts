@@ -22,7 +22,7 @@ import { RampEngine, canRamp } from '../outputs/ramp-engine';
 import {
   diffTargets, releaseTarget, resolveSnapshot, type TargetSnapshot,
 } from '../outputs/target-snapshot';
-import type { LightIntent } from '../outputs/light-intent';
+import { DEFAULT_BRIGHTNESS_SCALE, toDevice, type BrightnessScale, type LightIntent } from '../outputs/light-intent';
 import type { ControllerProfile, ControllerState, StateDetail } from '../profiles/controller-profile';
 import type { HealthMonitor } from './health-monitor';
 import type { InputEvent } from '../inputs/input-event';
@@ -99,6 +99,13 @@ export interface ControllerRuntimeDeps {
    * button that does nothing at all.
    */
   sources?: SourceRegistry;
+  /**
+   * The app-wide `BrightnessScale`, which a "set brightness" button's preset
+   * goes through on its way to the lamps. Read per press, so a change on the
+   * settings page needs no restart. Absent means the natural scale; the app
+   * always supplies it, and most test rigs leave it out.
+   */
+  brightnessScale?: () => BrightnessScale;
   log: (...args: unknown[]) => void;
   onStateChange: (state: ControllerState, detail?: StateDetail) => void;
   /**
@@ -883,6 +890,19 @@ export class ControllerRuntime {
   }
 
   /**
+   * A preset's stored brightness, as the `dim` the app's `BrightnessScale`
+   * says it means — here, at the one submit path, so a live press and the
+   * buttons screen's Test cannot disagree about it. Every other intent is
+   * already on the device axis: steps are relative, and `lightkeeper_on`
+   * borrows a value its source already published as a device value.
+   */
+  private onDeviceAxis(intent: LightIntent): LightIntent {
+    if (intent.type !== 'preset_absolute') return intent;
+    const scale = this.deps.brightnessScale?.() ?? DEFAULT_BRIGHTNESS_SCALE;
+    return { ...intent, brightness: toDevice(intent.brightness, scale) };
+  }
+
+  /**
    * Several intents as ONE ordered burst, which is the only way to send them.
    *
    * `WRITE_ORDER` inside the queue is what puts `light_mode` ahead of the hue it
@@ -905,7 +925,7 @@ export class ControllerRuntime {
   ): Promise<{ writes: number; skipped: number }> {
     const plan = { writes: [] as PlannedWrite[], skipped: [] as SkippedTarget[] };
     for (const intent of intents) {
-      const planned = planIntent(intent, targetIds, this.cache, this.profile.behavior);
+      const planned = planIntent(this.onDeviceAxis(intent), targetIds, this.cache, this.profile.behavior);
       plan.writes.push(...planned.writes);
       plan.skipped.push(...planned.skipped);
     }

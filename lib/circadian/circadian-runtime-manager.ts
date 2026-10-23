@@ -8,6 +8,7 @@ import type { CircadianPlan } from './circadian-types';
 import { fireAndForget } from '../support/async';
 import { RuntimeRegistry } from '../runtime/runtime-registry';
 import type { WriteRecord } from '../outputs/light-target-adapter';
+import type { BrightnessScale } from '../outputs/light-intent';
 import { messageOf } from '../support/homey-errors';
 
 /**
@@ -47,6 +48,12 @@ export interface CircadianManagerDeps {
   /** `homey.setInterval` in the app; a stub in the tests, which drive tickAll(). */
   setInterval?: (fn: () => void, ms: number) => unknown;
   clearInterval?: (handle: unknown) => void;
+  /**
+   * The app-wide `BrightnessScale`, handed to every runtime. Optional, and
+   * absent means the natural scale: every test rig leaves it out, app.ts never
+   * does.
+   */
+  brightnessScale?: () => BrightnessScale;
   log: (...args: unknown[]) => void;
 }
 
@@ -116,6 +123,7 @@ export class CircadianRuntimeManager {
       ...(this.deps.onEvidence ? { onEvidence: this.deps.onEvidence } : {}),
       timezone: this.deps.timezone,
       ...(this.deps.location ? { location: this.deps.location } : {}),
+      ...(this.deps.brightnessScale ? { brightnessScale: this.deps.brightnessScale } : {}),
       log: this.deps.log,
     };
   }
