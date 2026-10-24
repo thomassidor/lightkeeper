@@ -620,6 +620,31 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     this.log(`Brightness scale: ${scale}`);
   }
 
+  /**
+   * Every teardown is STARTED here, synchronously and in order, and only then
+   * awaited.
+   *
+   * Platform §17: an `await` inside `onUninit` may never get past itself.
+   * Whether the platform skips `onUninit`, stops awaiting it, or kills the
+   * process part-way, everything behind the first `await` is at risk. This
+   * method used to begin with `await this.evidence.close()`, so every
+   * registry's `destroyAll()` waited behind the recorder's gzip, cipher and
+   * `fsync`. That includes the parts that cost nothing and matter most: each
+   * runtime's `stop()` stops its write queue and cancels its pending implied-on
+   * checks before it awaits anything, and the curve and daylight managers clear
+   * their shared ticker the same way. Those now run before this method first
+   * yields.
+   *
+   * What each `stop()` does AFTER its first await (ramps, probe timers, the
+   * gate, unsubscribing) runs in a microtask at the earliest, behind the
+   * runtime's own lifetime lock, and so behind any refresh it has in flight. A
+   * stopped write queue is what keeps those last moments from reaching a lamp:
+   * a ramp tick submitted to it is cancelled, not written.
+   *
+   * `allSettled`, not a chain of awaits: one registry that rejects no longer
+   * abandons everything after it. Each failure is logged, and the rest still
+   * runs.
+   */
   override async onUninit() {
     this.evidence.stopTimer();
 
@@ -635,17 +660,20 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
      * awaited `fsync` completes, the answer is the same — the further down the
      * teardown this sits, the less chance it has.
      *
-     * So it goes to the front, where the only thing ahead of it is clearing its
-     * own timer. Nothing later in this method produces evidence, so nothing is
-     * lost by recording the shutdown before the runtimes are stopped rather
-     * than after.
+     * So it is started first, and `close()` buffers `app_shutdown` before its
+     * own first await, so the record is taken before anything else here runs.
+     * It is no longer AWAITED first. That was the cost of the first fix: every
+     * other teardown waited for the flush. Records the runtimes produce while
+     * stopping (an `override_cleared` per standing override) land after the
+     * flush has taken its snapshot. That was already true when this was
+     * awaited first, since nothing flushed after the runtimes either.
      *
      * It is still NOT relied on. What actually establishes a boot boundary in
      * the archive is `app_boot` plus a fresh `bootId` under the same `runId`,
      * written on the way UP where there is no grace window to run out of — and
      * that is what `docs/hardware-test-plan.md`'s T99 checks.
      */
-    await this.evidence?.close();
+    const recorder = this.evidence?.close();
 
     // Never leave a light mid-ramp, a timer running or a listener attached.
     // The SDK's setTimeout is disposal-safe, but a pending fan-out would still
@@ -654,20 +682,56 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       this.homey.clearTimeout(this.credentialFanOutTimer);
       this.credentialFanOutTimer = null;
     }
-    await this.controllers?.destroyAll();
-    await this.schedules?.destroyAll();
-    await this.curves?.destroyAll();
-    await this.daylights?.destroyAll();
-    // After the runtimes, so their own release() calls have already run and this
-    // is only the backstop for anything a pairing session left behind.
-    await this.lights?.destroy();
-    await this.luminance?.destroy();
-    await this.api?.destroy();
-    // Whatever the catalogue is still holding from the last read. Small by
-    // design (platform §15), but there is no reason for it to outlive the app.
+
+    /**
+     * The runtimes, and the two app-level backstops beside them, all started
+     * together.
+     *
+     * The backstops used to be awaited after the runtimes, "so their own
+     * release() calls have already run". Neither needs that order:
+     * - `luminance.destroy()` drops every sensor whatever the claims say. A
+     *   daylight runtime's `release()` arriving afterwards finds its claim
+     *   already gone, and both reconcile under the same per-sensor lock.
+     * - `lights.destroy()` is the `set_lights` card's own queue and adapter,
+     *   and shares nothing with a runtime. Its write queue is stopped before
+     *   its first await, like a runtime's.
+     */
+    const stopping = [
+      this.controllers?.destroyAll(),
+      this.schedules?.destroyAll(),
+      this.curves?.destroyAll(),
+      this.daylights?.destroyAll(),
+      this.lights?.destroy(),
+      this.luminance?.destroy(),
+    ];
+    // Whatever the catalogue is still holding from the last read, and its
+    // release timer (platform §15). Synchronous, so it goes with the rest.
     this.cards?.clear();
+
+    /**
+     * The read client LAST, but behind the runtimes only, not behind the
+     * recorder.
+     *
+     * Last because `api.destroy()` runs every tracked unsubscribe itself and
+     * then refuses all reads. Started alongside the runtimes, it would destroy
+     * capability instances out from under the adapters that are unsubscribing
+     * them. Not behind the recorder, because a flush that never finishes must
+     * not keep the socket open too.
+     */
+    const client = (async () => {
+      this.logFailures('Stopping', await Promise.allSettled(stopping));
+      await this.api?.destroy();
+    })();
+
+    this.logFailures('Shutting down', await Promise.allSettled([recorder, client]));
   }
 
+  /** One line per teardown step that rejected. Never throws: this runs on the way out. */
+  private logFailures(what: string, outcomes: PromiseSettledResult<unknown>[]): void {
+    for (const outcome of outcomes) {
+      if (outcome.status === 'rejected') this.log(`${what}: a teardown step failed:`, messageOf(outcome.reason));
+    }
+  }
 };
 
 /**
