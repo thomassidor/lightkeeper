@@ -219,7 +219,7 @@ is shared only if you choose. [`docs/privacy.md`](docs/privacy.md) has the full 
 
 Designed and written end to end with [Claude](https://claude.com/claude-code); a human directed the
 work, made the product decisions and verified it on real hardware — a Homey Pro 2023, four remotes,
-three transports, and over 2000 unit tests. [How well tested is this?](FAQ.md#how-well-tested-is-this)
+three transports, and over 2200 unit tests. [How well tested is this?](FAQ.md#how-well-tested-is-this)
 
 ## Contributing
 
