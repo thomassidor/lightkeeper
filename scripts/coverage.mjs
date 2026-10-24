@@ -66,6 +66,15 @@ const args = [
   // "never loaded by any test" on Node 24 while CI on Node 22 passed. Passing any exclude
   // replaces the default; the include list above already keeps test/ out.
   '--test-coverage-exclude=test/**',
+  // Per test, and the same value `npm test` passes. Without it a promise that never settles —
+  // a stop() that forgets to settle its waiters, say — does not fail the suite, it HANGS it, and
+  // CI then reports the job's 15-minute timeout instead of the test. Measured: that mutant hung
+  // `npm test` indefinitely. The slowest test today takes under a second.
+  //
+  // Deliberately NOT `--test-force-exit` beside it: a test file that leaves a live timer or
+  // socket behind is a teardown bug, and force-exit would let it pass silently where today it
+  // keeps the run open for somebody to notice.
+  '--test-timeout=30000',
   '--test-reporter=tap', 'test/unit/**/*.test.ts',
 ];
 const run = spawnSync(process.execPath, args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
@@ -73,6 +82,15 @@ if (run.error) throw run.error;
 
 const out = run.stdout;
 const failed = /^# fail (\d+)/m.exec(out);
+// A test that hits --test-timeout is reported as CANCELLED, not failed: `# fail 0` beside
+// `# cancelled 1`. Reading only the fail count let a timed-out test through to the coverage
+// assessment and a green run.
+const cancelled = /^# cancelled (\d+)/m.exec(out);
+if (cancelled && cancelled[1] !== '0') {
+  process.stdout.write(out.split('\n').filter(line => /^not ok|^\s+not ok|^# (tests|pass|fail|cancelled)/.test(line)).join('\n'));
+  console.error('\nA test was cancelled (most often: it ran past --test-timeout); coverage was not assessed.');
+  process.exit(1);
+}
 if (run.status !== 0 && (!failed || failed[1] !== '0')) {
   process.stdout.write(out.split('\n').filter(line => /^not ok|^\s+not ok|^# (tests|pass|fail)/.test(line)).join('\n'));
   console.error('\nThe suite itself failed; coverage was not assessed.');

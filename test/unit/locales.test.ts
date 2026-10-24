@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 
 import en from '../../locales/en.json' with { type: 'json' };
 import { LANGUAGES, RTL_LANGUAGES, categoriesFor, isPluralGroup } from '../support/languages';
@@ -184,6 +184,29 @@ function referencedKeys(): Set<string> {
   return referenced;
 }
 
+/**
+ * Every dynamic lookup's fixed prefix — `input.gesture.` in
+ * `` `input.gesture.${key}` `` — with the file it was found in.
+ *
+ * `referencedKeys()` treats such a lookup as using EVERY key under its prefix,
+ * which is right for "is this key unused" and blind for "is this key defined":
+ * a whole family renamed in en.json, or a prefix misspelt in the source, leaves
+ * the lookup matching nothing, and both checks above stay green while every
+ * string it builds renders as its raw key. The suffix is only known at run
+ * time, but a prefix that matches no key at all is wrong whatever it turns out
+ * to be.
+ */
+function dynamicPrefixes(): Array<{ file: string; prefix: string }> {
+  const groupPattern = Object.keys(en).join('|');
+  const dynamic = new RegExp(`['"\`](${groupPattern})\\.([\\w.]*?)\\$\\{`, 'g');
+  const found: Array<{ file: string; prefix: string }> = [];
+  for (const file of sourceFiles()) {
+    const text = withoutProse(readFileSync(file, 'utf8'));
+    for (const m of text.matchAll(dynamic)) found.push({ file: relative(ROOT, file), prefix: `${m[1]}.${m[2]}` });
+  }
+  return found;
+}
+
 describe('locales', () => {
   test('English is the reference locale and is present', () => {
     assert.ok(
@@ -224,6 +247,19 @@ describe('locales', () => {
     const missing = [...referencedKeys()].filter(k => !defined.has(k));
 
     assert.deepEqual(missing, [], 'referenced in source but absent from en.json');
+  });
+
+  test('every dynamic lookup names a prefix that keys exist under', () => {
+    const defined = keysOf(en);
+    const prefixes = dynamicPrefixes();
+    // Vacuous if the pattern stopped matching anything: there are dynamic
+    // lookups in lib/ and the views today.
+    assert.ok(prefixes.length > 0, 'no dynamic key lookup found — has the pattern stopped matching?');
+
+    const orphaned = prefixes
+      .filter(({ prefix }) => !defined.some(key => key.startsWith(prefix)))
+      .map(({ file, prefix }) => `${file}: ${prefix}\${…}`);
+    assert.deepEqual(orphaned, [], 'a dynamic lookup whose prefix matches no key in en.json');
   });
 
   test('token placeholders match between English and every translation', () => {

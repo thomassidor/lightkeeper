@@ -13,6 +13,7 @@ import {
   zoneValueAt,
 } from '../../lib/circadian/simple-curve';
 import { TRANSITIONS, type Transition } from '../../lib/support/interpolate';
+import { MINIMUM_BRIGHTNESS } from '../../lib/outputs/light-intent';
 
 /**
  * Everything the curve screen sends arrives from a webview and is therefore
@@ -197,6 +198,28 @@ describe('the three zones', () => {
     // A Homey never told where it is, and a polar day: both fall back, silently.
     assert.deepEqual(sunAnchorContext(null, 'Europe/Copenhagen', midsummer), {});
     assert.deepEqual(sunAnchorContext({ latitude: 78.2, longitude: 15.6 }, 'Arctic/Longyearbyen', midsummer), {});
+  });
+
+  test('across a daylight-saving change the anchors move with the wall clock, not the sun', () => {
+    // The zone boundaries are local minutes, so on the day the clocks change
+    // the sun has moved two minutes and the anchor an hour. Measured against
+    // the sun itself (UTC) the move would be invisible, and a curve anchored to
+    // "sunrise plus thirty minutes" would land an hour out every summer.
+    const copenhagen = { latitude: 55.68, longitude: 12.57 };
+    const anchors = (month: number, day: number) =>
+      sunAnchorContext(copenhagen, 'Europe/Copenhagen', Date.UTC(2026, month, day, 11, 0));
+
+    const beforeSpring = anchors(2, 28);
+    const afterSpring = anchors(2, 29);
+    const springMove = afterSpring.sunriseMinute! - beforeSpring.sunriseMinute!;
+    assert.ok(springMove >= 55 && springMove <= 60, `sunrise moved ${springMove} minutes on 29 March`);
+    assert.ok(Math.abs(afterSpring.sunriseMinute! - (6 * 60 + 48)) <= 15, `sunrise at ${afterSpring.sunriseMinute}`);
+
+    const beforeAutumn = anchors(9, 24);
+    const afterAutumn = anchors(9, 25);
+    const autumnMove = afterAutumn.sunsetMinute! - beforeAutumn.sunsetMinute!;
+    assert.ok(autumnMove <= -60 && autumnMove >= -65, `sunset moved ${autumnMove} minutes on 25 October`);
+    assert.ok(Math.abs(afterAutumn.sunsetMinute! - (16 * 60 + 46)) <= 15, `sunset at ${afterAutumn.sunsetMinute}`);
   });
 
   test('with no sun at all it falls back to fixed hours, and says so', () => {
@@ -440,6 +463,27 @@ describe('sanitiseZones — a screen sending nonsense falls back per FIELD', () 
 
     const off = sanitiseZones({ ...DEFAULT_ZONES, adjustBrightness: 'yes' });
     assert.equal(off.adjustBrightness, false, 'anything but a real true is a no');
+  });
+
+  test('a positive zone brightness under the floor is lifted to it, never stored as sent', () => {
+    // A positive brightness is never written as darkness. 5% is `dim` 0.0014
+    // under γ = 2.2, which `decimals: 2` rounds to 0.00 — so a zone that STORED
+    // 5% would read 5% on every screen while its lamps went dark. The floor is
+    // the sanitiser's job now that the migration step that used to do it is
+    // gone; 0 stays "unset" and falls back to the zone's default instead.
+    const { zones, corrected } = sanitiseZones({
+      ...DEFAULT_ZONES,
+      morning: { temperature: 0.78, brightness: 0.05 },
+      midday: { temperature: 0.18, brightness: 0.0001 },
+      evening: { temperature: 0.86, brightness: 0 },
+    });
+    assert.equal(zones.morning.brightness, MINIMUM_BRIGHTNESS);
+    assert.equal(zones.midday.brightness, MINIMUM_BRIGHTNESS);
+    assert.equal(zones.evening.brightness, DEFAULT_ZONES.evening.brightness);
+    assert.equal(MINIMUM_BRIGHTNESS, 0.1, 'the floor this test was written against');
+    // Lifting is not a correction the screen has to report: the number was a
+    // brightness, just one a lamp cannot show.
+    assert.deepEqual(corrected, []);
   });
 });
 

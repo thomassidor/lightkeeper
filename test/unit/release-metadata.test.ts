@@ -34,6 +34,22 @@ const readJson = (file: string) => JSON.parse(read(file));
 const composed = readJson('.homeycompose/app.json') as { version: string };
 const version = composed.version;
 
+/**
+ * A test file with its comments taken out, for counting call sites.
+ *
+ * A docblock that says "the test( above…" or quotes a call is not a test, and
+ * every one of them raised the floor the docs are checked against. Block
+ * comments and whole-line `//` comments only: a trailing `//` is left alone
+ * because it may sit inside a string, and a URL in a test name is common.
+ */
+function withoutComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter(line => !line.trim().startsWith('//'))
+    .join('\n');
+}
+
 describe('release metadata', () => {
   test('the version is a semver triple', () => {
     assert.match(version, /^\d+\.\d+\.\d+$/, '.homeycompose/app.json version is not x.y.z');
@@ -127,9 +143,18 @@ describe('release metadata', () => {
     const from = readme.indexOf('## Changelog');
 
     assert.ok(from !== -1, 'README.md has no "## Changelog" section');
-    assert.ok(
-      readme.slice(from).includes(version),
-      `README.md's changelog section does not mention ${version}`,
+    // Bounded at the next heading, and read for the FIRST version it names: the
+    // section opens with the current release in bold and demotes the previous
+    // ones to a table below it. "Mentions the version somewhere after the
+    // heading" was satisfied by the table row of a release that had already
+    // dropped off the top, or by any later section quoting it.
+    const rest = readme.slice(from + '## Changelog'.length);
+    const next = rest.search(/^## /m);
+    const section = next === -1 ? rest : rest.slice(0, next);
+    const first = /\b(\d+\.\d+\.\d+)\b/.exec(section)?.[1];
+    assert.equal(
+      first, version,
+      `README.md's changelog section leads with ${first ?? 'no version at all'}, not ${version}`,
     );
   });
 
@@ -156,7 +181,7 @@ describe('release metadata', () => {
     const files = readdirSync(join(ROOT, 'test', 'unit')).filter(f => f.endsWith('.test.ts'));
     // Call sites, so this is itself a floor on what the runner reports.
     const defined = files.reduce((sum, file) => {
-      const body = readFileSync(join(ROOT, 'test', 'unit', file), 'utf8');
+      const body = withoutComments(readFileSync(join(ROOT, 'test', 'unit', file), 'utf8'));
       return sum + (body.match(/(?:^|\s)(?:test|it)\(/g) ?? []).length;
     }, 0);
 

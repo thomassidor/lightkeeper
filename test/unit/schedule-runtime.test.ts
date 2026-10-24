@@ -61,6 +61,20 @@ function harness(options: {
   daylight?: { evaluate: () => { brightness: number; source: string } };
   /** The app-wide brightness scale. Absent is natural. */
   brightnessScale?: () => 'natural' | 'linear';
+  /** Why the key is invalid, when `credentialValid` is false. */
+  credentialFailure?: string;
+  /**
+   * What the bridge's sync reports beyond the references, or that it throws.
+   * Each is one of the verdicts reconciliation learns and assessHealth() must
+   * not paint over.
+   */
+  sync?: {
+    userEdited?: string[];
+    unsupported?: Array<{ bindingKey: string; reason: string }>;
+    throws?: Error;
+  };
+  /** Persistence of the learned references; absent always succeeds. */
+  onPlanChange?: () => Promise<void>;
 } = { plan: plan() }) {
   const devices = options.devices ?? [light('l1'), light('l2')];
   const writes: Array<{ deviceId: string; capability: string; value: unknown }> = [];
@@ -80,6 +94,7 @@ function harness(options: {
       getStatus: () => ({
         present: true,
         valid: options.credentialValid ?? true,
+        ...(options.credentialFailure ? { failure: options.credentialFailure } : {}),
       }),
     },
     async read() {
@@ -104,6 +119,7 @@ function harness(options: {
     reconcile: async (_deviceId: string, pass: () => Promise<unknown>) => pass(),
     async sync(request: unknown) {
       synced.push(request);
+      if (options.sync?.throws) throw options.sync.throws;
       const mapped = (request as any).mapped
         .filter((input: any) => !(options.onlyOnBoundary && String(input.key).endsWith(':off')));
       return {
@@ -115,7 +131,10 @@ function harness(options: {
           managedVersion: 1,
           createdAt: 0,
         })),
-        created: 2, deleted: 0, reused: 0, unsupported: [], userEdited: [], staleReplacements: [],
+        created: 2, deleted: 0, reused: 0,
+        unsupported: options.sync?.unsupported ?? [],
+        userEdited: options.sync?.userEdited ?? [],
+        staleReplacements: [],
       };
     },
     async removeAll() { return 0; },
@@ -133,7 +152,7 @@ function harness(options: {
     now: () => options.now ?? Date.UTC(2026, 7, 18, 20, 15),
     log: (...args: unknown[]) => logs.push(args.join(' ')),
     onStateChange: (state, detail) => states.push({ state, detail }),
-    onPlanChange: async () => { /* persistence is the device's job */ },
+    onPlanChange: options.onPlanChange ?? (async () => { /* persistence is the device's job */ }),
     // Absent unless a test asks, which is the shape a schedule with no daylight
     // response runs in — and the shape every other test in this file runs in.
     ...(options.daylight ? { daylight: options.daylight as any } : {}),
@@ -516,6 +535,32 @@ describe('flow reconciliation', () => {
     assert.equal(h.runtime.currentState, 'disabled');
   });
 
+  test('a paused schedule hands the bridge every Flow it wants, so none is deleted', async () => {
+    // "Reconciled" alone would pass with an empty wanted list — and an empty
+    // wanted list is how the bridge is told to delete a device's Flows (see
+    // "a schedule emptied of every window"). Pausing keeps them: the tile
+    // carries the switch that un-pauses, and recreating two Flows per window on
+    // every pause would churn the Flow list and lose any folder they were moved
+    // to. So the paused sync must want exactly what an enabled one would.
+    const paused = plan({
+      enabled: false,
+      entries: [
+        { id: 'a', onAt: 7 * 60, end: { kind: 'duration', minutes: 60 } },
+        { id: 'b', onAt: 22 * 60, end: { kind: 'duration', minutes: 90 } },
+      ],
+    });
+    const h = harness({ plan: paused, now: TUESDAY_1000 });
+    await h.runtime.start();
+
+    const request = h.synced[0] as any;
+    assert.equal(request.mapped.length, 2 * paused.entries.length);
+    assert.deepEqual(
+      request.mapped.map((m: any) => m.key),
+      ['sched:a:on', 'sched:a:off', 'sched:b:on', 'sched:b:off'],
+    );
+    assert.equal(h.runtime.currentPlan.managedFlows.length, 4, 'every reference is kept');
+  });
+
   test('no usable time card leaves the schedule in repair, and says what it saw', async () => {
     const h = harness({
       plan: plan(),
@@ -533,6 +578,98 @@ describe('flow reconciliation', () => {
     const h = harness({ plan: plan(), now: TUESDAY_1000, credentialValid: false });
     await h.runtime.start();
     assert.equal(h.runtime.currentState, 'needs_credential');
+  });
+});
+
+/**
+ * "A schedule runtime's health verdict never overrides reconciliation's."
+ *
+ * `start()` reconciles and THEN runs assessHealth(), which only looks at targets
+ * and would say 'ready' about a schedule whose Flows will never fire. Every
+ * reconcile branch that learns something is wrong sets `flowsHealthy = false`,
+ * and assessHealth() returns early on it. Only the missing time card was pinned;
+ * each test below asserts the state the device is LEFT in after the whole of
+ * start(), so deleting any one branch's `flowsHealthy = false` shows up as
+ * 'ready' painted over the verdict.
+ */
+describe('a reconcile verdict survives the health check that follows it', () => {
+  test('a Flow the user edited leaves the schedule in repair', async () => {
+    // Reconciliation will not overwrite it, so the edited Flow is what fires.
+    const h = harness({ plan: plan(), now: TUESDAY_1000, sync: { userEdited: ['f0'] } });
+    await h.runtime.start();
+
+    assert.equal(h.runtime.currentState, 'needs_repair');
+    assert.deepEqual(h.runtime.currentDetail, { key: 'state.flowEdited' });
+  });
+
+  test('a boundary the compiler declined leaves the schedule in repair, naming it', async () => {
+    // A window silently not firing is the failure; the tile must not say ready.
+    const h = harness({
+      plan: plan(),
+      now: TUESDAY_1000,
+      sync: { unsupported: [{ bindingKey: 'sched:a:off', reason: 'no card' }] },
+    });
+    await h.runtime.start();
+
+    assert.equal(h.runtime.currentState, 'needs_repair');
+    assert.deepEqual(h.runtime.currentDetail, {
+      key: 'state.unsupportedMapping',
+      tokens: { controls: 'sched:a:off' },
+    });
+  });
+
+  test('references that could not be stored leave the schedule in repair', async () => {
+    // References that never reached the store describe Flows nothing will find
+    // after a restart, and this device's Flows are the only thing that makes it
+    // fire at all.
+    const h = harness({
+      plan: plan(),
+      now: TUESDAY_1000,
+      onPlanChange: async () => { throw new Error('store write refused'); },
+    });
+    await h.runtime.start();
+
+    assert.equal(h.runtime.currentState, 'needs_repair');
+    assert.deepEqual(h.runtime.currentDetail, { key: 'state.persistFailed' });
+    assert.ok(h.logs.some(line => line.includes('store write refused')));
+  });
+
+  test('a sync that throws keeps the platform\'s own words on the tile', async () => {
+    // An unclassified platform error is reported as itself (redacted), because
+    // that message is what costs hours to rediscover (platform §3).
+    const message = '404 Not Found: FlowCardAction with ID homey:app:x:y';
+    const h = harness({ plan: plan(), now: TUESDAY_1000, sync: { throws: new Error(message) } });
+    await h.runtime.start();
+
+    assert.equal(h.runtime.currentState, 'needs_repair');
+    assert.deepEqual(h.runtime.currentDetail, { text: message });
+  });
+
+  test('a sync that throws on a dead key reports the key, with the classified reason', async () => {
+    // The mappings are fine and only the key is not: a different state and a
+    // different fix. `credential.expired` is the classifier's own key — the
+    // health check's credential leg would say `state.needsCredential`, and it
+    // does not even run here, because the failed sync stored no references.
+    const h = harness({
+      plan: plan(),
+      now: TUESDAY_1000,
+      credentialValid: false,
+      credentialFailure: 'session_expired',
+      sync: { throws: Object.assign(new Error('Unauthorized'), { statusCode: 401 }) },
+    });
+    await h.runtime.start();
+
+    assert.equal(h.runtime.currentState, 'needs_credential');
+    assert.deepEqual(h.runtime.currentDetail, { key: 'credential.expired' });
+  });
+
+  test('and a clean reconcile is what lets the health check say ready', async () => {
+    // The control: without it every test above would pass on a harness that
+    // could never reach 'ready' at all.
+    const h = harness({ plan: plan(), now: TUESDAY_1000 });
+    await h.runtime.start();
+
+    assert.equal(h.runtime.currentState, 'ready');
   });
 });
 

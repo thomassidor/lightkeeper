@@ -134,6 +134,62 @@ describe('what counts as a user edit', () => {
     }), expected), false);
   });
 
+  test('a trigger missing an argument we generated is an edit', () => {
+    // The superset above is forgiven; the SUBSET is not. A time we wrote that
+    // is no longer on the trigger is not something Homey echoes away, and with
+    // our template where we left it nothing excuses it. Absent keys are
+    // forgiven only when `triggerIdMayHaveMoved` says the card itself was
+    // reshaped (platform §9) — that half is shown here only as the contrast.
+    const timed: CompiledFlow = {
+      ...expected,
+      trigger: { id: 'homey:manager:cron:time_exactly', uri: 'x', args: { time: '22:00' } },
+    };
+    const live = asWritten({
+      trigger: { id: 'homey:manager:cron:time_exactly', uri: 'x', args: {} },
+    });
+    assert.equal(hasBeenUserEdited(live, timed), true);
+    assert.equal(hasBeenUserEdited(live, timed, { triggerIdMayHaveMoved: true }), false);
+  });
+
+  /**
+   * The token card's whole payload is its `droptoken` — a TOP-LEVEL property of
+   * the action, outside `args` (platform §5). A person who re-points it in the
+   * Flow editor at a different tag leaves the trigger and every argument we
+   * wrote untouched, so without this comparison the flow read as ours and was
+   * reused, feeding the controller a number from somewhere else entirely.
+   */
+  describe('a token-card flow', () => {
+    const TOKEN_CARD = `${APP_ID}:bridge_event_token`;
+    const tokenExpected: CompiledFlow = {
+      ...expected,
+      variantKey: 'token',
+      trigger: { id: 'homey:device:dial-1:rot_stopped', uri: 'x', args: { rotate_direction: 'clock_wise' } },
+      actions: [{
+        id: TOKEN_CARD,
+        uri: `homey:flowcardaction:${TOKEN_CARD}`,
+        group: 'then',
+        args: { controller: 'lk-ctrl-1755500000000-100001', event_key: 'dial|rotate' },
+        droptoken: 'steps',
+      }],
+    };
+    const tokenLive = (droptoken: unknown) => asWritten({
+      trigger: { ...tokenExpected.trigger, args: { rotate_direction: 'clock_wise' } },
+      actions: [{ ...tokenExpected.actions[0]!, droptoken }],
+    });
+
+    test('with the droptoken we wrote is untouched', () => {
+      assert.equal(hasBeenUserEdited(tokenLive('steps'), tokenExpected), false);
+    });
+
+    test('whose droptoken was re-pointed at another tag is an edit', () => {
+      assert.equal(hasBeenUserEdited(tokenLive('homey:device:other|measure_battery'), tokenExpected), true);
+    });
+
+    test('whose droptoken was cleared is an edit', () => {
+      assert.equal(hasBeenUserEdited(tokenLive(null), tokenExpected), true);
+    });
+  });
+
   test('no live flow is not an edit', () => {
     assert.equal(hasBeenUserEdited(null, expected), false);
     assert.equal(hasBeenUserEdited(undefined, expected), false);

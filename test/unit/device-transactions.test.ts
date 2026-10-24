@@ -154,6 +154,13 @@ class FakeOwner implements DeviceOwner<Plan, FakeRuntime> {
   readonly removedCapabilities: string[] = [];
   /** Set to make the NEXT addCapability fail. */
   failAddCapability: Error | null = null;
+  /**
+   * Capabilities whose every add / remove fails. By id rather than "the next
+   * call", so a test can fail one call in the MIDDLE of a sync and watch the
+   * calls after it still happen.
+   */
+  readonly failAddFor = new Set<string>();
+  readonly failRemoveFor = new Set<string>();
   /** Every value write, by capability — `capability` alone cannot see two. */
   readonly capabilityValues = new Map<string, unknown>();
 
@@ -196,11 +203,13 @@ class FakeOwner implements DeviceOwner<Plan, FakeRuntime> {
       this.failAddCapability = null;
       throw error;
     }
+    if (this.failAddFor.has(id)) throw new Error(`Homey would not add ${id}`);
     this.capabilities.add(id);
     this.addedCapabilities.push(id);
   }
 
   async removeCapability(id: string): Promise<void> {
+    if (this.failRemoveFor.has(id)) throw new Error(`Homey would not remove ${id}`);
     this.capabilities.delete(id);
     this.removedCapabilities.push(id);
   }
@@ -939,6 +948,43 @@ describe('capability rows', () => {
     assert.equal(h.owner.hasCapability(VALUE_CAPABILITIES.brightness), false);
     assert.ok(h.owner.logs.some(line => line.includes('Homey said no')));
     assert.equal(h.registry.get('lk-test-1')?.plan.value, 'v');
+    assert.equal(h.owner.unavailableText, null);
+  });
+
+  test('a failed add does not cost the capabilities after it their rows', async () => {
+    // Each add is in its OWN try/catch. One try around the loop would also keep
+    // init alive — the test above cannot tell the two apart — but every
+    // capability queued behind the first refusal would silently never be added,
+    // on every init, for as long as that one kept failing.
+    const h = harness();
+    h.owner.valueCapabilities = [VALUE_CAPABILITIES.brightness, VALUE_CAPABILITIES.temperature];
+    h.owner.failAddFor.add(VALUE_CAPABILITIES.brightness);
+    h.owner.store.set('plan', { enabled: true, value: 'v' });
+
+    await h.lifecycle.init();
+
+    assert.equal(h.owner.hasCapability(VALUE_CAPABILITIES.brightness), false);
+    assert.deepEqual(h.owner.addedCapabilities, [VALUE_CAPABILITIES.temperature]);
+    assert.equal(h.registry.get('lk-test-1')?.plan.value, 'v');
+  });
+
+  test('a capability that cannot be removed does not stop the device running either', async () => {
+    // The removal half carries the same promise as the add half: a stale row
+    // left on the tile is cosmetic, a device that refused to start over one has
+    // stopped driving the lights. And per call, so the next removal still runs.
+    const h = harness();
+    h.owner.capabilities.add(VALUE_CAPABILITIES.temperature);
+    h.owner.capabilities.add(VALUE_CAPABILITIES.colour);
+    h.owner.valueCapabilities = [VALUE_CAPABILITIES.brightness];
+    h.owner.failRemoveFor.add(VALUE_CAPABILITIES.temperature);
+    h.owner.store.set('plan', { enabled: true, value: 'v' });
+
+    await h.lifecycle.init();
+
+    assert.equal(h.owner.hasCapability(VALUE_CAPABILITIES.temperature), true, 'the refused row stays');
+    assert.deepEqual(h.owner.removedCapabilities, [VALUE_CAPABILITIES.colour]);
+    assert.ok(h.owner.logs.some(line => line.includes(`Homey would not remove ${VALUE_CAPABILITIES.temperature}`)));
+    assert.equal(h.registry.get('lk-test-1')?.plan.value, 'v', 'and the runtime is running');
     assert.equal(h.owner.unavailableText, null);
   });
 
