@@ -114,9 +114,11 @@ describe('onInit', () => {
 
   test('a device or zone change reaches every registry AND the sensor service', async () => {
     const { app, client, dispatched } = await boot();
+    // `noteCatalogChange`, the coalesced entry, not `onCatalogChange`: the
+    // service gathers a burst itself rather than re-reading per event.
     let luminance = 0;
-    const onCatalogChange = app.luminance.onCatalogChange.bind(app.luminance);
-    app.luminance.onCatalogChange = async () => { luminance += 1; return onCatalogChange(); };
+    const noteCatalogChange = app.luminance.noteCatalogChange.bind(app.luminance);
+    app.luminance.noteCatalogChange = () => { luminance += 1; noteCatalogChange(); };
     let curves = 0;
     let daylights = 0;
     app.curves.onCatalogChange = async () => { curves += 1; };

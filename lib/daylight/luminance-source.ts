@@ -64,6 +64,19 @@ export interface LuminanceDeps {
   log: (...args: unknown[]) => void;
 }
 
+/**
+ * How long a burst of catalogue changes is gathered before one metadata re-read.
+ *
+ * The same 500 ms the runtime registries coalesce over (`RuntimeRegistry`), and
+ * for the same reason: a single save of one of our own devices emits a
+ * `device.update`, and a Homey busy with its own devices may send many. This
+ * service used to re-read on every one of them, uncoalesced, and each re-read
+ * forced a full catalogue refresh because the event had just invalidated it.
+ * A dead sensor battery is now noticed half a second later; it is still
+ * noticed.
+ */
+export const CATALOG_COALESCE_MS = 500;
+
 export class LuminanceSource {
   private readonly sensors = new Map<string, Watched>();
   /** Serialised per sensor: a read-then-create is only safe if two callers cannot both read absent. */
@@ -73,6 +86,8 @@ export class LuminanceSource {
   private readonly timers: Timers;
   private stopped = false;
   private readonly offReplacement: Unsubscribe | undefined;
+  /** The pending coalesced re-read, held so `destroy()` can cancel it. */
+  private catalogTimer: unknown = null;
 
   constructor(private readonly deps: LuminanceDeps) {
     this.timers = withDefaults(deps.timers);
@@ -206,9 +221,32 @@ export class LuminanceSource {
     }
   }
 
+  /**
+   * The catalogue changed: re-read every watched sensor's metadata once the
+   * burst is over. What app.ts calls on every device and zone event; see
+   * `CATALOG_COALESCE_MS`.
+   *
+   * Nothing is armed while no sensor is watched. A sensor retained later reads
+   * its own metadata when it subscribes, so there would be nothing to re-read.
+   */
+  noteCatalogChange(): void {
+    if (this.stopped || this.catalogTimer !== null || this.sensors.size === 0) return;
+    this.catalogTimer = this.timers.setTimeout(() => {
+      this.catalogTimer = null;
+      fireAndForget(this.onCatalogChange(), this.deps.log, 'Luminance catalogue change');
+    }, CATALOG_COALESCE_MS);
+    // Like the retry timers: never what keeps a stopped process alive.
+    (this.catalogTimer as { unref?: () => void } | null)?.unref?.();
+  }
+
   /** Drop every subscription. The app-level backstop, called from onUninit. */
   async destroy(): Promise<void> {
     this.stopped = true;
+    // Before the first await, so a pending re-read cannot fire into a service
+    // that is tearing down — and so it is cancelled even if this never resumes
+    // (platform §17).
+    if (this.catalogTimer !== null) this.timers.clearTimeout(this.catalogTimer);
+    this.catalogTimer = null;
     await this.offReplacement?.();
     this.claims.clear();
     for (const id of [...this.sensors.keys()]) {

@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { LuminanceSource } from '../../lib/daylight/luminance-source';
+import { CATALOG_COALESCE_MS, LuminanceSource } from '../../lib/daylight/luminance-source';
 import type { DeviceCatalog } from '../../lib/device-catalog';
 import type { HomeyApiService } from '../../lib/homey-api-service';
 import { FakeTimers } from '../support/fake-timers';
@@ -34,7 +34,7 @@ interface FakeSensor {
   lux?: number | null;
 }
 
-function harness(sensors: FakeSensor[] = [{ id: 's1', lux: 100 }]) {
+function harness(sensors: FakeSensor[] = [{ id: 's1', lux: 100 }], timers?: FakeTimers) {
   /** deviceId -> the listener Homey would call. Absent means destroyed. */
   const listeners = new Map<string, (value: unknown) => void>();
   const subscribeCalls: string[] = [];
@@ -43,6 +43,7 @@ function harness(sensors: FakeSensor[] = [{ id: 's1', lux: 100 }]) {
   let now = 1_000_000;
   let present = [...sensors];
   let failSubscribe: string | null = null;
+  let metadataReads = 0;
 
   const catalogEntry = (sensor: FakeSensor) => ({
     id: sensor.id,
@@ -84,12 +85,16 @@ function harness(sensors: FakeSensor[] = [{ id: 's1', lux: 100 }]) {
 
   const catalog = {
     async device(id: string) {
+      metadataReads += 1;
       const found = present.find(s => s.id === id);
       return found === undefined ? undefined : catalogEntry(found);
     },
   } as unknown as DeviceCatalog;
 
-  const source = new LuminanceSource({ api, catalog, now: () => now, log: (...a) => logs.push(a.join(' ')) });
+  const source = new LuminanceSource({
+    api, catalog, now: () => now, log: (...a) => logs.push(a.join(' ')),
+    ...(timers ? { timers } : {}),
+  });
 
   return {
     source,
@@ -106,6 +111,8 @@ function harness(sensors: FakeSensor[] = [{ id: 's1', lux: 100 }]) {
       present = present.map(s => (s.id === id ? { ...s, available } : s));
     },
     failNextSubscribe(id: string) { failSubscribe = id; },
+    /** How many times the catalog has been asked about a sensor. */
+    metadataReads: () => metadataReads,
   };
 }
 
@@ -375,6 +382,64 @@ describe('LuminanceSource - the catalog, and failures', () => {
   });
 });
 
+
+/**
+ * app.ts calls `noteCatalogChange()` on every device and zone event. It used to
+ * call `onCatalogChange()` directly, so every event re-read every watched
+ * sensor and forced a full catalogue refresh, because the event had just
+ * invalidated the catalogue. Coalesced now, like the runtime registries.
+ */
+describe('LuminanceSource - coalesced catalogue changes', () => {
+  test('a burst of catalogue events costs one re-read, and still notices a dead sensor', async () => {
+    const timers = new FakeTimers();
+    const h = harness([{ id: 's1', lux: 100 }], timers);
+    await h.source.retain(['s1'], 'a');
+    const before = h.metadataReads();
+
+    for (let i = 0; i < 10; i += 1) h.source.noteCatalogChange();
+    assert.equal(timers.pending, 1, 'one pass armed for the whole burst');
+    await settle(4);
+    assert.equal(h.metadataReads(), before, 'nothing is re-read inside the window');
+
+    timers.advance(CATALOG_COALESCE_MS);
+    await settle(12);
+    assert.equal(h.metadataReads(), before + 1, 'one re-read for ten events');
+    assert.equal(timers.pending, 0);
+
+    h.setAvailable('s1', false);
+    for (let i = 0; i < 10; i += 1) h.source.noteCatalogChange();
+    timers.advance(CATALOG_COALESCE_MS);
+    await settle(12);
+    assert.equal(h.source.read('s1'), null, 'the battery died; the burst did not hide it');
+  });
+
+  test('nothing is armed while no sensor is watched', () => {
+    const timers = new FakeTimers();
+    const h = harness([{ id: 's1', lux: 100 }], timers);
+
+    h.source.noteCatalogChange();
+    assert.equal(timers.pending, 0);
+  });
+
+  /** Nothing survives teardown, and `destroy()` cancels before its first await (platform §17). */
+  test('destroy() cancels a pending re-read, synchronously', async () => {
+    const timers = new FakeTimers();
+    const h = harness([{ id: 's1', lux: 100 }], timers);
+    await h.source.retain(['s1'], 'a');
+    h.source.noteCatalogChange();
+    const before = h.metadataReads();
+
+    const destroying = h.source.destroy();
+    assert.equal(timers.pending, 0, 'cancelled before destroy() awaited anything');
+    await destroying;
+
+    timers.advance(CATALOG_COALESCE_MS);
+    await settle(12);
+    assert.equal(h.metadataReads(), before);
+    h.source.noteCatalogChange();
+    assert.equal(timers.pending, 0, 'and a stopped service arms nothing');
+  });
+});
 
 describe('sensor subscription recovery', () => {
   function recovering() {

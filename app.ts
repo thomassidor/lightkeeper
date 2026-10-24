@@ -376,7 +376,9 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       // sensor's availability arrives on these device events rather than over a
       // capability subscription, so without this a sensor whose battery died
       // went on being averaged with its last reading for as long as the app ran.
-      fireAndForget(this.luminance.onCatalogChange(), l, 'Luminance catalogue change');
+      // Coalesced like the registries are, inside the service: it used to
+      // re-read on every event, each re-read forcing a catalogue refresh.
+      this.luminance.noteCatalogChange();
     });
 
     // A stored key must be re-checked after every restart, or pairing asks for
