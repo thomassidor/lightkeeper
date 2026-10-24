@@ -7,7 +7,7 @@ import type { DeviceCatalog } from '../device-catalog';
 import type { SourceDiscoveryService } from '../source-discovery-service';
 import { FlowBridgeManager } from '../bridge/flow-bridge-manager';
 import { MappingEngine, intentForLightFunction } from '../mapping/mapping-engine';
-import { isLightkeeperPreset, type LightkeeperPreset, type MappingPreset }
+import { FUNCTION_CAPABILITY, isLightkeeperPreset, type LightkeeperPreset, type MappingPreset }
   from '../mapping/mapping-types';
 import {
   intentsFor, resolveSources, settingsFrom, type SourceRegistry,
@@ -56,6 +56,13 @@ function rampFor(intent: LightIntent): { kind: 'brightness' | 'temperature'; dir
  * `test/unit/mapping-and-state.test.ts` asserts the equivalence for every
  * function.
  */
+/**
+ * The most lights one Test may name: the stored-plan cap on a target list
+ * (`MAX_TARGET_DEVICES` in lib/validation/plans.ts), so a list the app could
+ * itself have stored is never refused.
+ */
+const MAX_TEST_TARGETS = 256;
+
 export function intentForFunction(
   func: LightFunction,
   behavior: ControllerBehavior,
@@ -430,13 +437,28 @@ export class ControllerRuntime {
     });
   }
 
-  /** Run one mapped function against its own targets, right now. */
+  /**
+   * Run one mapped function against its own targets, right now.
+   *
+   * Two callers reach this with arguments nobody on a screen typed: the pair
+   * session's `test` handler and the app API's `testControllerFunction` route,
+   * and both are scriptable (platform §14). So the two arguments are checked
+   * HERE, once, for both — see `testTargets` for the lights.
+   *
+   * `func` against the closed set by OWN property. `func in FUNCTION_CAPABILITY`
+   * walks the prototype, so `"toString"` passed, fell off
+   * `intentForLightFunction`'s switch (which has no default arm on purpose)
+   * and came back as an opaque TypeError from deep in the planner.
+   */
   async testFunction(
     func: LightFunction,
     deviceIds?: string[],
   ): Promise<{ writes: number; skipped: number; targets: number }> {
+    if (!Object.prototype.hasOwnProperty.call(FUNCTION_CAPABILITY, func)) {
+      throw new Error(`"${String(func)}" is not a light function`);
+    }
     const current = this.lifetime.current();
-    const targets = deviceIds && deviceIds.length ? deviceIds : this.targetIds;
+    const targets = this.testTargets(deviceIds);
 
     // Re-read live state first. The device catalog is cached and only
     // invalidates on Homey events, so a second Test would otherwise plan
@@ -476,6 +498,41 @@ export class ControllerRuntime {
     const intent = intentForFunction(func, this.profile.behavior, preset);
     const result = await this.runIntentNow(intent, targets);
     return { ...result, targets: targets.length };
+  }
+
+  /**
+   * The lights a Test may touch: the ones it named, but only those that are
+   * THIS device's — or all of this device's when it named none.
+   *
+   * The named list used to be taken as is. It was never intersected with
+   * `targetIds` and had no length: `Promise.all(targets.map(refresh))` issued
+   * one concurrent device read per entry, and each one left a target-cache
+   * entry behind — on a RUNNING controller, for the app route, so a few
+   * scripted calls grew that cache for the life of the runtime. A stranger
+   * stayed unwritten only because the planner happens to have no capability
+   * metadata for it, which is not a rule anybody wrote down. And it broke the
+   * one the live path does keep — `execute()` filters a rule's lights by
+   * `targetIds` — in the control whose purpose is to prove the live path.
+   *
+   * Filtered, like `execute()`, rather than refused per id: a rule's light that
+   * has since dropped out of the resolved targets should leave the Test to
+   * prove the rest. But a list that names lights and keeps NONE is refused
+   * rather than widened to "every light": that fallback is for a caller that
+   * named nothing, and reading "none of these are mine" as "all of mine" is
+   * the heuristic guess this app never makes. The cap is checked before any of
+   * that, so an oversized list costs nothing.
+   */
+  private testTargets(deviceIds: unknown): string[] {
+    if (deviceIds === undefined || deviceIds === null) return this.targetIds;
+    if (!Array.isArray(deviceIds)) throw new Error('deviceIds is not a list');
+    if (deviceIds.length === 0) return this.targetIds;
+    if (deviceIds.length > MAX_TEST_TARGETS) {
+      throw new Error(`deviceIds has more than ${MAX_TEST_TARGETS} entries`);
+    }
+    const named = new Set(deviceIds.filter((id): id is string => typeof id === 'string'));
+    const ours = this.targetIds.filter(id => named.has(id));
+    if (ours.length === 0) throw new Error('none of those lights belong to this controller');
+    return ours;
   }
 
   /** Rebuild targets, cache, engine and gate from the current profile. */

@@ -659,3 +659,54 @@ describe('the Test control leaves nothing running', () => {
     assert.deepEqual(r.client.writes, []);
   });
 });
+
+/**
+ * The Test control's two arguments are what a script can put anything in
+ * (platform §14): `func` is checked by OWN property, and `deviceIds` is kept to
+ * the controller's own lights and capped. It used to take both as sent: every
+ * named id cost a device read and a target-cache entry, without bound, and only
+ * the planner's lack of capability metadata for a stranger kept it unwritten.
+ */
+describe('the Test control refuses what the screen would never send', () => {
+  /** Every device the runtime reads, so a test can say which it never asked about. */
+  function watchReads(client: any): string[] {
+    const asked: string[] = [];
+    const read = client.devices.getDevice;
+    client.devices.getDevice = async (args: { id: string }) => { asked.push(args.id); return read(args); };
+    return asked;
+  }
+
+  test('an inherited name is not a job, and nothing is written', async () => {
+    const { session, client } = await readyForButtons();
+    for (const func of ['toString', 'constructor', '__proto__']) {
+      await assert.rejects(session.call('test', { func, deviceIds: null }),
+        { message: translate('errors.jobNotUsable') }, func);
+    }
+    assert.deepEqual(client.writes, []);
+  });
+
+  test('a light that is not this controller’s is never read or written', async () => {
+    const { session, client } = await readyForButtons();
+    const asked = watchReads(client);
+    await session.call('test', { func: 'on', deviceIds: ['l2', 'l3'] });
+    assert.deepEqual(client.writes.map(write => write.deviceId), ['l2'], 'the hall spot nobody chose');
+    assert.equal(asked.includes('l3'), false, 'nor even read');
+  });
+
+  test('a list naming only strangers is refused, not widened to every light', async () => {
+    const { session, client } = await readyForButtons();
+    await assert.rejects(session.call('test', { func: 'on', deviceIds: ['l3'] }), /none of those lights/);
+    assert.deepEqual(client.writes, []);
+  });
+
+  test('an oversized list is refused before any of it is read or written', async () => {
+    const { session, client } = await readyForButtons();
+    const asked = watchReads(client);
+    const huge = Array.from({ length: 10_000 }, (_, i) => `x${i}`);
+    await assert.rejects(session.call('test', { func: 'on', deviceIds: huge }), /more than 256/);
+    assert.deepEqual(client.writes, []);
+    // Building the ephemeral runtime reads its own two lamps; none of the
+    // ten thousand named ones is ever asked about.
+    assert.deepEqual(asked.filter(id => id.startsWith('x')), []);
+  });
+});

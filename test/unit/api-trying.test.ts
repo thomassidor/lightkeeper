@@ -457,3 +457,19 @@ describe('POST /controllers/:id/test', () => {
     assert.deepEqual(recorded.functions, []);
   });
 });
+
+describe('POST /controllers/:id/test refuses an inherited name', () => {
+  test('"toString" and friends are not light functions', async () => {
+    // `func in FUNCTION_CAPABILITY` walked the prototype and let these through,
+    // to the TypeError the route's own comment said it prevented.
+    const { homey: h, recorded } = homey({ controllers: [CONTROLLER_ID] });
+    for (const func of ['toString', 'constructor', 'hasOwnProperty', '__proto__']) {
+      await assert.rejects(
+        () => api.testControllerFunction({ homey: h, params: { id: CONTROLLER_ID }, body: { func } }),
+        /is not a light function/,
+        func,
+      );
+    }
+    assert.deepEqual(recorded.functions, []);
+  });
+});

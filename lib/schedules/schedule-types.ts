@@ -128,7 +128,9 @@ export function sanitiseEntries(
 ): { entries: ScheduleEntry[]; dropped: Array<{ index: number; reason: string }> } {
   const entries: ScheduleEntry[] = [];
   const dropped: Array<{ index: number; reason: string }> = [];
-  const list = Array.isArray(raw) ? raw : [];
+  const all = Array.isArray(raw) ? raw : [];
+  const list = all.slice(0, MAX_INCOMING_ENTRIES);
+  const unread = all.length - list.length;
 
   list.forEach((candidate, index) => {
     const drop = (reason: string) => dropped.push({ index, reason });
@@ -195,8 +197,24 @@ export function sanitiseEntries(
     entries.push(entry);
   });
 
+  if (unread > 0) {
+    dropped.push({ index: MAX_INCOMING_ENTRIES, reason: `${unread} more row(s) past the first ${MAX_INCOMING_ENTRIES} were not read` });
+  }
   return { entries, dropped };
 }
+
+/**
+ * How many incoming rows `sanitiseEntries` reads one by one: four times the cap.
+ *
+ * Generous on purpose — a screen that sent a few rows over the cap, or a few
+ * malformed ones among twelve good ones, still gets every one of them named
+ * back. What it bounds is the rest: the rows arrive over a pair session (or the
+ * app API's `setScheduleEntries`), both scriptable (platform §14), and walking
+ * a 100 000-row list produced 100 000 `dropped` entries and as many log lines
+ * in the driver, for a result that can only ever hold twelve. Past this, the
+ * remainder is one row saying how many were not read.
+ */
+export const MAX_INCOMING_ENTRIES = MAX_ENTRIES * 4;
 
 /**
  * Which days the schedule runs, from whatever the screen sent.

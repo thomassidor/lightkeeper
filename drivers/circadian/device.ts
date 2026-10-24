@@ -46,6 +46,8 @@ import type { Transition } from '../../lib/support/interpolate';
 module.exports = class CircadianDevice
   extends LightkeeperDevice<SimpleCircadianPlan, CircadianRuntime, CircadianPlan> {
 
+  /** What `mintDeviceId` put in this device's id; `DeviceLifecycle` refuses another kind's. */
+  readonly idKind = 'circ' as const;
   readonly storeKey = 'circadian';
   readonly missingKey = 'state.noCurve';
   override readonly availableWhenDisabled = true;
