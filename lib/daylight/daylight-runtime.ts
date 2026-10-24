@@ -77,6 +77,13 @@ export interface DaylightRuntimeDeps {
   displayName: () => string;
   now?: () => number;
   /**
+   * Timers for the write queue's rate limit and the implied-on check, beside
+   * `now` above (which wins over `timers.now` when both are given). Absent
+   * means real timers, which is what the app passes. See the schedule
+   * runtime's for why a faked clock alone was not enough.
+   */
+  timers?: Partial<Timers>;
+  /**
    * The app-wide `BrightnessScale`, read every pass so a change on the settings
    * page lands at the next tick without a restart. Absent means the natural
    * scale; the app always supplies it, and most test rigs leave it out.
@@ -314,10 +321,10 @@ export class DaylightRuntime {
     // Constructor BODY, like `timers` below: a field initialiser runs before
     // the parameter property `deps` is assigned.
     this.visible = new VisibleState((state, detail) => deps.onStateChange(state, detail));
-    this.timers = withDefaults({ ...(deps.now !== undefined ? { now: deps.now } : {}) });
+    this.timers = withDefaults({ ...deps.timers, ...(deps.now !== undefined ? { now: deps.now } : {}) });
     this.resolver = new TargetResolver(deps.catalog);
     this.sensorClaim = new SensorClaim(deps.luminance, controllerId);
-    this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log, { now: () => this.now() });
+    this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log, this.timers);
     if (deps.onWriteResult) this.adapter.setWriteSink(entry => deps.onWriteResult?.({ ...entry, controllerId: this.controllerId }));
   }
 
@@ -406,6 +413,9 @@ export class DaylightRuntime {
 
     this.scheduler = new CommandScheduler({
       minWriteIntervalMs: DEFAULT_BEHAVIOR.minWriteIntervalMs,
+      setTimeout: this.timers.setTimeout,
+      clearTimeout: this.timers.clearTimeout,
+      now: this.timers.now,
       onError: (deviceId, capability, error) =>
         this.deps.log(`Write failed on ${deviceId}/${capability}:`, messageOf(error)),
     }, (deviceId, capability, value, options) =>
@@ -426,23 +436,26 @@ export class DaylightRuntime {
     // over the subscriptions below, and re-reading every target every minute
     // would put a round trip per light per minute into an app that otherwise
     // only talks to Homey when something happens.
-    await Promise.all(this.targetIds.map(id => this.adapter.refresh(id)));
-    if (!current()) return;
-    await this.subscribeAll();
+    await this.subscribeAll({ prime: true });
     if (!current()) return;
   }
 
-  private async subscribeAll(): Promise<void> {
+  private async subscribeAll(options: { prime?: boolean } = {}): Promise<void> {
     // Nothing to watch on a device that writes to no lamp, and worse than idle
     // if left: `noteOverride` files every report it has no write of ours to
     // compare with as an override. The same argument as the circadian runtime's,
     // and it covers a PAUSED device too: resuming restarts the runtime through
     // `updatePlan`, which subscribes again.
-    if (!this.plan.enabled || !keepsLightsUpdated(this.plan)) return;
-    for (const deviceId of this.targetIds) {
-      await this.adapter.subscribe(deviceId, WATCHED, (id, capability, value, external) =>
-        this.onCapabilityChange(id, capability, value, external));
+    if (!this.plan.enabled || !keepsLightsUpdated(this.plan)) {
+      // The one-time read stays without the subscriptions, as on a curve.
+      if (options.prime) await Promise.all(this.targetIds.map(id => this.adapter.refresh(id)));
+      return;
     }
+    // One read per lamp for both, several lamps at a time: see
+    // `LightTargetAdapter.subscribeMany`.
+    await this.adapter.subscribeMany(this.targetIds, WATCHED,
+      (id, capability, value, external) => this.onCapabilityChange(id, capability, value, external),
+      options);
   }
 
   /**
@@ -763,7 +776,7 @@ export class DaylightRuntime {
     }
 
     this.lastAction = action;
-    this.history.actions.add(action);
+    this.history.action(action);
 
     if (awaitedCompletion) {
       await this.scheduler.drain();
@@ -780,7 +793,7 @@ export class DaylightRuntime {
     this.lastAction = { at: this.now(), reason, detail, writes: 0, skipped,
       targets: this.targetIds.map(deviceId => ({ deviceId, status: 'inactive', commands: 0 })),
     };
-    this.history.actions.add(this.lastAction);
+    this.history.action(this.lastAction);
     return { writes: 0, skipped };
   }
 
@@ -1155,9 +1168,7 @@ export class DaylightRuntime {
       this.snapshot = next;
       this.targetNames = next.names;
       this.resolver.primeCache(next.devices, this.cache);
-      await Promise.all(next.ids.map(id => this.adapter.refresh(id)));
-      if (!current()) return;
-      await this.subscribeAll();
+      await this.subscribeAll({ prime: true });
       if (!current()) return;
       this.deps.log(`Daylight targets re-resolved: ${next.ids.length} light(s)`);
 
@@ -1204,6 +1215,10 @@ export class DaylightRuntime {
   async stop(): Promise<void> {
     this.scheduler?.stop();
     this.adapter.suspend();
+    // A sensor subscription waiting to be retried is a timer, and timers are
+    // disarmed before the first await (platform §17; see the controller's
+    // `stop()`). The claim itself is still released in the cleanup.
+    this.sensorClaim.stopRetrying();
     return this.lifetime.stop(async () => {
       this.scheduler?.stop();
       this.scheduler = null;

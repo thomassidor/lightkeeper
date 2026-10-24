@@ -35,6 +35,7 @@ import {
   type SchedulePlan,
 } from './schedule-types';
 import { messageOf } from '../support/homey-errors';
+import { withDefaults, type Timers } from '../support/timers';
 import { VisibleState } from '../runtime/visible-state';
 import { ValueBoard, VALUE_CAPABILITIES, type PublishedValues } from '../runtime/published-values';
 
@@ -66,6 +67,15 @@ export interface ScheduleRuntimeDeps {
   /** The device's name, which appears in the generated Flows' titles. */
   displayName: () => string;
   now?: () => number;
+  /**
+   * Timers for the write queue's rate limit and the implied-on check, beside
+   * `now` above (which wins over `timers.now` when both are given, so every
+   * existing caller keeps its clock). Absent means real timers, which is what
+   * the app passes. Without this a test that faked the clock still had the
+   * queue's 200 ms wait on the real one, and could neither see a rate-limited
+   * write nor prove stop() left nothing armed.
+   */
+  timers?: Partial<Timers>;
   /**
    * The app-wide `BrightnessScale`, read at every use so a change on the
    * settings page reaches the next window without a restart. Absent means the
@@ -174,7 +184,8 @@ export interface ScheduleDiagnostics {
 
 export class ScheduleRuntime {
   private readonly lifetime = new RuntimeLifetime();
-  private readonly cache = new TargetStateCache();
+  private readonly timers: Timers;
+  private readonly cache = new TargetStateCache(() => this.timers.now());
   private readonly adapter: LightTargetAdapter;
   private readonly resolver: TargetResolver;
   private scheduler: CommandScheduler | null = null;
@@ -212,7 +223,8 @@ export class ScheduleRuntime {
     // Constructor BODY, like `timers` below: a field initialiser runs before
     // the parameter property `deps` is assigned.
     this.visible = new VisibleState((state, detail) => deps.onStateChange(state, detail));
-    this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log);
+    this.timers = withDefaults({ ...deps.timers, ...(deps.now !== undefined ? { now: deps.now } : {}) });
+    this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log, this.timers);
     if (deps.onWriteResult) this.adapter.setWriteSink(entry => deps.onWriteResult?.({ ...entry, controllerId: this.controllerId }));
     this.resolver = new TargetResolver(deps.catalog);
   }
@@ -284,7 +296,7 @@ export class ScheduleRuntime {
   }
 
   private now(): number {
-    return this.deps.now ? this.deps.now() : Date.now();
+    return this.timers.now();
   }
 
   private scale(): BrightnessScale {
@@ -354,6 +366,9 @@ export class ScheduleRuntime {
 
     this.scheduler = new CommandScheduler({
       minWriteIntervalMs: DEFAULT_BEHAVIOR.minWriteIntervalMs,
+      setTimeout: this.timers.setTimeout,
+      clearTimeout: this.timers.clearTimeout,
+      now: this.timers.now,
       onError: (deviceId, capability, error) =>
         this.deps.log(`Write failed on ${deviceId}/${capability}:`, messageOf(error)),
     }, (deviceId, capability, value, options) =>
@@ -941,7 +956,7 @@ export class ScheduleRuntime {
   /** Remove only what this schedule demonstrably owns. */
   async destroy(): Promise<void> {
     await this.stop();
-    await this.deps.bridge.removeAll(this.plan.managedFlows);
+    await this.deps.bridge.removeAll(this.controllerId, this.plan.managedFlows);
   }
 
   /** See `VisibleState`, which owns the when-did-it-move rule. */

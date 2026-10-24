@@ -2,61 +2,37 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  RampEngine, canRamp, HARD_STOP_MS, TICK_MS, type RampStopReason, type ActiveRamp,
+  RampEngine, canRamp, HARD_STOP_MS, TICK_MS, type RampStopReason, type ActiveRamp, type RampOptions,
 } from '../../lib/outputs/ramp-engine';
 import type { LightIntent } from '../../lib/outputs/light-intent';
+import { FakeTimers } from '../support/fake-timers';
 
-class FakeClock {
-  private seq = 0;
-  private intervals = new Map<number, { fn: () => void; every: number; next: number }>();
-  now = 0;
-
-  setInterval = (fn: () => void, ms: number): unknown => {
-    const id = ++this.seq;
-    this.intervals.set(id, { fn, every: ms, next: this.now + ms });
-    return id;
-  };
-
-  clearInterval = (handle: unknown): void => { this.intervals.delete(handle as number); };
-  nowFn = (): number => this.now;
-
-  advance(ms: number): void {
-    const target = this.now + ms;
-    // Step tick by tick so the engine's own hard-stop check runs each time.
-    while (true) {
-      const due = [...this.intervals.entries()]
-        .filter(([, timer]) => timer.next <= target)
-        .sort((a, b) => a[1].next - b[1].next)[0];
-      if (!due) break;
-
-      const [id, timer] = due;
-      this.now = timer.next;
-      timer.next += timer.every;
-      timer.fn();
-      if (!this.intervals.has(id)) continue;
-    }
-    this.now = target;
-  }
-}
-
-function harness(ratePerSecond = 0.6) {
-  const clock = new FakeClock();
+/**
+ * `extra` is spread into the options as given, so a test can hand the engine an
+ * option it does not declare and show it is ignored. `stoppedAt` is the fake
+ * clock's reading at each stop, beside `stops` rather than inside it so the
+ * existing exact matches on `stops` stay as they are.
+ */
+function harness(ratePerSecond = 0.6, extra: Record<string, unknown> = {}) {
+  const clock = new FakeTimers();
   const ticks: LightIntent[] = [];
   const ramps: ActiveRamp[] = [];
   const stops: Array<{ controlId: string; reason: RampStopReason }> = [];
+  const stoppedAt: number[] = [];
 
   const engine = new RampEngine(
     (intent, ramp) => { ticks.push(intent); ramps.push(ramp); },
-    (controlId, reason) => stops.push({ controlId, reason }),
+    (controlId, reason) => { stops.push({ controlId, reason }); stoppedAt.push(clock.now()); },
     {
       ratePerSecond,
       setInterval: clock.setInterval,
       clearInterval: clock.clearInterval,
-      now: clock.nowFn,
-    },
+      now: clock.now,
+      ...extra,
+    } as RampOptions,
   );
 
-  return { clock, ticks, ramps, stops, engine };
+  return { clock, ticks, ramps, stops, stoppedAt, engine };
 }
 
 describe('ramp engine', () => {
@@ -125,8 +101,16 @@ describe('ramp engine', () => {
     assert.deepEqual(stops, [{ controlId: 'up', reason: 'released' }]);
   });
 
+  test('the hard stop is ten seconds, written down here and not derived', () => {
+    // A product guarantee (CLAUDE.md, "Ramps hard-stop after 10 seconds"), so
+    // the number is stated rather than read back from the constant: every other
+    // test here is relative to HARD_STOP_MS and would follow it anywhere.
+    assert.equal(HARD_STOP_MS, 10_000);
+    assert.equal(TICK_MS, 100);
+  });
+
   test('MISSING RELEASE still terminates at the 10 second hard stop', () => {
-    const { clock, ticks, stops, engine } = harness();
+    const { clock, ticks, stops, stoppedAt, engine } = harness();
     engine.start('up', 'brightness', 1, ['l1']);
 
     // The release never arrives — routine on Zigbee.
@@ -134,19 +118,30 @@ describe('ramp engine', () => {
 
     assert.deepEqual(stops, [{ controlId: 'up', reason: 'hard_stop' }]);
     assert.equal(engine.activeCount, 0);
-    assert.ok(ticks.length <= HARD_STOP_MS / TICK_MS,
-      'must not emit a single tick beyond the hard stop');
+    // Exactly: ticks at 100 … 9 900 ms emit, and the one AT 10 000 ms is the
+    // stop. The check is `>=` and runs before emitting, so a ramp cannot run
+    // past the limit even by one tick — `<= 100` let exactly that tick through.
+    assert.equal(ticks.length, 99, 'must not emit a single tick at or beyond the hard stop');
+    assert.deepEqual(stoppedAt, [10_000]);
   });
 
   test('the hard stop is not configurable', () => {
-    // Constructing with any options must not change it.
-    const { clock, stops, engine } = harness(5);
+    // Every way a caller could plausibly try to lengthen it — a faster rate and
+    // option names that read like a setting — is ignored. The engine reads no
+    // behaviour or settings, and an option it does not declare must not become
+    // one it honours.
+    const { clock, ticks, stops, stoppedAt, engine } = harness(5, {
+      hardStopMs: 60_000, hardStop: 60_000, maxDurationMs: 60_000, HARD_STOP_MS: 60_000,
+    });
     engine.start('up', 'brightness', 1, ['l1']);
-    clock.advance(HARD_STOP_MS - TICK_MS);
+    clock.advance(10_000 - TICK_MS);
     assert.equal(stops.length, 0, 'still ramping just before the limit');
+    assert.equal(ticks.length, 99);
 
-    clock.advance(TICK_MS * 2);
+    clock.advance(TICK_MS);
     assert.deepEqual(stops.map(s => s.reason), ['hard_stop']);
+    assert.deepEqual(stoppedAt, [10_000], 'at ten seconds exactly, whatever was passed');
+    assert.equal(ticks.length, 99, 'and the stopping tick emitted nothing');
   });
 
   test('any other input from the same controller stops the ramp', () => {

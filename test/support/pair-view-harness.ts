@@ -578,9 +578,19 @@ export function runPairView(html: string, options: ViewOptions = {}): ViewRun {
     createDocumentFragment: () => makeNode('#fragment'),
     createTextNode: textNode,
     documentElement: makeNode('html'),
-    // `insertAdjacentHTML` is the poller's give-up path: a view that never finds
-    // Homey says so in the container's own document rather than staying blank.
-    body: Object.assign(makeNode('body'), { insertAdjacentHTML: () => undefined }),
+    // The poller's give-up path: a view that never finds Homey says so in the
+    // container's own document rather than staying blank. It builds a banner
+    // NODE and puts it in with `document.body.insertBefore(banner, firstChild)`
+    // — it used `insertAdjacentHTML` until that, the last HTML sink in any view,
+    // was replaced (webview-safety.test.ts now refuses every one). Order among
+    // body's children is not modelled: the banner is appended, which is enough
+    // for a test to find its text.
+    body: (() => {
+      const body = makeNode('body');
+      return Object.assign(body, {
+        insertBefore: (node: FakeNode, _before: FakeNode | null) => body.appendChild(node),
+      });
+    })(),
     querySelectorAll: (selector: string) => {
       const cls = /^\.([\w-]+)$/.exec(selector);
       return root.descendants().filter(node => (cls

@@ -196,3 +196,37 @@ describe('the opening sweep is exact about what it deletes', () => {
     assert.deepEqual(c.deleted, ['probe-1'], 'the probe was still created and cleaned up');
   });
 });
+
+/**
+ * "The API key is never logged", on the probe's one log line that carries an
+ * error.
+ *
+ * The probe runs on the RAW write client, outside `withWriteClient` and its
+ * sanitiser, so a failed delete arrives here exactly as the API phrased it — and
+ * an API that quotes the request back quotes the token with it. The line must
+ * say what was left behind and keep the reason, redacted. Both the whole key and
+ * the bare secret segment are searched for, because a message can carry either.
+ */
+describe('a failed clean-up logs what it left, never the key', () => {
+  /** NOT A REAL KEY: synthetic, shaped only so a redactor would recognise it. */
+  const KEY = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:11111111-2222-3333-4444-555555555555:'
+    + '0123456789abcdef0123456789abcdef01234567';
+  const SECRET = '0123456789abcdef0123456789abcdef01234567';
+  const leaks = (text: string) => text.includes(SECRET) || text.includes(KEY);
+
+  test('a delete refused with the key quoted back is logged redacted', async () => {
+    const logs: string[] = [];
+    const c = client({
+      failDelete: new Error(`403 Forbidden: DELETE /api/manager/flow/flowfolder?token=${KEY} (bearer ${SECRET})`),
+    });
+
+    await flowWriteProbe(c as any, (...args) => logs.push(args.map(String).join(' ')));
+
+    const line = logs.find(entry => /Left the permission-check folder behind/.test(entry));
+    assert.ok(line, 'the folder left behind is still reported');
+    assert.match(line, /403 Forbidden/, 'and the reason survives the redaction');
+    for (const entry of logs) {
+      assert.equal(leaks(entry), false, `a log line leaked the key: ${entry}`);
+    }
+  });
+});

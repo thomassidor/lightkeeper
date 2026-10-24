@@ -175,6 +175,7 @@ export function driverApp(client: FakeApiClient, options: DriverAppOptions = {})
     luminance: {
       retain: async (ids: string[], owner: string) => { record.retained.push({ ids: [...ids], owner }); },
       release: async (owner: string) => { record.released.push(owner); },
+      stopRetrying: () => { /* the fake arms no retry timers */ },
       week: async () => options.week ?? null,
     },
   };

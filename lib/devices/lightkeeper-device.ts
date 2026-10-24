@@ -98,7 +98,7 @@ export abstract class LightkeeperDevice<
   }
 
   async removeFlows(refs: unknown[]): Promise<number> {
-    return this.app.bridge.removeAll(refs);
+    return this.app.bridge.removeAll(this.deviceId, refs);
   }
 
   forgetFlowJournal(): void {

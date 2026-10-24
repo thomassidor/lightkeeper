@@ -22,6 +22,8 @@ import type { ScheduleRuntime } from '../../lib/schedules/schedule-runtime';
  */
 module.exports = class ScheduleDevice extends LightkeeperDevice<SchedulePlan, ScheduleRuntime> {
 
+  /** What `mintDeviceId` put in this device's id; `DeviceLifecycle` refuses another kind's. */
+  readonly idKind = 'sched' as const;
   readonly storeKey = 'schedule';
   readonly missingKey = 'state.noSchedule';
   override readonly availableWhenDisabled = true;

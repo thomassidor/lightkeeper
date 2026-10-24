@@ -26,6 +26,19 @@ import type { ManagedFlowReference } from '../../lib/profiles/controller-profile
 const APP_ID = 'com.thomassidor.lightkeeper';
 const cardId = (short: string) => `${APP_ID}:${short}`;
 
+/**
+ * The by-name lookup `bridgeCards()` makes first, answered as a Homey does:
+ * our own card echoed back (platform §3), or a 404. Without it every pass in
+ * this file ran the enumeration FALLBACK rather than the path production takes.
+ */
+function cardByName(actions: Record<string, { id: string; uri: string }>, uri: string, shortId: string) {
+  const card = uri === `homey:app:${APP_ID}`
+    ? Object.values(actions).find(c => c.id === cardId(shortId))
+    : undefined;
+  if (!card) throw Object.assign(new Error(`404 Not Found: FlowCardAction with ID ${shortId}`), { statusCode: 404 });
+  return card;
+}
+
 interface HarnessOptions {
   /** Flows already live on the Homey, keyed by id. */
   flows?: Record<string, any>;
@@ -37,6 +50,11 @@ interface HarnessOptions {
   notFoundOnDeleteOf?: Set<string>;
   /** Flow folders already on the Homey, keyed by id. */
   folders?: Record<string, any>;
+  /**
+   * `false` makes the by-name card lookup 404, so `bridgeCards()` has to take
+   * its enumeration fallback. Default is a Homey that answers by name.
+   */
+  cardsByName?: boolean;
 }
 
 function harness(options: HarnessOptions = {}) {
@@ -48,6 +66,7 @@ function harness(options: HarnessOptions = {}) {
   const foldersDeleted: string[] = [];
   const logs: string[] = [];
   let createCalls = 0;
+  let enumerations = 0;
   let nextFlowId = 1;
   let nextFolderId = 1;
 
@@ -59,7 +78,14 @@ function harness(options: HarnessOptions = {}) {
 
   const client = {
     flow: {
-      getFlowCardActions: async () => actions,
+      getFlowCardAction: async ({ uri, id }: { uri: string; id: string }) => {
+        if (options.cardsByName === false) throw Object.assign(new Error('404 Not Found'), { statusCode: 404 });
+        return cardByName(actions, uri, id);
+      },
+      getFlowCardActions: async () => {
+        enumerations += 1;
+        return actions;
+      },
       getFlows: async () => live,
       getFlowFolders: async () => folders,
       createFlowFolder: async ({ flowfolder }: { flowfolder: any }) => {
@@ -115,6 +141,7 @@ function harness(options: HarnessOptions = {}) {
   return {
     live, folders, created, deleted, foldersCreated, foldersDeleted, logs,
     get createCalls() { return createCalls; },
+    get enumerations() { return enumerations; },
     bridge: new FlowBridgeManager(api, APP_ID, (...args) => logs.push(args.join(' '))),
   };
 }
@@ -678,5 +705,40 @@ describe('an empty desired set reconciles to empty', () => {
       h.foldersCreated, ['Lightkeeper', 'Evening lights'],
       'the app root, then the device folder inside it',
     );
+  });
+});
+
+/**
+ * How a full pass finds the bridge's own three cards.
+ *
+ * Every harness in the flow-bridge files used to lack `getFlowCardAction`, so
+ * every pass they ran took the enumeration FALLBACK — reading the whole action
+ * catalogue, which platform §15 measured at ~12 MB on a real Homey — and the
+ * path production normally takes was exercised by one unit test of
+ * `bridgeCards()` alone. The harness now answers by name, as a Homey does, and
+ * these two say which path ran.
+ */
+describe('finding the bridge cards in a full pass', () => {
+  test('a normal pass asks for its cards by name and never reads the action catalogue', async () => {
+    const h = harness();
+
+    const result = await h.bridge.sync(request({ mapped: [scheduleInput('sched:0:on', '22:00')] }));
+
+    assert.equal(result.created, 1);
+    assert.equal(h.enumerations, 0, 'the catalogue read is the fallback, not the first thing tried');
+  });
+
+  test('a Homey that will not answer by name still gets its flows, through the fallback', async () => {
+    // The fallback is what keeps platform §3 honest when the direct lookup
+    // misses: enumerate, and echo back the card the Homey has.
+    const h = harness({ cardsByName: false });
+
+    const result = await h.bridge.sync(request({ mapped: [scheduleInput('sched:0:on', '22:00')] }));
+
+    assert.equal(result.created, 1);
+    assert.equal(h.enumerations, 1);
+    const flow = h.live[result.references[0]!.flowId];
+    assert.equal(flow.actions[0].id, cardId('bridge_event'), 'the enumerated card, echoed back');
+    assert.ok(h.logs.some(line => line.includes('Falling back to enumerating')));
   });
 });

@@ -224,10 +224,24 @@ export interface SanitisedCurve {
  * `adjustBrightness` is an INPUT and an OUTPUT: the caller asks for it, and this
  * returns whether the surviving points can actually support it.
  */
+/**
+ * How many incoming rows `sanitiseCurve` reads one by one: four times the cap.
+ *
+ * The same bound, and the same argument, as `MAX_INCOMING_ENTRIES` beside
+ * `sanitiseEntries`: a few rows over the cap are still each named back, and a
+ * scripted 100 000-row list (platform §14) is no longer walked — with an
+ * O(points) duplicate check per row and a driver log line per drop — for a
+ * result that can only ever hold eight.
+ */
+export const MAX_INCOMING_POINTS = MAX_POINTS * 4;
+
 export function sanitiseCurve(raw: unknown, adjustBrightness = false): SanitisedCurve {
   const points: CircadianPoint[] = [];
   const dropped: Array<{ index: number; reason: string }> = [];
-  const list = Array.isArray(raw) ? raw : [];
+  // A bounded walk, for the reason `MAX_INCOMING_POINTS` gives.
+  const all = Array.isArray(raw) ? raw : [];
+  const list = all.slice(0, MAX_INCOMING_POINTS);
+  const unread = all.length - list.length;
 
   list.forEach((candidate, index) => {
     const drop = (reason: string) => dropped.push({ index, reason });
@@ -287,6 +301,9 @@ export function sanitiseCurve(raw: unknown, adjustBrightness = false): Sanitised
       ...(color !== undefined ? { color } : {}),
     });
   });
+  if (unread > 0) {
+    dropped.push({ index: MAX_INCOMING_POINTS, reason: `${unread} more row(s) past the first ${MAX_INCOMING_POINTS} were not read` });
+  }
 
   points.sort((a, b) => resolvedMinute(a) - resolvedMinute(b));
 

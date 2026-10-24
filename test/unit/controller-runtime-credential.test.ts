@@ -95,8 +95,11 @@ function profile(): ControllerProfile {
  * monitor is the REAL one, so the needs_credential rule under test is the
  * shipping rule rather than a restatement of it.
  */
-function harness(options: { sourcePresent?: boolean } = {}) {
+function harness(options: { sourcePresent?: boolean; monitor?: boolean } = {}) {
   let credentialValid = false;
+  /** How many of the next `discover` calls throw — a busy Homey's catalogue read. */
+  let failDiscover = 0;
+  const removed: Array<{ owner: string; refs: unknown[] }> = [];
   let sourcePresent = options.sourcePresent ?? true;
   const states: Array<{ state: ControllerState; detail?: unknown }> = [];
   const syncCalls: unknown[] = [];
@@ -118,7 +121,13 @@ function harness(options: { sourcePresent?: boolean } = {}) {
   } as unknown as DeviceCatalog;
 
   const discovery = {
-    discover: async () => ({ inputs: [input()], fingerprint: FINGERPRINT, rejected: [] }),
+    discover: async () => {
+      if (failDiscover > 0) {
+        failDiscover -= 1;
+        throw new Error('trigger card catalogue timed out');
+      }
+      return { inputs: [input()], fingerprint: FINGERPRINT, rejected: [] };
+    },
   } as unknown as SourceDiscoveryService;
 
   const bridge = {
@@ -137,6 +146,10 @@ function harness(options: { sourcePresent?: boolean } = {}) {
         created: 0, reused: 1, deleted: 0, userEdited, staleReplacements: [],
         unsupported,
       };
+    },
+    removeAll: async (owner: string, refs: unknown[]) => {
+      removed.push({ owner, refs: [...refs] });
+      return refs.length;
     },
   } as unknown as FlowBridgeManager;
 
@@ -158,14 +171,21 @@ function harness(options: { sourcePresent?: boolean } = {}) {
 
   const health = new HealthMonitor(catalog, discovery, () => credentialValid);
 
+  // `monitor: false` is the manager the ephemeral rigs build: no HealthMonitor
+  // at all, so a recovered key has only the reconcile's word to go on.
   const manager = new ControllerRuntimeManager({
-    api, catalog, discovery, bridge, health, log: () => { /* quiet */ },
+    api, catalog, discovery, bridge,
+    ...(options.monitor === false ? {} : { health }),
+    log: () => { /* quiet */ },
   });
 
   return {
     manager,
     states,
     syncCalls,
+    removed,
+    /** The next `n` health checks cannot read the remote's event surface. */
+    failNextDiscover: (n = 1) => { failDiscover = n; },
     declineControl: (bindingKey: string, reason: string) => { unsupported = [{ bindingKey, reason }]; },
     /** Somebody changed a generated Flow in the Flow editor. */
     editFlow: () => { userEdited = ['flow-1']; },
@@ -471,6 +491,112 @@ describe('composing a reconcile verdict with a target verdict', () => {
 
     assert.equal(runtime.currentState, 'ready');
     assert.equal(runtime.currentDetail, undefined);
+
+    await h.manager.destroyAll();
+  });
+});
+
+/**
+ * Recovery that only `recoverFromCredentialFailure()` can perform.
+ *
+ * "A recovered key returns controllers to ready without a restart" (CLAUDE.md,
+ * Safety properties). The tests above pass with that method deleted, because
+ * on the plain path the reconcile does the work itself: a clean pass clears
+ * its own verdict and re-asks the monitor, which now sees a valid key. So none
+ * of them could tell a recovery from a lucky reconcile.
+ *
+ * The first two are places the reconcile is NOT enough, each of which leaves
+ * a device unavailable — "Lightkeeper needs a new API key" — against a key
+ * that works, until the app restarts. The third is the manager with no
+ * monitor, where it is, and says why.
+ */
+describe('recovery the reconcile alone does not perform', () => {
+  test('the MONITOR\'s needs_credential is re-checked even when the reconcile\'s own check could not run', async () => {
+    const h = harness();
+    h.grantCredential();
+    const runtime = await h.register();
+    assert.equal(runtime.currentState, 'ready');
+
+    // The key dies. The reconcile is skipped on a dead key, so it is the
+    // health monitor's credential branch that says so.
+    h.loseCredential();
+    await h.manager.onCredentialChange();
+    assert.equal(runtime.currentState, 'needs_credential');
+
+    // A new key, and a clean reconcile on it — but the health check at the end
+    // of that pass cannot read the remote's event surface (a busy Homey). It
+    // fails soft, as it must, so the monitor's old verdict is still standing.
+    // The recovery's own re-check is the second look, and the only one.
+    h.grantCredential();
+    h.failNextDiscover(1);
+    await h.manager.onCredentialChange();
+
+    assert.equal(runtime.currentState, 'ready', 'a working key left the device unavailable');
+
+    await h.manager.destroyAll();
+  });
+
+  test('recovering drops reconciliation\'s needs_credential, not only the monitor\'s', async () => {
+    // Both verdicts can hold one: the reconcile's catch classifies a 403 that
+    // way, and the monitor has its own credential branch. It is the most
+    // severe state there is, so a copy left in EITHER outranks everything
+    // after it for good. Called directly, so no fresh reconcile overwrites the
+    // flow verdict first and hides whether the method dropped it.
+    const h = harness();
+    const runtime = await h.register();
+    assert.equal(runtime.currentState, 'needs_credential');
+
+    h.grantCredential();
+    await runtime.recoverFromCredentialFailure();
+
+    assert.equal(runtime.currentState, 'ready');
+    assert.equal(h.states.at(-1)?.state, 'ready');
+
+    await h.manager.destroyAll();
+  });
+
+  test('with no health monitor, a clean reconcile on the new key is enough to say ready', async () => {
+    // The manager without a monitor, where assessHealth() returns before it
+    // can say anything. Ready still comes back, and it is worth knowing WHERE
+    // from: buildRuntime()'s own target verdict, which the dead key's flow
+    // verdict was outranking and which a clean reconcile uncovers. So on this
+    // path the reconcile recovers by itself, and the recovery's no-monitor
+    // branch finds the device already out of needs_credential and returns.
+    // This pins the promise on that manager; it is not evidence for that
+    // branch, which no reachable sequence needs while a registered runtime
+    // always has buildRuntime()'s verdict standing.
+    const h = harness({ monitor: false });
+    const runtime = await h.register();
+    assert.equal(runtime.currentState, 'needs_credential');
+
+    h.grantCredential();
+    await h.manager.onCredentialChange();
+
+    assert.equal(runtime.currentState, 'ready');
+    assert.equal(h.states.at(-1)?.state, 'ready');
+
+    await h.manager.destroyAll();
+  });
+});
+
+/**
+ * "Deleting a controller deletes only the Flows demonstrably created by it" —
+ * the DELETES half. The "only" is pinned at the bridge (`removeAll` refuses a
+ * Flow not attributed to its owner); this is that the delete is asked for at
+ * all. Without it, removing a device leaves every one of its Flows live and
+ * firing a bridge card at an id that no longer exists.
+ */
+describe('deleting a controller', () => {
+  test('destroy() hands the bridge its own id and every managed Flow it stored', async () => {
+    const h = harness();
+    h.grantCredential();
+    const runtime = await h.register();
+    const stored = runtime.currentProfile.managedFlows;
+    assert.equal(stored.length, 1, 'the rig must have a Flow to delete');
+
+    await runtime.destroy();
+
+    assert.deepEqual(h.removed, [{ owner: 'ctrl-1', refs: stored }]);
 
     await h.manager.destroyAll();
   });

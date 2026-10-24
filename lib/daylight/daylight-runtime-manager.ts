@@ -12,6 +12,7 @@ import { RuntimeRegistry } from '../runtime/runtime-registry';
 import type { WriteRecord } from '../outputs/light-target-adapter';
 import type { BrightnessScale } from '../outputs/light-intent';
 import { messageOf } from '../support/homey-errors';
+import type { Timers } from '../support/timers';
 
 /**
  * Registry of live Daylight runtimes — the fourth of these, and the third that
@@ -53,6 +54,13 @@ export interface DaylightManagerDeps {
    * does.
    */
   brightnessScale?: () => BrightnessScale;
+  /**
+   * Timers handed to every runtime this manager builds, registered or
+   * ephemeral, for their write queues and the rest of their clocks. Absent
+   * means real timers, which is what app.ts passes; tests pass a FakeTimers so
+   * a teardown can be checked for anything left armed.
+   */
+  timers?: Partial<Timers>;
   log: (...args: unknown[]) => void;
 }
 
@@ -77,7 +85,7 @@ export class DaylightRuntimeManager {
   private ticker: unknown = null;
 
   constructor(private readonly deps: DaylightManagerDeps) {
-    this.registry = new RuntimeRegistry({ log: deps.log, label: 'daylight' });
+    this.registry = new RuntimeRegistry({ log: deps.log, label: 'daylight', ...(deps.timers ? { timers: deps.timers } : {}) });
   }
 
   async register(
@@ -142,6 +150,7 @@ export class DaylightRuntimeManager {
       ...(this.deps.onWriteResult ? { onWriteResult: this.deps.onWriteResult } : {}),
       ...(this.deps.onEvidence ? { onEvidence: this.deps.onEvidence } : {}),
       ...(this.deps.brightnessScale ? { brightnessScale: this.deps.brightnessScale } : {}),
+      ...(this.deps.timers ? { timers: this.deps.timers } : {}),
       log: this.deps.log,
     };
   }

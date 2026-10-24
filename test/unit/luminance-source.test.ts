@@ -1,11 +1,13 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { LuminanceSource } from '../../lib/daylight/luminance-source';
+import { CATALOG_COALESCE_MS, LuminanceSource } from '../../lib/daylight/luminance-source';
 import type { DeviceCatalog } from '../../lib/device-catalog';
 import type { HomeyApiService } from '../../lib/homey-api-service';
 import { FakeTimers } from '../support/fake-timers';
 import { deferred, settle } from '../support/deferred';
+import { NO_CACHE } from '../../lib/flow-card-catalogue';
+import { fakeApiClient, fakeApiService, luxSensor, realCatalog, ZONES } from '../support/fake-homey-api';
 
 /**
  * One subscription per sensor, however many devices asked for it.
@@ -32,9 +34,16 @@ interface FakeSensor {
   capabilities?: string[];
   available?: boolean;
   lux?: number | null;
+  /**
+   * The raw `measure_luminance` VALUE, reported by the catalog AND by the live
+   * `getDevice` — `null` being what an integration sends on a flat battery.
+   * `lux: null` leaves the key out instead, which `Number(undefined)` (NaN)
+   * would have rejected anyway; this is the case that tells the guard apart.
+   */
+  raw?: unknown;
 }
 
-function harness(sensors: FakeSensor[] = [{ id: 's1', lux: 100 }]) {
+function harness(sensors: FakeSensor[] = [{ id: 's1', lux: 100 }], timers?: FakeTimers) {
   /** deviceId -> the listener Homey would call. Absent means destroyed. */
   const listeners = new Map<string, (value: unknown) => void>();
   const subscribeCalls: string[] = [];
@@ -43,24 +52,34 @@ function harness(sensors: FakeSensor[] = [{ id: 's1', lux: 100 }]) {
   let now = 1_000_000;
   let present = [...sensors];
   let failSubscribe: string | null = null;
+  let metadataReads = 0;
+  /** The arguments of every live `getDevice`, for platform §15's flags. */
+  const deviceReads: unknown[] = [];
 
+  const rawCapability = (sensor: FakeSensor) => ({ measure_luminance: { value: sensor.raw } });
   const catalogEntry = (sensor: FakeSensor) => ({
     id: sensor.id,
     name: sensor.name ?? sensor.id,
     available: sensor.available ?? true,
     capabilities: sensor.capabilities ?? ['measure_luminance'],
-    capabilitiesObj: sensor.lux === null || sensor.lux === undefined
-      ? {}
-      : { measure_luminance: { value: sensor.lux, decimals: 2, units: 'lx' } },
+    capabilitiesObj: 'raw' in sensor
+      ? rawCapability(sensor)
+      : sensor.lux === null || sensor.lux === undefined
+        ? {}
+        : { measure_luminance: { value: sensor.lux, decimals: 2, units: 'lx' } },
   });
 
   const api = {
     async read() {
       return {
         devices: {
-          getDevice: async ({ id }: { id: string }) => {
+          getDevice: async (args: { id: string }) => {
+            const { id } = args;
+            deviceReads.push({ ...args });
             if (failSubscribe === id) throw new Error('device is not reachable');
+            const sensor = present.find(s => s.id === id);
             return {
+              ...(sensor && 'raw' in sensor ? { capabilitiesObj: rawCapability(sensor) } : {}),
               makeCapabilityInstance(capability: string, listener: (value: unknown) => void) {
                 assert.equal(capability, 'measure_luminance', 'only the lux axis is subscribed');
                 subscribeCalls.push(id);
@@ -84,12 +103,16 @@ function harness(sensors: FakeSensor[] = [{ id: 's1', lux: 100 }]) {
 
   const catalog = {
     async device(id: string) {
+      metadataReads += 1;
       const found = present.find(s => s.id === id);
       return found === undefined ? undefined : catalogEntry(found);
     },
   } as unknown as DeviceCatalog;
 
-  const source = new LuminanceSource({ api, catalog, now: () => now, log: (...a) => logs.push(a.join(' ')) });
+  const source = new LuminanceSource({
+    api, catalog, now: () => now, log: (...a) => logs.push(a.join(' ')),
+    ...(timers ? { timers } : {}),
+  });
 
   return {
     source,
@@ -106,6 +129,9 @@ function harness(sensors: FakeSensor[] = [{ id: 's1', lux: 100 }]) {
       present = present.map(s => (s.id === id ? { ...s, available } : s));
     },
     failNextSubscribe(id: string) { failSubscribe = id; },
+    /** How many times the catalog has been asked about a sensor. */
+    metadataReads: () => metadataReads,
+    deviceReads,
   };
 }
 
@@ -376,6 +402,64 @@ describe('LuminanceSource - the catalog, and failures', () => {
 });
 
 
+/**
+ * app.ts calls `noteCatalogChange()` on every device and zone event. It used to
+ * call `onCatalogChange()` directly, so every event re-read every watched
+ * sensor and forced a full catalogue refresh, because the event had just
+ * invalidated the catalogue. Coalesced now, like the runtime registries.
+ */
+describe('LuminanceSource - coalesced catalogue changes', () => {
+  test('a burst of catalogue events costs one re-read, and still notices a dead sensor', async () => {
+    const timers = new FakeTimers();
+    const h = harness([{ id: 's1', lux: 100 }], timers);
+    await h.source.retain(['s1'], 'a');
+    const before = h.metadataReads();
+
+    for (let i = 0; i < 10; i += 1) h.source.noteCatalogChange();
+    assert.equal(timers.pending, 1, 'one pass armed for the whole burst');
+    await settle(4);
+    assert.equal(h.metadataReads(), before, 'nothing is re-read inside the window');
+
+    timers.advance(CATALOG_COALESCE_MS);
+    await settle(12);
+    assert.equal(h.metadataReads(), before + 1, 'one re-read for ten events');
+    assert.equal(timers.pending, 0);
+
+    h.setAvailable('s1', false);
+    for (let i = 0; i < 10; i += 1) h.source.noteCatalogChange();
+    timers.advance(CATALOG_COALESCE_MS);
+    await settle(12);
+    assert.equal(h.source.read('s1'), null, 'the battery died; the burst did not hide it');
+  });
+
+  test('nothing is armed while no sensor is watched', () => {
+    const timers = new FakeTimers();
+    const h = harness([{ id: 's1', lux: 100 }], timers);
+
+    h.source.noteCatalogChange();
+    assert.equal(timers.pending, 0);
+  });
+
+  /** Nothing survives teardown, and `destroy()` cancels before its first await (platform §17). */
+  test('destroy() cancels a pending re-read, synchronously', async () => {
+    const timers = new FakeTimers();
+    const h = harness([{ id: 's1', lux: 100 }], timers);
+    await h.source.retain(['s1'], 'a');
+    h.source.noteCatalogChange();
+    const before = h.metadataReads();
+
+    const destroying = h.source.destroy();
+    assert.equal(timers.pending, 0, 'cancelled before destroy() awaited anything');
+    await destroying;
+
+    timers.advance(CATALOG_COALESCE_MS);
+    await settle(12);
+    assert.equal(h.metadataReads(), before);
+    h.source.noteCatalogChange();
+    assert.equal(timers.pending, 0, 'and a stopped service arms nothing');
+  });
+});
+
 describe('sensor subscription recovery', () => {
   function recovering() {
     const timers = new FakeTimers();
@@ -427,6 +511,33 @@ describe('sensor subscription recovery', () => {
     assert.equal(h.destroyed(), 1);
   });
 
+  /**
+   * The synchronous half of a runtime's stop(): `release()` cancels a retry
+   * only after awaits, and platform §17 says those may never come back during
+   * app shutdown.
+   */
+  test('stopRetrying() cancels synchronously, only for a sensor nobody else wants', async () => {
+    const h = recovering();
+    await h.source.retain(['s1'], 'a'); await h.source.retain(['s1'], 'b');
+    assert.equal(h.timers.pending, 1);
+
+    h.source.stopRetrying('a');
+    assert.equal(h.timers.pending, 1, 'b still wants the sensor, so its retry stands');
+
+    await h.source.release('b');
+    h.source.stopRetrying('a');
+    assert.equal(h.timers.pending, 0, 'a was the last owner: no await needed to disarm it');
+
+    // A restart (stop, then start) retains again, and with no retry pending it
+    // subscribes again rather than waiting on a timer that no longer exists.
+    h.recover();
+    const attempts = h.attempts();
+    await h.source.retain(['s1'], 'a');
+    assert.equal(h.attempts(), attempts + 1);
+    assert.equal(h.source.read('s1')?.lux, 500);
+    await h.source.release('a');
+  });
+
   test('last-owner release cancels retries but another owner keeps them alive', async () => {
     const h = recovering();
     await h.source.retain(['s1'], 'a'); await h.source.retain(['s1'], 'b');
@@ -445,5 +556,62 @@ describe('sensor subscription recovery', () => {
     assert.equal(h.source.watched().length, 0);
     assert.equal(h.source.read('s1'), null);
     assert.equal(h.timers.pending, 0);
+  });
+});
+
+/**
+ * `Number(null)` is 0, and 0 lux is pitch dark — on the CATALOG path as well.
+ *
+ * The live listener has always gone through `asLux()`, and a test fires every
+ * junk value at it. The catalog seed is the other way a value gets in, and its
+ * fixture left the key out entirely rather than sending `{ value: null }` — so
+ * a bare `Number()` there saw `undefined`, made NaN, and was rejected for the
+ * wrong reason. A flat battery reports `null`, which a bare `Number()` makes 0.
+ */
+describe('LuminanceSource - a null reading on the catalog path', () => {
+  test('catalog and live device both reporting null read as nothing, never as zero lux', async () => {
+    const h = harness([{ id: 's1', raw: null }]);
+    await h.source.retain(['s1'], 'a');
+
+    assert.equal(h.source.read('s1'), null, 'null is no reading; { lux: 0 } is a dark room');
+    assert.equal(h.source.watched()[0]!.lux, null);
+  });
+});
+
+/**
+ * Platform §15, both halves, at the one single-device read this source makes.
+ *
+ * `$updateCache: false` is the memory half; `$cache: false` is the correctness
+ * half — a `getDevices()` anywhere in the app fills the cache a later
+ * `getDevice()` is answered from, so without it the "live" seed is whatever the
+ * catalogue last read. The source scan in flow-card-catalogue.test.ts cannot
+ * see this call (`getDevice` is not a `getAll`), so it is asserted here.
+ */
+describe('LuminanceSource - the live read opts out of the homey-api cache', () => {
+  test('the subscribing getDevice carries NO_CACHE', async () => {
+    const h = harness([{ id: 's1', lux: 100 }]);
+    await h.source.retain(['s1'], 'a');
+
+    assert.deepEqual(h.deviceReads, [{ id: 's1', ...NO_CACHE }]);
+  });
+
+  test('so it sees the sensor as it is now, not as the catalogue last cached it', async () => {
+    // The fake models §15's cache: DeviceCatalog's own getDevices() fills it,
+    // and a getDevice without `$cache: false` would be answered from it.
+    const client = fakeApiClient([luxSensor('s1', 'Hall sensor', 'z-living', 120)], ZONES, { cache: true });
+    const catalog = realCatalog(client);
+    assert.equal((await catalog.device('s1'))!.capabilitiesObj.measure_luminance!.value, 120);
+
+    // The room got brighter. Nothing invalidated anything, as nothing does
+    // between a capability change and the next catalogue event.
+    client.put(luxSensor('s1', 'Hall sensor', 'z-living', 640));
+    const stale = await client.devices.getDevice({ id: 's1' });
+    assert.equal(stale.capabilitiesObj.measure_luminance.value, 120, 'the cache this test is about');
+
+    const source = new LuminanceSource({ api: fakeApiService(client), catalog, log: () => {} });
+    await source.retain(['s1'], 'a');
+
+    assert.deepEqual(source.read('s1'), { lux: 640, deviceIds: ['s1'] }, 'the live seed beat the stale catalogue');
+    await source.destroy();
   });
 });

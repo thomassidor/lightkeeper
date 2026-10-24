@@ -6,6 +6,7 @@ import {
 } from '../../lib/credential-service';
 import { HomeyApiService } from '../../lib/homey-api-service';
 import { FlowBridgeManager } from '../../lib/bridge/flow-bridge-manager';
+import { FlowFolderManager } from '../../lib/bridge/flow-folder-manager';
 
 /**
  * The diagnostics export is offered to users with an explicit
@@ -27,6 +28,9 @@ const REAL_KEY = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee:11111111-2222-3333-4444-5
 
 /** The secret third segment — the part that would matter if it leaked. */
 const SECRET = '0123456789abcdef0123456789abcdef01234567';
+
+/** Whether text carries the key, or its secret segment on its own. */
+const leaks = (text: string) => text.includes(SECRET) || text.includes(REAL_KEY);
 
 function serviceHoldingRealKey() {
   const store = new Map<string, unknown>([['flowWriteApiKey', REAL_KEY]]);
@@ -204,8 +208,6 @@ describe('write failures never carry the key out of the write path', () => {
     return { api, credentials, logged };
   }
 
-  const leaks = (text: string) => text.includes(SECRET) || text.includes(REAL_KEY);
-
   test('createFlow: the thrown error is classified, not echoed', async () => {
     const { api } = writePath();
 
@@ -225,7 +227,34 @@ describe('write failures never carry the key out of the write path', () => {
       logged.push(args.map(String).join(' '));
     });
 
-    const deleted = await bridge.removeAll([{
+    // A live Flow attributed to the owner, so the bridge's ownership check
+    // passes and the failing delete — the path under test — is actually made.
+    const owner = 'lk-ctrl-1755500000000-100001';
+    const card = (name: string) => ({
+      id: `com.thomassidor.lightkeeper:${name}`,
+      uri: 'homey:app:com.thomassidor.lightkeeper',
+    });
+    Object.assign(api, {
+      read: async () => ({
+        flow: {
+          getFlowCardActions: async () => ({
+            a: card('bridge_event'), b: card('bridge_numeric_event'), c: card('bridge_token_event'),
+          }),
+          getFlows: async () => ({
+            'flow-1': {
+              id: 'flow-1',
+              actions: [{
+                id: 'com.thomassidor.lightkeeper:bridge_event',
+                args: { controller: owner, event_key: 'k' },
+              }],
+            },
+          }),
+          getFlowFolders: async () => ({}),
+        },
+      }),
+    });
+
+    const deleted = await bridge.removeAll(owner, [{
       flowId: 'flow-1', bindingKey: 'k', variantKey: 'fixed',
       fingerprint: 'fp', managedVersion: 1, createdAt: 1,
     }]);
@@ -262,5 +291,170 @@ describe('write failures never carry the key out of the write path', () => {
     const serialised = JSON.stringify(credentials.getStatus());
     assert.equal(leaks(serialised), false);
     assert.equal(credentials.getStatus().valid, false);
+  });
+});
+
+/**
+ * The two bridge log lines that redact as well as relying on the sanitiser.
+ *
+ * In the app every write error reaches these lines through `withWriteClient`,
+ * which has already reduced it to a classified, redacted message — so the
+ * end-to-end test above cannot tell whether they redact on their own. Each says
+ * it does ("Redacted as well as sanitised upstream"), and these pin that: the
+ * error is handed to them RAW, past a pass-through write client, quoting the
+ * whole key and the bare secret. Defence in depth is only depth if a regression
+ * in the first layer does not take the second with it.
+ */
+describe('the bridge redacts its own failure logs, sanitiser or not', () => {
+  const OWNER = 'lk-ctrl-1755500000000-100001';
+  const quoting = (what: string) => new Error(`${what} failed for token ${REAL_KEY}; bearer ${SECRET}`);
+
+  /** A HomeyApiService stand-in with NO sanitiser on the write path. */
+  function rawApi(read: unknown, write: unknown): HomeyApiService {
+    return {
+      read: async () => read,
+      withWriteClient: async (operation: (client: unknown) => Promise<unknown>) => operation(write),
+    } as unknown as HomeyApiService;
+  }
+
+  test('a refused flow delete is logged redacted', async () => {
+    const logged: string[] = [];
+    const card = (name: string) => ({
+      id: `com.thomassidor.lightkeeper:${name}`,
+      uri: 'homey:app:com.thomassidor.lightkeeper',
+    });
+    const api = rawApi({
+      flow: {
+        getFlowCardActions: async () => ({
+          a: card('bridge_event'), b: card('bridge_numeric_event'), c: card('bridge_token_event'),
+        }),
+        getFlows: async () => ({
+          'flow-1': {
+            id: 'flow-1',
+            actions: [{ id: 'com.thomassidor.lightkeeper:bridge_event', args: { controller: OWNER, event_key: 'k' } }],
+          },
+        }),
+        getFlowFolders: async () => ({}),
+      },
+    }, {
+      flow: { deleteFlow: async () => { throw quoting('DELETE /api/manager/flow/flow-1'); } },
+    });
+    const bridge = new FlowBridgeManager(api, 'com.thomassidor.lightkeeper', (...args) => {
+      logged.push(args.map(String).join(' '));
+    });
+
+    const deleted = await bridge.removeAll(OWNER, [{
+      flowId: 'flow-1', bindingKey: 'k', variantKey: 'fixed',
+      fingerprint: 'fp', managedVersion: 1, createdAt: 1,
+    }]);
+
+    assert.equal(deleted, 0, 'precondition: the delete was attempted and refused');
+    const line = logged.find(entry => /Could not delete flow flow-1/.test(entry));
+    assert.ok(line, 'the failure is still logged');
+    assert.match(line, /DELETE \/api\/manager\/flow\/flow-1 failed/, 'and keeps its meaning');
+    for (const entry of logged) assert.equal(leaks(entry), false, `a log line leaked the key: ${entry}`);
+  });
+
+  test('a refused folder delete is logged redacted', async () => {
+    const logged: string[] = [];
+    const api = rawApi(
+      { flow: { getFlows: async () => ({}) } },
+      { flow: { deleteFlowFolder: async () => { throw quoting('DELETE /api/manager/flow/flowfolder/f1'); } } },
+    );
+    const folders = new FlowFolderManager(api, (...args) => { logged.push(args.map(String).join(' ')); });
+
+    const removed = await folders.cleanUpEmpty({
+      root: 'root',
+      folders: new Map([['f1', { id: 'f1', name: 'Hall remote', parent: 'root' }]]),
+    }, ['f1']);
+
+    assert.equal(removed, 0, 'precondition: the delete was attempted and refused');
+    assert.ok(logged.some(entry => /Could not delete the empty folder f1/.test(entry)));
+    for (const entry of logged) assert.equal(leaks(entry), false, `a log line leaked the key: ${entry}`);
+  });
+
+  test('a refused folder read is logged redacted too', async () => {
+    // The read client has no sanitiser in the app either: the folder
+    // manager's own redaction is the ONLY layer on this path.
+    const logged: string[] = [];
+    const api = rawApi(
+      { flow: { getFlows: async () => { throw quoting('GET /api/manager/flow/flow'); } } },
+      {},
+    );
+    const folders = new FlowFolderManager(api, (...args) => { logged.push(args.map(String).join(' ')); });
+
+    await folders.cleanUpEmpty({
+      root: 'root',
+      folders: new Map([['f1', { id: 'f1', name: 'Hall remote', parent: 'root' }]]),
+    }, ['f1']);
+
+    assert.ok(logged.some(entry => /Could not check which folders are now empty/.test(entry)));
+    for (const entry of logged) assert.equal(leaks(entry), false, `a log line leaked the key: ${entry}`);
+  });
+
+  /**
+   * The two READ-client lines a delete goes through (SEC-1). Like the folder
+   * read above, there is no sanitiser on the read path in the app: the
+   * bridge's own redaction is the only layer.
+   */
+  const reference = (flowId: string) => ({
+    flowId, bindingKey: 'k', variantKey: 'fixed', fingerprint: 'fp', managedVersion: 1, createdAt: 1,
+  });
+  const bridgeCards = () => {
+    const card = (name: string) => ({ id: `com.thomassidor.lightkeeper:${name}`, uri: 'homey:app:com.thomassidor.lightkeeper' });
+    return { a: card('bridge_event'), b: card('bridge_numeric_event'), c: card('bridge_token_event') };
+  };
+
+  test('an unreadable Flow list deletes nothing, and says so redacted', async () => {
+    const logged: string[] = [];
+    const deletes: string[] = [];
+    const api = rawApi({
+      flow: {
+        getFlowCardActions: async () => bridgeCards(),
+        getFlows: async () => { throw quoting('GET /api/manager/flow/flow'); },
+        getFlowFolders: async () => ({}),
+      },
+    }, {
+      flow: { deleteFlow: async ({ id }: { id: string }) => { deletes.push(id); } },
+    });
+    const bridge = new FlowBridgeManager(api, 'com.thomassidor.lightkeeper', (...args) => {
+      logged.push(args.map(String).join(' '));
+    });
+
+    const deleted = await bridge.removeAll(OWNER, [reference('flow-1')]);
+
+    assert.equal(deleted, 0);
+    assert.deepEqual(deletes, [], 'nothing deleted without knowing whose it is');
+    assert.ok(logged.some(entry => /Could not read the Flow list/.test(entry)), 'the refusal is still logged');
+    for (const entry of logged) assert.equal(leaks(entry), false, `a log line leaked the key: ${entry}`);
+  });
+
+  test('a flow the snapshot lacks, which cannot be looked up, is logged redacted', async () => {
+    // A stored id the Flow-list snapshot does not contain (a deferred clean-up
+    // added after the snapshot, or any reference handed to removeAll) is read
+    // on its own before anything is deleted. That read failing is this line.
+    const logged: string[] = [];
+    const deletes: string[] = [];
+    const api = rawApi({
+      flow: {
+        getFlowCardActions: async () => bridgeCards(),
+        getFlows: async () => ({}),
+        getFlow: async ({ id }: { id: string }) => { throw quoting(`GET /api/manager/flow/flow/${id}`); },
+        getFlowFolders: async () => ({}),
+      },
+    }, {
+      flow: { deleteFlow: async ({ id }: { id: string }) => { deletes.push(id); } },
+    });
+    const bridge = new FlowBridgeManager(api, 'com.thomassidor.lightkeeper', (...args) => {
+      logged.push(args.map(String).join(' '));
+    });
+
+    await bridge.removeAll(OWNER, [reference('flow-9')]);
+
+    assert.deepEqual(deletes, [], 'an unattributable flow is not deleted');
+    const line = logged.find(entry => /Could not look up flow flow-9/.test(entry));
+    assert.ok(line, 'the failed look-up is logged');
+    assert.match(line, /GET \/api\/manager\/flow\/flow\/flow-9 failed/, 'and keeps its meaning');
+    for (const entry of logged) assert.equal(leaks(entry), false, `a log line leaked the key: ${entry}`);
   });
 });

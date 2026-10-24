@@ -12,7 +12,10 @@ import type { CredentialService } from '../../lib/credential-service';
  * rejected promise cached forever and no read works again without a restart.
  */
 
-/** A stand-in for HomeyAPI's client, with the four managers the service connects. */
+/**
+ * A stand-in for HomeyAPI's client. It offers more managers than the service
+ * connects, so a test can tell "not connected" from "not there to connect".
+ */
 function fakeApi() {
   const connected: string[] = [];
   const manager = (name: string) => ({
@@ -24,6 +27,8 @@ function fakeApi() {
     zones: manager('zones'),
     flow: manager('flow'),
     flowtoken: manager('flowtoken'),
+    insights: manager('insights'),
+    apps: manager('apps'),
   };
 }
 
@@ -68,7 +73,25 @@ describe('read client caching', () => {
 
     await service.read();
 
-    assert.deepEqual(api.connected, ['devices', 'zones', 'flow', 'flowtoken']);
+    assert.deepEqual(api.connected, ['devices', 'zones']);
+  });
+
+  /**
+   * `flow` and `flowtoken` used to be connected for `Flow.isBroken`, which the
+   * app never calls. Connected, each decodes every Flow or token event on the
+   * Homey in this process and caches every `*.create` for the life of the
+   * client. Nothing listens to either, and every Flow read goes through
+   * `__request`, which does not need the manager connected.
+   */
+  test('never opens realtime subscriptions nobody reads', async () => {
+    const api = fakeApi();
+    const service = new TestApiService(async () => api);
+
+    await service.read();
+
+    for (const unread of ['flow', 'flowtoken', 'insights', 'apps']) {
+      assert.ok(!api.connected.includes(unread), `${unread} must not be connected on the read client`);
+    }
   });
 
   test('concurrent callers share one connection attempt', async () => {

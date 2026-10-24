@@ -112,7 +112,8 @@ app.ts                          app entry, bridge action listeners, validation o
 api.ts                          app Web API: what settings/index.html renders, plus seven
                                 "try it now" routes over the runtimes
 lib/
-  homey-api-service.ts          both API clients, subscription tracking and teardown
+  homey-api-service.ts          both API clients, subscription tracking and teardown. The read
+                                client connects `devices` and `zones` only
   credential-service.ts         the API key: storage, write-validation, failure classification
   device-catalog.ts             devices, zones, owning apps, capability metadata
   flow-card-catalogue.ts        the ONE reader of the flow card catalogues, and the ONE place
@@ -857,6 +858,14 @@ Load-bearing product guarantees, not implementation details:
 - **Nothing survives teardown.** No timer, subscription, ramp or queued write outlives the runtime
   that owns it. Every one of them holds a reference to a device that may already be deleted, and a
   write that lands after teardown is a write nothing is left to attribute, cancel or report.
+  **Disarm before the first `await`**, because the cleanup behind it may never run: an `await`
+  inside `onUninit` is not seen through to its end (platform §17). Every runtime's `stop()` cancels
+  everything that can fire on a timer synchronously — write queue, implied-on checks, ramps, the
+  supersede gate, pre-stage probes, and sensor retries nobody else wants — and only unsubscribing
+  and releasing claims stay asynchronous behind the lifetime lock. `onUninit` itself STARTS every
+  teardown before it awaits any of them: the recorder first, then every registry, the `set_lights`
+  writer and the sensor service, and the read client last, behind the runtimes but not behind the
+  recorder.
 - **A positive brightness is never written as darkness.** Brightness is stored perceptually and
   written in device values through γ = 2.2 — under the default `BrightnessScale`; the settings page's
   *Same as Homey* makes it γ = 1 for every stored brightness, though never for a remote's steps
@@ -882,10 +891,17 @@ Load-bearing product guarantees, not implementation details:
   value through — which is exactly how a Colour Curve Light came to sit on the colour it last held.
   The colour leg has always decided per device; the temperature leg now does too.
 - **Flows that look user-edited are never overwritten.** The controller is marked for repair instead.
-- **Folder work never blocks a Flow write.** Every `FlowFolderManager` method catches its own
-  failure and degrades to "no folder". A folder is presentation only and is never evidence of
-  ownership — attribution is the controller id in the bridge action's arguments (below), so a Flow
-  outside its folder is still ours and a Flow inside one is not ours because of it.
+- **Folder work never blocks a Flow write, and never decides whether the key works.** Every
+  `FlowFolderManager` method catches its own failure and degrades to "no folder", and every folder
+  write goes through `folderWrite()` — `withWriteClient(op, { verdict: false })`: the same key, the
+  same shared handshake, the same sanitised rethrow, and no credential verdict in either direction.
+  Without it a `deleteFlowFolder` refused with "Missing Scopes" during a device removal or the orphan
+  sweep was classified app-wide before the folder manager's catch ran, and left every Flow-owning
+  device in `needs_credential`: nothing on a delete path writes a Flow afterwards to restore `valid`.
+  A dead key still surfaces at the next Flow write, classified exactly as before. A folder is
+  presentation only and is never evidence of ownership — attribution is the controller id in the
+  bridge action's arguments (below), so a Flow outside its folder is still ours and a Flow inside one
+  is not ours because of it.
 - **An override always ends.** `OVERRIDE_EXPIRY_MS` (4 h) is the second way out, beside the `onoff`
   edge, and it exists because the `onoff` gesture assumes a PERSON raised the override. A lamp that
   accepts a write, acks it and reverts to its own values a minute later raises one just as well —
@@ -965,18 +981,34 @@ Load-bearing product guarantees, not implementation details:
   `OverrideRecord` instead. Measured before: one curve device dropped 341 events in 4.8 h with 108
   of its 120 slots holding `write_pending`, and one daylight device spent 28 of 32 slots re-logging
   four overrides. The 120 slots are the only place an exception surfaces, and `scripts/diagnostics.mjs`
-  reads them — which is why its `countBy()` sums `count` rather than rows.
+  reads them — which is why its `countBy()` sums `count` rather than rows. The 60-slot ACTION ring
+  follows the same rule through `ControlHistory.action()`: a run of identical passes that wrote
+  nothing is one row with `count` and `lastAt`, compared against the newest row only (passes do not
+  interleave), and a pass that wrote is never folded.
 - **A tolerance is compared with an epsilon, never with a bare `<=`.** `withinOverrideTolerance()`
   exists because `Math.abs(0.83 - 0.86)` is `0.030000000000000027`: the same three hundredths was
   forgiven at one end of the axis and prosecuted at the other, which under the rule above meant
   standing down for good.
-- **Deleting a controller deletes only the Flows demonstrably created by it.** Attribution is the
-  controller id carried in the bridge action's arguments.
+- **Deleting a controller deletes only the Flows demonstrably created by it — and a stored
+  reference is not the demonstration.** Attribution is the controller id carried in the LIVE Flow's
+  bridge action. Every delete that starts from a stored id — a device's `managedFlows`, the bridge
+  journal in app settings, `deferCleanup` — goes through `deleteOwnedFlow()` in
+  `flow-bridge-manager.ts`, from `removeAll` and from `sync()`'s staged, cleanup and no-longer-wanted
+  paths alike, and deletes only when the live Flow names the owner. A Flow naming another device, or
+  calling no Lightkeeper card, is refused and dropped. An id missing from the snapshot is looked up on
+  its own: 404 means gone, a failed lookup means "could not tell" and the reference is kept. An
+  unreadable Flow list deletes nothing. A store is not ours alone — pair sessions can write any
+  `store` (platform §14) and the plan validators check shape, not ownership — so before this gate a
+  forged reference made the app delete arbitrary user Flows with the stored key. Only `compensate()`
+  deletes without it, because its ids are ones `createFlow` returned in that same pass.
 - **The orphan sweep refuses to run when no Flow-owning Lightkeeper device is live**, because every
   managed Flow would then look orphaned. The live set is the union of the controller and schedule
   registries PLUS every installed device of those two drivers — see `liveDeviceIds()` below for why
   that is load-bearing rather than tidy. A circadian or Colour Curve Light is deliberately absent:
   neither owns a Flow, so counting them would only inflate the count and stop the refusal firing.
+- **A Flow with a condition is never swept.** `looksGenerated()` requires `conditions` to be empty,
+  as `hasBeenUserEdited()` always has. A duplicated generated Flow somebody customised keeps our
+  `controller` argument and outlives its device; the sweep reports it as `unmanaged` and leaves it.
 - **A flow card catalogue is read, projected and dropped — never retained.** `homey-api` caches
   every `getAll` result for the life of the client (platform §15), and the two card catalogues are
   ~11.6 MB each on a real Homey: retaining them was 30 MB of a 48 MB footprint, against Homey's
@@ -987,7 +1019,8 @@ Load-bearing product guarantees, not implementation details:
   once per plausible device in a loop. `FlowBridgeManager.bridgeCards()` goes further and reads no
   catalogue at all: it asks for its three cards by name and echoes back what the Homey returns,
   which still honours platform §3 because nothing is assembled and then trusted. Enumeration
-  survives as the fallback.
+  survives as the fallback. The projection itself is released when its 60 s TTL runs out (an
+  unref'd timer that `clear()` cancels), not when the next read replaces it.
   What those two call sites were designed against was a measurement — 31.9 MB before the app had
   read a catalogue, 43.9 MB immediately after — read as a ~12 MB floor raised *permanently*, on the
   grounds that V8 never returns the pages. **That premise is retired** (see below, and §15): on a
@@ -1064,9 +1097,26 @@ Load-bearing product guarantees, not implementation details:
 - **Bridge arguments are untrusted.** Generated flow arguments are user-editable, so every incoming
   bridge event is validated against a live controller and an expected binding key before anything
   executes. On malformed or stale input, fail closed — log and ignore, never execute heuristically.
+  The Test control is held to the same rule in `testFunction`, for both of its callers (the pair
+  session and the app API): an own-property `func` (so `"toString"` is not a job), and only this
+  controller's own lights, at most 256 of them.
+- **A device id is claimed once, and a device that loses the claim is inert.**
+  `DeviceLifecycle.claimId()` takes `getData().id` synchronously at init, per registry, and refuses a
+  non-string, an `lk-` id of another device type (`idKind` on each device type), and an id another
+  installed device already holds. A pair session can create a device with any `data` (platform §14)
+  and `RuntimeRegistry.register` stops whatever already holds an id, so without this a duplicate
+  silently took over another device's runtime — and deleting it removed the victim's journal and
+  Flows. A refused device is unavailable and touches no runtime, Flow or journal under that id. Every
+  id shape a shipped version minted still starts (`ll-<n>-<n>`, `lk-<kind>-<n>-<n>`,
+  `lk-<kind>-<uuid>`): do not tighten the shape check beyond the prefix, or the 1.0 promise breaks.
 - **Range expansion is capped at 12 flow variants.** Beyond that the control is declined rather than
   flooding the user's Flow list. A schedule device is capped at 12 windows for the same reason: two
   Flows each, so 24 rows in the user's list.
+- **The app's own list caps are re-applied at load by truncating, never by throwing.** The
+  corruption caps in `plans.ts` (32 windows, 256 lights) quarantine; the app's own limits — 12
+  schedule windows, 256 proven pre-stage lamps — truncate, because a plan over them is not corrupt.
+  Without the load-time half a stored schedule of up to 32 windows generated 64 Flows. The incoming
+  sanitisers read 4× their cap row by row and report the rest as one dropped row.
 - **The orphan sweep's "live" set is the UNION of both registries** (`liveDeviceIds()` in `api.ts`).
   `findManagedFlows()` groups by the device id in a Flow's bridge arguments and cannot tell which
   registry that id belongs to, so a sweep that knew only about controllers would find every schedule's
@@ -1166,9 +1216,11 @@ Load-bearing product guarantees, not implementation details:
   setting to get wrong.
 - **A Room-sensing Light that cannot tell how light it is falls back to a number, never to
   darkness.** `source: 'none'` is real — a Homey never told where it is, a flat battery in the one
-  sensor — and the response's own stored ends are what it holds at. A room that went dark because a
-  sensor did would be the worse surprise, and it is why `MINIMUM_BRIGHTNESS` is applied in the
-  sanitiser rather than at the write.
+  sensor. In that state the device writes nothing to its lamps, which stay where they are, and its
+  PUBLISHED brightness falls back to the response's own stored dark end — so a `set_lights` card or a
+  remote's *On – with Lightkeeper* button reading it gets that number, never darkness, and "It is
+  dark enough" reads false. A room that went dark because a sensor did would be the worse surprise,
+  and it is why `MINIMUM_BRIGHTNESS` is applied in the sanitiser rather than at the write.
 - **A Room-sensing Light reads exactly ONE sensor.** It used to mean up to eight, and their mean,
   which sounds more robust and is not: a sensor in a cupboard and a sensor on a windowsill average
   to a number neither of them ever reported, and the pairing screen could not say which one the

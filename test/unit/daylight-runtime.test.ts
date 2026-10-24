@@ -3,13 +3,17 @@ import assert from 'node:assert/strict';
 
 import { DAYLIGHT_DEADBAND, DaylightRuntime, MAX_STEP_PER_TICK } from '../../lib/daylight/daylight-runtime';
 import { DEFAULT_RESPONSE, type DaylightPlan, type DaylightResponse } from '../../lib/daylight/daylight-types';
-import type { DaylightEvaluator, DaylightVerdict } from '../../lib/daylight/daylight-evaluator';
+import { DaylightEvaluator, type DaylightVerdict } from '../../lib/daylight/daylight-evaluator';
+import { isDarkEnough } from '../../lib/flow/darkness-condition';
+import { VALUE_CAPABILITIES } from '../../lib/runtime/published-values';
 import type { LuminanceSource } from '../../lib/daylight/luminance-source';
 import type { DeviceCatalog } from '../../lib/device-catalog';
 import type { HomeyApiService } from '../../lib/homey-api-service';
 import { toDevice, toPerceptual } from '../../lib/outputs/light-intent';
+import { OVERRIDE_EXPIRY_MS } from '../../lib/outputs/target-state-cache';
 import { settle as sharedSettle } from '../support/deferred';
 import { zoneLights } from '../support/fake-catalog';
+import { FakeTimers } from '../support/fake-timers';
 
 /**
  * What a Daylight runtime is responsible for is everything the response is not:
@@ -92,6 +96,19 @@ function harness(options: {
   sensorAt?: () => number | null;
   /** The app-wide brightness scale. Absent is natural. */
   brightnessScale?: () => 'natural' | 'linear';
+  /**
+   * A REAL evaluator over the fake luminance source instead of the scripted
+   * verdict, for the tests whose claim is about what the response itself
+   * returns — the dark end when nothing can tell how light it is — rather than
+   * about what the runtime does with a number it was handed.
+   */
+  realEvaluator?: { location: () => unknown };
+  /**
+   * The runtime's own timers — its write queue's rate limit runs on them. Only
+   * `setTimeout`/`clearTimeout` matter here: the harness's `now` still wins, as
+   * the runtime documents, so a held write is released by advancing THESE.
+   */
+  timers?: FakeTimers;
 } = {}) {
   /**
    * Which lamps refuse every write, settable after start.
@@ -120,11 +137,17 @@ function harness(options: {
   const luminance = {
     async retain(ids: string[], owner: string) { retained.push({ ids, owner }); },
     async release(owner: string) { released.push(owner); },
+    // The synchronous half of stop() (PERF-9): nothing to cancel in a fake.
+    stopRetrying() { /* no retry timers here */ },
     read: () => options.reading ?? null,
     watched: () => [{ deviceId: 's1', name: 'Hall', lux: 42, at: now, available: true }],
   } as unknown as LuminanceSource;
 
-  const daylight = {
+  const daylight = options.realEvaluator ? new DaylightEvaluator({
+    location: options.realEvaluator.location,
+    luminance,
+    now: () => now,
+  }) : {
     evaluate: () => verdict,
     sky: () => ({ elevation: verdict.elevation, level: verdict.level, location: null }),
     // `at` defaults to "just now", so a sensor is fresh unless a test freezes
@@ -175,6 +198,7 @@ function harness(options: {
     luminance,
     displayName: () => 'Kitchen daylight',
     now: () => now,
+    ...(options.timers ? { timers: options.timers } : {}),
     ...(options.brightnessScale ? { brightnessScale: options.brightnessScale } : {}),
     log: (...args) => logs.push(args.map(String).join(' ')),
     onStateChange: (state, detail) => states.push({ state, detail }),
@@ -1470,5 +1494,333 @@ describe('DaylightRuntime - a device that only publishes', () => {
     await h.runtime.drain();
 
     assert.equal(h.dimWrites().length, 2);
+  });
+});
+
+/**
+ * Boundaries and second halves the tests above stop short of. Each one pins a
+ * line that a plausible edit could change while every earlier test in this file
+ * stayed green — an edge just inside a constant, a guard whose other half
+ * happened to be covered by a plan that moved, a probe that only one of its
+ * four conditions was ever asked about.
+ */
+describe('DaylightRuntime - overrides, at their edges', () => {
+  test('a lapsed override hands the lamp back even when the target never moved', async () => {
+    // The OTHER half of `expireOverrides()`: forgetting `aim` and `committed`.
+    // The week-long-recording test above passes without it, because its plan
+    // moves over the five hours and that alone defeats the no-op filter. Here
+    // the room is flat — the case the recording was actually about, a lamp put
+    // somewhere and the plan unchanged — so if the records survive expiry the
+    // filter sees the same intended value it last landed and writes nothing:
+    // the override lapses and the lamp stays at 0.05 for good.
+    const h = harness({ devices: [light('l1', undefined, { dim: 0.3 })], verdict: { brightness: 0.8 } });
+    await h.runtime.start();
+    await converge(h);
+    const target = dimFor(0.8);
+    assert.equal(h.dimWrites().at(-1)!.value, target, 'precondition: settled on the target');
+
+    h.advance(SETTLE_PAST);
+    h.report('l1', 'dim', 0.05);
+    assert.equal(h.runtime.diagnostics().targets[0].overridden, true);
+
+    h.advance(3 * 60 * 60_000);
+    const standing = h.dimWrites().length;
+    await tick(h);
+    assert.equal(h.dimWrites().length, standing, 'nothing is written while the override stands');
+
+    h.advance(OVERRIDE_EXPIRY_MS - 3 * 60 * 60_000 + 60_000);
+    await tick(h);
+    assert.equal(h.runtime.diagnostics().targets[0].overridden, false);
+    assert.ok(h.dimWrites().slice(standing).some(w => w.deviceId === 'l1'),
+      'the very pass that lapses the override writes again, though the target is unchanged');
+
+    // And it slews back from where the person left it, to the same target.
+    await converge(h);
+    assert.equal(h.dimWrites().at(-1)!.value, target);
+    await h.runtime.stop();
+  });
+
+  test('a lamp fading out 59 s after its override is still a lamp fading out', async () => {
+    // Just inside FADE_OUT_GRACE_MS (60 s), and well past FADE_OUT_MIN_MS. The
+    // measured gap is 29-30 s, so the ceiling is twice that; this pins that the
+    // band reaches it rather than stopping somewhere short.
+    const h = harness({ devices: [light('l1', undefined, { dim: 0.61 })], verdict: { brightness: 0.8 } });
+    await h.runtime.start();
+    await sharedSettle(12);
+
+    h.advance(SETTLE_PAST);
+    h.report('l1', 'dim', 0.11);
+    h.advance(59_000);
+    h.report('l1', 'onoff', false);
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].fadeOutOverrides, 1);
+    assert.ok(d.recentControlEvents.some(e => e.type === 'override_cleared' && e.reason === 'power_fade_out'));
+    await h.runtime.stop();
+  });
+
+  test('a lamp switched off 61 s after its override is a person who dimmed it', async () => {
+    // Just outside the ceiling. A band that grew past a minute would start
+    // filing somebody who dimmed the room and left it as a lamp leaving — the
+    // record would lie about a person, which is the error the band was written
+    // to stop making about lamps.
+    const h = harness({ devices: [light('l1', undefined, { dim: 0.61 })], verdict: { brightness: 0.8 } });
+    await h.runtime.start();
+    await sharedSettle(12);
+
+    h.advance(SETTLE_PAST);
+    h.report('l1', 'dim', 0.11);
+    h.advance(61_000);
+    h.report('l1', 'onoff', false);
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].fadeOutOverrides, undefined);
+    assert.ok(d.recentControlEvents.some(e => e.type === 'override_cleared' && e.reason === 'power_changed'));
+    await h.runtime.stop();
+  });
+
+  test('three hundredths from our write is forgiven at the top of the axis too', async () => {
+    // `Math.abs(0.83 - 0.86)` is 0.030000000000000027, a hair over the 0.03
+    // tolerance in binary floating point, while `Math.abs(0.10 - 0.13)` is 0.03
+    // exactly. A bare `<=` forgives a bridge's rounding at the bottom of the
+    // axis and stands the device down for four hours over the same rounding
+    // near the top. `withinOverrideTolerance()` is the epsilon that stops it.
+    // Started within one slew step of the target, so the first write lands ON
+    // it: a lamp slewed from further away stops inside the deadband, short.
+    const h = harness({
+      devices: [light('l1', undefined, { dim: 0.8 })],
+      verdict: { brightness: toPerceptual(0.86, 'natural') },
+    });
+    await h.runtime.start();
+    await h.runtime.drain();
+    await h.settle();
+    assert.equal(h.dimWrites().at(-1)!.value, 0.86, 'precondition: 0.86 is what landed');
+
+    h.advance(SETTLE_PAST);
+    h.report('l1', 'dim', 0.83);
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].overridden, false, 'one tolerance away is rounding, wherever on the axis');
+    assert.equal(d.recentControlEvents.filter(e => e.type === 'override').length, 0);
+    await h.runtime.stop();
+  });
+
+  test('a lamp that ignored our write is counted in diagnostics, not hidden', async () => {
+    // `ineffectiveWrite()` turns a lamp that acked a write and stayed put from a
+    // loud wrong answer ("somebody took it over") into a quiet right one. The
+    // count is what keeps the quiet one from becoming a quiet WRONG one: a lamp
+    // nothing can move must not read as a runtime with nothing to do.
+    const wanted = toPerceptual(0.5, 'natural') + 0.04;
+    const h = harness({ devices: [light('l1', undefined, { dim: 0.5 })], verdict: { brightness: wanted } });
+    await h.runtime.start();
+    await h.runtime.drain();
+    await h.settle();
+    assert.equal(h.dimWrites().at(-1)!.value, dimFor(wanted), 'precondition: one write, away from 0.5');
+
+    // Past the settle window, the lamp says it is still exactly where it was.
+    h.advance(SETTLE_PAST);
+    h.report('l1', 'dim', 0.5);
+
+    const target = h.runtime.diagnostics().targets[0];
+    assert.equal(target.overridden, false);
+    assert.equal(target.ignoredWrites, 1);
+    await h.runtime.stop();
+  });
+});
+
+describe('DaylightRuntime - committed is what LANDED', () => {
+  test('a write the lamp refused is attempted again, not filtered as already done', async () => {
+    // `noteOutcomes` records `succeeded` only. Were a failed write recorded as
+    // committed, the no-op filter would see the next pass's identical value as
+    // already at the lamp and drop it — and with the aim inside the deadband
+    // there is no later pass that differs, so the lamp would never be written.
+    const wanted = toPerceptual(0.5, 'natural') + 0.04;
+    const h = harness({ devices: [light('l1', undefined, { dim: 0.5 })], verdict: { brightness: wanted } });
+    h.refuseWrites('l1');
+    await h.runtime.start();
+    await h.runtime.drain();
+    await h.settle();
+    assert.deepEqual(h.dimWrites(), [], 'precondition: the first write was refused');
+
+    h.acceptWrites('l1');
+    h.advance(60_000);
+    await tick(h);
+
+    assert.deepEqual(h.dimWrites(), [{ deviceId: 'l1', capability: 'dim', value: dimFor(wanted) }]);
+    await h.runtime.stop();
+  });
+});
+
+describe('DaylightRuntime - the raise-then-rise test, condition by condition', () => {
+  const risky = () => plan({ sensor: 's1', dark: 0.25, bright: 0.9 });
+  const dimLamps = () => [light('l1', undefined, { dim: 0.01 }), light('l2', undefined, { dim: 0.01 })];
+
+  test('four observations are not yet five, and the tile stays ready', async () => {
+    // FEEDBACK_OBSERVATIONS is "far past coincidence". Five passes give four
+    // resolved probes (the first only opens one), so this sits one short of the
+    // threshold: a lower threshold would put the warning on a tile after a
+    // couple of sunny minutes.
+    const h = harness({ plan: risky(), devices: dimLamps(), verdict: { level: 0.2, brightness: 0.3 } });
+    await h.runtime.start();
+    await sharedSettle(12);
+
+    for (let pass = 1; pass <= 5; pass += 1) {
+      h.advance(60_000);
+      h.setVerdict({ level: 0.2 + pass * 0.1, brightness: 0.9 });
+      await tick(h);
+    }
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.feedbackObservations, 4);
+    assert.equal(d.state, 'ready');
+    await h.runtime.stop();
+  });
+
+  test('a reading that rises while the aim FALLS is never feedback', async () => {
+    // Without the raise there is no mechanism: lamps being turned down cannot
+    // be what made the room lighter. A probe opened on every pass would count
+    // a cloud clearing during a fade-down.
+    const h = harness({
+      plan: risky(),
+      devices: [light('l1', undefined, { dim: 0.9 }), light('l2', undefined, { dim: 0.9 })],
+      verdict: { level: 0.2, brightness: 0.3 },
+    });
+    await h.runtime.start();
+    await sharedSettle(12);
+
+    for (let pass = 1; pass <= 6; pass += 1) {
+      h.advance(60_000);
+      h.setVerdict({ level: 0.2 + pass * 0.1 });
+      await tick(h);
+    }
+
+    assert.equal(h.runtime.diagnostics().feedbackObservations, 0);
+    await h.runtime.stop();
+  });
+
+  test('a reading that rises while the aim HOLDS is never feedback either', async () => {
+    // The settled room: inside the deadband the aim does not move, so a sunny
+    // morning brightening the sensor is the sky, not these lamps.
+    const h = harness({
+      plan: risky(),
+      devices: [light('l1', undefined, { dim: 0.5 })],
+      verdict: { level: 0.2, brightness: toPerceptual(0.5, 'natural') },
+    });
+    await h.runtime.start();
+    await sharedSettle(12);
+
+    for (let pass = 1; pass <= 6; pass += 1) {
+      h.advance(60_000);
+      h.setVerdict({ level: 0.2 + pass * 0.1 });
+      await tick(h);
+    }
+
+    assert.equal(h.runtime.diagnostics().feedbackObservations, 0);
+    await h.runtime.stop();
+  });
+
+  test('a level computed from the sun is never feedback, however it moves', async () => {
+    // The sensor is named (so the configuration is risky) but unusable, and the
+    // level comes from the sun's elevation (platform §16). Nothing these lamps
+    // do can move the sun, so the test is meaningless and must not count.
+    const h = harness({ plan: risky(), devices: dimLamps(), verdict: { level: 0.2, brightness: 0.3, source: 'sky' } });
+    await h.runtime.start();
+    await sharedSettle(12);
+
+    for (let pass = 1; pass <= 6; pass += 1) {
+      h.advance(60_000);
+      h.setVerdict({ level: 0.2 + pass * 0.1, brightness: 0.9 });
+      await tick(h);
+    }
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.feedbackObservations, 0);
+    assert.equal(d.state, 'ready');
+    await h.runtime.stop();
+  });
+
+  test('a rise that arrives eleven minutes after the raise is not its answer', async () => {
+    // FEEDBACK_WINDOW_MS (10 min) is long enough for a report-on-change sensor
+    // to get round to reporting. Past it, the rise is the afternoon, not the
+    // lamps: every probe here expires before the reading moves.
+    const h = harness({ plan: risky(), devices: dimLamps(), verdict: { level: 0.2, brightness: 0.3 } });
+    await h.runtime.start();
+    await sharedSettle(12);
+
+    for (let pass = 1; pass <= 6; pass += 1) {
+      h.advance(11 * 60_000);
+      h.setVerdict({ level: 0.2 + pass * 0.1, brightness: 0.9 });
+      await tick(h);
+    }
+
+    assert.equal(h.runtime.diagnostics().feedbackObservations, 0);
+    await h.runtime.stop();
+  });
+});
+
+describe('DaylightRuntime - publishing when it cannot tell how light it is', () => {
+  test('brightness is the dark end, the level is null, and "it is dark enough" is false', async () => {
+    // A REAL evaluator on a Homey with no location and a sensor that has never
+    // reported: `source: 'none'`. The brightness falls back to the response's
+    // own dark end — a room that went dark because a sensor did is the worse
+    // surprise — but the LEVEL is null, never 0: zero is pitch dark on that
+    // axis, and a Flow gating on darkness would light the room all day on a
+    // flat sensor battery. `isDarkEnough` at threshold 1 is true for ANY
+    // reading, so false here can only mean "no reading".
+    const h = harness({ plan: plan({ sensor: 's1', dark: 0.6 }), realEvaluator: { location: () => null } });
+    await h.runtime.start();
+    assert.equal(h.runtime.currentValue().source, 'none', 'precondition');
+
+    const values = h.runtime.publishedValues();
+    // 0.6 ^ 2.2 = 0.325, at the capability's two decimals.
+    assert.equal(values[VALUE_CAPABILITIES.brightness], 0.33);
+    assert.equal(values[VALUE_CAPABILITIES.brightness], dimFor(0.6));
+    assert.equal(values[VALUE_CAPABILITIES.daylight], null);
+    assert.equal(isDarkEnough(values, 1), false);
+    await h.runtime.stop();
+  });
+});
+
+/**
+ * "A Room-sensing Light never switches a lamp on", at the moment a write is
+ * DISPATCHED rather than the moment it was planned.
+ *
+ * Planning skips a lamp that is off, and an `onoff: false` report cancels the
+ * lamp's queue outright. Neither covers a write already held by the rate limit
+ * when the runtime learns the lamp is off some other way: a re-read of live
+ * values after the zone changed, say, because the lamp's own report was one of
+ * the many a Zigbee mesh drops. That write was planned for a lamp that was on,
+ * and a `dim` turns an off lamp on (platform §12). The scheduler's eligibility
+ * check — `dim` only while the cache says on — is the last thing between it and
+ * a light coming on in an empty room.
+ */
+describe('DaylightRuntime - a held write is checked again when it goes out', () => {
+  test('a rate-limited dim held for a lamp that has since gone off is never sent', async () => {
+    const timers = new FakeTimers(0);
+    const h = harness({ devices: [light('l1', undefined, { dim: 0.5 })], verdict: { brightness: 0.9 }, timers });
+    await h.runtime.start();
+    await h.settle();
+    assert.equal(h.dimWrites().length, 1, 'precondition: the first write went out on the leading edge');
+
+    // The next step of the slew, inside the 200 ms rate window: held, not sent.
+    await h.runtime.tick();
+    await h.settle();
+    assert.equal(h.dimWrites().length, 1);
+    assert.ok(timers.pending > 0, 'precondition: a second dim is held by the rate limit');
+
+    // The lamp goes off and its report never arrives. A second lamp joining the
+    // zone makes the runtime re-read every target, which is how it finds out.
+    h.devices[0].capabilitiesObj.onoff.value = false;
+    h.addToCatalogue(light('l2', undefined, { onoff: false }));
+    await h.runtime.refreshTargets();
+    await h.settle();
+    assert.equal(h.runtime.diagnostics().targets.find(t => t.id === 'l1')?.on, false,
+      'precondition: the runtime now knows l1 is off');
+
+    timers.advance(1_000);
+    await h.settle();
+
+    assert.equal(h.dimWrites().length, 1, 'the held dim would have switched the lamp back on');
+    await h.runtime.stop();
   });
 });

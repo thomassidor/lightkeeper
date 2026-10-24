@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import { CommandScheduler } from '../../lib/outputs/command-scheduler';
 import type { Capability, WriteValue } from '../../lib/outputs/intent-planner';
 import { FakeTimers } from '../support/fake-timers';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, relative } from 'node:path';
 
 /**
  * `WriteValue`, not `boolean | number`: `light_mode` is a string, and widening it
@@ -302,5 +304,73 @@ describe('a queue survives a flush with nothing in it', () => {
     await h.clock.advanceAsync(500);
 
     assert.equal(h.written.length, 2);
+  });
+});
+
+/**
+ * Every queue in the app runs on its owner's clock.
+ *
+ * Each of the five runtimes that writes to lamps (controller, schedule, curve,
+ * Room-sensing, and the set_lights writer) used to build its CommandScheduler
+ * with no timers at all, so the queue's 200 ms rate limit ran on the real clock
+ * whatever the runtime had been handed. A test driving a runtime on fake time
+ * could not see a rate-limited second write, and could not prove that stop()
+ * left nothing armed: the "scheduler.stop() removed" mutant survived in every
+ * runtime. The behaviour is pinned by the lifecycle tests; this is the
+ * structural half, so a sixth runtime cannot quietly go back to the real clock.
+ */
+describe("every CommandScheduler in lib/ is built on its owner's clock", () => {
+  const ROOT = join(import.meta.dirname, '..', '..');
+  const sources = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap(entry =>
+    entry.isDirectory() ? sources(join(dir, entry.name)) : entry.name.endsWith('.ts') ? [join(dir, entry.name)] : []);
+
+  const constructions = sources(join(ROOT, 'lib')).flatMap(file => {
+    const text = readFileSync(file, 'utf8');
+    return [...text.matchAll(/new CommandScheduler\(\{([\s\S]*?)\n\s*\}, /g)]
+      .map(m => ({ file: relative(ROOT, file).split('\\').join('/'), options: m[1]! }));
+  });
+
+  test('there are five, one per lamp-writing runtime', () => {
+    assert.deepEqual(constructions.map(c => c.file).sort(), [
+      'lib/circadian/circadian-runtime.ts',
+      'lib/daylight/daylight-runtime.ts',
+      'lib/flow/light-writer.ts',
+      'lib/runtime/controller-runtime.ts',
+      'lib/schedules/schedule-runtime.ts',
+    ]);
+  });
+
+  test('each passes setTimeout, clearTimeout and now', () => {
+    const missing = constructions.flatMap(({ file, options }) =>
+      ['setTimeout:', 'clearTimeout:', 'now:']
+        .filter(key => !options.includes(key))
+        .map(key => `${file} builds a CommandScheduler without ${key.slice(0, -1)}`));
+    assert.deepEqual(missing, []);
+  });
+});
+
+describe('stop() leaves no timer armed', () => {
+  /**
+   * "stop clears queues and stops accepting work" shows a stopped queue takes
+   * nothing new. A write already HELD when stop() arrives is not sent either,
+   * and that stays true with its rate timer still armed: the timer fires into a
+   * stopped scheduler and `flush()` returns early. So no write count can see
+   * the timer itself, which keeps the queue (and through it the runtime and
+   * every lamp handle it reaches) alive until it fires. Every runtime's
+   * teardown assertion of `pending === 0` rests on this one `clearTimeout`.
+   */
+  test('a write held on the rate window is disarmed by stop()', async () => {
+    const { clock, written, scheduler } = harness();
+    scheduler.submit([{ deviceId: 'a', capability: 'dim', value: 0.3 }]);
+    await clock.advanceAsync(0);
+    const held = scheduler.submit([{ deviceId: 'a', capability: 'dim', value: 0.6 }]);
+    assert.equal(clock.pending, 1, 'the second write waits on the rate window');
+
+    scheduler.stop();
+
+    assert.equal(clock.pending, 0);
+    assert.deepEqual((await held.completion).map(outcome => outcome.status), ['cancelled']);
+    await clock.advanceAsync(1000);
+    assert.deepEqual(written.map(w => w.value), [0.3]);
   });
 });

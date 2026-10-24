@@ -5,6 +5,9 @@ import { fakeHomey, makeDriver, translate, localised, FakePairSession } from '..
 import { fakeApiClient, lamp } from '../support/fake-homey-api';
 import { driverApp, type DriverAppOptions } from '../support/fake-lightkeeper-app';
 import { DEFAULT_POINTS, MIN_POINTS } from '../../lib/circadian/circadian-types';
+import { ScheduleRuntimeManager } from '../../lib/schedules/schedule-runtime-manager';
+import type { HomeyApiService } from '../../lib/homey-api-service';
+import type { FlowBridgeManager } from '../../lib/bridge/flow-bridge-manager';
 
 const CurveDriver = require('../../drivers/curve/driver');
 const ScheduleDriver = require('../../drivers/schedule/driver');
@@ -88,6 +91,22 @@ describe('the Colour Curve Light', () => {
     assert.equal(review.rows[3].value, translate('transition.balanced'));
     assert.equal(review.rows[3].view, 'curve');
     assert.deepEqual(review.control.modes, ['after', 'before', 'none']);
+  });
+
+  /**
+   * A NEW Colour Curve Light starts on "Change lights after they turn on", not
+   * on pre-staging. The default has been reversed twice (argued at
+   * DEFAULT_SIMPLE_PLAN), and the curve driver states its own seed in
+   * `bindSession` rather than inheriting that one — so the circadian driver's
+   * tests cannot catch this driver drifting back to `preStage: true`, which
+   * would offer an untested choice that pre-stages nothing (`preStagesLamp()`).
+   */
+  test('a new curve\'s review starts on "after", not on pre-staging', async () => {
+    const { session: s } = await session(CurveDriver);
+    await s.call('selectTargets', { kind: 'devices', deviceIds: ['l1'] });
+    const review = await s.call('getReview');
+
+    assert.equal(review.control.selected, 'after');
   });
 
   test('the transition the curve screen chose is what the device stores, and repair reads it back', async () => {
@@ -242,5 +261,56 @@ describe('the light schedule', () => {
     const { driver } = await session(ScheduleDriver);
     await driver.onInit();
     assert.ok(driver.logs.includes('Schedule driver initialised'));
+  });
+});
+
+/**
+ * "The Test control works before save, and without Flows" (CLAUDE.md, Safety
+ * properties), the schedule half.
+ *
+ * The test above runs against the fake app's STUBBED `schedules.ephemeral`, so
+ * it says nothing about the real manager: an ephemeral runtime built with the
+ * full `start()` instead of `startWithoutFlows()` would reconcile a schedule
+ * nobody has saved — generate its Flows under the preview owner, or fail on a
+ * pairing session that has no key yet — and every test stayed green.
+ *
+ * Here the driver's `test` handler is wired to the REAL
+ * `ScheduleRuntimeManager.ephemeral`, over the same catalogue and lamps, with a
+ * bridge and an API whose every Flow-shaped call is counted. The lamp
+ * answering is the positive control; nothing Flow-shaped happening is the
+ * promise.
+ */
+describe('the light schedule\'s Test control, on the real manager', () => {
+  test('applies the boundary to the lamp and never touches a Flow or the write client', async () => {
+    const WINDOW = { id: 'a', onAt: 22 * 60, end: { kind: 'duration', minutes: 180 } };
+    const built = await session(ScheduleDriver);
+    const flowCalls: string[] = [];
+
+    const bridge = {
+      reconcile: async () => { flowCalls.push('bridge.reconcile'); },
+      sync: async () => { flowCalls.push('bridge.sync'); throw new Error('the Test control synced Flows'); },
+      removeAll: async () => { flowCalls.push('bridge.removeAll'); return 0; },
+    } as unknown as FlowBridgeManager;
+    const api = {
+      ...(built.api as object),
+      withWriteClient: async () => { flowCalls.push('api.withWriteClient'); throw new Error('no key in a pairing session'); },
+    } as unknown as HomeyApiService;
+    const manager = new ScheduleRuntimeManager({
+      api, catalog: built.catalog, bridge, timezone: () => 'Europe/Copenhagen', log: () => undefined,
+    });
+    // A card lookup is the first thing a reconcile does; count it too.
+    manager.timeCard = async () => { flowCalls.push('timeCard'); return { card: null, candidates: [] }; };
+    built.app.schedules.ephemeral = (plan: any) => manager.ephemeral(plan) as never;
+
+    await built.session.call('selectTargets', { kind: 'devices', deviceIds: ['l1'] });
+    await built.session.call('setSchedules', { entries: [WINDOW] });
+    const result = await built.session.call('test', { entryId: 'a', boundary: 'off' });
+
+    assert.equal(result.targets, 1);
+    assert.ok(
+      built.client.writes.some(write => write.deviceId === 'l1' && write.capabilityId === 'onoff' && write.value === false),
+      'the Test reached the lamp',
+    );
+    assert.deepEqual(flowCalls, [], 'the Test control reached for a Flow');
   });
 });

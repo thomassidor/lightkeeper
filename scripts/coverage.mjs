@@ -32,11 +32,29 @@ const ROOT = join(fileURLToPath(import.meta.url), '..', '..');
 /** Where the app's own runtime code lives — everything a Homey executes. */
 const SOURCES = ['app.ts', 'api.ts', 'lib', 'drivers'];
 
-/** Totals over every file in the report. */
-const TOTAL = { lines: 97, branches: 87, functions: 92 };
+/**
+ * Totals over every file in the report.
+ *
+ * Set on 24 October 2026 against what the suite then achieved on BOTH the Node
+ * CI runs (22) and a current local one (24), which differ in the branch figure:
+ * lines 98.75 / 98.75, branches 89.86 / 89.77, functions 95.03 / 95.03. Each
+ * floor sits a quarter to half a point under the lower of the two.
+ */
+const TOTAL = { lines: 98.5, branches: 89.5, functions: 94.5 };
 
-/** The least any single file may have. */
-const PER_FILE = { lines: 85, branches: 65 };
+/**
+ * The least any single file may have.
+ *
+ * `functions` is new, and it is here because the totals cannot see a file whose
+ * functions go untested: the four runtime managers once sat at 60-74% while the
+ * total read 93%. The lowest files when it was set (both Node versions agree):
+ * lines 91.08 (schedule-runtime-manager.ts), branches 73.91 (drivers/curve/
+ * driver.ts), functions 56.00 (evidence-feature-disabled.ts, the launch build's
+ * no-op twin of the recorder) and then 61.73 (app.ts, whose Flow-card listener
+ * shells are thin). Raising the functions floor further means testing those
+ * two, not lowering anything else.
+ */
+const PER_FILE = { lines: 90, branches: 72, functions: 55 };
 
 /**
  * Files that are never in the report because they contain no runtime code: they
@@ -66,6 +84,15 @@ const args = [
   // "never loaded by any test" on Node 24 while CI on Node 22 passed. Passing any exclude
   // replaces the default; the include list above already keeps test/ out.
   '--test-coverage-exclude=test/**',
+  // Per test, and the same value `npm test` passes. Without it a promise that never settles —
+  // a stop() that forgets to settle its waiters, say — does not fail the suite, it HANGS it, and
+  // CI then reports the job's 15-minute timeout instead of the test. Measured: that mutant hung
+  // `npm test` indefinitely. The slowest test today takes under a second.
+  //
+  // Deliberately NOT `--test-force-exit` beside it: a test file that leaves a live timer or
+  // socket behind is a teardown bug, and force-exit would let it pass silently where today it
+  // keeps the run open for somebody to notice.
+  '--test-timeout=30000',
   '--test-reporter=tap', 'test/unit/**/*.test.ts',
 ];
 const run = spawnSync(process.execPath, args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
@@ -73,6 +100,15 @@ if (run.error) throw run.error;
 
 const out = run.stdout;
 const failed = /^# fail (\d+)/m.exec(out);
+// A test that hits --test-timeout is reported as CANCELLED, not failed: `# fail 0` beside
+// `# cancelled 1`. Reading only the fail count let a timed-out test through to the coverage
+// assessment and a green run.
+const cancelled = /^# cancelled (\d+)/m.exec(out);
+if (cancelled && cancelled[1] !== '0') {
+  process.stdout.write(out.split('\n').filter(line => /^not ok|^\s+not ok|^# (tests|pass|fail|cancelled)/.test(line)).join('\n'));
+  console.error('\nA test was cancelled (most often: it ran past --test-timeout); coverage was not assessed.');
+  process.exit(1);
+}
 if (run.status !== 0 && (!failed || failed[1] !== '0')) {
   process.stdout.write(out.split('\n').filter(line => /^not ok|^\s+not ok|^# (tests|pass|fail)/.test(line)).join('\n'));
   console.error('\nThe suite itself failed; coverage was not assessed.');

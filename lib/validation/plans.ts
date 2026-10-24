@@ -14,7 +14,7 @@ import {
 } from '../mapping/mapping-types';
 import type { ControllerProfile, ManagedFlowReference } from '../profiles/controller-profile';
 import {
-  ENTRY_ID_SHAPE,
+  ENTRY_ID_SHAPE, MAX_ENTRIES as MAX_SCHEDULE_WINDOWS,
   type SchedulePlan, type ScheduleEntry, type ScheduleEnd, type IsoWeekday,
 } from '../schedules/schedule-types';
 import {
@@ -49,13 +49,17 @@ import type { InputAction } from '../inputs/input-event';
  *  - **An unknown discriminant throws** rather than falling through a `switch`.
  *    A target kind the app cannot drive must read as "this device has no usable
  *    configuration", not as "there was nothing to write".
- *  - **`managedFlows` is shape-checked, and that is a DELETE gate.** The device
- *    layer's never-registered delete path hands these references straight to
- *    `bridge.removeAll`. A forged or corrupted reference is a flow id we were
- *    told to delete by something other than us, so nothing that fails the shape
- *    check may reach it. `validManagedFlowRefs()` is the filter, and it is
+ *  - **`managedFlows` is shape-checked, and that is the first of two DELETE
+ *    gates.** The device layer's never-registered delete path hands these
+ *    references to `bridge.removeAll`. A malformed reference is a flow id we
+ *    were told to delete by something other than us, so nothing that fails the
+ *    shape check may reach it. `validManagedFlowRefs()` is the filter, and it is
  *    separate from the throwing validator on purpose: a delete path must degrade
- *    to "delete fewer things", never to "throw and skip the cleanup".
+ *    to "delete fewer things", never to "throw and skip the cleanup". The second
+ *    gate is the bridge's ownership check against the LIVE Flow
+ *    (`deleteOwnedFlow` in lib/bridge/flow-bridge-manager.ts), and it is the one
+ *    that matters: a well-formed reference naming somebody else's Flow passes
+ *    this shape check, and only the live Flow can say whose it is.
  *
  * Caps are generous and documented at each site: they exist so a corrupted list
  * of 100 000 entries reports a bad plan instead of taking the app down inside a
@@ -81,7 +85,14 @@ const ROOT = {
   daylight: 'DaylightPlan',
 } as const;
 
-/** Well above the app's own limits — 64 mapping rows, 12 windows, 8 curve points. */
+/**
+ * Well above the app's own limits — 64 mapping rows, 12 windows, 8 curve points.
+ *
+ * These are CORRUPTION caps: past one, a plan is quarantined. The app's own
+ * limits are a different thing, and where a stored plan can exceed one without
+ * being corrupt it is re-applied by truncating instead — see the twelve-window
+ * cap in `validateSchedulePlan`.
+ */
 const MAX_MAPPINGS = 64;
 const MAX_ENTRIES = 32;
 const MAX_POINTS = 48;
@@ -536,9 +547,26 @@ function validateScheduleEntry(raw: unknown, path: string): ScheduleEntry {
 export function validateSchedulePlan(raw: unknown): SchedulePlan {
   const plan = requireRecord(raw, ROOT.schedule);
 
+  /**
+   * Validated up to the corruption cap, then held to the APP's cap of twelve.
+   *
+   * Twelve was enforced only by `sanitiseEntries`, on the way in from a screen
+   * or the app API. A stored plan read back through here accepted up to 32,
+   * and a store can be written without either — `createPairSessionDevice`
+   * takes any `store` (platform §14), as can a hand-edit — so a schedule could
+   * run, and generate Flows for, more windows than the app promises: two Flows
+   * each, 64 rows in the user's Flow list instead of 24.
+   *
+   * Truncated, never thrown: a plan with thirteen well-formed windows is not
+   * corrupt, and quarantining it would take a working device offline over the
+   * one window it could not keep. The first twelve in stored order are kept,
+   * which is the order `sanitiseEntries` keeps them in too. Every window is
+   * still validated, so a malformed thirteenth is still a malformed plan.
+   */
   const entries = uniqueIds(
     requireArray(plan.entries, `${ROOT.schedule}.entries`, MAX_ENTRIES)
-      .map((entry, i) => validateScheduleEntry(entry, `${ROOT.schedule}.entries[${i}]`)),
+      .map((entry, i) => validateScheduleEntry(entry, `${ROOT.schedule}.entries[${i}]`))
+      .slice(0, MAX_SCHEDULE_WINDOWS),
     `${ROOT.schedule}.entries`,
   );
   return {
@@ -765,7 +793,16 @@ export function validateSimpleCircadianPlan(raw: unknown): SimpleCircadianPlan {
  */
 function storedPreStageLights(plan: Record<string, unknown>): { preStageLights?: string[] } {
   if (!Array.isArray(plan.preStageLights)) return {};
-  const ids = plan.preStageLights.filter((id): id is string => typeof id === 'string' && id.length > 0);
+  /**
+   * Capped like every other stored list (`requireArray`'s docblock argues why),
+   * and capped the FORGIVING way: truncated, never thrown. It was the one list
+   * here with no cap at all, and it is copied on every persist and scanned once
+   * per lamp per tick by `preStagesLamp()`. A lamp past the cap is simply not
+   * pre-staged — the safe answer this field already gives for a bad entry.
+   * Truncated BEFORE filtering, so an oversized list is never walked whole.
+   */
+  const ids = plan.preStageLights.slice(0, MAX_TARGET_DEVICES)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0);
   return { preStageLights: [...new Set(ids)] };
 }
 

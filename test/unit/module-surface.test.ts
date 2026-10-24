@@ -134,3 +134,59 @@ describe('the surface lib/ actually exposes', () => {
     );
   });
 });
+
+/**
+ * A lux sensor never reaches the light seams (CLAUDE.md, "Safety properties").
+ *
+ * `measure_luminance` is `setable: false` and declares no `min`/`max` (platform
+ * §16), and the `Capability` union in the intent planner is the set of things
+ * this app WRITES. Widening it would put a read-only sensor in the write path,
+ * and nothing failed when it was widened: the union is type-only, so no test
+ * could see it, and lint is not part of `npm test`. So this reads the source,
+ * the same way the check above does, in both directions:
+ *
+ *  - the write path never names the sensor capability, and
+ *  - the two modules that read the sensor never import the write path.
+ */
+describe('the lux sensor and the light seams stay apart', () => {
+  const read = (path: string) => withoutComments(readFileSync(join(ROOT, path), 'utf8'));
+
+  /** The modules a planned write passes through, from intent to radio. */
+  const WRITE_PATH = [
+    'lib/outputs/intent-planner.ts',
+    'lib/outputs/light-target-adapter.ts',
+    'lib/outputs/command-scheduler.ts',
+    'lib/outputs/target-state-cache.ts',
+  ];
+  /** The only two modules that read a lux sensor: live values, and its week. */
+  const SENSOR_READERS = ['lib/daylight/luminance-source.ts', 'lib/daylight/sensor-history.ts'];
+
+  test("the planner's Capability union is the six light capabilities, and only those", () => {
+    const source = read('lib/outputs/intent-planner.ts');
+    const declaration = /export type Capability =([\s\S]*?);/.exec(source)?.[1];
+    assert.ok(declaration, 'no `export type Capability =` in intent-planner.ts — has it moved?');
+
+    const members = [...declaration.matchAll(/'([a-z_]+)'/g)].map(m => m[1]).sort();
+    assert.deepEqual(members, [
+      'dim', 'light_hue', 'light_mode', 'light_saturation', 'light_temperature', 'onoff',
+    ]);
+  });
+
+  test('no module on the write path names the sensor capability', () => {
+    const naming = WRITE_PATH.filter(path => /measure_luminance|LUMINANCE_CAPABILITY/.test(read(path)));
+    assert.deepEqual(naming, []);
+  });
+
+  test('the sensor readers import nothing from the write path', () => {
+    const crossing: string[] = [];
+    for (const path of SENSOR_READERS) {
+      for (const match of read(path).matchAll(/from\s+'([^']+)'/g)) {
+        const target = match[1]!;
+        if (WRITE_PATH.some(module => target.endsWith(module.replace(/^lib\/outputs\//, 'outputs/').replace(/\.ts$/, '')))) {
+          crossing.push(`${path} imports ${target}`);
+        }
+      }
+    }
+    assert.deepEqual(crossing, []);
+  });
+});

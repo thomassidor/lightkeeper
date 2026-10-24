@@ -87,10 +87,20 @@ export class HealthMonitor {
     const source = await this.catalog.device(profile.source.deviceId);
 
     if (!source) {
-      // The source is gone. Before declaring "needs repair", look for
-      // the same remote re-added under a new device ID.
-      const candidate = await this.findReattachCandidate(profile);
-      if (candidate) {
+      /**
+       * The source is gone. Before declaring "needs repair", look for the same
+       * remote re-added under a new device ID — in ONE scan.
+       *
+       * This used to ask twice: `findReattachCandidate` (stopping at two) and
+       * then `findReattachCandidates` (all of them). Every candidate `discover()`
+       * matches its device against the whole trigger catalogue, and this branch
+       * runs on every catalogue change for as long as the remote stays gone,
+       * which for BILRESA is "recurring, not exceptional". One full list answers
+       * both questions: exactly one is the tap, more than one is the ambiguity.
+       */
+      const { candidates } = await this.findReattachCandidates(profile);
+      if (candidates.length === 1) {
+        const candidate: ReattachCandidate = { ...candidates[0]!, matchedOn: 'owner+driver+fingerprint' };
         return {
           state: 'needs_repair',
           detail: {
@@ -111,14 +121,13 @@ export class HealthMonitor {
        * paired", which would be untrue and would send the user looking for a
        * remote sitting on the shelf in front of them.
        */
-      const ambiguous = await this.findReattachCandidates(profile);
-      if (ambiguous.candidates.length > 1) {
+      if (candidates.length > 1) {
         return {
           state: 'needs_repair',
           detail: {
             key: 'source.reattachAmbiguous',
-            tokens: { count: ambiguous.candidates.length },
-            text: `${ambiguous.candidates.length} remotes look like this one. Open repair to choose.`,
+            tokens: { count: candidates.length },
+            text: `${candidates.length} remotes look like this one. Open repair to choose.`,
           },
         };
       }
@@ -181,59 +190,51 @@ export class HealthMonitor {
    * instead — never guess a new binding.
    */
   async findReattachCandidate(profile: ControllerProfile): Promise<ReattachCandidate | undefined> {
-    if (!profile.source.eventSurfaceFingerprint) return undefined;
-
-    const inUse = this.sourcesInUse();
-    const devices = await this.catalog.allDevices();
-    const plausible = devices.filter(device =>
-      // A device already used by this controller is not a re-attach candidate.
-      device.id !== profile.source.deviceId
-      // Nor is one another LIVE controller is listening to. Re-attaching onto
-      // it would leave two controllers driving from one remote, with the other
-      // one's mappings silently competing for the same gestures.
-      && !inUse.has(device.id)
-      && matchesOwnerAndDriver(device, profile));
-
-    const matches: Array<{ deviceId: string; deviceName: string }> = [];
-    for (const device of plausible) {
-      const discovered = await this.discovery.discover(device);
-      if (!surfaceIsPortablyTheSame(profile, discovered)) continue;
-      matches.push({ deviceId: device.id, deviceName: device.name });
-      // Two is already enough to know there is no one-tap answer, and every
-      // extra `discover()` is a catalogue read (platform §15).
-      if (matches.length > 1) break;
-    }
-
+    // Two is already enough to know there is no one-tap answer, and every
+    // extra `discover()` is a catalogue read (platform §15).
+    const matches = await this.scanForReattach(profile, 2);
     if (matches.length !== 1) return undefined;
-
     return { ...matches[0]!, matchedOn: 'owner+driver+fingerprint' };
   }
 
   /**
-   * The same search, reported as the ambiguity it is.
+   * The same search, reported as the ambiguity it is: every candidate.
    *
-   * Separate from `findReattachCandidate` so the one-tap path stays a single
-   * yes-or-no question, and so a caller that only wants to know whether to
-   * offer the tap does not pay for the full list.
+   * `assess()` asks this one, once, because it needs the count for the
+   * ambiguous sentence anyway. `findReattachCandidate` stays for the repair
+   * screen, which only wants to know whether to offer the tap and stops at two.
    */
   async findReattachCandidates(profile: ControllerProfile): Promise<AmbiguousReattach> {
-    if (!profile.source.eventSurfaceFingerprint) return { candidates: [] };
+    return { candidates: await this.scanForReattach(profile) };
+  }
+
+  /** The one scan both questions are answered from, optionally stopping early. */
+  private async scanForReattach(
+    profile: ControllerProfile,
+    stopAt = Number.POSITIVE_INFINITY,
+  ): Promise<Array<{ deviceId: string; deviceName: string }>> {
+    if (!profile.source.eventSurfaceFingerprint) return [];
 
     const inUse = this.sourcesInUse();
     const devices = await this.catalog.allDevices();
-    const candidates: Array<{ deviceId: string; deviceName: string }> = [];
+    const matches: Array<{ deviceId: string; deviceName: string }> = [];
 
     for (const device of devices) {
+      // A device already used by this controller is not a re-attach candidate.
       if (device.id === profile.source.deviceId) continue;
+      // Nor is one another LIVE controller is listening to. Re-attaching onto
+      // it would leave two controllers driving from one remote, with the other
+      // one's mappings silently competing for the same gestures.
       if (inUse.has(device.id)) continue;
       if (!matchesOwnerAndDriver(device, profile)) continue;
 
       const discovered = await this.discovery.discover(device);
       if (!surfaceIsPortablyTheSame(profile, discovered)) continue;
-      candidates.push({ deviceId: device.id, deviceName: device.name });
+      matches.push({ deviceId: device.id, deviceName: device.name });
+      if (matches.length >= stopAt) break;
     }
 
-    return { candidates };
+    return matches;
   }
 
   /**

@@ -9,8 +9,9 @@ entry here says exactly what. [More in the FAQ](FAQ.md#is-this-finished).
 
 ## 1.0.0
 
-**Lightkeeper leaves early access.** Nothing needs redoing, and apart from the one fix below 1.0.0
-runs exactly what 0.6.6 ran. What changes is the promise.
+**Lightkeeper leaves early access.** Nothing needs redoing. Apart from the fixes and the hardening
+below — none of which changes how a device you set up behaves — 1.0.0 runs what 0.6.6 ran. What
+changes is the promise.
 
 Until now every release could reshape what a device stores, and the changelog entry was the only
 warning — there were no major bumps before 1.0, so a breaking change looked like any other minor or
@@ -26,8 +27,14 @@ patch. From 1.0 the app follows semantic versioning:
 New features and redrawn setup screens still arrive in minor versions; what they may not do is break
 a setup you already made.
 
-One fix:
+Two fixes:
 
+- **Removing a device no longer leaves your other devices asking for a new API key.** After a
+  device's Flows were deleted, Lightkeeper removed its now-empty Flow folder — and a Homey that
+  refused that folder delete with "Missing Scopes" had the refusal read as a verdict on the whole
+  key. Every Light Remote and schedule then sat in "needs a new key" until the app restarted, with
+  nothing wrong with the key. A folder is presentation only, so folder writes no longer decide
+  whether the key works in either direction; a refused Flow write still does, exactly as before.
 - **"Test my lights" puts a light back in the mode it found it in.** The test sends each light the
   colour or warmth pre-staging would, and that write switches a light's `light_mode` first
   (platform §6). Putting it back restored only the axis the test wrote, so a lamp found at warm white
@@ -35,7 +42,57 @@ One fix:
   now restores the mode, then only the axis that mode shows — the rule the circadian screen's
   "Stop preview" already followed, and one shared table (`AXES_FOR_MODE`) serves both.
 
+Hardening, from a security audit. Pair sessions and the app API are a scriptable surface
+(platform §14), so a stored setting is not proof of anything:
+
+- **A Flow is deleted only when the live Flow itself names the device deleting it.** A Flow id
+  stored with a device, or in the app's Flow journal, is no longer trusted on its own: a forged one
+  could have made the app delete any Flow in the house with the stored key. A Flow list that cannot
+  be read deletes nothing — so a device removed at that moment leaves its Flows for *Remove orphaned
+  Flows* to offer later — and a Flow somebody re-pointed at another device is no longer deleted with
+  the original.
+- **Remove orphaned Flows leaves alone a Flow somebody added a condition to**, such as a customised
+  copy of a generated Flow; it is reported as unmanaged.
+- **Two devices can no longer share one device id.** The second is marked unavailable instead of
+  silently taking over the first's lights and Flows. Every device id this app has ever created keeps
+  working.
+- **The Test control** (pairing screen and app API) refuses a job name that is not a light function,
+  and only ever touches the controller's own lights, at most 256 of them.
+- **A stored schedule never runs more than twelve blocks** — a plan holding more keeps its first
+  twelve instead of generating extra Flows — and every list a screen or a stored plan can carry is
+  bounded, including the lamps a pre-stage test proved.
+- **Every settings and pairing screen is checked for every HTML-injection route**, not only
+  `innerHTML`, and the credential screen's "could not reach Homey" banner is built from text nodes.
+
+Less background work, from a performance audit:
+
+- **The read client no longer subscribes to Homey's Flow and Flow-tag event streams**, which it never
+  read. The write client keeps them until a credential pass on hardware says otherwise.
+- **A device or zone change no longer re-reads every installed app's name**; names are asked for only
+  when a device from an unknown app appears. The sensor service gathers a burst of device changes
+  into one re-read, and the trigger-card list is let go when its minute is up.
+- **Starting or re-targeting a circadian, Colour Curve or Room-sensing Light reads each lamp once**
+  instead of twice, and subscribes to its lamps several at a time. A missing remote is searched for
+  once per health check, not twice.
+- **Stopping cancels every timer at once.** Each device cancels its ramps, held presses, pre-stage
+  checks and sensor retries before its asynchronous cleanup, and app shutdown starts every teardown
+  together instead of waiting on the evidence recorder first (platform §17: an `await` there may never
+  finish).
+- **`/diagnostics` keeps more useful history and counts more.** Identical idle passes are one row
+  with a count, so the last pass that changed a light is no longer pushed out within the hour; and
+  how often the device catalogue changes and the card lists are read is counted, which
+  `scripts/diagnostics.mjs` prints per hour.
+
 Under the hood, and none of it in the app a Homey runs:
+
+- **A test audit.** Every safety property in `CLAUDE.md` was mutation-tested — the guard deleted, to
+  see whether any test noticed — and the ones nothing pinned now are: teardown for every device type
+  (the controller's whole `stop()` could be deleted with the suite green), dispatch on the real
+  managers, override expiry, the fade-out band, folder failures, key redaction at every log site.
+  Each runtime's write queue now runs on the clock a test injects. Both daylight-saving days are
+  tested on Copenhagen's zone. A test that hangs now fails after 30 s, and the coverage gate refuses a
+  cancelled test instead of passing over it. The coverage floors are raised, with a per-file
+  functions floor beside them; the suite is past 2500 tests.
 
 - **Development tools updated** — eslint 10.13, typescript-eslint 8.72, tsx 4.23.15 and the Homey
   CLI 4.6.1, plus `actions/setup-node` 7.1.0 in CI. `homey-api`, the app's one runtime dependency,

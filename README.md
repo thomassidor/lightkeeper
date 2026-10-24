@@ -204,9 +204,10 @@ is shared only if you choose. [`docs/privacy.md`](docs/privacy.md) has the full 
 - **Out of early access.** Nothing needs redoing.
 - **A minor or patch update keeps every device working as you set it up.** Anything that would need
   Repair, re-adding a device or losing a setting comes only as a major version, and says so.
-- **"Test my lights" puts each light back in its own mode**, rather than leaving a white light on a
-  colour.
-- **Development tools updated**, and two vulnerable packages replaced in the Homey CLI's own tree.
+- **Two fixes:** removing a device no longer leaves your other devices asking for a new API key, and
+  "Test my lights" puts each light back in its own mode rather than leaving a white light on a colour.
+- **Hardened and lighter:** a Flow is deleted only when the live Flow names its device, and less
+  background work — plus a test audit, and development tools updated.
 
 | Version | What changed |
 |---|---|
@@ -219,7 +220,7 @@ is shared only if you choose. [`docs/privacy.md`](docs/privacy.md) has the full 
 
 Designed and written end to end with [Claude](https://claude.com/claude-code); a human directed the
 work, made the product decisions and verified it on real hardware — a Homey Pro 2023, four remotes,
-three transports, and over 2000 unit tests. [How well tested is this?](FAQ.md#how-well-tested-is-this)
+three transports, and over 2300 unit tests. [How well tested is this?](FAQ.md#how-well-tested-is-this)
 
 ## Contributing
 

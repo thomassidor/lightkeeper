@@ -221,6 +221,14 @@ function harness(options: {
       timers.runPending();
     },
     advance(ms: number) { timers.setNow(timers.now() + ms); },
+    /**
+     * Move the clock AND fire what comes due, in due order — the one place in
+     * this harness where elapsed time is the thing under test rather than a
+     * label on a report. `advance` above deliberately fires nothing.
+     */
+    elapse(ms: number) { timers.advance(ms); },
+    /** The wall clock, for a test that measures how long something took. */
+    now() { return timers.now(); },
     refuseWrites(id: string) { refusing.add(id); },
     acceptWrites(id: string) { refusing.delete(id); },
     at(ms: number) { timers.setNow(ms); },
@@ -738,6 +746,62 @@ describe('pre-staging that turns out to be unsafe', () => {
     const last = (capability: string) => h.writes.filter(w => w.capability === capability).at(-1)?.value;
     assert.equal(last('dim'), 0.7);
     assert.equal(last('light_temperature'), 0.3);
+    /**
+     * And `onoff` FIRST in the restore, which the two checks above cannot see —
+     * they read the last value of each capability, and that is the same in
+     * either order. `restoreLamp` puts the switch back before the values
+     * because the values are what was under test: a warmth sent to an off lamp
+     * is exactly the write that may or may not stick, so sending the restore
+     * to a lamp still off would put back nothing on the lamps that refuse it.
+     */
+    const restore = h.writes.slice(h.writes.findIndex(w => w.capability === 'onoff' && w.value === true));
+    assert.deepEqual(
+      restore.map(w => w.capability), ['onoff', 'light_temperature', 'dim'],
+      'switched on first, then given back its own values',
+    );
+  });
+
+  /**
+   * "Test my {n} lights" runs the lamps in PARALLEL, and the docblock on
+   * `probePreStageAll` says why that is load-bearing rather than quick: each
+   * lamp that is on waits twice (settle off, then the check), and a pair view's
+   * `emit()` gives up at 20 s. Three lamps one after another at the real 5 s
+   * wait is 30 s — a test that answers after the screen has stopped listening.
+   *
+   * Measured on the clock rather than on a write order: in parallel the whole
+   * test is two waits long whatever the count, one after another it is two per
+   * lamp.
+   */
+  test('the per-lamp test waits twice in all, not twice per lamp', async () => {
+    const WAIT = 1500;
+    const h = harness({
+      plan: plan({ preStage: true, preStageLights: [], target: { kind: 'devices', deviceIds: ['l1', 'l2', 'l3'] } }),
+      devices: [light('l1'), light('l2'), light('l3')],
+    });
+    await h.runtime.startIdle();
+
+    const started = h.now();
+    let answeredAt: number | null = null;
+    const pending = h.runtime.probePreStageAll(WAIT).then(outcome => {
+      answeredAt = h.now();
+      return outcome;
+    });
+    // 100 ms at a time, letting every write's continuation run between steps,
+    // so each wait is armed at the moment the code actually reaches it.
+    for (let elapsed = 0; elapsed <= 8 * WAIT && answeredAt === null; elapsed += 100) {
+      await h.settle();
+      h.elapse(100);
+    }
+    await h.settle();
+    const outcome = await pending;
+
+    assert.equal(outcome.lights.length, 3);
+    assert.ok(outcome.lights.every(lamp => lamp.ok), 'all three stayed off and passed');
+    assert.notEqual(answeredAt, null, 'the test never answered');
+    const took = answeredAt! - started;
+    assert.ok(took >= 2 * WAIT, `each lamp still waits twice — answered after ${took} ms`);
+    assert.ok(took <= 2 * WAIT + 200,
+      `three lamps took ${took} ms: two waits is ${2 * WAIT}, one after another would be ${6 * WAIT}`);
   });
 
   test('a lamp the test moved into colour mode is put back in its own mode', async () => {
@@ -1229,6 +1293,66 @@ describe('pre-staging that turns out to be unsafe', () => {
   });
 
   /**
+   * The inner streak is a run of CONSECUTIVE refusals, and a success inside the
+   * same off-period breaks it. The test above proves a success clears the
+   * record; this proves what that buys: refuse, refuse, take one, refuse is one
+   * refusal running, not three, so the lamp is still offered the next colour.
+   *
+   * Counted cumulatively instead, a lamp that takes most of what it is offered
+   * and occasionally says "soft off" — a busy bridge, not a lamp that refuses
+   * while off — would be stood down for the night on its third hiccup.
+   *
+   * On a curve steep enough that every 20-minute tick moves the warmth past
+   * the deadband, because the success records a warmth and an unmoved curve
+   * would then plan nothing whether the lamp were stood down or not.
+   */
+  test('a colour taken mid-streak resets the count, within one off-period', async () => {
+    let refusing = true;
+    const h = harness({
+      // 06:00 local: the steepest point of a 00:00 → 12:00 segment.
+      now: Date.UTC(2026, 7, 18, 4, 0),
+      plan: plan({
+        preStage: true,
+        target: { kind: 'devices', deviceIds: ['l1'] },
+        points: [
+          { id: 'a', anchor: { kind: 'clock', at: 0 }, warmth: 0.1 },
+          { id: 'b', anchor: { kind: 'clock', at: 12 * 60 }, warmth: 0.9 },
+        ],
+      }),
+      devices: [light('l1', undefined, { onoff: false })],
+      refuseWrite: {
+        capability: 'light_temperature',
+        message: 'device (light) abc is "soft off", command (.color_temperature.mirek) '
+          + 'may not have effect',
+        when: () => refusing,
+      },
+    });
+    const asked = () => h.attempts.filter(a => a.capability === 'light_temperature').length;
+    const pass = async () => {
+      h.advance(20 * 60_000);
+      await h.runtime.tick();
+      await applied(h);
+    };
+
+    await h.runtime.start();
+    await applied(h);                       // refused: 1
+    await pass();                           // refused: 2
+    assert.equal(asked(), 2);
+    refusing = false;
+    await pass();                           // taken
+    assert.equal(asked(), 3);
+    refusing = true;
+    await pass();                           // refused: 1 again, not 3
+    assert.equal(asked(), 4);
+
+    await pass();
+    assert.equal(asked(), 5, 'one refusal since a success is not three in a row');
+    assert.equal(h.runtime.diagnostics().targets[0]!.preStageDeclined?.count, 2,
+      'the streak restarted at the success');
+    await h.runtime.stop();
+  });
+
+  /**
    * The probe wrote `light_temperature` straight through the adapter with no
    * `light_mode` first, unlike every production pre-stage write. Platform §6
    * measured that a lamp sitting in colour mode refuses a temperature "from
@@ -1571,16 +1695,18 @@ describe('crossing between a coloured segment and a temperature one', () => {
 
   test('the mode write survives the SECOND crossing, not just the first', async () => {
     /**
-     * The regression. `planTemperature` returns two writes — the mode, then the
-     * temperature — and the deadband filter used to run per write. Handed the
-     * mode write, `hasMoved` compared the string 'temperature', got NaN, and
-     * NaN >= step is false, so the mode was dropped whenever a warmth had ever
-     * been recorded for that lamp. The temperature then went to a lamp still in
-     * colour mode, which refuses it outright.
+     * The crossing the bug was reported on: every crossing after the first
+     * left the lamp on the colour it last held, on a curve that repeats daily.
      *
-     * The first crossing always worked, which is why this is about the second:
-     * on a curve that repeats daily, every crossing after the first left the
-     * lamp on the colour it last held.
+     * What this test does NOT pin, despite its history, is the per-write
+     * deadband that caused it. That bug dropped the mode write whenever a
+     * warmth was recorded for the lamp — but by the second crossing the colour
+     * segment's hue write has VOIDED the recorded warmth (`noteOutcomes`, and
+     * the test below that), so `hasMoved` is true for every write here and a
+     * per-write filter passes them all. It pins the crossing end to end: the
+     * voiding plus the mode write, in order. The per-device decision itself is
+     * pinned by "a moving temperature segment sends the mode with every
+     * warmth", where a warmth HAS been recorded and nothing voids it.
      */
     const h = harness({ devices: [colourLamp('l1')], plan: mixedPlan(), now: localHour(9) });
     await h.runtime.start();
@@ -1609,6 +1735,52 @@ describe('crossing between a coloured segment and a temperature one', () => {
     const order = crossing.map(w => w.capability);
     assert.ok(order.indexOf('light_mode') < order.indexOf('light_temperature'),
       'mode must precede the temperature it enables, got ' + order.join(' -> '));
+  });
+
+  test('a moving temperature segment sends the mode with every warmth', async () => {
+    /**
+     * The regression proper. `planTemperature` returns two writes — the mode,
+     * then the temperature — and the deadband used to filter them one at a
+     * time. Handed the mode write, `hasMoved` compared the string
+     * 'temperature', got NaN, and NaN >= step is false: so once a warmth had
+     * landed on a lamp, every later warmth went out WITHOUT its mode, and a
+     * lamp that gates (platform §6) left in colour mode by anything — another
+     * app, a person, the vendor's own scene — refused all of them.
+     *
+     * A temperature-only curve, so no hue write ever voids the recorded warmth
+     * and masks the filter the way the crossing test above is masked. Every
+     * burst after the first is the case the bug was in.
+     */
+    const h = harness({
+      devices: [colourLamp('l1')],
+      // 06:00 local: the steepest point of a 00:00 → 12:00 segment, so every
+      // 20-minute tick moves the warmth well past the 0.01 deadband.
+      now: Date.UTC(2026, 7, 18, 4, 0),
+      plan: plan({
+        target: { kind: 'devices', deviceIds: ['l1'] },
+        points: [
+          { id: 'a', anchor: { kind: 'clock', at: 0 }, warmth: 0.1 },
+          { id: 'b', anchor: { kind: 'clock', at: 12 * 60 }, warmth: 0.9 },
+        ],
+      }),
+    });
+    await h.runtime.start();
+    await applied(h);
+    assert.notEqual(h.runtime.diagnostics().targets[0].lastWritten?.warmth, undefined,
+      'a warmth has landed, which is the precondition the bug needed');
+
+    for (let i = 0; i < 4; i += 1) {
+      const before = h.writes.length;
+      h.advance(20 * 60_000);
+      await h.runtime.tick();
+      await applied(h);
+
+      const order = h.writes.slice(before).map(w => w.capability);
+      assert.ok(order.includes('light_temperature'), `tick ${i + 1} moved the warmth and wrote it`);
+      assert.deepEqual(order, ['light_mode', 'light_temperature'],
+        `tick ${i + 1}: the mode must ride with the warmth it enables, got ${order.join(' -> ')}`);
+    }
+    await h.runtime.stop();
   });
 
   test('a flat temperature segment writes no mode at all', async () => {
@@ -1825,6 +1997,90 @@ describe('what the week-long recording found', () => {
   });
 
   /**
+   * The test above passes for a reason that is not the guarantee: its curve
+   * moved during the five hours, so the deadband let a write through whatever
+   * `lastWritten` said. The guarantee is that expiry FORGETS what we last
+   * wrote (`expireOverrides`), and only a curve that has NOT moved can show it:
+   * the record still says 0.6 landed, the plan still asks for 0.6, and without
+   * the forgetting the no-op gate writes nothing — the override lapses and the
+   * lamp stays exactly where it was put, which is the same silence one layer
+   * down. CLAUDE.md: "Both halves ship together or neither does anything."
+   */
+  test('a lapsed override writes the UNCHANGED plan value again', async () => {
+    const h = harness({
+      now: MORNING,
+      plan: plan({
+        target: { kind: 'devices', deviceIds: ['l1'] },
+        points: [
+          { id: 'a', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.6 },
+          { id: 'b', anchor: { kind: 'clock', at: 18 * 60 }, warmth: 0.6 },
+        ],
+      }),
+      devices: [light('l1', undefined, { light_temperature: 0.2 })],
+    });
+    await h.runtime.start();
+    await applied(h);
+    assert.deepEqual(temperatures(h.writes).map(w => w.value), [0.6]);
+
+    h.advance(10_000);
+    h.report('l1', 'light_temperature', 0.05);
+    assert.equal(h.runtime.diagnostics().targets[0].overridden, true);
+
+    // Four hours and a minute: past OVERRIDE_EXPIRY_MS, on a curve that has
+    // asked for 0.6 the whole time.
+    h.advance(4 * 60 * 60_000 + 60_000);
+    const before = h.writes.length;
+    await h.runtime.tick();
+    await applied(h);
+
+    assert.equal(h.runtime.diagnostics().targets[0].overridden, false);
+    assert.deepEqual(
+      temperatures(h.writes.slice(before)).map(w => [w.deviceId, w.value]), [['l1', 0.6]],
+      'the same 0.6, sent again to a lamp that has been at 0.05 since',
+    );
+    await h.runtime.stop();
+  });
+
+  /**
+   * The same guarantee on the colour leg, which keeps its own record
+   * (`lastColorWritten`) and its own gate (`colorHasMoved`) — so forgetting the
+   * warmth alone would leave a lamp somebody recoloured on the colour they
+   * chose, after the override that was protecting it has gone.
+   */
+  test('a lapsed colour override sends the unchanged colour again', async () => {
+    const h = harness({
+      now: MORNING,
+      plan: plan({
+        target: { kind: 'devices', deviceIds: ['l1'] },
+        points: [
+          { id: 'a', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.9, color: 'amber' },
+          { id: 'b', anchor: { kind: 'clock', at: 18 * 60 }, warmth: 0.9, color: 'amber' },
+        ],
+      }),
+      devices: [colourLamp('l1')],
+    });
+    await h.runtime.start();
+    await applied(h);
+    const hues = (writes: Written[]) => writes.filter(w => w.capability === 'light_hue').map(w => w.value);
+    const amber = hues(h.writes);
+    assert.equal(amber.length, 1, 'the colour went out once at start');
+
+    h.advance(10_000);
+    h.report('l1', 'light_hue', 0.6);
+    assert.equal(h.runtime.diagnostics().targets[0].override?.capability, 'light_hue');
+
+    h.advance(4 * 60 * 60_000 + 60_000);
+    const before = h.writes.length;
+    await h.runtime.tick();
+    await applied(h);
+
+    assert.equal(h.runtime.diagnostics().targets[0].overridden, false);
+    assert.deepEqual(hues(h.writes.slice(before)), amber,
+      'the same amber, sent again to a lamp somebody turned blue four hours ago');
+    await h.runtime.stop();
+  });
+
+  /**
    * `resolveSnapshot` seeds every capability in WATCHED_CAPABILITIES, but this
    * runtime only SUBSCRIBES to what it plans from — so an unwatched field keeps
    * its boot value and never moves again.
@@ -1949,6 +2205,52 @@ describe('what the week-long recording found', () => {
     assert.equal(h.writes.slice(before).filter(w => w.deviceId === 'l1').length, 1);
     await h.runtime.stop();
   });
+
+  /**
+   * The same epsilon at the OTHER comparison site: `noteColorOverride` measures
+   * the hue the short way round the wheel and asks `withinOverrideTolerance`
+   * too. The temperature test above cannot reach it — a separate line of code,
+   * which a bare `<=` could come back to without either test noticing.
+   *
+   * Magenta is hue 0.891, and on the wheel that is the recording's 0.86/0.83
+   * arithmetic again: three hundredths that subtract to a hair over 0.03.
+   */
+  test('a bridge exactly one tolerance away on the hue wheel is forgiven too', async () => {
+    const h = harness({
+      now: MORNING,
+      plan: plan({
+        target: { kind: 'devices', deviceIds: ['l1'] },
+        points: [
+          { id: 'a', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.9, color: 'magenta' },
+          { id: 'b', anchor: { kind: 'clock', at: 18 * 60 }, warmth: 0.9, color: 'magenta' },
+        ],
+      }),
+      devices: [colourLamp('l1')],
+    });
+    await h.runtime.start();
+    await applied(h);
+    const written = h.writes.find(w => w.capability === 'light_hue')?.value as number;
+
+    h.advance(10_000);
+    // Whichever direction is the boundary case from the hue the blend actually
+    // produced (0.8909999999999999 today, so UP: 0.921 is 0.030000000000000138
+    // away). The guard below keeps that choice honest: if the palette or the
+    // blend ever moves magenta, a test that stopped exercising the epsilon
+    // would assert nothing at all.
+    const reported = [written + 0.03, written - 0.03]
+      .map(candidate => Number(candidate.toFixed(3)))
+      .find(candidate => Math.abs(candidate - written) > 0.03) ?? written;
+    assert.ok(
+      Math.abs(reported - written) > 0.03 && Math.abs(reported - written) < 0.03 + 1e-9,
+      `${reported} vs ${written} is not a floating-point boundary case`,
+    );
+    h.report('l1', 'light_hue', reported);
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].overridden, false, 'three hundredths on the wheel is a bridge rounding');
+    assert.equal(d.recentControlEvents.filter(e => e.type === 'override').length, 0);
+    await h.runtime.stop();
+  });
 });
 
 /**
@@ -1991,6 +2293,32 @@ describe('what the switch-on capture found', () => {
     await h.runtime.stop();
   });
 
+  /**
+   * Forgiving a lamp that ignored us is the right way round to be wrong — we go
+   * on driving rather than stand down — but it must not be SILENT: a lamp
+   * nothing can move would otherwise read as a runtime with nothing to do.
+   * `ignoredWrites` on each target is what says so (CLAUDE.md, "A lamp that
+   * ignored our write is not a person"), and diagnostics is its only reader.
+   */
+  test('a lamp that ignored our write is counted in diagnostics', async () => {
+    const h = harness({
+      now: MORNING,
+      devices: [light('l1', undefined, { light_temperature: 0.05 })],
+    });
+    await h.runtime.start();
+    await applied(h);
+    assert.ok(temperatures(h.writes).some(w => w.value !== 0.05), 'we asked it to move');
+
+    h.advance(60_000);
+    h.report('l1', 'light_temperature', 0.05);
+
+    const target = h.runtime.diagnostics().targets[0];
+    assert.equal(target.overridden, false);
+    assert.deepEqual(target.ignoredWrites, { light_temperature: 1 },
+      'one ignored write, on the one axis it was given');
+    await h.runtime.stop();
+  });
+
   test('a lamp that keeps talking cannot postpone its own override expiry', async () => {
     const h = harness({ now: MORNING });
     await h.runtime.start();
@@ -2016,6 +2344,131 @@ describe('what the switch-on capture found', () => {
     const d = h.runtime.diagnostics();
     assert.equal(d.targets[0].overridden, false, 'the deadline runs from the first report');
     assert.ok(d.recentControlEvents.some(e => e.type === 'override_cleared' && e.reason === 'expired'));
+    await h.runtime.stop();
+  });
+});
+
+/**
+ * The fade-out band, on a curve that drives brightness.
+ *
+ * Written for the Room-sensing Light (`daylight-runtime.test.ts`, "what the
+ * day-long capture found") and carried by this runtime in its own copy of the
+ * rule — `FADE_OUT_MIN_MS`..`FADE_OUT_GRACE_MS` in `onCapabilityChange` — which
+ * nothing here tested. A lamp that fades out through a NONZERO level reports a
+ * `dim` below what we wanted 29.0-29.9 s before its own `onoff: false`; that is
+ * raised as an override (the evidence has not arrived yet) and only the RECORD
+ * is corrected when the off lands. It is a band because the ceiling alone,
+ * shipped first, filed a person's dim-then-switch-off as a fading lamp.
+ *
+ * `adjustBrightness: true`, or `dim` is not this device's to be overridden on.
+ */
+describe('the fade-out band, on a curve', () => {
+  /** 0.8 perceptual is dim 0.61 at γ = 2.2; the lamp starts well away from it. */
+  const fading = (start = 0.3) => harness({
+    now: MORNING,
+    plan: plan({
+      adjustBrightness: true,
+      target: { kind: 'devices', deviceIds: ['l1'] },
+      points: [
+        { id: 'a', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.5, brightness: 0.8 },
+        { id: 'b', anchor: { kind: 'clock', at: 18 * 60 }, warmth: 0.5, brightness: 0.8 },
+      ],
+    }),
+    devices: [light('l1', undefined, { dim: start })],
+  });
+
+  /** Start, let our write land, and report `dim` well past every settle window. */
+  async function overriddenAt(h: ReturnType<typeof fading>, dim: number): Promise<void> {
+    await h.runtime.start();
+    await applied(h);
+    assert.deepEqual(h.writes.filter(w => w.capability === 'dim').map(w => w.value), [0.61],
+      'the curve wrote its brightness, so there is an expected value to compare with');
+    h.advance(10_000);
+    h.report('l1', 'dim', dim);
+    assert.equal(h.runtime.diagnostics().targets[0].override?.capability, 'dim',
+      'raised as before: the evidence that explains it has not arrived yet');
+  }
+
+  const clearedAs = (h: ReturnType<typeof fading>) => h.runtime.diagnostics().recentControlEvents
+    .filter(e => e.type === 'override_cleared').map(e => e.reason);
+
+  test('a lamp fading out is recorded as one, not as a person', async () => {
+    const h = fading();
+    await overriddenAt(h, 0.11);
+    h.advance(29_000);
+    h.report('l1', 'onoff', false);
+
+    const d = h.runtime.diagnostics();
+    assert.equal(d.targets[0].override, null);
+    assert.equal(d.targets[0].fadeOutOverrides, 1);
+    assert.deepEqual(clearedAs(h), ['power_fade_out']);
+    await h.runtime.stop();
+  });
+
+  test('dimming and switching off two seconds later is a person, not a fade', async () => {
+    // The floor: the fade report arrives about half a minute AHEAD of the off
+    // (29.2 s minimum over 232 measured pairs), and the human gesture the
+    // ceiling-only rule misfiled was 0.5-2.1 s from override to off.
+    const h = fading();
+    await overriddenAt(h, 0.2);
+    h.advance(2_000);
+    h.report('l1', 'onoff', false);
+
+    assert.equal(h.runtime.diagnostics().targets[0].fadeOutOverrides, undefined);
+    assert.deepEqual(clearedAs(h), ['power_changed']);
+    await h.runtime.stop();
+  });
+
+  test('a lamp switched off ten minutes after being dimmed is still a person who dimmed it', async () => {
+    const h = fading();
+    await overriddenAt(h, 0.11);
+    h.advance(10 * 60_000);
+    h.report('l1', 'onoff', false);
+
+    assert.equal(h.runtime.diagnostics().targets[0].fadeOutOverrides, undefined);
+    assert.deepEqual(clearedAs(h), ['power_changed']);
+    await h.runtime.stop();
+  });
+
+  test('a lamp raised ABOVE what we wanted and then switched off is not a fade-out', async () => {
+    // Inside the band on the clock, so only the direction can tell it apart:
+    // somebody turned it up and then off, which is two decisions and neither
+    // is a fade.
+    const h = fading();
+    await overriddenAt(h, 0.9);
+    h.advance(29_000);
+    h.report('l1', 'onoff', false);
+
+    assert.equal(h.runtime.diagnostics().targets[0].fadeOutOverrides, undefined);
+    assert.deepEqual(clearedAs(h), ['power_changed']);
+    await h.runtime.stop();
+  });
+
+  /**
+   * The ceiling, from both sides. Hand-written seconds rather than the imported
+   * constant, so a test derived from `FADE_OUT_GRACE_MS` cannot move with it: a
+   * minute is what the band was sized to, and widening it to two would file a
+   * person who dimmed and then left the room as a lamp fading out.
+   */
+  test('switched off 59 s after the report is still a fade', async () => {
+    const h = fading();
+    await overriddenAt(h, 0.11);
+    h.advance(59_000);
+    h.report('l1', 'onoff', false);
+
+    assert.equal(h.runtime.diagnostics().targets[0].fadeOutOverrides, 1);
+    assert.deepEqual(clearedAs(h), ['power_fade_out']);
+    await h.runtime.stop();
+  });
+
+  test('switched off 61 s after the report is a person', async () => {
+    const h = fading();
+    await overriddenAt(h, 0.11);
+    h.advance(61_000);
+    h.report('l1', 'onoff', false);
+
+    assert.equal(h.runtime.diagnostics().targets[0].fadeOutOverrides, undefined);
+    assert.deepEqual(clearedAs(h), ['power_changed']);
     await h.runtime.stop();
   });
 });

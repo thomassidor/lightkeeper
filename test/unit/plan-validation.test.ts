@@ -617,3 +617,35 @@ describe('the stored-plan allow-list covers every function the app offers', () =
     );
   });
 });
+
+/**
+ * "A Room-sensing Light reads exactly ONE sensor", at the strict gate.
+ *
+ * It used to mean up to eight and their mean, and a store written then can
+ * still hold an array. The sanitiser's answer is tested beside the types; this
+ * is the validator's, and it has to REFUSE: a plan read through it as if the
+ * array were a sensor id would subscribe to a device called "a,b" — or, under a
+ * forgiving cast, to the first one alone while the screen's lux range described
+ * neither.
+ */
+describe('a daylight plan names one sensor or none', () => {
+  test('a list of sensors is refused, naming the field', () => {
+    assert.throws(
+      () => validateDaylightPlan({
+        ...validDaylight(),
+        response: { ...DEFAULT_RESPONSE, sensor: ['a', 'b'] },
+      }),
+      /DaylightPlan\.response\.sensor is not a non-empty string/,
+    );
+  });
+
+  test('a list of one is refused too, because it is still not a sensor id', () => {
+    assert.throws(
+      () => validateDaylightPlan({
+        ...validDaylight(),
+        response: { ...DEFAULT_RESPONSE, sensor: ['a'] },
+      }),
+      /DaylightPlan\.response\.sensor/,
+    );
+  });
+});

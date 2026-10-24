@@ -7,7 +7,7 @@ import type { DeviceCatalog } from '../device-catalog';
 import type { SourceDiscoveryService } from '../source-discovery-service';
 import { FlowBridgeManager } from '../bridge/flow-bridge-manager';
 import { MappingEngine, intentForLightFunction } from '../mapping/mapping-engine';
-import { isLightkeeperPreset, type LightkeeperPreset, type MappingPreset }
+import { FUNCTION_CAPABILITY, isLightkeeperPreset, type LightkeeperPreset, type MappingPreset }
   from '../mapping/mapping-types';
 import {
   intentsFor, resolveSources, settingsFrom, type SourceRegistry,
@@ -29,6 +29,7 @@ import type { InputEvent } from '../inputs/input-event';
 import type { SelectableInput } from '../inputs/selectable-input';
 import type { ControllerBehavior, LightFunction } from '../mapping/mapping-types';
 import { fireAndForget } from '../support/async';
+import { withDefaults, type Timers } from '../support/timers';
 import { sameCatalogue, sameManagedFlows } from '../support/same';
 import { messageOf } from '../support/homey-errors';
 import { VisibleState } from './visible-state';
@@ -55,6 +56,13 @@ function rampFor(intent: LightIntent): { kind: 'brightness' | 'temperature'; dir
  * `test/unit/mapping-and-state.test.ts` asserts the equivalence for every
  * function.
  */
+/**
+ * The most lights one Test may name: the stored-plan cap on a target list
+ * (`MAX_TARGET_DEVICES` in lib/validation/plans.ts), so a list the app could
+ * itself have stored is never refused.
+ */
+const MAX_TEST_TARGETS = 256;
+
 export function intentForFunction(
   func: LightFunction,
   behavior: ControllerBehavior,
@@ -106,6 +114,15 @@ export interface ControllerRuntimeDeps {
    * always supplies it, and most test rigs leave it out.
    */
   brightnessScale?: () => BrightnessScale;
+  /**
+   * The clock and timers every part of this runtime runs on: the write queue's
+   * rate limit, the supersede gate, ramps, the implied-on check and the
+   * timestamps in diagnostics. One injection for all of them, because a test
+   * that fakes the runtime's clock and not its queue's cannot see a
+   * rate-limited write, nor prove that stop() left no timer armed. Absent
+   * means real timers, which is what the app passes.
+   */
+  timers?: Partial<Timers>;
   log: (...args: unknown[]) => void;
   onStateChange: (state: ControllerState, detail?: StateDetail) => void;
   /**
@@ -183,7 +200,8 @@ const WATCHED: Capability[] = ['onoff', 'dim', 'light_temperature'];
 
 export class ControllerRuntime {
   private readonly lifetime = new RuntimeLifetime();
-  private readonly cache = new TargetStateCache();
+  private readonly timers: Timers;
+  private readonly cache = new TargetStateCache(() => this.timers.now());
   private readonly adapter: LightTargetAdapter;
   private readonly resolver: TargetResolver;
   private scheduler: CommandScheduler | null = null;
@@ -209,7 +227,8 @@ export class ControllerRuntime {
     // Constructor BODY, like `timers` below: a field initialiser runs before
     // the parameter property `deps` is assigned.
     this.visible = new VisibleState((state, detail) => deps.onStateChange(state, detail));
-    this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log);
+    this.timers = withDefaults(deps.timers);
+    this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log, this.timers);
     if (deps.onWriteResult) this.adapter.setWriteSink(entry => deps.onWriteResult?.({ ...entry, controllerId: this.controllerId }));
     this.resolver = new TargetResolver(deps.catalog);
   }
@@ -418,13 +437,28 @@ export class ControllerRuntime {
     });
   }
 
-  /** Run one mapped function against its own targets, right now. */
+  /**
+   * Run one mapped function against its own targets, right now.
+   *
+   * Two callers reach this with arguments nobody on a screen typed: the pair
+   * session's `test` handler and the app API's `testControllerFunction` route,
+   * and both are scriptable (platform §14). So the two arguments are checked
+   * HERE, once, for both — see `testTargets` for the lights.
+   *
+   * `func` against the closed set by OWN property. `func in FUNCTION_CAPABILITY`
+   * walks the prototype, so `"toString"` passed, fell off
+   * `intentForLightFunction`'s switch (which has no default arm on purpose)
+   * and came back as an opaque TypeError from deep in the planner.
+   */
   async testFunction(
     func: LightFunction,
     deviceIds?: string[],
   ): Promise<{ writes: number; skipped: number; targets: number }> {
+    if (!Object.prototype.hasOwnProperty.call(FUNCTION_CAPABILITY, func)) {
+      throw new Error(`"${String(func)}" is not a light function`);
+    }
     const current = this.lifetime.current();
-    const targets = deviceIds && deviceIds.length ? deviceIds : this.targetIds;
+    const targets = this.testTargets(deviceIds);
 
     // Re-read live state first. The device catalog is cached and only
     // invalidates on Homey events, so a second Test would otherwise plan
@@ -466,6 +500,41 @@ export class ControllerRuntime {
     return { ...result, targets: targets.length };
   }
 
+  /**
+   * The lights a Test may touch: the ones it named, but only those that are
+   * THIS device's — or all of this device's when it named none.
+   *
+   * The named list used to be taken as is. It was never intersected with
+   * `targetIds` and had no length: `Promise.all(targets.map(refresh))` issued
+   * one concurrent device read per entry, and each one left a target-cache
+   * entry behind — on a RUNNING controller, for the app route, so a few
+   * scripted calls grew that cache for the life of the runtime. A stranger
+   * stayed unwritten only because the planner happens to have no capability
+   * metadata for it, which is not a rule anybody wrote down. And it broke the
+   * one the live path does keep — `execute()` filters a rule's lights by
+   * `targetIds` — in the control whose purpose is to prove the live path.
+   *
+   * Filtered, like `execute()`, rather than refused per id: a rule's light that
+   * has since dropped out of the resolved targets should leave the Test to
+   * prove the rest. But a list that names lights and keeps NONE is refused
+   * rather than widened to "every light": that fallback is for a caller that
+   * named nothing, and reading "none of these are mine" as "all of mine" is
+   * the heuristic guess this app never makes. The cap is checked before any of
+   * that, so an oversized list costs nothing.
+   */
+  private testTargets(deviceIds: unknown): string[] {
+    if (deviceIds === undefined || deviceIds === null) return this.targetIds;
+    if (!Array.isArray(deviceIds)) throw new Error('deviceIds is not a list');
+    if (deviceIds.length === 0) return this.targetIds;
+    if (deviceIds.length > MAX_TEST_TARGETS) {
+      throw new Error(`deviceIds has more than ${MAX_TEST_TARGETS} entries`);
+    }
+    const named = new Set(deviceIds.filter((id): id is string => typeof id === 'string'));
+    const ours = this.targetIds.filter(id => named.has(id));
+    if (ours.length === 0) throw new Error('none of those lights belong to this controller');
+    return ours;
+  }
+
   /** Rebuild targets, cache, engine and gate from the current profile. */
   private async buildRuntime(current: () => boolean): Promise<void> {
     /**
@@ -486,10 +555,11 @@ export class ControllerRuntime {
     this.targetNames = resolved.names;
     this.resolver.primeCache(resolved.devices, this.cache);
 
-    for (const device of resolved.devices) {
-      await this.adapter.subscribe(device.id, WATCHED);
-      if (!current()) return;
-    }
+    // Several lamps at a time rather than one after another; see
+    // `LightTargetAdapter.subscribeMany`. No `prime`: a controller does not
+    // read its lamps at start, and this keeps it that way.
+    await this.adapter.subscribeMany(resolved.ids, WATCHED);
+    if (!current()) return;
 
     this.engine = new MappingEngine(this.profile.mappings, this.profile.behavior);
 
@@ -505,6 +575,8 @@ export class ControllerRuntime {
     this.gate = new SupersedeGate({
       supersedeMs: this.profile.behavior.supersedeMs,
       contestedControlIds: contestedControls(assignments),
+      setTimeout: this.timers.setTimeout,
+      clearTimeout: this.timers.clearTimeout,
     }, input => fireAndForget(this.execute(input), this.deps.log, 'Executing an input'));
 
     // A hold may only ramp where the source gives a reliable stop
@@ -526,10 +598,18 @@ export class ControllerRuntime {
         this.deps.log, 'A ramp tick',
       ),
       (controlId, reason) => this.deps.log(`Ramp on ${controlId} stopped: ${reason}`),
+      {
+        setInterval: this.timers.setInterval,
+        clearInterval: this.timers.clearInterval,
+        now: this.timers.now,
+      },
     );
 
     this.scheduler = new CommandScheduler({
       minWriteIntervalMs: this.profile.behavior.minWriteIntervalMs,
+      setTimeout: this.timers.setTimeout,
+      clearTimeout: this.timers.clearTimeout,
+      now: this.timers.now,
       onError: (deviceId, capability, error) =>
         this.deps.log(`Write failed on ${deviceId}/${capability}:`, messageOf(error)),
     }, (deviceId, capability, value, options) =>
@@ -728,7 +808,7 @@ export class ControllerRuntime {
    * that the controller and binding key exist.
    */
   handleInput(event: InputEvent, inputKey: string): void {
-    this.lastEvent = { key: inputKey, at: Date.now() };
+    this.lastEvent = { key: inputKey, at: this.timers.now() };
     if (!this.gate) return;
     // The gate re-enters via execute() once the supersede window resolves.
     this.gate.submit({ event, inputKey });
@@ -967,14 +1047,14 @@ export class ControllerRuntime {
     if (!this.scheduler) {
       this.deps.log('No scheduler: the runtime is not started, so writes were dropped');
       this.lastIntent = {
-        intent, at: Date.now(), writes: 0, skipped: plan.skipped.length,
+        intent, at: this.timers.now(), writes: 0, skipped: plan.skipped.length,
         note: 'dropped — runtime not started',
       };
       return { writes: 0, skipped: plan.skipped.length };
     }
 
     const batch = this.scheduler.submit(writes);
-    this.lastIntent = { intent, at: Date.now(), writes: writes.length, skipped: plan.skipped.length };
+    this.lastIntent = { intent, at: this.timers.now(), writes: writes.length, skipped: plan.skipped.length };
     if (options.waitForResults) {
       await this.scheduler.drain();
       return { writes: acceptedTargets(await batch.completion), skipped: plan.skipped.length };
@@ -1032,10 +1112,8 @@ export class ControllerRuntime {
       this.snapshot = next;
       this.targetNames = next.names;
       this.resolver.primeCache(next.devices, this.cache);
-      for (const deviceId of addedOrChanged) {
-        await this.adapter.subscribe(deviceId, WATCHED);
-        if (!current()) return;
-      }
+      await this.adapter.subscribeMany(addedOrChanged, WATCHED);
+      if (!current()) return;
       this.deps.log(`Targets re-resolved: ${next.ids.length} light(s)`);
 
       // A target that came back, or one that vanished, changes the verdict —
@@ -1051,10 +1129,25 @@ export class ControllerRuntime {
   }
 
   async stop(): Promise<void> {
+    /**
+     * Everything that can fire on a timer is disarmed HERE, before the first
+     * await, and not only in the cleanup below.
+     *
+     * The cleanup runs behind the lifetime lock: a microtask at the earliest,
+     * and after any refresh still in flight. Platform §17 found that an await
+     * during app shutdown may never resume, so anything left to the cleanup can
+     * outlive the runtime: a ramp ticking every 100 ms until its 10 s hard stop,
+     * or a press waiting in the supersede gate. The stopped write queue already
+     * kept those from reaching a lamp. This keeps them from running at all.
+     */
     this.scheduler?.stop();
     this.adapter.suspend();
+    this.ramps?.stopAll('shutdown');
+    this.gate?.cancelAll();
     return this.lifetime.stop(async () => {
-      // Never leave a light mid-ramp across a restart.
+      // Never leave a light mid-ramp across a restart. Again here, because a
+      // start that was still in flight when stop() was called may have built a
+      // new engine since the synchronous pass above.
       this.ramps?.stopAll('shutdown');
       this.ramps = null;
       this.gate?.cancelAll();
@@ -1078,7 +1171,7 @@ export class ControllerRuntime {
   /** Remove only resources demonstrably owned by this controller. */
   async destroy(): Promise<void> {
     await this.stop();
-    await this.deps.bridge.removeAll(this.profile.managedFlows);
+    await this.deps.bridge.removeAll(this.controllerId, this.profile.managedFlows);
   }
 
   /** See `VisibleState`, which owns the when-did-it-move rule. */

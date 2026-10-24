@@ -769,6 +769,17 @@ module.exports = class ControllerDriver extends LightkeeperDriver {
      */
     handler('test', async ({ func, deviceIds }: { func: LightFunction; deviceIds: string[] | null }) => {
       if (!state.target) throw new Error(this.tr('errors.chooseLightsFirst'));
+      /**
+       * Refused BEFORE an ephemeral runtime is built for it. The screen only
+       * ever sends a job it drew, but a pair session is scriptable (platform
+       * §14), and this handler passed `func` through unchecked. `testFunction`
+       * makes the same own-property check and also keeps `deviceIds` to this
+       * controller's own lights; this one only saves the round trip and says
+       * it in the user's language.
+       */
+      if (!Object.prototype.hasOwnProperty.call(FUNCTION_CAPABILITY, func)) {
+        throw new Error(this.tr('errors.jobNotUsable'));
+      }
       const runtime = await this.app.controllers.ephemeral(this.buildProfile(state));
       try {
         return await runtime.testFunction(func, deviceIds && deviceIds.length ? deviceIds : undefined);

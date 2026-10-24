@@ -68,4 +68,6 @@ export class SensorClaim {
 
   async retain(ids: string[]): Promise<void> { await this.source?.retain(ids, this.owner); }
   async release(): Promise<void> { await this.source?.release(this.owner); }
+  /** Synchronous: cancel retries nobody else wants. See `LuminanceSource.stopRetrying`. */
+  stopRetrying(): void { this.source?.stopRetrying(this.owner); }
 }

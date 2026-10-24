@@ -131,8 +131,10 @@ function bridge(events: Event[], options: { removes?: (refs: Array<{ flowId: str
   return {
     releaseReferences: (owner: string, ids: string[]) => { events.push(['release', owner, [...ids]]); },
     deferCleanup: (owner: string, ids: string[]) => { events.push(['defer', owner, [...ids]]); },
-    removeAll: async (refs: Array<{ flowId: string }>) => {
-      events.push(['removeAll', refs.map(ref => ref.flowId)]);
+    // The owner is recorded because it is the bridge's ownership gate: a device
+    // that handed over the wrong id would have every delete refused.
+    removeAll: async (owner: string, refs: Array<{ flowId: string }>) => {
+      events.push(['removeAll', owner, refs.map(ref => ref.flowId)]);
       return options.removes ? options.removes(refs) : refs.length;
     },
     forgetOwner: (owner: string) => { events.push(['forget', owner]); },
@@ -178,7 +180,7 @@ describe('a controller whose remote changes', () => {
       ['register', 'new'],
       ['store', 'new'],
       // ...and deleted only now, when there is no rollback left to point at them.
-      ['removeAll', ['f1', 'f2']],
+      ['removeAll', ID, ['f1', 'f2']],
     ]);
     assert.deepEqual(instance.getStoreValue('profile').managedFlows, []);
     assert.ok(instance.logs.includes('Source changed: removed 2 of 2 flow(s) from the old remote'));
@@ -259,7 +261,28 @@ describe('a controller whose remote changes', () => {
     assert.equal(instance.fake.unavailableMessage, translate('state.invalidConfiguration'));
 
     await instance.onDeleted();
-    assert.deepEqual(events.filter(([name]) => name !== 'unregister'), [['removeAll', ['f9']], ['forget', ID]]);
+    assert.deepEqual(events.filter(([name]) => name !== 'unregister'), [['removeAll', ID, ['f9']], ['forget', ID]]);
+  });
+
+  /**
+   * `afterApply`'s `previous` is the RAW store, never validated — and a device
+   * whose store failed to load is exactly the one a repair is for. Its
+   * malformed references must not reach a delete, as on every other delete path.
+   */
+  test('a repair that changes the remote of a broken device deletes only well-formed references', async () => {
+    const events: Event[] = [];
+    const good = controllerProfile('old', ['f1']).managedFlows[0];
+    const broken = {
+      ...controllerProfile('old', []),
+      mappings: 'not a list',
+      managedFlows: [good, { flowId: 42 }, 'junk', { flowId: 'no-other-fields' }],
+    };
+    const instance = device(ControllerDevice, ID, { profile: broken }, { controllers: registry(events), bridge: bridge(events) });
+    await instance.onInit();
+    events.length = 0;
+
+    await instance.applyPlan(controllerProfile('new', []));
+    assert.deepEqual(events.filter(([name]) => name === 'removeAll'), [['removeAll', ID, ['f1']]]);
   });
 });
 
@@ -277,8 +300,13 @@ describe('the bridge journal the controller now relies on', () => {
 
   test('releaseReferences drops only the named references, and deferCleanup queues them once', () => {
     const { manager, settings } = realBridge();
+    // Whole references, as `sync()` writes them: the journal is shape-checked on
+    // load, and a bare `{ flowId }` is exactly what that check drops.
+    const ref = (flowId: string) => ({
+      flowId, bindingKey: 'k', variantKey: 'fixed', fingerprint: 'fp', managedVersion: 1, createdAt: 1,
+    });
     settings.set('flowJournal:lk-ctrl-1', {
-      references: [{ flowId: 'f1' }, { flowId: 'f2' }, { flowId: 'f3' }], cleanup: ['old'], staged: [],
+      references: [ref('f1'), ref('f2'), ref('f3')], cleanup: ['old'], staged: [],
     });
 
     manager.releaseReferences('lk-ctrl-1', ['f1', 'f3']);
@@ -287,7 +315,7 @@ describe('the bridge journal the controller now relies on', () => {
     manager.deferCleanup('lk-ctrl-1', []);
 
     assert.deepEqual(settings.get('flowJournal:lk-ctrl-1'), {
-      references: [{ flowId: 'f2' }], cleanup: ['old', 'f1'], staged: [],
+      references: [ref('f2')], cleanup: ['old', 'f1'], staged: [],
     });
   });
 });
@@ -543,7 +571,7 @@ describe('LightkeeperDevice, the SDK shell', () => {
     await instance.onUninit();
     assert.deepEqual(events.at(-1), ['unregister', 'lk-curv-1']);
     assert.equal(await instance.removeFlows([{ flowId: 'x' }]), 1);
-    assert.deepEqual(events.at(-1), ['removeAll', ['x']]);
+    assert.deepEqual(events.at(-1), ['removeAll', 'lk-curv-1', ['x']]);
   });
 
   test('a runtime state after apply decides availability, translated', async () => {
@@ -554,5 +582,105 @@ describe('LightkeeperDevice, the SDK shell', () => {
     await instance.applyPlan(await plans.curve());
     assert.equal(instance.fake.available, false);
     assert.equal(instance.fake.unavailableMessage, translate('state.needsRepair'));
+  });
+});
+
+/**
+ * A device's id is `getData().id`, and a pair session can create a device with
+ * any `data` (platform §14). A second device carrying an existing one's id used
+ * to register over it — the real `RuntimeRegistry.register` stops whatever
+ * holds the id — and deleting the impostor then unregistered the victim,
+ * dropped its Flow journal and could delete its Flows. The first device to
+ * claim an id keeps it; the other is unavailable and touches nothing.
+ */
+describe('a device id is claimed once, and only ids this app could have minted are refused', () => {
+  const VICTIM = 'lk-ctrl-11111111-1111-1111-1111-111111111111';
+
+  test('a second device with the same id is unavailable, inert, and leaves the first running', async () => {
+    const events: Event[] = [];
+    const controllers = registry(events);
+    const app = { controllers, bridge: bridge(events) };
+    const victim = device(ControllerDevice, VICTIM, { profile: controllerProfile('old', ['f1']) }, app);
+    await victim.onInit();
+    const impostor = device(ControllerDevice, VICTIM, { profile: controllerProfile('other', ['f1']) }, app);
+    events.length = 0;
+
+    await impostor.onInit();
+    assert.equal(impostor.fake.available, false);
+    assert.equal(impostor.fake.unavailableMessage, translate('state.invalidConfiguration'));
+    assert.equal(controllers.registered.length, 1, 'never registered over the victim');
+
+    await assert.rejects(impostor.applyPlan(controllerProfile('other', [])),
+      { message: translate('state.invalidConfiguration') });
+    await impostor.onRenamed();
+    await impostor.onDeleted();
+    await impostor.onUninit();
+    assert.deepEqual(events, [], 'no register, no unregister, no Flow delete, no journal dropped');
+    assert.equal(controllers.get(VICTIM)?.currentProfile.source.deviceId, 'old');
+  });
+
+  test('a deleted device gives its id back', async () => {
+    const events: Event[] = [];
+    const app = { controllers: registry(events), bridge: bridge(events) };
+    const first = device(ControllerDevice, VICTIM, { profile: controllerProfile('old', []) }, app);
+    await first.onInit();
+    await first.onDeleted();
+
+    const next = device(ControllerDevice, VICTIM, { profile: controllerProfile('old', []) }, app);
+    await next.onInit();
+    assert.notEqual(next.fake.unavailableMessage, translate('state.invalidConfiguration'));
+  });
+
+  test('the same id in ANOTHER app\'s registry is no collision', async () => {
+    // Claims are per registry, so a fresh app — or a fresh test — starts clean.
+    for (let i = 0; i < 2; i += 1) {
+      const events: Event[] = [];
+      const instance = device(ControllerDevice, VICTIM, { profile: controllerProfile('old', []) },
+        { controllers: registry(events), bridge: bridge(events) });
+      await instance.onInit();
+      assert.deepEqual(events.filter(([name]) => name === 'register'), [['register', 'old']]);
+    }
+  });
+
+  test('an lk- id of another kind is refused', async () => {
+    const events: Event[] = [];
+    const instance = device(ControllerDevice, 'lk-dayl-11111111-1111-1111-1111-111111111111',
+      { profile: controllerProfile('old', []) }, { controllers: registry(events), bridge: bridge(events) });
+    await instance.onInit();
+    assert.equal(instance.fake.unavailableMessage, translate('state.invalidConfiguration'));
+    assert.deepEqual(events, []);
+  });
+
+  test('every id shape a shipped version minted still starts — the 1.0 promise', async () => {
+    for (const id of [
+      'll-1755500000000-123456', // the first controllers, before the rename
+      'lk-ctrl-1755500000000-123456', // timestamp and random
+      'lk-ctrl-11111111-1111-1111-1111-111111111111', // UUID
+    ]) {
+      const events: Event[] = [];
+      const instance = device(ControllerDevice, id, { profile: controllerProfile('old', []) },
+        { controllers: registry(events), bridge: bridge(events) });
+      await instance.onInit();
+      assert.deepEqual(events.filter(([name]) => name === 'register'), [['register', 'old']], id);
+    }
+    for (const id of ['lk-curv-1755500000000-1', 'lk-curv-11111111-1111-1111-1111-111111111111']) {
+      const events: Event[] = [];
+      const reg = registry(events);
+      const instance = device(CurveDevice, id, { curve: await plans.curve() },
+        { curves: reg, bridge: bridge(events) }, ['onoff']);
+      await instance.onInit();
+      assert.equal(reg.registered.length, 1, id);
+    }
+  });
+
+  test('a device with no usable id is refused', async () => {
+    for (const id of ['', 42, undefined]) {
+      const events: Event[] = [];
+      const instance = device(ControllerDevice, id as any, { profile: controllerProfile('old', []) },
+        { controllers: registry(events), bridge: bridge(events) });
+      await instance.onInit();
+      assert.equal(instance.fake.unavailableMessage, translate('state.invalidConfiguration'), String(id));
+      assert.deepEqual(events, []);
+    }
   });
 });

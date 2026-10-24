@@ -30,6 +30,19 @@ import { deferred, settle } from '../support/deferred';
 const APP_ID = 'com.thomassidor.lightkeeper';
 const cardId = (short: string) => `${APP_ID}:${short}`;
 
+/**
+ * The by-name lookup `bridgeCards()` makes first, answered as a Homey does:
+ * our own card echoed back (platform §3), or a 404. Without it every pass in
+ * this file ran the enumeration FALLBACK rather than the path production takes.
+ */
+function cardByName(actions: Record<string, { id: string; uri: string }>, uri: string, shortId: string) {
+  const card = uri === `homey:app:${APP_ID}`
+    ? Object.values(actions).find(c => c.id === cardId(shortId))
+    : undefined;
+  if (!card) throw Object.assign(new Error(`404 Not Found: FlowCardAction with ID ${shortId}`), { statusCode: 404 });
+  return card;
+}
+
 function scheduleInput(key: string, time: string) {
   return {
     key,
@@ -76,6 +89,7 @@ function harness() {
 
   const client = {
     flow: {
+      getFlowCardAction: async ({ uri, id }: { uri: string; id: string }) => cardByName(actions, uri, id),
       getFlowCardActions: async () => actions,
       getFlows: async () => {
         if (gate) await gate;
@@ -84,6 +98,12 @@ function harness() {
         // that create, which silently turned the un-serialised counter-example
         // below into a pass.
         return { ...live };
+      },
+      // One flow by id, as the bridge asks for an id its snapshot did not
+      // contain before it will delete it. A 404 is how a real Homey says gone.
+      getFlow: async ({ id }: { id: string }) => {
+        if (!live[id]) throw Object.assign(new Error(`404 Not Found: Flow with ID ${id}`), { statusCode: 404 });
+        return live[id];
       },
       getFlowFolders: async () => {
         if (gate) await gate;
@@ -484,7 +504,13 @@ describe('a journal edit made while a pass is in flight', () => {
 
   test('a delete deferred mid-pass is kept, and carried out by that same pass', async () => {
     const { h, pass, release } = await passHeldAtCreate();
-    h.live.stray = { id: 'stray', name: 'from the old remote' };
+    // Created by this schedule, as a deferred id always is (`afterApply`): the
+    // bridge deletes a stored id only when the live flow names its owner.
+    h.live.stray = {
+      id: 'stray',
+      name: 'from the old remote',
+      actions: [{ id: cardId('bridge_event'), args: { controller: 'lk-sched-1-1', event_key: 'old' } }],
+    };
     h.bridge.deferCleanup('lk-sched-1-1', ['stray']);
     release();
     await pass;

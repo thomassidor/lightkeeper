@@ -82,6 +82,11 @@ export interface CircadianRuntimeDeps {
   /** Injectable so the pre-stage probe does not cost tests a real 1.5 seconds. */
   setTimeout?: (fn: () => void, ms: number) => unknown;
   clearTimeout?: (handle: unknown) => void;
+  /**
+   * The same, as one object — the shape the managers hand every runtime. The
+   * piecemeal members above win over it where both are given.
+   */
+  timers?: Partial<Timers>;
   log: (...args: unknown[]) => void;
   onStateChange: (state: ControllerState, detail?: StateDetail) => void;
   /**
@@ -565,8 +570,13 @@ export class CircadianRuntime {
     // `withDefaults(this.deps)` there silently resolved to real timers and every
     // injected clock was ignored. `visible` would fail the same way, silently.
     this.visible = new VisibleState((state, detail) => deps.onStateChange(state, detail));
-    this.timers = withDefaults(deps);
-    this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log, { now: () => this.now() });
+    this.timers = withDefaults({
+      ...deps.timers,
+      ...(deps.setTimeout ? { setTimeout: deps.setTimeout } : {}),
+      ...(deps.clearTimeout ? { clearTimeout: deps.clearTimeout } : {}),
+      ...(deps.now ? { now: deps.now } : {}),
+    });
+    this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log, this.timers);
     if (deps.onWriteResult) this.adapter.setWriteSink(entry => deps.onWriteResult?.({ ...entry, controllerId: this.controllerId }));
     this.resolver = new TargetResolver(deps.catalog);
   }
@@ -716,6 +726,12 @@ export class CircadianRuntime {
 
     this.scheduler = new CommandScheduler({
       minWriteIntervalMs: DEFAULT_BEHAVIOR.minWriteIntervalMs,
+      // The runtime's own timers, as everything else here runs on: a queue on
+      // the real clock under a faked runtime hid every rate-limited write from
+      // the tests, and left stop()'s timer clearing unprovable.
+      setTimeout: this.timers.setTimeout,
+      clearTimeout: this.timers.clearTimeout,
+      now: this.timers.now,
       onError: (deviceId, capability, error) =>
         this.deps.log(`Write failed on ${deviceId}/${capability}:`, messageOf(error)),
     }, (deviceId, capability, value, options) =>
@@ -731,9 +747,7 @@ export class CircadianRuntime {
     // a round trip per light per minute into an app that otherwise only talks to
     // Homey when something happens. (The schedule runtime does refresh before it
     // acts — it fires twice a day, off a cache that may be hours stale.)
-    await Promise.all(this.targetIds.map(id => this.adapter.refresh(id)));
-    if (!current()) return;
-    await this.subscribeAll();
+    await this.subscribeAll({ prime: true });
     if (!current()) return;
   }
 
@@ -773,7 +787,7 @@ export class CircadianRuntime {
     return capabilities;
   }
 
-  private async subscribeAll(): Promise<void> {
+  private async subscribeAll(options: { prime?: boolean } = {}): Promise<void> {
     /**
      * Nothing to watch on a device that writes to no lamp.
      *
@@ -792,12 +806,17 @@ export class CircadianRuntime {
      * event slots. Resuming goes through `updatePlan`, which restarts the
      * runtime, so the subscriptions come back with it.
      */
-    if (!this.plan.enabled || !keepsLightsUpdated(this.plan)) return;
-    const capabilities = this.watchedCapabilities();
-    for (const deviceId of this.targetIds) {
-      await this.adapter.subscribe(deviceId, capabilities, (id, capability, value, external) =>
-        this.onCapabilityChange(id, capability, value, external));
+    if (!this.plan.enabled || !keepsLightsUpdated(this.plan)) {
+      // Not watching is not the same as not knowing: a preview still has to
+      // know which lamps are on, so the one-time read stays.
+      if (options.prime) await Promise.all(this.targetIds.map(id => this.adapter.refresh(id)));
+      return;
     }
+    // `prime`: one read per lamp seeds the cache AND makes the subscription.
+    // See `LightTargetAdapter.subscribeMany`.
+    await this.adapter.subscribeMany(this.targetIds, this.watchedCapabilities(),
+      (id, capability, value, external) => this.onCapabilityChange(id, capability, value, external),
+      options);
   }
 
   /**
@@ -1307,7 +1326,7 @@ export class CircadianRuntime {
     }
 
     this.lastAction = action;
-    this.history.actions.add(action);
+    this.history.action(action);
 
     if (awaitedCompletion) {
       await this.scheduler.drain();
@@ -1332,7 +1351,7 @@ export class CircadianRuntime {
     this.lastAction = { at: this.now(), reason, detail, writes: 0, skipped,
       targets: this.targetIds.map(deviceId => ({ deviceId, status: 'inactive', commands: 0 })),
     };
-    this.history.actions.add(this.lastAction);
+    this.history.action(this.lastAction);
     return { writes: 0, skipped };
   }
 
@@ -1771,6 +1790,12 @@ export class CircadianRuntime {
     if (count !== PRE_STAGE_DECLINES_BEFORE_SKIP) return;
     this.deps.log(`${deviceId} refused a colour while off ${count} times running, so it will not `
       + `be pre-staged again until it is switched on: ${reason}`);
+  }
+
+  /** Drop every outstanding pre-stage probe. Synchronous: see `stop()`. */
+  private cancelProbes(): void {
+    for (const probe of this.probes.values()) this.clearTimer(probe.timer);
+    this.probes.clear();
   }
 
   /** Drop a device's outstanding pre-stage probe, if it has one. */
@@ -2280,9 +2305,7 @@ export class CircadianRuntime {
       this.snapshot = next;
       this.targetNames = next.names;
       this.resolver.primeCache(next.devices, this.cache);
-      await Promise.all(next.ids.map(id => this.adapter.refresh(id)));
-      if (!current()) return;
-      await this.subscribeAll();
+      await this.subscribeAll({ prime: true });
       if (!current()) return;
       this.deps.log(`Circadian targets re-resolved: ${next.ids.length} light(s)`);
 
@@ -2298,11 +2321,21 @@ export class CircadianRuntime {
   }
 
   async stop(): Promise<void> {
+    /**
+     * The pre-stage probes are cancelled before the first await, and again in
+     * the cleanup for any a still-running start armed in between.
+     *
+     * A probe that fires after stop() already does nothing, because it checks
+     * the lifetime and `lifetime.stop()` bumps that synchronously. But its timer
+     * stayed armed until the cleanup ran, behind the lifetime lock, and platform
+     * §17 says that cleanup may never run during app shutdown. Nothing that can
+     * fire should outlive the runtime that armed it.
+     */
     this.scheduler?.stop();
     this.adapter.suspend();
+    this.cancelProbes();
     return this.lifetime.stop(async () => {
-      for (const probe of this.probes.values()) this.clearTimer(probe.timer);
-      this.probes.clear();
+      this.cancelProbes();
       this.writeGeneration.clear();
       this.scheduler?.stop();
       this.scheduler = null;

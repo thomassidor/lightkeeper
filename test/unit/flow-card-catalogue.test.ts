@@ -5,8 +5,10 @@ import { join } from 'node:path';
 
 import { FlowCardCatalogue, NO_CACHE, toDiscoveredCard } from '../../lib/flow-card-catalogue';
 import { FlowBridgeManager } from '../../lib/bridge/flow-bridge-manager';
-import type { HomeyApiService } from '../../lib/homey-api-service';
-import type { CatalogDevice } from '../../lib/device-catalog';
+import { HomeyApiService } from '../../lib/homey-api-service';
+import type { CredentialService } from '../../lib/credential-service';
+import { FakeTimers } from '../support/fake-timers';
+import { DeviceCatalog, type CatalogDevice } from '../../lib/device-catalog';
 import { fingerprintOf, fingerprintV2Of } from '../../lib/source-discovery-service';
 
 /**
@@ -136,6 +138,81 @@ describe('flow card catalogue', () => {
     await catalogue.triggerCards();
 
     assert.equal(calls.length, 2);
+  });
+
+  /**
+   * The TTL used to be checked only on a read, so the projection outlived it
+   * until the next read replaced it: once anything had asked, the trigger cards
+   * (~1.1 MB of heap for 1700 cards, platform §15) stayed for the whole run.
+   */
+  test('the projection is let go when the TTL runs out, not when the next read comes', async () => {
+    const timers = new FakeTimers(1_000);
+    const { api, calls } = fakeApi([FAT_CARD]);
+    const catalogue = new FlowCardCatalogue(api, { ttlMs: 1_000, timers });
+
+    await catalogue.triggerCards();
+    assert.equal(catalogue.stats().triggers.retained, true);
+    assert.equal(timers.pending, 1, 'one release timer per held projection');
+
+    timers.advance(999);
+    await catalogue.triggerCards();
+    assert.equal(calls.length, 1, 'inside the TTL the held projection still answers');
+    assert.equal(catalogue.stats().triggers.retained, true);
+
+    timers.advance(1);
+    assert.equal(catalogue.stats().triggers.retained, false, 'released on time, with nothing asking');
+    assert.equal(timers.pending, 0);
+
+    await catalogue.triggerCards();
+    assert.equal(calls.length, 2, 'the next question reads the cards again');
+  });
+
+  test('a refetch re-arms the release rather than stacking a second timer', async () => {
+    const timers = new FakeTimers();
+    const { api } = fakeApi([FAT_CARD]);
+    const catalogue = new FlowCardCatalogue(api, { ttlMs: 1_000, timers });
+
+    await catalogue.triggerCards();
+    await catalogue.actionCardRefs();
+    assert.equal(timers.pending, 2, 'one per catalogue');
+
+    timers.advance(1_000);
+    await catalogue.triggerCards();
+    assert.equal(timers.pending, 1, 'the triggers re-armed once; the actions were released');
+  });
+
+  /** Nothing survives teardown: `onUninit` calls `clear()`, and it must leave no timer. */
+  test('clear() leaves no release timer pending', async () => {
+    const timers = new FakeTimers();
+    const { api } = fakeApi([FAT_CARD]);
+    const catalogue = new FlowCardCatalogue(api, { timers });
+
+    await catalogue.triggerCards();
+    await catalogue.actionCardRefs();
+    catalogue.clear();
+
+    assert.equal(timers.pending, 0);
+    assert.equal(catalogue.stats().triggers.retained, false);
+    assert.equal(catalogue.stats().actions.retained, false);
+  });
+
+  /** For `/diagnostics`: how often the expensive read happens, and what it costs. */
+  test('stats count reads, failures, duration and size, and never carry a card', async () => {
+    const timers = new FakeTimers();
+    let broken = false;
+    const { api } = fakeApi([FAT_CARD, FAT_CARD], { fail: () => broken });
+    const catalogue = new FlowCardCatalogue(api, { ttlMs: 1_000, timers });
+
+    await catalogue.triggerCards();
+    await catalogue.triggerCards();
+    timers.advance(1_000);
+    broken = true;
+    await assert.rejects(() => catalogue.triggerCards());
+
+    const stats = catalogue.stats();
+    assert.deepEqual(stats.triggers, { fetches: 2, failures: 1, lastMs: 0, lastCount: 2, retained: false });
+    assert.deepEqual(stats.actions, { fetches: 0, failures: 0, lastMs: null, lastCount: null, retained: false });
+    assert.ok(!JSON.stringify(stats).includes('tapdial'), 'counts only, never a card');
   });
 
   describe('finding our own action cards', () => {
@@ -297,7 +374,7 @@ describe('flow card catalogue', () => {
 
 /**
  * Platform §15's rule, enforced: a `getAll` call site either passes `NO_CACHE`
- * or carries a comment saying what it retains and why.
+ * or is a deliberate, NAMED exception.
  *
  * The rule was prose, and prose is what a new call site forgets. The set of
  * operations that ARE `getAll` is not guessed from their names — §15 is blunt
@@ -305,11 +382,21 @@ describe('flow card catalogue', () => {
  * specification `homey-api` builds its managers from. A `getAll` added to the
  * client in a later version is covered the day the pin moves.
  *
- * What counts as the opt-out: `NO_CACHE` or `$updateCache: false` in the call's
- * own arguments, which may run over a few lines. What counts as the documented
- * opt-in: a comment in the lines above the call that cites §15 — that is where
- * `DeviceCatalog.refreshNow()` argues its measured reason, and where
- * `loadAppNames()` says why an unconnected manager retains nothing.
+ * What counts as the opt-out: `NO_CACHE` or `$updateCache: false` inside the
+ * call's own parentheses, which may run over a few lines — not merely nearby.
+ *
+ * What counts as an exception, and this is narrower than it was. It used to be
+ * any comment citing §15 within FORTY lines above the call, and that excused
+ * the very comments that explain why `NO_CACHE` IS passed: dropping the flag
+ * from `getFlowCardActions` or `getFlowFolders` left the scan green. Now it is
+ * one of two things, both local and both explicit:
+ *
+ *   - a `§15: retained` marker on the call's own line or the line directly
+ *     above it, for a new site that argues its case where it stands; or
+ *   - an entry in `RETAINED` below, which names the file and the operation and
+ *     points at the BEHAVIOURAL test that pins why. The three sites that rely
+ *     on it today argue their case in a docblock some lines up, and moving a
+ *     marker into the source is not this file's call to make.
  */
 describe('every getAll call site opts out of the cache, or says why not', () => {
   const ROOT = join(import.meta.dirname, '..', '..');
@@ -351,6 +438,29 @@ describe('every getAll call site opts out of the cache, or says why not', () => 
     }
   });
 
+  /**
+   * The deliberate exceptions, each one a file, an operation and the test that
+   * pins its reason. Exact: an entry that no longer matches a site fails too,
+   * so this list cannot outlive the code it excuses.
+   */
+  const RETAINED: Array<{ file: string; call: string; pinnedBy: string }> = [
+    // Measured: opting out raised the floor by 5 MB (DeviceCatalog.refreshNow).
+    { file: 'lib/device-catalog.ts', call: 'devices.getDevices', pinnedBy: 'the catalogue reads devices and zones WITH the cache' },
+    { file: 'lib/device-catalog.ts', call: 'zones.getZones', pinnedBy: 'the catalogue reads devices and zones WITH the cache' },
+    // Retains nothing: `homey-api` caches a getAll only while the manager is connected.
+    { file: 'lib/device-catalog.ts', call: 'apps.getApps', pinnedBy: 'the read client never connects apps' },
+  ];
+
+  /** The text between a call's own parentheses, `open` being the index of `(` in `text`. */
+  function argumentsOf(text: string, open: number): string {
+    let depth = 0;
+    for (let i = open; i < text.length; i += 1) {
+      if (text[i] === '(') depth += 1;
+      else if (text[i] === ')' && (depth -= 1) === 0) return text.slice(open + 1, i);
+    }
+    return text.slice(open + 1);
+  }
+
   test('no call site retains a getAll silently', () => {
     const operations = getAllOperations();
     const pattern = new RegExp(
@@ -359,8 +469,10 @@ describe('every getAll call site opts out of the cache, or says why not', () => 
     );
     const isGetAll = (manager: string, operation: string) =>
       operations.some(o => o.manager === manager && o.operation === operation);
+    const marker = /\/[/*].*§15: retained/;
 
     const offenders: string[] = [];
+    const excused = new Map<string, number>();
     let sites = 0;
     for (const file of sources()) {
       const lines = readFileSync(join(ROOT, file), 'utf8').split(/\r?\n/);
@@ -369,10 +481,15 @@ describe('every getAll call site opts out of the cache, or says why not', () => 
         const match = pattern.exec(line);
         if (!match || !isGetAll(match[1]!, match[2]!)) return;
         sites += 1;
-        const call = lines.slice(index, index + 6).join('\n');
-        if (/NO_CACHE|\$updateCache:\s*false/.test(call)) return;
-        const above = lines.slice(Math.max(0, index - 40), index).filter(isComment).join('\n');
-        if (/§15/.test(above)) return;
+        const text = lines.slice(index, index + 8).join('\n');
+        const args = argumentsOf(text, match.index + match[0].length - 1);
+        if (/NO_CACHE|\$updateCache:\s*false/.test(args)) return;
+        if (marker.test(line) || marker.test(lines[index - 1] ?? '')) return;
+        const call = `${match[1]}.${match[2]}`;
+        if (RETAINED.some(r => r.file === file && r.call === call)) {
+          excused.set(`${file} ${call}`, (excused.get(`${file} ${call}`) ?? 0) + 1);
+          return;
+        }
         offenders.push(`${file}:${index + 1}: ${line.trim()}`);
       });
     }
@@ -380,8 +497,97 @@ describe('every getAll call site opts out of the cache, or says why not', () => 
     assert.ok(sites >= 5, `found only ${sites} getAll call sites — is the scan still finding them?`);
     assert.deepEqual(
       offenders, [],
-      'a getAll that neither passes NO_CACHE nor says, citing platform §15, what it '
-      + 'retains and why',
+      'a getAll that neither passes NO_CACHE in its own arguments, nor carries a '
+      + '"§15: retained" marker on or directly above its line, nor is named in RETAINED',
     );
+    assert.deepEqual(
+      Object.fromEntries(excused),
+      Object.fromEntries(RETAINED.map(r => [`${r.file} ${r.call}`, 1])),
+      'each RETAINED entry excuses exactly one live call site — remove an entry whose site is gone',
+    );
+  });
+
+  test('the scan reads a call\'s own arguments, not the lines around it', () => {
+    // Self-test of the parser the scan stands on: a NO_CACHE on the NEXT
+    // statement used to excuse a call that passed nothing.
+    const text = 'await client.flow.getFlowFolders();\nconst opts = NO_CACHE;';
+    assert.equal(argumentsOf(text, text.indexOf('(')), '');
+    const multi = 'client.flow.getFlowFolders({\n  ...NO_CACHE,\n})';
+    assert.match(argumentsOf(multi, multi.indexOf('(')), /NO_CACHE/);
+  });
+});
+
+/**
+ * What the scan's call sites actually SEND, asserted against the client.
+ *
+ * A source scan can be satisfied by text; these cannot. Each is a call site the
+ * old 40-line exemption let lose its flag unnoticed, or one the scan cannot
+ * see at all, or one of the deliberate exceptions in `RETAINED` above.
+ */
+describe('platform §15, behaviourally', () => {
+  test('the action catalogue — the fallback\'s read — opts out in both directions', async () => {
+    const { api, calls } = fakeApi([FAT_CARD]);
+
+    await new FlowCardCatalogue(api).actionCardRefs();
+
+    assert.deepEqual(calls, [{ operation: 'actions', options: { ...NO_CACHE } }]);
+  });
+
+  /**
+   * RETAINED, first two entries. Not an oversight to be fixed by adding the
+   * flag: opting out was measured on hardware at +5 MB of floor, because every
+   * invalidation then re-parses every device (DeviceCatalog.refreshNow). The
+   * correctness half is paid where it matters instead — single-device reads
+   * pass `$cache: false` (see luminance-source.test.ts).
+   */
+  test('the catalogue reads devices and zones WITH the cache', async () => {
+    const seen: Record<string, unknown[]> = { getDevices: [], getZones: [], getApps: [] };
+    const record = (name: string, value: unknown) => async (...args: unknown[]) => {
+      seen[name]!.push(args[0]);
+      return value;
+    };
+    const client = {
+      devices: {
+        getDevices: record('getDevices', {
+          d1: { id: 'd1', name: 'Lamp', zone: 'z', class: 'light', ownerUri: 'homey:app:com.example',
+            capabilities: ['onoff'], capabilitiesObj: { onoff: { value: true } } },
+        }),
+        on: () => undefined, off: () => undefined,
+      },
+      zones: { getZones: record('getZones', { z: { id: 'z', name: 'Room', parent: null } }), on: () => undefined, off: () => undefined },
+      apps: { getApps: record('getApps', { 'com.example': { id: 'com.example', name: 'Example' } }) },
+    };
+    const api = {
+      read: async () => client, reportReadFailure: () => false,
+      track: (off: unknown) => off, onReadReplacement: () => () => undefined,
+    } as unknown as HomeyApiService;
+
+    await new DeviceCatalog(api).device('d1');
+
+    assert.deepEqual(seen, { getDevices: [undefined], getZones: [undefined], getApps: [undefined] },
+      'measured, and retained on purpose — a change here is a §15 decision, not a tidy-up');
+  });
+
+  /**
+   * RETAINED, third entry. `getApps()` passes no flag and retains nothing,
+   * because `homey-api` writes a getAll into its cache only while the manager
+   * `isConnected()` — and the read client never connects `apps`. That premise
+   * is what this pins: connect `apps` and the exception stops being true.
+   */
+  test('the read client never connects apps', async () => {
+    const connected: string[] = [];
+    const manager = (name: string) => ({ connect: async () => { connected.push(name); } });
+    const client: Record<string, unknown> = Object.fromEntries(
+      ['devices', 'zones', 'apps', 'flow', 'flowtoken', 'insights'].map(name => [name, manager(name)]),
+    );
+    class Service extends HomeyApiService {
+      protected override async createAppApi(): Promise<any> { return client; }
+    }
+    const service = new Service({ app: {} }, {} as CredentialService);
+
+    await service.read();
+
+    assert.deepEqual(connected, ['devices', 'zones']);
+    assert.equal(connected.includes('apps'), false, 'a connected apps manager would cache every getApps()');
   });
 });
