@@ -20,20 +20,6 @@ import { isTransportFailure, messageOf } from './support/homey-errors';
 const HomeyAPI = require('homey-api/lib/HomeyAPI/HomeyAPI');
 
 /**
- * Connect the named managers, one at a time, never failing the whole client.
- *
- * Managers connect individually; a top-level `connect()` does not cover them,
- * and `Flow.isBroken` refuses to run without `flow` + `flowtoken` connected.
- *
- * `onError` is a PARAMETER rather than a fixed policy because the two callers
- * genuinely disagree and both are right: the read client logs a degraded
- * manager, because the app will keep running on the ones that did connect and
- * somebody has to be able to see which did not; the write client swallows it,
- * because a write failure is reported by the write itself with a classified
- * credential verdict, and a second line about a manager would send the reader
- * to the wrong place.
- */
-/**
  * Which managers the app-token client connects — and `insights` is deliberately
  * NOT among them.
  *
@@ -57,6 +43,20 @@ const HomeyAPI = require('homey-api/lib/HomeyAPI/HomeyAPI');
  */
 const READ_MANAGERS = ['devices', 'zones', 'flow', 'flowtoken'];
 
+/**
+ * Connect the named managers, one at a time, never failing the whole client.
+ *
+ * Managers connect individually; a top-level `connect()` does not cover them,
+ * and `Flow.isBroken` refuses to run without `flow` + `flowtoken` connected.
+ *
+ * `onError` is a PARAMETER rather than a fixed policy because the two callers
+ * genuinely disagree and both are right: the read client logs a degraded
+ * manager, because the app will keep running on the ones that did connect and
+ * somebody has to be able to see which did not; the write client swallows it,
+ * because a write failure is reported by the write itself with a classified
+ * credential verdict, and a second line about a manager would send the reader
+ * to the wrong place.
+ */
 async function connectManagers(
   api: any,
   names: string[],

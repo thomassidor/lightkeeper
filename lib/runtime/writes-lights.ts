@@ -41,16 +41,3 @@ export function keepsLightsUpdated(plan: WritesLightsFlag): boolean {
 export function writesLightsField(writes: boolean): { writesLights?: false } {
   return writes ? {} : { writesLights: false };
 }
-
-/**
- * A pairing screen's switch, taken only when it arrives as a real boolean.
- *
- * A payload that leaves it out keeps what the session already holds. Reading an
- * absent key as "off" would quietly turn a device into one that only publishes
- * the first time any screen emitted without it. Junk keeps the fallback too,
- * because a screen that sent junk did not say "only publish".
- */
-export function writesLightsFrom(payload: unknown, fallback: boolean): boolean {
-  const value = (payload as { writesLights?: unknown } | null | undefined)?.writesLights;
-  return typeof value === 'boolean' ? value : fallback;
-}

@@ -325,7 +325,7 @@ describe('the target fingerprint sees what an id list cannot', () => {
  * A fourth promise, and the same trap CLAUDE.md records for lux one axis over:
  * `Number(null)` is 0, and 0 is pitch dark.
  *
- * `liveValuesOf()` is the ONE reader of a device snapshot's five light axes,
+ * `liveValuesOf()` is the ONE reader of a device snapshot's six light values,
  * and it used to cast: `obj?.dim?.value as number | undefined`. That does not
  * coerce, but it mistypes, and every consumer downstream tests `=== undefined`
  * to mean "the lamp never told us". So a `null` — an integration that has not
@@ -342,12 +342,12 @@ describe('an unusable snapshot value is absent, not zero', () => {
   test('null on any axis reads as absent rather than as zero', () => {
     const values = snapshot({
       onoff: null, dim: null, light_temperature: null,
-      light_hue: null, light_saturation: null,
+      light_hue: null, light_saturation: null, light_mode: null,
     });
 
     assert.deepEqual(values, {
       onoff: undefined, dim: undefined, light_temperature: undefined,
-      light_hue: undefined, light_saturation: undefined,
+      light_hue: undefined, light_saturation: undefined, light_mode: undefined,
     });
     // The distinction the whole finding turns on: absent, not a falsy number.
     assert.equal(values.dim, undefined);
@@ -374,19 +374,28 @@ describe('an unusable snapshot value is absent, not zero', () => {
   test('a genuine reading still passes, including both ends of the axis', () => {
     const values = snapshot({
       onoff: true, dim: 0, light_temperature: 1,
-      light_hue: 0.5, light_saturation: 0.25,
+      light_hue: 0.5, light_saturation: 0.25, light_mode: 'color',
     });
 
     assert.deepEqual(values, {
       onoff: true, dim: 0, light_temperature: 1,
-      light_hue: 0.5, light_saturation: 0.25,
+      light_hue: 0.5, light_saturation: 0.25, light_mode: 'color',
     });
   });
 
-  test('a missing capabilitiesObj is five absences, not five zeroes', () => {
+  test('a mode is one of the two strings, or absent', () => {
+    // Read by the pre-stage test to put a lamp back in the mode it found it in;
+    // a mode it cannot name must not be written back.
+    assert.equal(snapshot({ light_mode: 'temperature' }).light_mode, 'temperature');
+    for (const junk of ['xy', '', 0, null]) {
+      assert.equal(snapshot({ light_mode: junk }).light_mode, undefined, `${String(junk)}`);
+    }
+  });
+
+  test('a missing capabilitiesObj is six absences, not six zeroes', () => {
     assert.deepEqual(liveValuesOf({}), {
       onoff: undefined, dim: undefined, light_temperature: undefined,
-      light_hue: undefined, light_saturation: undefined,
+      light_hue: undefined, light_saturation: undefined, light_mode: undefined,
     });
   });
 });

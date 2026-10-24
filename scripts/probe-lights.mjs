@@ -281,7 +281,7 @@ export const FINDINGS = {
     title: 'dim declares a range that is not 0-1',
     assumption: 'lib/outputs/target-state-cache.ts commitDesired() — commitDesired puts desired dim through '
       + 'clamp01 whatever the lamp declares, so a lamp on a 0-100 scale is written ~0.4% of its '
-      + 'range and its cached state is corrupted. lib/outputs/intent-planner.ts clampDim() clamps to the '
+      + 'range and its cached state is corrupted. lib/outputs/intent-planner.ts clampFor() clamps to the '
       + 'declared range on the way out, so the two disagree.',
   },
   META_TEMP_RANGE_NOT_UNIT: {
@@ -552,13 +552,13 @@ export const FINDINGS = {
   DIM_UNDECLARED_FLOOR: {
     severity: 'medium',
     title: 'dim will not go as low as it says it will',
-    assumption: 'lib/outputs/intent-planner.ts clampDim() — clampToRange trusts the declared min, so the '
+    assumption: 'lib/outputs/intent-planner.ts clampFor() — clampToRange trusts the declared min, so the '
       + 'bottom of every brightness slider on this lamp is a value it silently refuses.',
   },
   DIM_UNDECLARED_CEILING: {
     severity: 'medium',
     title: 'dim will not go as high as it says it will',
-    assumption: 'lib/outputs/intent-planner.ts clampDim() — as above, at the other end.',
+    assumption: 'lib/outputs/intent-planner.ts clampFor() — as above, at the other end.',
   },
   TEMP_UNDECLARED_RANGE: {
     severity: 'medium',

@@ -226,19 +226,6 @@ export function managedKey(controllerId: string, bindingKey: string, variantKey:
 }
 
 /**
- * Which of a set of mapped inputs the compiler would decline, and why.
- *
- * The pairing screen's preflight. Answering it needs no Homey, no API key and
- * no cards that exist: `compileBinding` is pure, and the card refs are read
- * only for an `id` and `uri` to echo into a flow this will throw away. So the
- * placeholders below are honest rather than a shortcut — nothing here can
- * reach a real flow, which is the one thing platform §3's rule protects.
- *
- * Returns the declined inputs rather than throwing, and returns no sentence:
- * `lib/` has no access to `homey.__`, so a message built here could never be
- * translated. The caller phrases it.
- */
-/**
  * A control declined at pairing. `reason` is English, for the log; `detail` is
  * the same thing as a locale key, for the screen — `lib/` cannot translate.
  */
@@ -259,6 +246,19 @@ function declineDetail(error: RangeExpansionTooLargeError | InvalidRangeError): 
   };
 }
 
+/**
+ * Which of a set of mapped inputs the compiler would decline, and why.
+ *
+ * The pairing screen's preflight. Answering it needs no Homey, no API key and
+ * no cards that exist: `compileBinding` is pure, and the card refs are read
+ * only for an `id` and `uri` to echo into a flow this will throw away. So the
+ * placeholders below are honest rather than a shortcut — nothing here can
+ * reach a real flow, which is the one thing platform §3's rule protects.
+ *
+ * Returns the declined inputs rather than throwing, and returns no sentence:
+ * `lib/` has no access to `homey.__`, so a message built here could never be
+ * translated. The caller phrases it.
+ */
 export function findUncompilableBindings(
   inputs: Array<{ key: string; label: string; binding: LogicalSourceBinding }>,
   mappedKeys: Set<string>,

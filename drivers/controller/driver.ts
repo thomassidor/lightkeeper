@@ -1,8 +1,7 @@
-import type { LightkeeperApp } from '../../lib/app-contract';
+import { LightkeeperDriver } from '../../lib/devices/lightkeeper-driver';
 import { mintDeviceId } from '../../lib/bridge/flow-bridge-manager';
-import Homey from 'homey';
 import {
-  lightsSummary, paletteForScreen, registerIntroHandler, registerReviewHandler,
+  paletteForScreen, registerIntroHandler, registerReviewHandler,
 } from '../../lib/pairing/flow-screens';
 import {
   isSourceKind, sharedLightCount, sourceRows, type SourceDevice, type SourceKind,
@@ -36,9 +35,7 @@ import {
   handlerRegistrar,
   registerCredentialHandlers,
   registerTargetHandlers,
-  type PairSessionHost,
 } from '../../lib/pairing/pair-session';
-import { translatorFor } from '../../lib/support/i18n';
 import { localiseInputLabel, localisedInputLine } from '../../lib/inputs/input-label';
 
 /**
@@ -87,56 +84,8 @@ interface SessionState {
   editingSource?: SourceKind;
 }
 
-module.exports = class ControllerDriver extends Homey.Driver {
-  /**
-   * `homey.__`, plural-aware: a key that is a plural group picks its form from
-   * the numeric `count` token (lib/support/i18n.ts). Every string this driver
-   * resolves goes through here, so a counted one cannot be missed.
-   */
-  private tr(key: string, tokens?: Record<string, string | number>): string {
-    return translatorFor(this.homey)(key, tokens);
-  }
-
-  /** `tr`, as a value — for the lib/ helpers that take a translator. */
-  private readonly trFn = (key: string, tokens?: Record<string, string | number>): string => this.tr(key, tokens);
-
-
-  /**
-   * What `lib/pairing/pair-session.ts` needs of this driver.
-   *
-   * Four members and no `Homey.Driver` among them, which is the point: the
-   * shared mechanics stay importable by a test (platform §13). Built per call
-   * because a session binds it once and it costs nothing.
-   */
-  private pairHost(): PairSessionHost {
-    return {
-      log: (...args: unknown[]) => this.log(...args),
-      error: (...args: unknown[]) => this.error(...args),
-      translate: (key: string, tokens?: Record<string, string | number>) =>
-        this.tr(key, tokens),
-      clock: this.homey.clock,
-      app: this.app,
-    };
-  }
-
-  /**
-   * The app, through the contract rather than as `any`.
-   *
-   * This used to be `: any`, and the hardware pass is what found out what that
-   * cost: `catalog.devices()` and `catalog.getDevice()` do not exist — the
-   * methods are `allDevices()` and `device()` — and six call sites across three
-   * drivers shipped, invisible to `tsc`, the suite and `validate` alike,
-   * throwing the first time a real screen asked for them. `this.homey.app` is
-   * `App` from the SDK's own types, so the double cast is the seam; `LightkeeperApp`
-   * is the surface a driver is allowed to use.
-   */
-  private get app(): LightkeeperApp {
-    return this.homey.app as unknown as LightkeeperApp;
-  }
-
-  override async onInit() {
-    this.log('Controller driver initialised');
-  }
+module.exports = class ControllerDriver extends LightkeeperDriver {
+  protected readonly label = 'Controller';
 
   override async onPair(session: any) {
     await this.bindSession(session, {});
@@ -296,8 +245,8 @@ module.exports = class ControllerDriver extends Homey.Driver {
         eventCount: result.inputs.length,
         controls: groupByControl(result.inputs).map(g => ({
           controlId: g.controlId,
-          label: localiseInputLabel(g.label, this.trFn).control,
-          inputs: g.inputs.map(i => ({ key: i.key, label: localisedInputLine(i.label, this.trFn), action: i.action })),
+          label: localiseInputLabel(g.label, this.tr).control,
+          inputs: g.inputs.map(i => ({ key: i.key, label: localisedInputLine(i.label, this.tr), action: i.action })),
         })),
         // Allow selection but block completion, rather than hiding it.
         usable: result.inputs.length > 0,
@@ -425,7 +374,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
           // "Top · Press" as ONE line, because the row's second line now carries
           // the job and its lights. Split on the normalizer's own separator so a
           // control with no action of its own ("1 up rotary") stays as it is.
-          label: localisedInputLine(input.label, this.trFn),
+          label: localisedInputLine(input.label, this.tr),
         })),
         jobs,
       };
@@ -494,7 +443,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
       const palette = paletteForScreen(key => this.tr(key));
 
       return {
-        title: input ? localisedInputLine(input.label, this.trFn) : '',
+        title: input ? localisedInputLine(input.label, this.tr) : '',
         /**
          * Nine jobs as a grid, and "do nothing" is NOT one of them.
          *
@@ -732,14 +681,14 @@ module.exports = class ControllerDriver extends Homey.Driver {
         lights,
         controls: groupByControl(state.catalogue).map(g => ({
           controlId: g.controlId,
-          label: localiseInputLabel(g.label, this.trFn).control,
+          label: localiseInputLabel(g.label, this.tr).control,
           inputs: g.inputs.map(i => ({
             key: i.key,
             // Split so the UI can drop the action when a control has only one,
             // and avoid "1 up rotary — Press".
-            controlLabel: localiseInputLabel(i.label, this.trFn).control,
-            actionLabel: localiseInputLabel(i.label, this.trFn).action,
-            label: localisedInputLine(i.label, this.trFn),
+            controlLabel: localiseInputLabel(i.label, this.tr).control,
+            actionLabel: localiseInputLabel(i.label, this.tr).action,
+            label: localisedInputLine(i.label, this.tr),
           })),
         })),
         // Sections and rows, and the one-light collapse that binds them. Both
@@ -897,7 +846,7 @@ module.exports = class ControllerDriver extends Homey.Driver {
       this.tr('mapping.unsupportedControl', {
         controls: declined
           .map(item => this.tr('mapping.declinedControl', {
-            label: localisedInputLine(item.label, this.trFn),
+            label: localisedInputLine(item.label, this.tr),
             reason: this.tr(item.detail.key, item.detail.tokens),
           }))
           .join(this.tr('unit.listSeparator')),
@@ -905,18 +854,6 @@ module.exports = class ControllerDriver extends Homey.Driver {
     );
   }
 
-  /**
-   * A readable default name, so the last screen needs no text field. Homey
-   * lets the user rename a device afterwards, which is the natural place for
-   * it — asking during setup adds a step most people would skip anyway.
-   */
-  /**
-   * What the lights row reads back — and WHICH of the two shapes it stored.
-   *
-   * "Everything in Kitchen" and "4 picked" behave differently the next time
-   * somebody adds a lamp to that room, and this line is the only place that
-   * difference is ever visible.
-   */
   /**
    * Which lights a rule drives, as the shortest true phrase for them.
    *
@@ -1133,17 +1070,15 @@ module.exports = class ControllerDriver extends Homey.Driver {
     return typeof english === 'string' ? english : '';
   }
 
-  private async lightsSummary(
-    target: TargetSpec,
-    summary: { count: number },
-  ): Promise<string> {
-    return lightsSummary(this.pairHost(), target, summary, () => this.app.catalog.allZones());
-  }
-
+  /**
+   * A readable default name, so the last screen needs no text field. Homey
+   * lets the user rename a device afterwards, which is the natural place for
+   * it — asking during setup adds a step most people would skip anyway.
+   */
   private async deriveName(state: SessionState): Promise<string> {
     return deriveControllerName(
       this.app.catalog, state.target, state.sourceName ?? this.tr('names.remote'),
-      (key, tokens) => this.tr(key, tokens),
+      this.tr,
     );
   }
 

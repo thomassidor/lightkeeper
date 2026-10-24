@@ -21,10 +21,19 @@ export interface TargetRuntimeState {
   actualSaturation?: number;
   desiredHue?: number;
   desiredSaturation?: number;
+  /**
+   * Which mode the lamp last said it was in. No desired twin, because nothing
+   * plans FROM a mode — it is read once, by the pre-stage test, so the test
+   * can put a lamp back in the mode it found it in (`restoreLamp`).
+   */
+  actualMode?: LightMode;
 }
 
+/** The two values `light_mode` takes. */
+export type LightMode = 'color' | 'temperature';
+
 /**
- * The five capability values a target's live state is seeded from.
+ * The six capability values a target's live state is seeded from.
  *
  * Named, and read by `liveValuesOf()` below, because it was written out twice —
  * once in `target-resolver.ts`'s `primeCache()` and once in
@@ -40,10 +49,12 @@ export interface LiveValues {
   light_temperature?: number;
   light_hue?: number;
   light_saturation?: number;
+  /** A string, so no arithmetic; seeded and reported like the rest. */
+  light_mode?: LightMode;
 }
 
 /**
- * Pull those five off a device as `homey-api` handed it back.
+ * Pull those six off a device as `homey-api` handed it back.
  *
  * `capabilitiesObj` is optional all the way down because the client genuinely
  * may not send it, and every field is optional because a lamp need not have the
@@ -73,6 +84,7 @@ export function liveValuesOf(device: {
     light_temperature: usable<number>('light_temperature', obj?.light_temperature?.value),
     light_hue: usable<number>('light_hue', obj?.light_hue?.value),
     light_saturation: usable<number>('light_saturation', obj?.light_saturation?.value),
+    light_mode: usable<LightMode>('light_mode', obj?.light_mode?.value),
   };
 }
 
@@ -404,6 +416,7 @@ export class TargetStateCache {
     state.actualTemperature = actual.light_temperature;
     state.actualHue = actual.light_hue;
     state.actualSaturation = actual.light_saturation;
+    state.actualMode = actual.light_mode;
     state.desiredOn = actual.onoff;
     state.desiredDim = actual.dim;
     state.desiredTemperature = actual.light_temperature;
@@ -462,9 +475,9 @@ export class TargetStateCache {
         state.actualSaturation = value as number;
         break;
       case 'light_mode':
-        // A string with no arithmetic behind it. Tracked only through the echo
-        // dedupe above, which is the only reason this arm exists at all — and it
-        // exists explicitly so an added capability cannot fall through silently.
+        // A string with no arithmetic behind it: recorded so the pre-stage test
+        // can restore it, and otherwise tracked only through the echo dedupe.
+        state.actualMode = value as LightMode;
         break;
     }
 

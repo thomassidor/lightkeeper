@@ -38,11 +38,6 @@ export interface NameParts {
 }
 
 /**
- * "Kitchen schedule", "Reading lamp curve", "3 lights circadian".
- *
- * Shared by the schedule, circadian and Curve drivers.
- */
-/**
  * A name, TRIMMED, or the fallback if there is nothing left of it.
  *
  * Homey does not stop a user naming a lamp `" "` or leaving a zone name empty,
@@ -58,6 +53,11 @@ function named(value: string | undefined, fallback: string): string {
   return (value ?? '').trim() || fallback;
 }
 
+/**
+ * "Kitchen schedule", "Reading lamp curve", "3 lights circadian".
+ *
+ * Shared by the schedule, circadian and Curve drivers.
+ */
 export async function deriveSuffixedName(
   catalog: DeviceCatalog,
   target: TargetSpec | undefined,

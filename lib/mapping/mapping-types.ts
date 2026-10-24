@@ -113,20 +113,6 @@ export interface ColorPreset {
 }
 
 /**
- * The value a function needs, where its name is not enough — whichever kind of
- * value that is. Never both, and never a choice.
- *
- * Named `preset` rather than `args`, and that is worth a line: `fixedArgs` one
- * layer over means a generated Flow card's ARGUMENTS, which is a different thing
- * entirely, and a `MappingRule.args` sitting beside a `Binding.fixedArgs` would
- * be genuinely confusing to read.
- *
- * A union rather than one record with optional halves, because "a preset" is
- * not a thing in its own right: it is the rest of the sentence a job started,
- * and a `brightness` on a colour job is a number nothing will ever read. Every
- * reader discriminates, which is the point.
- */
-/**
  * Two other Lightkeeper devices, named — not a colour and not a brightness.
  *
  * The value behind "On – with Lightkeeper": which device this button takes its
@@ -162,6 +148,20 @@ export interface LightkeeperPreset {
   pressAgainOff: boolean;
 }
 
+/**
+ * The value a function needs, where its name is not enough — whichever kind of
+ * value that is. Never both, and never a choice.
+ *
+ * Named `preset` rather than `args`, and that is worth a line: `fixedArgs` one
+ * layer over means a generated Flow card's ARGUMENTS, which is a different thing
+ * entirely, and a `MappingRule.args` sitting beside a `Binding.fixedArgs` would
+ * be genuinely confusing to read.
+ *
+ * A union rather than one record with optional halves, because "a preset" is
+ * not a thing in its own right: it is the rest of the sentence a job started,
+ * and a `brightness` on a colour job is a number nothing will ever read. Every
+ * reader discriminates, which is the point.
+ */
 export type MappingPreset = BrightnessPreset | ColorPreset | LightkeeperPreset;
 
 /** Narrowing for the union above, in one place so the test can name it. */

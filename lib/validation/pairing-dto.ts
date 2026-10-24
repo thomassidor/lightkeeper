@@ -38,15 +38,6 @@ const MAX_RULES = 64;
 const MAX_RULE_LIGHTS = 64;
 
 /**
- * What a row is missing, as the half-sentence the screen prints after "has no".
- *
- * A record keyed on `PresetKind` rather than a ternary, because the ternary it
- * replaced said "brightness" for everything that was not a colour — which was
- * true while there were two kinds and became a lie the moment there was a
- * third. A `lightkeeper_on` row with neither source chosen reported that it had
- * "no brightness to set", which is not something that row has ever been about.
- */
-/**
  * Why a mapping row was dropped: English for the log, and a locale key for the
  * screen. `setGesture` shows the first one to the person editing the button, so
  * it has to be translatable — and `lib/` cannot translate (CLAUDE.md).
@@ -57,6 +48,15 @@ export interface DroppedRule {
   detail: { key: string; tokens?: Record<string, string> };
 }
 
+/**
+ * What a row is missing, as the half-sentence the screen prints after "has no".
+ *
+ * A record keyed on `PresetKind` rather than a ternary, because the ternary it
+ * replaced said "brightness" for everything that was not a colour — which was
+ * true while there were two kinds and became a lie the moment there was a
+ * third. A `lightkeeper_on` row with neither source chosen reported that it had
+ * "no brightness to set", which is not something that row has ever been about.
+ */
 const MISSING_VALUE: Record<PresetKind, string> = {
   none: 'value to set',
   brightness: 'brightness to set',
@@ -212,27 +212,6 @@ export interface MappingRuleDto {
 }
 
 /**
- * The mapping screen's rows: shape errors THROW; rows that no longer belong are
- * DROPPED and named.
- *
- * `groupKey` is checked against the lights ALREADY CHOSEN, not against the whole
- * Homey: a rule aimed at a light the controller does not target is a rule the
- * user cannot have meant, and it would resolve to a light they never selected on
- * the previous screen.
- *
- * The distinction is the whole of this signature. A malformed payload is a bug
- * in the view and refusing it is right. But a row whose light was deselected on
- * the previous screen, or whose function the remaining lamps cannot perform, is
- * a perfectly ordinary consequence of going back a step — and rejecting the
- * whole save for it made a controller's repair permanently unsaveable, with a
- * raw validation message and no way forward but starting over. The mapping
- * screen does not render such a row either, so the user could not even see what
- * was being complained about.
- *
- * Dropping and reporting is what `dedupeByInputKey`, `sanitiseEntries` and
- * `sanitiseCurve` all already do with their own payloads.
- */
-/**
  * Which lights a rule names, in either of the two spellings a caller may use.
  *
  * `lights` is the buttons flow's: a list of device ids, or null for "all of the
@@ -257,6 +236,27 @@ function readRuleLights(rule: Record<string, unknown>, path: string): string[] |
   return groupKey === '__all__' ? null : [groupKey];
 }
 
+/**
+ * The mapping screen's rows: shape errors THROW; rows that no longer belong are
+ * DROPPED and named.
+ *
+ * `groupKey` is checked against the lights ALREADY CHOSEN, not against the whole
+ * Homey: a rule aimed at a light the controller does not target is a rule the
+ * user cannot have meant, and it would resolve to a light they never selected on
+ * the previous screen.
+ *
+ * The distinction is the whole of this signature. A malformed payload is a bug
+ * in the view and refusing it is right. But a row whose light was deselected on
+ * the previous screen, or whose function the remaining lamps cannot perform, is
+ * a perfectly ordinary consequence of going back a step — and rejecting the
+ * whole save for it made a controller's repair permanently unsaveable, with a
+ * raw validation message and no way forward but starting over. The mapping
+ * screen does not render such a row either, so the user could not even see what
+ * was being complained about.
+ *
+ * Dropping and reporting is what `dedupeByInputKey`, `sanitiseEntries` and
+ * `sanitiseCurve` all already do with their own payloads.
+ */
 export function validateMappingRules(
   raw: unknown,
   selected: ReadonlySet<string>,

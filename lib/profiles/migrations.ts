@@ -33,10 +33,10 @@ import { validateControllerProfile } from '../validation/plans';
 export type Migration = MigrationStep;
 
 /**
- * Keyed by the version being migrated FROM. Add a new entry, never edit an
- * existing one — an installed base is already carrying the old shape.
+ * Keyed by the version being migrated FROM. Empty: see the header. Add a new
+ * entry, never edit an existing one — an installed base is already carrying the
+ * old shape.
  */
-/** Keyed by the version being migrated FROM. Empty: see the header. */
 const MIGRATIONS: Record<number, Migration> = {};
 
 export function migrateProfile(raw: unknown): MigrationResult<ControllerProfile> {

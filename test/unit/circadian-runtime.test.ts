@@ -37,7 +37,7 @@ function light(
   capabilities: string[] = ['onoff', 'dim', 'light_temperature'],
   values: {
     onoff?: boolean; dim?: number; light_temperature?: number;
-    light_hue?: number; light_saturation?: number;
+    light_hue?: number; light_saturation?: number; light_mode?: 'color' | 'temperature';
   } = {},
 ): FakeDevice {
   const capabilitiesObj: Record<string, any> = {};
@@ -57,6 +57,9 @@ function light(
   }
   if (capabilities.includes('light_saturation')) {
     capabilitiesObj.light_saturation = { min: 0, max: 1, value: values.light_saturation ?? 0.5 };
+  }
+  if (capabilities.includes('light_mode')) {
+    capabilitiesObj.light_mode = { value: values.light_mode ?? 'temperature' };
   }
   return { id, name: id, zoneName: 'Kitchen', class: 'light', capabilities, capabilitiesObj, available: true };
 }
@@ -735,6 +738,41 @@ describe('pre-staging that turns out to be unsafe', () => {
     const last = (capability: string) => h.writes.filter(w => w.capability === capability).at(-1)?.value;
     assert.equal(last('dim'), 0.7);
     assert.equal(last('light_temperature'), 0.3);
+  });
+
+  test('a lamp the test moved into colour mode is put back in its own mode', async () => {
+    // Found at warm white, in temperature mode. A coloured curve tests the hue
+    // axis, which writes `light_mode: color` first — and the restore used to
+    // put back the hue alone, leaving the lamp lit in colour mode at a colour
+    // it was not showing.
+    const h = harness({
+      plan: plan({
+        preStage: true, preStageLights: [], target: { kind: 'devices', deviceIds: ['l1'] },
+        points: [
+          { id: 'p1', anchor: { kind: 'clock', at: 21 * 60 }, warmth: 0.9, color: 'amber' },
+          { id: 'p2', anchor: { kind: 'clock', at: 23 * 60 }, warmth: 0.9, color: 'amber' },
+        ],
+      }),
+      devices: [light(
+        'l1',
+        ['onoff', 'dim', 'light_temperature', 'light_hue', 'light_saturation', 'light_mode'],
+        { onoff: true, dim: 0.6, light_temperature: 0.8, light_hue: 0.1, light_mode: 'temperature' },
+      )],
+    });
+    await h.runtime.startIdle();
+
+    const outcome = await finish(h, h.runtime.probePreStageAll(0));
+
+    assert.equal(outcome.lights[0]!.restored, true);
+    const modes = h.writes.filter(w => w.capability === 'light_mode').map(w => w.value);
+    assert.deepEqual(modes, ['color', 'temperature'], 'into colour to test, back to temperature after');
+    const afterRestore = h.writes.slice(h.writes.findIndex(w => w.value === 'temperature'));
+    assert.deepEqual(
+      afterRestore.map(w => w.capability),
+      ['light_mode', 'light_temperature', 'dim'],
+      'the mode, then only the axis it shows — no stale hue',
+    );
+    assert.equal(h.devices[0]!.capabilitiesObj.light_temperature.value, 0.8);
   });
 
   test('a lamp that refuses a colour while off is a fallback, not an error', async () => {

@@ -2,6 +2,7 @@ import { sanitiseUnitInterval } from '../validation/unit-interval';
 import { MINIMUM_BRIGHTNESS } from '../outputs/light-intent';
 import type { TargetSpec } from '../outputs/light-intent';
 import { DEFAULT_TRANSITION, sanitiseTransition, type Transition } from '../support/interpolate';
+import { BRIGHT_ELEVATION, DARK_ELEVATION } from './daylight-response';
 
 /**
  * What a daylight response is, as persisted — in FOUR different stores.
@@ -188,11 +189,12 @@ export const DEFAULT_RESPONSE: DaylightResponse = {
   brightLux: 500,
   dark: 0.9,
   bright: 0.25,
-  // Civil twilight, and a middling northern-European summer noon. Defaults
-  // rather than constants now: the screen pre-fills them from today's own sun
-  // path, the same way it pre-fills the two lux numbers from the sensor's week.
-  darkElevation: -6,
-  brightElevation: 25,
+  // Civil twilight, and a middling northern-European summer noon — see the two
+  // constants. Defaults rather than fixed now: the screen pre-fills them from
+  // today's own sun path, the same way it pre-fills the two lux numbers from the
+  // sensor's week.
+  darkElevation: DARK_ELEVATION,
+  brightElevation: BRIGHT_ELEVATION,
   // The shallow answer, which is the safe one to assume of a room nobody has
   // told us about: it models a little rather than nothing and rather than a full
   // south-facing cosine.

@@ -9,7 +9,8 @@ import {
 } from '../../lib/circadian/circadian-migrations';
 import {
   DEFAULT_ZONES, MAX_OFFSET, MIN_ZONE_MINUTES,
-  expandSimplePlan, foldBackSimplePlan, resolveBoundaries, sanitiseZones, zonePoints, zoneValueAt,
+  expandSimplePlan, foldBackSimplePlan, resolveBoundaries, sanitiseZones, sunAnchorContext, zonePoints,
+  zoneValueAt,
 } from '../../lib/circadian/simple-curve';
 import { TRANSITIONS, type Transition } from '../../lib/support/interpolate';
 
@@ -183,6 +184,19 @@ describe('the three zones', () => {
     assert.equal(morningEndMinute, 7 * 60, 'sunrise 06:30 plus half an hour');
     assert.equal(eveningStartMinute, 19 * 60, 'sunset 20:00 less an hour');
     assert.equal(fromSun, true);
+  });
+
+  test("the sun is read in the Homey's own local minutes, or not at all", () => {
+    // Copenhagen at midsummer: sunrise just before 05:00, sunset just before 22:00.
+    const midsummer = Date.UTC(2026, 5, 21, 10, 0);
+    const copenhagen = { latitude: 55.68, longitude: 12.57 };
+    const context = sunAnchorContext(copenhagen, 'Europe/Copenhagen', midsummer);
+    assert.ok(Math.abs(context.sunriseMinute! - (4 * 60 + 25)) <= 15, `sunrise at ${context.sunriseMinute}`);
+    assert.ok(Math.abs(context.sunsetMinute! - (21 * 60 + 57)) <= 15, `sunset at ${context.sunsetMinute}`);
+
+    // A Homey never told where it is, and a polar day: both fall back, silently.
+    assert.deepEqual(sunAnchorContext(null, 'Europe/Copenhagen', midsummer), {});
+    assert.deepEqual(sunAnchorContext({ latitude: 78.2, longitude: 15.6 }, 'Arctic/Longyearbyen', midsummer), {});
   });
 
   test('with no sun at all it falls back to fixed hours, and says so', () => {

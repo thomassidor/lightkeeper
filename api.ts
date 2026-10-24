@@ -19,7 +19,6 @@ import type {
   DiagnosticsResponse, LightkeeperApp, StatusResponse,
 } from './lib/app-contract';
 import { requireArray } from './lib/validation/guards';
-import { timezoneOf } from './lib/time/local-clock';
 import { messageOf } from './lib/support/homey-errors';
 import { heapReport } from './lib/support/heap-report';
 import { evidenceRoutes } from './lib/support/evidence-feature';
@@ -451,6 +450,17 @@ module.exports = {
   },
 
   /**
+   * The recorder's six routes, or nothing at all.
+   *
+   * Spread rather than written out because a launch build has no recorder:
+   * `evidenceRoutes()` returns `{}` there, and the six route names simply do
+   * not exist on this object. Defining them here would mean deleting them from
+   * generated JavaScript instead, which is not a thing to do by string surgery.
+   * See `lib/support/evidence-feature.ts`.
+   */
+  ...evidenceRoutes(appOf),
+
+  /**
    * For troubleshooting and bug reports, not for setup.
    *
    * ```
@@ -469,17 +479,6 @@ module.exports = {
    * key material. It DOES carry device and zone names by design — a controller
    * quietly pointed at the wrong room looks identical to a broken one.
    */
-  /**
-   * The recorder's six routes, or nothing at all.
-   *
-   * Spread rather than written out because a launch build has no recorder:
-   * `evidenceRoutes()` returns `{}` there, and the six route names simply do
-   * not exist on this object. Defining them here would mean deleting them from
-   * generated JavaScript instead, which is not a thing to do by string surgery.
-   * See `lib/support/evidence-feature.ts`.
-   */
-  ...evidenceRoutes(appOf),
-
   async getDiagnostics({ homey }: any): Promise<DiagnosticsResponse> {
     const app = appOf(homey);
     return {
@@ -618,29 +617,6 @@ module.exports = {
     const app = appOf(homey);
     await app.daylights.tickAll();
     return { ticked: app.daylights.all().length };
-  },
-
-  /**
-   * A light sensor's own last week, as the pairing screen buckets it.
-   *
-   * Reachable outside pairing for the same reason the six routes above it are:
-   * the mechanism is not new, only its reachability, and a hardware pass has to
-   * be able to ask whether Insights answers at all on a given firmware without
-   * opening a pairing sheet. It is also the one route that proves platform §1's
-   * read-scope claim extends to Insights.
-   *
-   * `:id` is the SENSOR's Homey device id, not a Lightkeeper device's `data.id`
-   * — this route is about a foreign device, so `idOf` does not apply. Answers
-   * `{ available: false }` rather than failing when the log cannot be read,
-   * which is the same thing the screen sees.
-   */
-  async getSensorHistory({ homey, params }: any) {
-    const app = appOf(homey);
-    const deviceId = String(params?.id ?? '');
-    if (!deviceId) throw new Error('A sensor device id is required.');
-    const week = await app.luminance.week(deviceId, timezoneOf(homey.clock));
-    if (!week) return { available: false };
-    return { available: true, ...week };
   },
 
   /**

@@ -70,9 +70,9 @@ const NO_FOLDERS: FolderView = { root: undefined, folders: new Map() };
 export interface FlowFolderInfo {
   id: string;
   folder: string | null | undefined;
-  /** The controller id from our bridge action, or '' when the flow is not ours. */
   /**
-   * Which Lightkeeper device owns this flow — controller or schedule.
+   * Which Lightkeeper device owns this flow — controller or schedule — read
+   * from our bridge action, or '' when the flow is not ours.
    *
    * Internal name only: the flow ARGUMENT it is read from is still
    * `args.controller`, which is persisted in every generated Flow on every

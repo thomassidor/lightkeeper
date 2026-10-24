@@ -5,7 +5,7 @@ import {
   requiredCapability,
   type LightIntent,
 } from './light-intent';
-import type { TargetStateCache } from './target-state-cache';
+import type { LightMode, TargetStateCache } from './target-state-cache';
 import { stepFromDecimals } from './target-state-cache';
 import { clamp01 } from './light-intent';
 import type { ControllerBehavior } from '../mapping/mapping-types';
@@ -138,7 +138,7 @@ export function planIntent(
     case 'temperature_absolute':
       for (const deviceId of supported) {
         writes.push(
-          ...planTemperature(deviceId, clampTemperature(deviceId, intent.value, cache), cache),
+          ...planTemperature(deviceId, clampFor('light_temperature', deviceId, intent.value, cache), cache),
         );
       }
       return { writes, skipped };
@@ -155,7 +155,7 @@ export function planIntent(
         if (intent.temperature !== undefined && cache.supports(deviceId, 'light_temperature')) {
           writes.push(
             ...planTemperature(
-              deviceId, clampTemperature(deviceId, intent.temperature, cache), cache,
+              deviceId, clampFor('light_temperature', deviceId, intent.temperature, cache), cache,
             ),
           );
         }
@@ -210,7 +210,7 @@ function planTemperatureCycle(
     const current = cache.currentTemperature(deviceId);
     const index = current === undefined ? -1 : Math.round(current / step);
     const next = (((index + 1) % CYCLE_STOPS) + CYCLE_STOPS) % CYCLE_STOPS * step;
-    writes.push(...planTemperature(deviceId, clampTemperature(deviceId, next, cache), cache));
+    writes.push(...planTemperature(deviceId, clampFor('light_temperature', deviceId, next, cache), cache));
   }
 
   return { writes, skipped };
@@ -294,7 +294,7 @@ function planBrightnessDelta(
      */
     const raw = synchronisedValue ?? applyPerceptualDelta(current, delta);
     const next = synchronisedValue !== null
-      ? clampDim(deviceId, raw, cache)
+      ? clampFor('dim', deviceId, raw, cache)
       : advanceDim(deviceId, current, raw, delta, cache);
 
     // Where the result would fall below the minimum, turn off rather
@@ -396,14 +396,23 @@ function planTemperatureDelta(
       continue;
     }
     const current = cache.currentTemperature(deviceId) ?? 0.5;
-    const next = clampTemperature(deviceId, current + delta, cache);
+    const next = clampFor('light_temperature', deviceId, current + delta, cache);
     writes.push(...planTemperature(deviceId, next, cache));
   }
   return { writes, skipped };
 }
 
-function clampDim(deviceId: string, value: number, cache: TargetStateCache): number {
-  const options = cache.capabilitiesOf(deviceId)?.dim;
+/**
+ * Into this lamp's own range for one capability, at its own resolution — never
+ * a range assumed uniform across targets (platform §6).
+ */
+function clampFor(
+  capability: 'dim' | 'light_temperature',
+  deviceId: string,
+  value: number,
+  cache: TargetStateCache,
+): number {
+  const options = cache.capabilitiesOf(deviceId)?.[capability];
   const min = options?.min ?? 0;
   const max = options?.max ?? 1;
   return quantise(clampToRange(value, min, max), options?.decimals);
@@ -439,10 +448,10 @@ function representableStep(deviceId: string, cache: TargetStateCache): number | 
  *
  * The same argument as `advanceDim`, one axis over: that one keeps a relative
  * step from rounding to a no-op, this one keeps an absolute level from rounding
- * to darkness. It lives here, in the absolute branch, rather than in `clampDim`
+ * to darkness. It lives here, in the absolute branch, rather than in `clampFor`
  * — the delta path deliberately allows low values, and `offBelowMinimum`
  * deliberately turns a lamp off below its minimum, and both go through
- * `clampDim` too.
+ * `clampFor` too.
  *
  * **Open question, answerable only on hardware:** what a lamp declaring
  * `decimals: 1` actually does with a `dim` of 0.01 — accept and round to zero,
@@ -452,7 +461,7 @@ function representableStep(deviceId: string, cache: TargetStateCache): number | 
  * resolution on the grounds that a lamp might honour it.
  */
 function litDim(deviceId: string, value: number, cache: TargetStateCache): number {
-  const quantised = clampDim(deviceId, value, cache);
+  const quantised = clampFor('dim', deviceId, value, cache);
   if (value <= 0 || quantised > 0) return quantised;
 
   const step = representableStep(deviceId, cache);
@@ -460,7 +469,7 @@ function litDim(deviceId: string, value: number, cache: TargetStateCache): numbe
   // zero the caller asked for.
   if (step === undefined) return quantised;
 
-  return clampDim(deviceId, step, cache);
+  return clampFor('dim', deviceId, step, cache);
 }
 
 /**
@@ -491,22 +500,29 @@ function advanceDim(
   delta: number,
   cache: TargetStateCache,
 ): number {
-  const next = clampDim(deviceId, raw, cache);
-  if (delta === 0 || next !== clampDim(deviceId, current, cache)) return next;
+  const next = clampFor('dim', deviceId, raw, cache);
+  if (delta === 0 || next !== clampFor('dim', deviceId, current, cache)) return next;
 
   // No declared resolution means nothing was quantised away, so nothing to do.
   const step = representableStep(deviceId, cache);
   if (step === undefined) return next;
 
-  return clampDim(deviceId, next + (delta > 0 ? step : -step), cache);
+  return clampFor('dim', deviceId, next + (delta > 0 ? step : -step), cache);
 }
 
-function clampTemperature(deviceId: string, value: number, cache: TargetStateCache): number {
-  const options = cache.capabilitiesOf(deviceId)?.light_temperature;
-  const min = options?.min ?? 0;
-  const max = options?.max ?? 1;
-  return quantise(clampToRange(value, min, max), options?.decimals);
-}
+/**
+ * The capabilities each `light_mode` value enables — the inverse of the mode
+ * `planTemperature` and `planColor` write ahead of their values.
+ *
+ * What a RESTORE needs: put the mode back, then only the axis that mode shows.
+ * The other axis is invisible in that mode, and on a lamp that switches mode on
+ * any colour write, restoring it would undo the mode just put back. Read by the
+ * try-it screen's `putBack` and by the pre-stage test's `restoreLamp`.
+ */
+export const AXES_FOR_MODE: Readonly<Record<LightMode, readonly Capability[]>> = {
+  color: ['light_hue', 'light_saturation'],
+  temperature: ['light_temperature'],
+};
 
 /**
  * A temperature write, preceded by the mode switch that makes it land.

@@ -9,8 +9,8 @@ entry here says exactly what. [More in the FAQ](FAQ.md#is-this-finished).
 
 ## 1.0.0
 
-**Lightkeeper leaves early access.** Nothing changes in how the app behaves and nothing needs
-redoing: 1.0.0 runs exactly what 0.6.6 ran. What changes is the promise.
+**Lightkeeper leaves early access.** Nothing needs redoing, and apart from the one fix below 1.0.0
+runs exactly what 0.6.6 ran. What changes is the promise.
 
 Until now every release could reshape what a device stores, and the changelog entry was the only
 warning — there were no major bumps before 1.0, so a breaking change looked like any other minor or
@@ -26,6 +26,15 @@ patch. From 1.0 the app follows semantic versioning:
 New features and redrawn setup screens still arrive in minor versions; what they may not do is break
 a setup you already made.
 
+One fix:
+
+- **"Test my lights" puts a light back in the mode it found it in.** The test sends each light the
+  colour or warmth pre-staging would, and that write switches a light's `light_mode` first
+  (platform §6). Putting it back restored only the axis the test wrote, so a lamp found at warm white
+  and tested with a coloured curve came back on in colour mode, showing whatever hue it last had. It
+  now restores the mode, then only the axis that mode shows — the rule the circadian screen's
+  "Stop preview" already followed, and one shared table (`AXES_FOR_MODE`) serves both.
+
 Under the hood, and none of it in the app a Homey runs:
 
 - **Development tools updated** — eslint 10.13, typescript-eslint 8.72, tsx 4.23.15 and the Homey
@@ -35,6 +44,13 @@ Under the hood, and none of it in the app a Homey runs:
   to 0.2.7, and `image-size` to 0.6.2 — a step back on purpose, to the release before the parser
   with the bug existed. `CLAUDE.md` says why the forward fix (2.x) would silently switch off
   `validate`'s image checks.
+- **A code review's tidy-up.** All five drivers now extend one `LightkeeperDriver` shell instead of
+  carrying the same translator, pair-session host and typed app five times; the override record
+  that anchors the four-hour deadline and folds repeats is one function rather than three pasted
+  copies; the review screen and the running device read the sun through one `sunAnchorContext`
+  (whose cache now rolls over at local midnight, not UTC). `GET /sensors/:id/history`, an app Web
+  API route nothing called, is gone, along with the unused `writesLightsFrom`, and eighteen doc
+  comments that had drifted off the code they describe are back on it.
 - **Two test-tooling fixes.** A daylight driver test failed from mid-October to late February,
   because Copenhagen's sun never reaches the 25° bright end then; it now runs at 40°N. And on Node
   24 the coverage script lost `lib/outputs/test-outcome.ts` to the runner's default test-file

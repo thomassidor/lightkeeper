@@ -19,10 +19,11 @@
  * which cannot import this. Change one, change both.
  */
 
-/** How a value moves between two points. Stored on every engine plan. */
-export type Transition = 'gradual' | 'balanced' | 'quick';
+/** Every shape there is. The type below is read off this list, as is `isTransition`. */
+export const TRANSITIONS = ['gradual', 'balanced', 'quick'] as const;
 
-export const TRANSITIONS: readonly Transition[] = ['gradual', 'balanced', 'quick'];
+/** How a value moves between two points. Stored on every engine plan. */
+export type Transition = typeof TRANSITIONS[number];
 
 /** What a NEW device gets. Existing devices get what their migration chose. */
 export const DEFAULT_TRANSITION: Transition = 'balanced';
@@ -40,7 +41,7 @@ const BALANCED_K = 6;
 const QUICK_K = 16;
 
 export function isTransition(value: unknown): value is Transition {
-  return value === 'gradual' || value === 'balanced' || value === 'quick';
+  return (TRANSITIONS as readonly unknown[]).includes(value);
 }
 
 /**

@@ -1,6 +1,9 @@
 import { acceptedTargets } from '../outputs/test-outcome';
 import type { EvidenceSink } from '../support/evidence-sink';
-import { ControlHistory, type ControlAction, type OverrideRecord, type TargetDecision } from '../runtime/control-diagnostics';
+import {
+  ControlHistory, expireOverrides, noteOverrideReport,
+  type ControlAction, type OverrideRecord, type TargetDecision,
+} from '../runtime/control-diagnostics';
 import { RuntimeLifetime, cleanupResources, startRuntime, SensorClaim } from '../runtime/runtime-resources';
 import type { HomeyApiService } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
@@ -11,7 +14,6 @@ import {
   validCapabilityValue,
   FADE_OUT_GRACE_MS,
   FADE_OUT_MIN_MS,
-  OVERRIDE_EXPIRY_MS,
   OVERRIDE_SETTLE_MS,
   withinOverrideTolerance,
   TargetStateCache,
@@ -572,15 +574,11 @@ export class DaylightRuntime {
    * this lamp. The next pass re-seeds from its real level and slews back.
    */
   private expireOverrides(): void {
-    const cutoff = this.now() - OVERRIDE_EXPIRY_MS;
-    for (const [deviceId, record] of this.overrides) {
-      if (record.at > cutoff) continue;
-      this.overrides.delete(deviceId);
+    expireOverrides(this.overrides, this.history, this.now(), deviceId => {
       this.aim.delete(deviceId);
       this.committed.delete(deviceId);
-      this.history.events.add({ at: this.now(), type: 'override_cleared', deviceId, reason: 'expired' });
       this.deps.log(`${deviceId}'s manual override has lapsed; daylight control resumes`);
-    }
+    });
   }
 
   /** Somebody changed this light's level by hand. Stand down for it. */
@@ -596,37 +594,15 @@ export class DaylightRuntime {
       if (withinOverrideTolerance(reported - last.device)) return;
     }
 
-    if (!this.overrides.has(deviceId)) {
+    const raised = noteOverrideReport(this.overrides, this.history, deviceId, {
+      capability: 'dim', value: reported, expected: last?.device ?? null,
+    }, this.now());
+    if (raised) {
       this.deps.log(
         `${deviceId} was dimmed externally (${reported}); daylight will leave it alone `
         + 'until it is switched off and on again, or for four hours',
       );
     }
-    /**
-     * The FIRST report's time, not this one's. `OVERRIDE_EXPIRY_MS` is the only
-     * way out of an override that does not need somebody to walk to a switch,
-     * and re-stamping on every report pushes it out for as long as the lamp
-     * keeps talking — which is exactly what a stuck lamp does. Seen on the
-     * reference Homey: four lamps reporting a value we never wrote, every
-     * minute, each report renewing the four hours that were supposed to end it.
-     * The history event below keeps the real arrival time; only the deadline is
-     * anchored to the start.
-     */
-    const startedAt = this.overrides.get(deviceId)?.at ?? this.now();
-    const record: OverrideRecord = { at: startedAt, capability: 'dim', value: reported, expected: last?.device ?? null, source: 'external_report' };
-    // One override, one row. A lamp that keeps restating it — a stuck bulb
-    // reporting once a minute — is counted on the record instead of pushing a
-    // row per report: 28 of one device's 32 event slots were four overrides
-    // said over and over, which is how the evidence for everything else was
-    // lost. `repeats` carries the same information in one slot, and the tile
-    // and the settings page read the record rather than the log.
-    const previous = this.overrides.get(deviceId);
-    if (previous !== undefined) {
-      record.repeats = (previous.repeats ?? 1) + 1;
-      record.lastAt = this.now();
-    }
-    this.overrides.set(deviceId, record);
-    if (previous === undefined) this.history.events.add({ ...record, at: this.now(), type: 'override', deviceId });
   }
 
   /** Once a minute, from the manager's single shared timer. */

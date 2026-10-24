@@ -1,4 +1,5 @@
 import { mix, shape } from '../support/interpolate';
+import { clamp01 } from '../outputs/light-intent';
 import type { DaylightResponse, SunPeak } from './daylight-types';
 
 /**
@@ -245,9 +246,4 @@ export function resolveLevel(
     return { level: clamp01(oriented), source: 'sky' };
   }
   return { level: 0, source: 'none' };
-}
-
-function clamp01(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.min(1, Math.max(0, value));
 }

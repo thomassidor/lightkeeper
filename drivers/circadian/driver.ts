@@ -1,26 +1,23 @@
-import Homey from 'homey';
-
+import { LightkeeperDriver } from '../../lib/devices/lightkeeper-driver';
 import {
   resolveSummary, targetDeviceIds, targetLights,
 } from '../../lib/pairing/target-picker';
-import type { LightkeeperApp } from '../../lib/app-contract';
 import { CURRENT_CIRCADIAN_SCHEMA_VERSION } from '../../lib/circadian/circadian-migrations';
 import {
   DEFAULT_SIMPLE_PLAN, FALLBACK_SUNRISE, FALLBACK_SUNSET, MAX_OFFSET, OFFSET_STEP,
-  expandSimplePlan, resolveBoundaries, sanitiseZones, zoneValueAt,
+  expandSimplePlan, resolveBoundaries, sanitiseZones, sunAnchorContext, zoneValueAt,
   type CircadianZones, type SimpleCircadianPlan,
 } from '../../lib/circadian/simple-curve';
 import { formatMinutes } from '../../lib/time/wall-clock';
 import { messageOf } from '../../lib/support/homey-errors';
 import { localNow } from '../../lib/time/local-clock';
-import { sunTimes } from '../../lib/daylight/solar-elevation';
-import { usableLocation } from '../../lib/daylight/daylight-types';
 import type { AnchorContext, CurveValue } from '../../lib/circadian/circadian-curve';
 import type { Transition } from '../../lib/support/interpolate';
 import { keepsLightsUpdated, writesLightsField } from '../../lib/runtime/writes-lights';
 import type { TargetSpec } from '../../lib/outputs/light-intent';
+import { AXES_FOR_MODE } from '../../lib/outputs/intent-planner';
 import {
-  lightsSummary, registerIntroHandler, registerReviewHandler, transitionKey, warmthKey, warmthSwatch,
+  registerIntroHandler, registerReviewHandler, transitionKey, warmthKey, warmthSwatch,
 } from '../../lib/pairing/flow-screens';
 import { registerControlHandlers, reviewControl } from '../../lib/pairing/control-choice';
 import {
@@ -29,10 +26,7 @@ import {
   registerCurvePreviewHandlers,
   registerSaveHandler,
   registerTargetHandlers,
-  timezoneOf,
-  type PairSessionHost,
 } from '../../lib/pairing/pair-session';
-import { translatorFor } from '../../lib/support/i18n';
 
 /**
  * The circadian light's driver: two screens, and the second one asks two
@@ -101,22 +95,6 @@ interface SessionState {
  */
 const RESTORABLE = ['dim', 'light_mode', 'light_temperature', 'light_hue', 'light_saturation', 'onoff'];
 
-/**
- * The capabilities each `light_mode` value enables — and so the only colour
- * axis a restore sends, after the mode itself.
- *
- * The other axis is deliberately NOT restored: on a gating lamp it would be
- * ignored, and on the lamps that switch mode on any colour write it would undo
- * the mode that was just put back. Its snapshotted value is invisible while the
- * lamp is in the other mode, which is the state it was found in. The same
- * one-axis rule `restoreLamp` in the circadian runtime applies to the review
- * screen's pre-stage test.
- */
-const AXIS_FOR_MODE: Record<string, readonly string[]> = {
-  color: ['light_hue', 'light_saturation'],
-  temperature: ['light_temperature'],
-};
-
 interface LampSnapshot {
   id: string;
   name: string;
@@ -134,62 +112,16 @@ interface LampSnapshot {
  * the try-it handlers, against the writes a fake lamp actually received.
  */
 function restoreOrder(values: Record<string, unknown>): string[] {
-  const mode = typeof values.light_mode === 'string' ? values.light_mode : null;
-  const axes = mode !== null && AXIS_FOR_MODE[mode]
-    ? ['light_mode', ...AXIS_FOR_MODE[mode]!]
+  const mode = values.light_mode;
+  const axes = mode === 'color' || mode === 'temperature'
+    ? ['light_mode', ...AXES_FOR_MODE[mode]]
     // No mode we can read: a one-mode lamp, so every axis it reported.
     : ['light_temperature', 'light_hue', 'light_saturation'];
   return ['dim', ...axes, 'onoff'].filter(capability => capability in values);
 }
 
-
-module.exports = class CircadianDriver extends Homey.Driver {
-  /**
-   * `homey.__`, plural-aware: a key that is a plural group picks its form from
-   * the numeric `count` token (lib/support/i18n.ts). Every string this driver
-   * resolves goes through here, so a counted one cannot be missed.
-   */
-  private tr(key: string, tokens?: Record<string, string | number>): string {
-    return translatorFor(this.homey)(key, tokens);
-  }
-
-
-  /**
-   * What `lib/pairing/pair-session.ts` needs of this driver.
-   *
-   * Four members and no `Homey.Driver` among them, which is the point: the
-   * shared mechanics stay importable by a test (platform §13). Built per call
-   * because a session binds it once and it costs nothing.
-   */
-  private pairHost(): PairSessionHost {
-    return {
-      log: (...args: unknown[]) => this.log(...args),
-      error: (...args: unknown[]) => this.error(...args),
-      translate: (key: string, tokens?: Record<string, string | number>) =>
-        this.tr(key, tokens),
-      clock: this.homey.clock,
-      app: this.app,
-    };
-  }
-
-  /**
-   * The app, through the contract rather than as `any`.
-   *
-   * This used to be `: any`, and the hardware pass is what found out what that
-   * cost: `catalog.devices()` and `catalog.getDevice()` do not exist — the
-   * methods are `allDevices()` and `device()` — and six call sites across three
-   * drivers shipped, invisible to `tsc`, the suite and `validate` alike,
-   * throwing the first time a real screen asked for them. `this.homey.app` is
-   * `App` from the SDK's own types, so the double cast is the seam; `LightkeeperApp`
-   * is the surface a driver is allowed to use.
-   */
-  private get app(): LightkeeperApp {
-    return this.homey.app as unknown as LightkeeperApp;
-  }
-
-  override async onInit() {
-    this.log('Circadian driver initialised');
-  }
+module.exports = class CircadianDriver extends LightkeeperDriver {
+  protected readonly label = 'Circadian';
 
   override async onPair(session: any) {
     await this.bindSession(session, {});
@@ -579,7 +511,7 @@ module.exports = class CircadianDriver extends Homey.Driver {
    * value it had before somebody switched it off.
    *
    * `light_mode` AHEAD of the colour axis it enables, and only that axis — see
-   * `AXIS_FOR_MODE`. A lamp with no `light_mode` has one mode and cannot gate,
+   * `AXES_FOR_MODE`. A lamp with no `light_mode` has one mode and cannot gate,
    * so everything it reported is written back as before.
    *
    * A lamp that refuses is logged and skipped rather than failing the restore:
@@ -611,48 +543,15 @@ module.exports = class CircadianDriver extends Homey.Driver {
     return restored;
   }
 
-  private timezone(): string | null {
-    return timezoneOf(this.pairHost());
-  }
-
   /**
-   * What the lights row reads back — and WHICH of the two shapes it stored.
-   *
-   * "Everything in Kitchen" and "4 picked" behave differently the next time
-   * somebody adds a lamp to that room, and this line is the only place that
-   * difference is ever visible. `lights.html` deliberately does not show it:
-   * making the picker explain its own storage would be a control nobody asked
-   * for, on the screen least able to afford one.
-   */
-  private async lightsSummary(
-    target: TargetSpec,
-    summary: { count: number },
-  ): Promise<string> {
-    return lightsSummary(this.pairHost(), target, summary, () => this.app.catalog.allZones());
-  }
-
-  /**
-   * Today's sunrise and sunset as minutes of the local day, or nothing.
-   *
-   * The pairing screen's copy of what `CircadianRuntime.sunContext` computes,
-   * and it has to be its own because there is no runtime yet — the device being
-   * paired does not exist. An empty context is not a failure: `resolveBoundaries`
-   * falls back to fixed hours, and the screen is told so by `fromSun` and says
-   * it in words rather than drawing a sunrise that is not there.
+   * Today's sunrise and sunset, as the device will resolve them once it exists
+   * — the same `sunAnchorContext` the runtime calls. An empty context is not a
+   * failure: `resolveBoundaries` falls back to fixed hours, and the screen is
+   * told so by `fromSun` and says it in words rather than drawing a sunrise
+   * that is not there.
    */
   private sunContext(): AnchorContext {
-    const location = usableLocation(this.app.daylight.sky().location);
-    if (!location) return {};
-
-    const now = Date.now();
-    const times = sunTimes(location.latitude, location.longitude, now);
-    if (times.sunriseMs === null || times.sunsetMs === null) return {};
-
-    const timezone = this.timezone() ?? undefined;
-    return {
-      sunriseMinute: localNow(timezone, times.sunriseMs).minutesOfDay,
-      sunsetMinute: localNow(timezone, times.sunsetMs).minutesOfDay,
-    };
+    return sunAnchorContext(this.app.daylight.sky().location, this.timezone() ?? undefined, Date.now());
   }
 
   /** The real engine at one minute of today, for the screens that draw it. */

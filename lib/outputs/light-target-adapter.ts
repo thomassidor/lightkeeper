@@ -749,7 +749,7 @@ export class LightTargetAdapter {
       const device = await client.devices.getDevice({ id: deviceId, ...NO_CACHE });
       if (!current()) return;
       /**
-       * All five, because `initialise()` assigns all five.
+       * All six, because `initialise()` assigns all six.
        *
        * It used to pass three, and `initialise()` writes every pair
        * unconditionally — so a refresh BLANKED the hue and saturation that

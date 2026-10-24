@@ -352,10 +352,6 @@
     "testControllerFunction": {
       "method": "POST",
       "path": "/controllers/:id/test"
-    },
-    "getSensorHistory": {
-      "method": "GET",
-      "path": "/sensors/:id/history"
     }
   },
   "flow": {

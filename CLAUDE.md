@@ -165,8 +165,9 @@ lib/
                                 evaluator, runtime, manager, migration chain. sensor-history.ts
                                 buckets a sensor's Insights week into the 7 x 12 grid the pairing
                                 screens draw — pure apart from the one reader that fetches it
-  devices/                      the device layer: DeviceLifecycle (plain, testable) and
-                                LightkeeperDevice (the Homey.Device shell) — see platform §13
+  devices/                      the device layer: DeviceLifecycle (plain, testable),
+                                LightkeeperDevice (the Homey.Device shell) and LightkeeperDriver,
+                                the Homey.Driver shell all five drivers extend — see platform §13
   time/                         wall-clock minutes and the Homey's local clock
   validation/                   guards, the four plan validators, pairing DTO checks
   pairing/                      the light picker, the SENSOR picker, the remote picker, the

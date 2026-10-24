@@ -34,6 +34,12 @@ import { resolveSources, sourceRegistryOver, type SourceRegistry } from './lib/o
 import { lightChoices, matching, parseTargetChoice, sourceChoices } from './lib/flow/flow-arguments';
 import { isDarkEnough } from './lib/flow/darkness-condition';
 
+/** How often the heap trend is sampled. See where it is started, in `onInit`. */
+const HEAP_SAMPLE_MS = 30 * 60_000;
+
+/** Where the settings page's "Brightness scale" is kept. See `BrightnessScale`. */
+const BRIGHTNESS_SCALE_SETTING = 'brightnessScale';
+
 /**
  * The first mark, and it has to be HERE rather than in `onInit`.
  *
@@ -42,12 +48,6 @@ import { isDarkEnough } from './lib/flow/darkness-condition';
  * before a single line of its own logic executes. `onInit` cannot see it, which
  * is exactly why "the app uses N MB" was never attributable.
  */
-/** How often the heap trend is sampled. See where it is started, in `onInit`. */
-const HEAP_SAMPLE_MS = 30 * 60_000;
-
-/** Where the settings page's "Brightness scale" is kept. See `BrightnessScale`. */
-const BRIGHTNESS_SCALE_SETTING = 'brightnessScale';
-
 markPhase('modules-loaded');
 
 /**
@@ -426,16 +426,6 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
   }
 
   /**
-   * Register one bridge action card. The SHELL only.
-   *
-   * Every rule — the coercion, the fail-closed refusal, the magnitude, and which
-   * registry a key belongs to — is `intakeBridgeEvent` in
-   * `lib/bridge/bridge-event-intake.ts`, because this class `extends Homey.App`
-   * and no test can import it (platform §13). "Bridge arguments are untrusted"
-   * is one of CLAUDE.md's stated safety properties and it had no test at all
-   * while it lived here.
-   */
-  /**
    * The `set_lights` card. The SHELL only, exactly like the bridge cards above.
    *
    * Every decision is in `lib/flow/` — what the three pickers offer
@@ -534,6 +524,16 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
     return sourceRegistryOver(this);
   }
 
+  /**
+   * Register one bridge action card. The SHELL only.
+   *
+   * Every rule — the coercion, the fail-closed refusal, the magnitude, and which
+   * registry a key belongs to — is `intakeBridgeEvent` in
+   * `lib/bridge/bridge-event-intake.ts`, because this class `extends Homey.App`
+   * and no test can import it (platform §13). "Bridge arguments are untrusted"
+   * is one of CLAUDE.md's stated safety properties and it had no test at all
+   * while it lived here.
+   */
   private registerBridgeCard(cardId: string, magnitudeOf?: MagnitudeReader) {
     const card = this.homey.flow.getActionCard(cardId);
 

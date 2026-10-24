@@ -1,9 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  keepsLightsUpdated, writesLightsField, writesLightsFrom,
-} from '../../lib/runtime/writes-lights';
+import { keepsLightsUpdated, writesLightsField } from '../../lib/runtime/writes-lights';
 import {
   validateCircadianPlan, validateDaylightPlan, validateSimpleCircadianPlan,
 } from '../../lib/validation/plans';
@@ -64,15 +62,6 @@ describe('the flag is opt-out', () => {
   test('it is stored only when it says no', () => {
     assert.deepEqual(writesLightsField(true), {});
     assert.deepEqual(writesLightsField(false), { writesLights: false });
-  });
-
-  test('a screen that leaves it out, or sends junk, keeps what the session held', () => {
-    assert.equal(writesLightsFrom({}, true), true);
-    assert.equal(writesLightsFrom({}, false), false);
-    assert.equal(writesLightsFrom({ writesLights: 'no' }, true), true);
-    assert.equal(writesLightsFrom(null, true), true);
-    assert.equal(writesLightsFrom({ writesLights: false }, true), false);
-    assert.equal(writesLightsFrom({ writesLights: true }, false), true);
   });
 });
 

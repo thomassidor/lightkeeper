@@ -201,11 +201,12 @@ is shared only if you choose. [`docs/privacy.md`](docs/privacy.md) has the full 
 
 **1.0.0**
 
-- **Out of early access.** Nothing changes in how the app behaves, and nothing needs redoing.
+- **Out of early access.** Nothing needs redoing.
 - **A minor or patch update keeps every device working as you set it up.** Anything that would need
   Repair, re-adding a device or losing a setting comes only as a major version, and says so.
+- **"Test my lights" puts each light back in its own mode**, rather than leaving a white light on a
+  colour.
 - **Development tools updated**, and two vulnerable packages replaced in the Homey CLI's own tree.
-  The app a Homey runs is unchanged.
 
 | Version | What changed |
 |---|---|

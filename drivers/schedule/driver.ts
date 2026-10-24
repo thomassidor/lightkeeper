@@ -1,7 +1,6 @@
-import Homey from 'homey';
-import type { LightkeeperApp } from '../../lib/app-contract';
+import { LightkeeperDriver } from '../../lib/devices/lightkeeper-driver';
 import {
-  lightsSummary, paletteForScreen, registerIntroHandler, registerReviewHandler,
+  paletteForScreen, registerIntroHandler, registerReviewHandler,
 } from '../../lib/pairing/flow-screens';
 
 import {
@@ -21,10 +20,7 @@ import {
   registerCredentialHandlers,
   registerSaveHandler,
   registerTargetHandlers,
-  timezoneOf,
-  type PairSessionHost,
 } from '../../lib/pairing/pair-session';
-import { translatorFor } from '../../lib/support/i18n';
 
 /**
  * The schedule driver owns: pair/repair session handlers, the data its two
@@ -43,53 +39,8 @@ interface SessionState {
   days: IsoWeekday[] | null;
 }
 
-module.exports = class ScheduleDriver extends Homey.Driver {
-  /**
-   * `homey.__`, plural-aware: a key that is a plural group picks its form from
-   * the numeric `count` token (lib/support/i18n.ts). Every string this driver
-   * resolves goes through here, so a counted one cannot be missed.
-   */
-  private tr(key: string, tokens?: Record<string, string | number>): string {
-    return translatorFor(this.homey)(key, tokens);
-  }
-
-
-  /**
-   * What `lib/pairing/pair-session.ts` needs of this driver.
-   *
-   * Four members and no `Homey.Driver` among them, which is the point: the
-   * shared mechanics stay importable by a test (platform §13). Built per call
-   * because a session binds it once and it costs nothing.
-   */
-  private pairHost(): PairSessionHost {
-    return {
-      log: (...args: unknown[]) => this.log(...args),
-      error: (...args: unknown[]) => this.error(...args),
-      translate: (key: string, tokens?: Record<string, string | number>) =>
-        this.tr(key, tokens),
-      clock: this.homey.clock,
-      app: this.app,
-    };
-  }
-
-  /**
-   * The app, through the contract rather than as `any`.
-   *
-   * This used to be `: any`, and the hardware pass is what found out what that
-   * cost: `catalog.devices()` and `catalog.getDevice()` do not exist — the
-   * methods are `allDevices()` and `device()` — and six call sites across three
-   * drivers shipped, invisible to `tsc`, the suite and `validate` alike,
-   * throwing the first time a real screen asked for them. `this.homey.app` is
-   * `App` from the SDK's own types, so the double cast is the seam; `LightkeeperApp`
-   * is the surface a driver is allowed to use.
-   */
-  private get app(): LightkeeperApp {
-    return this.homey.app as unknown as LightkeeperApp;
-  }
-
-  override async onInit() {
-    this.log('Schedule driver initialised');
-  }
+module.exports = class ScheduleDriver extends LightkeeperDriver {
+  protected readonly label = 'Schedule';
 
   override async onPair(session: any) {
     await this.bindSession(session, { entries: [] });
@@ -278,22 +229,6 @@ module.exports = class ScheduleDriver extends Homey.Driver {
   }
 
   /**
-   * What the lights row reads back — and WHICH of the two shapes it stored.
-   *
-   * "Everything in Kitchen" and "4 picked" behave differently the next time
-   * somebody adds a lamp to that room, and this line is the only place that
-   * difference is ever visible. `lights.html` deliberately does not show it:
-   * making the picker explain its own storage would be a control nobody asked
-   * for, on the screen least able to afford one.
-   */
-  private async lightsSummary(
-    target: TargetSpec,
-    summary: { count: number },
-  ): Promise<string> {
-    return lightsSummary(this.pairHost(), target, summary, () => this.app.catalog.allZones());
-  }
-
-  /**
    * Every block as a percentage of the day, for the review's picture.
    *
    * A block that crosses midnight becomes TWO — the tail from the on-time to
@@ -320,10 +255,6 @@ module.exports = class ScheduleDriver extends Homey.Driver {
       }
     }
     return blocks;
-  }
-
-  private timezone(): string | null {
-    return timezoneOf(this.pairHost());
   }
 
   private buildPlan(state: SessionState): SchedulePlan {

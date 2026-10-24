@@ -1,11 +1,10 @@
-import Homey from 'homey';
-import type { LightkeeperApp } from '../../lib/app-contract';
+import { LightkeeperDriver } from '../../lib/devices/lightkeeper-driver';
 import { formatMinutes } from '../../lib/time/wall-clock';
 import { localNow } from '../../lib/time/local-clock';
 import { solarElevation, sunTimes } from '../../lib/daylight/solar-elevation';
 import type { WatchedSensor } from '../../lib/daylight/luminance-source';
 import {
-  lightsSummary, registerIntroHandler, registerReviewHandler, transitionKey,
+  registerIntroHandler, registerReviewHandler, transitionKey,
 } from '../../lib/pairing/flow-screens';
 import { validateSensorsAgainstCatalog } from '../../lib/validation/pairing-dto';
 
@@ -27,10 +26,7 @@ import {
   registerSaveHandler,
   registerTargetHandlers,
   releaseOnDisconnect,
-  timezoneOf,
-  type PairSessionHost,
 } from '../../lib/pairing/pair-session';
-import { translatorFor } from '../../lib/support/i18n';
 
 /**
  * The Room-sensing Light's driver: two screens, and the second one is the daylight
@@ -77,7 +73,6 @@ interface SessionState {
   luxChosen: boolean;
 }
 
-
 /** The week grid's own labels, Monday first — ISO weekday 1 is `week.mon`. */
 const WEEKDAY_KEYS = ['week.mon', 'week.tue', 'week.wed', 'week.thu', 'week.fri', 'week.sat', 'week.sun'];
 
@@ -88,53 +83,8 @@ function newest(a: number | null, b: number | null): number | null {
   return Math.max(a, b);
 }
 
-module.exports = class DaylightDriver extends Homey.Driver {
-  /**
-   * `homey.__`, plural-aware: a key that is a plural group picks its form from
-   * the numeric `count` token (lib/support/i18n.ts). Every string this driver
-   * resolves goes through here, so a counted one cannot be missed.
-   */
-  private tr(key: string, tokens?: Record<string, string | number>): string {
-    return translatorFor(this.homey)(key, tokens);
-  }
-
-
-  /**
-   * What `lib/pairing/pair-session.ts` needs of this driver.
-   *
-   * Four members and no `Homey.Driver` among them, which is the point: the
-   * shared mechanics stay importable by a test (platform §13). Built per call
-   * because a session binds it once and it costs nothing.
-   */
-  private pairHost(): PairSessionHost {
-    return {
-      log: (...args: unknown[]) => this.log(...args),
-      error: (...args: unknown[]) => this.error(...args),
-      translate: (key: string, tokens?: Record<string, string | number>) =>
-        this.tr(key, tokens),
-      clock: this.homey.clock,
-      app: this.app,
-    };
-  }
-
-  /**
-   * The app, through the contract rather than as `any`.
-   *
-   * This used to be `: any`, and the hardware pass is what found out what that
-   * cost: `catalog.devices()` and `catalog.getDevice()` do not exist — the
-   * methods are `allDevices()` and `device()` — and six call sites across three
-   * drivers shipped, invisible to `tsc`, the suite and `validate` alike,
-   * throwing the first time a real screen asked for them. `this.homey.app` is
-   * `App` from the SDK's own types, so the double cast is the seam; `LightkeeperApp`
-   * is the surface a driver is allowed to use.
-   */
-  private get app(): LightkeeperApp {
-    return this.homey.app as unknown as LightkeeperApp;
-  }
-
-  override async onInit() {
-    this.log('Daylight driver initialised');
-  }
+module.exports = class DaylightDriver extends LightkeeperDriver {
+  protected readonly label = 'Daylight';
 
   override async onPair(session: any) {
     await this.bindSession(session, {});
@@ -474,31 +424,12 @@ module.exports = class DaylightDriver extends Homey.Driver {
   }
 
   /**
-   * What the lights row reads back — and WHICH of the two shapes it stored.
-   *
-   * "Everything in Kitchen" and "4 picked" behave differently the next time
-   * somebody adds a lamp to that room, and this line is the only place that
-   * difference is ever visible. `lights.html` deliberately does not show it:
-   * making the picker explain its own storage would be a control nobody asked
-   * for, on the screen least able to afford one.
-   */
-  private async lightsSummary(
-    target: TargetSpec,
-    summary: { count: number },
-  ): Promise<string> {
-    return lightsSummary(this.pairHost(), target, summary, () => this.app.catalog.allZones());
-  }
-
-  /**
    * When the sun sets today, as a clock time — or null where it does not.
    *
    * Shown on the sensor screen beside "The sun", because that option needs to
    * say something concrete about this house rather than being the choice you
    * make by not making one.
    */
-  private timezone(): string | null {
-    return timezoneOf(this.pairHost());
-  }
 
   private sunsetToday(): string | null {
     const location = usableLocation(this.app.daylight.sky().location);
@@ -508,18 +439,6 @@ module.exports = class DaylightDriver extends Homey.Driver {
     return formatMinutes(localNow(this.timezone() ?? undefined, times.sunsetMs).minutesOfDay);
   }
 
-  /**
-   * The two sun ends, labelled with the clock time they happen at TODAY.
-   *
-   * "−3°" is not a thing anybody can picture; "around 20:18 today" is. The
-   * stored value stays the angle, because an angle is the same all year and a
-   * time is not — which is exactly why the label says today.
-   *
-   * Found by walking the day in ten-minute steps rather than by solving for the
-   * elevation: the crossing may not exist at all (a winter day that never
-   * reaches the bright end), and a search says so by finding nothing where an
-   * inversion would have to invent an answer.
-   */
   /**
    * Today's sun, as the three numbers the response screen draws it from.
    *
@@ -560,6 +479,18 @@ module.exports = class DaylightDriver extends Homey.Driver {
     };
   }
 
+  /**
+   * The two sun ends, labelled with the clock time they happen at TODAY.
+   *
+   * "−3°" is not a thing anybody can picture; "around 20:18 today" is. The
+   * stored value stays the angle, because an angle is the same all year and a
+   * time is not — which is exactly why the label says today.
+   *
+   * Found by walking the day in ten-minute steps rather than by solving for the
+   * elevation: the crossing may not exist at all (a winter day that never
+   * reaches the bright end), and a search says so by finding nothing where an
+   * inversion would have to invent an answer.
+   */
   private elevationTimes(response: DaylightResponse): { atDark: string | null; atBright: string | null } {
     const location = usableLocation(this.app.daylight.sky().location);
     if (!location) return { atDark: null, atBright: null };

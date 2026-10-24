@@ -1,5 +1,5 @@
 import { MINUTES_PER_DAY } from '../time/wall-clock';
-import { MINIMUM_BRIGHTNESS } from '../outputs/light-intent';
+import { MINIMUM_BRIGHTNESS, clampToRange } from '../outputs/light-intent';
 import { sanitiseUnitInterval } from '../validation/unit-interval';
 import type { AnchorContext, CurveValue } from './circadian-curve';
 import {
@@ -7,6 +7,9 @@ import {
 } from '../support/interpolate';
 import type { CircadianPlan, CircadianPoint } from './circadian-types';
 import type { TargetSpec } from '../outputs/light-intent';
+import { usableLocation } from '../daylight/daylight-types';
+import { sunTimes } from '../daylight/solar-elevation';
+import { localNow } from '../time/local-clock';
 
 /**
  * A circadian light with no curve to draw: three parts of the day, and two
@@ -157,6 +160,35 @@ export const DEFAULT_SIMPLE_PLAN: Omit<SimpleCircadianPlan, 'target' | 'schemaVe
   preStage: false,
 };
 
+/**
+ * Today's sunrise and sunset as minutes of the local day, or an empty context.
+ *
+ * The ONE reading of the sun a circadian light anchors to, shared by the
+ * running device (`CircadianRuntime.sunContext`, which caches it per local day)
+ * and the pairing screens, which have no runtime yet because the device does
+ * not exist. Two copies of this used to agree only by coincidence, and the
+ * review screen's "Follows the sun" times are a promise about what the device
+ * will then do.
+ *
+ * An empty context is not a failure: `resolveBoundaries` falls back to fixed
+ * hours, which is the right answer for a Homey that has never been told where
+ * it is and for a polar day with no sunrise to anchor to.
+ */
+export function sunAnchorContext(
+  location: unknown,
+  timezone: string | undefined,
+  nowMs: number,
+): AnchorContext {
+  const usable = usableLocation(location);
+  if (!usable) return {};
+  const times = sunTimes(usable.latitude, usable.longitude, nowMs);
+  if (times.sunriseMs === null || times.sunsetMs === null) return {};
+  return {
+    sunriseMinute: localNow(timezone, times.sunriseMs).minutesOfDay,
+    sunsetMinute: localNow(timezone, times.sunsetMs).minutesOfDay,
+  };
+}
+
 /** The two boundaries as minutes of the local day, in an order the curve can use. */
 export interface ResolvedBoundaries {
   morningEndMinute: number;
@@ -191,18 +223,14 @@ export function resolveBoundaries(
   // another and the middle zone is never reached at all.
   const slack = MIN_ZONE_MINUTES;
 
-  const morningEndMinute = clamp(sunrise + zones.morningEnd, slack, MINUTES_PER_DAY - 2 * slack);
-  const eveningStartMinute = clamp(
+  const morningEndMinute = clampToRange(sunrise + zones.morningEnd, slack, MINUTES_PER_DAY - 2 * slack);
+  const eveningStartMinute = clampToRange(
     sunset + zones.eveningStart,
     morningEndMinute + slack,
     MINUTES_PER_DAY - slack,
   );
 
   return { morningEndMinute, eveningStartMinute, fromSun };
-}
-
-function clamp(value: number, low: number, high: number): number {
-  return Math.max(low, Math.min(high, value));
 }
 
 /**
@@ -473,7 +501,7 @@ function offset(raw: unknown, fallback: number, field: string, corrected: string
     return fallback;
   }
   const stepped = Math.round(raw / OFFSET_STEP) * OFFSET_STEP;
-  const clamped = clamp(stepped, -MAX_OFFSET, MAX_OFFSET);
+  const clamped = clampToRange(stepped, -MAX_OFFSET, MAX_OFFSET);
   if (clamped !== raw) corrected.push(field);
   return clamped;
 }

@@ -96,15 +96,6 @@ export function isActive(
 }
 
 /**
- * The entries whose window contains `now`, latest-started first.
- *
- * "Latest-started" is the smallest `elapsed`, and it is the ordering that makes
- * overlap deterministic. Applying every active entry in array order — which is
- * what catch-up did — meant a restart inside two overlapping windows landed on
- * whichever happened to be stored second, so the same restart at the same minute
- * gave a different room depending on the order the user had added the rows in.
- */
-/**
  * How far a boundary event may arrive from the minute it was scheduled for.
  *
  * The Flow engine fires on the minute and our own clock is read separately, so
@@ -154,6 +145,15 @@ export function boundaryClockMatches(
   return boundary === 'on' ? isActive(entry, days, now) : !isActive(entry, days, now);
 }
 
+/**
+ * The entries whose window contains `now`, latest-started first.
+ *
+ * "Latest-started" is the smallest `elapsed`, and it is the ordering that makes
+ * overlap deterministic. Applying every active entry in array order — which is
+ * what catch-up did — meant a restart inside two overlapping windows landed on
+ * whichever happened to be stored second, so the same restart at the same minute
+ * gave a different room depending on the order the user had added the rows in.
+ */
 export function activeEntries(
   entries: readonly ScheduleEntry[],
   days: IsoWeekday[] | null,

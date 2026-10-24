@@ -1,12 +1,13 @@
 import { acceptedTargets } from '../outputs/test-outcome';
 import type { EvidenceSink } from '../support/evidence-sink';
-import { ControlHistory, type ControlAction, type OverrideRecord, type TargetDecision } from '../runtime/control-diagnostics';
+import {
+  ControlHistory, expireOverrides, noteOverrideReport,
+  type ControlAction, type OverrideRecord, type TargetDecision,
+} from '../runtime/control-diagnostics';
 import { RuntimeLifetime, cleanupResources, startRuntime } from '../runtime/runtime-resources';
 import type { HomeyApiService } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
-import { sunTimes } from '../daylight/solar-elevation';
-import { usableLocation } from '../daylight/daylight-types';
-import { zonePoints, zoneValueAt } from './simple-curve';
+import { sunAnchorContext, zonePoints, zoneValueAt } from './simple-curve';
 import type { AnchorContext } from './circadian-curve';
 import { CommandScheduler, type WriteOutcome } from '../outputs/command-scheduler';
 import { LightTargetAdapter, type WriteRecord } from '../outputs/light-target-adapter';
@@ -15,14 +16,13 @@ import {
   validCapabilityValue,
   FADE_OUT_GRACE_MS,
   FADE_OUT_MIN_MS,
-  OVERRIDE_EXPIRY_MS,
   OVERRIDE_SETTLE_MS,
   withinOverrideTolerance,
   TargetStateCache,
   stepFromDecimals,
   type LiveValues,
 } from '../outputs/target-state-cache';
-import { planIntent, type Capability, type PlannedWrite } from '../outputs/intent-planner';
+import { AXES_FOR_MODE, planIntent, type Capability, type PlannedWrite } from '../outputs/intent-planner';
 import { DEFAULT_BRIGHTNESS_SCALE, toDevice, type BrightnessScale } from '../outputs/light-intent';
 import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
@@ -276,13 +276,6 @@ const PRE_STAGE_DECLINED_PERIODS_BEFORE_BACKOFF = 3;
  */
 const PRE_STAGE_RETEST_MS = 24 * 60 * 60_000;
 
-/**
- * What `diagnostics()` returns. See ControllerDiagnostics for why it is typed.
- *
- * No `credential` field, and its absence is the feature: this device type
- * generates no Flows, so no API key is involved in anything it does (platform
- * §12).
- */
 /** One lamp's answer to "Test my {n} lights". See `probePreStageAll()`. */
 export interface PreStageLampResult {
   deviceId: string;
@@ -295,6 +288,13 @@ export interface PreStageLampResult {
   reason?: string;
 }
 
+/**
+ * What `diagnostics()` returns. See ControllerDiagnostics for why it is typed.
+ *
+ * No `credential` field, and its absence is the feature: this device type
+ * generates no Flows, so no API key is involved in anything it does (platform
+ * §12).
+ */
 export interface CircadianDiagnostics extends ReturnType<ControlHistory<CircadianAction>['snapshot']> {
   sampledAt: number;
   writeHistory: ReturnType<LightTargetAdapter['writeHistory']>;
@@ -532,8 +532,9 @@ export class CircadianRuntime {
    * person, switched on.
    */
   private readonly probes = new Map<string, { timer: unknown; generation: number }>();
-  /** Monotonic per device; bumped on every write that could start a probe. */
   /**
+   * Monotonic per device; bumped on every write that could start a probe.
+   *
    * Deliberately NOT dropped when a target leaves, unlike its five siblings
    * above — and the asymmetry is the point rather than an oversight.
    *
@@ -547,11 +548,11 @@ export class CircadianRuntime {
    */
   private readonly writeGeneration = new Map<string, number>();
 
-  /** The target set this runtime is built against. See the controller's. */
-  /** The UTC day `sunCache` was computed for; -1 until the first ask. */
+  /** The local day `sunCache` was computed for; -1 until the first ask. */
   private sunDay = -1;
   private sunCache: AnchorContext = {};
 
+  /** The target set this runtime is built against. See the controller's. */
   private snapshot: TargetSnapshot | null = null;
 
   constructor(
@@ -954,37 +955,15 @@ export class CircadianRuntime {
       if (withinOverrideTolerance(delta)) return;
     }
 
-    if (!this.overrides.has(deviceId)) {
+    const raised = noteOverrideReport(this.overrides, this.history, deviceId, {
+      capability: 'light_hue', value: reported, expected: ours?.hue ?? null,
+    }, this.now());
+    if (raised) {
       this.deps.log(
         `${deviceId}'s colour was changed externally (hue ${reported}); circadian will leave it `
         + 'alone until it is switched off and on again, or for four hours',
       );
     }
-    /**
-     * The FIRST report's time, not this one's. `OVERRIDE_EXPIRY_MS` is the only
-     * way out of an override that does not need somebody to walk to a switch,
-     * and re-stamping on every report pushes it out for as long as the lamp
-     * keeps talking — which is exactly what a stuck lamp does. Seen on the
-     * reference Homey: four lamps reporting a value we never wrote, every
-     * minute, each report renewing the four hours that were supposed to end it.
-     * The history event below keeps the real arrival time; only the deadline is
-     * anchored to the start.
-     */
-    const startedAt = this.overrides.get(deviceId)?.at ?? this.now();
-    const record: OverrideRecord = { at: startedAt, capability: 'light_hue', value: reported, expected: ours?.hue ?? null, source: 'external_report' };
-    // One override, one row. A lamp that keeps restating it — a stuck bulb
-    // reporting once a minute — is counted on the record instead of pushing a
-    // row per report: 28 of one device's 32 event slots were four overrides
-    // said over and over, which is how the evidence for everything else was
-    // lost. `repeats` carries the same information in one slot, and the tile
-    // and the settings page read the record rather than the log.
-    const previous = this.overrides.get(deviceId);
-    if (previous !== undefined) {
-      record.repeats = (previous.repeats ?? 1) + 1;
-      record.lastAt = this.now();
-    }
-    this.overrides.set(deviceId, record);
-    if (previous === undefined) this.history.events.add({ ...record, at: this.now(), type: 'override', deviceId });
   }
 
   /**
@@ -1009,15 +988,11 @@ export class CircadianRuntime {
    * this lamp. The next pass re-seeds from its real level and slews back.
    */
   private expireOverrides(): void {
-    const cutoff = this.now() - OVERRIDE_EXPIRY_MS;
-    for (const [deviceId, record] of this.overrides) {
-      if (record.at > cutoff) continue;
-      this.overrides.delete(deviceId);
+    expireOverrides(this.overrides, this.history, this.now(), deviceId => {
       this.lastWritten.delete(deviceId);
       this.lastColorWritten.delete(deviceId);
-      this.history.events.add({ at: this.now(), type: 'override_cleared', deviceId, reason: 'expired' });
       this.deps.log(`${deviceId}'s manual override has lapsed; circadian control resumes`);
-    }
+    });
   }
 
   /** Somebody changed this light's colour or level by hand. Stand down for it. */
@@ -1034,28 +1009,17 @@ export class CircadianRuntime {
       if (ours !== undefined && withinOverrideTolerance(reported - ours)) return;
     }
 
-    if (!this.overrides.has(deviceId)) {
+    const raised = noteOverrideReport(this.overrides, this.history, deviceId, {
+      capability: field === 'warmth' ? 'light_temperature' : 'dim',
+      value: reported,
+      expected: last?.[field] ?? null,
+    }, this.now());
+    if (raised) {
       this.deps.log(
         `${deviceId} was changed externally (${field} ${reported}); circadian will leave it alone `
         + 'until it is switched off and on again, or for four hours',
       );
     }
-    // The first report's time, not this one's — see noteColorOverride.
-    const startedAt = this.overrides.get(deviceId)?.at ?? this.now();
-    const record: OverrideRecord = { at: startedAt, capability: field === 'warmth' ? 'light_temperature' : 'dim', value: reported, expected: last?.[field] ?? null, source: 'external_report' };
-    // One override, one row. A lamp that keeps restating it — a stuck bulb
-    // reporting once a minute — is counted on the record instead of pushing a
-    // row per report: 28 of one device's 32 event slots were four overrides
-    // said over and over, which is how the evidence for everything else was
-    // lost. `repeats` carries the same information in one slot, and the tile
-    // and the settings page read the record rather than the log.
-    const previous = this.overrides.get(deviceId);
-    if (previous !== undefined) {
-      record.repeats = (previous.repeats ?? 1) + 1;
-      record.lastAt = this.now();
-    }
-    this.overrides.set(deviceId, record);
-    if (previous === undefined) this.history.events.add({ ...record, at: this.now(), type: 'override', deviceId });
   }
 
   /** Once a minute, from the manager's single shared timer. */
@@ -1114,35 +1078,23 @@ export class CircadianRuntime {
   }
 
   /**
-   * Today's sunrise and sunset as minutes of the local day, or nothing.
+   * `sunAnchorContext`, memoised per day, because `resolvedPoints` is reached
+   * several times per tick — the value, the next point, the diagnostics — and
+   * the NOAA sequence has no business running three times a minute for an
+   * answer that changes once a day.
    *
-   * Memoised on the UTC day, because `resolvedPoints` is reached several times
-   * per tick — the value, the next point, the diagnostics — and the NOAA
-   * sequence has no business running three times a minute for an answer that
-   * changes once a day.
-   *
-   * An empty context is not a failure: `resolveBoundaries` falls back to fixed
-   * hours, which is the right answer for a Homey that has never been told where
-   * it is and for a polar day where there is no sunrise to anchor to.
+   * The LOCAL day — local midnight, in epoch minutes. It was the UTC day, which
+   * rolls over at 02:00 in Copenhagen and at 14:00 in Honolulu, so a morning
+   * boundary could be resolved against yesterday's sunrise.
    */
   private sunContext(): AnchorContext {
-    const day = Math.floor(this.now() / 86_400_000);
+    const now = this.now();
+    const timezone = this.deps.timezone();
+    const day = Math.floor(now / 60_000) - localNow(timezone, now).minutesOfDay;
     if (this.sunDay === day) return this.sunCache;
 
     this.sunDay = day;
-    this.sunCache = {};
-
-    const location = usableLocation(this.deps.location?.());
-    if (location) {
-      const times = sunTimes(location.latitude, location.longitude, this.now());
-      if (times.sunriseMs !== null && times.sunsetMs !== null) {
-        const timezone = this.deps.timezone();
-        this.sunCache = {
-          sunriseMinute: localNow(timezone, times.sunriseMs).minutesOfDay,
-          sunsetMinute: localNow(timezone, times.sunsetMs).minutesOfDay,
-        };
-      }
-    }
+    this.sunCache = sunAnchorContext(this.deps.location?.(), timezone, now);
     return this.sunCache;
   }
 
@@ -1152,8 +1104,7 @@ export class CircadianRuntime {
    * `force` skips the "has it moved enough to be worth a write" gate and the
    * override check; it is for the moment a light comes on and for the pairing
    * screen's preview, where the user has explicitly asked for a change they can see.
-   */
-  /**
+   *
    * `waitForResults` is what a "try it now" needs and what a tick must never
    * do: hold the call open until the queue has drained and every command in
    * the batch has come back, so the count reported is lamps that ACCEPTED the
@@ -1623,12 +1574,6 @@ export class CircadianRuntime {
   }
 
   /**
-   * Per capability, how many consecutive writes this lamp has acknowledged and
-   * not acted on. Only the capabilities this device type actually writes, so a
-   * reader is never left wondering why a colour count exists on a lamp that has
-   * only ever been given a temperature.
-   */
-  /**
    * What this lamp has REPORTED, narrowed to the capabilities we listen to.
    *
    * An unwatched field would otherwise be drawn from the boot snapshot forever —
@@ -1649,6 +1594,12 @@ export class CircadianRuntime {
     };
   }
 
+  /**
+   * Per capability, how many consecutive writes this lamp has acknowledged and
+   * not acted on. Only the capabilities this device type actually writes, so a
+   * reader is never left wondering why a colour count exists on a lamp that has
+   * only ever been given a temperature.
+   */
   private ignoredWritesFor(deviceId: string): Record<string, number> {
     return this.writeCounts(capability => this.cache.ignoredCount(deviceId, capability));
   }
@@ -2075,7 +2026,10 @@ export class CircadianRuntime {
       return result(false, true, 'takes no colour or colour temperature');
     }
 
-    const before = this.cache.reportedValues(deviceId);
+    // The mode too, which `reportedValues` leaves out: the test's own write
+    // changes it, and a restore that does not put it back leaves the lamp
+    // showing the axis it was NOT on. Fresh, because of the refresh above.
+    const before = { ...this.cache.reportedValues(deviceId), light_mode: this.cache.state(deviceId).actualMode };
     const wasOn = before.onoff === true;
 
     try {
@@ -2125,10 +2079,19 @@ export class CircadianRuntime {
    * `onoff` FIRST for a lamp that was on, and not last as `putBack` in the
    * circadian driver does it — because here the values are the question under
    * test: a colour sent to an off lamp is exactly what may or may not stick, so
-   * it is sent once the lamp is on again. Only the axis the test wrote is
-   * restored, plus brightness; the test changed nothing else.
+   * it is sent once the lamp is on again.
+   *
+   * Then the lamp's own MODE, and the axis that mode shows (`AXES_FOR_MODE`),
+   * the same rule `putBack` follows. The test wrote `light_mode` ahead of its
+   * value (platform §6), so restoring only the axis the test wrote left a lamp
+   * found at warm white in colour mode, showing a stale hue. Where the lamp
+   * reported no mode it has only one, and the axis the test wrote is the one.
    */
-  private async restoreLamp(deviceId: string, before: LiveValues, onColour: boolean): Promise<boolean> {
+  private async restoreLamp(
+    deviceId: string,
+    before: LiveValues,
+    onColour: boolean,
+  ): Promise<boolean> {
     try {
       if (before.onoff !== true) {
         await this.adapter.refresh(deviceId);
@@ -2136,7 +2099,11 @@ export class CircadianRuntime {
         return true;
       }
       await this.adapter.write(deviceId, 'onoff', true);
-      const axes: Capability[] = onColour ? ['light_hue', 'light_saturation'] : ['light_temperature'];
+      const mode = this.cache.supports(deviceId, 'light_mode') ? before.light_mode : undefined;
+      if (mode !== undefined) await this.adapter.write(deviceId, 'light_mode', mode);
+      const axes = mode !== undefined
+        ? AXES_FOR_MODE[mode]
+        : AXES_FOR_MODE[onColour ? 'color' : 'temperature'];
       for (const capability of [...axes, 'dim'] as Capability[]) {
         const previous = before[capability as keyof LiveValues];
         if (typeof previous === 'number') await this.adapter.write(deviceId, capability, previous);

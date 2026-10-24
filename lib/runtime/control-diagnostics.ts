@@ -3,6 +3,7 @@ import type { Capability, PlannedWrite } from '../outputs/intent-planner';
 import type { WriteOutcome } from '../outputs/command-scheduler';
 import type { EvidenceSink } from '../support/evidence-sink';
 import type { BrightnessScale } from '../outputs/light-intent';
+import { OVERRIDE_EXPIRY_MS } from '../outputs/target-state-cache';
 
 export interface OverrideRecord {
   /** The FIRST report's time. The four-hour deadline is anchored to it. */
@@ -23,6 +24,69 @@ export interface OverrideRecord {
    */
   repeats?: number;
   lastAt?: number;
+}
+
+/**
+ * File a report as an override, or restate the one already standing.
+ *
+ * Shared by every runtime that stands down for a person — three call sites
+ * across the circadian and daylight runtimes carried this block, comments and
+ * all, and both rules in it are safety properties:
+ *
+ *  - **The deadline is the FIRST report's time, never this one's.**
+ *    `OVERRIDE_EXPIRY_MS` is the only way out of an override that does not
+ *    need somebody to walk to a switch, and re-stamping on every report pushes
+ *    it out for as long as the lamp keeps talking — which is exactly what a
+ *    stuck lamp does. Seen on the reference Homey: four lamps reporting a value
+ *    we never wrote, every minute, each report renewing the four hours that
+ *    were supposed to end it. The history event keeps the real arrival time;
+ *    only the deadline is anchored to the start.
+ *  - **One override, one row.** A lamp that keeps restating it is counted on
+ *    the record (`repeats`, `lastAt`) instead of pushing a row per report: 28 of
+ *    one device's 32 event slots were four overrides said over and over, which
+ *    is how the evidence for everything else was lost. The tile and the
+ *    settings page read the record rather than the log.
+ *
+ * Returns true when this report RAISED the override, so the caller can say so
+ * once in its log in its own words.
+ */
+export function noteOverrideReport(
+  overrides: Map<string, OverrideRecord>,
+  history: ControlHistory<ControlAction>,
+  deviceId: string,
+  report: Pick<OverrideRecord, 'capability' | 'value' | 'expected'>,
+  now: number,
+): boolean {
+  const previous = overrides.get(deviceId);
+  const record: OverrideRecord = { at: previous?.at ?? now, ...report, source: 'external_report' };
+  if (previous !== undefined) {
+    record.repeats = (previous.repeats ?? 1) + 1;
+    record.lastAt = now;
+  }
+  overrides.set(deviceId, record);
+  if (previous === undefined) history.events.add({ ...record, at: now, type: 'override', deviceId });
+  return previous === undefined;
+}
+
+/**
+ * Drop every override older than `OVERRIDE_EXPIRY_MS`, record that it lapsed,
+ * and hand each lamp to `forget` — where the runtime drops what it last wrote,
+ * which is half the fix rather than tidiness (see either runtime's
+ * `expireOverrides`).
+ */
+export function expireOverrides(
+  overrides: Map<string, OverrideRecord>,
+  history: ControlHistory<ControlAction>,
+  now: number,
+  forget: (deviceId: string) => void,
+): void {
+  const cutoff = now - OVERRIDE_EXPIRY_MS;
+  for (const [deviceId, record] of overrides) {
+    if (record.at > cutoff) continue;
+    overrides.delete(deviceId);
+    forget(deviceId);
+    history.events.add({ at: now, type: 'override_cleared', deviceId, reason: 'expired' });
+  }
 }
 
 export interface TargetDecision {

@@ -453,12 +453,6 @@ export class DeviceLifecycle<
   }
 
   /**
-   * Called by the pair/repair session when the user saves.
-   *
-   * Transactional: the candidate plan reaches the store only once the runtime is
-   * running, and a failure puts the previous plan and its runtime back.
-   */
-  /**
    * The plan about to be registered, put through the SAME validator the load
    * path ends in — or refused before anything runs or is stored.
    *
@@ -484,6 +478,12 @@ export class DeviceLifecycle<
     return this.owner.migrate(plan).plan;
   }
 
+  /**
+   * Called by the pair/repair session when the user saves.
+   *
+   * Transactional: the candidate plan reaches the store only once the runtime is
+   * running, and a failure puts the previous plan and its runtime back.
+   */
   async apply(incoming: TPlan): Promise<void> {
     return this.operations.run(OPS, async () => {
       this.applying = true;
