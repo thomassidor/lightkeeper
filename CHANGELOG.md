@@ -74,6 +74,13 @@ Less background work, from a performance audit:
 - **Starting or re-targeting a circadian, Colour Curve or Room-sensing Light reads each lamp once**
   instead of twice, and subscribes to its lamps several at a time. A missing remote is searched for
   once per health check, not twice.
+- **Motion in a room no longer makes Lightkeeper re-read anything.** Homey reports every change in a
+  zone's motion state as a zone update — for the zone and every zone above it, 176 an hour in a quiet
+  house — and each one used to rebuild the device list and, behind it, re-read the whole list of
+  Flow trigger cards. A zone update now counts only when the zone's name or place changed, and a
+  remote's buttons are re-read only when something about that remote changed, or once an hour.
+  Measured on the reference Homey, the zone half took device-list rebuilds from 94 an hour to 20 and
+  full card reads from 24 to 13; the remote half is what is meant to take the 13 down to about one.
 - **Stopping cancels every timer at once.** Each device cancels its ramps, held presses, pre-stage
   checks and sensor retries before its asynchronous cleanup, and app shutdown starts every teardown
   together instead of waiting on the evidence recorder first (platform §17: an `await` there may never

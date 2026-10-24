@@ -1527,9 +1527,18 @@ refreshed behind it, and a controller's health pass rediscovers its remote's eve
 re-reads the whole trigger catalogue whenever its 60 s TTL has lapsed: **24 full reads of 1748 cards
 in that hour**, from a house where no device had changed. `isNoOpZoneUpdate()` now drops a
 `zone.update` whose `name` and `parent` match what the last refresh published, since those are the
-only zone fields the catalogue keeps, and counts it as `ignoredZoneUpdates`. And a capability VALUE
+only zone fields the catalogue keeps, and counts it as `ignoredZoneUpdates`. A capability VALUE
 change evidently does not arrive as a `device.update`: eight in an hour, with nine lamps on and
 curves writing to them, is far too few for that — an inference from the counts, not a capture.
+
+That took rebuilds from 94 to 20 an hour, and full trigger-catalogue reads only from 24 to 13: the
+remaining `device.update` traffic — 45 that hour, about 84 an hour in a five-minute capture after it
+— came from a dashboard tablet flapping `available` every minute or two and a car integration
+re-sending its device with nothing changed. Neither is a remote, so `HealthMonitor` now remembers a
+remote's discovered surface while that remote's own row (`id`, `available`, `driverId`, `ownerUri`)
+is unchanged, for at most an hour, forgets it whenever the remote is seen unavailable, and re-reads
+live before a remembered surface could ever declare `surfaceChanged`. Not yet re-measured on the
+Homey; the next quiet hour's `trigger cards read` is the number that says whether it worked.
 
 ### Reading the number back
 

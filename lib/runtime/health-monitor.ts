@@ -43,7 +43,22 @@ export interface AmbiguousReattach {
   candidates: Array<{ deviceId: string; deviceName: string }>;
 }
 
+/**
+ * How long a remote's discovered event surface is reused while its catalogue
+ * row stays the same. See `surfaceOf`.
+ */
+export const SURFACE_MEMO_MS = 60 * 60_000;
+
+type Discovered = Awaited<ReturnType<SourceDiscoveryService['discover']>>;
+
 export class HealthMonitor {
+  /**
+   * The last surface discovered per source device, with the catalogue row it
+   * was discovered against. Bounded by the remotes in use: an entry past its
+   * hour is dropped the next time anything is discovered.
+   */
+  private readonly surfaces = new Map<string, { row: string; at: number; discovered: Discovered }>();
+
   /**
    * `sourcesInUse` is the device id every LIVE controller is currently
    * listening to, and it is what keeps a one-tap re-attach honest in a
@@ -69,6 +84,7 @@ export class HealthMonitor {
     private readonly discovery: SourceDiscoveryService,
     private readonly credentialValid: () => boolean,
     private readonly sourcesInUse: () => ReadonlySet<string> = () => new Set(),
+    private readonly now: () => number = Date.now,
   ) {}
 
   /**
@@ -141,11 +157,18 @@ export class HealthMonitor {
       };
     }
 
-    if (!source.available) return { state: 'needs_repair', detail: { key: 'state.sourceUnavailable' } };
+    if (!source.available) {
+      // Forget its surface: an integration restarting is the likeliest reason,
+      // and the row it comes back with is otherwise identical to the one before.
+      this.surfaces.delete(source.id);
+      return { state: 'needs_repair', detail: { key: 'state.sourceUnavailable' } };
+    }
 
-    // An integration update can change the event surface under us.
-    const discovered = await this.discovery.discover(source);
-    if (surfaceMoved(profile, discovered)) {
+    // An integration update can change the event surface under us. A
+    // remembered surface may only ever clear a controller, never fail one: a
+    // disagreement is re-read live before it becomes a verdict.
+    const { discovered, remembered } = await this.surfaceOf(source);
+    if (surfaceMoved(profile, discovered) && (!remembered || surfaceMoved(profile, await this.discoverLive(source)))) {
       return {
         state: 'needs_repair',
         detail: {
@@ -175,6 +198,45 @@ export class HealthMonitor {
     return targets.detail
       ? { state: targets.state, detail: targets.detail }
       : { state: targets.state };
+  }
+
+  /**
+   * The source's event surface — remembered while its catalogue row is unchanged
+   * and the memory is under `SURFACE_MEMO_MS` old, discovered live otherwise.
+   *
+   * Every discovery matches the remote against the whole trigger catalogue, and
+   * `assess()` runs on every catalogue change: on the reference Homey that was
+   * a full read of 1748 cards 13 times an hour (after `isNoOpZoneUpdate` had
+   * already removed the zone traffic), driven by a dashboard tablet flapping
+   * `available` and an integration re-sending a device with nothing changed —
+   * neither of them the remote. Re-discovering is only worth it when something
+   * about the REMOTE could have moved.
+   *
+   * The row is `id`, `available`, `driverId` and `ownerUri`: an integration
+   * update restarts its app, which is expected to show here as availability —
+   * and `assess()` drops the memory whenever it sees the source unavailable,
+   * because the row it comes back with is the same as the one before. That is
+   * not measured, so the hour is the backstop — an update that moved the
+   * surface without touching the row is noticed within the hour instead of on
+   * whatever catalogue change happened to come next. And the cost of being wrong
+   * runs the safe way: `assess()` never declares `surfaceChanged` from memory.
+   */
+  private async surfaceOf(source: CatalogDevice): Promise<{ discovered: Discovered; remembered: boolean }> {
+    const known = this.surfaces.get(source.id);
+    if (known && known.row === surfaceRow(source) && this.now() - known.at < SURFACE_MEMO_MS) {
+      return { discovered: known.discovered, remembered: true };
+    }
+    return { discovered: await this.discoverLive(source), remembered: false };
+  }
+
+  private async discoverLive(source: CatalogDevice): Promise<Discovered> {
+    const discovered = await this.discovery.discover(source);
+    const at = this.now();
+    for (const [id, entry] of this.surfaces) {
+      if (at - entry.at >= SURFACE_MEMO_MS) this.surfaces.delete(id);
+    }
+    this.surfaces.set(source.id, { row: surfaceRow(source), at, discovered });
+    return discovered;
   }
 
   /**
@@ -287,6 +349,11 @@ export class HealthMonitor {
     };
   }
 
+}
+
+/** What about a source device would make its remembered surface worth re-reading. */
+function surfaceRow(device: CatalogDevice): string {
+  return JSON.stringify([device.id, device.available, device.driverId, device.ownerUri]);
 }
 
 export function matchesOwnerAndDriver(device: CatalogDevice, profile: ControllerProfile): boolean {

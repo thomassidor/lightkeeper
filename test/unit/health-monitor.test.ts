@@ -3,7 +3,7 @@ import { ownsNothing, zoneLights } from '../support/fake-catalog';
 import assert from 'node:assert/strict';
 
 import {
-  HealthMonitor, matchesOwnerAndDriver, surfaceIsPortablyTheSame, surfaceMoved,
+  HealthMonitor, SURFACE_MEMO_MS, matchesOwnerAndDriver, surfaceIsPortablyTheSame, surfaceMoved,
 } from '../../lib/runtime/health-monitor';
 import { CURRENT_SCHEMA_VERSION, type ControllerProfile } from '../../lib/profiles/controller-profile';
 import { DEFAULT_BEHAVIOR } from '../../lib/mapping/mapping-types';
@@ -62,6 +62,8 @@ function harness(options: {
   sourcesInUse?: string[];
   /** Every device `discover()` was asked about, in order. */
   discovered?: string[];
+  /** The monitor's clock, for the surface memo. */
+  now?: () => number;
 }) {
   const catalog = {
     device: async (id: string) => options.devices.find(d => d.id === id),
@@ -88,6 +90,7 @@ function harness(options: {
   return new HealthMonitor(
     catalog, discovery, () => options.credentialValid ?? true,
     () => new Set(options.sourcesInUse ?? []),
+    options.now,
   );
 }
 
@@ -474,5 +477,77 @@ describe('re-attach candidate matching', () => {
       source: { deviceId: 'old', eventSurfaceFingerprint: 'fp-abc' },
     });
     assert.equal(matchesOwnerAndDriver(device({ id: 'x' }), p), false);
+  });
+});
+
+/**
+ * A remote's surface is re-read when something about the REMOTE could have
+ * moved, not on every catalogue change.
+ *
+ * Measured on the reference Homey: with zone motion already ignored, a full
+ * read of the 1748-card trigger catalogue still happened 13 times an hour,
+ * driven by devices that were not the remote at all.
+ */
+describe('the remembered event surface', () => {
+  function rig() {
+    let clock = 1_000_000;
+    const discovered: string[] = [];
+    const fingerprints: Record<string, string> = { 'old-device': 'fp-abc' };
+    const devices = [device({ id: 'old-device' }), light('light-1')];
+    const monitor = harness({ devices, fingerprints, discovered, now: () => clock });
+    return {
+      monitor, discovered, fingerprints, devices,
+      advance: (ms: number) => { clock += ms; },
+      setSource: (over: Partial<CatalogDevice>) => { devices[0] = device({ id: 'old-device', ...over }); },
+    };
+  }
+
+  test('an unchanged remote is discovered once, however many checks follow', async () => {
+    const r = rig();
+    for (let i = 0; i < 5; i += 1) assert.equal((await r.monitor.assess(profile({ source: { ...profile().source, deviceId: 'old-device' } }))).state, 'ready');
+    assert.deepEqual(r.discovered, ['old-device']);
+  });
+
+  test('a changed driver or owning app is read again', async () => {
+    const r = rig();
+    const p = profile({ source: { ...profile().source, deviceId: 'old-device', driverId: undefined, ownerAppId: undefined } });
+    await r.monitor.assess(p);
+    r.setSource({ driverId: 'homey:app:com.ikea.tradfri:remote_control_n3' });
+    await r.monitor.assess(p);
+    assert.deepEqual(r.discovered, ['old-device', 'old-device']);
+  });
+
+  test('a remote that went unavailable is read again when it comes back', async () => {
+    const r = rig();
+    const p = profile({ source: { ...profile().source, deviceId: 'old-device' } });
+    await r.monitor.assess(p);
+    r.setSource({ available: false });
+    assert.equal((await r.monitor.assess(p)).state, 'needs_repair');
+    r.setSource({ available: true });
+    r.fingerprints['old-device'] = 'fp-CHANGED';   // what an integration update can do
+    const back = await r.monitor.assess(p);
+    assert.equal(back.detail?.key, 'state.surfaceChanged', 'the restart is what made it look again');
+    assert.equal(r.discovered.length, 2);
+  });
+
+  test('after the hour it is read again, which is the backstop for a move the row cannot show', async () => {
+    const r = rig();
+    const p = profile({ source: { ...profile().source, deviceId: 'old-device' } });
+    await r.monitor.assess(p);
+    r.fingerprints['old-device'] = 'fp-CHANGED';
+    r.advance(SURFACE_MEMO_MS - 1);
+    assert.equal((await r.monitor.assess(p)).state, 'ready', 'inside the hour the memory stands');
+    r.advance(1);
+    assert.equal((await r.monitor.assess(p)).detail?.key, 'state.surfaceChanged');
+  });
+
+  test('a remembered surface never fails a controller: a disagreement is re-read live first', async () => {
+    const r = rig();
+    await r.monitor.assess(profile({ source: { ...profile().source, deviceId: 'old-device' } }));
+    // Repair remapped the remote onto a surface the memory predates.
+    r.fingerprints['old-device'] = 'fp-NEW';
+    const repaired = profile({ source: { ...profile().source, deviceId: 'old-device', eventSurfaceFingerprint: 'fp-NEW' } });
+    assert.equal((await r.monitor.assess(repaired)).state, 'ready');
+    assert.deepEqual(r.discovered, ['old-device', 'old-device'], 'the second read is the live one');
   });
 });
