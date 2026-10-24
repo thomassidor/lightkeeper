@@ -1789,6 +1789,12 @@ export class CircadianRuntime {
       + `be pre-staged again until it is switched on: ${reason}`);
   }
 
+  /** Drop every outstanding pre-stage probe. Synchronous: see `stop()`. */
+  private cancelProbes(): void {
+    for (const probe of this.probes.values()) this.clearTimer(probe.timer);
+    this.probes.clear();
+  }
+
   /** Drop a device's outstanding pre-stage probe, if it has one. */
   private cancelProbe(deviceId: string): void {
     const existing = this.probes.get(deviceId);
@@ -2314,11 +2320,21 @@ export class CircadianRuntime {
   }
 
   async stop(): Promise<void> {
+    /**
+     * The pre-stage probes are cancelled before the first await, and again in
+     * the cleanup for any a still-running start armed in between.
+     *
+     * A probe that fires after stop() already does nothing, because it checks
+     * the lifetime and `lifetime.stop()` bumps that synchronously. But its timer
+     * stayed armed until the cleanup ran, behind the lifetime lock, and platform
+     * §17 says that cleanup may never run during app shutdown. Nothing that can
+     * fire should outlive the runtime that armed it.
+     */
     this.scheduler?.stop();
     this.adapter.suspend();
+    this.cancelProbes();
     return this.lifetime.stop(async () => {
-      for (const probe of this.probes.values()) this.clearTimer(probe.timer);
-      this.probes.clear();
+      this.cancelProbes();
       this.writeGeneration.clear();
       this.scheduler?.stop();
       this.scheduler = null;

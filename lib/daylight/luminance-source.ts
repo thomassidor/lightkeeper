@@ -132,6 +132,30 @@ export class LuminanceSource {
     }
   }
 
+  /**
+   * Cancel the pending subscription retry of every sensor that only this owner
+   * wants. Synchronous, for the first line of a runtime's `stop()`.
+   *
+   * `release()` gets there too, but only after awaits, through each sensor's
+   * lock. A retry timer that fires in between does no harm, because reconcile
+   * checks the owners. But it stays armed, and platform §17 says the await may
+   * never come back during app shutdown. A sensor someone else still claims
+   * keeps its retry: that owner still wants the subscription.
+   *
+   * The claim itself is untouched, so a runtime that is restarted (stop, then
+   * start) retains and reconciles as before, and reconcile subscribes again
+   * because no retry is pending.
+   */
+  stopRetrying(owner: string): void {
+    for (const id of this.claims.get(owner) ?? []) {
+      const watched = this.sensors.get(id);
+      if (watched === undefined || watched.retry === null) continue;
+      if ([...this.claims].some(([other, ids]) => other !== owner && ids.has(id))) continue;
+      this.timers.clearTimeout(watched.retry);
+      watched.retry = null;
+    }
+  }
+
   /** Give up every sensor one device held. Called from a runtime's stop(). */
   async release(owner: string): Promise<void> {
     const previous = this.claims.get(owner) ?? new Set<string>();

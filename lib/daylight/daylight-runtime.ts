@@ -1214,6 +1214,10 @@ export class DaylightRuntime {
   async stop(): Promise<void> {
     this.scheduler?.stop();
     this.adapter.suspend();
+    // A sensor subscription waiting to be retried is a timer, and timers are
+    // disarmed before the first await (platform §17; see the controller's
+    // `stop()`). The claim itself is still released in the cleanup.
+    this.sensorClaim.stopRetrying();
     return this.lifetime.stop(async () => {
       this.scheduler?.stop();
       this.scheduler = null;

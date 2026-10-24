@@ -40,6 +40,7 @@ function house() {
   let handleGate: Promise<void> | undefined;
   let teardownGate: Promise<void> | undefined;
   let failReconcile = false;
+  let failSensor = false;
   // homey-api's client-replacement hook. Every LightTargetAdapter registers on
   // it when it resumes and only `unsubscribeAll()` lets go, so it is the one
   // resource a SCHEDULE holds that a capability listener count cannot see:
@@ -53,6 +54,7 @@ function house() {
     },
     read: async () => ({ devices: { getDevice: async ({ id }: { id: string }) => {
       if (handleGate) await handleGate;
+      if (id === 'sensor' && failSensor) throw new Error('sensor unreachable');
       return { ...(id === 'lamp' ? lamp : sensor),
         setCapabilityValue: async (write: { capabilityId: string; value: unknown }) => { writes.push(write); },
         makeCapabilityInstance: (cap: string, listener: (value: unknown) => void) => {
@@ -135,6 +137,8 @@ function house() {
     remove: () => { present = false; },
     failHealth: () => { failQuery = queries + 2; },
     failReconcile: () => { failReconcile = true; },
+    /** The lux sensor refuses to be subscribed to, so the sensor service arms a retry. */
+    failSensor: () => { failSensor = true; },
     replacementCount: () => replacements.size,
     holdQuery: (gate: Promise<void>) => { queryGate = gate; },
     holdHandle: (gate: Promise<void>) => { handleGate = gate; },
@@ -418,6 +422,63 @@ describe('teardown leaves nothing armed, for every kind of runtime', () => {
         h.timers.advance(10_000); await settle(12);
         assert.equal(h.writes.length, before, 'nothing lands after teardown');
       } finally { await h.stop(); }
+    });
+  }
+
+  /**
+   * PERF-9. The test above awaits `unregister()`, so it cannot tell a timer
+   * disarmed by `stop()`'s synchronous prefix from one disarmed by its cleanup,
+   * which runs behind the lifetime lock. Platform §17: during app shutdown that
+   * cleanup may never run. So these hold the cleanup open (the lamp's listener
+   * will not finish tearing down) and look at the clock BEFORE awaiting
+   * anything. Each kind arms what it can: held writes everywhere, a ramp and a
+   * gated press on a controller, the 5 s pre-stage probe on a curve, a sensor
+   * retry on a Room-sensing Light.
+   */
+  for (const kind of kinds) {
+    test(`${kind}: every timer is disarmed before stop() first awaits`, async () => {
+      const h = house();
+      if (kind === 'daylight') h.failSensor();
+      const persisted: unknown[] = [];
+      const release = deferred<void>();
+      // The curve and daylight managers' shared ticker belongs to the MANAGER,
+      // and this stops the runtime alone; it is the one timer allowed to stay.
+      const ticker = kind === 'curve' || kind === 'daylight' ? 1 : 0;
+      try {
+        let runtime: { stop: () => Promise<void>; write: () => Promise<void> };
+        if (kind === 'curve') {
+          // Pre-staging on, this lamp proven, a warmth the lamp is not at: an
+          // OFF lamp is sent a colour, and the probe that watches it is armed.
+          const plan: CircadianPlan = { ...h.curve, preStage: true, preStageLights: ['lamp'],
+            points: h.curve.points.map(point => ({ ...point, warmth: 0.2 })) };
+          const curve = await h.curves.register('runtime', plan, () => {}, async next => { persisted.push(next); });
+          runtime = { stop: () => curve.stop(), write: async () => { await curve.applyNow('tick', { force: true }); } };
+        } else {
+          runtime = await registered(h, kind);
+        }
+        await settle(12); h.timers.advance(1000); await settle(12);
+        if (kind === 'curve') { h.reportOff(); await settle(12); }
+        if (kind === 'controller') {
+          const controller = h.controllers.get('runtime');
+          controller?.handleInput({ controlId: 'up', action: 'long_press' }, 'up-hold');
+          await settle(4);
+          controller?.handleInput({ controlId: 'btn', action: 'press' }, 'btn-press');
+        }
+        await runtime.write(); await settle(12);
+        if (kind !== 'daylight') { await runtime.write(); await settle(12); }
+        assert.ok(h.timers.pending >= (kind === 'controller' ? 3 : 1), `something is armed on a ${kind}`);
+
+        h.holdTeardown(release.promise);
+        const stopping = runtime.stop();
+
+        assert.equal(h.timers.pending, ticker, 'nothing the runtime armed is left when stop() returns its promise');
+
+        h.timers.advance(10_000); await settle(12);
+        assert.equal(h.timers.pending, ticker);
+        assert.deepEqual(persisted, [], 'a probe that never fires persists nothing');
+        release.resolve();
+        await stopping;
+      } finally { release.resolve(); await h.stop(); }
     });
   }
 
