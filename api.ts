@@ -740,13 +740,21 @@ module.exports = {
      * with a stack trace instead of a refusal is the one thing every other
      * handler in this file is careful not to do — and this is the same membership
      * check `pairing-dto.ts` already makes on the same value.
+     *
+     * By OWN property. The check was `func in FUNCTION_CAPABILITY`, and `in`
+     * walks the prototype: `"toString"` and `"constructor"` passed it and
+     * reached exactly the TypeError this comment says was fixed.
+     * `testFunction` makes the same check again for the pair session's caller.
      */
     const func = String(body?.func ?? '');
     if (!func) throw new Error('no func in the request');
-    if (!(func in FUNCTION_CAPABILITY)) {
+    if (!Object.prototype.hasOwnProperty.call(FUNCTION_CAPABILITY, func)) {
       throw new Error(`"${func}" is not a light function`);
     }
-    const deviceIds = Array.isArray(body?.deviceIds) ? body.deviceIds.map(String) : undefined;
+    // Handed over as sent: `testFunction` caps the list before touching it,
+    // keeps only this controller's own lights, and ignores non-strings. A
+    // `.map(String)` here would walk an oversized list before that cap.
+    const deviceIds = Array.isArray(body?.deviceIds) ? body.deviceIds : undefined;
     return runtime.testFunction(func as any, deviceIds);
   },
 
