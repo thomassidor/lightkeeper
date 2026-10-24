@@ -1,4 +1,5 @@
 import type { HomeyApiService } from './homey-api-service';
+import { withDefaults, type Timers } from './support/timers';
 import { titleTextOf, type CardToken, type DiscoveredTriggerCard } from './inputs/event-normalizer';
 import type { CardArgument } from './inputs/magnitude-collapser';
 
@@ -43,21 +44,56 @@ export interface ActionCardRef {
 /** Long enough to cover a burst of discovery, short enough to never be stale. */
 const DEFAULT_TTL_MS = 60_000;
 
+/**
+ * What one of the two catalogues has cost since the app started. For
+ * `/diagnostics` only: counts, a duration and a size, never a card.
+ *
+ * The trigger catalogue is the expensive read in this app — every card of every
+ * installed app, ~1.0-1.3 MB of JSON on the reference Homey (platform §15) —
+ * and how often it happens is set by how often something asks, which nothing
+ * recorded. These say it.
+ */
+export interface CatalogueReadStats {
+  /** Reads that went to the Homey, successful or not. */
+  fetches: number;
+  failures: number;
+  /** How long the last successful read took, fetch and projection together. */
+  lastMs: number | null;
+  /** How many cards the last successful read returned. */
+  lastCount: number | null;
+  /** Whether a projection is being held right now. */
+  retained: boolean;
+}
+
+export interface CardCatalogueStats {
+  triggers: CatalogueReadStats;
+  actions: CatalogueReadStats;
+}
+
 export class FlowCardCatalogue {
   private readonly ttlMs: number;
-  private readonly now: () => number;
+  private readonly timers: Timers;
 
   private readonly triggers: Cached<DiscoveredTriggerCard[]>;
   private readonly actions: Cached<ActionCardRef[]>;
 
+  /**
+   * `now` alone is still accepted, as the older tests pass it; `timers` is
+   * what drives the release timer as well.
+   */
   constructor(
     private readonly api: HomeyApiService,
-    options: { ttlMs?: number; now?: () => number } = {},
+    options: { ttlMs?: number; now?: () => number; timers?: Partial<Timers> } = {},
   ) {
     this.ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
-    this.now = options.now ?? (() => Date.now());
-    this.triggers = new Cached(this.now, this.ttlMs);
-    this.actions = new Cached(this.now, this.ttlMs);
+    this.timers = withDefaults({ ...options.timers, ...(options.now ? { now: options.now } : {}) });
+    this.triggers = new Cached(this.timers, this.ttlMs);
+    this.actions = new Cached(this.timers, this.ttlMs);
+  }
+
+  /** What the two catalogues have cost so far. See `CatalogueReadStats`. */
+  stats(): CardCatalogueStats {
+    return { triggers: this.triggers.stats(), actions: this.actions.stats() };
   }
 
   /**
@@ -157,30 +193,52 @@ export class FlowCardCatalogue {
 export const NO_CACHE = { $cache: false, $updateCache: false } as const;
 
 /**
- * A value fetched at most once per TTL, and at most once at a time.
+ * A value fetched at most once per TTL, and at most once at a time — and let go
+ * when the TTL runs out.
  *
  * The in-flight promise is retracted in `finally` — on failure as well as
  * success — for the same reason `HomeyApiService.read()` and
  * `DeviceCatalog.refresh()` do it: clearing only on the happy path caches a
  * rejection forever, and one transient failure at boot then poisons every
  * later call with nothing short of a restart to recover.
+ *
+ * The release timer is the other half of the TTL. Expiry used to be checked
+ * only on a read, so a projection outlived its TTL until the next read
+ * replaced it: once anything had asked, ~1.1 MB of trigger cards (platform
+ * §15's figure for 1700 cards) stayed on the heap for the whole app run,
+ * however long ago the question was. The expiry check on read stays as well,
+ * for a clock that moves without its timers firing. The timer is `unref`'d, so
+ * it never holds a process open on its own, and `clear()` cancels it, because
+ * nothing may outlive the teardown that calls it.
  */
 class Cached<T> {
   private value: T | null = null;
   private at = 0;
   private inFlight: Promise<T> | null = null;
+  private release: unknown = null;
+  private readonly counts: Omit<CatalogueReadStats, 'retained'> = {
+    fetches: 0, failures: 0, lastMs: null, lastCount: null,
+  };
 
-  constructor(private readonly now: () => number, private readonly ttlMs: number) {}
+  constructor(private readonly timers: Timers, private readonly ttlMs: number) {}
 
   async get(fetch: () => Promise<T>): Promise<T> {
-    if (this.value !== null && this.now() - this.at < this.ttlMs) return this.value;
+    if (this.value !== null && this.timers.now() - this.at < this.ttlMs) return this.value;
     if (this.inFlight) return this.inFlight;
 
+    const startedAt = this.timers.now();
+    this.counts.fetches += 1;
     const attempt = fetch()
       .then(value => {
         this.value = value;
-        this.at = this.now();
+        this.at = this.timers.now();
+        this.counts.lastMs = this.at - startedAt;
+        this.counts.lastCount = Array.isArray(value) ? value.length : null;
+        this.armRelease();
         return value;
+      }, (error: unknown) => {
+        this.counts.failures += 1;
+        throw error;
       })
       .finally(() => {
         if (this.inFlight === attempt) this.inFlight = null;
@@ -190,9 +248,30 @@ class Cached<T> {
     return attempt;
   }
 
+  stats(): CatalogueReadStats {
+    return { ...this.counts, retained: this.value !== null };
+  }
+
   clear(): void {
+    this.cancelRelease();
     this.value = null;
     this.at = 0;
+  }
+
+  private armRelease(): void {
+    this.cancelRelease();
+    this.release = this.timers.setTimeout(() => {
+      this.release = null;
+      this.value = null;
+      this.at = 0;
+    }, this.ttlMs);
+    (this.release as { unref?: () => void } | null)?.unref?.();
+  }
+
+  private cancelRelease(): void {
+    if (this.release === null) return;
+    this.timers.clearTimeout(this.release);
+    this.release = null;
   }
 }
 
