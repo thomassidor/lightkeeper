@@ -161,6 +161,15 @@ export interface DeviceOwner<
   forgetFlowJournal(): void;
 
   // ---- what differs between device types ----------------------------------
+  /**
+   * The kind every id this driver mints carries — `lk-<kind>-…`.
+   *
+   * Optional so a test host need not declare one; every shipped device type
+   * does. An id carrying ANOTHER kind's prefix is refused at init (see
+   * `claimId`): every id any shipped version minted carried its own driver's
+   * kind, so only a store written by something other than this app can.
+   */
+  readonly idKind?: DeviceIdKind;
   /** The device-store key this type's plan is filed under. */
   readonly storeKey: string;
   /** Locale key for "you have not configured me yet". */
@@ -288,6 +297,22 @@ export interface DeviceOwner<
  */
 const OPS = 'ops';
 const STATE = 'state';
+
+/** The kinds `mintDeviceId` puts in an id (lib/bridge/flow-bridge-manager.ts). */
+export type DeviceIdKind = 'ctrl' | 'sched' | 'circ' | 'curv' | 'dayl';
+
+/** The kind in an `lk-` id, or nothing for every other shape — the legacy `ll-` included. */
+const ID_KIND = /^lk-(ctrl|sched|circ|curv|dayl)-/;
+
+/**
+ * Which device holds each id, per registry.
+ *
+ * Keyed by the REGISTRY instance — one per device type per app — so the claim
+ * is exactly as wide as the collision it prevents (two devices registering one
+ * id in one registry), and a test that builds a fresh app gets a fresh map.
+ * A WeakMap so an app that is torn down takes its claims with it.
+ */
+const claims = new WeakMap<object, Map<string, object>>();
 const VALUES = 'values';
 
 /**
@@ -318,6 +343,13 @@ export class DeviceLifecycle<
   private appliedSeq = 0;
   private planGeneration = 0;
   private applying = false;
+  /**
+   * Set when this device's id was refused at init: malformed, the wrong kind,
+   * or already held by another installed device. Such a device is inert —
+   * every path below that would reach the registry, a Flow or the journal
+   * under that id is skipped, because the id is somebody else's.
+   */
+  private displaced = false;
 
   constructor(private readonly owner: DeviceOwner<TPlan, TRuntime, TRuntimePlan>) {}
 
@@ -332,6 +364,16 @@ export class DeviceLifecycle<
   // ---------------------------------------------------------------- lifecycle
 
   async init(): Promise<void> {
+    // Before the first await, so two devices initialising together cannot both
+    // pass the check: the claim is taken synchronously.
+    const refusal = this.claimId();
+    if (refusal) {
+      this.displaced = true;
+      this.owner.error(`Not starting: ${refusal}`);
+      await this.owner.setUnavailable(this.owner.translate('state.invalidConfiguration'));
+      return;
+    }
+
     await this.reconcileCapabilities();
 
     const plan = await this.loadPlan();
@@ -355,6 +397,55 @@ export class DeviceLifecycle<
     await this.showSettings(plan);
 
     await this.registerPlan(plan);
+  }
+
+  /**
+   * Take this device's id in its registry, or say why it cannot be had.
+   *
+   * The id is `getData().id`, and nothing checked it. A pair session can
+   * create a device with any `data` it likes (platform §14), so a second
+   * device carrying an existing one's id registered over it: `register`
+   * stops whatever already holds the id, so the first device's runtime
+   * stopped while its tile kept saying it was fine. Deleting the impostor then
+   * unregistered the victim and dropped its Flow journal — and with the
+   * ownership check on Flow deletes keyed on that same id, it could delete the
+   * victim's Flows too.
+   *
+   * Three refusals, each costing an existing device nothing:
+   *
+   *  - **not a non-empty string**: nothing could key on it;
+   *  - **an `lk-` id of another kind**: every shipped version minted its own
+   *    driver's kind (`ll-<n>-<n>` for the first controllers, then
+   *    `lk-<kind>-<n>-<n>`, then `lk-<kind>-<uuid>`), and an id of any OTHER
+   *    shape, `ll-` included, is accepted exactly as before;
+   *  - **already held by another device in this registry**: first come keeps
+   *    it. At boot that is whichever initialises first, which is arbitrary but
+   *    never TWO — the one that loses is unavailable and inert, rather than
+   *    both sharing one runtime slot and fighting over it.
+   */
+  private claimId(): string | null {
+    const id: unknown = this.owner.getData()?.id;
+    if (typeof id !== 'string' || id.length === 0) return 'this device has no usable id';
+
+    const kind = ID_KIND.exec(id)?.[1];
+    if (kind && this.owner.idKind && kind !== this.owner.idKind) {
+      return `"${id}" is an id of another kind of device (${kind}, not ${this.owner.idKind})`;
+    }
+
+    const registry = this.owner.registry() as object;
+    let held = claims.get(registry);
+    if (!held) claims.set(registry, held = new Map());
+    const holder = held.get(id);
+    if (holder && holder !== this.owner) return `another installed device already has the id "${id}"`;
+    held.set(id, this.owner);
+    return null;
+  }
+
+  /** Give the id back, on delete or uninit — only if it is still ours to give. */
+  private releaseId(): void {
+    const held = claims.get(this.owner.registry() as object);
+    const id: unknown = this.owner.getData()?.id;
+    if (held && typeof id === 'string' && held.get(id) === this.owner) held.delete(id);
   }
 
   /**
@@ -485,6 +576,9 @@ export class DeviceLifecycle<
    * running, and a failure puts the previous plan and its runtime back.
    */
   async apply(incoming: TPlan): Promise<void> {
+    // A displaced device registering its plan would register over the device
+    // that holds its id — the takeover `claimId` exists to stop.
+    if (this.displaced) throw new Error(this.owner.translate('state.invalidConfiguration'));
     return this.operations.run(OPS, async () => {
       this.applying = true;
       this.planGeneration += 1;
@@ -579,7 +673,7 @@ export class DeviceLifecycle<
   async setEnabled(enabled: boolean): Promise<void> {
     return this.operations.run(OPS, async () => {
       const plan = this.storedPlan();
-      if (!plan) return;
+      if (!plan || this.displaced) return;
 
       const updated = this.owner.withEnabled(plan, enabled);
       await this.owner.setStoreValue(this.owner.storeKey, updated);
@@ -660,6 +754,11 @@ export class DeviceLifecycle<
       // refused — and `storedPlan()` hands that back raw. Accepting it here
       // overwrote the store `loadPlan` promises to leave alone, and registered
       // a runtime on a plan nobody had validated.
+      //
+      // A displaced device is refused the same way: restarting "its" runtime
+      // would restart the one registered under its id, which is another
+      // device's (see `claimId`).
+      if (this.displaced) throw new Error(this.owner.translate('state.invalidConfiguration'));
       const raw = this.storedPlan();
       if (!raw) throw new Error(this.owner.translate(this.quarantineKey));
       let plan: TPlan;
@@ -740,6 +839,7 @@ export class DeviceLifecycle<
    */
   async renamed(): Promise<void> {
     return this.operations.run(OPS, async () => {
+      if (this.displaced) return;
       await this.owner.registry().get(this.deviceId)?.reconcileFlows?.();
     });
   }
@@ -749,6 +849,17 @@ export class DeviceLifecycle<
    * runtime's subscriptions.
    */
   async deleted(): Promise<void> {
+    /**
+     * A displaced device owns nothing under its id: the runtime registered
+     * there, the Flows attributed to it and the journal keyed on it all belong
+     * to the device that holds the id. Deleting it removes the device and
+     * nothing else.
+     */
+    if (this.displaced) {
+      this.owner.log('Deleted; its id belonged to another device, so nothing else was touched');
+      return;
+    }
+    this.releaseId();
     const registry = this.owner.registry();
     const runtime = registry.get(this.deviceId);
     if (runtime) {
@@ -775,6 +886,8 @@ export class DeviceLifecycle<
   }
 
   async uninit(): Promise<void> {
+    if (this.displaced) return;
+    this.releaseId();
     await this.owner.registry().unregister(this.deviceId);
   }
 
