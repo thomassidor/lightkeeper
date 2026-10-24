@@ -85,6 +85,12 @@ function harness() {
         // below into a pass.
         return { ...live };
       },
+      // One flow by id, as the bridge asks for an id its snapshot did not
+      // contain before it will delete it. A 404 is how a real Homey says gone.
+      getFlow: async ({ id }: { id: string }) => {
+        if (!live[id]) throw Object.assign(new Error(`404 Not Found: Flow with ID ${id}`), { statusCode: 404 });
+        return live[id];
+      },
       getFlowFolders: async () => {
         if (gate) await gate;
         return folders;
@@ -484,7 +490,13 @@ describe('a journal edit made while a pass is in flight', () => {
 
   test('a delete deferred mid-pass is kept, and carried out by that same pass', async () => {
     const { h, pass, release } = await passHeldAtCreate();
-    h.live.stray = { id: 'stray', name: 'from the old remote' };
+    // Created by this schedule, as a deferred id always is (`afterApply`): the
+    // bridge deletes a stored id only when the live flow names its owner.
+    h.live.stray = {
+      id: 'stray',
+      name: 'from the old remote',
+      actions: [{ id: cardId('bridge_event'), args: { controller: 'lk-sched-1-1', event_key: 'old' } }],
+    };
     h.bridge.deferCleanup('lk-sched-1-1', ['stray']);
     release();
     await pass;

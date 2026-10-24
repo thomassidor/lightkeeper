@@ -13,6 +13,7 @@ import type { LogicalSourceBinding } from '../inputs/selectable-input';
 import { FlowFolderManager, type FlowFolderInfo } from './flow-folder-manager';
 import { FlowCardCatalogue, NO_CACHE } from '../flow-card-catalogue';
 import { isNotFound, redactedMessage } from '../support/homey-errors';
+import { validManagedFlowRefs } from '../validation/plans';
 import { randomUUID } from 'node:crypto';
 
 import { KeyedMutex, SingleFlight } from '../support/keyed-mutex';
@@ -283,9 +284,7 @@ export class FlowBridgeManager {
   private journal(owner: string): FlowJournal {
     const cached = this.journals.get(owner);
     if (cached) return cached;
-    const saved = this.journalStore?.get(`flowJournal:${owner}`) as FlowJournal | undefined;
-    const journal = saved && Array.isArray(saved.references) && Array.isArray(saved.cleanup)
-      && Array.isArray(saved.staged) ? saved : { references: [], cleanup: [], staged: [] };
+    const journal = readJournal(this.journalStore?.get(`flowJournal:${owner}`));
     this.journals.set(owner, journal);
     return journal;
   }
@@ -568,10 +567,18 @@ export class FlowBridgeManager {
     }
 
     const journal = this.journal(request.controllerId);
+    /**
+     * Every delete below names an id this pass did not just create — it came
+     * from the device store, the journal in app settings or `deferCleanup` —
+     * so every one goes through `deleteOwnedFlow` against the snapshot read
+     * above. See `removeAll` for why a stored id is a claim and not a proof.
+     */
+    const cardIds = ourCardIds(cards);
+    const deleteOwned = (id: string) => this.deleteOwnedFlow(request.controllerId, id, liveFlows, cardIds);
     // A previous pass failed before committing its complete replacement set.
     const unfinished: string[] = [];
     for (const id of journal.staged) {
-      if (!await this.deleteFlow(id)) unfinished.push(id);
+      if (!await deleteOwned(id)) unfinished.push(id);
       else delete liveFlows[id];
     }
     journal.staged = unfinished;
@@ -714,7 +721,7 @@ export class FlowBridgeManager {
       this.saveJournal(request.controllerId, journal);
       committed = true;
       for (const id of [...cleanup]) {
-        if (await this.deleteFlow(id)) {
+        if (await deleteOwned(id)) {
           result.deleted += 1;
           cleanup.delete(id);
           const folderOf = flowInfos.find(f => f.id === id)?.folder;
@@ -732,7 +739,7 @@ export class FlowBridgeManager {
         if (wanted.has(key)) continue;
         if (result.references.some(r => r.flowId === ref.flowId)) continue;
         const folderOf = flowInfos.find(f => f.id === ref.flowId)?.folder;
-        if (await this.deleteFlow(ref.flowId)) {
+        if (await deleteOwned(ref.flowId)) {
           result.deleted += 1;
           if (folderOf) abandoned.add(folderOf);
         } else {
@@ -979,30 +986,53 @@ export class FlowBridgeManager {
   }
 
   /**
-   * Remove ONLY flows provably managed by this controller, and the device
-   * folder they leave behind.
+   * Remove ONLY flows provably managed by `owner`, and the device folder they
+   * leave behind.
    *
-   * The folders are read BEFORE the deletes, because afterwards the flows that
-   * knew which folder they were in are gone.
+   * **The references are a claim, and the live Flow is the proof.** They come
+   * from a device store, and a device store is not ours alone: a pair session
+   * can create a device with any `store` it likes (platform §14), and a
+   * corrupted or hand-edited one can say anything. Deleting on the strength of
+   * a stored id therefore used to delete whatever Flow that id named — a
+   * user's alarm Flow included — with the stored Personal API Key, which a
+   * caller holding only device permissions could not otherwise have done.
+   * `deleteOwnedFlow` refuses any id whose live Flow is not attributed to
+   * `owner`, which is the same attribution rule the orphan sweep applies.
+   *
+   * **An unreadable Flow list deletes NOTHING.** It used to cost only the
+   * folder names; now it is the proof, and "we could not look" must never read
+   * as "everything is already gone" or as "go ahead anyway". The flows stay
+   * behind — still carrying a controller id that is about to be dead, so the
+   * orphan sweep can offer them later — and 0 tells `afterApply` to defer.
+   *
+   * The folders are read in the same pass, BEFORE the deletes, because
+   * afterwards the flows that knew which folder they were in are gone.
+   *
+   * Returns how many references are settled: deleted, already gone, or refused
+   * as not ours. All three leave nothing for a retry to do.
    */
-  async removeAll(references: ManagedFlowReference[]): Promise<number> {
-    const emptied = new Set<string>();
+  async removeAll(owner: string, references: ManagedFlowReference[]): Promise<number> {
+    let live: Record<string, any>;
+    let cardIds: Set<string>;
     try {
+      cardIds = ourCardIds(await this.bridgeCards());
       const client = await this.api.read();
-      const live = (await client.flow.getFlows(NO_CACHE)) as Record<string, any>;
-      for (const ref of references) {
-        const folder = live[ref.flowId]?.folder;
-        if (folder) emptied.add(String(folder));
-      }
+      live = (await client.flow.getFlows(NO_CACHE)) as Record<string, any>;
     } catch (error) {
-      // Losing the folder names only means an empty folder is left behind.
-      this.log('Could not read flow folders before deleting:',
+      this.log(`Could not read the Flow list, so deleted none of ${references.length} flow(s) for ${owner}:`,
         redactedMessage(error));
+      return 0;
+    }
+
+    const emptied = new Set<string>();
+    for (const ref of references) {
+      const folder = live[ref.flowId]?.folder;
+      if (folder) emptied.add(String(folder));
     }
 
     let deleted = 0;
     for (const ref of references) {
-      if (await this.deleteFlow(ref.flowId)) deleted += 1;
+      if (await this.deleteOwnedFlow(owner, ref.flowId, live, cardIds)) deleted += 1;
     }
 
     // `createRoot: false`: this is a DELETE path and must never create a
@@ -1041,6 +1071,89 @@ export class FlowBridgeManager {
    * Everything else stays `false`. A 401, a 403 or an unreachable Homey all
    * mean "we could not tell", and reading "could not tell" as "it is gone" is
    * how a reference is dropped while the Flow it names goes on firing.
+   */
+  /**
+   * Delete a flow named by a STORED reference — only if the live flow is ours.
+   *
+   * Every id that reaches a delete from a device store, the journal in app
+   * settings or `deferCleanup` goes through here. Only `compensate()` calls
+   * `deleteFlow` directly, because its ids are the ones `createFlow` has just
+   * handed back in this very pass: nothing stored them, so nothing could have
+   * forged them.
+   *
+   * `live` is the snapshot the caller already read for its own purposes, so
+   * the common case costs no extra round trip. Four answers, all `true`
+   * except a delete that failed and a flow nobody could look at:
+   *
+   *  - **attributed to `owner`**: deleted through `deleteFlow`, idempotent as
+   *    ever;
+   *  - **attributed to somebody else, or to nobody**: refused and logged. Not
+   *    retried either, because no later pass can make it ours — so `true`, and
+   *    the reference is dropped. This includes a generated flow the user
+   *    re-pointed at another device by editing its `controller` argument: it
+   *    stopped being this device's when they did that;
+   *  - **absent from the snapshot, and confirmed gone** by asking for that one
+   *    flow: the end state holds, which is what `deleteFlow` concludes from a
+   *    404 too;
+   *  - **absent from the snapshot, and the lookup failed**: `false` — "we
+   *    could not tell" is never "it is gone", for the reason `deleteFlow`'s
+   *    own docblock gives. The caller keeps the reference and the next pass
+   *    asks again.
+   *
+   * Why absence is CONFIRMED rather than believed: `sync()` reads its snapshot
+   * at the start of a pass, and `deferCleanup` can add an id while that pass
+   * is awaiting the Homey (the "deferred mid-pass" case its own docblock
+   * describes). Reading such an id as gone would drop a live flow from every
+   * list that could ever delete it. A single-flow read costs one request, and
+   * only for ids the snapshot did not already answer.
+   */
+  private async deleteOwnedFlow(
+    owner: string,
+    flowId: string,
+    live: Record<string, any>,
+    cardIds: Set<string>,
+  ): Promise<boolean> {
+    if (typeof flowId !== 'string' || flowId.length === 0) return true;
+    // An OWN property, not `live[flowId]`: the snapshot is a plain object and a
+    // stored id of `constructor` must not find its prototype. (`Object.hasOwn`
+    // is ES2022, past the es2021 lib this app compiles against.)
+    let flow: unknown = Object.prototype.hasOwnProperty.call(live, flowId) ? live[flowId] : undefined;
+    if (flow === undefined) {
+      const looked = await this.lookUpFlow(flowId);
+      if (looked === GONE) return true;
+      if (looked === UNKNOWN) return false;
+      flow = looked;
+    }
+    const attributed = ownerDeviceIdOf(flow, cardIds);
+    if (attributed !== owner) {
+      this.log(`Not deleting flow ${flowId}: it is not attributed to ${owner}`
+        + (attributed ? ` (it names ${attributed})` : ' (it calls no Lightkeeper card)'));
+      return true;
+    }
+    return this.deleteFlow(flowId);
+  }
+
+  /**
+   * One flow, read fresh, for an id the caller's snapshot did not contain.
+   *
+   * Through the READ client, like every other flow read (platform §1), and
+   * uncached (platform §15). A 404 is the one answer that means gone; anything
+   * else that fails means we could not tell.
+   */
+  private async lookUpFlow(flowId: string): Promise<unknown> {
+    try {
+      const client = await this.api.read();
+      const flow = await client.flow.getFlow({ id: flowId, ...NO_CACHE });
+      return flow ?? GONE;
+    } catch (error) {
+      if (isNotFound(error)) return GONE;
+      this.log(`Could not look up flow ${flowId} before deleting it:`, redactedMessage(error));
+      return UNKNOWN;
+    }
+  }
+
+  /**
+   * The raw delete. Callers holding a STORED id use `deleteOwnedFlow` instead.
    */
   private async deleteFlow(flowId: string): Promise<boolean> {
     try {
@@ -1094,6 +1207,35 @@ function previewToken(flowIds: string[], liveDeviceIds: Set<string>): string {
   }
   return `${flowIds.length}-${liveDeviceIds.size}-${hash.toString(36)}`;
 }
+
+/**
+ * A journal as stored in app settings, kept only where every element has the
+ * shape this module writes.
+ *
+ * It used to be accepted on three `Array.isArray` checks, so a journal whose
+ * `cleanup` held an object or a number handed that straight to a delete, and
+ * one whose `references` held junk reached `existingRefs` and the commit. App
+ * settings are writable from outside the app, and every id in here ends up in
+ * front of a delete — `deleteOwnedFlow` is the gate that matters, and this is
+ * the shape check in front of it, the same one `validManagedFlowRefs()` makes
+ * for a device store. Filtered rather than discarded wholesale: a journal with
+ * one bad entry still carries the recovery state the rest of it exists for.
+ */
+function readJournal(saved: unknown): FlowJournal {
+  const raw = saved as Partial<Record<keyof FlowJournal, unknown>> | null | undefined;
+  if (!raw || typeof raw !== 'object') return { references: [], cleanup: [], staged: [] };
+  const ids = (list: unknown): string[] => (Array.isArray(list) ? list : [])
+    .filter((id): id is string => typeof id === 'string' && id.length > 0);
+  return {
+    references: validManagedFlowRefs(raw.references),
+    cleanup: ids(raw.cleanup),
+    staged: ids(raw.staged),
+  };
+}
+
+/** What `lookUpFlow` answers when there is no flow to hand back. */
+const GONE = Symbol('gone');
+const UNKNOWN = Symbol('unknown');
 
 function ourCardIds(cards: BridgeCardRefs): Set<string> {
   return new Set([cards.event.id, cards.numeric.id, cards.token.id]);

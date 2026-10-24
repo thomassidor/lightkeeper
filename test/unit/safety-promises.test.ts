@@ -141,7 +141,7 @@ describe('safety promises', () => {
     });
 
     // What device.onDeleted() calls, with the references the device stored.
-    const removed = await h.bridge.removeAll([
+    const removed = await h.bridge.removeAll('lk-ctrl-1755500000000-100001', [
       { flowId: 'f-mine-1', bindingKey: 'press:up', fingerprint: 'fp', managedVersion: 1, createdAt: 1 },
       { flowId: 'f-mine-2', bindingKey: 'press:down', fingerprint: 'fp', managedVersion: 1, createdAt: 1 },
     ] as any);

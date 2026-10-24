@@ -5,6 +5,7 @@ import {
   FlowBridgeManager, mintDeviceId, LIGHTKEEPER_DEVICE_ID,
 } from '../../lib/bridge/flow-bridge-manager';
 import type { HomeyApiService } from '../../lib/homey-api-service';
+import { migrateSchedulePlan } from '../../lib/schedules/schedule-migrations';
 
 /**
  * The orphan sweep is the only bulk-delete this app performs. It classifies a
@@ -313,5 +314,184 @@ describe('the device-id pattern accepts both shapes, forever', () => {
     // device can delete the other's Flows.
     const ids = new Set(Array.from({ length: 500 }, () => mintDeviceId('ctrl')));
     assert.equal(ids.size, 500);
+  });
+});
+
+/**
+ * Every delete that starts from a STORED id — a device's `managedFlows`, the
+ * journal in app settings, `deferCleanup` — is checked against the live Flow's
+ * own `controller` argument before it is made.
+ *
+ * A store is not ours alone. A pair session can create a device with any
+ * `store` it likes (platform §14), and the plan validators check a reference's
+ * SHAPE, not whose Flow it names. Before this, a forged reference made the app
+ * delete any Flow on the Homey with its stored Personal API Key — on reconcile,
+ * on device delete, and on a remote change.
+ */
+describe('a stored reference is a claim, and the live Flow is the proof', () => {
+  const OWNER = 'lk-sched-1755500000000-444444';
+  const OTHER = 'lk-ctrl-1755500000000-555555';
+
+  /** A user's own Flow: no Lightkeeper card anywhere in it. */
+  const userFlow = (id: string) => ({
+    id,
+    name: 'Arm the alarm at night',
+    trigger: { id: 'homey:manager:presence:everyone_left' },
+    actions: [{ id: 'homey:app:com.example.alarm:arm', args: {} }],
+  });
+
+  const ref = (flowId: string, bindingKey = 'sched:0:on') => ({
+    flowId, bindingKey, variantKey: 'at:22:00', fingerprint: 'fp-1', managedVersion: 1, createdAt: 1,
+  });
+
+  /**
+   * A Homey that can do everything `sync()` and `removeAll()` ask of it, whose
+   * reads can be made to fail, and which records every delete and log line.
+   */
+  function rig(flows: Record<string, unknown>, options: { failRead?: boolean; failLookup?: boolean } = {}) {
+    const live: Record<string, any> = { ...flows };
+    const deleted: string[] = [];
+    const logged: string[] = [];
+    const settings = new Map<string, unknown>();
+    const actions = {
+      a: { id: cardId('bridge_event'), uri: `homey:flowcardaction:${cardId('bridge_event')}` },
+      b: { id: cardId('bridge_numeric_event'), uri: `homey:flowcardaction:${cardId('bridge_numeric_event')}` },
+      c: { id: cardId('bridge_token_event'), uri: `homey:flowcardaction:${cardId('bridge_token_event')}` },
+    };
+    const client = {
+      flow: {
+        getFlowCardActions: async () => actions,
+        getFlows: async () => {
+          if (options.failRead) throw new Error('socket hang up');
+          return { ...live };
+        },
+        getFlow: async ({ id }: { id: string }) => {
+          if (options.failLookup) throw new Error('socket hang up');
+          if (!live[id]) throw Object.assign(new Error(`404 Not Found: Flow with ID ${id}`), { statusCode: 404 });
+          return live[id];
+        },
+        getFlowFolders: async () => ({}),
+        createFlowFolder: async ({ flowfolder }: { flowfolder: any }) => ({ id: 'folder-1', ...flowfolder }),
+        deleteFlowFolder: async () => undefined,
+        deleteFlow: async ({ id }: { id: string }) => { deleted.push(id); delete live[id]; },
+      },
+    };
+    const api = {
+      read: async () => client,
+      withWriteClient: async (operation: (c: any) => Promise<unknown>) => operation(client),
+      reportReadFailure: () => false,
+    } as unknown as HomeyApiService;
+    const bridge = new FlowBridgeManager(api, APP_ID, (...args: unknown[]) => {
+      logged.push(args.map(String).join(' '));
+    }, undefined, {
+      get: key => settings.get(key),
+      set: (key, value) => { settings.set(key, value); },
+      unset: key => { settings.delete(key); },
+    });
+    return { bridge, live, deleted, logged, settings };
+  }
+
+  const syncRequest = (existing: Array<ReturnType<typeof ref>>) => ({
+    controllerId: OWNER, deviceName: 'Evening lights', sourceName: 'Clock',
+    fingerprint: 'fp-1', mapped: [], existing,
+  });
+
+  test('a forged reference passes the stored-plan validator, so the bridge has to be the gate', () => {
+    // Not a defect in the validator: it checks shape, and a well-formed id
+    // naming somebody else's Flow is well-formed. Pinned so nobody moves the
+    // ownership check there, away from the one place that can see the Flow.
+    const { plan } = migrateSchedulePlan({
+      schemaVersion: 1, enabled: true, days: null,
+      target: { kind: 'devices', deviceIds: ['lamp'] },
+      entries: [{ id: 'a', onAt: 600, end: { kind: 'duration', minutes: 60 } }],
+      managedFlows: [ref('user-flow')],
+    });
+    assert.equal(plan.managedFlows[0]!.flowId, 'user-flow');
+  });
+
+  test('removeAll never deletes a Flow that calls no Lightkeeper card', async () => {
+    const h = rig({ 'user-flow': userFlow('user-flow') });
+    const settled = await h.bridge.removeAll(OWNER, [ref('user-flow')]);
+
+    assert.deepEqual(h.deleted, []);
+    assert.ok(h.live['user-flow'], 'the user’s Flow survives');
+    assert.equal(settled, 1, 'refused, and not left for a retry that could never succeed');
+    assert.ok(h.logged.some(line => line.includes('Not deleting flow user-flow')), h.logged.join('\n'));
+  });
+
+  test('removeAll never deletes ANOTHER live device’s Flow', async () => {
+    const h = rig({ theirs: managedFlow('theirs', OTHER), mine: managedFlow('mine', OWNER) });
+    await h.bridge.removeAll(OWNER, [ref('theirs'), ref('mine', 'sched:0:off')]);
+
+    assert.deepEqual(h.deleted, ['mine']);
+    assert.ok(h.live.theirs);
+  });
+
+  test('a Flow already gone counts as settled, and costs no delete', async () => {
+    const h = rig({});
+    assert.equal(await h.bridge.removeAll(OWNER, [ref('vanished')]), 1);
+    assert.deepEqual(h.deleted, []);
+  });
+
+  test('an id that names a prototype member finds nothing to delete', async () => {
+    const h = rig({});
+    assert.equal(await h.bridge.removeAll(OWNER, [ref('constructor'), ref('__proto__', 'k2')]), 2);
+    assert.deepEqual(h.deleted, []);
+  });
+
+  test('an unreadable Flow list deletes NOTHING — it is not "everything is already gone"', async () => {
+    const h = rig({ mine: managedFlow('mine', OWNER) }, { failRead: true });
+    const settled = await h.bridge.removeAll(OWNER, [ref('mine')]);
+
+    assert.equal(settled, 0, 'a caller deferring on a shortfall must see one');
+    assert.deepEqual(h.deleted, []);
+    assert.ok(h.live.mine);
+  });
+
+  test('sync never deletes a forged unwanted reference', async () => {
+    const h = rig({ 'user-flow': userFlow('user-flow') });
+    const result = await h.bridge.sync(syncRequest([ref('user-flow')]));
+
+    assert.deepEqual(h.deleted, []);
+    assert.deepEqual(result.references, [], 'and the forged reference is not kept either');
+  });
+
+  test('sync never deletes a forged id in the journal’s staged or cleanup lists', async () => {
+    const h = rig({ a: userFlow('a'), b: userFlow('b') });
+    h.settings.set(`flowJournal:${OWNER}`, { references: [], cleanup: ['a'], staged: ['b'] });
+    await h.bridge.sync(syncRequest([]));
+
+    assert.deepEqual(h.deleted, []);
+    assert.deepEqual(h.settings.get(`flowJournal:${OWNER}`), { references: [], cleanup: [], staged: [] });
+  });
+
+  test('a junk journal is filtered on load rather than handed to a delete', async () => {
+    const h = rig({ mine: managedFlow('mine', OWNER) });
+    h.settings.set(`flowJournal:${OWNER}`, {
+      references: [{ flowId: 7 }, 'junk'], cleanup: [{ id: 'x' }, 42, 'mine'], staged: [null],
+    });
+    await h.bridge.sync(syncRequest([]));
+
+    assert.deepEqual(h.deleted, ['mine'], 'the one well-formed id of ours is still cleaned up');
+  });
+
+  test('a superseded Flow of our own IS still deleted', async () => {
+    // The regression guard: the gate must not stop the bridge deleting what it
+    // made. A deferred id the pass's snapshot did not contain is looked up.
+    const h = rig({ mine: managedFlow('mine', OWNER) });
+    h.bridge.deferCleanup(OWNER, ['mine', 'not-in-snapshot']);
+    await h.bridge.sync(syncRequest([]));
+
+    assert.deepEqual(h.deleted, ['mine']);
+  });
+
+  test('an id the snapshot lacked and nobody could look up is KEPT for the next pass', async () => {
+    const h = rig({}, { failLookup: true });
+    h.bridge.deferCleanup(OWNER, ['unseen']);
+    const result = await h.bridge.sync(syncRequest([]));
+
+    assert.deepEqual(h.deleted, []);
+    assert.deepEqual(result.staleReplacements, ['unseen']);
+    assert.deepEqual((h.settings.get(`flowJournal:${OWNER}`) as any).cleanup, ['unseen']);
   });
 });

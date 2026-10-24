@@ -3,6 +3,22 @@ import { migrateProfile } from '../../lib/profiles/migrations';
 import { carryForwardFlows } from '../../lib/profiles/controller-profile';
 import type { ControllerProfile } from '../../lib/profiles/controller-profile';
 import type { ControllerRuntime } from '../../lib/runtime/controller-runtime';
+import { validManagedFlowRefs } from '../../lib/validation/plans';
+
+/**
+ * The previous profile with only well-formed Flow references left in it.
+ *
+ * `previous` reaches both hooks below from `storedPlan()`, which is the RAW
+ * store — never migrated, never validated, because the device being repaired
+ * may be exactly the one whose store failed to load. Its `managedFlows` is
+ * therefore unchecked input on its way to a delete, and every other delete
+ * path in the app filters through `validManagedFlowRefs()` first (see
+ * `DeviceLifecycle.deleted`). The bridge's ownership check is the gate that
+ * matters; this is the shape check in front of it.
+ */
+function withValidFlowRefs(previous: ControllerProfile | null): ControllerProfile | null {
+  return previous ? { ...previous, managedFlows: validManagedFlowRefs(previous.managedFlows) } : null;
+}
 
 /**
  * One virtual device per configuration, and the lifecycle boundary for the
@@ -68,7 +84,7 @@ module.exports = class ControllerDevice extends LightkeeperDevice<ControllerProf
     previous: ControllerProfile | null,
     incoming: ControllerProfile,
   ): Promise<ControllerProfile> {
-    const { profile: merged, obsolete } = carryForwardFlows(previous, incoming);
+    const { profile: merged, obsolete } = carryForwardFlows(withValidFlowRefs(previous), incoming);
     if (obsolete.length > 0) {
       this.app.bridge.releaseReferences(this.deviceId, obsolete.map(ref => ref.flowId));
     }
@@ -86,10 +102,12 @@ module.exports = class ControllerDevice extends LightkeeperDevice<ControllerProf
    * idempotent, so the next reconcile retries every one of them safely.
    */
   override async afterApply(previous: ControllerProfile | null, committed: ControllerProfile): Promise<void> {
-    const { obsolete } = carryForwardFlows(previous, committed);
+    const { obsolete } = carryForwardFlows(withValidFlowRefs(previous), committed);
     if (obsolete.length === 0) return;
 
-    const removed = await this.app.bridge.removeAll(obsolete);
+    // Owned by THIS device or not deleted at all — the bridge checks each live
+    // Flow's `controller` argument against `deviceId` before it deletes.
+    const removed = await this.app.bridge.removeAll(this.deviceId, obsolete);
     this.log(`Source changed: removed ${removed} of ${obsolete.length} flow(s) from the old remote`);
     if (removed < obsolete.length) {
       this.app.bridge.deferCleanup(this.deviceId, obsolete.map(ref => ref.flowId));

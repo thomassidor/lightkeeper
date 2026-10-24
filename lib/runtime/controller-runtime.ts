@@ -1078,7 +1078,7 @@ export class ControllerRuntime {
   /** Remove only resources demonstrably owned by this controller. */
   async destroy(): Promise<void> {
     await this.stop();
-    await this.deps.bridge.removeAll(this.profile.managedFlows);
+    await this.deps.bridge.removeAll(this.controllerId, this.profile.managedFlows);
   }
 
   /** See `VisibleState`, which owns the when-did-it-move rule. */

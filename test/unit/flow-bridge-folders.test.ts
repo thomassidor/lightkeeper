@@ -300,7 +300,7 @@ describe('cleaning up after a deletion', () => {
       flows: [liveFlow('flow-1', 'kitchen')],
     });
 
-    const deleted = await h.bridge.removeAll([reference('flow-1')]);
+    const deleted = await h.bridge.removeAll(CONTROLLER, [reference('flow-1')]);
 
     assert.equal(deleted, 1);
     assert.deepEqual(h.calls.deletedFolders, ['kitchen']);
@@ -313,7 +313,7 @@ describe('cleaning up after a deletion', () => {
       flows: [liveFlow('flow-1', 'kitchen'), liveFlow('flow-2', 'kitchen', 'lk-ctrl-1755500000000-100002')],
     });
 
-    await h.bridge.removeAll([reference('flow-1')]);
+    await h.bridge.removeAll(CONTROLLER, [reference('flow-1')]);
 
     assert.deepEqual(h.calls.deletedFolders, []);
   });
@@ -338,7 +338,7 @@ describe('cleaning up after a deletion', () => {
       flows: [liveFlow('flow-1', 'kitchen')],
     });
 
-    const deleted = await h.bridge.removeAll([reference('flow-1')]);
+    const deleted = await h.bridge.removeAll(CONTROLLER, [reference('flow-1')]);
 
     assert.equal(deleted, 1, 'the flow must still be deleted');
     assert.deepEqual(

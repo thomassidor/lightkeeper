@@ -225,7 +225,34 @@ describe('write failures never carry the key out of the write path', () => {
       logged.push(args.map(String).join(' '));
     });
 
-    const deleted = await bridge.removeAll([{
+    // A live Flow attributed to the owner, so the bridge's ownership check
+    // passes and the failing delete — the path under test — is actually made.
+    const owner = 'lk-ctrl-1755500000000-100001';
+    const card = (name: string) => ({
+      id: `com.thomassidor.lightkeeper:${name}`,
+      uri: 'homey:app:com.thomassidor.lightkeeper',
+    });
+    Object.assign(api, {
+      read: async () => ({
+        flow: {
+          getFlowCardActions: async () => ({
+            a: card('bridge_event'), b: card('bridge_numeric_event'), c: card('bridge_token_event'),
+          }),
+          getFlows: async () => ({
+            'flow-1': {
+              id: 'flow-1',
+              actions: [{
+                id: 'com.thomassidor.lightkeeper:bridge_event',
+                args: { controller: owner, event_key: 'k' },
+              }],
+            },
+          }),
+          getFlowFolders: async () => ({}),
+        },
+      }),
+    });
+
+    const deleted = await bridge.removeAll(owner, [{
       flowId: 'flow-1', bindingKey: 'k', variantKey: 'fixed',
       fingerprint: 'fp', managedVersion: 1, createdAt: 1,
     }]);
