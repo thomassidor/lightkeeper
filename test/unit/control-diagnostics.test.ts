@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TargetStateCache } from '../../lib/outputs/target-state-cache';
+import {
+  TargetStateCache, OVERRIDE_TOLERANCE, withinOverrideTolerance,
+} from '../../lib/outputs/target-state-cache';
 import { ControlHistory, type ControlAction } from '../../lib/runtime/control-diagnostics';
 
 test('malformed reports never corrupt a target or classify as an override', () => {
@@ -157,6 +159,46 @@ test('a real nudge on a stuck lamp is still an override', () => {
   assert.equal(cache.overrideSuppression('lamp', 'dim', 0.10), 'write_ignored');
   assert.equal(cache.overrideSuppression('lamp', 'dim', 0.60), null,
     'somewhere the lamp has never been is news, whatever it ignored before');
+});
+
+/**
+ * A tolerance is compared with an epsilon, never with a bare `<=`.
+ *
+ * `Math.abs(0.83 - 0.86)` is 0.030000000000000027, so the same three hundredths
+ * was forgiven at one end of the axis and prosecuted at the other — and an
+ * override, once raised, stood a device down for hours. The values are written
+ * as the subtractions a lamp's reports actually produce, not as literals, because
+ * the literal 0.03 is the one case that never goes wrong.
+ */
+test('three hundredths is within tolerance wherever on the axis it falls', () => {
+  assert.equal(OVERRIDE_TOLERANCE, 0.03, 'the tolerance this test was written against');
+  assert.ok(Math.abs(0.83 - 0.86) > OVERRIDE_TOLERANCE, 'the float error this guards against');
+  assert.equal(withinOverrideTolerance(0.83 - 0.86), true);
+  assert.equal(withinOverrideTolerance(0.86 - 0.83), true);
+  assert.equal(withinOverrideTolerance(0.10 - 0.13), true);
+  // And the slack is an epsilon, not a widening: anything a lamp could really
+  // express past three hundredths is still outside.
+  assert.equal(withinOverrideTolerance(0.035), false);
+  assert.equal(withinOverrideTolerance(-0.035), false);
+  assert.equal(withinOverrideTolerance(0.03 + 1e-6), false);
+});
+
+test('a stuck lamp re-reporting its old level three hundredths off is still an ignored write', () => {
+  // The same float error, one layer down: `sameReportedValue` decides whether a
+  // report is the value the lamp sat at before our write, and it must go
+  // through the epsilon too. Sitting at 0.86, sent 0.50, re-reporting 0.83 —
+  // a bridge restating an unchanged level, not a person — must be forgiven as
+  // the lamp ignoring us, not filed as an override because 0.86 − 0.83 came out
+  // a hair over 0.03.
+  let now = 0;
+  const cache = new TargetStateCache(() => now);
+  cache.initialise('lamp', { onoff: true, light_temperature: 0.86 });
+  const seq = cache.noteEcho('lamp', 'light_temperature', 0.50);
+  cache.finishWrite('lamp', 'light_temperature', seq);
+  now = 60_000;
+
+  assert.equal(cache.overrideSuppression('lamp', 'light_temperature', 0.83), 'write_ignored');
+  assert.equal(cache.ignoredCount('lamp', 'light_temperature'), 1);
 });
 
 test('forgetting a target drops what it was reporting before its last write', () => {

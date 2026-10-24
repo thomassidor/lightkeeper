@@ -5,7 +5,7 @@ import { planIntent } from '../../lib/outputs/intent-planner';
 import { TargetStateCache } from '../../lib/outputs/target-state-cache';
 import { DEFAULT_BEHAVIOR } from '../../lib/mapping/mapping-types';
 import {
-  toPerceptual, toDevice, applyPerceptualDelta, sanitizeBrightnessScale,
+  toPerceptual, toDevice, applyPerceptualDelta, sanitizeBrightnessScale, MINIMUM_BRIGHTNESS,
 } from '../../lib/outputs/light-intent';
 
 const DIM = { min: 0, max: 1, decimals: 2 };
@@ -67,10 +67,14 @@ describe('turning a lamp on is never turning it on at nothing', () => {
     );
 
     const implied = writes.filter(w => w.impliesOn === true);
-    assert.ok(implied.length > 0, 'both lamps are off and being raised');
+    assert.equal(implied.length, 2, 'both lamps are off and being raised');
     for (const write of implied) {
-      assert.ok(
-        Number(write.value) > 0,
+      // Exactly ONE tenths step, not merely "positive": the configured
+      // `minimumBrightness` (0.01) is positive too, and is darkness on this
+      // lamp. Only `litDim` turns it into something a tenths lamp can show, so
+      // `> 0` would pass with that net removed.
+      assert.equal(
+        write.value, 0.1,
         `${write.deviceId} would be switched on at ${String(write.value)}`,
       );
     }
@@ -90,7 +94,7 @@ describe('turning a lamp on is never turning it on at nothing', () => {
 
     const implied = writes.filter(w => w.impliesOn === true);
     assert.equal(implied.length, 1);
-    assert.ok(Number(implied[0]!.value) > 0);
+    assert.equal(implied[0]!.value, 0.1, 'one tenths step, the dimmest this lamp shows');
   });
 });
 
@@ -259,6 +263,88 @@ describe('a positive brightness is never written as darkness', () => {
       writes.map(w => ({ capability: w.capability, value: w.value })),
       [{ capability: 'onoff', value: false }],
     );
+  });
+});
+
+/**
+ * The absolute branches, where a STORED brightness arrives as a device value.
+ *
+ * Every brightness a plan stores is perceptual and reaches the planner through
+ * `toDevice()` under the app's `BrightnessScale` — `ControllerRuntime.runIntents`
+ * for a remote's preset, the engines for their own writes. γ = 2.2 turns 5%
+ * into 0.0014, which `decimals: 2` rounds to 0.00, and the stored floor itself
+ * (0.10) is 0.0063, which `decimals: 1` rounds to 0.0. `litDim` is the net that
+ * writes one representable step instead, on both absolute branches. Each test
+ * puts the value through `toDevice` exactly as the runtime does, so the scale is
+ * part of what is pinned rather than an assumption about it.
+ */
+describe('an absolute brightness that asks for light gets light', () => {
+  test('a preset at 5% on a two-decimal lamp is written as 0.01, not as off', () => {
+    const cache = cacheWith([{ id: 'a', on: true, dim: 0.5 }]);
+    const value = toDevice(0.05, 'natural');
+    assert.ok(value > 0 && value < 0.005, `0.05 perceptual is ${value}, which rounds to 0.00`);
+
+    const { writes } = planIntent(
+      { type: 'preset_absolute', brightness: value, temperature: 0.8 }, ['a'], cache, DEFAULT_BEHAVIOR,
+    );
+
+    assert.equal(dimWrites(writes).a, 0.01);
+    // The warmth still rides on top: the floor touched the brightness only.
+    assert.ok(writes.some(w => w.capability === 'light_temperature' && w.value === 0.8));
+  });
+
+  test('the stored floor on a tenths lamp is one tenth, for a preset', () => {
+    const cache = cacheWith([{ id: 'a', on: true, dim: 0.5, dimDecimals: 1 }]);
+    const { writes } = planIntent(
+      { type: 'preset_absolute', brightness: toDevice(MINIMUM_BRIGHTNESS, 'natural') },
+      ['a'], cache, DEFAULT_BEHAVIOR,
+    );
+    assert.equal(dimWrites(writes).a, 0.1);
+  });
+
+  test('and for a plain absolute brightness, on both resolutions', () => {
+    const cache = cacheWith([
+      { id: 'hundredths', on: true, dim: 0.5 },
+      { id: 'tenths', on: true, dim: 0.5, dimDecimals: 1 },
+    ]);
+    const { writes } = planIntent(
+      { type: 'brightness_absolute', value: toDevice(0.05, 'natural') },
+      ['hundredths', 'tenths'], cache, DEFAULT_BEHAVIOR,
+    );
+    assert.deepEqual(dimWrites(writes), { hundredths: 0.01, tenths: 0.1 });
+  });
+
+  test('under "Same as Homey" a level below one step is still written as one step', () => {
+    // γ = 1: the stored number IS the `dim`. 0.04 on a tenths lamp rounds to
+    // 0.0 all the same — a plan predating the floor, or a scripted pair session
+    // (platform §14) — and the net is the planner's, not the scale's.
+    const cache = cacheWith([
+      { id: 'a', on: true, dim: 0.5, dimDecimals: 1 },
+      { id: 'b', on: true, dim: 0.5, dimDecimals: 2 },
+    ]);
+    const value = toDevice(0.04, 'linear');
+    assert.equal(value, 0.04);
+
+    const preset = planIntent(
+      { type: 'preset_absolute', brightness: value }, ['a', 'b'], cache, DEFAULT_BEHAVIOR,
+    );
+    assert.deepEqual(dimWrites(preset.writes), { a: 0.1, b: 0.04 });
+
+    const absolute = planIntent(
+      { type: 'brightness_absolute', value }, ['a', 'b'], cache, DEFAULT_BEHAVIOR,
+    );
+    assert.deepEqual(dimWrites(absolute.writes), { a: 0.1, b: 0.04 });
+  });
+
+  test('zero is still zero on the absolute branches', () => {
+    // Only a request for light is kept as light.
+    const cache = cacheWith([{ id: 'a', on: true, dim: 0.5, dimDecimals: 1 }]);
+    for (const intent of [
+      { type: 'brightness_absolute', value: 0 } as const,
+      { type: 'preset_absolute', brightness: 0 } as const,
+    ]) {
+      assert.equal(dimWrites(planIntent(intent, ['a'], cache, DEFAULT_BEHAVIOR).writes).a, 0);
+    }
   });
 });
 

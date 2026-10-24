@@ -265,7 +265,16 @@ describe('what the card offers to choose from', () => {
  * quietly undo.
  */
 describe('a pass, all the way to the lamps', () => {
-  function rig(states: Record<string, boolean>) {
+  /**
+   * `states` is what the CATALOG says; `live` overrides what a fresh
+   * `getDevice` read says, for the lamp whose state changed since the catalog
+   * last heard — which is the reason the pass refreshes at all. Absent, the two
+   * agree. `undefined` in either is a lamp that has never reported `onoff`.
+   */
+  function rig(
+    states: Record<string, boolean | undefined>,
+    live: Record<string, boolean | undefined> = {},
+  ) {
     const written: Array<{ id: string; capability: string; value: unknown }> = [];
 
     const devices: CatalogDevice[] = Object.keys(states).map(id => ({
@@ -288,7 +297,9 @@ describe('a pass, all the way to the lamps', () => {
     }));
 
     const handles = new Map(devices.map(device => [device.id, {
-      capabilitiesObj: device.capabilitiesObj,
+      capabilitiesObj: device.id in live
+        ? { ...device.capabilitiesObj, onoff: { value: live[device.id] } }
+        : device.capabilitiesObj,
       async setCapabilityValue({ capabilityId, value }: any) {
         written.push({ id: device.id, capability: capabilityId, value });
       },
@@ -368,6 +379,45 @@ describe('a pass, all the way to the lamps', () => {
 
     assert.deepEqual(written, []);
     assert.match(result.refused ?? '', /none of the chosen lights are on/);
+  });
+
+  test('"only lights already on" never writes to a lamp whose state is unknown', async () => {
+    // A lamp that has never reported `onoff` (catalog AND live read both
+    // silent) is counted as off. Counting it as on would hand the planner a
+    // `dim` for it — which turns an off lamp on (platform §12), the one thing
+    // this choice promises not to do. The pure test above pins
+    // `eligibleTargets`; this pins the predicate the writer actually passes it.
+    const { writer, written } = rig({ 'lamp-on': true, 'lamp-silent': undefined });
+
+    const result = await writer.apply(SPEC, planSetLights({
+      colour: null,
+      brightness: source({ [VALUE_CAPABILITIES.brightness]: 0.26 }),
+      missing: [],
+    }, 'only_on'), 'only_on');
+    await writer.destroy();
+
+    assert.deepEqual(written, [{ id: 'lamp-on', capability: 'dim', value: 0.26 }]);
+    assert.equal(result.skipped, 1);
+  });
+
+  test('a lamp switched off since the catalog last heard is read live, and left alone', async () => {
+    // The catalog is cached (platform §15), so a lamp switched off by hand a
+    // minute ago can still read as on there. The pass refreshes every lamp with
+    // a live read before deciding who is on, and the live answer wins.
+    const { writer, written } = rig(
+      { 'lamp-on': true, 'lamp-stale': true },
+      { 'lamp-stale': false },
+    );
+
+    const result = await writer.apply(SPEC, planSetLights({
+      colour: null,
+      brightness: source({ [VALUE_CAPABILITIES.brightness]: 0.26 }),
+      missing: [],
+    }, 'only_on'), 'only_on');
+    await writer.destroy();
+
+    assert.deepEqual(written, [{ id: 'lamp-on', capability: 'dim', value: 0.26 }]);
+    assert.equal(result.skipped, 1);
   });
 
   test('a refused plan never reaches a lamp', async () => {

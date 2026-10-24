@@ -13,6 +13,7 @@ import {
   zoneValueAt,
 } from '../../lib/circadian/simple-curve';
 import { TRANSITIONS, type Transition } from '../../lib/support/interpolate';
+import { MINIMUM_BRIGHTNESS } from '../../lib/outputs/light-intent';
 
 /**
  * Everything the curve screen sends arrives from a webview and is therefore
@@ -462,6 +463,27 @@ describe('sanitiseZones — a screen sending nonsense falls back per FIELD', () 
 
     const off = sanitiseZones({ ...DEFAULT_ZONES, adjustBrightness: 'yes' });
     assert.equal(off.adjustBrightness, false, 'anything but a real true is a no');
+  });
+
+  test('a positive zone brightness under the floor is lifted to it, never stored as sent', () => {
+    // A positive brightness is never written as darkness. 5% is `dim` 0.0014
+    // under γ = 2.2, which `decimals: 2` rounds to 0.00 — so a zone that STORED
+    // 5% would read 5% on every screen while its lamps went dark. The floor is
+    // the sanitiser's job now that the migration step that used to do it is
+    // gone; 0 stays "unset" and falls back to the zone's default instead.
+    const { zones, corrected } = sanitiseZones({
+      ...DEFAULT_ZONES,
+      morning: { temperature: 0.78, brightness: 0.05 },
+      midday: { temperature: 0.18, brightness: 0.0001 },
+      evening: { temperature: 0.86, brightness: 0 },
+    });
+    assert.equal(zones.morning.brightness, MINIMUM_BRIGHTNESS);
+    assert.equal(zones.midday.brightness, MINIMUM_BRIGHTNESS);
+    assert.equal(zones.evening.brightness, DEFAULT_ZONES.evening.brightness);
+    assert.equal(MINIMUM_BRIGHTNESS, 0.1, 'the floor this test was written against');
+    // Lifting is not a correction the screen has to report: the number was a
+    // brightness, just one a lamp cannot show.
+    assert.deepEqual(corrected, []);
   });
 });
 
