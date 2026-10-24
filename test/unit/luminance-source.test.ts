@@ -511,6 +511,33 @@ describe('sensor subscription recovery', () => {
     assert.equal(h.destroyed(), 1);
   });
 
+  /**
+   * The synchronous half of a runtime's stop(): `release()` cancels a retry
+   * only after awaits, and platform §17 says those may never come back during
+   * app shutdown.
+   */
+  test('stopRetrying() cancels synchronously, only for a sensor nobody else wants', async () => {
+    const h = recovering();
+    await h.source.retain(['s1'], 'a'); await h.source.retain(['s1'], 'b');
+    assert.equal(h.timers.pending, 1);
+
+    h.source.stopRetrying('a');
+    assert.equal(h.timers.pending, 1, 'b still wants the sensor, so its retry stands');
+
+    await h.source.release('b');
+    h.source.stopRetrying('a');
+    assert.equal(h.timers.pending, 0, 'a was the last owner: no await needed to disarm it');
+
+    // A restart (stop, then start) retains again, and with no retry pending it
+    // subscribes again rather than waiting on a timer that no longer exists.
+    h.recover();
+    const attempts = h.attempts();
+    await h.source.retain(['s1'], 'a');
+    assert.equal(h.attempts(), attempts + 1);
+    assert.equal(h.source.read('s1')?.lux, 500);
+    await h.source.release('a');
+  });
+
   test('last-owner release cancels retries but another owner keeps them alive', async () => {
     const h = recovering();
     await h.source.retain(['s1'], 'a'); await h.source.retain(['s1'], 'b');

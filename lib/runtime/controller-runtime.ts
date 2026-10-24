@@ -555,10 +555,11 @@ export class ControllerRuntime {
     this.targetNames = resolved.names;
     this.resolver.primeCache(resolved.devices, this.cache);
 
-    for (const device of resolved.devices) {
-      await this.adapter.subscribe(device.id, WATCHED);
-      if (!current()) return;
-    }
+    // Several lamps at a time rather than one after another; see
+    // `LightTargetAdapter.subscribeMany`. No `prime`: a controller does not
+    // read its lamps at start, and this keeps it that way.
+    await this.adapter.subscribeMany(resolved.ids, WATCHED);
+    if (!current()) return;
 
     this.engine = new MappingEngine(this.profile.mappings, this.profile.behavior);
 
@@ -1111,10 +1112,8 @@ export class ControllerRuntime {
       this.snapshot = next;
       this.targetNames = next.names;
       this.resolver.primeCache(next.devices, this.cache);
-      for (const deviceId of addedOrChanged) {
-        await this.adapter.subscribe(deviceId, WATCHED);
-        if (!current()) return;
-      }
+      await this.adapter.subscribeMany(addedOrChanged, WATCHED);
+      if (!current()) return;
       this.deps.log(`Targets re-resolved: ${next.ids.length} light(s)`);
 
       // A target that came back, or one that vanished, changes the verdict —
@@ -1130,10 +1129,25 @@ export class ControllerRuntime {
   }
 
   async stop(): Promise<void> {
+    /**
+     * Everything that can fire on a timer is disarmed HERE, before the first
+     * await, and not only in the cleanup below.
+     *
+     * The cleanup runs behind the lifetime lock: a microtask at the earliest,
+     * and after any refresh still in flight. Platform §17 found that an await
+     * during app shutdown may never resume, so anything left to the cleanup can
+     * outlive the runtime: a ramp ticking every 100 ms until its 10 s hard stop,
+     * or a press waiting in the supersede gate. The stopped write queue already
+     * kept those from reaching a lamp. This keeps them from running at all.
+     */
     this.scheduler?.stop();
     this.adapter.suspend();
+    this.ramps?.stopAll('shutdown');
+    this.gate?.cancelAll();
     return this.lifetime.stop(async () => {
-      // Never leave a light mid-ramp across a restart.
+      // Never leave a light mid-ramp across a restart. Again here, because a
+      // start that was still in flight when stop() was called may have built a
+      // new engine since the synchronous pass above.
       this.ramps?.stopAll('shutdown');
       this.ramps = null;
       this.gate?.cancelAll();

@@ -70,6 +70,72 @@ test('decision history stays bounded independently of the number of lamp writes'
 });
 
 /**
+ * PERF-7. Every runtime records a pass per tick, and on a flat stretch, a
+ * publish-only device or a room with every lamp off they are all the same
+ * "nothing to do". Sixty of them used to fill the ring in an hour and evict the
+ * last pass that wrote.
+ */
+describe('a run of identical passes that wrote nothing', () => {
+  type Pass = ControlAction & { detail?: string; warmth?: number };
+  const idle = (at: number, extra: Partial<Pass> = {}): Pass => ({
+    at, reason: 'tick', writes: 0, skipped: 1, warmth: 0.5 + at / 1000,
+    targets: [{ deviceId: 'lamp', status: 'off', commands: 0 }], ...extra,
+  });
+
+  test('is one row: count, the first at, the newest lastAt and values; and the sink sees every pass', () => {
+    const sunk: unknown[] = [];
+    const history = new ControlHistory<Pass>((type, entry) => { if (type === 'control_action') sunk.push(entry); });
+    for (let at = 0; at < 10; at++) history.action(idle(at));
+
+    const rows = history.snapshot().recentActions;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]!.count, 10);
+    assert.equal(rows[0]!.at, 0);
+    assert.equal(rows[0]!.lastAt, 9);
+    assert.equal(rows[0]!.warmth, 0.509, 'the value from the newest pass, not the first');
+    assert.equal(sunk.length, 10, 'evidence keeps every tick');
+  });
+
+  test('a pass that wrote breaks the run, and is never folded into', () => {
+    const history = new ControlHistory<Pass>();
+    history.action(idle(0));
+    history.action(idle(1));
+    history.action({ ...idle(2), writes: 2, batchId: 'b1', targets: [{ deviceId: 'lamp', status: 'queued', commands: 2 }] });
+    history.action(idle(3));
+    history.action({ ...idle(4), writes: 2, batchId: 'b2', targets: [{ deviceId: 'lamp', status: 'queued', commands: 2 }] });
+    history.action({ ...idle(5), writes: 2, batchId: 'b3', targets: [{ deviceId: 'lamp', status: 'queued', commands: 2 }] });
+
+    assert.deepEqual(history.snapshot().recentActions.map(a => [a.at, a.count ?? 1, a.batchId ?? null]), [
+      [5, 1, 'b3'], [4, 1, 'b2'], [3, 1, null], [2, 1, 'b1'], [0, 2, null],
+    ]);
+  });
+
+  test('a different reason, sentence or lamp verdict starts a new row', () => {
+    const history = new ControlHistory<Pass>();
+    history.action(idle(0));
+    history.action(idle(1, { reason: 'switched on' }));
+    history.action(idle(2, { reason: 'switched on', detail: 'the plan is switched off' }));
+    history.action(idle(3, { reason: 'switched on', detail: 'the plan is switched off',
+      targets: [{ deviceId: 'lamp', status: 'unchanged', commands: 0 }] }));
+    // Only the NEWEST row is compared: this matches the first row, not the last.
+    history.action(idle(4));
+
+    assert.equal(history.snapshot().recentActions.length, 5);
+  });
+
+  test('sixty slots now hold far more than an hour of a flat stretch, and keep the last write', () => {
+    const history = new ControlHistory<Pass>();
+    history.action({ ...idle(0), writes: 1, batchId: 'last-write', targets: [{ deviceId: 'lamp', status: 'queued', commands: 1 }] });
+    for (let at = 1; at <= 600; at++) history.action(idle(at));
+
+    const rows = history.snapshot().recentActions;
+    assert.equal(rows.length, 2);
+    assert.equal(rows[1]!.batchId, 'last-write', 'ten hours of ticks later, the write is still there');
+    assert.equal(rows[0]!.count, 600);
+  });
+});
+
+/**
  * What a capture on the reference Homey found five lamps doing on one wall
  * switch, and the two rules that came out of it. Both are the same mistake as
  * the week-long recording's: reading a LAMP as a PERSON.

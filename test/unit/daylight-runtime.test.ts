@@ -137,6 +137,8 @@ function harness(options: {
   const luminance = {
     async retain(ids: string[], owner: string) { retained.push({ ids, owner }); },
     async release(owner: string) { released.push(owner); },
+    // The synchronous half of stop() (PERF-9): nothing to cancel in a fake.
+    stopRetrying() { /* no retry timers here */ },
     read: () => options.reading ?? null,
     watched: () => [{ deviceId: 's1', name: 'Hall', lux: 42, at: now, available: true }],
   } as unknown as LuminanceSource;

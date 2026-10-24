@@ -6,9 +6,11 @@
  * calls one GET route and writes nothing to the Homey.
  *
  * **The default is a DIGEST, and that is the whole point of the script.** The
- * raw document from a six-device house is roughly a megabyte of JSON: sixty
+ * raw document from a six-device house was roughly a megabyte of JSON: sixty
  * recorded actions and up to a hundred and twenty control events per runtime,
- * most of them identical ticks. Pasting that anywhere — a terminal, an issue, a
+ * most of them identical ticks. Identical idle passes are now one row carrying
+ * a `count`, as identical reports already were, so it is smaller. It is still
+ * mostly detail nobody needs at first. Pasting that anywhere — a terminal, an issue, a
  * model's context — buries the four lines that matter under the ninety-nine per
  * cent that never changes. `--raw` and `--save` exist for when the detail IS
  * the question; reach for them second.
