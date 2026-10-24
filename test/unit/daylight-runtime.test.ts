@@ -13,6 +13,7 @@ import { toDevice, toPerceptual } from '../../lib/outputs/light-intent';
 import { OVERRIDE_EXPIRY_MS } from '../../lib/outputs/target-state-cache';
 import { settle as sharedSettle } from '../support/deferred';
 import { zoneLights } from '../support/fake-catalog';
+import { FakeTimers } from '../support/fake-timers';
 
 /**
  * What a Daylight runtime is responsible for is everything the response is not:
@@ -102,6 +103,12 @@ function harness(options: {
    * about what the runtime does with a number it was handed.
    */
   realEvaluator?: { location: () => unknown };
+  /**
+   * The runtime's own timers — its write queue's rate limit runs on them. Only
+   * `setTimeout`/`clearTimeout` matter here: the harness's `now` still wins, as
+   * the runtime documents, so a held write is released by advancing THESE.
+   */
+  timers?: FakeTimers;
 } = {}) {
   /**
    * Which lamps refuse every write, settable after start.
@@ -189,6 +196,7 @@ function harness(options: {
     luminance,
     displayName: () => 'Kitchen daylight',
     now: () => now,
+    ...(options.timers ? { timers: options.timers } : {}),
     ...(options.brightnessScale ? { brightnessScale: options.brightnessScale } : {}),
     log: (...args) => logs.push(args.map(String).join(' ')),
     onStateChange: (state, detail) => states.push({ state, detail }),
@@ -1767,6 +1775,50 @@ describe('DaylightRuntime - publishing when it cannot tell how light it is', () 
     assert.equal(values[VALUE_CAPABILITIES.brightness], dimFor(0.6));
     assert.equal(values[VALUE_CAPABILITIES.daylight], null);
     assert.equal(isDarkEnough(values, 1), false);
+    await h.runtime.stop();
+  });
+});
+
+/**
+ * "A Room-sensing Light never switches a lamp on", at the moment a write is
+ * DISPATCHED rather than the moment it was planned.
+ *
+ * Planning skips a lamp that is off, and an `onoff: false` report cancels the
+ * lamp's queue outright. Neither covers a write already held by the rate limit
+ * when the runtime learns the lamp is off some other way: a re-read of live
+ * values after the zone changed, say, because the lamp's own report was one of
+ * the many a Zigbee mesh drops. That write was planned for a lamp that was on,
+ * and a `dim` turns an off lamp on (platform §12). The scheduler's eligibility
+ * check — `dim` only while the cache says on — is the last thing between it and
+ * a light coming on in an empty room.
+ */
+describe('DaylightRuntime - a held write is checked again when it goes out', () => {
+  test('a rate-limited dim held for a lamp that has since gone off is never sent', async () => {
+    const timers = new FakeTimers(0);
+    const h = harness({ devices: [light('l1', undefined, { dim: 0.5 })], verdict: { brightness: 0.9 }, timers });
+    await h.runtime.start();
+    await h.settle();
+    assert.equal(h.dimWrites().length, 1, 'precondition: the first write went out on the leading edge');
+
+    // The next step of the slew, inside the 200 ms rate window: held, not sent.
+    await h.runtime.tick();
+    await h.settle();
+    assert.equal(h.dimWrites().length, 1);
+    assert.ok(timers.pending > 0, 'precondition: a second dim is held by the rate limit');
+
+    // The lamp goes off and its report never arrives. A second lamp joining the
+    // zone makes the runtime re-read every target, which is how it finds out.
+    h.devices[0].capabilitiesObj.onoff.value = false;
+    h.addToCatalogue(light('l2', undefined, { onoff: false }));
+    await h.runtime.refreshTargets();
+    await h.settle();
+    assert.equal(h.runtime.diagnostics().targets.find(t => t.id === 'l1')?.on, false,
+      'precondition: the runtime now knows l1 is off');
+
+    timers.advance(1_000);
+    await h.settle();
+
+    assert.equal(h.dimWrites().length, 1, 'the held dim would have switched the lamp back on');
     await h.runtime.stop();
   });
 });

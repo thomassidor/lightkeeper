@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   TargetStateCache, OVERRIDE_TOLERANCE, withinOverrideTolerance,
@@ -316,4 +316,214 @@ test('folding looks past the rows interleaved with it, and a new reason starts a
   history.ignored({ at: 99, type: 'report_ignored', deviceId: 'a', capability: 'light_hue', value: 0.5, reason: 'write_pending' });
   assert.equal(history.snapshot().recentControlEvents.length, 7,
     'and so is a different capability');
+});
+
+/**
+ * The power-settle window and the restore allowance, at their edges.
+ *
+ * The tests above show each rule doing its job once. These pin the bounds that
+ * make them safe to have at all: a window extended only while it is OPEN, an
+ * allowance that lasts 15 s and no longer, and one that each power-on edge
+ * re-arms and each power-off edge withdraws. Get any of those wrong the
+ * permissive way and a person's own dimming is forgiven as the lamp's.
+ */
+describe('power settle and power restore, at their edges', () => {
+  test('a write finishing after the window shut does not re-open it', () => {
+    // "Only an open window is extended" is what keeps the settle window
+    // bounded. Were a shut one re-opened by any late write, every pass the
+    // runtime makes would buy the lamp another three seconds of immunity, and
+    // a person's change landing just after one would never be read as theirs.
+    let now = 0;
+    const cache = new TargetStateCache(() => now);
+    cache.initialise('lamp', { onoff: false, dim: 0.30, light_temperature: 0.50 });
+
+    cache.applyExternalChange('lamp', 'onoff', true);
+    // Spend the temperature axis's restore allowance after the window has shut,
+    // so the report under test below is judged by the window alone.
+    now = 3_500;
+    assert.equal(cache.overrideSuppression('lamp', 'light_temperature', 0.50), 'power_restore');
+
+    now = 4_000;
+    const seq = cache.noteEcho('lamp', 'dim', 0.40);
+    cache.finishWrite('lamp', 'dim', seq);
+
+    now = 5_000;
+    assert.equal(cache.overrideSuppression('lamp', 'light_temperature', 0.90), null,
+      'a write after the window shut is not one the power event caused');
+  });
+
+  test('a second power-on re-arms the restore allowance', () => {
+    // The comment on the per-capability test above claims this and never
+    // asserted it. Each power-on is a new restore: a lamp that has already
+    // spoken once tonight still restores its level the next time it comes on,
+    // and reading that as a person stands the device down for four hours.
+    let now = 0;
+    const cache = new TargetStateCache(() => now);
+    cache.initialise('lamp', { onoff: false, dim: 0.30 });
+
+    cache.applyExternalChange('lamp', 'onoff', true);
+    now = 4_400;
+    assert.equal(cache.overrideSuppression('lamp', 'dim', 0.30), 'power_restore');
+
+    now = 10_000;
+    cache.applyExternalChange('lamp', 'onoff', false);
+    now = 20_000;
+    cache.applyExternalChange('lamp', 'onoff', true);
+    // Past the new edge's settle window, so only the allowance can answer.
+    now = 24_400;
+    assert.equal(cache.overrideSuppression('lamp', 'dim', 0.30), 'power_restore',
+      'the second power-on gets its own restore');
+  });
+
+  test('the allowance lasts fifteen seconds from the edge, and not a moment more', () => {
+    // POWER_RESTORE_MS is the measured envelope: lamps on a bridge report their
+    // restored levels a few seconds after coming on. Shorter and a slow bridge
+    // is read as a person; longer and a person's first change after switch-on
+    // is forgiven as the lamp's.
+    let now = 0;
+    const inside = new TargetStateCache(() => now);
+    inside.initialise('lamp', { onoff: false, dim: 0.30 });
+    inside.applyExternalChange('lamp', 'onoff', true);
+    now = 14_900;
+    assert.equal(inside.overrideSuppression('lamp', 'dim', 0.30), 'power_restore');
+
+    now = 0;
+    const outside = new TargetStateCache(() => now);
+    outside.initialise('lamp', { onoff: false, dim: 0.30 });
+    outside.applyExternalChange('lamp', 'onoff', true);
+    now = 15_100;
+    assert.equal(outside.overrideSuppression('lamp', 'dim', 0.30), null);
+  });
+
+  test('switching off withdraws the allowance the last power-on granted', () => {
+    // An off edge resets the set of capabilities that have spoken, so without
+    // also clearing when the lamp came on, the next report — from a lamp that
+    // is now OFF — would be forgiven as a restore it is not.
+    let now = 0;
+    const cache = new TargetStateCache(() => now);
+    cache.initialise('lamp', { onoff: false, dim: 0.30 });
+
+    cache.applyExternalChange('lamp', 'onoff', true);
+    now = 1_000;
+    cache.applyExternalChange('lamp', 'onoff', false);
+    // Past the off edge's settle window, still inside fifteen seconds of the on.
+    now = 5_000;
+    assert.equal(cache.overrideSuppression('lamp', 'dim', 0.90), null,
+      'there is no power-on to restore from');
+  });
+});
+
+/**
+ * The override rules under DUPLICATED echoes (platform §6).
+ *
+ * "Setting `dim` once produces two identical callbacks" — on twenty-two of
+ * twenty-seven lamps measured, and on every Hue bulb. Every test above hands
+ * the cache exactly one report per write. These run a real CircadianRuntime
+ * over the `homey-api` fake with `duplicateEchoes` on, so each write and each
+ * external change reaches the real adapter, subscription and cache twice, as
+ * on a Homey.
+ *
+ * What must hold: our own write echoed twice is still ours — no override, no
+ * event, no second write provoked; a person's change echoed twice is ONE
+ * override, said once; and one power-on is one forced write, not two.
+ *
+ * The imports are dynamic so this block stays self-contained in a file whose
+ * other tests are about the cache alone.
+ */
+describe('override classification under duplicated echoes (platform §6)', () => {
+  async function curveOverDuplicatingHomey(lampValues: Record<string, unknown> = {}) {
+    const { CircadianRuntime } = await import('../../lib/circadian/circadian-runtime');
+    const { fakeApiClient, fakeApiService, realCatalog, lamp, ZONES } = await import('../support/fake-homey-api');
+    const { FakeTimers } = await import('../support/fake-timers');
+    const { settle } = await import('../support/deferred');
+
+    const timers = new FakeTimers(Date.UTC(2026, 9, 24, 12, 0));
+    const client = fakeApiClient([lamp('l1', 'Sofa lamp', 'z-living', lampValues)], ZONES, { duplicateEchoes: true });
+    // A flat curve: the same warmth and brightness all day, so nothing but a
+    // first pass or a power-on ever has a reason to write.
+    const runtime = new CircadianRuntime('circ-dup', {
+      schemaVersion: 2, enabled: true, target: { kind: 'devices', deviceIds: ['l1'] },
+      adjustBrightness: true, transition: 'balanced', preStage: false,
+      points: [0, 720].map(at => ({
+        id: String(at), anchor: { kind: 'clock' as const, at }, warmth: 0.7, brightness: 0.8,
+      })),
+    }, {
+      api: fakeApiService(client), catalog: realCatalog(client),
+      timezone: () => 'UTC', displayName: () => 'Sofa curve', timers,
+      log: () => undefined, onStateChange: () => undefined, onPlanChange: async () => undefined,
+    });
+    return {
+      client, runtime, timers,
+      /** Let the write queue and every echo it provokes run out. */
+      async drain() {
+        for (let i = 0; i < 6; i += 1) { timers.advance(1_000); await settle(12); }
+      },
+      /** Somebody else — the vendor app, a wall switch — sets the lamp. */
+      async external(capabilityId: string, value: unknown) {
+        const device = await client.devices.getDevice({ id: 'l1' });
+        await device.setCapabilityValue({ capabilityId, value });
+        await settle(12);
+      },
+      lampWrites: () => client.writes.filter(w => w.capabilityId !== 'onoff'),
+    };
+  }
+
+  test('our own write, echoed twice, is still ours: no override, no event, no second write', async () => {
+    const rig = await curveOverDuplicatingHomey();
+    await rig.runtime.start();
+    await rig.drain();
+
+    assert.deepEqual(
+      rig.lampWrites().map(w => w.capabilityId), ['dim', 'light_mode', 'light_temperature'],
+      'one write per axis — a duplicate read as external would have the desired state fight itself',
+    );
+    const diagnostics = rig.runtime.diagnostics();
+    assert.equal(diagnostics.targets[0]!.overridden, false);
+    assert.deepEqual(diagnostics.recentControlEvents, [], 'six echoes of three writes, and nothing to say about them');
+    await rig.runtime.destroy();
+  });
+
+  test('a person\'s change, echoed twice, is ONE override, said once', async () => {
+    const rig = await curveOverDuplicatingHomey();
+    await rig.runtime.start();
+    await rig.drain();
+    // Well past the settle window after our own write, so the report is judged.
+    rig.timers.advance(10_000);
+
+    await rig.external('dim', 0.25);
+
+    const diagnostics = rig.runtime.diagnostics();
+    const target = diagnostics.targets[0]!;
+    assert.equal(target.overridden, true, 'somebody dimmed the lamp, and the curve stands down');
+    assert.deepEqual(
+      { capability: target.override!.capability, value: target.override!.value, repeats: target.override!.repeats ?? 1 },
+      { capability: 'dim', value: 0.25, repeats: 1 },
+      'the duplicate is the platform repeating itself, not the lamp restating an override',
+    );
+    assert.equal(
+      diagnostics.recentControlEvents.filter(e => e.type === 'override').length, 1,
+      'one override is one row, however many times the platform says it',
+    );
+    await rig.runtime.destroy();
+  });
+
+  test('one power-on, echoed twice, is one forced write — not two', async () => {
+    // "because echoes arrive duplicated (§6), [the cache's verdict] is also
+    // what makes one power-on produce one write rather than two" — platform §12.
+    const rig = await curveOverDuplicatingHomey({ onoff: false });
+    await rig.runtime.start();
+    await rig.drain();
+    assert.deepEqual(rig.lampWrites(), [], 'nothing is written to a lamp that is off, without pre-staging');
+
+    await rig.external('onoff', true);
+    await rig.drain();
+
+    assert.deepEqual(
+      rig.lampWrites().map(w => w.capabilityId), ['dim', 'light_mode', 'light_temperature'],
+      'the switched-on pass ran once',
+    );
+    const power = rig.runtime.diagnostics().recentControlEvents.filter(e => e.type === 'power');
+    assert.equal(power.length, 1, 'and the power edge was recorded once');
+    await rig.runtime.destroy();
+  });
 });
