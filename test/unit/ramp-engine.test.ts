@@ -5,39 +5,7 @@ import {
   RampEngine, canRamp, HARD_STOP_MS, TICK_MS, type RampStopReason, type ActiveRamp, type RampOptions,
 } from '../../lib/outputs/ramp-engine';
 import type { LightIntent } from '../../lib/outputs/light-intent';
-
-class FakeClock {
-  private seq = 0;
-  private intervals = new Map<number, { fn: () => void; every: number; next: number }>();
-  now = 0;
-
-  setInterval = (fn: () => void, ms: number): unknown => {
-    const id = ++this.seq;
-    this.intervals.set(id, { fn, every: ms, next: this.now + ms });
-    return id;
-  };
-
-  clearInterval = (handle: unknown): void => { this.intervals.delete(handle as number); };
-  nowFn = (): number => this.now;
-
-  advance(ms: number): void {
-    const target = this.now + ms;
-    // Step tick by tick so the engine's own hard-stop check runs each time.
-    while (true) {
-      const due = [...this.intervals.entries()]
-        .filter(([, timer]) => timer.next <= target)
-        .sort((a, b) => a[1].next - b[1].next)[0];
-      if (!due) break;
-
-      const [id, timer] = due;
-      this.now = timer.next;
-      timer.next += timer.every;
-      timer.fn();
-      if (!this.intervals.has(id)) continue;
-    }
-    this.now = target;
-  }
-}
+import { FakeTimers } from '../support/fake-timers';
 
 /**
  * `extra` is spread into the options as given, so a test can hand the engine an
@@ -46,7 +14,7 @@ class FakeClock {
  * existing exact matches on `stops` stay as they are.
  */
 function harness(ratePerSecond = 0.6, extra: Record<string, unknown> = {}) {
-  const clock = new FakeClock();
+  const clock = new FakeTimers();
   const ticks: LightIntent[] = [];
   const ramps: ActiveRamp[] = [];
   const stops: Array<{ controlId: string; reason: RampStopReason }> = [];
@@ -54,12 +22,12 @@ function harness(ratePerSecond = 0.6, extra: Record<string, unknown> = {}) {
 
   const engine = new RampEngine(
     (intent, ramp) => { ticks.push(intent); ramps.push(ramp); },
-    (controlId, reason) => { stops.push({ controlId, reason }); stoppedAt.push(clock.now); },
+    (controlId, reason) => { stops.push({ controlId, reason }); stoppedAt.push(clock.now()); },
     {
       ratePerSecond,
       setInterval: clock.setInterval,
       clearInterval: clock.clearInterval,
-      now: clock.nowFn,
+      now: clock.now,
       ...extra,
     } as RampOptions,
   );
