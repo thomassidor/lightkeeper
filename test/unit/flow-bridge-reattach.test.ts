@@ -28,6 +28,19 @@ const CONTROLLER = 'ctrl-1';
 
 const cardId = (shortId: string) => `${APP_ID}:${shortId}`;
 
+/**
+ * The by-name lookup `bridgeCards()` makes first, answered as a Homey does:
+ * our own card echoed back (platform §3), or a 404. Without it every pass in
+ * this file ran the enumeration FALLBACK rather than the path production takes.
+ */
+function cardByName(actions: Record<string, { id: string; uri: string }>, uri: string, shortId: string) {
+  const card = uri === `homey:app:${APP_ID}`
+    ? Object.values(actions).find(c => c.id === cardId(shortId))
+    : undefined;
+  if (!card) throw Object.assign(new Error(`404 Not Found: FlowCardAction with ID ${shortId}`), { statusCode: 404 });
+  return card;
+}
+
 const OLD_DEVICE = 'device-before-readd';
 const NEW_DEVICE = 'device-after-readd';
 
@@ -89,6 +102,7 @@ function harness(flows: Record<string, unknown>) {
 
   const client = {
     flow: {
+      getFlowCardAction: async ({ uri, id }: { uri: string; id: string }) => cardByName(actions, uri, id),
       getFlowCardActions: async () => actions,
       getFlows: async () => flows,
       getFlowFolders: async () => ({

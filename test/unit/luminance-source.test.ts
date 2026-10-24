@@ -6,6 +6,8 @@ import type { DeviceCatalog } from '../../lib/device-catalog';
 import type { HomeyApiService } from '../../lib/homey-api-service';
 import { FakeTimers } from '../support/fake-timers';
 import { deferred, settle } from '../support/deferred';
+import { NO_CACHE } from '../../lib/flow-card-catalogue';
+import { fakeApiClient, fakeApiService, luxSensor, realCatalog, ZONES } from '../support/fake-homey-api';
 
 /**
  * One subscription per sensor, however many devices asked for it.
@@ -32,6 +34,13 @@ interface FakeSensor {
   capabilities?: string[];
   available?: boolean;
   lux?: number | null;
+  /**
+   * The raw `measure_luminance` VALUE, reported by the catalog AND by the live
+   * `getDevice` — `null` being what an integration sends on a flat battery.
+   * `lux: null` leaves the key out instead, which `Number(undefined)` (NaN)
+   * would have rejected anyway; this is the case that tells the guard apart.
+   */
+  raw?: unknown;
 }
 
 function harness(sensors: FakeSensor[] = [{ id: 's1', lux: 100 }], timers?: FakeTimers) {
@@ -44,24 +53,33 @@ function harness(sensors: FakeSensor[] = [{ id: 's1', lux: 100 }], timers?: Fake
   let present = [...sensors];
   let failSubscribe: string | null = null;
   let metadataReads = 0;
+  /** The arguments of every live `getDevice`, for platform §15's flags. */
+  const deviceReads: unknown[] = [];
 
+  const rawCapability = (sensor: FakeSensor) => ({ measure_luminance: { value: sensor.raw } });
   const catalogEntry = (sensor: FakeSensor) => ({
     id: sensor.id,
     name: sensor.name ?? sensor.id,
     available: sensor.available ?? true,
     capabilities: sensor.capabilities ?? ['measure_luminance'],
-    capabilitiesObj: sensor.lux === null || sensor.lux === undefined
-      ? {}
-      : { measure_luminance: { value: sensor.lux, decimals: 2, units: 'lx' } },
+    capabilitiesObj: 'raw' in sensor
+      ? rawCapability(sensor)
+      : sensor.lux === null || sensor.lux === undefined
+        ? {}
+        : { measure_luminance: { value: sensor.lux, decimals: 2, units: 'lx' } },
   });
 
   const api = {
     async read() {
       return {
         devices: {
-          getDevice: async ({ id }: { id: string }) => {
+          getDevice: async (args: { id: string }) => {
+            const { id } = args;
+            deviceReads.push({ ...args });
             if (failSubscribe === id) throw new Error('device is not reachable');
+            const sensor = present.find(s => s.id === id);
             return {
+              ...(sensor && 'raw' in sensor ? { capabilitiesObj: rawCapability(sensor) } : {}),
               makeCapabilityInstance(capability: string, listener: (value: unknown) => void) {
                 assert.equal(capability, 'measure_luminance', 'only the lux axis is subscribed');
                 subscribeCalls.push(id);
@@ -113,6 +131,7 @@ function harness(sensors: FakeSensor[] = [{ id: 's1', lux: 100 }], timers?: Fake
     failNextSubscribe(id: string) { failSubscribe = id; },
     /** How many times the catalog has been asked about a sensor. */
     metadataReads: () => metadataReads,
+    deviceReads,
   };
 }
 
@@ -510,5 +529,62 @@ describe('sensor subscription recovery', () => {
     assert.equal(h.source.watched().length, 0);
     assert.equal(h.source.read('s1'), null);
     assert.equal(h.timers.pending, 0);
+  });
+});
+
+/**
+ * `Number(null)` is 0, and 0 lux is pitch dark — on the CATALOG path as well.
+ *
+ * The live listener has always gone through `asLux()`, and a test fires every
+ * junk value at it. The catalog seed is the other way a value gets in, and its
+ * fixture left the key out entirely rather than sending `{ value: null }` — so
+ * a bare `Number()` there saw `undefined`, made NaN, and was rejected for the
+ * wrong reason. A flat battery reports `null`, which a bare `Number()` makes 0.
+ */
+describe('LuminanceSource - a null reading on the catalog path', () => {
+  test('catalog and live device both reporting null read as nothing, never as zero lux', async () => {
+    const h = harness([{ id: 's1', raw: null }]);
+    await h.source.retain(['s1'], 'a');
+
+    assert.equal(h.source.read('s1'), null, 'null is no reading; { lux: 0 } is a dark room');
+    assert.equal(h.source.watched()[0]!.lux, null);
+  });
+});
+
+/**
+ * Platform §15, both halves, at the one single-device read this source makes.
+ *
+ * `$updateCache: false` is the memory half; `$cache: false` is the correctness
+ * half — a `getDevices()` anywhere in the app fills the cache a later
+ * `getDevice()` is answered from, so without it the "live" seed is whatever the
+ * catalogue last read. The source scan in flow-card-catalogue.test.ts cannot
+ * see this call (`getDevice` is not a `getAll`), so it is asserted here.
+ */
+describe('LuminanceSource - the live read opts out of the homey-api cache', () => {
+  test('the subscribing getDevice carries NO_CACHE', async () => {
+    const h = harness([{ id: 's1', lux: 100 }]);
+    await h.source.retain(['s1'], 'a');
+
+    assert.deepEqual(h.deviceReads, [{ id: 's1', ...NO_CACHE }]);
+  });
+
+  test('so it sees the sensor as it is now, not as the catalogue last cached it', async () => {
+    // The fake models §15's cache: DeviceCatalog's own getDevices() fills it,
+    // and a getDevice without `$cache: false` would be answered from it.
+    const client = fakeApiClient([luxSensor('s1', 'Hall sensor', 'z-living', 120)], ZONES, { cache: true });
+    const catalog = realCatalog(client);
+    assert.equal((await catalog.device('s1'))!.capabilitiesObj.measure_luminance!.value, 120);
+
+    // The room got brighter. Nothing invalidated anything, as nothing does
+    // between a capability change and the next catalogue event.
+    client.put(luxSensor('s1', 'Hall sensor', 'z-living', 640));
+    const stale = await client.devices.getDevice({ id: 's1' });
+    assert.equal(stale.capabilitiesObj.measure_luminance.value, 120, 'the cache this test is about');
+
+    const source = new LuminanceSource({ api: fakeApiService(client), catalog, log: () => {} });
+    await source.retain(['s1'], 'a');
+
+    assert.deepEqual(source.read('s1'), { lux: 640, deviceIds: ['s1'] }, 'the live seed beat the stale catalogue');
+    await source.destroy();
   });
 });

@@ -2,7 +2,9 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { FlowBridgeManager } from '../../lib/bridge/flow-bridge-manager';
-import type { HomeyApiService } from '../../lib/homey-api-service';
+import { HomeyApiService } from '../../lib/homey-api-service';
+import { CredentialService, type CredentialStatus } from '../../lib/credential-service';
+import { NO_CACHE } from '../../lib/flow-card-catalogue';
 import type { ManagedFlowReference } from '../../lib/profiles/controller-profile';
 import type { SelectableInput } from '../../lib/inputs/selectable-input';
 
@@ -77,19 +79,51 @@ const reference = (flowId: string): ManagedFlowReference => ({
 interface FolderRow { id: string; name: string; parent: string | null }
 
 /**
+ * The folder calls a test can make fail, ONE AT A TIME.
+ *
+ * `failFolders` fails `getFlowFolders` first, so `load()` degrades to "no
+ * folders" and no other folder method ever runs under failure — which left the
+ * catch in every one of them unpinned. Each of these reaches exactly one:
+ *
+ *   createFlowFolder    resolveForDevice's create (or load()'s, without a root)
+ *   getFlowFolders      every folder read; a predicate picks which one
+ *   updateFlowFolder    renameIfOurs
+ *   placeFlow           placeExisting — an updateFlow that carries a folder
+ *   deleteFlowFolder    cleanUpEmpty's inner delete
+ *   getFlowsAfterDelete cleanUpEmpty's re-read of the flows, which is the only
+ *                       getFlows that comes after a deleteFlow
+ */
+type FolderCall =
+  | 'createFlowFolder' | 'getFlowFolders' | 'updateFlowFolder' | 'placeFlow'
+  | 'deleteFlowFolder' | 'getFlowsAfterDelete';
+
+const refused = () => Object.assign(new Error('403 Missing Scopes'), { statusCode: 403 });
+
+/**
  * A Homey whose flows and folders actually change when written to, so a test
  * can assert the END STATE rather than a sequence of calls.
+ *
+ * `api` swaps the pass-through service for another one built over the same
+ * client — the REAL `HomeyApiService`, in the platform §2 test at the bottom.
  */
 function harness(options: {
   folders?: FolderRow[];
   flows?: Array<ReturnType<typeof liveFlow>>;
   failFolders?: boolean;
+  fail?: Partial<Record<FolderCall, (arg: any) => boolean>>;
+  api?: (client: any) => HomeyApiService;
 } = {}) {
   const folders = new Map((options.folders ?? []).map(f => [f.id, { ...f }]));
   const flows = new Map((options.flows ?? []).map(f => [f.id, { ...f } as any]));
-  const calls = { createdFolders: [] as any[], deletedFolders: [] as string[], renamed: [] as any[] };
+  const calls = {
+    createdFolders: [] as any[], deletedFolders: [] as string[], renamed: [] as any[],
+    /** The argument of every `getFlowFolders` call — platform §15 wants `NO_CACHE` in each. */
+    folderReads: [] as unknown[],
+  };
   let next = 0;
+  let flowDeletes = 0;
   const id = (prefix: string) => `${prefix}-${(next += 1)}`;
+  const failing = (call: FolderCall, arg?: unknown) => options.fail?.[call]?.(arg) === true;
 
   const actions = {
     a: { id: cardId('bridge_event'), uri: `homey:flowcardaction:${cardId('bridge_event')}` },
@@ -99,27 +133,36 @@ function harness(options: {
 
   const client = {
     flow: {
+      // By name first, as production asks (platform §3: echoed, never built).
+      getFlowCardAction: async ({ uri, id: shortId }: { uri: string; id: string }) =>
+        cardByName(actions, uri, shortId),
       getFlowCardActions: async () => actions,
-      getFlows: async () => Object.fromEntries(flows),
+      getFlows: async () => {
+        if (flowDeletes > 0 && failing('getFlowsAfterDelete')) throw new Error('socket hang up');
+        return Object.fromEntries(flows);
+      },
 
-      getFlowFolders: async () => {
-        if (options.failFolders) throw new Error('403 Missing Scopes');
+      getFlowFolders: async (opts?: unknown) => {
+        calls.folderReads.push(opts);
+        if (options.failFolders || failing('getFlowFolders', opts)) throw refused();
         return Object.fromEntries(folders);
       },
       createFlowFolder: async ({ flowfolder }: any) => {
-        if (options.failFolders) throw new Error('403 Missing Scopes');
+        if (options.failFolders || failing('createFlowFolder', flowfolder)) throw refused();
         const row = { id: id('folder'), name: flowfolder.name, parent: flowfolder.parent ?? null };
         folders.set(row.id, row);
         calls.createdFolders.push({ ...row });
         return row;
       },
       updateFlowFolder: async ({ id: folderId, flowfolder }: any) => {
+        if (failing('updateFlowFolder', { id: folderId, ...flowfolder })) throw refused();
         const row = folders.get(folderId)!;
         Object.assign(row, flowfolder);
         calls.renamed.push({ id: folderId, ...flowfolder });
         return row;
       },
       deleteFlowFolder: async ({ id: folderId }: any) => {
+        if (failing('deleteFlowFolder', folderId)) throw refused();
         folders.delete(folderId);
         calls.deletedFolders.push(folderId);
       },
@@ -130,13 +173,14 @@ function harness(options: {
         return row;
       },
       updateFlow: async ({ id: flowId, flow }: any) => {
+        if ('folder' in flow && failing('placeFlow', { id: flowId, ...flow })) throw refused();
         Object.assign(flows.get(flowId), flow);
       },
-      deleteFlow: async ({ id: flowId }: any) => { flows.delete(flowId); },
+      deleteFlow: async ({ id: flowId }: any) => { flowDeletes += 1; flows.delete(flowId); },
     },
   };
 
-  const api = {
+  const api = options.api?.(client) ?? {
     read: async () => client,
     withWriteClient: async (operation: (c: any) => Promise<unknown>) => operation(client),
   } as unknown as HomeyApiService;
@@ -146,6 +190,15 @@ function harness(options: {
     folders, flows, calls,
     folderNamed: (name: string) => [...folders.values()].find(f => f.name === name),
   };
+}
+
+/** The by-name lookup `bridgeCards()` tries first: our own card, or a 404. */
+function cardByName(actions: Record<string, { id: string; uri: string }>, uri: string, shortId: string) {
+  const card = uri === `homey:app:${APP_ID}`
+    ? Object.values(actions).find(c => c.id === cardId(shortId))
+    : undefined;
+  if (!card) throw Object.assign(new Error(`404 Not Found: FlowCardAction with ID ${shortId}`), { statusCode: 404 });
+  return card;
 }
 
 const syncRequest = (deviceName: string, existing: ManagedFlowReference[] = []) => ({
@@ -391,5 +444,208 @@ describe('folders are never allowed to break flows', () => {
     await h.bridge.sync(syncRequest('   '));
 
     assert.equal(h.calls.createdFolders.length, 1, 'the root doubles as the fallback folder');
+  });
+});
+
+/**
+ * "Folder work never blocks a Flow write", one folder method at a time.
+ *
+ * The test above refuses EVERY folder call, and the first one refused is
+ * `load()`'s read — so the view comes back empty and no other method runs
+ * under failure at all. Each test here lets `load()` succeed and refuses
+ * exactly one later call, which is the only way the catch inside that method
+ * is ever reached. A catch that rethrew would surface as `sync()` or
+ * `removeAll()` rejecting, with the Flow write it was meant to protect undone.
+ */
+describe('each folder method swallows its own failure', () => {
+  test('a refused device-folder create still gets the flow, filed in no folder', async () => {
+    // resolveForDevice's create. The root exists, so load() never writes.
+    const h = harness({ folders: [ROOT], fail: { createFlowFolder: () => true } });
+
+    const result = await h.bridge.sync(syncRequest('Kitchen dial'));
+
+    assert.equal(result.created, 1, 'the flow is created regardless');
+    assert.equal([...h.flows.values()][0]!.folder, null, 'and simply filed nowhere');
+  });
+
+  test('a failed re-read before creating falls back to the snapshot, so no duplicate is made', async () => {
+    // findByName re-reads the folders live inside the lock. When that read
+    // fails it must answer from the view load() already holds — which here
+    // has the device's folder in it — rather than throw or create a second one.
+    let reads = 0;
+    const h = harness({
+      folders: [ROOT, { id: 'kitchen', name: 'Kitchen dial', parent: 'root' }],
+      fail: { getFlowFolders: () => (reads += 1) > 1 },
+    });
+
+    const result = await h.bridge.sync(syncRequest('Kitchen dial'));
+
+    assert.equal(reads, 2, 'load() read once, and the re-read was the one refused');
+    assert.equal(result.created, 1);
+    assert.deepEqual(h.calls.createdFolders, [], 'the snapshot already knew the folder');
+    assert.equal([...h.flows.values()][0]!.folder, 'kitchen');
+  });
+
+  test('a refused rename leaves the flow reused and the folder as it was', async () => {
+    const h = harness({
+      folders: [ROOT, { id: 'kitchen', name: 'Kitchen dial', parent: 'root' }],
+      flows: [liveFlow('flow-1', 'kitchen')],
+      fail: { updateFlowFolder: () => true },
+    });
+
+    const result = await h.bridge.sync(syncRequest('Hallway dial', [reference('flow-1')]));
+
+    assert.equal(result.reused, 1);
+    assert.deepEqual(result.references.map(r => r.flowId), ['flow-1']);
+    assert.equal(h.folders.get('kitchen')!.name, 'Kitchen dial', 'cosmetic, and left for the next pass');
+    assert.equal(h.flows.get('flow-1')!.folder, 'kitchen');
+  });
+
+  test('a refused move leaves the flow reused exactly where it was', async () => {
+    // placeExisting runs INSIDE sync's try, so a catch that rethrew would also
+    // send the pass through compensation and lose its references.
+    const h = harness({
+      folders: [ROOT],
+      flows: [liveFlow('flow-1', 'root')],
+      fail: { placeFlow: () => true },
+    });
+
+    const result = await h.bridge.sync(syncRequest('Kitchen dial', [reference('flow-1')]));
+
+    assert.equal(result.reused, 1);
+    assert.deepEqual(result.references.map(r => r.flowId), ['flow-1']);
+    assert.ok(h.flows.has('flow-1'), 'a flow that would not move still works');
+    assert.equal(h.flows.get('flow-1')!.folder, 'root');
+  });
+
+  test('a refused folder delete neither undoes the flow deletes nor stops the next folder', async () => {
+    // cleanUpEmpty's INNER catch. Rethrown, the outer catch would swallow it —
+    // so the visible difference is the second empty folder, left behind.
+    const h = harness({
+      folders: [
+        ROOT,
+        { id: 'kitchen', name: 'Kitchen dial', parent: 'root' },
+        { id: 'kitchen-2', name: 'Kitchen dial 2', parent: 'root' },
+      ],
+      flows: [liveFlow('flow-1', 'kitchen'), liveFlow('flow-2', 'kitchen-2')],
+      fail: { deleteFlowFolder: (folderId: string) => folderId === 'kitchen' },
+    });
+
+    const deleted = await h.bridge.removeAll(CONTROLLER, [reference('flow-1'), reference('flow-2')]);
+
+    assert.equal(deleted, 2, 'both flows are gone and counted');
+    assert.equal(h.flows.size, 0);
+    assert.deepEqual(h.calls.deletedFolders, ['kitchen-2'], 'one refusal did not stop the next folder');
+    assert.ok(h.folders.has('kitchen'), 'the refused one is simply still there');
+  });
+
+  test('an unreadable flow list after the deletes still settles removeAll', async () => {
+    // cleanUpEmpty's OUTER catch: it cannot tell which folders are empty, so it
+    // deletes none — and the flows it was cleaning up after stay deleted.
+    const h = harness({
+      folders: [ROOT, { id: 'kitchen', name: 'Kitchen dial', parent: 'root' }],
+      flows: [liveFlow('flow-1', 'kitchen')],
+      fail: { getFlowsAfterDelete: () => true },
+    });
+
+    const deleted = await h.bridge.removeAll(CONTROLLER, [reference('flow-1')]);
+
+    assert.equal(deleted, 1);
+    assert.equal(h.flows.has('flow-1'), false);
+    assert.deepEqual(h.calls.deletedFolders, [], 'nothing deleted on a guess');
+  });
+
+  test('and the orphan sweep still reports what it deleted', async () => {
+    const h = harness({
+      folders: [ROOT, { id: 'gone', name: 'Deleted dial', parent: 'root' }],
+      flows: [liveFlow('flow-1', 'gone', 'lk-ctrl-1755500000000-999999')],
+      fail: { getFlowsAfterDelete: () => true },
+    });
+
+    const result = await h.bridge.sweepOrphans(new Set([CONTROLLER]));
+
+    assert.equal(result.deleted, 1);
+    assert.equal(result.failed, 0);
+    assert.deepEqual(h.calls.deletedFolders, []);
+  });
+});
+
+describe('the folder read opts out of the homey-api cache', () => {
+  /**
+   * Platform §15: `getFlowFolders` is a `getAll`, and `homey-api` retains
+   * every `getAll` result for the life of the client unless told not to. The
+   * source scan in flow-card-catalogue.test.ts used to excuse this call site
+   * because a §15 comment sat a few lines above it, so dropping the flag went
+   * unnoticed. This asserts what actually reaches the client.
+   */
+  test('every getFlowFolders call carries NO_CACHE, on the create path and the delete path', async () => {
+    const h = harness({ folders: [ROOT], flows: [liveFlow('flow-1', 'root')] });
+
+    await h.bridge.sync(syncRequest('Kitchen dial'));
+    await h.bridge.removeAll(CONTROLLER, [reference('flow-1')]);
+
+    assert.ok(h.calls.folderReads.length >= 3, 'load(), findByName() and the delete path all read');
+    for (const opts of h.calls.folderReads) {
+      assert.deepEqual(opts, { ...NO_CACHE });
+    }
+  });
+});
+
+/**
+ * The folder layer through the REAL `HomeyApiService.withWriteClient`.
+ *
+ * Every other harness here hands the bridge a pass-through write client, and
+ * the real one does something before the folder manager's catch ever runs: it
+ * CLASSIFIES the failure app-wide (platform §2), and a "Missing Scopes" refusal
+ * publishes `insufficient_scope` to every device through `onStatusChange`. So
+ * the folder manager swallowing an error does not mean nobody saw it.
+ *
+ * What this pins is the END STATE on the create path only: after a refused
+ * folder write the flow still exists, filed in no folder, and the key is
+ * reported valid. The intermediate `insufficient_scope` publication that
+ * happens today is deliberately NOT asserted: whether a folder-only refusal
+ * should publish a credential verdict at all is being changed (on the delete
+ * path, where no write follows, it leaves the key reported invalid after a
+ * removal that succeeded — the situation `load()`'s docblock describes), and a
+ * test pinning the sequence would lock in exactly that behaviour.
+ */
+describe('a folder refusal through the real write client (platform §2)', () => {
+  function realService(statuses: CredentialStatus[]) {
+    const store = new Map<string, unknown>([['flowWriteApiKey', 'user:session:secret']]);
+    let credentials!: CredentialService;
+    const api = (client: any) => {
+      credentials = new CredentialService({
+        settings: {
+          get: k => store.get(k),
+          set: (k, v) => { store.set(k, v); },
+          unset: k => { store.delete(k); },
+        },
+        createWriteClient: async () => client,
+        getLocalAddress: async () => 'http://127.0.0.1:80',
+        log: () => { /* quiet */ },
+        onStatusChange: status => { statuses.push(status); },
+      });
+      // Only the read client is replaced; withWriteClient is the real one.
+      class Service extends HomeyApiService {
+        protected override async createAppApi(): Promise<any> { return client; }
+      }
+      return new Service({ api: {} }, credentials);
+    };
+    return { api, credentials: () => credentials };
+  }
+
+  test('a refused root create still leaves the flow written and the key valid', async () => {
+    const statuses: CredentialStatus[] = [];
+    const real = realService(statuses);
+    // No root yet, so load() writes one — and that write is refused.
+    const h = harness({ fail: { createFlowFolder: () => true }, api: real.api });
+    real.credentials().reportSuccess();
+
+    const result = await h.bridge.sync(syncRequest('Kitchen dial'));
+
+    assert.equal(result.created, 1, 'the flow is still created');
+    assert.equal(h.flows.size, 1);
+    assert.equal([...h.flows.values()][0]!.folder, null, 'filed in no folder');
+    assert.equal(real.credentials().getStatus().valid, true, 'the key is reported working at the end');
   });
 });
