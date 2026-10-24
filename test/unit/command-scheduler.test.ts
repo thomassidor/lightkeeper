@@ -348,3 +348,29 @@ describe("every CommandScheduler in lib/ is built on its owner's clock", () => {
     assert.deepEqual(missing, []);
   });
 });
+
+describe('stop() leaves no timer armed', () => {
+  /**
+   * "stop clears queues and stops accepting work" shows a stopped queue takes
+   * nothing new. A write already HELD when stop() arrives is not sent either,
+   * and that stays true with its rate timer still armed: the timer fires into a
+   * stopped scheduler and `flush()` returns early. So no write count can see
+   * the timer itself, which keeps the queue (and through it the runtime and
+   * every lamp handle it reaches) alive until it fires. Every runtime's
+   * teardown assertion of `pending === 0` rests on this one `clearTimeout`.
+   */
+  test('a write held on the rate window is disarmed by stop()', async () => {
+    const { clock, written, scheduler } = harness();
+    scheduler.submit([{ deviceId: 'a', capability: 'dim', value: 0.3 }]);
+    await clock.advanceAsync(0);
+    const held = scheduler.submit([{ deviceId: 'a', capability: 'dim', value: 0.6 }]);
+    assert.equal(clock.pending, 1, 'the second write waits on the rate window');
+
+    scheduler.stop();
+
+    assert.equal(clock.pending, 0);
+    assert.deepEqual((await held.completion).map(outcome => outcome.status), ['cancelled']);
+    await clock.advanceAsync(1000);
+    assert.deepEqual(written.map(w => w.value), [0.3]);
+  });
+});

@@ -107,7 +107,7 @@ export class ControllerRuntimeManager {
   private readonly registry: RuntimeRegistry<ControllerRuntime>;
 
   constructor(private readonly deps: RuntimeManagerDeps) {
-    this.registry = new RuntimeRegistry({ log: deps.log, label: 'controller' });
+    this.registry = new RuntimeRegistry({ log: deps.log, label: 'controller', ...(deps.timers ? { timers: deps.timers } : {}) });
   }
 
   async register(

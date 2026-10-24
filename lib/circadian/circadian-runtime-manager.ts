@@ -79,7 +79,7 @@ export class CircadianRuntimeManager {
   private ticker: unknown = null;
 
   constructor(private readonly deps: CircadianManagerDeps) {
-    this.registry = new RuntimeRegistry({ log: deps.log, label: 'circadian' });
+    this.registry = new RuntimeRegistry({ log: deps.log, label: 'circadian', ...(deps.timers ? { timers: deps.timers } : {}) });
   }
 
   async register(

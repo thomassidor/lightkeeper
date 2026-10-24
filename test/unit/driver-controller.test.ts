@@ -612,3 +612,50 @@ describe('the handler wrapper', () => {
     assert.equal(await session.call('add_device'), true);
   });
 });
+
+describe('the Test control leaves nothing running', () => {
+  /**
+   * Every press of Test builds a real, unregistered runtime: it subscribes to
+   * each chosen lamp and owns a write queue, and nothing but the handler that
+   * built it will ever stop it — it is in no registry, so neither `onUninit`
+   * nor the orphan sweep can find it. One left behind per press is a set of
+   * capability listeners on somebody's lamps for the life of the app, and a
+   * live queue that will still write to them. So: the listeners it took are
+   * all released by the time the handler answers, and the runtime it used no
+   * longer writes.
+   */
+  test('the preview runtime is stopped when the handler answers', async () => {
+    const r = await readyForButtons();
+    let live = 0;
+    let taken = 0;
+    const getDevice = r.client.devices.getDevice.bind(r.client.devices);
+    r.client.devices.getDevice = async (args: { id: string }) => {
+      const handle = await getDevice(args);
+      const make = handle.makeCapabilityInstance.bind(handle);
+      handle.makeCapabilityInstance = (capabilityId: string, fn: (value: unknown) => void) => {
+        const instance = make(capabilityId, fn);
+        live += 1; taken += 1;
+        let destroyed = false;
+        return { destroy: () => { if (!destroyed) { destroyed = true; live -= 1; } instance.destroy(); } };
+      };
+      return handle;
+    };
+    let preview: { runIntent(intent: { type: 'power'; value: boolean }): Promise<{ writes: number }> } | undefined;
+    const ephemeral = r.app.controllers.ephemeral;
+    r.app.controllers.ephemeral = async (profile: any) => {
+      const runtime = await ephemeral(profile);
+      preview = runtime;
+      return runtime;
+    };
+
+    const outcome = await r.session.call('test', { func: 'on', deviceIds: null });
+    assert.ok(outcome.writes > 0, 'the Test did reach the lamps');
+    assert.ok(taken > 0, 'and its runtime watched them while it did');
+
+    assert.equal(live, 0, 'every listener it took is released');
+    r.client.writes.length = 0;
+    const late = await preview?.runIntent({ type: 'power', value: false });
+    assert.equal(late?.writes, 0, 'and the runtime it used no longer writes');
+    assert.deepEqual(r.client.writes, []);
+  });
+});

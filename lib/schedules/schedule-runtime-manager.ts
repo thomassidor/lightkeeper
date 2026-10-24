@@ -69,7 +69,7 @@ export class ScheduleRuntimeManager {
   private readonly cards: FlowCardCatalogue;
 
   constructor(private readonly deps: ScheduleManagerDeps) {
-    this.registry = new RuntimeRegistry({ log: deps.log, label: 'schedule' });
+    this.registry = new RuntimeRegistry({ log: deps.log, label: 'schedule', ...(deps.timers ? { timers: deps.timers } : {}) });
     this.cards = deps.cards ?? new FlowCardCatalogue(deps.api);
   }
 

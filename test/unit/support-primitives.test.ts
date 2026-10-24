@@ -8,6 +8,7 @@ import { KeyedMutex, SingleFlight } from '../../lib/support/keyed-mutex';
 import { deferred, settle } from '../support/deferred';
 import { FakeTimers } from '../support/fake-timers';
 import { failNth } from '../support/failing-nth';
+import { RuntimeLifetime } from '../../lib/runtime/runtime-resources';
 
 describe('fireAndForget', () => {
   test('logs a rejection with its label', async () => {
@@ -361,5 +362,52 @@ describe('one wall clock, shared', () => {
     assert.equal(sanitiseUnitInterval(''), null);
     assert.equal(sanitiseUnitInterval(null), null);
     assert.equal(sanitiseUnitInterval('warm'), null);
+  });
+});
+
+/**
+ * `RuntimeLifetime` is what every runtime's late work asks before it touches
+ * anything: a write's `eligible()`, a refresh's re-subscribe, a start that is
+ * still awaiting the catalogue. All four runtimes' "nothing survives teardown"
+ * reduces to these three answers, and none of them was tested directly.
+ */
+describe('RuntimeLifetime', () => {
+  test('a liveness check taken while running answers false once stop() is called', async () => {
+    const lifetime = new RuntimeLifetime();
+    let captured: (() => boolean) | undefined;
+    await lifetime.start(async current => { captured = current; });
+    assert.equal(captured?.(), true);
+
+    const stopping = lifetime.stop(async () => {});
+    // Synchronously: late work that checks before stop's cleanup has even run
+    // must already see it.
+    assert.equal(captured?.(), false);
+    await stopping;
+    assert.equal(captured?.(), false);
+  });
+
+  test('after stop(), a fresh check is false and run() does no work', async () => {
+    const lifetime = new RuntimeLifetime();
+    await lifetime.start(async () => {});
+    await lifetime.stop(async () => {});
+
+    assert.equal(lifetime.current()(), false);
+    let ran = false;
+    await lifetime.run(async () => { ran = true; });
+    assert.equal(ran, false, 'a target refresh arriving after teardown must not re-acquire anything');
+  });
+
+  test('a restart does not revive a check taken in the previous life', async () => {
+    // The generation is what tells the two lives apart: `active` alone is true
+    // again after the restart, and a write queued by the old runtime would
+    // then go out under the new one.
+    const lifetime = new RuntimeLifetime();
+    let old: (() => boolean) | undefined;
+    await lifetime.start(async current => { old = current; });
+    await lifetime.stop(async () => {});
+    await lifetime.start(async () => {});
+
+    assert.equal(lifetime.current()(), true);
+    assert.equal(old?.(), false);
   });
 });

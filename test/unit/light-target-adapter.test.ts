@@ -300,3 +300,35 @@ describe('late work after adapter teardown', () => {
     assert.equal(created, 0);
   });
 });
+
+describe('suspend() disarms the implied-on check', () => {
+  /**
+   * A dim that is meant to switch a lamp on arms a 1.5 s check that can send
+   * `onoff: true` — the one timer in the adapter that writes to a lamp by
+   * itself. Every runtime's `stop()` calls `suspend()` FIRST, before its first
+   * await, precisely so that check cannot outlive it. The probe re-checks
+   * liveness when it fires, so a write count alone would pass with the timer
+   * still armed; what has to hold is that nothing is left armed at all.
+   */
+  test('a check armed by a completed impliesOn write is cancelled, not merely ignored', async () => {
+    const timers = new FakeTimers();
+    const cache = new TargetStateCache();
+    const sent: string[] = [];
+    const api = { read: async () => ({ devices: { getDevice: async () => ({
+      setCapabilityValue: async ({ capabilityId }: { capabilityId: string }) => { sent.push(capabilityId); },
+    }) } }) } as unknown as HomeyApiService;
+    const adapter = new LightTargetAdapter(api, cache, () => {}, timers);
+    let corrected = 0;
+    adapter.setImpliedOnFallback(async () => { corrected += 1; });
+
+    await adapter.write('lamp', 'dim', 0.5, { impliesOn: true });
+    assert.equal(timers.pending, 1, 'the implied-on check is armed');
+
+    adapter.suspend();
+
+    assert.equal(timers.pending, 0);
+    timers.advance(2000); await settle(4);
+    assert.equal(corrected, 0);
+    assert.deepEqual(sent, ['dim']);
+  });
+});

@@ -23,6 +23,8 @@ import { VALUE_CAPABILITIES } from '../../lib/runtime/published-values';
 import { ownsNothing, zoneLights } from '../support/fake-catalog';
 import type { CatalogDevice, DeviceCatalog } from '../../lib/device-catalog';
 import type { HomeyApiService, Unsubscribe } from '../../lib/homey-api-service';
+import { FakeTimers } from '../support/fake-timers';
+import { deferred, settle } from '../support/deferred';
 
 /**
  * The `set_lights` card: colour from one Lightkeeper device, brightness from
@@ -432,5 +434,74 @@ describe('a pass, all the way to the lamps', () => {
 
     assert.deepEqual(written, []);
     assert.match(result.refused ?? '', /lk-gone/);
+  });
+});
+
+describe('the card\'s writer, torn down', () => {
+  /**
+   * `lights.destroy()` is the last thing `onUninit` asks of the card, and the
+   * writer is the one lamp-writing queue no runtime owns: it may name lights no
+   * device targets, so nothing else will ever stop it. "Nothing survives
+   * teardown" means a pass caught mid-flight by uninit finishes the ONE write
+   * Homey already has and sends nothing after it, leaves no timer armed on the
+   * writer's clock, and lets go of the client-replacement hook its adapter
+   * took when it was built.
+   */
+  test('destroy() mid-pass stops the queue, arms nothing and releases the adapter', async () => {
+    const timers = new FakeTimers();
+    const started: string[] = [];
+    const replacements = new Set<() => void>();
+    const device: CatalogDevice = {
+      id: 'lamp', name: 'lamp', class: 'light', virtualClass: null, zone: 'z1', zoneName: 'Living room',
+      driverId: null, ownerUri: null, ownerName: 'Test', available: true,
+      capabilities: ['onoff', 'dim', 'light_temperature'],
+      capabilitiesObj: {
+        onoff: { value: true },
+        dim: { value: 0.5, min: 0, max: 1, decimals: 2 },
+        light_temperature: { value: 0.5, min: 0, max: 1, decimals: 2 },
+      },
+    };
+    const gate = deferred();
+    const handle = {
+      capabilitiesObj: device.capabilitiesObj,
+      async setCapabilityValue({ capabilityId }: { capabilityId: string }) {
+        started.push(capabilityId);
+        await gate.promise;
+      },
+      makeCapabilityInstance: () => ({ destroy: () => {} }),
+    };
+    const catalog = {
+      device: async () => device,
+      devicesInZone: async () => [device],
+      lightsInZone: zoneLights(async () => [device]),
+      isOwnDevice: ownsNothing,
+    } as unknown as DeviceCatalog;
+    const api = {
+      async read() { return { devices: { getDevice: async () => handle } }; },
+      track: (unsubscribe: Unsubscribe) => unsubscribe,
+      onReadReplacement: (listener: () => void) => {
+        replacements.add(listener);
+        return () => { replacements.delete(listener); };
+      },
+    } as unknown as HomeyApiService;
+    const writer = new FlowLightWriter({ api, catalog, log: () => {}, timers });
+    assert.equal(replacements.size, 1, 'the adapter registers on construction');
+
+    const applying = writer.apply({ kind: 'zone', zoneId: 'z1', includeSubzones: true }, planSetLights({
+      colour: curve({ [VALUE_CAPABILITIES.temperature]: 0.86 }),
+      brightness: source({ [VALUE_CAPABILITIES.brightness]: 0.26 }),
+      missing: [],
+    }, 'on'), 'on');
+    await settle(12);
+    assert.equal(started.length, 1, 'one write is with Homey, the rest of the burst is queued behind it');
+
+    await writer.destroy();
+    gate.resolve();
+    await applying;
+    timers.advance(10_000); await settle(12);
+
+    assert.equal(started.length, 1, 'nothing queued behind it was sent after destroy()');
+    assert.equal(timers.pending, 0);
+    assert.equal(replacements.size, 0);
   });
 });

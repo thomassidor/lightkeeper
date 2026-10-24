@@ -85,7 +85,7 @@ export class DaylightRuntimeManager {
   private ticker: unknown = null;
 
   constructor(private readonly deps: DaylightManagerDeps) {
-    this.registry = new RuntimeRegistry({ log: deps.log, label: 'daylight' });
+    this.registry = new RuntimeRegistry({ log: deps.log, label: 'daylight', ...(deps.timers ? { timers: deps.timers } : {}) });
   }
 
   async register(
