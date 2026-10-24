@@ -58,11 +58,18 @@ function privilegedViews(): string[] {
 
 const read = (view: string) => readFileSync(join(ROOT, view), 'utf8');
 
-/** Assignments only. A mention inside a comment is not an assignment. */
+/**
+ * Assignments only — `=` and `+=` alike. A mention inside a comment is not an
+ * assignment.
+ *
+ * `+=` is in the pattern because `/\.innerHTML\s*=/` alone does not match it:
+ * `.innerHTML += '<li>' + name` is the classic way to append markup, and it was
+ * invisible to the guard written to catch exactly that.
+ */
 function innerHtmlAssignments(source: string): string[] {
   return source
     .split('\n')
-    .filter(line => /\.innerHTML\s*=/.test(line))
+    .filter(line => /\.innerHTML\s*\+?=/.test(line))
     .filter(line => !/^\s*(\/\/|\*|\/\*)/.test(line.trimStart()) === true || !/^\s*[/*]/.test(line))
     .map(line => line.trim());
 }
@@ -126,6 +133,89 @@ describe('no interpolated innerHTML in a privileged webview', () => {
     }
   });
 
+});
+
+/**
+ * Every OTHER way a string reaches a HTML parser, a script engine or a URL.
+ *
+ * `innerHTML` is one sink of many, and a guard that names only it says nothing
+ * about the rest. The list is the DOM's: markup parsers, string handlers,
+ * string code, and the attributes that load a URL — any of which turns a device
+ * name from another app into script running beside a webview that can
+ * `Homey.get` the API key (see the top of this file).
+ *
+ * The one hit there used to be — the credential view's static "could not reach
+ * Homey" banner, inserted with `insertAdjacentHTML` — is built as a node now,
+ * so this needs no allowlist either.
+ */
+const HTML_SINKS: Array<[string, RegExp]> = [
+  ['outerHTML', /\.outerHTML\s*\+?=/],
+  ['insertAdjacentHTML', /\binsertAdjacentHTML\s*\(/],
+  ['document.write', /\bdocument\.write(?:ln)?\s*\(/],
+  ['createContextualFragment', /\bcreateContextualFragment\s*\(/],
+  ['DOMParser', /\bDOMParser\b|\bparseFromString\s*\(/],
+  ['srcdoc', /\bsrcdoc\b/],
+  ['eval', /(?<![\w.])eval\s*\(/],
+  ['new Function', /\bnew\s+Function\s*\(/],
+  ['a string timer', /\bset(?:Timeout|Interval)\s*\(\s*['"`]/],
+  ['a string event handler', /\.on[a-z]+\s*=\s*['"`]/],
+  ['an event-handler attribute', /\bsetAttribute\s*\(\s*['"`]on/i],
+  ['a URL-loading attribute', /\bsetAttribute\s*\(\s*['"`](?:href|src|srcset|action|formaction|xlink:href)['"`]/i],
+  ['a URL-loading property', /\.(?:href|src|srcset|action|formAction)\s*=(?!=)/],
+  ['a javascript: URL', /javascript:/i],
+];
+
+/** Lines that are not comments — what a sink search has to read. */
+function codeLines(source: string): string[] {
+  return source
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.length > 0 && !/^(\/\/|\*|\/\*|<!--)/.test(line));
+}
+
+describe('no other HTML sink in a privileged webview either', () => {
+  test('the sink patterns catch what they are for', () => {
+    // A pattern that matches nothing is indistinguishable from a clean tree.
+    const samples: Record<string, string> = {
+      'outerHTML': 'row.outerHTML = html;',
+      'insertAdjacentHTML': "el.insertAdjacentHTML('beforeend', name);",
+      'document.write': 'document.write(name);',
+      'createContextualFragment': 'range.createContextualFragment(html);',
+      'DOMParser': "new DOMParser().parseFromString(html, 'text/html');",
+      'srcdoc': 'frame.srcdoc = html;',
+      'eval': 'eval(code);',
+      'new Function': "new Function('return ' + name)();",
+      'a string timer': "setTimeout('go()', 10);",
+      'a string event handler': "button.onclick = 'go()';",
+      'an event-handler attribute': "img.setAttribute('onerror', code);",
+      'a URL-loading attribute': "link.setAttribute('href', url);",
+      'a URL-loading property': 'link.href = url;',
+      'a javascript: URL': "var u = 'javascript:alert(1)';",
+    };
+    for (const [name, pattern] of HTML_SINKS) {
+      assert.match(samples[name]!, pattern, name);
+    }
+    assert.match('list.innerHTML += item;', /\.innerHTML\s*\+?=/);
+
+    // And what every view legitimately does is not a sink.
+    for (const fine of [
+      'label.textContent = name;',
+      'window.onHomeyReady = __lkBootCr;',
+      "row.setAttribute('aria-pressed', 'true');",
+      'if (a.href === b) {}',
+    ]) {
+      for (const [name, pattern] of HTML_SINKS) assert.doesNotMatch(fine, pattern, `${name}: ${fine}`);
+    }
+  });
+
+  for (const view of privilegedViews()) {
+    test(`${view} uses none of them`, () => {
+      const hits = codeLines(read(view)).flatMap(line => HTML_SINKS
+        .filter(([, pattern]) => pattern.test(line))
+        .map(([name]) => `${name}: ${line}`));
+      assert.deepEqual(hits, [], `${view} reaches a HTML sink. Build the node instead — see node() in any view`);
+    });
+  }
 });
 
 describe('no view reads the API key', () => {
