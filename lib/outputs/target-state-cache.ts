@@ -684,10 +684,14 @@ export class TargetStateCache {
   private ineffectiveWrite(deviceId: string, capability: Capability, value: unknown): boolean {
     const key = `${deviceId}:${capability}`;
     const before = this.preWrite.get(key);
+    // No snapshot: nothing dispatched to this capability since the target was
+    // (re)built, or the last write already landed and dropped it (below).
+    //
+    // There is deliberately no "has a newer write gone out since?" check here.
+    // `noteEcho` replaces the snapshot on EVERY dispatch, together with the
+    // write sequence and with the same value, so `before` is always the latest
+    // write's — a guard comparing the two (there was one) could never fire.
     if (before === undefined) return false;
-    // Nothing has been dispatched since this snapshot was taken, so the lamp is
-    // not answering a write of ours and this says nothing either way.
-    if (this.writeSeq.get(key) !== before.seq) return false;
     // The lamp reached what we asked for. Whatever it reports after that is
     // news about the lamp, not about the write — so drop the snapshot and let
     // the ordinary override rules have it. Without this a person who happens to
@@ -751,10 +755,8 @@ export class TargetStateCache {
     if (capability === 'light_hue') return false;
     const key = `${deviceId}:${capability}`;
     const before = this.preWrite.get(key);
+    // Always the latest write's snapshot; see `ineffectiveWrite`.
     if (before === undefined) return false;
-    // Same guard as `ineffectiveWrite`: a newer write means this report is not
-    // answering the one the snapshot describes.
-    if (this.writeSeq.get(key) !== before.seq) return false;
     if (typeof value !== 'number'
       || typeof before.value !== 'number'
       || typeof before.written !== 'number') return false;
