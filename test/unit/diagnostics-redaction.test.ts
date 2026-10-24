@@ -391,4 +391,70 @@ describe('the bridge redacts its own failure logs, sanitiser or not', () => {
     assert.ok(logged.some(entry => /Could not check which folders are now empty/.test(entry)));
     for (const entry of logged) assert.equal(leaks(entry), false, `a log line leaked the key: ${entry}`);
   });
+
+  /**
+   * The two READ-client lines a delete goes through (SEC-1). Like the folder
+   * read above, there is no sanitiser on the read path in the app: the
+   * bridge's own redaction is the only layer.
+   */
+  const reference = (flowId: string) => ({
+    flowId, bindingKey: 'k', variantKey: 'fixed', fingerprint: 'fp', managedVersion: 1, createdAt: 1,
+  });
+  const bridgeCards = () => {
+    const card = (name: string) => ({ id: `com.thomassidor.lightkeeper:${name}`, uri: 'homey:app:com.thomassidor.lightkeeper' });
+    return { a: card('bridge_event'), b: card('bridge_numeric_event'), c: card('bridge_token_event') };
+  };
+
+  test('an unreadable Flow list deletes nothing, and says so redacted', async () => {
+    const logged: string[] = [];
+    const deletes: string[] = [];
+    const api = rawApi({
+      flow: {
+        getFlowCardActions: async () => bridgeCards(),
+        getFlows: async () => { throw quoting('GET /api/manager/flow/flow'); },
+        getFlowFolders: async () => ({}),
+      },
+    }, {
+      flow: { deleteFlow: async ({ id }: { id: string }) => { deletes.push(id); } },
+    });
+    const bridge = new FlowBridgeManager(api, 'com.thomassidor.lightkeeper', (...args) => {
+      logged.push(args.map(String).join(' '));
+    });
+
+    const deleted = await bridge.removeAll(OWNER, [reference('flow-1')]);
+
+    assert.equal(deleted, 0);
+    assert.deepEqual(deletes, [], 'nothing deleted without knowing whose it is');
+    assert.ok(logged.some(entry => /Could not read the Flow list/.test(entry)), 'the refusal is still logged');
+    for (const entry of logged) assert.equal(leaks(entry), false, `a log line leaked the key: ${entry}`);
+  });
+
+  test('a flow the snapshot lacks, which cannot be looked up, is logged redacted', async () => {
+    // A stored id the Flow-list snapshot does not contain (a deferred clean-up
+    // added after the snapshot, or any reference handed to removeAll) is read
+    // on its own before anything is deleted. That read failing is this line.
+    const logged: string[] = [];
+    const deletes: string[] = [];
+    const api = rawApi({
+      flow: {
+        getFlowCardActions: async () => bridgeCards(),
+        getFlows: async () => ({}),
+        getFlow: async ({ id }: { id: string }) => { throw quoting(`GET /api/manager/flow/flow/${id}`); },
+        getFlowFolders: async () => ({}),
+      },
+    }, {
+      flow: { deleteFlow: async ({ id }: { id: string }) => { deletes.push(id); } },
+    });
+    const bridge = new FlowBridgeManager(api, 'com.thomassidor.lightkeeper', (...args) => {
+      logged.push(args.map(String).join(' '));
+    });
+
+    await bridge.removeAll(OWNER, [reference('flow-9')]);
+
+    assert.deepEqual(deletes, [], 'an unattributable flow is not deleted');
+    const line = logged.find(entry => /Could not look up flow flow-9/.test(entry));
+    assert.ok(line, 'the failed look-up is logged');
+    assert.match(line, /GET \/api\/manager\/flow\/flow\/flow-9 failed/, 'and keeps its meaning');
+    for (const entry of logged) assert.equal(leaks(entry), false, `a log line leaked the key: ${entry}`);
+  });
 });

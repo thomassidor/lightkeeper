@@ -32,11 +32,29 @@ const ROOT = join(fileURLToPath(import.meta.url), '..', '..');
 /** Where the app's own runtime code lives — everything a Homey executes. */
 const SOURCES = ['app.ts', 'api.ts', 'lib', 'drivers'];
 
-/** Totals over every file in the report. */
-const TOTAL = { lines: 97, branches: 87, functions: 92 };
+/**
+ * Totals over every file in the report.
+ *
+ * Set on 24 October 2026 against what the suite then achieved on BOTH the Node
+ * CI runs (22) and a current local one (24), which differ in the branch figure:
+ * lines 98.75 / 98.75, branches 89.86 / 89.77, functions 95.03 / 95.03. Each
+ * floor sits a quarter to half a point under the lower of the two.
+ */
+const TOTAL = { lines: 98.5, branches: 89.5, functions: 94.5 };
 
-/** The least any single file may have. */
-const PER_FILE = { lines: 85, branches: 65 };
+/**
+ * The least any single file may have.
+ *
+ * `functions` is new, and it is here because the totals cannot see a file whose
+ * functions go untested: the four runtime managers once sat at 60-74% while the
+ * total read 93%. The lowest files when it was set (both Node versions agree):
+ * lines 91.08 (schedule-runtime-manager.ts), branches 73.91 (drivers/curve/
+ * driver.ts), functions 56.00 (evidence-feature-disabled.ts, the launch build's
+ * no-op twin of the recorder) and then 61.73 (app.ts, whose Flow-card listener
+ * shells are thin). Raising the functions floor further means testing those
+ * two, not lowering anything else.
+ */
+const PER_FILE = { lines: 90, branches: 72, functions: 55 };
 
 /**
  * Files that are never in the report because they contain no runtime code: they
