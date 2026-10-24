@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { FlowCardCatalogue, NO_CACHE, toDiscoveredCard } from '../../lib/flow-card-catalogue';
 import { FlowBridgeManager } from '../../lib/bridge/flow-bridge-manager';
 import type { HomeyApiService } from '../../lib/homey-api-service';
+import { FakeTimers } from '../support/fake-timers';
 import type { CatalogDevice } from '../../lib/device-catalog';
 import { fingerprintOf, fingerprintV2Of } from '../../lib/source-discovery-service';
 
@@ -136,6 +137,81 @@ describe('flow card catalogue', () => {
     await catalogue.triggerCards();
 
     assert.equal(calls.length, 2);
+  });
+
+  /**
+   * The TTL used to be checked only on a read, so the projection outlived it
+   * until the next read replaced it: once anything had asked, the trigger cards
+   * (~1.1 MB of heap for 1700 cards, platform §15) stayed for the whole run.
+   */
+  test('the projection is let go when the TTL runs out, not when the next read comes', async () => {
+    const timers = new FakeTimers(1_000);
+    const { api, calls } = fakeApi([FAT_CARD]);
+    const catalogue = new FlowCardCatalogue(api, { ttlMs: 1_000, timers });
+
+    await catalogue.triggerCards();
+    assert.equal(catalogue.stats().triggers.retained, true);
+    assert.equal(timers.pending, 1, 'one release timer per held projection');
+
+    timers.advance(999);
+    await catalogue.triggerCards();
+    assert.equal(calls.length, 1, 'inside the TTL the held projection still answers');
+    assert.equal(catalogue.stats().triggers.retained, true);
+
+    timers.advance(1);
+    assert.equal(catalogue.stats().triggers.retained, false, 'released on time, with nothing asking');
+    assert.equal(timers.pending, 0);
+
+    await catalogue.triggerCards();
+    assert.equal(calls.length, 2, 'the next question reads the cards again');
+  });
+
+  test('a refetch re-arms the release rather than stacking a second timer', async () => {
+    const timers = new FakeTimers();
+    const { api } = fakeApi([FAT_CARD]);
+    const catalogue = new FlowCardCatalogue(api, { ttlMs: 1_000, timers });
+
+    await catalogue.triggerCards();
+    await catalogue.actionCardRefs();
+    assert.equal(timers.pending, 2, 'one per catalogue');
+
+    timers.advance(1_000);
+    await catalogue.triggerCards();
+    assert.equal(timers.pending, 1, 'the triggers re-armed once; the actions were released');
+  });
+
+  /** Nothing survives teardown: `onUninit` calls `clear()`, and it must leave no timer. */
+  test('clear() leaves no release timer pending', async () => {
+    const timers = new FakeTimers();
+    const { api } = fakeApi([FAT_CARD]);
+    const catalogue = new FlowCardCatalogue(api, { timers });
+
+    await catalogue.triggerCards();
+    await catalogue.actionCardRefs();
+    catalogue.clear();
+
+    assert.equal(timers.pending, 0);
+    assert.equal(catalogue.stats().triggers.retained, false);
+    assert.equal(catalogue.stats().actions.retained, false);
+  });
+
+  /** For `/diagnostics`: how often the expensive read happens, and what it costs. */
+  test('stats count reads, failures, duration and size, and never carry a card', async () => {
+    const timers = new FakeTimers();
+    let broken = false;
+    const { api } = fakeApi([FAT_CARD, FAT_CARD], { fail: () => broken });
+    const catalogue = new FlowCardCatalogue(api, { ttlMs: 1_000, timers });
+
+    await catalogue.triggerCards();
+    await catalogue.triggerCards();
+    timers.advance(1_000);
+    broken = true;
+    await assert.rejects(() => catalogue.triggerCards());
+
+    const stats = catalogue.stats();
+    assert.deepEqual(stats.triggers, { fetches: 2, failures: 1, lastMs: 0, lastCount: 2, retained: false });
+    assert.deepEqual(stats.actions, { fetches: 0, failures: 0, lastMs: null, lastCount: null, retained: false });
+    assert.ok(!JSON.stringify(stats).includes('tapdial'), 'counts only, never a card');
   });
 
   describe('finding our own action cards', () => {

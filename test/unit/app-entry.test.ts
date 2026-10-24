@@ -114,9 +114,11 @@ describe('onInit', () => {
 
   test('a device or zone change reaches every registry AND the sensor service', async () => {
     const { app, client, dispatched } = await boot();
+    // `noteCatalogChange`, the coalesced entry, not `onCatalogChange`: the
+    // service gathers a burst itself rather than re-reading per event.
     let luminance = 0;
-    const onCatalogChange = app.luminance.onCatalogChange.bind(app.luminance);
-    app.luminance.onCatalogChange = async () => { luminance += 1; return onCatalogChange(); };
+    const noteCatalogChange = app.luminance.noteCatalogChange.bind(app.luminance);
+    app.luminance.noteCatalogChange = () => { luminance += 1; noteCatalogChange(); };
     let curves = 0;
     let daylights = 0;
     app.curves.onCatalogChange = async () => { curves += 1; };
@@ -472,5 +474,71 @@ describe('onUninit', () => {
     const never = makeApp(LightkeeperApp, fakeHomey());
     never.evidence = { stopTimer: () => undefined, close: async () => undefined };
     await never.onUninit();
+  });
+
+  /**
+   * Platform §17: an `await` inside `onUninit` may never complete. It used to
+   * open with `await this.evidence.close()`, so if the recorder's flush never
+   * finished, no runtime was ever told to stop: no write queue stopped, no
+   * ticker cleared. Every teardown must be STARTED before the first await.
+   */
+  test('every teardown begins synchronously, even if the recorder never finishes closing', async () => {
+    const { app, homey } = await boot();
+    const started: string[] = [];
+    const recorder = app.evidence;
+    app.evidence = {
+      stopTimer: () => { started.push('evidence.stopTimer'); recorder.stopTimer(); },
+      close: () => { started.push('evidence.close'); return new Promise<void>(() => { /* never */ }); },
+    };
+    for (const name of ['controllers', 'schedules', 'curves', 'daylights']) {
+      app[name] = { ...app[name], destroyAll: async () => { started.push(`${name}.destroyAll`); } };
+    }
+    for (const name of ['lights', 'luminance']) {
+      const destroy = app[name].destroy.bind(app[name]);
+      app[name].destroy = () => { started.push(`${name}.destroy`); return destroy(); };
+    }
+    let cleared = false;
+    const clear = app.cards.clear.bind(app.cards);
+    app.cards.clear = () => { cleared = true; clear(); };
+    let clientDestroyed = false;
+    const destroyClient = app.api.destroy.bind(app.api);
+    app.api.destroy = async () => { clientDestroyed = true; await destroyClient(); };
+
+    const uninit = app.onUninit();
+
+    // Nothing awaited yet: all of it ran inside the synchronous call.
+    assert.deepEqual(started, [
+      'evidence.stopTimer', 'evidence.close',
+      'controllers.destroyAll', 'schedules.destroyAll', 'curves.destroyAll', 'daylights.destroyAll',
+      'lights.destroy', 'luminance.destroy',
+    ], 'recorder first, as its own comment insists, and every other teardown started behind it');
+    assert.equal(cleared, true);
+    assert.equal(clientDestroyed, false, 'the read client goes last, after the runtimes have stopped through it');
+
+    await settle(12);
+    assert.equal(clientDestroyed, true, 'and it is not held hostage by a flush that never finishes');
+
+    // One interval is left, by design: the heap sampler, the SDK's
+    // disposal-safe alias, which `onUninit` does not own. Everything else this
+    // app armed on the Homey's timers is gone although the recorder never
+    // finished.
+    void uninit;
+    assert.equal(homey.timers.pending, 1, `left behind: ${homey.timers.pending}`);
+  });
+
+  test('a registry whose teardown rejects does not abandon the ones after it', async () => {
+    const { app } = await boot();
+    const torn: string[] = [];
+    app.controllers = { ...app.controllers, destroyAll: async () => { throw new Error('controller teardown broke'); } };
+    for (const name of ['schedules', 'curves', 'daylights']) {
+      app[name] = { ...app[name], destroyAll: async () => { torn.push(name); } };
+    }
+    const destroy = app.api.destroy.bind(app.api);
+    app.api.destroy = async () => { torn.push('api'); await destroy(); };
+
+    await app.onUninit();
+
+    assert.deepEqual(torn, ['schedules', 'curves', 'daylights', 'api']);
+    assert.ok(app.logs.some((line: string) => line.includes('controller teardown broke')), app.logs.join('\n'));
   });
 });

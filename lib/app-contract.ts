@@ -4,7 +4,8 @@ import type { diagnosticSemantics } from './runtime/control-diagnostics';
 import type { CredentialService, CredentialStatus } from './credential-service';
 import type { IntakeRecord } from './bridge/bridge-event-intake';
 import type { HomeyApiService } from './homey-api-service';
-import type { DeviceCatalog } from './device-catalog';
+import type { CatalogStats, DeviceCatalog } from './device-catalog';
+import type { CardCatalogueStats, FlowCardCatalogue } from './flow-card-catalogue';
 import type { SourceDiscoveryService } from './source-discovery-service';
 import type { FlowBridgeManager } from './bridge/flow-bridge-manager';
 import type { HealthMonitor } from './runtime/health-monitor';
@@ -41,6 +42,12 @@ export interface LightkeeperApp {
   readonly credentials: CredentialService;
   readonly api: HomeyApiService;
   readonly catalog: DeviceCatalog;
+  /**
+   * The one flow card catalogue. On the public surface for `/diagnostics`,
+   * which reports how often the card reads happen. Asking it for cards from a
+   * route is exactly what that route must never do (platform §15).
+   */
+  readonly cards: FlowCardCatalogue;
   readonly discovery: SourceDiscoveryService;
   readonly bridge: FlowBridgeManager;
   readonly controllers: ControllerRuntimeManager;
@@ -211,6 +218,16 @@ export interface DiagnosticsResponse {
    * retention regression detectable at all.
    */
   heap: HeapReport;
+  /**
+   * How often the device catalogue is invalidated and refreshed, and how often
+   * the card catalogues are read, since the app started.
+   *
+   * The cost of every catalogue change is set by how often Homey sends device
+   * and zone events, and that rate had never been measured. It decides whether
+   * a controller re-reading the whole trigger catalogue on a catalogue change
+   * is a rounding error or a 1 MB read once a minute. Counts only.
+   */
+  catalog: { devices: CatalogStats; cards: CardCatalogueStats };
   semantics: ReturnType<typeof diagnosticSemantics>;
   eventHistory: { capacity: number; retained: number; dropped: number };
   generatedAt: number;

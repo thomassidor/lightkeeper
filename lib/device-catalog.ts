@@ -75,10 +75,73 @@ export interface CatalogZone {
  */
 const LIGHT_CAPABILITIES = ['onoff', 'dim', 'light_temperature', 'light_hue'] as const;
 
+/**
+ * How hard the catalogue is working, counted since the app started. For
+ * `/diagnostics` only.
+ *
+ * Every device or zone event invalidates the whole catalogue, and every
+ * invalidation goes on to a refresh in each runtime registry (500 ms later)
+ * and in the sensor service. What that costs is set by how often Homey sends
+ * those events, which nobody has measured: our own `setStoreValue` is known to
+ * emit `device.update`, but whether a capability VALUE change does is not
+ * recorded anywhere. Counted so it can be read off a real Homey rather than
+ * argued about.
+ *
+ * Counts and event names only: no device id, name or URI, so nothing here
+ * needs redacting.
+ */
+export interface CatalogStats {
+  /** When counting began, so a reader can turn counts into rates. */
+  since: number;
+  /** Per event name, plus `read_client_replaced`. */
+  invalidations: Record<string, number>;
+  /** Refresh passes that published a view, retries included. */
+  refreshes: number;
+  /** Of those, the passes that re-ran because an event landed mid-read. */
+  supersededRetries: number;
+  /** Refreshes whose device or zone read failed. */
+  refreshFailures: number;
+  /** `getApps()` round trips, the one read in a refresh that is never cached. */
+  appNameLoads: number;
+}
+
 export class DeviceCatalog {
   private devices: Map<string, CatalogDevice> | null = null;
   private zones: Map<string, CatalogZone> | null = null;
+  /**
+   * Owning app names, by `homey:app:<id>` URI. Kept across invalidations, and
+   * that is a change.
+   *
+   * It used to be cleared on every device or zone event, and `getApps()` is a
+   * real round trip every time (`read()` never connects `apps`, so nothing
+   * caches it). So every catalogue refresh made one, for an answer that changes
+   * only when an integration is installed, updated or renamed. A
+   * `device.update` on a device whose app we already know cannot change it.
+   *
+   * Now the names are loaded only when a refresh meets an owner it has no name
+   * for. That is still exactly the case the old clearing existed for, an
+   * integration installed after boot: its first device arrives with an unknown
+   * owner. `device.create` also clears the map, so an app that was updated and
+   * renamed picks up its new name with its next new device. Until then it keeps
+   * the old one, which only matters to how the picker labels a light.
+   */
   private appNames = new Map<string, string>();
+  /**
+   * Owners a `getApps()` was asked about and could not name: an app that is
+   * mid-install, or a read that failed. Remembered so the same owner does not
+   * cost a round trip on every refresh. Cleared on `device.create` and when
+   * the read client is replaced, the two moments when asking again could give
+   * a different answer.
+   */
+  private unresolvedOwners = new Set<string>();
+  private readonly counters: CatalogStats = {
+    since: Date.now(),
+    invalidations: {},
+    refreshes: 0,
+    supersededRetries: 0,
+    refreshFailures: 0,
+    appNameLoads: 0,
+  };
   /**
    * The refresh in flight, shared by every caller that arrives while it runs.
    *
@@ -129,16 +192,25 @@ export class DeviceCatalog {
     return device.ownerUri === `homey:app:${this.ownAppId}`;
   }
 
+  /** What the catalogue has done since the app started. See `CatalogStats`. */
+  stats(): CatalogStats {
+    return { ...this.counters, invalidations: { ...this.counters.invalidations } };
+  }
+
   /** Zone and device changes invalidate the cache (zone re-resolution). */
   async watch(onChange: () => void): Promise<void> {
-    const invalidate = () => {
+    const invalidate = (reason: string) => {
+      this.counters.invalidations[reason] = (this.counters.invalidations[reason] ?? 0) + 1;
       this.generation += 1;
       this.devices = null;
       this.zones = null;
-      // App names too: an integration installed or updated after boot would
-      // otherwise show as its raw `homey:app:<id>` URI for the rest of the app's
-      // life, because loadAppNames() returns early on a non-empty map.
-      this.appNames = new Map();
+      // App names survive, except on the two events after which asking again
+      // could give a different answer. See `appNames` for why every other event
+      // must not cost a `getApps()`.
+      if (reason === 'device.create') this.appNames = new Map();
+      if (reason === 'device.create' || reason === 'read_client_replaced') {
+        this.unresolvedOwners = new Set();
+      }
       onChange();
     };
 
@@ -153,14 +225,16 @@ export class DeviceCatalog {
       ] as const) {
         for (const event of events) {
           if (typeof manager?.on !== 'function') continue;
-          manager.on(event, invalidate);
-          detach.push(() => manager.off?.(event, invalidate));
+          // One handler per event, kept, so `off` is handed the same function.
+          const handler = () => invalidate(event);
+          manager.on(event, handler);
+          detach.push(() => manager.off?.(event, handler));
         }
       }
     };
     await bind();
     const offReplacement = this.api.onReadReplacement?.(() => {
-      invalidate();
+      invalidate('read_client_replaced');
       void bind().catch(() => { /* Next recovery retries binding. */ });
     });
     this.api.track(async () => {
@@ -283,10 +357,9 @@ export class DeviceCatalog {
     /**
      * The generation this pass belongs to.
      *
-     * `refreshNow` awaits twice after the reads — `loadAppNames()` is a real
-     * round trip every time, because `read()` never connects the `apps` manager
-     * so `getApps()` is never cached, and `invalidate()` clears `appNames`
-     * before every refresh it triggers. A device or zone event landing in that
+     * `refreshNow` can await after the reads — `loadAppNames()` is a real
+     * round trip whenever it runs, because `read()` never connects the `apps`
+     * manager so `getApps()` is never cached. A device or zone event landing in that
      * window nulled `this.zones`, and the device loop then dereferenced
      * `this.zones!` and threw a TypeError: one refresh pass lost, and an opaque
      * line in the log or a spurious error on a pairing screen.
@@ -329,6 +402,7 @@ export class DeviceCatalog {
         client.zones.getZones(),
       ]);
     } catch (error) {
+      this.counters.refreshFailures += 1;
       // A socket that has gone away answers every later read identically. Say so
       // and let the next call rebuild the client rather than failing forever.
       this.api.reportReadFailure(error);
@@ -343,7 +417,7 @@ export class DeviceCatalog {
       parent: typeof z.parent === 'string' ? z.parent : null,
     }]));
 
-    await this.loadAppNames(client);
+    await this.loadAppNames(client, Object.values(rawDevices) as RawDevice[]);
 
     const devices = new Map((Object.values(rawDevices) as RawDevice[]).map(d => {
       const ownerUri = typeof d.ownerUri === 'string' ? d.ownerUri : null;
@@ -372,6 +446,7 @@ export class DeviceCatalog {
     // which is the whole of the fix.
     this.zones = zones;
     this.devices = devices;
+    this.counters.refreshes += 1;
 
     /**
      * Superseded while we were reading, so read again.
@@ -388,13 +463,29 @@ export class DeviceCatalog {
      * after the storm settles refetches anyway.
      */
     if (this.generation !== generation && attempt < 2) {
+      this.counters.supersededRetries += 1;
       await this.refreshNow(attempt + 1);
     }
   }
 
-  /** Always show the owning integration, by name rather than URI. */
-  private async loadAppNames(client: any): Promise<void> {
-    if (this.appNames.size > 0) return;
+  /**
+   * Always show the owning integration, by name rather than URI — and ask for
+   * the names only when some device has an owner we cannot name yet.
+   *
+   * Only `homey:app:` owners can be named by `getApps()`; a device owned by
+   * Homey itself never triggers a read. See `appNames` and `unresolvedOwners`.
+   */
+  private async loadAppNames(client: any, rawDevices: RawDevice[]): Promise<void> {
+    const unknown = new Set<string>();
+    for (const device of rawDevices) {
+      const owner = typeof device.ownerUri === 'string' ? device.ownerUri : null;
+      if (owner === null || !owner.startsWith('homey:app:')) continue;
+      if (this.appNames.has(owner) || this.unresolvedOwners.has(owner)) continue;
+      unknown.add(owner);
+    }
+    if (unknown.size === 0) return;
+
+    this.counters.appNameLoads += 1;
     try {
       // A `getAll` WITHOUT `NO_CACHE`, and platform §15's rule wants the why:
       // it retains nothing. `homey-api` writes a `getAll` into its cache only
@@ -406,7 +497,13 @@ export class DeviceCatalog {
         if (app?.id) this.appNames.set(`homey:app:${app.id}`, app.name ?? app.id);
       }
     } catch {
-      // Names are cosmetic; the URI fallback is still informative.
+      // Names are cosmetic; the URI fallback is still informative. The owners
+      // are still marked below, so a failing read is not retried on every
+      // refresh: a transport failure replaces the read client, which clears
+      // the mark.
+    }
+    for (const owner of unknown) {
+      if (!this.appNames.has(owner)) this.unresolvedOwners.add(owner);
     }
   }
 

@@ -488,6 +488,9 @@ module.exports = {
       // one bare memory call inside a literal taking a whole health sample with
       // it, once a minute, for a week.
       heap: heapReport(),
+      // Counters only, read and copied. Neither call reads anything from the
+      // Homey: a report must not change what it is reporting on (platform §15).
+      catalog: { devices: app.catalog.stats(), cards: app.cards.stats() },
       semantics: diagnosticSemantics(app.brightnessScale()),
       eventHistory: app.recentEvents.retention(),
       app: { id: homey.manifest.id, version: homey.manifest.version },
