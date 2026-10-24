@@ -11,6 +11,9 @@ import { planIntent } from '../../lib/outputs/intent-planner';
 import { DEFAULT_BEHAVIOR } from '../../lib/mapping/mapping-types';
 import { eventKeyFor } from '../../lib/schedules/schedule-bindings';
 import type { ScheduleEntry } from '../../lib/schedules/schedule-types';
+import { ScheduleRuntime } from '../../lib/schedules/schedule-runtime';
+import type { DeviceCatalog } from '../../lib/device-catalog';
+import { settle } from '../support/deferred';
 
 /**
  * One named test per PROMISE the app makes in prose.
@@ -127,7 +130,7 @@ describe('safety promises', () => {
    * it demonstrably created." CLAUDE.md, Safety properties: "Attribution is the
    * controller id carried in the bridge action's arguments."
    */
-  test('deleting a device removes only the flows carrying its own id', async () => {
+  test('deleting a device removes the flows it stored, and leaves every other flow alone', async () => {
     const h = bridgeHarness({
       'f-mine-1': generatedFlow({ id: 'f-mine-1', controller: 'lk-ctrl-1755500000000-100001', eventKey: 'press:up' }),
       'f-mine-2': generatedFlow({ id: 'f-mine-2', controller: 'lk-ctrl-1755500000000-100001', eventKey: 'press:down' }),
@@ -447,28 +450,98 @@ describe('safety promises', () => {
    * catching up means lighting a household's rooms with nothing to turn them off
    * again, which is the one failure worse than a dark evening.
    */
-  test('catch-up needs a recorded off boundary for the entry it is catching up', () => {
+  test('catch-up needs a recorded off boundary for the entry it is catching up', async () => {
     /**
-     * This used to declare its OWN `hasOff` predicate and assert that against
-     * hand-built reference lists — so it never called `ScheduleRuntime` at all,
-     * and would have passed just as happily with the gate deleted outright. The
-     * one test in the suite whose name promised the most and checked the least.
+     * END TO END, through `start()` — the restart a user's Homey actually does.
      *
-     * The runtime-level assertion now lives in schedule-runtime.test.ts, where
-     * the harness that can build a runtime already is: "catch-up declines a
-     * window whose off boundary is not recorded". What is left here is the
-     * SHAPE the gate keys on, which is this file's own business — that the
-     * binding key of an off reference is derivable and distinct from the on one.
+     * This test first declared its own `hasOff` predicate, and then shrank to
+     * asserting the SHAPE of `eventKeyFor()`; neither ever ran a runtime, so
+     * both would have passed with the gate deleted outright. Now it restarts a
+     * real `ScheduleRuntime` at 22:15, inside a 20:00-01:00 window, twice: once
+     * after a reconcile that recorded only the ON Flow (a half-finished pass, a
+     * Flow the user deleted, a dead key at first save) and once after one that
+     * recorded both. The second is the control — without it, a runtime that
+     * never caught up at all would pass.
      */
     const entry: ScheduleEntry = {
       id: 'night', onAt: 20 * 60, end: { kind: 'duration', minutes: 300 },
     };
 
-    assert.notEqual(
-      eventKeyFor(entry.id, 'on'), eventKeyFor(entry.id, 'off'),
-      'the two boundaries must be separately referenceable, or the gate cannot tell them apart',
+    const restart = async (recordOff: boolean) => {
+      const writes: Array<{ capability: string; value: unknown }> = [];
+      const lamp = {
+        id: 'l1', name: 'Sofa lamp', zoneName: 'Living room', class: 'light', available: true,
+        capabilities: ['onoff', 'dim'],
+        capabilitiesObj: { onoff: { value: false }, dim: { min: 0, max: 1, decimals: 2, value: 0.5 } },
+      };
+      const runtime = new ScheduleRuntime('sched-1', {
+        schemaVersion: 1, enabled: true, days: null, managedFlows: [],
+        target: { kind: 'devices', deviceIds: ['l1'] }, entries: [entry],
+      }, {
+        api: {
+          credentials: { getStatus: () => ({ present: true, valid: true }) },
+          read: async () => ({
+            devices: {
+              getDevice: async () => ({
+                async setCapabilityValue({ capabilityId, value }: { capabilityId: string; value: unknown }) {
+                  writes.push({ capability: capabilityId, value });
+                },
+                makeCapabilityInstance: () => ({ destroy: () => undefined }),
+              }),
+            },
+          }),
+          track: (unsubscribe: unknown) => unsubscribe,
+        } as unknown as HomeyApiService,
+        catalog: {
+          device: async (id: string) => (id === 'l1' ? lamp : undefined),
+          devicesInZone: async () => [lamp],
+          lightsInZone: async () => [lamp],
+          isOwnDevice: () => false,
+        } as unknown as DeviceCatalog,
+        bridge: {
+          reconcile: async (_id: string, pass: () => Promise<unknown>) => pass(),
+          sync: async (request: { mapped: Array<{ key: string; variantKey?: string }>; fingerprint: string }) => ({
+            references: request.mapped
+              .filter(input => recordOff || input.key !== eventKeyFor(entry.id, 'off'))
+              .map((input, index) => ({
+                flowId: `f${index}`, bindingKey: input.key, variantKey: input.variantKey,
+                fingerprint: request.fingerprint, managedVersion: 1, createdAt: 0,
+              })),
+            created: 2, reused: 0, deleted: 0, userEdited: [], unsupported: [], staleReplacements: [],
+          }),
+          removeAll: async () => 0,
+        } as unknown as FlowBridgeManager,
+        timeCard: async () => ({
+          card: { id: 'homey:manager:cron:time_exactly', uri: 'homey:flowcardtrigger:homey:manager:cron:time_exactly', argument: 'time' },
+          candidates: [],
+        }),
+        timezone: () => 'Europe/Copenhagen',
+        // Tuesday 18 August 2026, 22:15 in Copenhagen.
+        now: () => Date.UTC(2026, 7, 18, 20, 15),
+        displayName: () => 'Living room schedule',
+        log: () => undefined,
+        onStateChange: () => undefined,
+        onPlanChange: async () => undefined,
+      });
+      await runtime.start();
+      // Catch-up is fire-and-forget into the write queue; the first write goes
+      // out on the leading edge, a few turns later.
+      await settle(12);
+      const refusals = runtime.diagnostics().catchUpRefusals;
+      await runtime.stop();
+      return { writes, refusals };
+    };
+
+    const withoutOff = await restart(false);
+    assert.deepEqual(withoutOff.writes, [], 'a room lit with nothing scheduled to switch it off');
+    assert.deepEqual(withoutOff.refusals.map(r => r.entryId), ['night'], 'and the refusal is on record');
+
+    const withOff = await restart(true);
+    assert.ok(
+      withOff.writes.some(w => w.capability === 'onoff' && w.value === true),
+      'the control: with both Flows recorded, the same restart does catch up',
     );
-    assert.match(eventKeyFor(entry.id, 'off'), /:off$/);
+    assert.deepEqual(withOff.refusals, []);
   });
 });
 
@@ -509,5 +582,35 @@ describe('platform-reference citations', () => {
       }
     }
     assert.deepEqual(missing, []);
+  });
+});
+
+/**
+ * README.md, What you can rely on: "Deleting a device deletes only the Flows
+ * it demonstrably created" — the half the delete test above does not reach.
+ *
+ * That test hands `removeAll` the device's own references, so it shows that
+ * those are deleted and nothing ELSE is; it never offers a reference the
+ * device should not have. A stored Flow id is a claim, not a proof (a hand
+ * edit, an older build, a half-applied plan can all put a foreign id in a
+ * device's store), and the attribution rule is that the LIVE Flow's bridge
+ * arguments must name the device being deleted.
+ */
+describe('safety promises: whose Flows a delete may take', () => {
+  test('a stored reference to a flow carrying another device\'s id is never deleted', async () => {
+    const owner = 'lk-ctrl-1755500000000-100001';
+    const h = bridgeHarness({
+      'f-mine': generatedFlow({ id: 'f-mine', controller: owner, eventKey: 'press:up' }),
+      'f-theirs': generatedFlow({ id: 'f-theirs', controller: 'lk-ctrl-1755500000000-100002', eventKey: 'press:up' }),
+    });
+
+    await h.bridge.removeAll(owner, [
+      { flowId: 'f-mine', bindingKey: 'press:up', fingerprint: 'fp', managedVersion: 1, createdAt: 1 },
+      // Well-formed, passes every shape check, and names somebody else's Flow.
+      { flowId: 'f-theirs', bindingKey: 'press:down', fingerprint: 'fp', managedVersion: 1, createdAt: 1 },
+    ] as any);
+
+    assert.deepEqual(h.deleted, ['f-mine']);
+    assert.ok('f-theirs' in h.live, 'another device’s flow survives a forged reference to it');
   });
 });
