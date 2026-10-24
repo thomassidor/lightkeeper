@@ -37,17 +37,37 @@ const HomeyAPI = require('homey-api/lib/HomeyAPI/HomeyAPI');
  * gate that lets `Manager.__cache` retain a week of samples per sensor for the
  * life of the client (platform §15).
  *
- * The four below ARE load-bearing: the app subscribes to device and zone events
- * and to capability changes, and `Flow.isBroken` refuses to run without `flow`
- * and `flowtoken` connected.
+ * `flow` and `flowtoken` are not among them either, for the same two reasons.
+ * They used to be, on the strength of `Flow.isBroken` refusing to run without
+ * both connected — and nothing in this app has ever called `isBroken`. Nor does
+ * anything listen on either namespace: every Flow, folder and card read goes
+ * through `__request`, which uses the socket SESSION whenever it is up (the
+ * `devices` connect below keeps it up) and HTTP otherwise, connected manager
+ * or not. What the two connects did buy was every Flow and token CRUD event on
+ * the Homey decoded, transformed and dropped in this process, and every
+ * `*.create` among them written into `__cache` unconditionally while the
+ * manager is connected (`Manager.js`, the realtime `create` branch), for the
+ * life of the client (platform §15). How busy the `flowtoken` stream is on a
+ * real Homey was never measured; it did not need to be, because nothing reads
+ * it.
+ *
+ * The two below ARE load-bearing: `DeviceCatalog.watch()` listens for device
+ * and zone events. Capability changes do not need either — a capability
+ * instance subscribes to its own device's URI.
+ *
+ * The WRITE client still connects `flow` and `flowtoken` (`createWriteClient`).
+ * The same argument applies there, but that client holds the user's Personal
+ * API Key and platform §2's session behaviour was established on hardware, so
+ * dropping them waits for a credential pass on a real Homey.
  */
-const READ_MANAGERS = ['devices', 'zones', 'flow', 'flowtoken'];
+const READ_MANAGERS = ['devices', 'zones'];
 
 /**
  * Connect the named managers, one at a time, never failing the whole client.
  *
- * Managers connect individually; a top-level `connect()` does not cover them,
- * and `Flow.isBroken` refuses to run without `flow` + `flowtoken` connected.
+ * Managers connect individually; a top-level `connect()` does not cover them.
+ * Connecting is only ever about realtime EVENTS — see `READ_MANAGERS` for why
+ * a manager whose events nobody reads is not connected.
  *
  * `onError` is a PARAMETER rather than a fixed policy because the two callers
  * genuinely disagree and both are right: the read client logs a degraded

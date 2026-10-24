@@ -9,8 +9,11 @@ import type { CardArgument } from './inputs/magnitude-collapser';
  * `homey-api` caches every item returned by a `getAll` operation, permanently,
  * for the life of the client — see `Manager.__request`, where the `getAll`
  * branch writes `this.__cache` whenever `isConnected() && $updateCache`. Both
- * card catalogues are `getAll` operations, and `HomeyApiService.read()`
- * connects the flow manager, so the gate is open for every call we make.
+ * card catalogues are `getAll` operations. `HomeyApiService.read()` used to
+ * connect the flow manager, which held that gate open for every call we made;
+ * it no longer does (see `READ_MANAGERS`), but the opt-out below stays. It is
+ * what keeps the rule true whichever client and whichever connect list a
+ * future change hands this class, and it costs nothing.
  *
  * That is not a small cache. Platform §4 records ~1700 trigger cards on a real
  * Homey; measured, that payload is ~11.6 MB of JSON retaining ~16.8 MB of heap

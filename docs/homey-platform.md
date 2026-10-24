@@ -1167,10 +1167,23 @@ case 'getAll': {
 }
 ```
 
-Two conditions, both of which we satisfy by default. `isConnected()` is true because
-`HomeyApiService.read()` calls `connect()` on `devices`, `zones`, `flow` and `flowtoken` — which it
-must (§1, and `Flow.isBroken` refuses to run without flow + flowtoken connected). `$updateCache`
-defaults to `true`.
+Two conditions, both of which we satisfied by default. `isConnected()` was true because
+`HomeyApiService.read()` called `connect()` on `devices`, `zones`, `flow` and `flowtoken`, and
+`$updateCache` defaults to `true`.
+
+**`flow` and `flowtoken` are no longer connected on the read client** (24 October 2026). They were
+connected because `Flow.isBroken` refuses to run without both, and nothing in the app has ever called
+`isBroken`. `connect()` opens a manager's realtime subscription and nothing else: `__request` sends
+every read over the socket session whenever that session is up, and over HTTP when it is not,
+whether or not the manager is connected. So the two connects bought nothing the app used, and cost
+two things: every Flow and token event on the Homey decoded and dropped in this process, and every
+`*.create` event written into `__cache` unconditionally while the manager is connected (the realtime
+`create` branch in `Manager.js`). This is the same reasoning that took `insights` off the list (see
+`READ_MANAGERS`). The read client now connects `devices` and `zones` only, for
+`DeviceCatalog.watch()`. **The write client still connects `flow` and `flowtoken`.** Dropping them
+there waits for a credential pass on hardware, because that client holds the Personal API Key and
+§2's session behaviour was established empirically. The `NO_CACHE` rule below stands either way: it
+costs nothing, and it keeps a later change to a connect list from quietly reopening the gate.
 
 **Which operations are `getAll` is a property of the specification, not of the name.** From
 `assets/specifications/HomeyAPIV3Local.json`:
