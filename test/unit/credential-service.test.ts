@@ -355,3 +355,52 @@ describe('a candidate key leaves nothing connected', () => {
     assert.equal(h.service.revision, before, 'the stored key did not change');
   });
 });
+
+/**
+ * "The API key is never logged", on the path that runs with nobody watching.
+ *
+ * `revalidate` runs at every app start against the STORED key, and its failure
+ * is logged before anyone has asked for anything. The handshake and the write
+ * probe are the two places an error can quote the request back, token and all,
+ * so the log line must carry the classified failure and never the error. Both
+ * the whole key and its bare secret segment are searched for: a redactor that
+ * only recognised the whole key would let a message quoting the secret alone
+ * straight through.
+ */
+describe('a failed revalidation logs a classification, never the error', () => {
+  const SECRET = VALID_KEY.split(':')[2]!;
+  const leaks = (text: string) => text.includes(SECRET) || text.includes(VALID_KEY);
+
+  test('the stored key quoted back by the write probe stays out of the log', async () => {
+    const h = harness();
+    h.store.set('flowWriteApiKey', VALID_KEY);
+
+    const status = await h.service.revalidate(async () => {
+      throw Object.assign(
+        new Error(`Session Not Found for token ${VALID_KEY} (secret ${SECRET})`),
+        { statusCode: 401 },
+      );
+    });
+
+    assert.equal(status.failure, 'session_expired');
+    assert.ok(h.logs.some(line => /Stored API key is not usable/.test(line)),
+      'the failure must still be diagnosable');
+    for (const line of h.logs) {
+      assert.equal(leaks(line), false, `a log line leaked the key: ${line}`);
+    }
+  });
+
+  test('an unclassifiable error quoting only the secret stays out of it too', async () => {
+    const h = harness();
+    h.store.set('flowWriteApiKey', VALID_KEY);
+
+    await h.service.revalidate(async () => {
+      throw new Error(`socket hang up while sending bearer ${SECRET}`);
+    });
+
+    assert.ok(h.logs.length > 0);
+    for (const line of h.logs) {
+      assert.equal(leaks(line), false, `a log line leaked the secret: ${line}`);
+    }
+  });
+});

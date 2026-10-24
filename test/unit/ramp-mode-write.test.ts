@@ -1,5 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { FakeTimers } from '../support/fake-timers';
 
 import { ownsNothing, zoneLights } from '../support/fake-catalog';
 import { ControllerRuntimeManager } from '../../lib/runtime/controller-runtime-manager';
@@ -174,43 +175,13 @@ describe('the mode write inside a ramp', () => {
 });
 
 describe('what the ramp engine tells its consumer', () => {
-  class FakeClock {
-    private seq = 0;
-    private intervals = new Map<number, { fn: () => void; every: number; next: number }>();
-    now = 0;
-
-    setInterval = (fn: () => void, ms: number): unknown => {
-      const id = ++this.seq;
-      this.intervals.set(id, { fn, every: ms, next: this.now + ms });
-      return id;
-    };
-
-    clearInterval = (handle: unknown): void => { this.intervals.delete(handle as number); };
-    nowFn = (): number => this.now;
-
-    advance(ms: number): void {
-      const target = this.now + ms;
-      for (;;) {
-        const due = [...this.intervals.entries()]
-          .filter(([, t]) => t.next <= target)
-          .sort((a, b) => a[1].next - b[1].next)[0];
-        if (!due) break;
-        const timer = due[1];
-        this.now = timer.next;
-        timer.next += timer.every;
-        timer.fn();
-      }
-      this.now = target;
-    }
-  }
-
   test('every tick carries the ramp, counting from 1, and a re-hold starts over', () => {
-    const clock = new FakeClock();
+    const clock = new FakeTimers();
     const seen: number[] = [];
     const engine = new RampEngine(
       (_intent, ramp) => seen.push(ramp.ticks),
       () => { /* stops ignored */ },
-      { setInterval: clock.setInterval, clearInterval: clock.clearInterval, now: clock.nowFn },
+      { setInterval: clock.setInterval, clearInterval: clock.clearInterval, now: clock.now },
     );
 
     engine.start('warm', 'temperature', -1, ['l1']);

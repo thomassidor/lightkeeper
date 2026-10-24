@@ -9,6 +9,9 @@ import type { DeviceCatalog } from '../../lib/device-catalog';
 import type { FlowBridgeManager } from '../../lib/bridge/flow-bridge-manager';
 import type { HomeyApiService } from '../../lib/homey-api-service';
 import { settle as sharedSettle } from '../support/deferred';
+import { ScheduleRuntimeManager } from '../../lib/schedules/schedule-runtime-manager';
+import { fakeApiClient, fakeApiService, realCatalog, lamp as liveLamp } from '../support/fake-homey-api';
+import { FakeTimers } from '../support/fake-timers';
 
 /**
  * What a schedule runtime is responsible for is exactly what a generated Flow
@@ -808,5 +811,137 @@ describe('catch-up will not light a room it cannot switch off again', () => {
     await settle();
 
     assert.ok(h.runtime.diagnostics().catchUpRefusals.length > 0);
+  });
+});
+
+/**
+ * A REAL `ScheduleRuntimeManager` over the real catalogue, for the two things
+ * only the manager does: fan a credential change out to every schedule, and
+ * hand a runtime to the device layer to delete.
+ *
+ * The bridge writes Flows only while the key is valid — the one thing the key
+ * gates (platform §1) — and records what it was asked to delete.
+ */
+function managerHouse() {
+  let credentialValid = false;
+  const removed: Array<{ owner: string; refs: unknown[] }> = [];
+  const states: string[] = [];
+  const client = fakeApiClient([liveLamp('l1', 'Sofa lamp', 'z-living', { onoff: false })]);
+  const api = {
+    ...fakeApiService(client),
+    credentials: {
+      getStatus: () => ({
+        present: true, valid: credentialValid,
+        ...(credentialValid ? {} : { failure: 'session_expired' as const }),
+      }),
+    },
+  } as unknown as HomeyApiService;
+
+  const bridge = {
+    reconcile: async (_id: string, pass: () => Promise<unknown>) => pass(),
+    async sync(request: { mapped: Array<{ key: string; variantKey?: string }> }) {
+      if (!credentialValid) throw new Error('403 Missing Scopes');
+      return {
+        references: request.mapped.map((input, index) => ({
+          flowId: `f${index}`, bindingKey: input.key, variantKey: input.variantKey,
+          fingerprint: 'fp', managedVersion: 1, createdAt: 0,
+        })),
+        created: request.mapped.length, deleted: 0, reused: 0,
+        unsupported: [], userEdited: [], staleReplacements: [],
+      };
+    },
+    async removeAll(owner: string, refs: unknown[]) {
+      removed.push({ owner, refs: [...refs] });
+      return refs.length;
+    },
+  } as unknown as FlowBridgeManager;
+
+  const manager = new ScheduleRuntimeManager({
+    api, catalog: realCatalog(client), bridge,
+    // 10:00, outside the 22:00 window: nothing to catch up, nothing written.
+    timers: new FakeTimers(TUESDAY_1000),
+    timezone: () => 'Europe/Copenhagen',
+    log: () => { /* quiet */ },
+  });
+  manager.timeCard = async () => ({
+    card: { id: 'homey:manager:cron:time_exactly', uri: 'homey:flowcardtrigger:homey:manager:cron:time_exactly', argument: 'time' },
+    candidates: [],
+  });
+
+  return {
+    manager,
+    removed,
+    states,
+    grantCredential: () => { credentialValid = true; },
+    loseCredential: () => { credentialValid = false; },
+    register: () => manager.register('sched-1', plan({ target: { kind: 'devices', deviceIds: ['l1'] } }),
+      state => { states.push(state); }),
+  };
+}
+
+/**
+ * "A recovered key returns controllers to ready without a restart" — for a
+ * schedule, where it is the MANAGER's job.
+ *
+ * A schedule's reconcile never declares `ready` itself: a clean pass only sets
+ * `flowsHealthy`, and `assessHealth()` is what turns that into a state. So the
+ * health re-check that `onCredentialChange()` runs after the reconcile is the
+ * whole of the recovery. Skip it and a schedule stays on "Lightkeeper needs a
+ * new API key", unavailable, against a key that has just written its Flows.
+ */
+describe('a schedule and a credential change, through the manager', () => {
+  test('a schedule at needs_credential returns to ready when a valid key arrives', async () => {
+    const h = managerHouse();
+    const runtime = await h.register();
+    assert.equal(runtime.currentState, 'needs_credential');
+
+    h.grantCredential();
+    await h.manager.onCredentialChange();
+
+    assert.equal(runtime.currentState, 'ready');
+    assert.equal(h.states.at(-1), 'ready');
+    assert.equal(runtime.currentPlan.managedFlows.length, 2, 'and the new key wrote both Flows');
+
+    await h.manager.destroyAll();
+  });
+
+  test('and losing the key marks a ready schedule straight away', async () => {
+    // The mirror. No reconcile runs on a dead key, so the re-check is the
+    // ONLY thing that can notice; a schedule reporting ready while its Flow
+    // maintenance is dead is telling the user something untrue.
+    const h = managerHouse();
+    h.grantCredential();
+    const runtime = await h.register();
+    assert.equal(runtime.currentState, 'ready');
+
+    h.loseCredential();
+    await h.manager.onCredentialChange();
+
+    assert.equal(runtime.currentState, 'needs_credential');
+
+    await h.manager.destroyAll();
+  });
+});
+
+/**
+ * "Deleting a controller deletes only the Flows demonstrably created by it",
+ * the schedule half and the DELETES half: that a registered schedule's
+ * `destroy()` asks for its Flows to go at all. The "only" is the bridge's.
+ * Without this, a deleted schedule's two Flows per window stay live and go on
+ * firing at a device that no longer exists.
+ */
+describe('deleting a schedule', () => {
+  test('destroy() hands the bridge its own id and every managed Flow it stored', async () => {
+    const h = managerHouse();
+    h.grantCredential();
+    const runtime = await h.register();
+    const stored = runtime.currentPlan.managedFlows;
+    assert.equal(stored.length, 2, 'one on and one off Flow for the one window');
+
+    await runtime.destroy();
+
+    assert.deepEqual(h.removed, [{ owner: 'sched-1', refs: stored }]);
+
+    await h.manager.destroyAll();
   });
 });

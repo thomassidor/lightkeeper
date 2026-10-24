@@ -12,6 +12,7 @@ import { RuntimeRegistry } from './runtime-registry';
 import type { WriteRecord } from '../outputs/light-target-adapter';
 import type { BrightnessScale } from '../outputs/light-intent';
 import { messageOf } from '../support/homey-errors';
+import type { Timers } from '../support/timers';
 
 /**
  * Registry of live controller runtimes.
@@ -44,6 +45,13 @@ export interface RuntimeManagerDeps {
    * does.
    */
   brightnessScale?: () => BrightnessScale;
+  /**
+   * Timers handed to every runtime this manager builds, registered or
+   * ephemeral, for their write queues and the rest of their clocks. Absent
+   * means real timers, which is what app.ts passes; tests pass a FakeTimers so
+   * a teardown can be checked for anything left armed.
+   */
+  timers?: Partial<Timers>;
   log: (...args: unknown[]) => void;
 }
 
@@ -99,7 +107,7 @@ export class ControllerRuntimeManager {
   private readonly registry: RuntimeRegistry<ControllerRuntime>;
 
   constructor(private readonly deps: RuntimeManagerDeps) {
-    this.registry = new RuntimeRegistry({ log: deps.log, label: 'controller' });
+    this.registry = new RuntimeRegistry({ log: deps.log, label: 'controller', ...(deps.timers ? { timers: deps.timers } : {}) });
   }
 
   async register(
@@ -150,7 +158,7 @@ export class ControllerRuntimeManager {
    */
   private baseDeps(): Pick<
     ControllerRuntimeDeps,
-    'api' | 'catalog' | 'discovery' | 'bridge' | 'log' | 'onWriteResult' | 'sources' | 'brightnessScale'
+    'api' | 'catalog' | 'discovery' | 'bridge' | 'log' | 'onWriteResult' | 'sources' | 'brightnessScale' | 'timers'
   > {
     return {
       api: this.deps.api,
@@ -165,6 +173,7 @@ export class ControllerRuntimeManager {
       // sources would prove the degradation instead of the job.
       ...(this.deps.sources ? { sources: this.deps.sources } : {}),
       ...(this.deps.brightnessScale ? { brightnessScale: this.deps.brightnessScale } : {}),
+      ...(this.deps.timers ? { timers: this.deps.timers } : {}),
     };
   }
 

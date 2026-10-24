@@ -53,6 +53,7 @@ const ID = {
   circ: 'lk-circ-1755500000000-300001',
   circTwo: 'lk-circ-1755500000000-300002',
   dayl: 'lk-dayl-1755500000000-400001',
+  curve: 'lk-curve-1755500000000-500001',
 };
 
 type Write = { deviceId: string; capability: string; value: unknown; ok: boolean };
@@ -61,7 +62,16 @@ function homey(options: {
   controllers?: string[];
   schedules?: string[];
   circadian?: string[];
+  /** Colour Curve Lights: the same `curves` registry as circadian, their own driver. */
+  curve?: string[];
   daylight?: string[];
+  /**
+   * Registered runtimes whose device the DRIVER does not list — the window
+   * between a device being torn down and its runtime unregistering, or a
+   * driver whose list is momentarily behind. The registry alone must then be
+   * enough to keep the device's Flows, which is the union's half of the job.
+   */
+  notInstalled?: string[];
   /** Flows on the Homey, as `flow(id, controllerId)` builds them. */
   managed?: Array<Record<string, unknown>>;
   /**
@@ -233,7 +243,12 @@ function homey(options: {
          * because a curve is what both of them run — and its absence from
          * `liveDeviceIds` is what these tests are about.
          */
-        curves: { all: () => (options.circadian ?? []).map(id => runtime(id, 'circadian')) },
+        curves: {
+          all: () => [
+            ...(options.circadian ?? []).map(id => runtime(id, 'circadian')),
+            ...(options.curve ?? []).map(id => runtime(id, 'circadian')),
+          ],
+        },
         /**
          * A fifth device type that owns no Flows either, and its absence from
          * `liveDeviceIds` is part of what these tests are about.
@@ -249,25 +264,33 @@ function homey(options: {
       drivers: {
         /**
          * The SDK's own shape: `homey.drivers.getDriver(id).getDevices()`,
-         * each device answering `getData()`. Every device with a runtime is
-         * installed too — a runtime cannot exist without one — plus whatever
-         * `installedOnly` adds.
+         * each device answering `getData()`. Each driver lists its OWN
+         * installed devices — every one with a runtime, except those named in
+         * `notInstalled`, plus whatever `installedOnly` adds.
+         *
+         * All five drivers answer, and that is the point. This fake used to
+         * hand circadian and daylight an empty list, send `curve` down the
+         * schedule branch and list every runtime as installed — so a driver
+         * loop that grew a third entry, or a union that lost a registry, was
+         * invisible to every test below. A driver id this app does not have is
+         * refused, as the SDK refuses it.
          */
         getDriver(driverId: string) {
           if (driverId === options.unreadableDriver) {
             throw new Error(`the ${driverId} driver is not ready`);
           }
-          const withRuntimes = driverId === 'controller'
-            ? (options.controllers ?? [])
-            : (options.schedules ?? []);
-          const extra = driverId === 'controller'
-            ? (options.installedOnly?.controller ?? [])
-            : (options.installedOnly?.schedule ?? []);
-          // Neither owns a Flow, so neither is enumerated by liveDeviceIds and
-          // neither has devices to offer here.
-          if (driverId === 'circadian' || driverId === 'daylight') return { getDevices: () => [] };
+          const byDriver: Record<string, string[]> = {
+            controller: [...(options.controllers ?? []), ...(options.installedOnly?.controller ?? [])],
+            schedule: [...(options.schedules ?? []), ...(options.installedOnly?.schedule ?? [])],
+            circadian: options.circadian ?? [],
+            curve: options.curve ?? [],
+            daylight: options.daylight ?? [],
+          };
+          const installed = byDriver[driverId];
+          if (installed === undefined) throw new Error(`Invalid Driver: ${driverId}`);
+          const listed = installed.filter(id => !(options.notInstalled ?? []).includes(id));
           return {
-            getDevices: () => [...withRuntimes, ...extra].map(id => ({ getData: () => ({ id }) })),
+            getDevices: () => listed.map(id => ({ getData: () => ({ id }) })),
           };
         },
       },
@@ -751,5 +774,123 @@ describe('the app API never returns the stored key', () => {
     assertNoKey('setCredential (accepted)', status);
     assertNoKey('getStatus after acceptance', await api.getStatus(h.args));
     assertNoKey('deleteCredential', await api.deleteCredential(h.args));
+  });
+});
+
+/**
+ * The live set is BOTH registries AND both drivers' installed devices — and
+ * only those four sources.
+ *
+ * The two halves cover different gaps. The driver lists cover a device with no
+ * runtime (a failed init, a bad migration); the registries cover a runtime the
+ * driver does not list at that moment. Either half alone leaves one of those
+ * devices' Flows reading as orphaned on a Homey where something else is
+ * running, so the "nothing is running" refusal does not save them.
+ */
+describe('the orphan sweep\'s live set, source by source', () => {
+  test('a registered controller the driver does not list still keeps its flows', async () => {
+    const h = homey({
+      controllers: [ID.ctrl],
+      schedules: [ID.sched],
+      notInstalled: [ID.ctrl],
+      managed: [flow('f1', ID.ctrl), flow('f2', ID.sched)],
+    });
+
+    const preview = await api.countOrphans(h.args);
+    assert.equal(preview.orphans, 0, 'the controller registry is half the union');
+    await sweep(h);
+    assert.ok(h.swept.at(-1)!.has(ID.ctrl));
+    assert.deepEqual(h.deleted, []);
+  });
+
+  test('a registered schedule the driver does not list still keeps its flows', async () => {
+    const h = homey({
+      controllers: [ID.ctrl],
+      schedules: [ID.sched],
+      notInstalled: [ID.sched],
+      managed: [flow('f1', ID.ctrl), flow('f2', ID.sched)],
+    });
+
+    const preview = await api.countOrphans(h.args);
+    assert.equal(preview.orphans, 0, 'the schedule registry is the other half');
+    await sweep(h);
+    assert.ok(h.swept.at(-1)!.has(ID.sched));
+    assert.deepEqual(h.deleted, []);
+  });
+
+  test('installed lights of the three Flow-less types never join the live set', async () => {
+    // Each of these drivers now LISTS its devices, so this fails if the driver
+    // loop in liveDeviceIds grows a third entry by reflex — the exclusion has
+    // to be a decision, and an empty fake list made it look like one for free.
+    const h = homey({
+      controllers: [ID.ctrl],
+      circadian: [ID.circ],
+      curve: [ID.curve],
+      daylight: [ID.dayl],
+    });
+
+    await sweep(h);
+    assert.deepEqual([...h.swept.at(-1)!], [ID.ctrl]);
+    assert.equal((await api.countOrphans(h.args)).liveControllers, 1);
+  });
+
+  test('a Colour Curve Light alone does not lift the refusal', async () => {
+    // The third Flow-less type, asserted on its own for the reason the circadian
+    // and Room-sensing tests above give: the refusal is what stops a sweep on a
+    // Homey with no Flow owner deleting every managed Flow it finds.
+    const h = homey({ curve: [ID.curve], managed: [flow('f1', ID.ctrlGone)] });
+
+    const result = await api.countOrphans(h.args);
+    assert.equal(result.refused, 'no_live_controllers');
+    await sweep(h);
+    assert.deepEqual(h.deleted, []);
+  });
+});
+
+/**
+ * "A credential is validated by a real Flow WRITE", at the settings page's own
+ * route.
+ *
+ * The write probe is pinned for pair sessions and for boot; the settings page
+ * reaches `setCredential` through `api.ts`, which supplies its own validator. A
+ * route that handed the service a validator doing nothing would accept a key
+ * that can read but not write — the exact key platform §1 says looks fine until
+ * the first reconcile — and store it.
+ */
+describe('the settings route proves a key by writing with it', () => {
+  const PASTED = 'ffffffff-bbbb-cccc-dddd-eeeeeeeeeeee:11111111-2222-3333-4444-555555555555:'
+    + 'fedcba9876543210fedcba9876543210fedcba98';
+
+  test('a key whose folder write is refused is reported invalid and is not stored', async () => {
+    const store = new Map<string, unknown>();
+    const client = {
+      flow: {
+        // Reads succeed: a read-only key gets this far, which is the trap.
+        getFlowFolders: async () => ({}),
+        createFlowFolder: async () => {
+          throw Object.assign(new Error('Missing Scopes'), { statusCode: 403 });
+        },
+        deleteFlowFolder: async () => undefined,
+      },
+      destroy: () => undefined,
+    };
+    const credentials = new CredentialService({
+      settings: {
+        get: k => store.get(k),
+        set: (k, v) => { store.set(k, v); },
+        unset: k => { store.delete(k); },
+      },
+      createWriteClient: async () => client,
+      getLocalAddress: async () => 'http://127.0.0.1:80',
+      log: () => { /* quiet */ },
+    });
+    const h = homey({ credentials });
+
+    const status = await api.setCredential({ ...h.args, body: { token: PASTED } });
+
+    assert.equal(status.valid, false);
+    assert.equal(status.failure, 'insufficient_scope');
+    assert.equal(store.size, 0, 'a key that cannot write must not be stored');
+    assert.equal(credentials.hasCredential(), false);
   });
 });

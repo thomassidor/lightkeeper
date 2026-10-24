@@ -16,6 +16,9 @@ import type { HomeyApiService } from '../../lib/homey-api-service';
  * Every device is LIVE: a `setCapabilityValue` updates the value the next
  * `getDevice` returns and fires any `makeCapabilityInstance` listener, so a
  * runtime that writes and then reads back sees its own write, as on a Homey.
+ * `FakeApiOptions` opts into the two things a Homey does that this does not by
+ * default: duplicated echoes (platform §6) and the `getAll` cache serving a
+ * later `getDevice` (platform §15).
  */
 
 export interface RawDeviceFixture {
@@ -58,10 +61,38 @@ export const ZONES: ZoneFixture[] = [
 
 export interface CapabilityWrite { deviceId: string; capabilityId: string; value: unknown }
 
+/**
+ * Two ways `homey-api` behaves that the default client does NOT model, each
+ * opt-in so every test written against the simple client keeps meaning what it
+ * meant.
+ */
+export interface FakeApiOptions {
+  /**
+   * Platform §6: "Setting `dim` once produces two identical callbacks." Every
+   * `makeCapabilityInstance` listener is called twice per write. The platform
+   * does not promise the second one either, which is why this is not the
+   * default: nothing may DEPEND on it, and code that only works with one echo
+   * is what this is for.
+   */
+  duplicateEchoes?: boolean;
+  /**
+   * Platform §15: a `getAll` writes every item into the manager's cache, and a
+   * single-item `get` then answers from that cache unless it passes
+   * `$cache: false`. With this on, `getDevices()` and `getDevice()` read and
+   * fill a per-device SNAPSHOT exactly that way — `$cache: false` skips the
+   * read, `$updateCache: false` skips the write — so a reader that forgets the
+   * flag sees the value as it was when something last cached it.
+   */
+  cache?: boolean;
+}
+
+/** The two `homey-api` flags a read can carry (platform §15). */
+interface CacheFlags { $cache?: boolean; $updateCache?: boolean }
+
 export interface FakeApiClient {
   devices: {
-    getDevices(): Promise<Record<string, unknown>>;
-    getDevice(args: { id: string }): Promise<any>;
+    getDevices(args?: CacheFlags): Promise<Record<string, unknown>>;
+    getDevice(args: { id: string } & CacheFlags): Promise<any>;
     on(event: string, fn: () => void): void;
     off(event: string, fn: () => void): void;
   };
@@ -81,11 +112,14 @@ export interface FakeApiClient {
   /** Add or replace a device. */
   put(device: RawDeviceFixture): void;
   remove(id: string): void;
+  /** The arguments of every `getDevice` call, in order — to assert what a reader asked for. */
+  readonly deviceReads: Array<{ id: string } & CacheFlags>;
 }
 
 export function fakeApiClient(
   devices: RawDeviceFixture[] = [],
   zones: ZoneFixture[] = ZONES,
+  options: FakeApiOptions = {},
 ): FakeApiClient {
   // Cloned, because every device here is LIVE and a write mutates it: a
   // fixture shared between two tests would otherwise carry the first test's
@@ -117,13 +151,21 @@ export function fakeApiClient(
     ...(device.settings ? { settings: device.settings } : {}),
   });
 
-  const handle = (device: RawDeviceFixture) => ({
-    ...raw(device),
+  /**
+   * `view` is what the handle SAYS — the device, or a cached snapshot of it —
+   * and `device` is what its methods act on. A cached `getDevice` in
+   * `homey-api` is the same: stale fields, a live write path.
+   */
+  const handle = (device: RawDeviceFixture, view: RawDeviceFixture = device) => ({
+    ...raw(view),
     async setCapabilityValue({ capabilityId, value }: { capabilityId: string; value: unknown }) {
       if (refusing.has(device.id)) throw new Error(`${device.name} did not answer`);
       writes.push({ deviceId: device.id, capabilityId, value });
       device.capabilities[capabilityId] = value;
-      for (const fn of capabilityListeners.get(`${device.id}:${capabilityId}`) ?? []) fn(value);
+      const listeners = [...capabilityListeners.get(`${device.id}:${capabilityId}`) ?? []];
+      for (let echo = 0; echo < (options.duplicateEchoes ? 2 : 1); echo += 1) {
+        for (const fn of listeners) fn(value);
+      }
     },
     makeCapabilityInstance(capabilityId: string, fn: (value: unknown) => void) {
       const key = `${device.id}:${capabilityId}`;
@@ -134,14 +176,33 @@ export function fakeApiClient(
     },
   });
 
+  /** `options.cache` only: the snapshot a cached read answers with, per device id. */
+  const cached = new Map<string, RawDeviceFixture>();
+  const deviceReads: Array<{ id: string } & CacheFlags> = [];
+  const readsCache = (flags: CacheFlags | undefined) => options.cache === true && flags?.$cache !== false;
+  const fillsCache = (flags: CacheFlags | undefined) => options.cache === true && flags?.$updateCache !== false;
+
   return {
     writes,
     refusing,
+    deviceReads,
     devices: {
-      getDevices: async () => Object.fromEntries([...table.values()].map(device => [device.id, raw(device)])),
-      getDevice: async ({ id }) => {
-        const device = table.get(id);
-        if (!device) throw Object.assign(new Error(`Device not found: ${id}`), { statusCode: 404 });
+      getDevices: async flags => {
+        if (fillsCache(flags)) {
+          for (const device of table.values()) cached.set(device.id, structuredClone(device));
+        }
+        return Object.fromEntries([...table.values()].map(device => [
+          device.id,
+          raw(readsCache(flags) ? cached.get(device.id) ?? device : device),
+        ]));
+      },
+      getDevice: async args => {
+        deviceReads.push({ ...args });
+        const device = table.get(args.id);
+        if (!device) throw Object.assign(new Error(`Device not found: ${args.id}`), { statusCode: 404 });
+        const snapshot = readsCache(args) ? cached.get(args.id) : undefined;
+        if (snapshot) return handle(device, snapshot);
+        if (fillsCache(args)) cached.set(device.id, structuredClone(device));
         return handle(device);
       },
       on: (event, fn) => {

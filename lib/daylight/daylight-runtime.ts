@@ -77,6 +77,13 @@ export interface DaylightRuntimeDeps {
   displayName: () => string;
   now?: () => number;
   /**
+   * Timers for the write queue's rate limit and the implied-on check, beside
+   * `now` above (which wins over `timers.now` when both are given). Absent
+   * means real timers, which is what the app passes. See the schedule
+   * runtime's for why a faked clock alone was not enough.
+   */
+  timers?: Partial<Timers>;
+  /**
    * The app-wide `BrightnessScale`, read every pass so a change on the settings
    * page lands at the next tick without a restart. Absent means the natural
    * scale; the app always supplies it, and most test rigs leave it out.
@@ -314,10 +321,10 @@ export class DaylightRuntime {
     // Constructor BODY, like `timers` below: a field initialiser runs before
     // the parameter property `deps` is assigned.
     this.visible = new VisibleState((state, detail) => deps.onStateChange(state, detail));
-    this.timers = withDefaults({ ...(deps.now !== undefined ? { now: deps.now } : {}) });
+    this.timers = withDefaults({ ...deps.timers, ...(deps.now !== undefined ? { now: deps.now } : {}) });
     this.resolver = new TargetResolver(deps.catalog);
     this.sensorClaim = new SensorClaim(deps.luminance, controllerId);
-    this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log, { now: () => this.now() });
+    this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log, this.timers);
     if (deps.onWriteResult) this.adapter.setWriteSink(entry => deps.onWriteResult?.({ ...entry, controllerId: this.controllerId }));
   }
 
@@ -406,6 +413,9 @@ export class DaylightRuntime {
 
     this.scheduler = new CommandScheduler({
       minWriteIntervalMs: DEFAULT_BEHAVIOR.minWriteIntervalMs,
+      setTimeout: this.timers.setTimeout,
+      clearTimeout: this.timers.clearTimeout,
+      now: this.timers.now,
       onError: (deviceId, capability, error) =>
         this.deps.log(`Write failed on ${deviceId}/${capability}:`, messageOf(error)),
     }, (deviceId, capability, value, options) =>

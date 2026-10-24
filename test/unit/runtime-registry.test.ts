@@ -251,6 +251,24 @@ describe('teardown', () => {
   });
 
   /**
+   * The test above cannot tell a CANCELLED timer from one that fires into an
+   * empty map: `destroyAll()` clears the map too, so a refresh pass that runs
+   * after teardown re-resolves nothing and `refreshed` stays 0 either way. What
+   * "nothing survives teardown" asks is that the timer itself is gone — an armed
+   * timer holding the registry is exactly what outlives the app on uninit.
+   */
+  test('destroyAll leaves no catalogue-change timer armed', async () => {
+    const { registry, timers } = harness();
+    await registry.register('d1', async () => runtime('d1'));
+
+    registry.onCatalogChange();
+    assert.equal(timers.pending, 1, 'the coalescing window is open');
+    await registry.destroyAll();
+
+    assert.equal(timers.pending, 0);
+  });
+
+  /**
    * `allSettled`, not a sequential loop. One runtime whose `stop()` rejects used
    * to abandon every runtime behind it in the map, leaving their subscriptions
    * and timers alive for the rest of the process's life — which on shutdown is
