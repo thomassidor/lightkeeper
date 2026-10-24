@@ -594,20 +594,13 @@ describe('the folder read opts out of the homey-api cache', () => {
 /**
  * The folder layer through the REAL `HomeyApiService.withWriteClient`.
  *
- * Every other harness here hands the bridge a pass-through write client, and
- * the real one does something before the folder manager's catch ever runs: it
- * CLASSIFIES the failure app-wide (platform §2), and a "Missing Scopes" refusal
- * publishes `insufficient_scope` to every device through `onStatusChange`. So
- * the folder manager swallowing an error does not mean nobody saw it.
- *
- * What this pins is the END STATE on the create path only: after a refused
- * folder write the flow still exists, filed in no folder, and the key is
- * reported valid. The intermediate `insufficient_scope` publication that
- * happens today is deliberately NOT asserted: whether a folder-only refusal
- * should publish a credential verdict at all is being changed (on the delete
- * path, where no write follows, it leaves the key reported invalid after a
- * removal that succeeded — the situation `load()`'s docblock describes), and a
- * test pinning the sequence would lock in exactly that behaviour.
+ * Every other harness here hands the bridge a pass-through write client. The
+ * real one classifies a failed write app-wide (platform §2) unless asked not
+ * to, and folder writes ask not to: a folder is presentation, so its refusal
+ * is no verdict on the key. That publication rule is pinned in
+ * folder-credential-verdict.test.ts. What this pins is the end state the
+ * bridge is responsible for: a refused folder write still leaves the Flow
+ * written, filed in no folder, with the key reported working.
  */
 describe('a folder refusal through the real write client (platform §2)', () => {
   function realService(statuses: CredentialStatus[]) {
