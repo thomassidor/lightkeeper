@@ -115,9 +115,12 @@ export class FlowFolderManager {
    * had two consequences, both wrong. A user who deleted the `Lightkeeper`
    * folder and then deleted their last device got an empty root recreated *by
    * the deletion*. And with a dead API key the same path attempted a folder
-   * WRITE from a delete, which `withWriteClient` classifies app-wide before
-   * this method's own catch can swallow it — so tidying up after a removal
-   * could flip every device to `needs_credential`.
+   * WRITE from a delete, which `withWriteClient` used to classify app-wide
+   * before this method's own catch could swallow it — so tidying up after a
+   * removal could flip every device to `needs_credential`. Folder writes no
+   * longer publish a verdict at all (`folderWrite` below), which closes that for
+   * `cleanUpEmpty`'s own folder deletes too; not creating a root here is still
+   * right for the first reason.
    *
    * `cleanUpEmpty` needs the root only as a parent filter, so an absent one
    * simply means there is nothing of ours to clean up.
@@ -141,7 +144,7 @@ export class FlowFolderManager {
         // root has been deleted from under it.
         if (options.createRoot === false) return { root: undefined, folders };
 
-        const created = await this.api.withWriteClient(async write =>
+        const created = await this.folderWrite(async write =>
           write.flow.createFlowFolder({ flowfolder: { name: MANAGED_FOLDER_NAME } }));
         const record = toRecord(created);
         folders.set(record.id, record);
@@ -206,7 +209,7 @@ export class FlowFolderManager {
       if (byName) return byName;
 
       try {
-        const created = await this.api.withWriteClient(async write =>
+        const created = await this.folderWrite(async write =>
           write.flow.createFlowFolder({ flowfolder: { name, parent: view.root } }));
         const record = toRecord(created);
         view.folders.set(record.id, record);
@@ -263,7 +266,7 @@ export class FlowFolderManager {
     if (occupants.some(f => f.ownerDeviceId !== ownerDeviceId)) return;
 
     try {
-      await this.api.withWriteClient(async write =>
+      await this.folderWrite(async write =>
         write.flow.updateFlowFolder({ id: folderId, flowfolder: { name } }));
       view.folders.set(folderId, { ...folder, name });
       this.log(`Renamed the Flow folder "${folder.name}" to "${name}"`);
@@ -297,7 +300,7 @@ export class FlowFolderManager {
       if (flow.folder && flow.folder !== view.root) continue;
 
       try {
-        await this.api.withWriteClient(async write =>
+        await this.folderWrite(async write =>
           write.flow.updateFlow({ id: flow.id, flow: { folder: folderId } }));
         flow.folder = folderId;
         moved += 1;
@@ -335,7 +338,7 @@ export class FlowFolderManager {
       for (const id of wanted) {
         if (occupied.has(id)) continue;
         try {
-          await this.api.withWriteClient(async write => write.flow.deleteFlowFolder({ id }));
+          await this.folderWrite(async write => write.flow.deleteFlowFolder({ id }));
           view.folders.delete(id);
           deleted += 1;
         } catch (error) {
@@ -348,6 +351,25 @@ export class FlowFolderManager {
 
     if (deleted > 0) this.log(`Removed ${deleted} empty device folder(s)`);
     return deleted;
+  }
+
+  /**
+   * Every folder WRITE in this file, and the reason it is not a plain
+   * `withWriteClient`: a folder write publishes no credential verdict.
+   *
+   * Rule 1 above ("folder work never blocks a flow write") was being broken one
+   * layer down. `withWriteClient` classifies every failure app-wide (platform
+   * §2) BEFORE the catch in each method here can swallow it, so a folder delete
+   * refused with "Missing Scopes" during a device's removal published
+   * `insufficient_scope` to every device, and nothing on a delete path wrote a
+   * Flow afterwards to publish `valid` again. `{ verdict: false }` keeps the
+   * key, the shared handshake and the sanitised rethrow, and leaves the
+   * verdict to the Flow writes that can actually earn one. Moving a flow into
+   * its folder (`placeExisting`) counts as folder work: it changes where a
+   * flow is filed, never what it does.
+   */
+  private folderWrite<T>(operation: (write: any) => Promise<T>): Promise<T> {
+    return this.api.withWriteClient(operation, { verdict: false });
   }
 
   /** Redacted as well as sanitised upstream: these lines go to the app log. */

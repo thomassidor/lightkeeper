@@ -229,16 +229,39 @@ export class HomeyApiService {
    * `homey-api`, and therefore the likeliest error to quote it back — escaped
    * both the redaction and the classification, reaching the device's unavailable
    * text raw and leaving the credential status untouched.
+   *
+   * **`{ verdict: false }` is for FOLDER writes, and only those.** Same key,
+   * same memoised handshake (still one live session per key, platform §2),
+   * same sanitised rethrow — but the outcome is not reported to the credential
+   * service, in either direction. A folder is presentation only and
+   * `FlowFolderManager` swallows every failure of its own; classifying one here
+   * broke that promise one layer down, before the folder manager's catch ever
+   * ran. A `deleteFlowFolder` refused with "Missing Scopes" while a device was
+   * being removed published `insufficient_scope` to every device, and on the
+   * delete paths no Flow write followed to publish `valid` again — so every
+   * Flow-owning device sat in `needs_credential` after a removal that had
+   * succeeded. Nothing is lost by the silence: a key that really is dead fails
+   * the next FLOW write, which is classified exactly as before. A folder
+   * success is not reported either; the verdict that a key works belongs to
+   * Flow writes and to the write probe.
+   *
+   * An options bag rather than a second method so every pass-through fake of
+   * this service keeps working unchanged: they ignore the argument, which is
+   * the right behaviour for a fake that publishes no verdicts at all.
    */
-  async withWriteClient<T>(operation: (api: any) => Promise<T>): Promise<T> {
+  async withWriteClient<T>(
+    operation: (api: any) => Promise<T>,
+    options: { verdict?: boolean } = {},
+  ): Promise<T> {
+    const verdict = options.verdict !== false;
     const revision = this.credentials.revision;
     try {
       const api = await this.write();
       const result = await operation(api);
-      this.credentials.reportSuccess(revision);
+      if (verdict) this.credentials.reportSuccess(revision);
       return result;
     } catch (error) {
-      this.credentials.reportFailure(error, revision);
+      if (verdict) this.credentials.reportFailure(error, revision);
       throw sanitizedWriteError(error);
     }
   }
