@@ -6,6 +6,7 @@ import { planIntent, type PlannedWrite } from '../outputs/intent-planner';
 import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
 import { cleanupResources } from '../runtime/runtime-resources';
 import { messageOf } from '../support/homey-errors';
+import { withDefaults, type Timers } from '../support/timers';
 import type { HomeyApiService } from '../homey-api-service';
 import type { DeviceCatalog } from '../device-catalog';
 import type { TargetSpec } from '../outputs/light-intent';
@@ -31,6 +32,8 @@ export interface FlowLightWriterDeps {
   catalog: DeviceCatalog;
   log: (...args: unknown[]) => void;
   onWriteResult?: (entry: WriteRecord & { controllerId: string }) => void;
+  /** The write queue's and the adapter's clock. Absent means real timers, as the app passes. */
+  timers?: Partial<Timers>;
 }
 
 /** Which device the write records are filed under on the settings page. */
@@ -44,7 +47,9 @@ export interface FlowWriteResult {
 }
 
 export class FlowLightWriter {
-  private readonly cache = new TargetStateCache(() => Date.now());
+  private readonly timers: Timers;
+
+  private readonly cache = new TargetStateCache(() => this.timers.now());
 
   private readonly adapter: LightTargetAdapter;
 
@@ -53,13 +58,17 @@ export class FlowLightWriter {
   private readonly scheduler: CommandScheduler;
 
   constructor(private readonly deps: FlowLightWriterDeps) {
+    this.timers = withDefaults(deps.timers);
     this.resolver = new TargetResolver(deps.catalog);
-    this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log);
+    this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log, this.timers);
     if (deps.onWriteResult) {
       this.adapter.setWriteSink(entry => deps.onWriteResult?.({ ...entry, controllerId: SOURCE }));
     }
     this.scheduler = new CommandScheduler({
       minWriteIntervalMs: DEFAULT_BEHAVIOR.minWriteIntervalMs,
+      setTimeout: this.timers.setTimeout,
+      clearTimeout: this.timers.clearTimeout,
+      now: this.timers.now,
       onError: (deviceId, capability, error) =>
         deps.log(`Flow card write failed on ${deviceId}/${capability}:`, messageOf(error)),
     }, (deviceId, capability, value, options) =>

@@ -11,6 +11,7 @@ import { RuntimeRegistry } from '../runtime/runtime-registry';
 import type { WriteRecord } from '../outputs/light-target-adapter';
 import type { BrightnessScale } from '../outputs/light-intent';
 import { messageOf } from '../support/homey-errors';
+import type { Timers } from '../support/timers';
 
 /**
  * Registry of live schedule runtimes — the schedule half of what
@@ -45,6 +46,13 @@ export interface ScheduleManagerDeps {
    * does.
    */
   brightnessScale?: () => BrightnessScale;
+  /**
+   * Timers handed to every runtime this manager builds, registered or
+   * ephemeral, for their write queues and the rest of their clocks. Absent
+   * means real timers, which is what app.ts passes; tests pass a FakeTimers so
+   * a teardown can be checked for anything left armed.
+   */
+  timers?: Partial<Timers>;
   log: (...args: unknown[]) => void;
 }
 
@@ -148,6 +156,7 @@ export class ScheduleRuntimeManager {
       ...(this.deps.onWriteResult ? { onWriteResult: this.deps.onWriteResult } : {}),
       timezone: this.deps.timezone,
       ...(this.deps.brightnessScale ? { brightnessScale: this.deps.brightnessScale } : {}),
+      ...(this.deps.timers ? { timers: this.deps.timers } : {}),
       log: this.deps.log,
     };
   }

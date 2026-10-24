@@ -29,6 +29,7 @@ import type { InputEvent } from '../inputs/input-event';
 import type { SelectableInput } from '../inputs/selectable-input';
 import type { ControllerBehavior, LightFunction } from '../mapping/mapping-types';
 import { fireAndForget } from '../support/async';
+import { withDefaults, type Timers } from '../support/timers';
 import { sameCatalogue, sameManagedFlows } from '../support/same';
 import { messageOf } from '../support/homey-errors';
 import { VisibleState } from './visible-state';
@@ -106,6 +107,15 @@ export interface ControllerRuntimeDeps {
    * always supplies it, and most test rigs leave it out.
    */
   brightnessScale?: () => BrightnessScale;
+  /**
+   * The clock and timers every part of this runtime runs on: the write queue's
+   * rate limit, the supersede gate, ramps, the implied-on check and the
+   * timestamps in diagnostics. One injection for all of them, because a test
+   * that fakes the runtime's clock and not its queue's cannot see a
+   * rate-limited write, nor prove that stop() left no timer armed. Absent
+   * means real timers, which is what the app passes.
+   */
+  timers?: Partial<Timers>;
   log: (...args: unknown[]) => void;
   onStateChange: (state: ControllerState, detail?: StateDetail) => void;
   /**
@@ -183,7 +193,8 @@ const WATCHED: Capability[] = ['onoff', 'dim', 'light_temperature'];
 
 export class ControllerRuntime {
   private readonly lifetime = new RuntimeLifetime();
-  private readonly cache = new TargetStateCache();
+  private readonly timers: Timers;
+  private readonly cache = new TargetStateCache(() => this.timers.now());
   private readonly adapter: LightTargetAdapter;
   private readonly resolver: TargetResolver;
   private scheduler: CommandScheduler | null = null;
@@ -209,7 +220,8 @@ export class ControllerRuntime {
     // Constructor BODY, like `timers` below: a field initialiser runs before
     // the parameter property `deps` is assigned.
     this.visible = new VisibleState((state, detail) => deps.onStateChange(state, detail));
-    this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log);
+    this.timers = withDefaults(deps.timers);
+    this.adapter = new LightTargetAdapter(deps.api, this.cache, deps.log, this.timers);
     if (deps.onWriteResult) this.adapter.setWriteSink(entry => deps.onWriteResult?.({ ...entry, controllerId: this.controllerId }));
     this.resolver = new TargetResolver(deps.catalog);
   }
@@ -505,6 +517,8 @@ export class ControllerRuntime {
     this.gate = new SupersedeGate({
       supersedeMs: this.profile.behavior.supersedeMs,
       contestedControlIds: contestedControls(assignments),
+      setTimeout: this.timers.setTimeout,
+      clearTimeout: this.timers.clearTimeout,
     }, input => fireAndForget(this.execute(input), this.deps.log, 'Executing an input'));
 
     // A hold may only ramp where the source gives a reliable stop
@@ -526,10 +540,18 @@ export class ControllerRuntime {
         this.deps.log, 'A ramp tick',
       ),
       (controlId, reason) => this.deps.log(`Ramp on ${controlId} stopped: ${reason}`),
+      {
+        setInterval: this.timers.setInterval,
+        clearInterval: this.timers.clearInterval,
+        now: this.timers.now,
+      },
     );
 
     this.scheduler = new CommandScheduler({
       minWriteIntervalMs: this.profile.behavior.minWriteIntervalMs,
+      setTimeout: this.timers.setTimeout,
+      clearTimeout: this.timers.clearTimeout,
+      now: this.timers.now,
       onError: (deviceId, capability, error) =>
         this.deps.log(`Write failed on ${deviceId}/${capability}:`, messageOf(error)),
     }, (deviceId, capability, value, options) =>
@@ -728,7 +750,7 @@ export class ControllerRuntime {
    * that the controller and binding key exist.
    */
   handleInput(event: InputEvent, inputKey: string): void {
-    this.lastEvent = { key: inputKey, at: Date.now() };
+    this.lastEvent = { key: inputKey, at: this.timers.now() };
     if (!this.gate) return;
     // The gate re-enters via execute() once the supersede window resolves.
     this.gate.submit({ event, inputKey });
@@ -967,14 +989,14 @@ export class ControllerRuntime {
     if (!this.scheduler) {
       this.deps.log('No scheduler: the runtime is not started, so writes were dropped');
       this.lastIntent = {
-        intent, at: Date.now(), writes: 0, skipped: plan.skipped.length,
+        intent, at: this.timers.now(), writes: 0, skipped: plan.skipped.length,
         note: 'dropped — runtime not started',
       };
       return { writes: 0, skipped: plan.skipped.length };
     }
 
     const batch = this.scheduler.submit(writes);
-    this.lastIntent = { intent, at: Date.now(), writes: writes.length, skipped: plan.skipped.length };
+    this.lastIntent = { intent, at: this.timers.now(), writes: writes.length, skipped: plan.skipped.length };
     if (options.waitForResults) {
       await this.scheduler.drain();
       return { writes: acceptedTargets(await batch.completion), skipped: plan.skipped.length };
