@@ -1506,6 +1506,31 @@ The original note said 0.5 MB of heap and 0.7 MB of RSS:
 So the deep path is worth **~11 MB of RSS**, not 0.7, and it is one of the largest single savings in
 the app. The "do not tidy this back to the package root" note on it is load-bearing.
 
+### How often the read client's events arrive, and that a zone's motion is one of them
+
+Measured on the reference Homey, firmware 13.5.3, 24 October 2026, from the counters `/diagnostics`
+carries under `catalog` — one quiet hour, nobody pairing anything:
+
+| Event | Per hour |
+|---|---|
+| `zone.update` | **176** |
+| `device.update` | 8 |
+| `device.create` / `device.delete` / `zone.create` / `zone.delete` | 0 |
+
+**`zone.update` is a zone's MOTION state, not its definition.** Captured live, every one carried a
+change to `active`, `activeOrigins` and `activeLastUpdated` and nothing else — and one motion sensor
+tripping in the kitchen sent it for "Kitchen" AND for every zone above it, up to the home. A zone
+payload is `{ id, uri, name, parent, sortIndex, active, activeOrigins, activeLastUpdated, icon }`.
+
+That mattered more than it looks. `DeviceCatalog` invalidated on every one, every runtime registry
+refreshed behind it, and a controller's health pass rediscovers its remote's event surface, which
+re-reads the whole trigger catalogue whenever its 60 s TTL has lapsed: **24 full reads of 1748 cards
+in that hour**, from a house where no device had changed. `isNoOpZoneUpdate()` now drops a
+`zone.update` whose `name` and `parent` match what the last refresh published, since those are the
+only zone fields the catalogue keeps, and counts it as `ignoredZoneUpdates`. And a capability VALUE
+change evidently does not arrive as a `device.update`: eight in an hour, with nine lamps on and
+curves writing to them, is far too few for that — an inference from the counts, not a capture.
+
 ### Reading the number back
 
 `GET /api/manager/apps/app/:id/usage` (`ManagerApps.getAppUsage`) is what

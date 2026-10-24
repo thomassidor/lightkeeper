@@ -79,13 +79,14 @@ const LIGHT_CAPABILITIES = ['onoff', 'dim', 'light_temperature', 'light_hue'] as
  * How hard the catalogue is working, counted since the app started. For
  * `/diagnostics` only.
  *
- * Every device or zone event invalidates the whole catalogue, and every
+ * Every device or zone event invalidates the whole catalogue — bar a
+ * `zone.update` that changes nothing it keeps (`isNoOpZoneUpdate`) — and every
  * invalidation goes on to a refresh in each runtime registry (500 ms later)
  * and in the sensor service. What that costs is set by how often Homey sends
- * those events, which nobody has measured: our own `setStoreValue` is known to
- * emit `device.update`, but whether a capability VALUE change does is not
- * recorded anywhere. Counted so it can be read off a real Homey rather than
- * argued about.
+ * those events. Read off the reference Homey in a quiet hour: 8 `device.update`
+ * and 176 `zone.update`, the latter all motion state, which is what the
+ * no-op rule is for. Counted so it can go on being read rather than argued
+ * about.
  *
  * Counts and event names only: no device id, name or URI, so nothing here
  * needs redacting.
@@ -103,6 +104,11 @@ export interface CatalogStats {
   refreshFailures: number;
   /** `getApps()` round trips, the one read in a refresh that is never cached. */
   appNameLoads: number;
+  /**
+   * `zone.update`s that changed neither the zone's name nor its parent, and so
+   * invalidated nothing. See `isNoOpZoneUpdate`.
+   */
+  ignoredZoneUpdates: number;
 }
 
 export class DeviceCatalog {
@@ -134,6 +140,16 @@ export class DeviceCatalog {
    * a different answer.
    */
   private unresolvedOwners = new Set<string>();
+  /**
+   * The name and parent of every zone, as the last refresh published them.
+   *
+   * Kept apart from `zones`, which every invalidation nulls, because this is
+   * what a `zone.update` is compared against — and a device event landing
+   * between two zone events must not turn the second one back into a full
+   * invalidation. Written only by `refresh()`, so a refresh superseded by a
+   * real rename corrects it on its own re-run.
+   */
+  private zoneShapes = new Map<string, CatalogZone>();
   private readonly counters: CatalogStats = {
     since: Date.now(),
     invalidations: {},
@@ -141,6 +157,7 @@ export class DeviceCatalog {
     supersededRetries: 0,
     refreshFailures: 0,
     appNameLoads: 0,
+    ignoredZoneUpdates: 0,
   };
   /**
    * The refresh in flight, shared by every caller that arrives while it runs.
@@ -226,7 +243,13 @@ export class DeviceCatalog {
         for (const event of events) {
           if (typeof manager?.on !== 'function') continue;
           // One handler per event, kept, so `off` is handed the same function.
-          const handler = () => invalidate(event);
+          const handler = (payload?: unknown) => {
+            if (event === 'zone.update' && this.isNoOpZoneUpdate(payload)) {
+              this.counters.ignoredZoneUpdates += 1;
+              return;
+            }
+            invalidate(event);
+          };
           manager.on(event, handler);
           detach.push(() => manager.off?.(event, handler));
         }
@@ -242,6 +265,33 @@ export class DeviceCatalog {
       for (const off of detach) off();
       detach = [];
     });
+  }
+
+  /**
+   * A `zone.update` that changes nothing this catalogue publishes.
+   *
+   * Measured on the reference Homey (24 October 2026, firmware 13.5.3): in a
+   * quiet hour 176 of 184 catalogue events were `zone.update`, and every one
+   * captured was a zone's motion state — `active`, `activeOrigins`,
+   * `activeLastUpdated` — sent for the zone AND each zone above it. Each one
+   * invalidated the whole catalogue, every registry refreshed 500 ms later, and
+   * a controller's health pass then re-read the 1748-card trigger catalogue
+   * whenever its 60 s TTL had lapsed: 24 full reads in that hour.
+   *
+   * A zone's `id`, `name` and `parent` are all the catalogue keeps (`RawZone`),
+   * so an update that changes neither name nor parent of a zone it already
+   * knows cannot change anything it would publish. Anything else still
+   * invalidates — a payload without an id or name (fail open: one refresh too
+   * many is the old behaviour, a stale room name is not), and a zone the last
+   * refresh never saw.
+   */
+  private isNoOpZoneUpdate(payload: unknown): boolean {
+    const zone = payload as RawZone | null | undefined;
+    if (!zone || typeof zone.id !== 'string' || typeof zone.name !== 'string') return false;
+    const known = this.zoneShapes.get(zone.id);
+    if (!known) return false;
+    const parent = typeof zone.parent === 'string' ? zone.parent : null;
+    return known.name === zone.name && known.parent === parent;
   }
 
   async allDevices(): Promise<CatalogDevice[]> {
@@ -446,6 +496,7 @@ export class DeviceCatalog {
     // which is the whole of the fix.
     this.zones = zones;
     this.devices = devices;
+    this.zoneShapes = zones;
     this.counters.refreshes += 1;
 
     /**

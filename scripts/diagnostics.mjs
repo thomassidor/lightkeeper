@@ -123,6 +123,7 @@ function catalogueActivity(diagnostics, now) {
     : ` (last ${triggers.lastMs} ms, ${triggers.lastCount} cards)`;
   return {
     line: `catalogue: ${perHour(events)} invalidation(s)/h (${asList(invalidations) || 'none'}), `
+      + `${perHour(devices.ignoredZoneUpdates ?? 0)} zone update(s)/h ignored (name and parent unchanged), `
       + `${perHour(devices.refreshes ?? 0)} refresh(es)/h, ${perHour(devices.appNameLoads ?? 0)} app-name read(s)/h, `
       + `trigger cards read ${perHour(triggers.fetches ?? 0)}/h${last}`,
     triggerReadsPerHour: (triggers.fetches ?? 0) / hours,

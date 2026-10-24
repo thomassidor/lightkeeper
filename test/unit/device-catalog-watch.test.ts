@@ -22,18 +22,21 @@ function harness(initial: Device[], apps: Record<string, { id: string; name: str
   'com.example.bulbs': { id: 'com.example.bulbs', name: 'Example Bulbs' },
 }) {
   let devices = initial;
+  let zones: Record<string, { id: string; name: string; parent: string | null }> = {
+    z1: { id: 'z1', name: 'Living room', parent: null },
+  };
   let appsCalls = 0;
   let appsFail = false;
   let gate: Promise<void> | null = null;
-  const listeners = new Map<string, Set<() => void>>();
+  const listeners = new Map<string, Set<(payload?: unknown) => void>>();
   const replacements: Array<() => void> = [];
 
   const manager = {
-    on: (event: string, fn: () => void) => {
+    on: (event: string, fn: (payload?: unknown) => void) => {
       if (!listeners.has(event)) listeners.set(event, new Set());
       listeners.get(event)!.add(fn);
     },
-    off: (event: string, fn: () => void) => { listeners.get(event)?.delete(fn); },
+    off: (event: string, fn: (payload?: unknown) => void) => { listeners.get(event)?.delete(fn); },
   };
 
   const client = {
@@ -47,7 +50,7 @@ function harness(initial: Device[], apps: Record<string, { id: string; name: str
         }]));
       },
     },
-    zones: { ...manager, getZones: async () => ({ z1: { id: 'z1', name: 'Living room', parent: null } }) },
+    zones: { ...manager, getZones: async () => ({ ...zones }) },
     apps: {
       getApps: async () => {
         appsCalls += 1;
@@ -66,9 +69,10 @@ function harness(initial: Device[], apps: Record<string, { id: string; name: str
 
   return {
     catalog: new DeviceCatalog(api, 'com.thomassidor.lightkeeper'),
-    emit: (event: string) => { for (const fn of [...listeners.get(event) ?? []]) fn(); },
+    emit: (event: string, payload?: unknown) => { for (const fn of [...listeners.get(event) ?? []]) fn(payload); },
     replaceClient: () => { for (const fn of replacements) fn(); },
     setDevices: (next: Device[]) => { devices = next; },
+    setZones: (next: typeof zones) => { zones = next; },
     failApps: (fail: boolean) => { appsFail = fail; },
     hold: () => {
       let open!: () => void;
@@ -186,6 +190,7 @@ describe('device catalogue invalidation cost', () => {
     assert.equal(stats.supersededRetries, 1);
     assert.equal(stats.refreshFailures, 0);
     assert.equal(stats.appNameLoads, 1);
+    assert.equal(stats.ignoredZoneUpdates, 0);
     assert.equal(typeof stats.since, 'number');
     assert.ok(!JSON.stringify(stats).includes('lamp-1'), 'counts and event names only');
   });
@@ -199,5 +204,84 @@ describe('device catalogue invalidation cost', () => {
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(h.listenerCount('device.update'), 1, 'off must be handed the same function on was');
     assert.equal(h.listenerCount('zone.delete'), 1);
+  });
+});
+
+/**
+ * A zone's motion state is not a change to the catalogue.
+ *
+ * Captured on the reference Homey: every `zone.update` in a quiet hour carried
+ * only `active`, `activeOrigins` and `activeLastUpdated`, for the zone and each
+ * zone above it — 176 an hour, each one a full invalidation and, behind it, a
+ * trigger-catalogue read. The catalogue keeps a zone's name and parent only.
+ */
+describe('zone.update that changes nothing the catalogue keeps', () => {
+  const MOTION = { id: 'z1', name: 'Living room', parent: null, active: true, activeOrigins: ['m1'], activeLastUpdated: 1 };
+
+  async function watched() {
+    const h = harness([BULB]);
+    let changes = 0;
+    await h.catalog.watch(() => { changes += 1; });
+    await h.catalog.allDevices();
+    return { h, changes: () => changes };
+  }
+
+  test('a motion-only update invalidates nothing, notifies nobody, and is counted', async () => {
+    const { h, changes } = await watched();
+    const before = h.catalog.stats().refreshes;
+
+    h.emit('zone.update', MOTION);
+    h.emit('zone.update', { ...MOTION, active: false });
+    await h.catalog.allDevices();
+
+    assert.equal(changes(), 0, 'no registry is told to refresh');
+    assert.equal(h.catalog.stats().refreshes, before, 'and the cache is still the one it had');
+    assert.equal(h.catalog.stats().ignoredZoneUpdates, 2);
+    assert.equal(h.catalog.stats().invalidations['zone.update'], undefined);
+  });
+
+  test('a renamed zone still invalidates, and the new name is what devices read', async () => {
+    const { h, changes } = await watched();
+
+    h.setZones({ z1: { id: 'z1', name: 'Lounge', parent: null } });
+    h.emit('zone.update', { ...MOTION, name: 'Lounge' });
+
+    assert.equal(changes(), 1);
+    assert.equal((await h.catalog.device('lamp-1'))?.zoneName, 'Lounge');
+    // And once the catalogue knows the new name, a motion update under it is quiet again.
+    h.emit('zone.update', { ...MOTION, name: 'Lounge', active: false });
+    assert.equal(changes(), 1);
+  });
+
+  test('a zone moved under another still invalidates', async () => {
+    const { h, changes } = await watched();
+    h.emit('zone.update', { ...MOTION, parent: 'z-home' });
+    assert.equal(changes(), 1);
+    assert.equal(h.catalog.stats().invalidations['zone.update'], 1);
+  });
+
+  test('an update it cannot judge invalidates, as every update used to', async () => {
+    const { h, changes } = await watched();
+    h.emit('zone.update');                                        // no payload at all
+    h.emit('zone.update', { id: 'z1' });                          // no name to compare
+    h.emit('zone.update', { id: 'z-new', name: 'Attic', parent: null }); // a zone the refresh never saw
+    assert.equal(changes(), 3);
+    assert.equal(h.catalog.stats().ignoredZoneUpdates, 0);
+  });
+
+  test('before the first refresh there is nothing to compare with, so it invalidates', async () => {
+    const h = harness([BULB]);
+    let changes = 0;
+    await h.catalog.watch(() => { changes += 1; });
+    h.emit('zone.update', MOTION);
+    assert.equal(changes, 1);
+  });
+
+  test('a device event between two zone updates does not make the second one count', async () => {
+    const { h, changes } = await watched();
+    h.emit('device.update');                 // nulls the cache, keeps the shapes
+    h.emit('zone.update', MOTION);
+    assert.equal(changes(), 1, 'only the device event');
+    assert.equal(h.catalog.stats().ignoredZoneUpdates, 1);
   });
 });
