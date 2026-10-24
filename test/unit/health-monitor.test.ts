@@ -60,6 +60,8 @@ function harness(options: {
   credentialValid?: boolean;
   /** Remotes a LIVE controller is already listening to. See `sourcesInUse`. */
   sourcesInUse?: string[];
+  /** Every device `discover()` was asked about, in order. */
+  discovered?: string[];
 }) {
   const catalog = {
     device: async (id: string) => options.devices.find(d => d.id === id),
@@ -70,7 +72,7 @@ function harness(options: {
   } as any;
 
   const discovery = {
-    discover: async (d: CatalogDevice) => ({
+    discover: async (d: CatalogDevice) => (options.discovered?.push(d.id), {
       device: d,
       inputs: [],
       rejected: [],
@@ -215,6 +217,39 @@ describe('one-tap re-attach', () => {
       assessment.detail?.key, 'source.reattachAmbiguous',
       'and it must say WHY, not fall back to "no longer paired"',
     );
+  });
+
+  /**
+   * `assess()` used to scan twice when the source was gone — the one-tap
+   * search, then the full list — and every `discover()` is a match against the
+   * whole trigger catalogue, repeated on every catalogue change while the
+   * remote stays gone.
+   */
+  test('a gone remote is searched for once per assessment, not twice', async () => {
+    for (const ids of [['bilresa-a'], ['bilresa-a', 'bilresa-b'], ['bilresa-a', 'bilresa-b', 'bilresa-c']]) {
+      const discovered: string[] = [];
+      const monitor = harness({
+        devices: [...ids.map(id => device({ id, name: id })), light('light-1')],
+        discovered,
+      });
+
+      const assessment = await monitor.assess(profile());
+
+      assert.deepEqual(discovered, ids, `each candidate discovered once (${ids.length} remote(s))`);
+      if (ids.length === 1) assert.equal(assessment.reattach?.deviceId, 'bilresa-a');
+      else assert.deepEqual(assessment.detail?.tokens, { count: ids.length });
+    }
+  });
+
+  test('the repair screen\'s yes-or-no search still stops at two', async () => {
+    const discovered: string[] = [];
+    const monitor = harness({
+      devices: ['a', 'b', 'c'].map(id => device({ id, name: id })),
+      discovered,
+    });
+
+    assert.equal(await monitor.findReattachCandidate(profile()), undefined);
+    assert.deepEqual(discovered, ['a', 'b']);
   });
 
   test('a remote another live controller is using is not a candidate', async () => {
