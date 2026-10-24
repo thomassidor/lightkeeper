@@ -584,3 +584,103 @@ describe('LightkeeperDevice, the SDK shell', () => {
     assert.equal(instance.fake.unavailableMessage, translate('state.needsRepair'));
   });
 });
+
+/**
+ * A device's id is `getData().id`, and a pair session can create a device with
+ * any `data` (platform §14). A second device carrying an existing one's id used
+ * to register over it — the real `RuntimeRegistry.register` stops whatever
+ * holds the id — and deleting the impostor then unregistered the victim,
+ * dropped its Flow journal and could delete its Flows. The first device to
+ * claim an id keeps it; the other is unavailable and touches nothing.
+ */
+describe('a device id is claimed once, and only ids this app could have minted are refused', () => {
+  const VICTIM = 'lk-ctrl-11111111-1111-1111-1111-111111111111';
+
+  test('a second device with the same id is unavailable, inert, and leaves the first running', async () => {
+    const events: Event[] = [];
+    const controllers = registry(events);
+    const app = { controllers, bridge: bridge(events) };
+    const victim = device(ControllerDevice, VICTIM, { profile: controllerProfile('old', ['f1']) }, app);
+    await victim.onInit();
+    const impostor = device(ControllerDevice, VICTIM, { profile: controllerProfile('other', ['f1']) }, app);
+    events.length = 0;
+
+    await impostor.onInit();
+    assert.equal(impostor.fake.available, false);
+    assert.equal(impostor.fake.unavailableMessage, translate('state.invalidConfiguration'));
+    assert.equal(controllers.registered.length, 1, 'never registered over the victim');
+
+    await assert.rejects(impostor.applyPlan(controllerProfile('other', [])),
+      { message: translate('state.invalidConfiguration') });
+    await impostor.onRenamed();
+    await impostor.onDeleted();
+    await impostor.onUninit();
+    assert.deepEqual(events, [], 'no register, no unregister, no Flow delete, no journal dropped');
+    assert.equal(controllers.get(VICTIM)?.currentProfile.source.deviceId, 'old');
+  });
+
+  test('a deleted device gives its id back', async () => {
+    const events: Event[] = [];
+    const app = { controllers: registry(events), bridge: bridge(events) };
+    const first = device(ControllerDevice, VICTIM, { profile: controllerProfile('old', []) }, app);
+    await first.onInit();
+    await first.onDeleted();
+
+    const next = device(ControllerDevice, VICTIM, { profile: controllerProfile('old', []) }, app);
+    await next.onInit();
+    assert.notEqual(next.fake.unavailableMessage, translate('state.invalidConfiguration'));
+  });
+
+  test('the same id in ANOTHER app\'s registry is no collision', async () => {
+    // Claims are per registry, so a fresh app — or a fresh test — starts clean.
+    for (let i = 0; i < 2; i += 1) {
+      const events: Event[] = [];
+      const instance = device(ControllerDevice, VICTIM, { profile: controllerProfile('old', []) },
+        { controllers: registry(events), bridge: bridge(events) });
+      await instance.onInit();
+      assert.deepEqual(events.filter(([name]) => name === 'register'), [['register', 'old']]);
+    }
+  });
+
+  test('an lk- id of another kind is refused', async () => {
+    const events: Event[] = [];
+    const instance = device(ControllerDevice, 'lk-dayl-11111111-1111-1111-1111-111111111111',
+      { profile: controllerProfile('old', []) }, { controllers: registry(events), bridge: bridge(events) });
+    await instance.onInit();
+    assert.equal(instance.fake.unavailableMessage, translate('state.invalidConfiguration'));
+    assert.deepEqual(events, []);
+  });
+
+  test('every id shape a shipped version minted still starts — the 1.0 promise', async () => {
+    for (const id of [
+      'll-1755500000000-123456', // the first controllers, before the rename
+      'lk-ctrl-1755500000000-123456', // timestamp and random
+      'lk-ctrl-11111111-1111-1111-1111-111111111111', // UUID
+    ]) {
+      const events: Event[] = [];
+      const instance = device(ControllerDevice, id, { profile: controllerProfile('old', []) },
+        { controllers: registry(events), bridge: bridge(events) });
+      await instance.onInit();
+      assert.deepEqual(events.filter(([name]) => name === 'register'), [['register', 'old']], id);
+    }
+    for (const id of ['lk-curv-1755500000000-1', 'lk-curv-11111111-1111-1111-1111-111111111111']) {
+      const events: Event[] = [];
+      const reg = registry(events);
+      const instance = device(CurveDevice, id, { curve: await plans.curve() },
+        { curves: reg, bridge: bridge(events) }, ['onoff']);
+      await instance.onInit();
+      assert.equal(reg.registered.length, 1, id);
+    }
+  });
+
+  test('a device with no usable id is refused', async () => {
+    for (const id of ['', 42, undefined]) {
+      const events: Event[] = [];
+      const instance = device(ControllerDevice, id as any, { profile: controllerProfile('old', []) },
+        { controllers: registry(events), bridge: bridge(events) });
+      await instance.onInit();
+      assert.equal(instance.fake.unavailableMessage, translate('state.invalidConfiguration'), String(id));
+      assert.deepEqual(events, []);
+    }
+  });
+});

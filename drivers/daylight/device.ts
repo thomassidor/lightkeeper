@@ -38,6 +38,8 @@ import type { Transition } from '../../lib/support/interpolate';
  */
 module.exports = class DaylightDevice extends LightkeeperDevice<DaylightPlan, DaylightRuntime> {
 
+  /** What `mintDeviceId` put in this device's id; `DeviceLifecycle` refuses another kind's. */
+  readonly idKind = 'dayl' as const;
   readonly storeKey = 'daylight';
   readonly missingKey = 'state.noDaylight';
   override readonly availableWhenDisabled = true;

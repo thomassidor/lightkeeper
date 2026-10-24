@@ -34,6 +34,8 @@ function withValidFlowRefs(previous: ControllerProfile | null): ControllerProfil
  */
 module.exports = class ControllerDevice extends LightkeeperDevice<ControllerProfile, ControllerRuntime> {
 
+  /** What `mintDeviceId` put in this device's id; `DeviceLifecycle` refuses another kind's. */
+  readonly idKind = 'ctrl' as const;
   readonly storeKey = 'profile';
   readonly missingKey = 'state.noConfiguration';
 
