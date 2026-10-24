@@ -90,6 +90,22 @@ describe('the Colour Curve Light', () => {
     assert.deepEqual(review.control.modes, ['after', 'before', 'none']);
   });
 
+  /**
+   * A NEW Colour Curve Light starts on "Change lights after they turn on", not
+   * on pre-staging. The default has been reversed twice (argued at
+   * DEFAULT_SIMPLE_PLAN), and the curve driver states its own seed in
+   * `bindSession` rather than inheriting that one — so the circadian driver's
+   * tests cannot catch this driver drifting back to `preStage: true`, which
+   * would offer an untested choice that pre-stages nothing (`preStagesLamp()`).
+   */
+  test('a new curve\'s review starts on "after", not on pre-staging', async () => {
+    const { session: s } = await session(CurveDriver);
+    await s.call('selectTargets', { kind: 'devices', deviceIds: ['l1'] });
+    const review = await s.call('getReview');
+
+    assert.equal(review.control.selected, 'after');
+  });
+
   test('the transition the curve screen chose is what the device stores, and repair reads it back', async () => {
     const { session: s } = await session(CurveDriver);
     await s.call('selectTargets', { kind: 'devices', deviceIds: ['l1'] });
