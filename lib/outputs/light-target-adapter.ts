@@ -579,25 +579,86 @@ export class LightTargetAdapter {
     }
   }
 
+  /**
+   * `prime` also seeds the cache from the same fresh read the subscription is
+   * made from, which is what `refresh()` does with a read of its own. See
+   * `subscribeMany` for who asks for it and why. Never set on a re-subscribe
+   * (a retry, a replaced read client): seeding resets desired state to the
+   * live value, which is right when a runtime starts and wrong in the middle of
+   * a ramp.
+   */
   async subscribe(
     deviceId: string,
     capabilities: Capability[],
     onChange?: (
       deviceId: string, capability: Capability, value: unknown, external: boolean,
     ) => void,
+    options: { prime?: boolean } = {},
   ): Promise<void> {
     this.desiredSubscriptions.set(deviceId, { capabilities: [...capabilities], onChange });
     const current = this.current(deviceId);
     this.failedSubscriptions.delete(deviceId);
     try {
       await this.subscriptionLock.run(deviceId, () =>
-        this.subscribeNow(deviceId, capabilities, onChange, current));
+        this.subscribeNow(deviceId, capabilities, onChange, current, options.prime === true));
     } catch (error) {
-      if (current()) this.failedSubscriptions.add(deviceId);
+      if (current()) {
+        this.failedSubscriptions.add(deviceId);
+        // What `refresh()` records for a failed read, so priming through here
+        // reports the lamp exactly as the separate read did.
+        if (options.prime === true) this.recordFailure(deviceId, 'onoff', error);
+      }
       this.api.reportReadFailure?.(error);
       throw error;
     }
   }
+
+  /**
+   * Subscribe to several targets: at most `SUBSCRIBE_CONCURRENCY` at a time,
+   * and with `prime`, from one read per lamp.
+   *
+   * Two costs this replaced, both paid at every runtime start and every
+   * re-target:
+   * - A runtime used to `refresh()` every lamp and then `subscribe()` every
+   *   lamp, and each of those makes its own `getDevice({ $cache: false })`.
+   *   That is two full device reads per lamp, for one set of values. With
+   *   `prime`, the subscription's own fresh read seeds the cache too.
+   * - The subscriptions were made one lamp at a time, so a room of twenty
+   *   lamps waited out twenty round trips in a row. `subscriptionLock` is per
+   *   device, so nothing required that. Bounded rather than unbounded, because
+   *   a zone target can be 256 lamps.
+   *
+   * Every subscription is settled before this returns, failed or not, so
+   * nothing is still in flight behind a caller that has moved on. The first
+   * failure is then re-thrown, which is what the one-at-a-time loop did.
+   */
+  async subscribeMany(
+    deviceIds: readonly string[],
+    capabilities: Capability[],
+    onChange?: (
+      deviceId: string, capability: Capability, value: unknown, external: boolean,
+    ) => void,
+    options: { prime?: boolean } = {},
+  ): Promise<void> {
+    const failures: unknown[] = [];
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (next < deviceIds.length) {
+        const deviceId = deviceIds[next++]!;
+        try {
+          await this.subscribe(deviceId, capabilities, onChange, options);
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+    };
+    const workers = Math.min(LightTargetAdapter.SUBSCRIBE_CONCURRENCY, deviceIds.length);
+    await Promise.all(Array.from({ length: workers }, () => worker()));
+    if (failures.length > 0) throw failures[0];
+  }
+
+  /** The same eight `WriteCoordinator` allows writes. */
+  static readonly SUBSCRIBE_CONCURRENCY = 8;
 
   private async subscribeNow(
     deviceId: string,
@@ -606,6 +667,7 @@ export class LightTargetAdapter {
       deviceId: string, capability: Capability, value: unknown, external: boolean,
     ) => void,
     current: () => boolean = this.current(deviceId),
+    prime = false,
   ): Promise<void> {
     if (!current()) return;
     // Replace, never stack. See the `subscriptions` field for why.
@@ -636,6 +698,9 @@ export class LightTargetAdapter {
      */
     const device = await client.devices.getDevice({ id: deviceId, $cache: false });
     if (!current()) return;
+    // All six values, exactly as `refresh()` seeds them (see the hue and
+    // saturation note there), and from a read that is just as live.
+    if (prime) this.cache.initialise(deviceId, liveValuesOf(device));
 
     const created: Unsubscribe[] = [];
     for (const capability of capabilities) {

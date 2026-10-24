@@ -747,9 +747,7 @@ export class CircadianRuntime {
     // a round trip per light per minute into an app that otherwise only talks to
     // Homey when something happens. (The schedule runtime does refresh before it
     // acts — it fires twice a day, off a cache that may be hours stale.)
-    await Promise.all(this.targetIds.map(id => this.adapter.refresh(id)));
-    if (!current()) return;
-    await this.subscribeAll();
+    await this.subscribeAll({ prime: true });
     if (!current()) return;
   }
 
@@ -789,7 +787,7 @@ export class CircadianRuntime {
     return capabilities;
   }
 
-  private async subscribeAll(): Promise<void> {
+  private async subscribeAll(options: { prime?: boolean } = {}): Promise<void> {
     /**
      * Nothing to watch on a device that writes to no lamp.
      *
@@ -808,12 +806,17 @@ export class CircadianRuntime {
      * event slots. Resuming goes through `updatePlan`, which restarts the
      * runtime, so the subscriptions come back with it.
      */
-    if (!this.plan.enabled || !keepsLightsUpdated(this.plan)) return;
-    const capabilities = this.watchedCapabilities();
-    for (const deviceId of this.targetIds) {
-      await this.adapter.subscribe(deviceId, capabilities, (id, capability, value, external) =>
-        this.onCapabilityChange(id, capability, value, external));
+    if (!this.plan.enabled || !keepsLightsUpdated(this.plan)) {
+      // Not watching is not the same as not knowing: a preview still has to
+      // know which lamps are on, so the one-time read stays.
+      if (options.prime) await Promise.all(this.targetIds.map(id => this.adapter.refresh(id)));
+      return;
     }
+    // `prime`: one read per lamp seeds the cache AND makes the subscription.
+    // See `LightTargetAdapter.subscribeMany`.
+    await this.adapter.subscribeMany(this.targetIds, this.watchedCapabilities(),
+      (id, capability, value, external) => this.onCapabilityChange(id, capability, value, external),
+      options);
   }
 
   /**
@@ -2302,9 +2305,7 @@ export class CircadianRuntime {
       this.snapshot = next;
       this.targetNames = next.names;
       this.resolver.primeCache(next.devices, this.cache);
-      await Promise.all(next.ids.map(id => this.adapter.refresh(id)));
-      if (!current()) return;
-      await this.subscribeAll();
+      await this.subscribeAll({ prime: true });
       if (!current()) return;
       this.deps.log(`Circadian targets re-resolved: ${next.ids.length} light(s)`);
 

@@ -332,3 +332,110 @@ describe('suspend() disarms the implied-on check', () => {
     assert.deepEqual(sent, ['dim']);
   });
 });
+
+/**
+ * PERF-5. A curve or daylight runtime used to `refresh()` every lamp and then
+ * `subscribe()` every lamp, two fresh `getDevice` reads per lamp for one set of
+ * values, and it subscribed one lamp at a time. `subscribeMany` makes one read
+ * per lamp do both, several lamps at a time.
+ */
+describe('subscribing to many lamps at once', () => {
+  function many(ids: string[], options: { gate?: Promise<void>; failing?: string } = {}) {
+    const reads: Array<{ id: string; options: any }> = [];
+    let inFlight = 0;
+    let peak = 0;
+    const listeners = new Map<string, number>();
+    const api = {
+      async read() {
+        return {
+          devices: {
+            getDevice: async (args: any) => {
+              reads.push({ id: args.id, options: args });
+              inFlight += 1;
+              peak = Math.max(peak, inFlight);
+              try {
+                if (options.gate) await options.gate;
+                if (args.id === options.failing) throw new Error('could not reach device');
+                return {
+                  capabilitiesObj: {
+                    onoff: { value: true }, dim: { value: 0.3 }, light_temperature: { value: 0.6 },
+                    light_hue: { value: 0.1 }, light_saturation: { value: 0.9 }, light_mode: { value: 'color' },
+                  },
+                  makeCapabilityInstance(capability: string) {
+                    listeners.set(`${args.id}:${capability}`, (listeners.get(`${args.id}:${capability}`) ?? 0) + 1);
+                    return { destroy: () => { /* not under test */ } };
+                  },
+                };
+              } finally {
+                inFlight -= 1;
+              }
+            },
+          },
+        };
+      },
+      track: (off: Unsubscribe) => off,
+    } as unknown as HomeyApiService;
+    const cache = new TargetStateCache();
+    for (const id of ids) {
+      cache.setCapabilities(id, {
+        onoff: true, dim: { min: 0, max: 1 }, light_temperature: { min: 0, max: 1 },
+        light_hue: { min: 0, max: 1 }, light_saturation: { min: 0, max: 1 }, light_mode: true,
+      });
+    }
+    const adapter = new LightTargetAdapter(api, cache, () => { /* quiet */ });
+    return { adapter, cache, reads, listeners, peak: () => peak };
+  }
+
+  test('with prime, ONE live read per lamp seeds all six values and makes the subscription', async () => {
+    const ids = ['a', 'b', 'c'];
+    const h = many(ids);
+
+    await h.adapter.subscribeMany(ids, ['onoff', 'dim', 'light_hue'], undefined, { prime: true });
+
+    assert.deepEqual(h.reads.map(r => r.id).sort(), ids, 'one read per lamp, not two');
+    assert.ok(h.reads.every(r => r.options.$cache === false), 'and a LIVE one (platform §15)');
+    for (const id of ids) {
+      assert.deepEqual(h.cache.reportedValues(id), {
+        onoff: true, dim: 0.3, light_temperature: 0.6, light_hue: 0.1, light_saturation: 0.9,
+      }, 'hue and saturation too: a seed that blanked them read the next echo as a person');
+      assert.equal(h.listeners.get(`${id}:light_hue`), 1);
+    }
+  });
+
+  test('without prime the cache is left alone, as a re-subscribe must leave it', async () => {
+    const h = many(['a']);
+    h.cache.initialise('a', { onoff: false, dim: 0.8 });
+
+    await h.adapter.subscribeMany(['a'], ['onoff', 'dim']);
+
+    assert.equal(h.reads.length, 1);
+    assert.equal(h.cache.reportedValues('a').dim, 0.8);
+    assert.equal(h.cache.reportedValues('a').onoff, false);
+  });
+
+  test('at most eight at a time, and every lamp is reached', async () => {
+    const ids = Array.from({ length: 20 }, (_, i) => `lamp-${i}`);
+    const gate = deferred<void>();
+    const h = many(ids, { gate: gate.promise });
+
+    const subscribing = h.adapter.subscribeMany(ids, ['onoff'], undefined, { prime: true });
+    await settle(4);
+    assert.equal(h.peak(), LightTargetAdapter.SUBSCRIBE_CONCURRENCY, 'not one after another, and not twenty at once');
+    gate.resolve();
+    await subscribing;
+
+    assert.equal(h.reads.length, 20);
+    assert.equal(h.peak(), LightTargetAdapter.SUBSCRIBE_CONCURRENCY);
+  });
+
+  test('a lamp that cannot be read fails the call, but only after every other lamp is subscribed', async () => {
+    const ids = ['a', 'dead', 'b', 'c'];
+    const h = many(ids, { failing: 'dead' });
+
+    await assert.rejects(h.adapter.subscribeMany(ids, ['onoff'], undefined, { prime: true }), /could not reach/);
+
+    for (const id of ['a', 'b', 'c']) assert.equal(h.listeners.get(`${id}:onoff`), 1, `${id} still subscribed`);
+    assert.ok(h.adapter.failures().some(f => f.deviceId === 'dead' && f.capability === 'onoff'),
+      'the failed read is recorded as refresh() recorded it');
+  });
+});

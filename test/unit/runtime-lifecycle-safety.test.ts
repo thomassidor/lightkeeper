@@ -41,6 +41,7 @@ function house() {
   let teardownGate: Promise<void> | undefined;
   let failReconcile = false;
   let failSensor = false;
+  let lampReads = 0;
   // homey-api's client-replacement hook. Every LightTargetAdapter registers on
   // it when it resumes and only `unsubscribeAll()` lets go, so it is the one
   // resource a SCHEDULE holds that a capability listener count cannot see:
@@ -52,9 +53,12 @@ function house() {
       replacements.add(listener);
       return () => { replacements.delete(listener); };
     },
-    read: async () => ({ devices: { getDevice: async ({ id }: { id: string }) => {
+    read: async () => ({ devices: { getDevice: async ({ id, $cache }: { id: string; $cache?: boolean }) => {
       if (handleGate) await handleGate;
       if (id === 'sensor' && failSensor) throw new Error('sensor unreachable');
+      // LIVE reads only. A write's device handle is a `getDevice` too, but one
+      // homey-api answers from its cache on a Homey, and it is fetched once.
+      if (id === 'lamp' && $cache === false) lampReads += 1;
       return { ...(id === 'lamp' ? lamp : sensor),
         setCapabilityValue: async (write: { capabilityId: string; value: unknown }) => { writes.push(write); },
         makeCapabilityInstance: (cap: string, listener: (value: unknown) => void) => {
@@ -139,6 +143,8 @@ function house() {
     failReconcile: () => { failReconcile = true; },
     /** The lux sensor refuses to be subscribed to, so the sensor service arms a retry. */
     failSensor: () => { failSensor = true; },
+    /** How many times anything has read the lamp LIVE (`$cache: false`). */
+    lampReads: () => lampReads,
     replacementCount: () => replacements.size,
     holdQuery: (gate: Promise<void>) => { queryGate = gate; },
     holdHandle: (gate: Promise<void>) => { handleGate = gate; },
@@ -481,6 +487,33 @@ describe('teardown leaves nothing armed, for every kind of runtime', () => {
       } finally { release.resolve(); await h.stop(); }
     });
   }
+
+  /**
+   * PERF-5. A curve and a Room-sensing Light read each lamp at start, to know
+   * whether it is on (the 2 September bug in platform §15), and subscribe to
+   * it. Those used to be two reads of the same lamp; the subscription's own
+   * read now seeds the values. A controller only subscribes, so one read is
+   * all it ever made. A schedule watches no lamp at start.
+   */
+  for (const kind of kinds) {
+    test(`${kind}: starting reads each lamp at most once`, async () => {
+      const h = house();
+      try {
+        await registered(h, kind); await settle(12);
+        assert.equal(h.lampReads(), kind === 'schedule' ? 0 : 1);
+      } finally { await h.stop(); }
+    });
+  }
+
+  test('a curve that only publishes still reads its lamps once, without watching them', async () => {
+    const h = house();
+    try {
+      await h.curves.register('runtime', { ...h.curve, writesLights: false }, () => {});
+      await settle(12);
+      assert.equal(h.lampReads(), 1, 'a preview still has to know which lamps are on');
+      assert.equal(h.listenerCount(), 0, 'and a device that writes nothing subscribes to nothing');
+    } finally { await h.stop(); }
+  });
 
   for (const kind of ['controller', 'schedule'] as const) {
     /**

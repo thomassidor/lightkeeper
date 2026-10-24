@@ -436,23 +436,26 @@ export class DaylightRuntime {
     // over the subscriptions below, and re-reading every target every minute
     // would put a round trip per light per minute into an app that otherwise
     // only talks to Homey when something happens.
-    await Promise.all(this.targetIds.map(id => this.adapter.refresh(id)));
-    if (!current()) return;
-    await this.subscribeAll();
+    await this.subscribeAll({ prime: true });
     if (!current()) return;
   }
 
-  private async subscribeAll(): Promise<void> {
+  private async subscribeAll(options: { prime?: boolean } = {}): Promise<void> {
     // Nothing to watch on a device that writes to no lamp, and worse than idle
     // if left: `noteOverride` files every report it has no write of ours to
     // compare with as an override. The same argument as the circadian runtime's,
     // and it covers a PAUSED device too: resuming restarts the runtime through
     // `updatePlan`, which subscribes again.
-    if (!this.plan.enabled || !keepsLightsUpdated(this.plan)) return;
-    for (const deviceId of this.targetIds) {
-      await this.adapter.subscribe(deviceId, WATCHED, (id, capability, value, external) =>
-        this.onCapabilityChange(id, capability, value, external));
+    if (!this.plan.enabled || !keepsLightsUpdated(this.plan)) {
+      // The one-time read stays without the subscriptions, as on a curve.
+      if (options.prime) await Promise.all(this.targetIds.map(id => this.adapter.refresh(id)));
+      return;
     }
+    // One read per lamp for both, several lamps at a time: see
+    // `LightTargetAdapter.subscribeMany`.
+    await this.adapter.subscribeMany(this.targetIds, WATCHED,
+      (id, capability, value, external) => this.onCapabilityChange(id, capability, value, external),
+      options);
   }
 
   /**
@@ -1165,9 +1168,7 @@ export class DaylightRuntime {
       this.snapshot = next;
       this.targetNames = next.names;
       this.resolver.primeCache(next.devices, this.cache);
-      await Promise.all(next.ids.map(id => this.adapter.refresh(id)));
-      if (!current()) return;
-      await this.subscribeAll();
+      await this.subscribeAll({ prime: true });
       if (!current()) return;
       this.deps.log(`Daylight targets re-resolved: ${next.ids.length} light(s)`);
 

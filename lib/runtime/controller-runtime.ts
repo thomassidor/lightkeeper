@@ -555,10 +555,11 @@ export class ControllerRuntime {
     this.targetNames = resolved.names;
     this.resolver.primeCache(resolved.devices, this.cache);
 
-    for (const device of resolved.devices) {
-      await this.adapter.subscribe(device.id, WATCHED);
-      if (!current()) return;
-    }
+    // Several lamps at a time rather than one after another; see
+    // `LightTargetAdapter.subscribeMany`. No `prime`: a controller does not
+    // read its lamps at start, and this keeps it that way.
+    await this.adapter.subscribeMany(resolved.ids, WATCHED);
+    if (!current()) return;
 
     this.engine = new MappingEngine(this.profile.mappings, this.profile.behavior);
 
@@ -1111,10 +1112,8 @@ export class ControllerRuntime {
       this.snapshot = next;
       this.targetNames = next.names;
       this.resolver.primeCache(next.devices, this.cache);
-      for (const deviceId of addedOrChanged) {
-        await this.adapter.subscribe(deviceId, WATCHED);
-        if (!current()) return;
-      }
+      await this.adapter.subscribeMany(addedOrChanged, WATCHED);
+      if (!current()) return;
       this.deps.log(`Targets re-resolved: ${next.ids.length} light(s)`);
 
       // A target that came back, or one that vanished, changes the verdict —
