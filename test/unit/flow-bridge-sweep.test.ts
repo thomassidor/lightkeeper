@@ -179,6 +179,36 @@ describe('orphan sweep', () => {
     assert.deepEqual(h.deleted, []);
     assert.equal(result.unmanaged, 1);
   });
+
+  /**
+   * Duplicate a generated Flow in the Flow editor, add a condition, delete the
+   * device: the copy keeps our `controller` argument and is in no device's
+   * references, so it outlives the device — and used to be swept as ours.
+   */
+  test('a flow somebody added a CONDITION to is not ours to delete', async () => {
+    const h = harness({
+      f1: { ...managedFlow('f1', GONE), conditions: [{ id: 'homey:manager:presence:somebody_home' }] },
+      f2: managedFlow('f2', GONE),
+    });
+
+    const preview = await h.bridge.countOrphans(new Set([ALIVE]));
+    assert.deepEqual(preview.flowIds, ['f2'], 'the customised copy is never offered');
+    assert.equal(preview.unmanaged, 1);
+
+    const result = await h.bridge.sweepOrphans(new Set([ALIVE]), { token: preview.token, flowIds: preview.flowIds });
+    assert.deepEqual(h.deleted, ['f2']);
+    assert.equal(result.unmanaged, 1);
+  });
+
+  test('an empty or absent conditions list is still ours', async () => {
+    const h = harness({
+      f1: { ...managedFlow('f1', GONE), conditions: [] },
+      f2: managedFlow('f2', GONE),
+    });
+
+    await h.bridge.sweepOrphans(new Set([ALIVE]));
+    assert.deepEqual(h.deleted.sort(), ['f1', 'f2']);
+  });
 });
 
 describe('the sweep only deletes what the user was shown', () => {

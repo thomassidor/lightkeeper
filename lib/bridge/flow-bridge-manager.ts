@@ -214,7 +214,7 @@ function argsMatch(
 /**
  * Does this flow match, in full, the template `compileBinding` produces?
  *
- * Four things, and all four must hold:
+ * Five things, and all five must hold:
  *
  *   - exactly ONE action. Every generated flow has one; a user who added a
  *     second has made it theirs, and `hasBeenUserEdited` agrees.
@@ -225,6 +225,15 @@ function argsMatch(
  *   - its `event_key` argument is non-empty. A generated flow always carries
  *     one; the dispatcher refuses an event without it, so a flow that has none
  *     could never have been ours.
+ *   - it has NO conditions. We generate `conditions: []` for every flow, so a
+ *     condition is something a person added — `hasBeenUserEdited` has always
+ *     read it as the clearest edit there is. The sweep did not, and the gap
+ *     was reachable with two ordinary taps: duplicate a generated Flow in the
+ *     Flow editor (the copy keeps our `controller` argument), add "only when
+ *     I'm home", delete the device. `removeAll` deletes only the original it
+ *     has a reference to; the customised copy is left attributed to a dead id,
+ *     and the next sweep offered it up for deletion under a name that reads
+ *     exactly like ours. Now it is `unmanaged`: found, reported, never deleted.
  *
  * Deliberately says nothing about the TRIGGER. A re-attach repoints a flow's
  * trigger at a new device and the flow stays ours; requiring a particular
@@ -240,7 +249,11 @@ function looksGenerated(flow: any, cardIds: Set<string>): boolean {
   const controller = String(action?.args?.controller ?? '');
   if (!LIGHTKEEPER_DEVICE_ID.test(controller)) return false;
 
-  return String(action?.args?.event_key ?? '') !== '';
+  if (String(action?.args?.event_key ?? '') === '') return false;
+
+  // Absent is not a condition: Homey may omit the field, as it may `enabled`.
+  const conditions = flow?.conditions;
+  return !Array.isArray(conditions) || conditions.length === 0;
 }
 
 /** What countOrphans reports, and what a sweep must be handed back. */
