@@ -4,6 +4,8 @@ import { BoundedLog } from '../../lib/support/bounded-log';
 import { FlowBridgeManager } from '../../lib/bridge/flow-bridge-manager';
 import type { HomeyApiService } from '../../lib/homey-api-service';
 import { CredentialService } from '../../lib/credential-service';
+import { DeviceCatalog } from '../../lib/device-catalog';
+import { FlowCardCatalogue } from '../../lib/flow-card-catalogue';
 
 const api = require('../../api') as {
   countOrphans(args: any): Promise<any>;
@@ -178,10 +180,26 @@ function homey(options: {
     },
   };
 
+  /**
+   * The REAL two catalogues, over a client that refuses to be read. The
+   * diagnostics route reports their counters, and must do it without asking
+   * the Homey for anything: one trigger-card read from a bug report is the
+   * mistake platform §15 records.
+   */
+  const reads = { count: 0 };
+  const unreadable = {
+    read: async () => {
+      reads.count += 1;
+      throw new Error('a report must not read the Homey to describe the catalogue');
+    },
+    reportReadFailure: () => false,
+  } as unknown as HomeyApiService;
+
   return {
     swept,
     deleted,
     live,
+    reads,
     // The handlers take the Homey argument object: { homey }.
     args: { homey: {
       // Any version: nothing here asserts one, and a hardcoded release number
@@ -196,6 +214,8 @@ function homey(options: {
         brightnessScale: () => (settings.get('brightnessScale') === 'linear' ? 'linear' : 'natural'),
         setBrightnessScale: (scale: string) => settings.set('brightnessScale', scale),
         credentials: options.credentials ?? { getStatus: () => ({ present: true, valid: true }) },
+        catalog: new DeviceCatalog(unreadable),
+        cards: new FlowCardCatalogue(unreadable),
         controllers: { all: () => (options.controllers ?? []).map(id => runtime(id, 'controller')) },
         schedules: {
           all: () => (options.schedules ?? []).map(id => runtime(id, 'schedule')),
@@ -620,6 +640,24 @@ describe('the settings payload', () => {
       (await api.getStatus(h.args)).recentWrites, [sched, ctrl],
       'newest first — the schedule wrote after the controller did',
     );
+  });
+
+  /**
+   * How often the catalogue is invalidated and the card catalogues are read had
+   * never been recorded, and it decides what a catalogue change costs. Reported
+   * from counters alone.
+   */
+  test('diagnostics carry the catalogue counters, and reading them reads nothing', async () => {
+    const h = homey({ controllers: [ID.ctrl] });
+
+    const diagnostics = await api.getDiagnostics(h.args);
+
+    assert.deepEqual(Object.keys(diagnostics.catalog).sort(), ['cards', 'devices']);
+    assert.equal(diagnostics.catalog.devices.refreshes, 0);
+    assert.deepEqual(diagnostics.catalog.devices.invalidations, {});
+    assert.equal(diagnostics.catalog.cards.triggers.fetches, 0);
+    assert.equal(diagnostics.catalog.cards.actions.retained, false);
+    assert.equal(h.reads.count, 0, 'the report must not provoke the reads it counts');
   });
 
   test('a runtime keeps its OWN write log for per-device diagnostics', async () => {

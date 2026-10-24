@@ -92,6 +92,42 @@ const asList = (/** @type {Record<string, number>} */ counts) =>
   Object.entries(counts).map(([key, count]) => `${key} x${count}`).join(', ');
 
 /**
+ * How busy the device catalogue and the card catalogues have been, as rates
+ * since the app started.
+ *
+ * Rates, not counts, because the counts start at boot and a capture can come
+ * minutes or weeks after it. The question this line exists to answer is how
+ * often Homey's device and zone events arrive, which decides what each one
+ * costs, and it had never been measured. `null` for a capture from a build
+ * that predates the counters.
+ *
+ * @param {any} diagnostics
+ * @param {number} now
+ * @returns {{ line: string, triggerReadsPerHour: number } | null}
+ */
+function catalogueActivity(diagnostics, now) {
+  const devices = diagnostics.catalog?.devices;
+  const cards = diagnostics.catalog?.cards;
+  if (!devices || !cards) return null;
+  // A floor of one minute, so a capture taken at boot does not divide by ~0.
+  const hours = Math.max((now - devices.since) / 3_600_000, 1 / 60);
+  /** @type {Record<string, number>} */
+  const invalidations = devices.invalidations ?? {};
+  const events = Object.values(invalidations).reduce((sum, count) => sum + count, 0);
+  const perHour = (/** @type {number} */ count) => (count / hours).toFixed(1);
+  const triggers = cards.triggers ?? {};
+  const last = triggers.lastMs === null || triggers.lastMs === undefined
+    ? ''
+    : ` (last ${triggers.lastMs} ms, ${triggers.lastCount} cards)`;
+  return {
+    line: `catalogue: ${perHour(events)} invalidation(s)/h (${asList(invalidations) || 'none'}), `
+      + `${perHour(devices.refreshes ?? 0)} refresh(es)/h, ${perHour(devices.appNameLoads ?? 0)} app-name read(s)/h, `
+      + `trigger cards read ${perHour(triggers.fetches ?? 0)}/h${last}`,
+    triggerReadsPerHour: (triggers.fetches ?? 0) / hours,
+  };
+}
+
+/**
  * The lines worth looking twice at, across every device.
  *
  * Deliberately a flat list rather than a per-device tree: the question this
@@ -104,6 +140,13 @@ function notable(/** @type {any} */ diagnostics) {
   const lines = [];
   if (diagnostics.credential?.present && !diagnostics.credential?.valid) {
     lines.push('credential: present but NOT valid — every Flow-writing device is stranded');
+  }
+  // Six an hour is a 1 MB read every ten minutes, for as long as the app runs.
+  // A controller re-checks its remote against the whole trigger catalogue on a
+  // catalogue change, so this is the line that says the changes are frequent.
+  const activity = catalogueActivity(diagnostics, now);
+  if (activity && activity.triggerReadsPerHour > 6) {
+    lines.push(`catalogue: the whole trigger catalogue is read ${activity.triggerReadsPerHour.toFixed(1)} times an hour`);
   }
   for (const runtime of runtimes(diagnostics)) {
     const name = nameOf(runtime);
@@ -155,6 +198,8 @@ function digest(/** @type {any} */ diagnostics) {
   out.push(`${diagnostics.app?.id ?? APP_ID} ${diagnostics.app?.version ?? '?'} — captured ${new Date(now).toISOString()}`);
   out.push(`credential: present=${diagnostics.credential?.present} valid=${diagnostics.credential?.valid}, checked ${age(now, diagnostics.credential?.lastCheckedAt)}`);
   out.push(`heap: ${mb(heap.heapUsed)} of ${mb(heap.heapTotal)} (limit ${mb(heap.heapLimit)}), peak RSS ${mb(heap.maxRss)}, up ${((heap.uptimeSeconds ?? 0) / 3600).toFixed(1)}h`);
+  const activity = catalogueActivity(diagnostics, now);
+  if (activity) out.push(activity.line);
   out.push('');
 
   for (const runtime of runtimes(diagnostics)) {
