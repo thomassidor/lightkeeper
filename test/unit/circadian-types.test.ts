@@ -199,6 +199,28 @@ describe('the three zones', () => {
     assert.deepEqual(sunAnchorContext({ latitude: 78.2, longitude: 15.6 }, 'Arctic/Longyearbyen', midsummer), {});
   });
 
+  test('across a daylight-saving change the anchors move with the wall clock, not the sun', () => {
+    // The zone boundaries are local minutes, so on the day the clocks change
+    // the sun has moved two minutes and the anchor an hour. Measured against
+    // the sun itself (UTC) the move would be invisible, and a curve anchored to
+    // "sunrise plus thirty minutes" would land an hour out every summer.
+    const copenhagen = { latitude: 55.68, longitude: 12.57 };
+    const anchors = (month: number, day: number) =>
+      sunAnchorContext(copenhagen, 'Europe/Copenhagen', Date.UTC(2026, month, day, 11, 0));
+
+    const beforeSpring = anchors(2, 28);
+    const afterSpring = anchors(2, 29);
+    const springMove = afterSpring.sunriseMinute! - beforeSpring.sunriseMinute!;
+    assert.ok(springMove >= 55 && springMove <= 60, `sunrise moved ${springMove} minutes on 29 March`);
+    assert.ok(Math.abs(afterSpring.sunriseMinute! - (6 * 60 + 48)) <= 15, `sunrise at ${afterSpring.sunriseMinute}`);
+
+    const beforeAutumn = anchors(9, 24);
+    const afterAutumn = anchors(9, 25);
+    const autumnMove = afterAutumn.sunsetMinute! - beforeAutumn.sunsetMinute!;
+    assert.ok(autumnMove <= -60 && autumnMove >= -65, `sunset moved ${autumnMove} minutes on 25 October`);
+    assert.ok(Math.abs(afterAutumn.sunsetMinute! - (16 * 60 + 46)) <= 15, `sunset at ${afterAutumn.sunsetMinute}`);
+  });
+
   test('with no sun at all it falls back to fixed hours, and says so', () => {
     // Two cases reach this and both are real: a Homey that has never been told
     // where it is, and a polar day with no sunrise to anchor to for weeks.

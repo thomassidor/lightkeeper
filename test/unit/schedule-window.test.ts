@@ -2,8 +2,8 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  activeWindowStartDay, boundaryDayMatches, crossesMidnight, dayMatches,
-  isActive, offMinuteOf, windowLengthMinutes,
+  activeEntries, activeWindowStartDay, boundaryClockMatches, boundaryDayMatches, crossesMidnight,
+  dayMatches, isActive, offMinuteOf, windowLengthMinutes,
 } from '../../lib/schedules/schedule-window';
 import { describeClock, fromJsDay, localNow, previousWeekday } from '../../lib/time/local-clock';
 import {
@@ -191,6 +191,84 @@ describe('the local clock', () => {
     assert.equal(previousWeekday(1), 7);
     assert.equal(previousWeekday(7), 6);
     assert.equal(describeClock({ minutesOfDay: 90, isoWeekday: 7 }), 'Sun 01:30');
+  });
+});
+
+/**
+ * The two days a year the wall clock is not a clock.
+ *
+ * Every comparison in schedule-window.ts is in wall-clock minutes, and nothing
+ * converts a wall time to an instant. lib/time/local-clock.ts refuses that
+ * conversion on purpose: it is the code DST breaks (a local time that does not
+ * exist, or exists twice), and the Flow engine owns firing anyway. These tests
+ * pin only what holds whichever way time is counted on the reference Homey's
+ * own zone: the skipped hour is never read, the repeated hour is read twice on
+ * the same day, a boundary fired at its own wall minute is accepted, and every
+ * window is matched to the day it started on.
+ *
+ * Deliberately NOT asserted, because they are consequences of the wall-clock
+ * design rather than guarantees, and a decision to change either should not be
+ * fought by a test:
+ *  - the REPEATED hour: a window that already ended in real time reads as
+ *    active again. On 2026-10-25, a window from 01:30 for 60 min is switched off
+ *    at 02:30 CEST (00:30Z), and at 02:15 CET (01:15Z), 45 real minutes later,
+ *    `activeEntries` returns it again and an `on` is accepted. A restart inside
+ *    that hour would catch the room up and switch it back on.
+ *  - the SKIPPED hour: a window is as long as the wall says (01:00 for three
+ *    hours lasts two real hours on 2026-03-29), and one lying wholly inside
+ *    02:00-02:59 never runs that night and is not caught up.
+ */
+describe('a daylight-saving day, in Europe/Copenhagen', () => {
+  const zone = 'Europe/Copenhagen';
+  const at = (month: number, day: number, h: number, m: number) => localNow(zone, Date.UTC(2026, month, day, h, m));
+  /** Sunday 29 March 2026: 02:00 CET jumps to 03:00 CEST at 01:00 UTC. */
+  const spring = (h: number, m: number) => at(2, 29, h, m);
+  /** Sunday 25 October 2026: 03:00 CEST falls back to 02:00 CET at 01:00 UTC. */
+  const autumn = (h: number, m: number) => at(9, 25, h, m);
+
+  test('in spring the hour from 02:00 is never read, and the day stays Sunday', () => {
+    assert.deepEqual(spring(0, 59), { minutesOfDay: 1 * 60 + 59, isoWeekday: 7 });
+    assert.deepEqual(spring(1, 0), { minutesOfDay: 3 * 60, isoWeekday: 7 });
+  });
+
+  test('in autumn the hour from 02:00 is read twice, on the same Sunday', () => {
+    assert.deepEqual(autumn(0, 30), { minutesOfDay: 2 * 60 + 30, isoWeekday: 7 }, '02:30 CEST');
+    assert.deepEqual(autumn(1, 30), { minutesOfDay: 2 * 60 + 30, isoWeekday: 7 }, '02:30 CET');
+    assert.deepEqual(autumn(2, 0), { minutesOfDay: 3 * 60, isoWeekday: 7 });
+  });
+
+  test('a restart after the spring jump catches up a window it is inside', () => {
+    // On at 01:00 CET for three hours; 03:30 CEST is 90 real minutes in.
+    const night = entry({ onAt: 60, end: { kind: 'duration', minutes: 180 } });
+    const found = activeEntries([night], null, spring(1, 30));
+    assert.equal(found.length, 1);
+    assert.equal(found[0]!.startDay, 7);
+  });
+
+  test('a window running across the spring jump is accepted at both ends', () => {
+    // The Flow engine fires each boundary at its own wall minute, so that is
+    // the minute that must be accepted.
+    const across = entry({ onAt: 1 * 60 + 30, end: { kind: 'duration', minutes: 120 } });
+    assert.equal(boundaryClockMatches(across, null, 'on', spring(0, 30)), true, 'on at 01:30 CET');
+    assert.equal(isActive(across, null, spring(1, 15)), true, '03:15 CEST, still inside');
+    assert.equal(boundaryClockMatches(across, null, 'off', spring(1, 30)), true, 'off at 03:30 CEST');
+  });
+
+  test('a window running across the autumn fall-back is accepted at both ends', () => {
+    const across = entry({ onAt: 1 * 60 + 30, end: { kind: 'duration', minutes: 120 } });
+    assert.equal(boundaryClockMatches(across, null, 'on', at(9, 24, 23, 30)), true, 'on at 01:30 CEST');
+    assert.equal(isActive(across, null, autumn(0, 30)), true, 'the first 02:30');
+    assert.equal(isActive(across, null, autumn(1, 15)), true, 'the second 02:15');
+    assert.equal(boundaryClockMatches(across, null, 'off', autumn(2, 30)), true, 'off at 03:30 CET');
+  });
+
+  test('a midnight-crossing window over the fall-back still belongs to the day it started', () => {
+    // Saturday 23:00 for four hours, ending on the fall-back Sunday.
+    const late = entry({ onAt: 23 * 60, end: { kind: 'duration', minutes: 240 } });
+    const saturdays: IsoWeekday[] = [6];
+    assert.equal(activeWindowStartDay(late, saturdays, autumn(0, 30)), 6, '02:30 CEST belongs to Saturday');
+    assert.equal(boundaryDayMatches(late, saturdays, 'off', autumn(2, 0).isoWeekday), true);
+    assert.equal(boundaryDayMatches(late, saturdays, 'on', autumn(2, 0).isoWeekday), false);
   });
 });
 
