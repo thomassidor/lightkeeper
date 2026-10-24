@@ -941,7 +941,7 @@ export class ScheduleRuntime {
   /** Remove only what this schedule demonstrably owns. */
   async destroy(): Promise<void> {
     await this.stop();
-    await this.deps.bridge.removeAll(this.plan.managedFlows);
+    await this.deps.bridge.removeAll(this.controllerId, this.plan.managedFlows);
   }
 
   /** See `VisibleState`, which owns the when-did-it-move rule. */
