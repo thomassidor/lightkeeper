@@ -1326,7 +1326,7 @@ export class CircadianRuntime {
     }
 
     this.lastAction = action;
-    this.history.actions.add(action);
+    this.history.action(action);
 
     if (awaitedCompletion) {
       await this.scheduler.drain();
@@ -1351,7 +1351,7 @@ export class CircadianRuntime {
     this.lastAction = { at: this.now(), reason, detail, writes: 0, skipped,
       targets: this.targetIds.map(deviceId => ({ deviceId, status: 'inactive', commands: 0 })),
     };
-    this.history.actions.add(this.lastAction);
+    this.history.action(this.lastAction);
     return { writes: 0, skipped };
   }
 

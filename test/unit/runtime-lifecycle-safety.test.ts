@@ -505,6 +505,30 @@ describe('teardown leaves nothing armed, for every kind of runtime', () => {
     });
   }
 
+  /**
+   * PERF-7, end to end: a room with its lamp off gives the same "nothing to
+   * do" every minute, and those minutes are one row in the action history.
+   */
+  for (const kind of ['curve', 'daylight'] as const) {
+    test(`${kind}: an hour of identical idle ticks is one history row`, async () => {
+      const h = house();
+      try {
+        await registered(h, kind); await settle(12);
+        h.reportOff(); await settle(12);
+        const manager = kind === 'curve' ? h.curves : h.daylights;
+        for (let minute = 0; minute < 60; minute += 1) {
+          h.timers.advance(60_000); await settle(4);
+        }
+        const runtime = manager.get('runtime')!;
+        const idle = runtime.diagnostics().recentActions.filter(action => action.writes === 0);
+        const newest = idle[0]!;
+        assert.ok(idle.length <= 2, `${idle.length} idle rows`);
+        assert.ok((newest.count ?? 1) >= 58, `the run is counted: ${newest.count}`);
+        assert.equal(newest, runtime.diagnostics().recentActions[0], 'the run is the newest row');
+      } finally { await h.stop(); }
+    });
+  }
+
   test('a curve that only publishes still reads its lamps once, without watching them', async () => {
     const h = house();
     try {

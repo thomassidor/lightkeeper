@@ -119,6 +119,32 @@ export interface ControlAction {
   batchId?: string;
   completedAt?: number;
   outcomes?: WriteOutcome[];
+  /**
+   * Set only on a row standing for a RUN of identical passes that wrote
+   * nothing: how many it stands for, and when the newest of them ran. `at` stays
+   * the first. See `ControlHistory.action`.
+   */
+  count?: number;
+  lastAt?: number;
+}
+
+/**
+ * Whether two passes that wrote nothing are the same pass again: the same
+ * reason and sentence, and the same verdict on every lamp. The curve's own
+ * values (warmth, brightness, colour) are deliberately NOT compared, because
+ * on a flat stretch they creep by thousandths per tick without a write. The row
+ * carries the newest of them instead.
+ */
+function sameIdlePass(a: ControlAction & { detail?: string }, b: ControlAction & { detail?: string }): boolean {
+  if (a.writes !== 0 || b.writes !== 0) return false;
+  if (a.reason !== b.reason || a.detail !== b.detail || a.skipped !== b.skipped) return false;
+  const left = a.targets ?? [];
+  const right = b.targets ?? [];
+  return left.length === right.length && left.every((target, i) => {
+    const other = right[i]!;
+    return target.deviceId === other.deviceId && target.status === other.status
+      && target.commands === other.commands;
+  });
 }
 
 /** Keep decisions independently of capability writes: six lamps must not erase
@@ -141,6 +167,36 @@ export class ControlHistory<T extends ControlAction> {
    * itself a signal: a lamp echoing forty times is worth seeing) at the cost of
    * one slot rather than forty.
    */
+  /**
+   * Record one pass. A pass that wrote nothing and matches the NEWEST row
+   * exactly is folded into it instead of taking a slot of its own.
+   *
+   * The same argument as `ignored()` below, for actions. Every runtime records
+   * one action per tick, and on a flat stretch of curve, a publish-only device,
+   * a paused one or a room with every lamp off, every one of them is the same
+   * "nothing to do". Sixty slots then hold one hour of identical rows. The pass
+   * that last actually wrote is evicted after that hour, which is the row a
+   * reader needs. Those rows also made up most of `/diagnostics`' megabyte.
+   *
+   * Only the newest row is compared, never a window as `ignored()` does.
+   * Actions do not interleave the way five lamps' echoes do, and folding into
+   * an older row would put a pass before a write that happened first. Any pass
+   * that wrote is never folded, so its `batchId` and outcomes stay its own.
+   * The evidence sink still sees every pass.
+   */
+  action(entry: T): void {
+    this.actions.addRepeat(
+      entry,
+      existing => sameIdlePass(existing, entry),
+      existing => {
+        const first = existing.at;
+        const count = (existing.count ?? 1) + 1;
+        Object.assign(existing, entry, { at: first, count, lastAt: entry.at });
+      },
+      1,
+    );
+  }
+
   ignored(event: ControlEvent): void {
     this.events.addRepeat(
       event,
@@ -204,4 +260,5 @@ const DIAGNOSTIC_SEMANTICS = {
   timestamps: 'Unix milliseconds; sampledAt is the current snapshot, lastAction.at is its earlier evaluation',
   history: 'bounded, newest first, in memory only; reset on app restart',
   repeatedEvents: 'a run of identical reports is one row: count is how many, at is the first, lastAt the newest',
+  repeatedActions: 'a run of identical passes that wrote nothing is one row the same way, carrying the newest pass\'s values',
 } as const;
