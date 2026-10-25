@@ -23,7 +23,6 @@ import {
   type LiveValues,
 } from '../outputs/target-state-cache';
 import { AXES_FOR_MODE, planIntent, type Capability, type PlannedWrite } from '../outputs/intent-planner';
-import { DEFAULT_BRIGHTNESS_SCALE, toDevice, type BrightnessScale } from '../outputs/light-intent';
 import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
 import { assessTargets } from '../runtime/target-health';
@@ -112,12 +111,6 @@ export interface CircadianRuntimeDeps {
    * then.
    */
   location?: () => unknown;
-  /**
-   * The app-wide `BrightnessScale`, read every pass so a change on the settings
-   * page lands at the next tick without a restart. Absent means the natural
-   * scale; the app always supplies it, and most test rigs leave it out.
-   */
-  brightnessScale?: () => BrightnessScale;
 }
 
 export interface CircadianAction extends ControlAction {
@@ -386,9 +379,8 @@ export interface CircadianDiagnostics extends ReturnType<ControlHistory<Circadia
      * What we last sent this lamp, in DEVICE values, and when.
      *
      * `dim` rather than `brightness` on purpose: it is the value the lamp was
-     * given, after the perceptual curve and after quantisation, so at
-     * `now.brightness` 0.156 this reads 0.02. Both were called `brightness`
-     * once, which invited exactly the comparison that cannot be made.
+     * given, after quantisation to the lamp's own resolution and `litDim()`,
+     * so it can differ from `now.brightness` in the last place.
      *
      * `color` comes from a different map than the other two, because a
      * temperature write voids a recorded colour and a colour write voids a
@@ -647,7 +639,7 @@ export class CircadianRuntime {
   private publishValues(): void {
     const value = this.currentValue();
     const brightness = this.plan.adjustBrightness && value?.brightness !== undefined
-      ? toDevice(value.brightness, this.scale())
+      ? value.brightness
       : null;
 
     this.values.set({
@@ -673,10 +665,6 @@ export class CircadianRuntime {
 
   private now(): number {
     return this.timers.now();
-  }
-
-  private scale(): BrightnessScale {
-    return this.deps.brightnessScale?.() ?? DEFAULT_BRIGHTNESS_SCALE;
   }
 
   private setTimer(fn: () => void, ms: number): unknown {
@@ -922,7 +910,7 @@ export class CircadianRuntime {
      * gone missing it would have been permanent.
      *
      * The value test needs no clock and no ordering. Neither runtime can write
-     * 0: `MINIMUM_BRIGHTNESS` is 0.10 perceptual and `litDim()` guarantees a
+     * 0: `MINIMUM_BRIGHTNESS` is one hundredth and `litDim()` guarantees a
      * positive brightness is never written as darkness, so a reported 0 is
      * always the lamp's own. And a person dragging a dimmer to zero turns the
      * lamp OFF, which arrives as `onoff` and clears any override anyway — so
@@ -1473,9 +1461,9 @@ export class CircadianRuntime {
 
     if (this.plan.adjustBrightness && value.brightness !== undefined && lit.length > 0) {
       const brightness = planIntent(
-        // Stored as the person set it, written in device values through the
-        // app's `BrightnessScale` — 40% means here what it means everywhere else.
-        { type: 'brightness_absolute', value: toDevice(value.brightness, this.scale()) },
+        // Stored as Homey's own `dim` (`MINIMUM_BRIGHTNESS`): 40% here is 40%
+        // in Homey's slider.
+        { type: 'brightness_absolute', value: value.brightness },
         // `lit` is already a subset of `eligible`: the override check runs before
         // either list is built.
         lit, this.cache, DEFAULT_BEHAVIOR,

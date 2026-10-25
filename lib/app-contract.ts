@@ -18,7 +18,6 @@ import type { LuminanceSource } from './daylight/luminance-source';
 import type { BoundedLog } from './support/bounded-log';
 import type { HeapReport } from './support/heap-report';
 import type { WriteRecord } from './outputs/light-target-adapter';
-import type { BrightnessScale } from './outputs/light-intent';
 import type { ControllerDiagnostics } from './runtime/controller-runtime';
 import type { ScheduleDiagnostics } from './schedules/schedule-runtime';
 import type { CircadianDiagnostics } from './circadian/circadian-runtime';
@@ -37,6 +36,14 @@ import type { TimeCardDiscovery } from './schedules/time-card-discovery';
  * the app's own business, and a consumer reaching past it is a consumer that
  * should be asking for something to be added.
  */
+
+/**
+ * What the retired app-wide "Brightness scale" setting said. `natural` stored
+ * every brightness perceptually (`dim = p^2.2`); `linear` stored Homey's own
+ * `dim`, which is what every brightness is now. Absent meant natural.
+ */
+export type LegacyBrightnessScale = 'natural' | 'linear';
+
 export interface LightkeeperApp {
   readonly evidence: EvidenceFeature;
   readonly credentials: CredentialService;
@@ -72,15 +79,12 @@ export interface LightkeeperApp {
   readonly health: HealthMonitor;
   readonly recentEvents: BoundedLog<BridgeEventRecord>;
   readonly recentWrites: BoundedLog<WriteRecord>;
-  /** The app-wide `BrightnessScale`, as the settings page last stored it. */
-  brightnessScale(): BrightnessScale;
   /**
-   * Store a new scale. Every runtime reads it at its next use — a curve or a
-   * Room-sensing Light at its next tick, a schedule at its next window, a
-   * remote at its next press — rather than being forced through a pass, so one
-   * click on the settings page is not a burst of writes across the house.
+   * Which scale the retired "Brightness scale" setting held, for the one
+   * migration step per store that converts a plan saved before 1.0.0's
+   * release. Read-only: nothing writes the setting any more.
    */
-  setBrightnessScale(scale: BrightnessScale): void;
+  legacyBrightnessScale(): LegacyBrightnessScale;
   log(...args: unknown[]): void;
   error(...args: unknown[]): void;
 }
@@ -137,8 +141,6 @@ export interface StatusResponse {
    * but schedules. The per-device view is in `getDiagnostics`.
    */
   recentWrites: readonly WriteRecord[];
-  /** The settings page's "Brightness scale" choice. */
-  brightnessScale: BrightnessScale;
 }
 
 /**

@@ -1,4 +1,6 @@
 import { type DaylightPlan } from './daylight-types';
+import { carryBrightness } from '../outputs/light-intent';
+import type { LegacyBrightnessScale } from '../app-contract';
 import { runMigrationChain, type MigrationResult, type MigrationStep } from '../support/migrations';
 import { validateDaylightPlan } from '../validation/plans';
 
@@ -29,14 +31,23 @@ import { validateDaylightPlan } from '../validation/plans';
  * change. It goes INSIDE `response` — see `DaylightResponse.transition`. A
  * response that is not an object is left for the validator to refuse with its
  * own path, rather than replaced here by one that would pass.
+ *
+ * **2 → 3 (1.0.0): every brightness becomes Homey's own `dim`.** The app-wide
+ * "Brightness scale" setting is gone, and with it the natural scale it defaulted
+ * to (`dim = p^2.2`, so 50% read 22% in Homey). A plan saved on that scale has
+ * the response's two ends (`dark`, `bright`) converted through `carryBrightness()`, which keeps every lamp at the
+ * level it was showing; one saved under *Same as Homey* already holds `dim`
+ * values and is only re-stamped. Which of the two a plan is comes from the
+ * retired setting itself (`legacyBrightnessScale()` on the app), passed in
+ * because a step is otherwise a pure function of the stored shape.
  */
 
-export const CURRENT_DAYLIGHT_SCHEMA_VERSION = 2;
+export const CURRENT_DAYLIGHT_SCHEMA_VERSION = 3;
 
 export type DaylightMigration = MigrationStep;
 
 /** Keyed by the version being migrated FROM. See the header for each step. */
-const DAYLIGHT_MIGRATIONS: Record<number, DaylightMigration> = {
+const daylightMigrations = (legacy: LegacyBrightnessScale): Record<number, DaylightMigration> => ({
   1: raw => ({
     ...raw,
     response: raw.response && typeof raw.response === 'object'
@@ -44,13 +55,28 @@ const DAYLIGHT_MIGRATIONS: Record<number, DaylightMigration> = {
       : raw.response,
     schemaVersion: 2,
   }),
-};
+  2: raw => {
+    const response = raw.response && typeof raw.response === 'object'
+      ? raw.response as Record<string, unknown>
+      : null;
+    return {
+      ...raw,
+      response: response
+        ? { ...response, dark: carryBrightness(response.dark, legacy), bright: carryBrightness(response.bright, legacy) }
+        : raw.response,
+      schemaVersion: 3,
+    };
+  },
+});
 
-export function migrateDaylightPlan(raw: unknown): MigrationResult<DaylightPlan> {
+export function migrateDaylightPlan(
+  raw: unknown,
+  legacy: LegacyBrightnessScale = 'natural',
+): MigrationResult<DaylightPlan> {
   return runMigrationChain(raw, {
     label: 'Daylight',
     current: CURRENT_DAYLIGHT_SCHEMA_VERSION,
-    table: DAYLIGHT_MIGRATIONS,
+    table: daylightMigrations(legacy),
     validate: validateDaylightPlan,
   });
 }

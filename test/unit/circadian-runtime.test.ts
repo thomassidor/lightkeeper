@@ -103,8 +103,6 @@ function harness(options: {
    * measured on 25 October 2026. See RESTORE_SETTLE_MS.
    */
   appliesHeldOnPowerOn?: { ids: string[]; ms: number };
-  /** The app-wide brightness scale, read per pass. Absent is natural. */
-  brightnessScale?: () => 'natural' | 'linear';
 } = {}) {
   const devices = options.devices ?? [light('l1'), light('l2')];
   /** Lamps refusing every write, settable after start. See setCapabilityValue. */
@@ -213,7 +211,6 @@ function harness(options: {
     // Absent unless a test asks, which is the shape a curve with no daylight
     // response runs in — and the shape every other test in this file runs in.
     ...(options.daylight ? { daylight: options.daylight as any } : {}),
-    ...(options.brightnessScale ? { brightnessScale: options.brightnessScale } : {}),
     onPlanChange: async p => { plans.push(p); },
   });
 
@@ -482,8 +479,7 @@ describe('brightness', () => {
     await h.runtime.start();
     await settle();
 
-    // A perceptual 1 is a device 1; the conversion is toDevice(), the same one
-    // the dimming gestures and the schedule screen use.
+    // A stored 1 is a `dim` of 1: every stored brightness is Homey's own number.
     assert.deepEqual(
       h.writes.filter(w => w.capability === 'dim').map(w => w.value),
       [1, 1],
@@ -491,14 +487,12 @@ describe('brightness', () => {
   });
 
   /**
-   * The settings page's "Same as Homey": a stored 74% is sent as dim 0.74 and
-   * published as 0.74, where the natural scale sends 0.74^2.2 ≈ 0.52. Read per
-   * pass, so a switch reaches the lamps at the next tick with no restart — and
-   * the published value, which a Flow tag and a remote's `lightkeeper_on` both
-   * read, moves with it.
+   * A stored 74% is sent as `dim` 0.74 and published as 0.74 — Homey's own
+   * number, with no scale between them. The published value is what a Flow tag
+   * and a remote's `lightkeeper_on` both read, so it must be the number the
+   * lamp was sent.
    */
-  test('follows the app-wide brightness scale, and a switch lands at the next tick', async () => {
-    let scale: 'natural' | 'linear' = 'linear';
+  test('a stored brightness is written and published as Homey’s own dim', async () => {
     const flat = plan({
       adjustBrightness: true,
       points: [
@@ -506,20 +500,12 @@ describe('brightness', () => {
         { id: 'night', anchor: { kind: 'clock', at: 23 * 60 }, warmth: 0.2, brightness: 0.74 },
       ],
     });
-    const h = harness({ plan: flat, brightnessScale: () => scale });
+    const h = harness({ plan: flat });
     await h.runtime.start();
     await settle();
 
-    const dims = () => h.writes.filter(w => w.capability === 'dim').map(w => w.value);
-    assert.deepEqual(dims(), [0.74, 0.74]);
+    assert.deepEqual(h.writes.filter(w => w.capability === 'dim').map(w => w.value), [0.74, 0.74]);
     assert.equal(h.runtime.publishedValues()['lightkeeper_brightness'], 0.74);
-
-    scale = 'natural';
-    h.advance(60_000);
-    await h.runtime.tick();
-    await applied(h);
-    assert.deepEqual(dims().slice(2), [0.52, 0.52], '0.74^2.2 ≈ 0.515, at two decimals');
-    assert.ok(Math.abs((h.runtime.publishedValues()['lightkeeper_brightness'] as number) - 0.74 ** 2.2) < 0.01);
   });
 
   test('is never sent to a light that is off, even while pre-staging', async () => {
@@ -1910,18 +1896,16 @@ describe('a brightness a person chose is a brightness the lamp shows', () => {
 
   test('the dimmest setting is dim 0.01, not 0.00', async () => {
     /**
-     * γ = 2.2 turns 5% into 0.0014, and `dim` reports two decimals, so it was
-     * quantised to 0.00 — off, on most lamps. That was the LOWEST position the
-     * brightness sliders offered, and on a curve it held there for the eight
-     * minutes either side of the point. The sliders now start at 10%, and this
-     * is the floor underneath any plan stored before they did.
+     * `dim` reports two decimals, so a positive brightness under 0.005 would be
+     * quantised to 0.00 — off, on most lamps. The sanitiser floors a stored
+     * plan at `MINIMUM_BRIGHTNESS`; `litDim()` is the net under a plan that
+     * reaches the runtime without passing it, which is what this one does.
      */
-    const h = harness({ devices: [light('l1')], plan: flatPlan(0.05) });
+    const h = harness({ devices: [light('l1')], plan: flatPlan(0.004) });
     await h.runtime.start();
     await applied(h);
 
-    assert.deepEqual(dims(h.writes), [0.01],
-      'a positive brightness must stay positive through the perceptual curve');
+    assert.deepEqual(dims(h.writes), [0.01], 'a positive brightness must stay positive');
   });
 
   test('a brightness well above the floor is untouched', async () => {
@@ -1929,8 +1913,7 @@ describe('a brightness a person chose is a brightness the lamp shows', () => {
     await h.runtime.start();
     await applied(h);
 
-    // 0.6^2.2 = 0.325, quantised to two decimals.
-    assert.deepEqual(dims(h.writes), [0.33], 'the floor must not reshape the rest of the curve');
+    assert.deepEqual(dims(h.writes), [0.6], 'the floor must not reshape the rest of the curve');
   });
 });
 
@@ -2432,7 +2415,7 @@ describe('what the switch-on capture found', () => {
  * `adjustBrightness: true`, or `dim` is not this device's to be overridden on.
  */
 describe('the fade-out band, on a curve', () => {
-  /** 0.8 perceptual is dim 0.61 at γ = 2.2; the lamp starts well away from it. */
+  /** The curve wants dim 0.8; the lamp starts well away from it. */
   const fading = (start = 0.3) => harness({
     now: MORNING,
     plan: plan({
@@ -2450,7 +2433,7 @@ describe('the fade-out band, on a curve', () => {
   async function overriddenAt(h: ReturnType<typeof fading>, dim: number): Promise<void> {
     await h.runtime.start();
     await applied(h);
-    assert.deepEqual(h.writes.filter(w => w.capability === 'dim').map(w => w.value), [0.61],
+    assert.deepEqual(h.writes.filter(w => w.capability === 'dim').map(w => w.value), [0.8],
       'the curve wrote its brightness, so there is an expected value to compare with');
     h.advance(10_000);
     h.report('l1', 'dim', dim);

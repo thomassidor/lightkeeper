@@ -55,9 +55,8 @@ export interface ScheduleEntry {
   onAt: number;
   end: ScheduleEnd;
   /**
-   * Perceptual brightness 0–1, converted with toDevice() at plan time so "40%"
-   * means 40% of PERCEIVED brightness — the same axis the dimming gestures use.
-   * Absent = leave brightness alone and only switch on.
+   * Brightness as Homey's own `dim`, 0–1 (`MINIMUM_BRIGHTNESS`): 40% here is 40% in Homey's
+   * slider. Absent = leave brightness alone and only switch on.
    */
   brightness?: number;
   /**

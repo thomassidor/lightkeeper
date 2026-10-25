@@ -218,11 +218,7 @@ function homey(options: {
       app: {
         recentEvents: new BoundedLog<never>(40),
         recentWrites: writeLog,
-        // A real store behind the two calls, so the route test below reads
-        // back what it wrote rather than what a stub was told to say.
         settings,
-        brightnessScale: () => (settings.get('brightnessScale') === 'linear' ? 'linear' : 'natural'),
-        setBrightnessScale: (scale: string) => settings.set('brightnessScale', scale),
         credentials: options.credentials ?? { getStatus: () => ({ present: true, valid: true }) },
         catalog: new DeviceCatalog(unreadable),
         cards: new FlowCardCatalogue(unreadable),
@@ -553,26 +549,18 @@ describe('orphan counting across both device types', () => {
   });
 });
 
-describe('the brightness scale', () => {
-  test('is natural until somebody chooses, and the status says so', async () => {
+describe('the brightness scale is gone', () => {
+  test('there is no route to set one, and the status carries none', async () => {
     const h = homey({});
-    assert.equal((await api.getStatus(h.args)).brightnessScale, 'natural');
+    assert.equal('setBrightnessScale' in api, false);
+    assert.equal('brightnessScale' in await api.getStatus(h.args), false);
   });
 
-  test('a choice is stored, echoed, and read back by the next status', async () => {
+  test('diagnostics say every brightness is a dim', async () => {
     const h = homey({});
-    assert.deepEqual(await api.setBrightnessScale({ ...h.args, body: { scale: 'linear' } }), { brightnessScale: 'linear' });
-    assert.equal((await api.getStatus(h.args)).brightnessScale, 'linear');
-    assert.equal((await api.getDiagnostics(h.args)).semantics.brightnessScale, 'linear');
-  });
-
-  test('anything that is not one of the two scales is refused, and nothing changes', async () => {
-    const h = homey({});
-    await api.setBrightnessScale({ ...h.args, body: { scale: 'linear' } });
-    for (const body of [{ scale: 'Linear' }, { scale: 1 }, {}, null]) {
-      await assert.rejects(api.setBrightnessScale({ ...h.args, body }), /natural.*linear/);
-    }
-    assert.equal((await api.getStatus(h.args)).brightnessScale, 'linear');
+    const semantics = (await api.getDiagnostics(h.args)).semantics;
+    assert.equal(semantics.brightness, 'dim_0_1');
+    assert.equal('brightnessScale' in semantics, false);
   });
 });
 

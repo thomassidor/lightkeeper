@@ -54,7 +54,7 @@ module.exports = class DaylightDevice extends LightkeeperDevice<DaylightPlan, Da
   override readonly controlModes: readonly ControlMode[] = ['after', 'none'];
 
   migrate(raw: unknown): PlanMigration<DaylightPlan> {
-    return migrateDaylightPlan(raw);
+    return migrateDaylightPlan(raw, this.app.legacyBrightnessScale());
   }
 
   registry(): DeviceRegistry<DaylightPlan, DaylightRuntime> {

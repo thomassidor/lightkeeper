@@ -90,9 +90,8 @@ export const FUNCTION_PRESET: Record<LightFunction, PresetKind> = {
 
 export interface BrightnessPreset {
   /**
-   * Brightness 0–1, on the same axis every other slider in the app uses —
-   * perceptual under the natural `BrightnessScale`, Homey's own under linear.
-   * Converted to a `dim` in `ControllerRuntime`, not here.
+   * Brightness as Homey's own `dim`, 0–1 (`MINIMUM_BRIGHTNESS`), the axis every other slider in
+   * the app uses, written as it is.
    */
   brightness: number;
   /** Normalised colour temperature 0–1, where 1 is warmest. Absent = leave it alone. */
@@ -216,25 +215,17 @@ export interface ControllerBehavior {
   /** Below minimum, turn off rather than clamp. */
   offBelowMinimum: boolean;
   /**
-   * The floor on a dim-DOWN, as a **device value** — not a perceptual one.
+   * The floor on a dim-DOWN, as a **device value**.
    *
-   * Two constants in this app are called something like "minimum brightness"
-   * and they are in different units, which is worth stating because the names
-   * do not:
-   *
-   *   `minimumBrightness` (here, 0.01)     a DEVICE value. Compared against
-   *                                        `next`, which the planner has
-   *                                        already put through gamma and
-   *                                        quantised, so the comparison is
-   *                                        in consistent units.
-   *   `MINIMUM_BRIGHTNESS` (0.10, in       a PERCEPTUAL floor. Where the three
-   *   `outputs/light-intent.ts`)           brightness sliders start and what
-   *                                        the migration chains lift stored
-   *                                        plans to.
+   * Two constants in this app are called something like "minimum brightness".
+   * They are now the same number in the same unit, `dim` — this one is the
+   * floor a relative step stops at, and `MINIMUM_BRIGHTNESS` in
+   * `outputs/light-intent.ts` is the floor every stored brightness is lifted to.
+   * They are kept apart because they answer different questions, and a change
+   * to one is not automatically right for the other.
    *
    * And 0.01 is not really a policy number: it is the `decimals: 2`
-   * representable step, which is what most lamps declare, and it happens to
-   * equal `toDevice(0.10)` quantised. It is not user-editable and never has
+   * representable step, which is what most lamps declare. It is not user-editable and never has
    * been. On a lamp declaring `decimals: 1` it is not representable AT ALL, so
    * the planner routes it through `litDim()` rather than trusting it as a
    * floor — see the dim-down branch in `intent-planner.ts`.

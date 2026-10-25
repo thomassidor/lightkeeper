@@ -57,7 +57,7 @@ module.exports = class CircadianDevice
   override readonly controlModes: readonly ControlMode[] = ['after', 'before', 'none'];
 
   migrate(raw: unknown): PlanMigration<SimpleCircadianPlan> {
-    return migrateCircadianPlan(raw);
+    return migrateCircadianPlan(raw, this.app.legacyBrightnessScale());
   }
 
   /**

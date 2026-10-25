@@ -152,7 +152,7 @@ describe('the findings table', () => {
     assert.equal(THRESHOLDS.HARD_STOP_MS, 10_000);
     assert.equal(THRESHOLDS.PRE_STAGE_CHECK_MS, 1500);
     assert.equal(THRESHOLDS.GAMMA, 2.2);
-    assert.equal(THRESHOLDS.MINIMUM_BRIGHTNESS, 0.1);
+    assert.equal(THRESHOLDS.MINIMUM_BRIGHTNESS, 0.01);
   });
 });
 
@@ -207,11 +207,11 @@ describe('the perceptual axis', () => {
     }
   });
 
-  test("the app's minimum brightness is a device value quantise() can eat", () => {
-    // 0.1 perceptual is 0.0063 in device values, which `decimals: 2` rounds to
-    // 0.01 rather than to zero — the whole reason `litDim()` exists.
-    const raw = toDevice(THRESHOLDS.MINIMUM_BRIGHTNESS);
-    assert.ok(raw > 0 && raw < 0.01, `expected a tiny positive value, got ${raw}`);
+  test("the app's minimum brightness survives two decimals and not one", () => {
+    // A `dim` of 0.01 is exactly one hundredth, and `decimals: 1` rounds it to
+    // zero — the lamp the probe's P5f step exists for, and the whole reason
+    // `litDim()` exists.
+    const raw = THRESHOLDS.MINIMUM_BRIGHTNESS;
     assert.equal(quantise(raw, 2), 0.01);
     assert.equal(quantise(raw, 1), 0);
   });

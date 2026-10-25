@@ -101,7 +101,7 @@ function liveRegistry(): SourceRegistry {
 const EMPTY_REGISTRY: SourceRegistry = { colour: () => undefined, brightness: () => undefined };
 
 function harness(options: {
-  sources?: SourceRegistry; lampOn?: boolean; brightnessScale?: () => 'natural' | 'linear';
+  sources?: SourceRegistry; lampOn?: boolean;
 } = {}) {
   const written: Array<{ capability: string; value: unknown }> = [];
 
@@ -169,7 +169,6 @@ function harness(options: {
     bridge,
     health,
     ...(options.sources ? { sources: options.sources } : {}),
-    ...(options.brightnessScale ? { brightnessScale: options.brightnessScale } : {}),
     log: (...args: unknown[]) => { logged.push(args.map(String).join(' ')); },
   });
 
@@ -186,12 +185,11 @@ function harness(options: {
 /**
  * A "set brightness" button, through the same runtime and queue.
  *
- * Its preset is stored on the axis every slider uses and used to reach the
- * planner raw — so a remote's 60% wrote dim 0.60 while a schedule's 60% wrote
- * 0.33. It now goes through the app's `BrightnessScale` at the one submit path,
- * which is why the live press and the buttons screen's Test are asserted alike.
+ * Its preset is stored as Homey's `dim`, like every other stored brightness, so
+ * 60% is written as 0.60 — from a live press and from the buttons screen's Test
+ * alike, which is why both are asserted.
  */
-describe('a set-brightness press follows the app-wide scale', () => {
+describe('a set-brightness press writes its preset as Homey’s dim', () => {
   const presetProfile = (): ControllerProfile => ({
     ...profile(PRESET),
     mappings: [{
@@ -202,22 +200,20 @@ describe('a set-brightness press follows the app-wide scale', () => {
   const dims = (h: ReturnType<typeof harness>) =>
     h.written.filter(entry => entry.capability === 'dim').map(entry => entry.value);
 
-  for (const [scale, expected] of [['natural', 0.33], ['linear', 0.6]] as const) {
-    test(`60% is dim ${expected} on the ${scale} scale, from the Test control`, async () => {
-      const h = harness({ lampOn: true, brightnessScale: () => scale });
-      const runtime = await h.manager.register(LIGHT_ID, presetProfile(), () => { /* state ignored */ });
-      await runtime.testFunction('brightness_set');
-      assert.deepEqual(dims(h), [expected]);
-    });
+  test('60% is dim 0.6, from the Test control', async () => {
+    const h = harness({ lampOn: true });
+    const runtime = await h.manager.register(LIGHT_ID, presetProfile(), () => { /* state ignored */ });
+    await runtime.testFunction('brightness_set');
+    assert.deepEqual(dims(h), [0.6]);
+  });
 
-    test(`60% is dim ${expected} on the ${scale} scale, from a live press`, async () => {
-      const h = harness({ lampOn: true, brightnessScale: () => scale });
-      const runtime = await h.manager.register(LIGHT_ID, presetProfile(), () => { /* state ignored */ });
-      runtime.handleInput({ controlId: 'btn', action: 'press' }, 'btn|press');
-      await settle(12);
-      assert.deepEqual(dims(h), [expected]);
-    });
-  }
+  test('60% is dim 0.6, from a live press', async () => {
+    const h = harness({ lampOn: true });
+    const runtime = await h.manager.register(LIGHT_ID, presetProfile(), () => { /* state ignored */ });
+    runtime.handleInput({ controlId: 'btn', action: 'press' }, 'btn|press');
+    await settle(12);
+    assert.deepEqual(dims(h), [0.6]);
+  });
 });
 
 describe('a composed press, through the real queue', () => {

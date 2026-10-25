@@ -281,6 +281,25 @@ describe('the controller profile chain, after the reset', () => {
     }));
   });
 
+  test('a version 1 profile on the natural scale has a set-brightness preset converted to dim', () => {
+    const v1 = {
+      ...CURRENT(),
+      schemaVersion: 1,
+      mappings: [
+        { id: 'r1', function: 'brightness_set', inputKey: 'k1', target: null, preset: { brightness: 0.6, temperature: 0.8 } },
+        { id: 'r2', function: 'toggle', inputKey: 'k2', target: null },
+      ],
+    };
+    const natural = migrateProfile(v1, 'natural').plan;
+    assert.deepEqual(natural.mappings[0].preset, { brightness: 0.325, temperature: 0.8 },
+      '60% was being written as 0.325; the warmth is not a brightness and does not move');
+    assert.equal(natural.mappings[1].preset, undefined);
+    assert.equal(natural.schemaVersion, CURRENT_SCHEMA_VERSION);
+
+    const linear = migrateProfile(v1, 'linear').plan;
+    assert.deepEqual(linear.mappings[0].preset, { brightness: 0.6, temperature: 0.8 });
+  });
+
   test('the chain still ends in its validator', () => {
     // A `brightness_set` with no preset is the rule this chain's reset was
     // about: a button whose job is "a set brightness", carrying no brightness.

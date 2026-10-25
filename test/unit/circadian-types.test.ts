@@ -487,21 +487,20 @@ describe('sanitiseZones — a screen sending nonsense falls back per FIELD', () 
   });
 
   test('a positive zone brightness under the floor is lifted to it, never stored as sent', () => {
-    // A positive brightness is never written as darkness. 5% is `dim` 0.0014
-    // under γ = 2.2, which `decimals: 2` rounds to 0.00 — so a zone that STORED
-    // 5% would read 5% on every screen while its lamps went dark. The floor is
-    // the sanitiser's job now that the migration step that used to do it is
-    // gone; 0 stays "unset" and falls back to the zone's default instead.
+    // A positive brightness is never written as darkness. Under half a
+    // hundredth, `decimals: 2` rounds a `dim` to 0.00 — so a zone that STORED
+    // 0.4% would ask for light while its lamps went dark. The floor is the
+    // sanitiser's job; 0 stays "unset" and falls back to the zone's default.
     const { zones, corrected } = sanitiseZones({
       ...DEFAULT_ZONES,
-      morning: { temperature: 0.78, brightness: 0.05 },
+      morning: { temperature: 0.78, brightness: 0.004 },
       midday: { temperature: 0.18, brightness: 0.0001 },
       evening: { temperature: 0.86, brightness: 0 },
     });
     assert.equal(zones.morning.brightness, MINIMUM_BRIGHTNESS);
     assert.equal(zones.midday.brightness, MINIMUM_BRIGHTNESS);
     assert.equal(zones.evening.brightness, DEFAULT_ZONES.evening.brightness);
-    assert.equal(MINIMUM_BRIGHTNESS, 0.1, 'the floor this test was written against');
+    assert.equal(MINIMUM_BRIGHTNESS, 0.01, 'the floor this test was written against');
     // Lifting is not a correction the screen has to report: the number was a
     // brightness, just one a lamp cannot show.
     assert.deepEqual(corrected, []);
@@ -529,13 +528,31 @@ describe('the circadian chain, after the reset', () => {
   test('a version 1 plan gains a transition, and it is QUICK', () => {
     // The zones used to hold flat and blend over 100 minutes at each boundary.
     // Quick is the nearest of the three to that; see circadian-migrations.ts.
+    // Saved under "Same as Homey", so the 1.0.0 step leaves the zones alone and
+    // this test is about the transition only.
     const { transition: _new, ...v1 } = { ...CURRENT, schemaVersion: 1 };
-    const { plan, migrated, fromVersion } = migrateCircadianPlan(v1);
+    const { plan, migrated, fromVersion } = migrateCircadianPlan(v1, 'linear');
     assert.equal(migrated, true);
     assert.equal(fromVersion, 1);
-    assert.equal(plan.schemaVersion, 2);
+    assert.equal(plan.schemaVersion, CURRENT_CIRCADIAN_SCHEMA_VERSION);
     assert.equal(plan.transition, 'quick');
     assert.deepEqual(plan.zones, DEFAULT_ZONES, 'and nothing else moves');
+  });
+
+  test('a version 2 plan on the natural scale has each zone\u2019s brightness converted to dim', () => {
+    const zones = {
+      ...DEFAULT_ZONES,
+      morning: { temperature: 0.78, brightness: 0.55 },
+      midday: { temperature: 0.18, brightness: 0.9 },
+      evening: { temperature: 0.86, brightness: 0.45 },
+    };
+    const { plan } = migrateCircadianPlan({ ...CURRENT, schemaVersion: 2, zones, adjustBrightness: true }, 'natural');
+    assert.deepEqual(
+      [plan.zones.morning.brightness, plan.zones.midday.brightness, plan.zones.evening.brightness],
+      [0.268, 0.793, 0.173],
+    );
+    assert.equal(plan.zones.morning.temperature, 0.78, 'and the warmth does not move');
+    assert.equal(plan.zones.morningEnd, DEFAULT_ZONES.morningEnd);
   });
 
   test('a stored transition that is not one of the three is refused, not defaulted', () => {

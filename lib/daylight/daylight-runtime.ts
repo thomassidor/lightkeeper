@@ -19,7 +19,7 @@ import {
   TargetStateCache,
 } from '../outputs/target-state-cache';
 import { planIntent, type Capability, type PlannedWrite } from '../outputs/intent-planner';
-import { DEFAULT_BRIGHTNESS_SCALE, toDevice, toPerceptual, type BrightnessScale } from '../outputs/light-intent';
+import { dimFromPerceived, perceivedFromDim } from '../outputs/light-intent';
 import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
 import { assessTargets } from '../runtime/target-health';
@@ -83,16 +83,6 @@ export interface DaylightRuntimeDeps {
    * runtime's for why a faked clock alone was not enough.
    */
   timers?: Partial<Timers>;
-  /**
-   * The app-wide `BrightnessScale`, read every pass so a change on the settings
-   * page lands at the next tick without a restart. Absent means the natural
-   * scale; the app always supplies it, and most test rigs leave it out.
-   *
-   * The aim and the slew stay on the stored axis whichever scale is chosen, so
-   * a switch moves the lamps once, to the same aim on the new scale, rather
-   * than walking there.
-   */
-  brightnessScale?: () => BrightnessScale;
   log: (...args: unknown[]) => void;
   onStateChange: (state: ControllerState, detail?: StateDetail) => void;
 }
@@ -100,7 +90,7 @@ export interface DaylightRuntimeDeps {
 export interface DaylightAction extends ControlAction {
   at: number;
   reason: string;
-  /** Perceptual brightness the response asked for, before slewing. */
+  /** The brightness (`dim`) the response asked for, before slewing. */
   brightness?: number;
   sensors?: WatchedSensor[];
   level?: number;
@@ -140,7 +130,7 @@ export interface DaylightDiagnostics extends ReturnType<ControlHistory<DaylightA
     overridden: boolean;
     override: OverrideRecord | null;
     reported: ReturnType<TargetStateCache['reportedValues']>;
-    /** Perceptual level this lamp is being held at. */
+    /** The `dim` this lamp is being aimed at (held on the perceptual axis; see `aim`). */
     aim: number | null;
     /**
      * Consecutive `dim` writes this lamp acknowledged and did not act on.
@@ -188,8 +178,11 @@ export interface DaylightDiagnostics extends ReturnType<ControlHistory<DaylightA
  * position is that the app damps it rather than removing it — the FAQ says so,
  * and names the sensor placements that avoid it altogether.
  *
- * `DAYLIGHT_DEADBAND` is a deadband, in PERCEPTUAL units, measured against what
- * was last actually written to that lamp. Under it, nothing moves. That is what
+ * `DAYLIGHT_DEADBAND` is a deadband, in PERCEPTUAL units (`GAMMA` in
+ * light-intent.ts — the same axis a remote's steps move on), measured against
+ * where that lamp is aimed. Every brightness this device stores or publishes is
+ * Homey's `dim`; only the movement between them is perceptual, because a fade
+ * of equal `dim` steps flashes at the dark end and crawls at the bright one. Under it, nothing moves. That is what
  * makes the loop SETTLE instead of orbiting: once inside the band there is no
  * next write to provoke the next reading. 0.02 is finer than the eye on a wall
  * and coarser than the jitter of a sensor reporting to two decimals.
@@ -208,6 +201,11 @@ export interface DaylightDiagnostics extends ReturnType<ControlHistory<DaylightA
  */
 export const DAYLIGHT_DEADBAND = 0.02;
 export const MAX_STEP_PER_TICK = 0.05;
+
+/** An aim as the `dim` it stands for, which is what diagnostics reads in. */
+function aimDim(aim: number | undefined): number | null {
+  return aim === undefined ? null : dimFromPerceived(aim);
+}
 
 /**
  * When to stop calling the feedback loop a risk and start calling it observed.
@@ -274,7 +272,8 @@ export class DaylightRuntime {
   private readonly fadeOuts = new Map<string, number>();
 
   /**
-   * Where each lamp is currently AIMED, on the perceptual axis.
+   * Where each lamp is currently AIMED, on the perceptual axis — the only state
+   * here that is not a `dim`. `diagnostics()` reports it as one.
    *
    * Advanced on every pass that decides to move, whether or not a write goes
    * out — and that is the whole reason it is separate from `committed` below.
@@ -369,16 +368,12 @@ export class DaylightRuntime {
   private publishValues(): void {
     const verdict = this.currentValue();
     this.values.set({
-      [VALUE_CAPABILITIES.brightness]: toDevice(verdict.brightness, this.scale()),
+      [VALUE_CAPABILITIES.brightness]: verdict.brightness,
       [VALUE_CAPABILITIES.daylight]: verdict.source === 'none' ? null : verdict.level,
     });
   }
 
   private now(): number { return this.timers.now(); }
-
-  private scale(): BrightnessScale {
-    return this.deps.brightnessScale?.() ?? DEFAULT_BRIGHTNESS_SCALE;
-  }
 
   async start(): Promise<void> {
     return this.lifetime.start(async current => {
@@ -543,7 +538,7 @@ export class DaylightRuntime {
      * gone missing it would have been permanent.
      *
      * The value test needs no clock and no ordering. Neither runtime can write
-     * 0: `MINIMUM_BRIGHTNESS` is 0.10 perceptual and `litDim()` guarantees a
+     * 0: `MINIMUM_BRIGHTNESS` is one hundredth and `litDim()` guarantees a
      * positive brightness is never written as darkness, so a reported 0 is
      * always the lamp's own. And a person dragging a dimmer to zero turns the
      * lamp OFF, which arrives as `onoff` and clears any override anyway — so
@@ -890,14 +885,16 @@ export class DaylightRuntime {
    * make the settled aim jitter with the reading, and the aim is what the next
    * pass's deadband is measured against.
    */
-  private aimFor(deviceId: string, wanted: number, force: boolean): number {
+  private aimFor(deviceId: string, wantedDim: number, force: boolean): number {
+    // The response answers in `dim`; the aim moves on the perceptual axis.
+    const wanted = perceivedFromDim(wantedDim);
     if (force) return wanted;
 
     const current = this.aim.get(deviceId);
     if (current === undefined) {
       const reported = this.cache.currentDim(deviceId);
       if (reported === undefined) return wanted;
-      return this.step(toPerceptual(reported, this.scale()), wanted);
+      return this.step(perceivedFromDim(reported), wanted);
     }
 
     if (Math.abs(wanted - current) < DAYLIGHT_DEADBAND) return current;
@@ -929,7 +926,7 @@ export class DaylightRuntime {
     const planned: PlannedWrite[] = [];
     for (const [level, deviceIds] of byLevel) {
       const plan = planIntent(
-        { type: 'brightness_absolute', value: toDevice(level, this.scale()) },
+        { type: 'brightness_absolute', value: dimFromPerceived(level) },
         deviceIds, this.cache, DEFAULT_BEHAVIOR,
       );
       /**
@@ -963,9 +960,9 @@ export class DaylightRuntime {
    *
    * Only the DEVICE value is recorded, and that is the point of the split: the
    * aim is already recorded by the pass that computed it, and reading a
-   * perceptual value back out of `toPerceptual(outcome.value)` would be lossy —
-   * the round trip through the scale's γ and the capability's `decimals` means every
-   * pass would start a little short of where the last one finished.
+   * perceptual aim back out of `perceivedFromDim(outcome.value)` would be lossy —
+   * the round trip through γ and the capability's `decimals` means every pass
+   * would start a little short of where the last one finished.
    */
   private noteOutcomes(outcomes: WriteOutcome[]): void {
     for (const outcome of outcomes) {
@@ -1308,7 +1305,7 @@ export class DaylightRuntime {
         overridden: this.overrides.has(id),
         override: this.overrides.get(id) ?? null,
         reported: this.cache.reportedValues(id),
-        aim: this.aim.get(id) ?? null,
+        aim: aimDim(this.aim.get(id)),
         ...(this.cache.ignoredCount(id, 'dim') > 0
           ? { ignoredWrites: this.cache.ignoredCount(id, 'dim') }
           : {}),

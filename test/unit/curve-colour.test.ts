@@ -414,9 +414,28 @@ describe('the curve plan has its own store and its own chain', () => {
     const { transition: _new, ...v1 } = { ...validPlan(), schemaVersion: 1 };
     const { plan, migrated } = migrateCurvePlan(v1);
     assert.equal(migrated, true);
-    assert.equal(plan.schemaVersion, 2);
+    assert.equal(plan.schemaVersion, CURRENT_CURVE_SCHEMA_VERSION);
     assert.equal(plan.transition, 'balanced');
     assert.deepEqual(plan.points, validPlan().points, 'and nothing else moves');
+  });
+
+  test('a version 2 curve stored on the natural scale has every brightness converted to dim', () => {
+    const v2 = {
+      ...validPlan(),
+      schemaVersion: 2,
+      adjustBrightness: true,
+      points: [
+        { id: 'p1', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.2, brightness: 0.5 },
+        { id: 'p2', anchor: { kind: 'clock', at: 21 * 60 }, warmth: 1, color: 'amber', brightness: 0.1 },
+      ],
+    };
+    const natural = migrateCurvePlan(v2, 'natural').plan;
+    assert.deepEqual(natural.points.map(p => p.brightness), [0.218, 0.01],
+      '0.5 ** 2.2, and the old 10% floor lifted to the new one rather than rounded off');
+    assert.equal(natural.points[1].color, 'amber', 'and nothing but the brightness moves');
+
+    const linear = migrateCurvePlan(v2, 'linear').plan;
+    assert.deepEqual(linear.points.map(p => p.brightness), [0.5, 0.1], 'saved under "Same as Homey": already dim');
   });
 
   test('a stored transition that is not one of the three is refused, not defaulted', () => {
@@ -577,19 +596,19 @@ describe('a brightness comes up to the floor on the way IN', () => {
    * untrusted input arrives, so a plan can never come to hold a value no lamp
    * can show.
    *
-   * Why the floor exists: quantisation happens in device values and `dim`
-   * reports `decimals: 2`, so a perceptual 5% is `dim` 0.0014 and rounds to
-   * 0.00 — off, on most integrations. `litDim` is the safety net at write time;
-   * this stops the plan itself saying 5% on every screen while the lamp is dark.
+   * Why the floor exists: `dim` reports `decimals: 2`, so anything under half
+   * a hundredth rounds to 0.00 — off, on most integrations. `litDim` is the
+   * safety net at write time; this stops the plan itself saying "0%" on every
+   * screen while asking for light.
    */
   const at = (brightness: number | undefined) => [
     { id: 'p1', anchor: { kind: 'clock', at: 6 * 60 }, warmth: 0.2, brightness },
     { id: 'p2', anchor: { kind: 'clock', at: 21 * 60 }, warmth: 1, brightness: 0.6 },
   ];
 
-  test('5% becomes 10%, and nothing above the floor moves', () => {
-    const { points } = sanitiseCurve(at(0.05), true);
-    assert.equal(points[0].brightness, 0.1);
+  test('under one hundredth becomes one hundredth, and nothing above the floor moves', () => {
+    const { points } = sanitiseCurve(at(0.004), true);
+    assert.equal(points[0].brightness, 0.01);
     assert.equal(points[1].brightness, 0.6);
   });
 

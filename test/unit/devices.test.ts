@@ -143,7 +143,9 @@ function bridge(events: Event[], options: { removes?: (refs: Array<{ flowId: str
 
 function device(Cls: any, id: string, store: Record<string, unknown>, app: Record<string, unknown>,
   capabilities: string[] = []) {
-  const homey: FakeHomey = fakeHomey({ app });
+  // Every device asks the app which scale a stored plan was saved on before it
+  // migrates it; natural, as every house before 1.0.0's release was by default.
+  const homey: FakeHomey = fakeHomey({ app: { legacyBrightnessScale: () => 'natural', ...app } });
   const instance = makeDevice(Cls, homey, { id, name: 'Kitchen', store, capabilities });
   return instance as Device & Record<string, any>;
 }

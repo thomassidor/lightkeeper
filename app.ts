@@ -1,7 +1,7 @@
 'use strict';
 
 import { EvidenceFeature } from './lib/support/evidence-feature';
-import type { LightkeeperApp } from './lib/app-contract';
+import type { LegacyBrightnessScale, LightkeeperApp } from './lib/app-contract';
 import Homey from 'homey';
 
 import { CredentialService } from './lib/credential-service';
@@ -27,7 +27,6 @@ import type { WriteRecord } from './lib/outputs/light-target-adapter';
 import { messageOf } from './lib/support/homey-errors';
 import { markPhase, sampleHeap } from './lib/support/heap-report';
 import { timezoneOf } from './lib/time/local-clock';
-import { sanitizeBrightnessScale, type BrightnessScale } from './lib/outputs/light-intent';
 import { FlowLightWriter } from './lib/flow/light-writer';
 import { isPowerChoice, planSetLights } from './lib/flow/set-lights';
 import { resolveSources, sourceRegistryOver, type SourceRegistry } from './lib/outputs/lightkeeper-settings';
@@ -37,7 +36,10 @@ import { isDarkEnough } from './lib/flow/darkness-condition';
 /** How often the heap trend is sampled. See where it is started, in `onInit`. */
 const HEAP_SAMPLE_MS = 30 * 60_000;
 
-/** Where the settings page's "Brightness scale" is kept. See `BrightnessScale`. */
+/**
+ * Where the retired "Brightness scale" setting was kept. Read, never written:
+ * see `legacyBrightnessScale()`.
+ */
 const BRIGHTNESS_SCALE_SETTING = 'brightnessScale';
 
 /**
@@ -294,7 +296,6 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       // so an unpaired remote or a changed event surface stayed invisible until
       // the user pressed a button and nothing happened.
       health: this.health,
-      brightnessScale: () => this.brightnessScale(),
       log: (...args) => this.log(...args),
     });
 
@@ -307,7 +308,6 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       // See `timezoneOf`: read per call, never cached, and `undefined` rather
       // than a guess when the Homey cannot say.
       timezone: () => timezoneOf(this.homey.clock),
-      brightnessScale: () => this.brightnessScale(),
       log: (...args) => this.log(...args),
     });
 
@@ -326,7 +326,6 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       // may use a timer where a schedule may not (platform §9).
       setInterval: (fn, ms) => this.homey.setInterval(fn, ms),
       clearInterval: handle => this.homey.clearInterval(handle as any),
-      brightnessScale: () => this.brightnessScale(),
       log: (...args) => this.log(...args),
     });
 
@@ -343,7 +342,6 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
       // one.
       setInterval: (fn, ms) => this.homey.setInterval(fn, ms),
       clearInterval: handle => this.homey.clearInterval(handle as any),
-      brightnessScale: () => this.brightnessScale(),
       log: (...args) => this.log(...args),
     });
 
@@ -600,24 +598,17 @@ const LightkeeperAppImpl = class LightkeeperApp extends Homey.App {
   }
 
   /**
-   * The settings page's "Brightness scale", read from `homey.settings` on every
-   * call rather than held in a field, so there is no second copy to fall out of
-   * step with the stored one. Anything unrecognised, absent included, is the
-   * natural scale: every house paired before the setting existed is on it.
+   * Which scale a plan saved before 1.0.0's release was stored on: the retired
+   * "Brightness scale" setting, where anything but `linear` — absent included —
+   * was the natural scale. Read by each store's migration step to decide
+   * whether its brightnesses need converting to `dim`, and by nothing else.
+   *
+   * Deliberately never cleared. Only a plan with an old `schemaVersion` asks,
+   * every such plan was saved while this setting meant what it says, and a
+   * device paired from now on is stored at the current version and never asks.
    */
-  brightnessScale(): BrightnessScale {
-    return sanitizeBrightnessScale(this.homey.settings.get(BRIGHTNESS_SCALE_SETTING));
-  }
-
-  /**
-   * No fan-out, deliberately: each runtime reads the scale at its next use — a
-   * curve or Room-sensing Light at its next tick, a schedule at its next window,
-   * a remote at its next press. Forcing a pass would turn one click on the
-   * settings page into a burst of writes to every lamp in the house.
-   */
-  setBrightnessScale(scale: BrightnessScale): void {
-    this.homey.settings.set(BRIGHTNESS_SCALE_SETTING, scale);
-    this.log(`Brightness scale: ${scale}`);
+  legacyBrightnessScale(): LegacyBrightnessScale {
+    return this.homey.settings.get(BRIGHTNESS_SCALE_SETTING) === 'linear' ? 'linear' : 'natural';
   }
 
   /**

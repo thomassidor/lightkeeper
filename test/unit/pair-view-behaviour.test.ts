@@ -1750,7 +1750,7 @@ describe('the job editor, pushed from one gesture', () => {
     await view.settle();
 
     assert.equal(view.byId('jb-preset')!.style.display, '');
-    assert.deepEqual(lastSet(view)?.preset, { brightness: 0.6 });
+    assert.deepEqual(lastSet(view)?.preset, { brightness: 0.3 });
   });
 
   test('"do nothing" clears the job, and takes the Test control with it', async () => {

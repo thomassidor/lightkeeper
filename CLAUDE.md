@@ -123,7 +123,8 @@ lib/
                                 — the stored English gesture label ("Dial — Turn right") read
                                 back into the user's language, from the normalizer's own words
   mapping/                      mapping engine, supersede gate, behaviour types
-  outputs/                      intents, perceptual curve, planner, scheduler, ramp engine,
+  outputs/                      intents, the step axis (γ 2.2, movement only), planner, scheduler,
+                                ramp engine,
                                 target resolver, target-state cache, and
                                 lightkeeper-settings.ts — what two OTHER Lightkeeper devices want
                                 the lights to be, shared by the `set_lights` Flow card and by a
@@ -186,9 +187,8 @@ lib/
                                 three modes over the two flags the plans already had, the
                                 per-lamp pre-stage test, and what repair reads back from it.
                                 source-picker.ts is what the two "take it from" screens offer:
-                                which devices answer which question, the live swatch or level on
-                                each row, and why a level is drawn perceptually when the board
-                                publishes a device value.
+                                which devices answer which question, and the live swatch or level
+                                on each row.
                                 pair-session.ts is the same lift for the MECHANICS: the handler
                                 wrapper, the sensor retain/release ref-count, the light picker's
                                 two handlers, save-and-name, the credential pair and the curve
@@ -875,19 +875,20 @@ Load-bearing product guarantees, not implementation details:
   teardown before it awaits any of them: the recorder first, then every registry, the `set_lights`
   writer and the sensor service, and the read client last, behind the runtimes but not behind the
   recorder.
-- **A positive brightness is never written as darkness.** Brightness is stored perceptually and
-  written in device values through γ = 2.2 — under the default `BrightnessScale`; the settings page's
-  *Same as Homey* makes it γ = 1 for every stored brightness, though never for a remote's steps
-  (`lib/outputs/light-intent.ts`) — so the bottom of the axis is where quantisation bites:
-  5% becomes `dim` 0.0014, which `decimals: 2` rounds to 0.00. `MINIMUM_BRIGHTNESS` (0.10) is the
-  floor the three brightness sliders start at and the three migration chains that store a
-  brightness lift stored plans to (the controller profile has none);
-  `litDim()` in the intent planner is the safety net under both, writing one representable step
-  wherever rounding would eat a positive request. Zero still means zero — only a request for light
-  is kept as light. `advanceDim()` is the same guarantee for relative steps, and its docblock carries
-  the longer argument. The floor is the same 0.10 under both scales, which on the linear one is a
-  10% `dim` — deliberately, because the sanitisers that apply it are pure and a stored plan must not
-  mean a different floor depending on a setting read at load time. The FAQ says so.
+- **Every brightness is Homey's own `dim`, and a positive one is never written as darkness.** A
+  curve point, a schedule block, a response end, a remote's preset and the published *Brightness
+  now* are all the number Homey's slider shows — 50% here is 50% there. The app-wide "Brightness
+  scale" that used to offer a perceptual meaning (`dim = p^2.2`, the default) was retired in 1.0.0 as
+  a scale of our own invention; each store's migration chain converts a plan saved on it once
+  (`carryBrightness()`, keyed on the old setting through `legacyBrightnessScale()`), so a household's
+  lamps keep the level they had. **γ = 2.2 survives for movement only** — a remote's step, a hold
+  ramp and a Room-sensing Light's fade — because equal `dim` steps flash at the dark end; none of
+  them shows a number. The bottom of the axis is where quantisation bites: under half a hundredth
+  rounds to 0.00 at `decimals: 2`. `MINIMUM_BRIGHTNESS` (0.01) is the floor the sanitisers lift a
+  stored brightness to; `litDim()` in the intent planner is the safety net under it, writing one
+  representable step wherever rounding would eat a positive request (0.01 on a `decimals: 1` lamp
+  is one). Zero still means zero — only a request for light is kept as light. `advanceDim()` is the
+  same guarantee for relative steps, and its docblock carries the longer argument.
 - **A lamp is never sent a value the mode it is in makes it ignore.** Some lamps in colour mode
   refuse a colour temperature and vice versa — silently, reporting the write as accepted (platform
   §6) — so `planColor()` and `planTemperature()` each emit `light_mode` ahead of the value it
@@ -1147,7 +1148,8 @@ Load-bearing product guarantees, not implementation details:
 - **The daylight loop terminates, and two constants are what make it.** A `measure_luminance` sensor
   in the room whose lamps it drives reads those lamps as well as the sky, so this is a closed loop —
   and an undamped closed loop hunts: a room that visibly pulses once a minute for as long as the app
-  runs. `DAYLIGHT_DEADBAND` (0.02 perceptual) is what makes it SETTLE, because inside the band there
+  runs. `DAYLIGHT_DEADBAND` (0.02 on the perceptual step axis — the response's ends and everything
+  published are `dim`; only the movement between them is perceptual) is what makes it SETTLE, because inside the band there
   is no next write to provoke the next reading. `MAX_STEP_PER_TICK` (0.05) is a slew limit, so any
   residual movement is a fade rather than a flash. **They must stay in that order** — the step
   strictly larger than the band — or a target just outside the band is approached in increments that

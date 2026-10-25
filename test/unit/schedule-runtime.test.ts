@@ -245,10 +245,9 @@ describe('schedule boundaries', () => {
       ['onoff', 'dim', 'light_temperature'],
     );
 
-    // Brightness is stored perceptually: 0.5 perceptual is 0.5^2.2 ≈ 0.22 of
-    // the device's own range, quantised to the capability's two decimals.
+    // Brightness is stored as Homey's own `dim`, and written as it is.
     const dim = h.writes.find(w => w.deviceId === 'l1' && w.capability === 'dim');
-    assert.equal(dim!.value, 0.22);
+    assert.equal(dim!.value, 0.5);
     const temperature = h.writes.find(w => w.capability === 'light_temperature');
     assert.equal(temperature!.value, 0.2);
   });

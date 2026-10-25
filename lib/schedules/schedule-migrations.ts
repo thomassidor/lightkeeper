@@ -1,4 +1,6 @@
 import type { SchedulePlan } from './schedule-types';
+import { carryBrightness } from '../outputs/light-intent';
+import type { LegacyBrightnessScale } from '../app-contract';
 import { runMigrationChain, type MigrationResult, type MigrationStep } from '../support/migrations';
 import { validateSchedulePlan } from '../validation/plans';
 /**
@@ -26,20 +28,42 @@ import { validateSchedulePlan } from '../validation/plans';
  * `DeviceLifecycle` quarantines the device with its store untouched, so it comes
  * up unavailable with a reason rather than running on a plan nobody can vouch
  * for. Delete it and add it again.
+ *
+ * **1 → 2 (1.0.0): every brightness becomes Homey's own `dim`.** The app-wide
+ * "Brightness scale" setting is gone, and with it the natural scale it defaulted
+ * to (`dim = p^2.2`, so 50% read 22% in Homey). A plan saved on that scale has
+ * each window's brightness converted through `carryBrightness()`, which keeps every lamp at the
+ * level it was showing; one saved under *Same as Homey* already holds `dim`
+ * values and is only re-stamped. Which of the two a plan is comes from the
+ * retired setting itself (`legacyBrightnessScale()` on the app), passed in
+ * because a step is otherwise a pure function of the stored shape.
  */
 
-export const CURRENT_SCHEDULE_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEDULE_SCHEMA_VERSION = 2;
 
 export type ScheduleMigration = MigrationStep;
 
-/** Keyed by the version being migrated FROM. Empty: see the header. */
-const SCHEDULE_MIGRATIONS: Record<number, ScheduleMigration> = {};
+/** Keyed by the version being migrated FROM. See the header for each step. */
+const scheduleMigrations = (legacy: LegacyBrightnessScale): Record<number, ScheduleMigration> => ({
+  1: raw => ({
+    ...raw,
+    entries: Array.isArray(raw.entries)
+      ? raw.entries.map(entry => (entry && typeof entry === 'object' && 'brightness' in entry
+        ? { ...entry, brightness: carryBrightness((entry as Record<string, unknown>).brightness, legacy) }
+        : entry))
+      : raw.entries,
+    schemaVersion: 2,
+  }),
+});
 
-export function migrateSchedulePlan(raw: unknown): MigrationResult<SchedulePlan> {
+export function migrateSchedulePlan(
+  raw: unknown,
+  legacy: LegacyBrightnessScale = 'natural',
+): MigrationResult<SchedulePlan> {
   return runMigrationChain(raw, {
     label: 'Schedule',
     current: CURRENT_SCHEDULE_SCHEMA_VERSION,
-    table: SCHEDULE_MIGRATIONS,
+    table: scheduleMigrations(legacy),
     validate: validateSchedulePlan,
   });
 }

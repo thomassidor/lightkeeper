@@ -27,12 +27,9 @@ export type LightIntent =
    * and the two writes have to reach the queue together — a brightness that
    * landed and a warmth that did not is a room nobody asked for.
    *
-   * `brightness` is the STORED level as the mapping engine resolves it — the
-   * slider's number, not yet a `dim`. `ControllerRuntime.runIntents` puts it
-   * through the app's `BrightnessScale` on the way to the planner, which then
-   * reads it as a device value like every other absolute brightness. It used to
-   * reach the planner raw, so a remote's 60% wrote 0.60 while a schedule's 60%
-   * wrote 0.32.
+   * `brightness` is the stored level as the mapping engine resolves it, which
+   * is Homey's `dim` like every other stored brightness (`MINIMUM_BRIGHTNESS`),
+   * so the planner reads it as a device value with no conversion.
    */
   | { type: 'preset_absolute'; brightness: number; temperature?: number }
   /**
@@ -80,80 +77,67 @@ export function requiredCapability(intent: LightIntent): 'onoff' | 'dim' | 'ligh
 }
 
 /**
- * The perceptual axis.
+ * The perceptual axis, for MOVEMENT only — never for a number anybody reads.
  *
- * All brightness arithmetic happens on p ∈ [0,1]; the device value is v = p^γ
- * with γ = 2.2. Deltas apply to p, then convert. Linear stepping feels violent
- * at the bottom of the range and inert at the top, which is why this is not
- * optional dressing.
+ * A remote's step, a hold ramp and a Room-sensing Light's fade move along
+ * p ∈ [0,1] with the device value v = p^γ, γ = 2.2: equal steps in `dim` feel
+ * violent at the bottom of the range and inert at the top, and none of these
+ * shows a number to disagree with anything. That is the whole of this axis's
+ * remit now — every stored or shown brightness is Homey's `dim`
+ * (`MINIMUM_BRIGHTNESS`).
  */
 const GAMMA = 2.2;
 
-/**
- * How a STORED brightness — a curve point, a schedule block, a response end, a
- * remote's preset — becomes the `dim` a lamp is sent. App-wide, chosen on the
- * settings page.
- *
- * `natural` is the perceptual axis above: 50% looks half as bright, and reads
- * 22% in Homey's own slider. `linear` sends the number as it was set, so 50%
- * here is 50% in Homey — asked for by a user who reads both side by side, which
- * the natural scale makes look like a bug. A stored percentage keeps its number
- * across a switch and changes its meaning; nothing is converted, because the
- * number IS what the person who asked for linear wants written.
- *
- * Deliberately NOT applied to relative steps: `applyPerceptualDelta` stays on
- * γ = 2.2 under both scales. A remote's step and a hold ramp show no number to
- * disagree with Homey's, and even feel at the bottom of the range is their
- * whole point.
- */
-export type BrightnessScale = 'natural' | 'linear';
-
-export const DEFAULT_BRIGHTNESS_SCALE: BrightnessScale = 'natural';
-
-/** A stored or received scale, where anything unrecognised means the default. */
-export function sanitizeBrightnessScale(value: unknown): BrightnessScale {
-  return value === 'linear' ? 'linear' : DEFAULT_BRIGHTNESS_SCALE;
+/** A `dim` on the perceptual axis. See `GAMMA`. */
+export function perceivedFromDim(value: number): number {
+  return Math.pow(clamp01(value), 1 / GAMMA);
 }
 
-function gammaOf(scale: BrightnessScale): number {
-  return scale === 'linear' ? 1 : GAMMA;
+/** A point on the perceptual axis as a `dim`. See `GAMMA`. */
+export function dimFromPerceived(perceptual: number): number {
+  return Math.pow(clamp01(perceptual), GAMMA);
 }
 
 /**
- * The dimmest brightness a stored plan may hold, and the floor the brightness
- * sliders start at.
+ * The dimmest brightness a stored plan may hold: one hundredth, Homey's own
+ * 1%.
  *
- * A consequence of the gamma above, which is why it lives beside it. Quantisation
- * happens in DEVICE values, and `dim` reports `decimals: 2`, so a perceptual
- * brightness below 0.005^(1/2.2) ≈ 0.0900 rounds to `dim` 0.00 — off, on most
- * lamps. The sliders used to start at 5%, so the dimmest setting they offered was
- * inside that band.
+ * **Every stored brightness is Homey's `dim`** — a curve point, a schedule
+ * block, a response end, a remote's preset, the published *Brightness now*.
+ * 50% here is 50% in Homey's own slider, which is the only number a person can
+ * check it against. Until 1.0.0 an app-wide setting offered a second, perceptual
+ * meaning (`v = p^2.2`, so 50% read 22% in Homey) and made it the default; it
+ * was dropped as a scale of our own invention, and `legacyNaturalToDim()` is
+ * what carries a plan stored on it forward.
  *
- * 0.10 rather than 0.09 because the sliders step in fives, and a floor a slider
- * cannot land on is a floor that has to be explained. `litDim` in the intent
- * planner is the safety net under this for any plan that predates it.
- *
- * The same 0.10 under the linear `BrightnessScale`, where it is a 10% device
- * floor rather than about 0.6%. Not made scale-dependent: the floor is applied
- * by the plan sanitisers, which are pure and know nothing of an app setting,
- * and a stored plan must not mean a different floor depending on when it was
- * loaded. The FAQ says so.
+ * 0.01 because `dim` reports `decimals: 2` on the lamps measured, so anything
+ * below rounds to 0.00 — off, on most lamps. `litDim` in the intent planner is
+ * the safety net under this for a lamp with a coarser resolution.
  */
-export const MINIMUM_BRIGHTNESS = 0.1;
-
+export const MINIMUM_BRIGHTNESS = 0.01;
 
 /**
- * Device value → the brightness as a person set it: perceptual under the
- * natural scale, the same number under linear. The scale is required rather
- * than defaulted so that no call site can quietly keep writing γ = 2.2.
+ * A brightness stored on the retired natural scale, as Homey's `dim`.
+ *
+ * Used by the one migration step per store that carries 1.0.0's plans forward,
+ * and nowhere else. Rounded to a thousandth — finer than any lamp resolves —
+ * and floored at `MINIMUM_BRIGHTNESS`, so a dim night setting stays lit rather
+ * than rounding to nothing. A plan saved while the setting said *Same as Homey*
+ * already holds dim values and is not passed through this.
  */
-export function toPerceptual(value: number, scale: BrightnessScale): number {
-  return Math.pow(clamp01(value), 1 / gammaOf(scale));
+export function legacyNaturalToDim(perceptual: number): number {
+  return Math.max(MINIMUM_BRIGHTNESS, Math.round(dimFromPerceived(perceptual) * 1000) / 1000);
 }
 
-/** The brightness as a person set it → device value. See `toPerceptual`. */
-export function toDevice(perceptual: number, scale: BrightnessScale): number {
-  return Math.pow(clamp01(perceptual), gammaOf(scale));
+/**
+ * One stored brightness carried forward: converted from the natural scale,
+ * left alone when it was saved under *Same as Homey* (already a `dim`), and
+ * left alone when it is not a number at all — the validator behind every
+ * migration chain is what decides what a malformed value means, not this.
+ */
+export function carryBrightness(value: unknown, legacy: 'natural' | 'linear'): unknown {
+  if (legacy === 'linear' || typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return value;
+  return legacyNaturalToDim(value);
 }
 
 /**
@@ -161,11 +145,10 @@ export function toDevice(perceptual: number, scale: BrightnessScale): number {
  * The delta is expressed as a fraction of the perceptual range, so ±0.1 is
  * "one tenth of the way up the perceived scale" regardless of current level.
  *
- * Always γ = 2.2, whatever `BrightnessScale` says — see its docblock.
+ * Always γ = 2.2 — see `GAMMA`.
  */
 export function applyPerceptualDelta(currentDeviceValue: number, perceptualDelta: number): number {
-  const next = clamp01(toPerceptual(currentDeviceValue, 'natural') + perceptualDelta);
-  return toDevice(next, 'natural');
+  return dimFromPerceived(clamp01(perceivedFromDim(currentDeviceValue) + perceptualDelta));
 }
 
 /** Confine a normalised 0–1 value, treating NaN and Infinity as 0. */

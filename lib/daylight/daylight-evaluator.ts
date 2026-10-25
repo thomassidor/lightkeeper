@@ -31,7 +31,7 @@ export interface DaylightEvaluatorDeps {
 export interface DaylightVerdict {
   /** 0 = fully dark outside, 1 = fully bright. */
   level: number;
-  /** Perceptual brightness 0–1, ready for toDevice() at write time. */
+  /** Homey's `dim`, 0–1 — written as it is (`MINIMUM_BRIGHTNESS`). */
   brightness: number;
   source: DaylightSource;
   /** Degrees above the horizon, or null when there is no usable position. */

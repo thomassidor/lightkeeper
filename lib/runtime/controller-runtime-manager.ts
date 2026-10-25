@@ -10,7 +10,6 @@ import type { ControllerProfile, ControllerState, StateDetail } from '../profile
 import type { InputEvent } from '../inputs/input-event';
 import { RuntimeRegistry } from './runtime-registry';
 import type { WriteRecord } from '../outputs/light-target-adapter';
-import type { BrightnessScale } from '../outputs/light-intent';
 import { messageOf } from '../support/homey-errors';
 import type { Timers } from '../support/timers';
 
@@ -39,12 +38,6 @@ export interface RuntimeManagerDeps {
    * Every test rig in the suite leaves it out.
    */
   sources?: SourceRegistry;
-  /**
-   * The app-wide `BrightnessScale`, handed to every runtime. Optional, and
-   * absent means the natural scale: every test rig leaves it out, app.ts never
-   * does.
-   */
-  brightnessScale?: () => BrightnessScale;
   /**
    * Timers handed to every runtime this manager builds, registered or
    * ephemeral, for their write queues and the rest of their clocks. Absent
@@ -158,7 +151,7 @@ export class ControllerRuntimeManager {
    */
   private baseDeps(): Pick<
     ControllerRuntimeDeps,
-    'api' | 'catalog' | 'discovery' | 'bridge' | 'log' | 'onWriteResult' | 'sources' | 'brightnessScale' | 'timers'
+    'api' | 'catalog' | 'discovery' | 'bridge' | 'log' | 'onWriteResult' | 'sources' | 'timers'
   > {
     return {
       api: this.deps.api,
@@ -172,7 +165,6 @@ export class ControllerRuntimeManager {
       // gets that this job works before they save, and a Test that resolved no
       // sources would prove the degradation instead of the job.
       ...(this.deps.sources ? { sources: this.deps.sources } : {}),
-      ...(this.deps.brightnessScale ? { brightnessScale: this.deps.brightnessScale } : {}),
       ...(this.deps.timers ? { timers: this.deps.timers } : {}),
     };
   }

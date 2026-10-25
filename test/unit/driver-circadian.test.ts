@@ -222,7 +222,7 @@ describe('the review and the control choice', () => {
     // The last row reads the choice back by name and taps back to the day.
     assert.equal(review.rows[5].value, translate('transition.balanced'));
     assert.equal(review.rows[5].view, 'day');
-    assert.equal(review.rows[2].value, `${translate('warmth.coolWhite')} · 90%`);
+    assert.equal(review.rows[2].value, `${translate('warmth.coolWhite')} · 80%`);
     assert.deepEqual(review.control.modes, ['after', 'before', 'none']);
     assert.equal(review.control.selected, 'after');
     assert.equal(review.control.lightCount, 2);

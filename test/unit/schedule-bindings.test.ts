@@ -408,7 +408,8 @@ describe('finding Homey\'s time trigger card', () => {
 
 describe('schedule plan migration, after the reset', () => {
   /**
-   * The table is empty on purpose.
+   * The table began empty on purpose, and has one step now: 1.0.0's conversion
+   * of each window's brightness to Homey's own `dim` (tested below).
    *
    * The pairing rewrite moved the day set off each window onto the schedule and
    * removed `fromDaylight`, and there is no honest step from the old shape to
@@ -448,6 +449,24 @@ describe('schedule plan migration, after the reset', () => {
     assert.throws(() => migrateSchedulePlan({
       ...CURRENT, schemaVersion: CURRENT_SCHEDULE_SCHEMA_VERSION + 1,
     }));
+  });
+
+  test('a version 1 plan on the natural scale has each window\u2019s brightness converted to dim', () => {
+    const v1 = {
+      ...CURRENT,
+      schemaVersion: 1,
+      entries: [
+        { id: 'a', onAt: 60, end: { kind: 'duration', minutes: 30 }, brightness: 0.5 },
+        { id: 'b', onAt: 180, end: { kind: 'duration', minutes: 30 } },
+      ],
+    };
+    const natural = migrateSchedulePlan(v1, 'natural').plan;
+    assert.deepEqual(natural.entries.map(e => e.brightness), [0.218, undefined],
+      'a window with no brightness switches on and stays without one');
+    assert.equal(natural.schemaVersion, 2);
+
+    const linear = migrateSchedulePlan(v1, 'linear').plan;
+    assert.equal(linear.entries[0].brightness, 0.5);
   });
 
   test('the chain still ends in its validator, so a bad plan is quarantined not cast', () => {

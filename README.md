@@ -207,6 +207,8 @@ is shared only if you choose. [`docs/privacy.md`](docs/privacy.md) has the full 
 - **Fixes:** removing a device no longer leaves your other devices asking for a new API key, and
   "Test my lights" puts each light back as it found it — its own mode, and its own warmth on lights
   that bring back an older setting as they switch on.
+- **Every brightness is Homey's own number** — 50% here is 50% in Homey — and the *Brightness
+  scale* setting is gone. Devices set up before are converted so their lights look exactly the same.
 - **Hardened and lighter:** a Flow is deleted only when the live Flow names its device, and less
   background work — plus a test audit, and development tools updated.
 

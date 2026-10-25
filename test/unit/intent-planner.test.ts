@@ -5,7 +5,7 @@ import { planIntent } from '../../lib/outputs/intent-planner';
 import { TargetStateCache } from '../../lib/outputs/target-state-cache';
 import { DEFAULT_BEHAVIOR } from '../../lib/mapping/mapping-types';
 import {
-  toPerceptual, toDevice, applyPerceptualDelta, sanitizeBrightnessScale, MINIMUM_BRIGHTNESS,
+  perceivedFromDim, dimFromPerceived, applyPerceptualDelta, legacyNaturalToDim, carryBrightness, MINIMUM_BRIGHTNESS,
 } from '../../lib/outputs/light-intent';
 
 const DIM = { min: 0, max: 1, decimals: 2 };
@@ -269,20 +269,15 @@ describe('a positive brightness is never written as darkness', () => {
 /**
  * The absolute branches, where a STORED brightness arrives as a device value.
  *
- * Every brightness a plan stores is perceptual and reaches the planner through
- * `toDevice()` under the app's `BrightnessScale` — `ControllerRuntime.runIntents`
- * for a remote's preset, the engines for their own writes. γ = 2.2 turns 5%
- * into 0.0014, which `decimals: 2` rounds to 0.00, and the stored floor itself
- * (0.10) is 0.0063, which `decimals: 1` rounds to 0.0. `litDim` is the net that
- * writes one representable step instead, on both absolute branches. Each test
- * puts the value through `toDevice` exactly as the runtime does, so the scale is
- * part of what is pinned rather than an assumption about it.
+ * Every brightness a plan stores is Homey's `dim` and reaches the planner as it
+ * is. A level under half a step rounds to nothing — 0.004 at `decimals: 2`, and
+ * the stored floor itself (0.01) at `decimals: 1` — and `litDim` is the net that
+ * writes one representable step instead, on both absolute branches.
  */
 describe('an absolute brightness that asks for light gets light', () => {
-  test('a preset at 5% on a two-decimal lamp is written as 0.01, not as off', () => {
+  test('a preset under half a step on a two-decimal lamp is written as 0.01, not as off', () => {
     const cache = cacheWith([{ id: 'a', on: true, dim: 0.5 }]);
-    const value = toDevice(0.05, 'natural');
-    assert.ok(value > 0 && value < 0.005, `0.05 perceptual is ${value}, which rounds to 0.00`);
+    const value = 0.004;
 
     const { writes } = planIntent(
       { type: 'preset_absolute', brightness: value, temperature: 0.8 }, ['a'], cache, DEFAULT_BEHAVIOR,
@@ -296,7 +291,7 @@ describe('an absolute brightness that asks for light gets light', () => {
   test('the stored floor on a tenths lamp is one tenth, for a preset', () => {
     const cache = cacheWith([{ id: 'a', on: true, dim: 0.5, dimDecimals: 1 }]);
     const { writes } = planIntent(
-      { type: 'preset_absolute', brightness: toDevice(MINIMUM_BRIGHTNESS, 'natural') },
+      { type: 'preset_absolute', brightness: MINIMUM_BRIGHTNESS },
       ['a'], cache, DEFAULT_BEHAVIOR,
     );
     assert.equal(dimWrites(writes).a, 0.1);
@@ -308,22 +303,20 @@ describe('an absolute brightness that asks for light gets light', () => {
       { id: 'tenths', on: true, dim: 0.5, dimDecimals: 1 },
     ]);
     const { writes } = planIntent(
-      { type: 'brightness_absolute', value: toDevice(0.05, 'natural') },
+      { type: 'brightness_absolute', value: 0.004 },
       ['hundredths', 'tenths'], cache, DEFAULT_BEHAVIOR,
     );
     assert.deepEqual(dimWrites(writes), { hundredths: 0.01, tenths: 0.1 });
   });
 
-  test('under "Same as Homey" a level below one step is still written as one step', () => {
-    // γ = 1: the stored number IS the `dim`. 0.04 on a tenths lamp rounds to
-    // 0.0 all the same — a plan predating the floor, or a scripted pair session
-    // (platform §14) — and the net is the planner's, not the scale's.
+  test('a level below one step is still written as one step, and one above it as it is', () => {
+    // 0.04 on a tenths lamp rounds to 0.0 — a scripted pair session (platform
+    // §14) can store it — and the net is the planner's.
     const cache = cacheWith([
       { id: 'a', on: true, dim: 0.5, dimDecimals: 1 },
       { id: 'b', on: true, dim: 0.5, dimDecimals: 2 },
     ]);
-    const value = toDevice(0.04, 'linear');
-    assert.equal(value, 0.04);
+    const value = 0.04;
 
     const preset = planIntent(
       { type: 'preset_absolute', brightness: value }, ['a', 'b'], cache, DEFAULT_BEHAVIOR,
@@ -449,18 +442,18 @@ describe('clamping to each device\'s own range', () => {
 describe('perceptual curve', () => {
   test('the exponent is 2.2, written down here and not derived', () => {
     // Nothing else pins it: the round-trip below holds for any exponent, and
-    // the runtime suites compute their expected `dim` through toDevice()
-    // itself, so a changed γ would move every expectation with it. Every
-    // stored brightness in every house is a perceptual number read through this
-    // curve, and `MINIMUM_BRIGHTNESS` / `litDim()` are argued at 2.2.
-    assert.ok(Math.abs(toDevice(0.5, 'natural') - 0.5 ** 2.2) < 1e-12, `toDevice(0.5, 'natural') = ${toDevice(0.5, 'natural')}`);
-    assert.ok(Math.abs(toDevice(0.5, 'natural') - 0.2176) < 1e-4, 'and 0.5 ** 2.2 is ~0.2176');
-    assert.ok(Math.abs(toPerceptual(0.2176, 'natural') - 0.5) < 1e-4);
+    // the daylight suite computes its expected slew through these functions
+    // itself, so a changed γ would move every expectation with it. The remote's
+    // steps, the hold ramp, the daylight fade and the one-time conversion of a
+    // plan stored on the retired natural scale are all argued at 2.2.
+    assert.ok(Math.abs(dimFromPerceived(0.5) - 0.5 ** 2.2) < 1e-12, `dimFromPerceived(0.5) = ${dimFromPerceived(0.5)}`);
+    assert.ok(Math.abs(dimFromPerceived(0.5) - 0.2176) < 1e-4, 'and 0.5 ** 2.2 is ~0.2176');
+    assert.ok(Math.abs(perceivedFromDim(0.2176) - 0.5) < 1e-4);
   });
 
   test('round-trips', () => {
     for (const v of [0, 0.1, 0.25, 0.5, 0.75, 1]) {
-      assert.ok(Math.abs(toDevice(toPerceptual(v, 'natural'), 'natural') - v) < 1e-9);
+      assert.ok(Math.abs(dimFromPerceived(perceivedFromDim(v)) - v) < 1e-9);
     }
   });
 
@@ -477,26 +470,38 @@ describe('perceptual curve', () => {
     assert.equal(applyPerceptualDelta(0, -0.5), 0);
   });
 
-  test('the linear scale sends the number as it was set, both ways', () => {
-    // "Same as Homey" on the settings page: 74% here is 74% in Homey's slider.
-    for (const v of [0, 0.1, 0.5, 0.74, 1]) {
-      assert.equal(toDevice(v, 'linear'), v);
-      assert.equal(toPerceptual(v, 'linear'), v);
-    }
-    assert.equal(toDevice(1.4, 'linear'), 1, 'and still clamps');
-  });
-
-  test('a step keeps the natural curve whichever scale is chosen', () => {
-    // The function takes no scale at all, which is the assertion: a remote's
-    // step shows no number to disagree with Homey's, and even feel at the
-    // bottom of the range is what the curve is for.
+  test('a step takes no scale at all: it is always the perceptual curve', () => {
+    // A remote's step shows no number to disagree with Homey's, and even feel
+    // at the bottom of the range is what the curve is for.
     assert.equal(applyPerceptualDelta.length, 2);
   });
+});
 
-  test('a stored scale that is not one of the two reads as natural', () => {
-    assert.equal(sanitizeBrightnessScale('linear'), 'linear');
-    for (const junk of ['natural', undefined, null, 'Linear', 1, {}]) {
-      assert.equal(sanitizeBrightnessScale(junk), 'natural');
+/**
+ * The one-time conversion of a plan stored on the retired natural scale. A
+ * migration chain per store calls `carryBrightness` on every stored brightness,
+ * so these are the numbers a household's lamps keep after the update.
+ */
+describe('a brightness stored on the retired natural scale', () => {
+  test('is converted to the dim it was being written as', () => {
+    assert.equal(legacyNaturalToDim(0.5), 0.218, '0.5 ** 2.2, to a thousandth');
+    assert.equal(legacyNaturalToDim(0.74), 0.516);
+    assert.equal(legacyNaturalToDim(1), 1);
+  });
+
+  test('stays lit: the old floor is lifted to the new one, never rounded to off', () => {
+    // 0.10 perceptual was dim 0.0063 — below one hundredth.
+    assert.equal(legacyNaturalToDim(0.1), MINIMUM_BRIGHTNESS);
+    assert.equal(MINIMUM_BRIGHTNESS, 0.01);
+  });
+
+  test('is left alone when it was saved under "Same as Homey", or is not a positive number', () => {
+    assert.equal(carryBrightness(0.5, 'linear'), 0.5, 'already a dim');
+    assert.equal(carryBrightness(0.5, 'natural'), 0.218);
+    // Zero means "leave brightness alone" on a curve point and a schedule
+    // window, and junk is the validator's to judge — neither is this step's.
+    for (const value of [0, -1, undefined, null, 'half', Number.NaN]) {
+      assert.deepEqual(carryBrightness(value, 'natural'), value);
     }
   });
 });

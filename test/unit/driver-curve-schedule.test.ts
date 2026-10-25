@@ -86,7 +86,7 @@ describe('the Colour Curve Light', () => {
     assert.equal(review.hero.kind, 'bars');
     assert.equal(review.hero.bars.length, 24);
     assert.equal(review.rows[1].value, `${DEFAULT_POINTS.length} · 06:30–22:30`);
-    assert.equal(review.rows[2].value, translate('review.brightnessRange', { min: 36, max: 94 }));
+    assert.equal(review.rows[2].value, translate('review.brightnessRange', { min: 10, max: 85 }));
     assert.equal(review.rows[3].label, translate('review.transition'));
     assert.equal(review.rows[3].value, translate('transition.balanced'));
     assert.equal(review.rows[3].view, 'curve');

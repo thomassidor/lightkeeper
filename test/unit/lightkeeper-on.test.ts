@@ -19,7 +19,6 @@ import { VALUE_CAPABILITIES } from '../../lib/runtime/published-values';
 import {
   isSourceKind, sourceColour, sourceLevel, sourceRows,
 } from '../../lib/pairing/source-picker';
-import { toDevice } from '../../lib/outputs/light-intent';
 
 /**
  * "On – with Lightkeeper": a button that comes on the way the rest of the house
@@ -229,25 +228,17 @@ describe('what one press is made of', () => {
 
 describe('the picker behind each row', () => {
   test('a level is drawn on the axis every other percentage in pairing uses', () => {
-    /**
-     * `lightkeeper_brightness` is published as a DEVICE value. A curve set to
-     * 40% publishes `toDevice(0.4, 'natural')` ≈ 0.13, and drawing that as "13%" beside
-     * the job screen's own 40% slider would leave somebody with two numbers for
-     * one setting and no way to tell which was lying.
-     */
-    const level = sourceLevel({ [VALUE_CAPABILITIES.brightness]: toDevice(0.4, 'natural') } as any, 'natural');
-    assert.ok(level !== null && Math.abs(level - 0.4) < 1e-9);
-
-    // And on the linear scale the published value already IS the slider's
-    // number, so converting it again would draw 40% as 66%.
-    assert.equal(sourceLevel({ [VALUE_CAPABILITIES.brightness]: 0.4 } as any, 'linear'), 0.4);
+    // `lightkeeper_brightness` is published as Homey's `dim`, and every slider
+    // in pairing is on that axis too — so a curve set to 40% reads 40% here,
+    // beside the job screen's own 40% slider, with nothing converted.
+    assert.equal(sourceLevel({ [VALUE_CAPABILITIES.brightness]: 0.4 } as any), 0.4);
   });
 
   test('a level that is not a number is absent rather than dark', () => {
     // `Number(null)` is 0 and 0 is a legitimate reading on this axis, so the
     // guard is explicit — the same trap `lib/daylight/` closes on the way in.
     for (const junk of [null, undefined, 'bright', NaN]) {
-      assert.equal(sourceLevel({ [VALUE_CAPABILITIES.brightness]: junk } as any, 'natural'), null);
+      assert.equal(sourceLevel({ [VALUE_CAPABILITIES.brightness]: junk } as any), null);
     }
   });
 
@@ -276,7 +267,7 @@ describe('the picker behind each row', () => {
     const rows = sourceRows('brightness', [
       { id: 'b', name: 'Second', subtitle: 'Light schedule', values: {} as any },
       { id: 'a', name: 'First', subtitle: 'Room-sensing Light', values: {} as any },
-    ], { name: 'Leave it alone', subtitle: 'Do not set this at all' }, 'natural');
+    ], { name: 'Leave it alone', subtitle: 'Do not set this at all' });
 
     assert.deepEqual(rows.map(row => row.id), [LEAVE_ALONE, 'a', 'b']);
     assert.equal(rows[0]!.level, undefined,
@@ -290,11 +281,11 @@ describe('the picker behind each row', () => {
       values: {} as any, current: { warmth: 0.8, color: { hue: 0, saturation: 1 } },
     }];
 
-    const colour = sourceRows('colour', devices, { name: 'n', subtitle: 's' }, 'natural')[1]!;
+    const colour = sourceRows('colour', devices, { name: 'n', subtitle: 's' })[1]!;
     assert.ok(typeof colour.swatch === 'string' && colour.swatch.startsWith('hsl('));
     assert.equal(colour.level, undefined);
 
-    const brightness = sourceRows('brightness', devices, { name: 'n', subtitle: 's' }, 'natural')[1]!;
+    const brightness = sourceRows('brightness', devices, { name: 'n', subtitle: 's' })[1]!;
     assert.equal(brightness.swatch, undefined);
     assert.equal(brightness.level, null);
   });
