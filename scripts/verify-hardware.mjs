@@ -4706,7 +4706,7 @@ async function controlReviews(api, session) {
       if (device.driver === 'daylight') {
         const refused = await session.emit(open, 'setControl', { mode: 'before' })
           .then(() => false, () => true);
-        report('T166', refused ? 'OK' : 'FAILED', `${label}: "set lights before they turn on" is `
+        report('T166', refused ? 'OK' : 'FAILED', `${label}: "keep lights updated, even while off" is `
           + (refused ? 'refused by the driver itself, not only left off the screen'
             : 'ACCEPTED over the API — a brightness-only device would pre-stage nothing and claim to'));
       }
@@ -5192,7 +5192,7 @@ async function controlPublishOnly(api, app, session) {
 
   // Back to the default whatever happens, so `teardown` deletes a device in its
   // normal shape — registered before the change, run at the end.
-  const modeBack = undo.push(`set "${circadian.name}" back to changing lights after they turn on`,
+  const modeBack = undo.push(`set "${circadian.name}" back to keeping lights updated while they're on`,
     () => repairAndSave(session, circadian, async (open) => {
       await session.emit(open, 'setControl', { mode: 'after' });
     }));

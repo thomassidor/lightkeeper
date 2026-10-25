@@ -309,7 +309,7 @@
       "one": "__count__ light changed by hand",
       "other": "__count__ lights changed by hand"
     },
-    "circadianPreStageOff": "Setting the colour before the lights come on was turned off automatically: one of these lights switched itself on.",
+    "circadianPreStageOff": "Updating lights while they are off was stopped automatically: one of these lights switched itself on.",
     "publishOnly": "Works out what its lights should be, and leaves them alone until a remote or a Flow asks.",
     "mappingCount": {
       "one": "__count__ mapping",
@@ -433,11 +433,11 @@
     "transition": "Transition",
     "control": {
       "title": "How Lightkeeper controls your lights",
-      "after": "Change lights after they turn on",
-      "afterWhy": "Lights can turn on in their previous colour and change a moment later.",
-      "afterBrightnessWhy": "Lights can turn on at their previous brightness and change a moment later.",
-      "before": "Set lights before they turn on",
-      "beforeWhy": "Lights turn on in the right colour. Needs a quick test first, as some lights turn on when they are set.",
+      "after": "Keep lights updated while they’re on",
+      "afterWhy": "Lights can come on in their previous colour and catch up a moment later.",
+      "afterBrightnessWhy": "Lights can come on at their previous brightness and catch up a moment later.",
+      "before": "Keep lights updated, even while off",
+      "beforeWhy": "Lights come on already in the right colour. Needs a quick test first, as some lights turn on when they are set.",
       "none": "Don’t change lights automatically",
       "noneWhy": "Lightkeeper calculates colour and brightness but leaves your lights alone. Use the values in your own flows.",
       "test": {
@@ -447,7 +447,7 @@
       "testing": "Testing…",
       "testNote": "Takes about 15 seconds. Each light blinks once, then goes back to how it was.",
       "passed": "Turns on in the right colour",
-      "fallback": "Turned on when set, so it is changed after it turns on",
+      "fallback": "Turned on when set, so it is only updated while on",
       "testedNow": {
         "one": "Tested just now · the light is back to how it was",
         "other": "Tested just now · __count__ lights back to how they were"
@@ -456,7 +456,7 @@
         "one": "Tested just now · __restored__ of __count__ light back to how it was",
         "other": "Tested just now · __restored__ of __count__ lights back to how they were"
       },
-      "testedBefore": "From the last test. Lights added since then are changed after they turn on until they are tested.",
+      "testedBefore": "From the last test. Lights added since then are only updated while on until they are tested.",
       "testAgain": "Test again",
       "testFailed": "The test could not be run. Check that the lights are reachable and try again."
     },
@@ -755,7 +755,7 @@
     "addASchedule": "Add at least one schedule.",
     "targetSelectionChanged": "The lights you chose changed while this was being checked. Choose them again.",
     "notAControlMode": "“__mode__” is not a way Lightkeeper can control lights.",
-    "cannotSetBefore": "This device cannot set lights before they turn on.",
+    "cannotSetBefore": "This device cannot update lights while they are off.",
     "notATransition": "“__transition__” is not a Transition Lightkeeper knows.",
     "notALightList": "That is not a list of lights this device can test."
   },
@@ -787,7 +787,7 @@
     "7": "Sun"
   },
   "warnings": {
-    "preStageUntested": "Set to change lights before they turn on, but no light has been tested for it yet, so none are. Open Repair and run the light test on the last screen."
+    "preStageUntested": "Set to keep lights updated while off, but no light has been tested for it yet, so none are. Open Repair and run the light test on the last screen."
   },
   "names": {
     "suffixed": "__place__ __suffix__",

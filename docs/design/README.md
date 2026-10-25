@@ -63,9 +63,9 @@ this repo hit the same bug in seven places, fixed it, and has guarded it ever si
    `lib/circadian/simple-curve.ts` carry the reasoning for the symmetric range.
 
 7. **A Room-sensing Light's last screen offers two of the three ways to control lights.** The
-   2026-09-23 handoff draws "Set lights before they turn on" there too. It writes brightness and
-   nothing else, and a brightness sent to an off lamp switches it on — so that option's test would
-   fail on every lamp there is. `lib/pairing/control-choice.ts` has the argument, and its first
+   2026-09-23 handoff draws "Set lights before they turn on" (now "Keep lights updated, even while
+   off") there too. It writes brightness and nothing else, and a brightness sent to an off lamp
+   switches it on — so that option's test would fail on every lamp there is. `lib/pairing/control-choice.ts` has the argument, and its first
    answer is reworded for brightness ("at their previous brightness").
 
 8. **The flat and quiet sensor blocks say what the week shows, not what the handoff's sample said.**

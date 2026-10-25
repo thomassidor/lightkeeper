@@ -309,7 +309,7 @@
       "one": "__count__ lampa ändrad för hand",
       "other": "__count__ lampor ändrade för hand"
     },
-    "circadianPreStageOff": "Att ställa in färgen innan lamporna tänds stängdes av automatiskt: en av lamporna tändes av sig själv.",
+    "circadianPreStageOff": "Att uppdatera släckta lampor stoppades automatiskt: en av lamporna tändes av sig själv.",
     "publishOnly": "Räknar ut hur lamporna ska vara och lämnar dem ifred tills en fjärrkontroll eller ett Flow ber om det.",
     "mappingCount": {
       "one": "__count__ tilldelning",
@@ -433,11 +433,11 @@
     "transition": "Övergång",
     "control": {
       "title": "Hur Lightkeeper styr dina lampor",
-      "after": "Ändra lamporna efter att de tänts",
-      "afterWhy": "Lamporna kan tändas i sin tidigare färg och ändras en stund senare.",
-      "afterBrightnessWhy": "Lamporna kan tändas med sin tidigare ljusstyrka och ändras en stund senare.",
-      "before": "Ställ in lamporna innan de tänds",
-      "beforeWhy": "Lamporna tänds i rätt färg. Kräver ett snabbt test först, eftersom vissa lampor tänds när de ställs in.",
+      "after": "Håll lamporna uppdaterade medan de är tända",
+      "afterWhy": "Lamporna kan tändas i sin tidigare färg och uppdateras en stund senare.",
+      "afterBrightnessWhy": "Lamporna kan tändas med sin tidigare ljusstyrka och uppdateras en stund senare.",
+      "before": "Håll lamporna uppdaterade, även när de är släckta",
+      "beforeWhy": "Lamporna tänds direkt i rätt färg. Kräver ett snabbt test först, eftersom vissa lampor tänds när de ställs in.",
       "none": "Ändra inte lamporna automatiskt",
       "noneWhy": "Lightkeeper räknar ut färg och ljusstyrka men lämnar dina lampor ifred. Använd värdena i dina egna Flows.",
       "test": {
@@ -447,7 +447,7 @@
       "testing": "Testar…",
       "testNote": "Tar ungefär 15 sekunder. Varje lampa blinkar en gång och återgår sedan till hur den var.",
       "passed": "Tänds i rätt färg",
-      "fallback": "Tändes när den ställdes in, så den ändras efter att den tänts",
+      "fallback": "Tändes när den ställdes in, så den uppdateras bara medan den är tänd",
       "testedNow": {
         "one": "Testad nyss · lampan är tillbaka som den var",
         "other": "Testade nyss · __count__ lampor tillbaka som de var"
@@ -456,7 +456,7 @@
         "one": "Testad nyss · __restored__ av __count__ lampa tillbaka som den var",
         "other": "Testade nyss · __restored__ av __count__ lampor tillbaka som de var"
       },
-      "testedBefore": "Från det senaste testet. Lampor som lagts till sedan dess ändras efter att de tänts tills de har testats.",
+      "testedBefore": "Från det senaste testet. Lampor som lagts till sedan dess uppdateras bara medan de är tända, tills de har testats.",
       "testAgain": "Testa igen",
       "testFailed": "Testet kunde inte köras. Kontrollera att lamporna går att nå och försök igen."
     },
@@ -753,7 +753,7 @@
     "addASchedule": "Lägg till minst ett schema.",
     "targetSelectionChanged": "Lamporna du valde ändrades medan de kontrollerades. Välj dem igen.",
     "notAControlMode": "”__mode__” är inte ett sätt som Lightkeeper kan styra lampor på.",
-    "cannotSetBefore": "Den här enheten kan inte ställa in lampor innan de tänds.",
+    "cannotSetBefore": "Den här enheten kan inte uppdatera lampor medan de är släckta.",
     "notATransition": "”__transition__” är inte en övergång som Lightkeeper känner till.",
     "notALightList": "Det är ingen lista över lampor som den här enheten kan testa."
   },
@@ -785,7 +785,7 @@
     "7": "Sön"
   },
   "warnings": {
-    "preStageUntested": "Inställd på att ändra lamporna innan de tänds, men ingen lampa har testats för det än, så det görs inte på någon. Öppna Reparera och kör lamptestet på sista skärmen."
+    "preStageUntested": "Inställd på att hålla lamporna uppdaterade även när de är släckta, men ingen lampa har testats för det än, så det görs inte på någon. Öppna Reparera och kör lamptestet på sista skärmen."
   },
   "names": {
     "suffixed": "__place__ – __suffix__",

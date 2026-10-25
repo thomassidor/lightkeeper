@@ -1181,10 +1181,11 @@ Load-bearing product guarantees, not implementation details:
   Both halves ship together: suppression alone would freeze the streak at exactly the tripping value
   and remove the only writes that could clear it.
 - **Pre-staging is chosen on the review screen and then proven PER LAMP — and choosing it is not
-  enough.** "How Lightkeeper controls your lights" offers "Set lights before they turn on" on the two
-  curve-driven types, and it is stored as `preStage: true` plus `preStageLights`: the lamps the
-  review screen's test ("Test my {n} lights", `probePreStageAll()`) watched stay off while given a
-  colour. `preStagesLamp()` in `lib/circadian/circadian-types.ts` is the one rule — BOTH, always.
+  enough.** "How Lightkeeper controls your lights" offers "Keep lights updated, even while off" on
+  the two curve-driven types (it read "Set lights before they turn on" until 1.0.0, which sounded
+  like the opposite of the other option rather than a superset of it), and it is stored as
+  `preStage: true` plus `preStageLights`: the lamps the review screen's test ("Test my {n}
+  lights", `probePreStageAll()`) watched stay off while given a colour. `preStagesLamp()` in `lib/circadian/circadian-types.ts` is the one rule — BOTH, always.
   Chosen and not tested pre-stages nothing, which is the design's "until the test has run, the
   device behaves as option 1", and it is also exactly what every device paired before this change
   with `preStage: true` now reads as: no migration, and those devices stopped pre-staging until

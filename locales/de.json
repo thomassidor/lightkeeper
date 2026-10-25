@@ -309,7 +309,7 @@
       "one": "__count__ Licht von Hand geändert",
       "other": "__count__ Lichter von Hand geändert"
     },
-    "circadianPreStageOff": "Das Einstellen der Farbe vor dem Einschalten wurde automatisch deaktiviert: Eines dieser Lichter hat sich selbst eingeschaltet.",
+    "circadianPreStageOff": "Das Anpassen ausgeschalteter Lichter wurde automatisch beendet: Eines dieser Lichter hat sich selbst eingeschaltet.",
     "publishOnly": "Berechnet, wie seine Lichter sein sollten, und lässt sie in Ruhe, bis eine Fernbedienung oder ein Flow danach fragt.",
     "mappingCount": {
       "one": "__count__ Zuordnung",
@@ -433,11 +433,11 @@
     "transition": "Übergang",
     "control": {
       "title": "Wie Lightkeeper deine Lichter steuert",
-      "after": "Lichter nach dem Einschalten anpassen",
-      "afterWhy": "Lichter können in ihrer vorherigen Farbe angehen und sich einen Moment später ändern.",
-      "afterBrightnessWhy": "Lichter können mit ihrer vorherigen Helligkeit angehen und sich einen Moment später ändern.",
-      "before": "Lichter vor dem Einschalten einstellen",
-      "beforeWhy": "Lichter gehen in der richtigen Farbe an. Dafür ist zuerst ein kurzer Test nötig, denn manche Lichter schalten sich ein, wenn sie eingestellt werden.",
+      "after": "Lichter aktuell halten, solange sie an sind",
+      "afterWhy": "Lichter können in ihrer vorherigen Farbe angehen und werden einen Moment später angepasst.",
+      "afterBrightnessWhy": "Lichter können mit ihrer vorherigen Helligkeit angehen und werden einen Moment später angepasst.",
+      "before": "Lichter aktuell halten, auch wenn sie aus sind",
+      "beforeWhy": "Lichter gehen gleich in der richtigen Farbe an. Dafür ist zuerst ein kurzer Test nötig, denn manche Lichter schalten sich ein, wenn sie eingestellt werden.",
       "none": "Lichter nicht automatisch ändern",
       "noneWhy": "Lightkeeper berechnet Farbe und Helligkeit, lässt deine Lichter aber in Ruhe. Verwende die Werte in deinen eigenen Flows.",
       "test": {
@@ -447,7 +447,7 @@
       "testing": "Wird getestet…",
       "testNote": "Dauert etwa 15 Sekunden. Jedes Licht blinkt einmal und kehrt dann in seinen vorherigen Zustand zurück.",
       "passed": "Geht in der richtigen Farbe an",
-      "fallback": "Hat sich beim Einstellen eingeschaltet, daher wird es nach dem Einschalten angepasst",
+      "fallback": "Hat sich beim Einstellen eingeschaltet, daher wird es nur angepasst, solange es an ist",
       "testedNow": {
         "one": "Gerade getestet · das Licht ist wieder wie vorher",
         "other": "Gerade getestet · __count__ Lichter sind wieder wie vorher"
@@ -456,7 +456,7 @@
         "one": "Gerade getestet · __restored__ von __count__ Licht wieder wie vorher",
         "other": "Gerade getestet · __restored__ von __count__ Lichtern wieder wie vorher"
       },
-      "testedBefore": "Aus dem letzten Test. Seitdem hinzugefügte Lichter werden nach dem Einschalten angepasst, bis sie getestet sind.",
+      "testedBefore": "Aus dem letzten Test. Seitdem hinzugefügte Lichter werden nur angepasst, solange sie an sind, bis sie getestet sind.",
       "testAgain": "Erneut testen",
       "testFailed": "Der Test konnte nicht ausgeführt werden. Prüfe, ob die Lichter erreichbar sind, und versuche es erneut."
     },
@@ -752,7 +752,7 @@
     "addASchedule": "Füge mindestens einen Zeitplan hinzu.",
     "targetSelectionChanged": "Die gewählten Lichter haben sich während der Prüfung geändert. Wähle sie erneut.",
     "notAControlMode": "„__mode__“ ist keine Art, wie Lightkeeper Lichter steuern kann.",
-    "cannotSetBefore": "Dieses Gerät kann Lichter nicht vor dem Einschalten einstellen.",
+    "cannotSetBefore": "Dieses Gerät kann Lichter nicht anpassen, während sie aus sind.",
     "notATransition": "„__transition__“ ist kein Übergang, den Lightkeeper kennt.",
     "notALightList": "Das ist keine Liste von Lichtern, die dieses Gerät testen kann."
   },
@@ -784,7 +784,7 @@
     "7": "So"
   },
   "warnings": {
-    "preStageUntested": "Eingestellt, Lichter vor dem Einschalten anzupassen, aber noch kein Licht wurde dafür getestet, daher geschieht es bei keinem. Öffne Reparieren und führe den Lichttest auf dem letzten Bildschirm aus."
+    "preStageUntested": "Eingestellt, Lichter auch im ausgeschalteten Zustand aktuell zu halten, aber noch kein Licht wurde dafür getestet, daher geschieht es bei keinem. Öffne Reparieren und führe den Lichttest auf dem letzten Bildschirm aus."
   },
   "names": {
     "suffixed": "__place__ – __suffix__",

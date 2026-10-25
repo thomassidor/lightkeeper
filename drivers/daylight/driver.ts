@@ -406,7 +406,7 @@ module.exports = class DaylightDriver extends LightkeeperDriver {
           },
         ],
         // Two of the three: a brightness written to an off lamp switches it on,
-        // so there is no "set lights before they turn on" to offer here.
+        // so there is no "keep lights updated, even while off" to offer here.
         control: await reviewControl(host, state, false),
       };
     });

@@ -322,7 +322,7 @@
       "many": "__count__ de lumières modifiées à la main",
       "other": "__count__ lumières modifiées à la main"
     },
-    "circadianPreStageOff": "Le réglage de la couleur avant l'allumage a été désactivé automatiquement : l'une de ces lumières s'est allumée d'elle-même.",
+    "circadianPreStageOff": "La mise à jour des lumières éteintes a été arrêtée automatiquement : l'une de ces lumières s'est allumée d'elle-même.",
     "publishOnly": "Calcule ce que ses lumières devraient être, et les laisse tranquilles jusqu'à ce qu'une télécommande ou un Flow le demande.",
     "mappingCount": {
       "one": "__count__ association",
@@ -452,11 +452,11 @@
     "transition": "Transition",
     "control": {
       "title": "Comment Lightkeeper contrôle vos lumières",
-      "after": "Modifier les lumières après leur allumage",
-      "afterWhy": "Les lumières peuvent s'allumer dans leur couleur précédente et changer un instant plus tard.",
-      "afterBrightnessWhy": "Les lumières peuvent s'allumer à leur luminosité précédente et changer un instant plus tard.",
-      "before": "Régler les lumières avant leur allumage",
-      "beforeWhy": "Les lumières s'allument dans la bonne couleur. Un test rapide est nécessaire d'abord, car certaines lumières s'allument quand on les règle.",
+      "after": "Mettre à jour les lumières quand elles sont allumées",
+      "afterWhy": "Les lumières peuvent s'allumer dans leur couleur précédente et se mettre à jour un instant plus tard.",
+      "afterBrightnessWhy": "Les lumières peuvent s'allumer à leur luminosité précédente et se mettre à jour un instant plus tard.",
+      "before": "Mettre à jour les lumières, même éteintes",
+      "beforeWhy": "Les lumières s'allument directement dans la bonne couleur. Un test rapide est nécessaire d'abord, car certaines lumières s'allument quand on les règle.",
       "none": "Ne pas modifier les lumières automatiquement",
       "noneWhy": "Lightkeeper calcule la couleur et la luminosité mais laisse vos lumières tranquilles. Utilisez ces valeurs dans vos propres Flows.",
       "test": {
@@ -467,7 +467,7 @@
       "testing": "Test en cours…",
       "testNote": "Environ 15 secondes. Chaque lumière clignote une fois, puis revient à son état d'origine.",
       "passed": "S'allume dans la bonne couleur",
-      "fallback": "S'est allumée quand on l'a réglée, elle est donc modifiée après son allumage",
+      "fallback": "S'est allumée quand on l'a réglée, elle n'est donc mise à jour que lorsqu'elle est allumée",
       "testedNow": {
         "one": "Testée à l'instant · la lumière est revenue à son état d'origine",
         "many": "Testées à l'instant · __count__ lumières revenues à leur état d'origine",
@@ -478,7 +478,7 @@
         "many": "Testées à l'instant · __restored__ lumières sur __count__ revenues à leur état d'origine",
         "other": "Testées à l'instant · __restored__ lumières sur __count__ revenues à leur état d'origine"
       },
-      "testedBefore": "D'après le dernier test. Les lumières ajoutées depuis sont modifiées après leur allumage tant qu'elles n'ont pas été testées.",
+      "testedBefore": "D'après le dernier test. Les lumières ajoutées depuis ne sont mises à jour que lorsqu'elles sont allumées, tant qu'elles n'ont pas été testées.",
       "testAgain": "Tester à nouveau",
       "testFailed": "Le test n'a pas pu être effectué. Vérifiez que les lumières sont joignables et réessayez."
     },
@@ -787,7 +787,7 @@
     "addASchedule": "Ajoutez au moins un programme.",
     "targetSelectionChanged": "Les lumières choisies ont changé pendant la vérification. Choisissez-les à nouveau.",
     "notAControlMode": "« __mode__ » n'est pas une façon dont Lightkeeper peut contrôler des lumières.",
-    "cannotSetBefore": "Cet appareil ne peut pas régler les lumières avant leur allumage.",
+    "cannotSetBefore": "Cet appareil ne peut pas mettre à jour les lumières éteintes.",
     "notATransition": "« __transition__ » n'est pas une transition connue de Lightkeeper.",
     "notALightList": "Ce n'est pas une liste de lumières que cet appareil peut tester."
   },
@@ -819,7 +819,7 @@
     "7": "Dim"
   },
   "warnings": {
-    "preStageUntested": "Réglé pour modifier les lumières avant leur allumage, mais aucune lumière n'a encore été testée pour cela, donc aucune ne l'est. Ouvrez Réparer et lancez le test des lumières sur le dernier écran."
+    "preStageUntested": "Réglé pour mettre à jour les lumières même éteintes, mais aucune lumière n'a encore été testée pour cela, donc aucune ne l'est. Ouvrez Réparer et lancez le test des lumières sur le dernier écran."
   },
   "names": {
     "suffixed": "__suffix__ __place__",

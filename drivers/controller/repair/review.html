@@ -641,7 +641,7 @@
   #rv-root .mode .what { font-size: 15px; font-weight: 500; line-height: 22px; }
   #rv-root .mode .why { font-size: 13px; color: var(--lk-muted); line-height: 1.45;
                         margin-top: 1px; }
-  /* What unfolds under "Set lights before they turn on", indented to the
+  /* What unfolds under "Keep lights updated, even while off", indented to the
      title's own left edge — 22px of mark plus 12px of gap — so it reads as
      belonging to that option rather than as a fourth one. */
   #rv-root .mode .more { margin: 0 0 14px 34px; }
@@ -650,7 +650,7 @@
                          margin: 9px 0 0; }
   /* The test's answer per lamp. Success is a DOT (the system has no green
      ground); the fallback is the same dot in the chevron grey, because a lamp
-     that is changed after it turns on is not a fault — it is option 1. */
+     that is only updated while on is not a fault — it is option 1. */
   #rv-root .tested { background: var(--lk-flat-bg); border-radius: 12px;
                      padding: 4px 12px; }
   #rv-root .tested .lamp { display: flex; align-items: flex-start; gap: 10px;
@@ -1115,7 +1115,7 @@ function __lkBootRv(Homey) {
     return wrap;
   }
 
-  /** The test, or its answer — only under "Set lights before they turn on". */
+  /** The test, or its answer — only under "Keep lights updated, even while off". */
   function renderBefore() {
     var more = node('div', 'more');
     var tested = control.tested;

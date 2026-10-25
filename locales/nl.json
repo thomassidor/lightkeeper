@@ -309,7 +309,7 @@
       "one": "__count__ lamp met de hand aangepast",
       "other": "__count__ lampen met de hand aangepast"
     },
-    "circadianPreStageOff": "De kleur instellen voordat de lampen aangaan, is automatisch uitgezet: een van deze lampen ging vanzelf aan.",
+    "circadianPreStageOff": "Lampen bijwerken als ze uit zijn, is automatisch gestopt: een van deze lampen ging vanzelf aan.",
     "publishOnly": "Berekent wat zijn lampen zouden moeten doen, en laat ze met rust tot een afstandsbediening of een Flow erom vraagt.",
     "mappingCount": {
       "one": "__count__ toewijzing",
@@ -433,11 +433,11 @@
     "transition": "Overgang",
     "control": {
       "title": "Hoe Lightkeeper je lampen bedient",
-      "after": "Lampen aanpassen nadat ze aangaan",
-      "afterWhy": "Lampen kunnen in hun vorige kleur aangaan en een tel later veranderen.",
-      "afterBrightnessWhy": "Lampen kunnen op hun vorige helderheid aangaan en een tel later veranderen.",
-      "before": "Lampen instellen voordat ze aangaan",
-      "beforeWhy": "Lampen gaan in de juiste kleur aan. Hiervoor is eerst een korte test nodig, want sommige lampen gaan aan als ze worden ingesteld.",
+      "after": "Lampen bijwerken zolang ze aan zijn",
+      "afterWhy": "Lampen kunnen in hun vorige kleur aangaan en een tel later worden bijgewerkt.",
+      "afterBrightnessWhy": "Lampen kunnen op hun vorige helderheid aangaan en een tel later worden bijgewerkt.",
+      "before": "Lampen bijwerken, ook als ze uit zijn",
+      "beforeWhy": "Lampen gaan meteen in de juiste kleur aan. Hiervoor is eerst een korte test nodig, want sommige lampen gaan aan als ze worden ingesteld.",
       "none": "Lampen niet automatisch aanpassen",
       "noneWhy": "Lightkeeper berekent kleur en helderheid, maar laat je lampen met rust. Gebruik de waarden in je eigen Flows.",
       "test": {
@@ -447,7 +447,7 @@
       "testing": "Testen…",
       "testNote": "Duurt ongeveer 15 seconden. Elke lamp knippert één keer en gaat daarna terug naar hoe hij was.",
       "passed": "Gaat in de juiste kleur aan",
-      "fallback": "Ging aan bij het instellen, dus hij wordt aangepast nadat hij aangaat",
+      "fallback": "Ging aan bij het instellen, dus hij wordt alleen bijgewerkt als hij aan is",
       "testedNow": {
         "one": "Zojuist getest · de lamp staat weer zoals hij was",
         "other": "Zojuist getest · __count__ lampen staan weer zoals ze waren"
@@ -456,7 +456,7 @@
         "one": "Zojuist getest · __restored__ van __count__ lamp staat weer zoals hij was",
         "other": "Zojuist getest · __restored__ van __count__ lampen staan weer zoals ze waren"
       },
-      "testedBefore": "Uit de vorige test. Lampen die sindsdien zijn toegevoegd, worden aangepast nadat ze aangaan, tot ze zijn getest.",
+      "testedBefore": "Uit de vorige test. Lampen die sindsdien zijn toegevoegd, worden alleen bijgewerkt als ze aan zijn, tot ze zijn getest.",
       "testAgain": "Opnieuw testen",
       "testFailed": "De test kon niet worden uitgevoerd. Controleer of de lampen bereikbaar zijn en probeer het opnieuw."
     },
@@ -752,7 +752,7 @@
     "addASchedule": "Voeg minstens één schema toe.",
     "targetSelectionChanged": "De gekozen lampen veranderden terwijl dit werd gecontroleerd. Kies ze opnieuw.",
     "notAControlMode": "“__mode__” is geen manier waarop Lightkeeper lampen kan bedienen.",
-    "cannotSetBefore": "Dit apparaat kan lampen niet instellen voordat ze aangaan.",
+    "cannotSetBefore": "Dit apparaat kan lampen niet bijwerken als ze uit zijn.",
     "notATransition": "“__transition__” is geen overgang die Lightkeeper kent.",
     "notALightList": "Dat is geen lijst met lampen die dit apparaat kan testen."
   },
@@ -784,7 +784,7 @@
     "7": "zo"
   },
   "warnings": {
-    "preStageUntested": "Ingesteld om lampen aan te passen voordat ze aangaan, maar er is nog geen lamp op getest, dus bij geen enkele gebeurt het. Open Repareren en voer de lamptest uit op het laatste scherm."
+    "preStageUntested": "Ingesteld om lampen ook bij te werken als ze uit zijn, maar er is nog geen lamp op getest, dus bij geen enkele gebeurt het. Open Repareren en voer de lamptest uit op het laatste scherm."
   },
   "names": {
     "suffixed": "__suffix__ __place__",

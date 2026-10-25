@@ -48,6 +48,13 @@ all Homey's `dim` — 50% here is 50% there — and the floor is 1% rather than 
   `POST /brightness-scale` route and `semantics.brightnessScale` in diagnostics are gone;
   `semantics.brightness` says `dim_0_1`.
 
+**Clearer names for how a device controls your lights.** *Change lights after they turn on* and *Set
+lights before they turn on* read as opposite timings, when both keep a light that is on updated all
+day; the second only adds lights that are off. They are now **Keep lights updated while they're on**
+and **Keep lights updated, even while off**, on the last setup screen and in each device's Settings,
+in all thirteen languages, with the light test's results and the warnings worded to match. Nothing is
+stored differently and nothing you chose changes.
+
 Four fixes:
 
 - **Removing a device no longer leaves your other devices asking for a new API key.** After a

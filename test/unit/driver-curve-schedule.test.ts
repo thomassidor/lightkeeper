@@ -94,7 +94,7 @@ describe('the Colour Curve Light', () => {
   });
 
   /**
-   * A NEW Colour Curve Light starts on "Change lights after they turn on", not
+   * A NEW Colour Curve Light starts on "Keep lights updated while they're on", not
    * on pre-staging. The default has been reversed twice (argued at
    * DEFAULT_SIMPLE_PLAN), and the curve driver states its own seed in
    * `bindSession` rather than inheriting that one — so the circadian driver's

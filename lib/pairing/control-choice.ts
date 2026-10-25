@@ -17,11 +17,16 @@ import { keepsLightsUpdated, writesLightsField } from '../runtime/writes-lights'
  * two decisions was not drawn at all. The 2026-09-23 design moves both to the
  * last screen, as three options of one radio group:
  *
- *   after   "Change lights after they turn on"   — today's behaviour, and the
- *                                                  default
- *   before  "Set lights before they turn on"     — `preStage: true`, and only
- *                                                  for the lamps the test proved
- *   none    "Don't change lights automatically"  — `writesLights: false`
+ *   after   "Keep lights updated while they're on" — today's behaviour, and the
+ *                                                    default
+ *   before  "Keep lights updated, even while off"  — `preStage: true`, and only
+ *                                                    for the lamps the test proved
+ *   none    "Don't change lights automatically"    — `writesLights: false`
+ *
+ * The first two were "Change lights after they turn on" and "Set lights before
+ * they turn on" until 1.0.0, which read as opposite timings when both keep a
+ * lit lamp updated all day: they differ only in whether an OFF lamp is updated
+ * too, so that is what the labels now name.
  *
  * **No new stored shape.** The three are the two flags the plans already had,
  * plus `preStageLights`: the lamps the test watched stay off. "Before", chosen

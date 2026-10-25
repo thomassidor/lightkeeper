@@ -296,7 +296,7 @@
     "circadianOverridden": {
       "other": "직접 바꾼 조명 __count__개"
     },
-    "circadianPreStageOff": "조명이 켜지기 전에 색상을 설정하는 기능이 자동으로 꺼졌어요. 이 조명 중 하나가 스스로 켜졌어요.",
+    "circadianPreStageOff": "꺼져 있는 조명 업데이트가 자동으로 중지됐어요. 이 조명 중 하나가 스스로 켜졌어요.",
     "publishOnly": "조명이 어떻게 되어야 할지 계산하고, 리모컨이나 Flow가 요청할 때까지 조명을 그대로 둬요.",
     "mappingCount": {
       "other": "할당 __count__개"
@@ -414,11 +414,11 @@
     "transition": "전환",
     "control": {
       "title": "Lightkeeper가 조명을 제어하는 방법",
-      "after": "조명이 켜진 후 바꾸기",
-      "afterWhy": "조명이 이전 색상으로 켜졌다가 잠시 후 바뀔 수 있어요.",
-      "afterBrightnessWhy": "조명이 이전 밝기로 켜졌다가 잠시 후 바뀔 수 있어요.",
-      "before": "조명이 켜지기 전에 설정하기",
-      "beforeWhy": "조명이 올바른 색상으로 켜져요. 설정하면 켜져 버리는 조명도 있어서 먼저 간단한 테스트가 필요해요.",
+      "after": "켜져 있는 동안 조명 업데이트하기",
+      "afterWhy": "조명이 이전 색상으로 켜졌다가 잠시 후 업데이트될 수 있어요.",
+      "afterBrightnessWhy": "조명이 이전 밝기로 켜졌다가 잠시 후 업데이트될 수 있어요.",
+      "before": "꺼져 있을 때도 조명 업데이트하기",
+      "beforeWhy": "조명이 처음부터 올바른 색상으로 켜져요. 설정하면 켜져 버리는 조명도 있어서 먼저 간단한 테스트가 필요해요.",
       "none": "조명을 자동으로 바꾸지 않기",
       "noneWhy": "Lightkeeper가 색상과 밝기를 계산하지만 조명은 그대로 둬요. 계산된 값을 직접 만든 Flow에서 사용하세요.",
       "test": {
@@ -427,14 +427,14 @@
       "testing": "테스트 중…",
       "testNote": "약 15초 걸려요. 각 조명이 한 번 깜빡인 후 원래 상태로 돌아가요.",
       "passed": "올바른 색상으로 켜져요",
-      "fallback": "설정하면 켜져서, 켜진 후에 바꿔요",
+      "fallback": "설정하면 켜져서, 켜져 있을 때만 업데이트해요",
       "testedNow": {
         "other": "방금 테스트함 · 조명 __count__개가 원래 상태로 돌아왔어요"
       },
       "testedNowSome": {
         "other": "방금 테스트함 · 조명 __count__개 중 __restored__개가 원래 상태로 돌아왔어요"
       },
-      "testedBefore": "마지막 테스트 결과예요. 그 후에 추가된 조명은 테스트할 때까지 켜진 후에 바뀌어요.",
+      "testedBefore": "마지막 테스트 결과예요. 그 후에 추가된 조명은 테스트할 때까지 켜져 있을 때만 업데이트돼요.",
       "testAgain": "다시 테스트",
       "testFailed": "테스트를 실행할 수 없었어요. 조명에 연결할 수 있는지 확인하고 다시 시도하세요."
     },
@@ -718,7 +718,7 @@
     "addASchedule": "일정을 하나 이상 추가하세요.",
     "targetSelectionChanged": "확인하는 동안 선택한 조명이 바뀌었어요. 다시 고르세요.",
     "notAControlMode": "“__mode__”은(는) Lightkeeper가 조명을 제어하는 방법이 아니에요.",
-    "cannotSetBefore": "이 기기는 조명이 켜지기 전에 설정할 수 없어요.",
+    "cannotSetBefore": "이 기기는 꺼져 있는 조명을 업데이트할 수 없어요.",
     "notATransition": "“__transition__”은(는) Lightkeeper가 아는 전환이 아니에요.",
     "notALightList": "이 기기가 테스트할 수 있는 조명 목록이 아니에요."
   },
@@ -750,7 +750,7 @@
     "7": "일"
   },
   "warnings": {
-    "preStageUntested": "조명이 켜지기 전에 바꾸도록 설정했지만 아직 테스트한 조명이 없어서 어떤 조명도 그렇게 동작하지 않아요. 복구를 열고 마지막 화면에서 조명 테스트를 실행하세요."
+    "preStageUntested": "꺼져 있을 때도 조명을 업데이트하도록 설정했지만 아직 테스트한 조명이 없어서 어떤 조명도 그렇게 동작하지 않아요. 복구를 열고 마지막 화면에서 조명 테스트를 실행하세요."
   },
   "names": {
     "suffixed": "__place__ __suffix__",

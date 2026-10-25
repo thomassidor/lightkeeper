@@ -53,7 +53,7 @@ interface SessionState {
   adjustBrightness: boolean;
   /** How the curve moves between neighbouring points. */
   transition: Transition;
-  /** "Set lights before they turn on" — see lib/pairing/control-choice.ts. */
+  /** "Keep lights updated, even while off" — see lib/pairing/control-choice.ts. */
   preStage: boolean;
   /** The lamps the review screen's test proved. Absent = never tested. */
   preStageLights?: string[] | undefined;
@@ -112,7 +112,7 @@ module.exports = class CurveDriver extends LightkeeperDriver {
 
   private async bindSession(session: any, initial: Partial<SessionState>, device?: any) {
     const state: SessionState = {
-      // "Change lights after they turn on" for a NEW device — the review
+      // "Keep lights updated while they're on" for a NEW device — the review
       // screen's default, argued at DEFAULT_SIMPLE_PLAN. A repair's `initial`
       // carries the stored plan's own choice and overwrites this.
       points: [...DEFAULT_POINTS], adjustBrightness: false, transition: DEFAULT_TRANSITION,

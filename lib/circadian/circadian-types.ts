@@ -129,7 +129,7 @@ export interface CircadianPlan {
    */
   zones?: CircadianZones;
   /**
-   * "Set lights before they turn on": write the day's colour to lights that are
+   * "Keep lights updated, even while off": write the day's colour to lights that are
    * OFF, so a light is already correct before anyone touches it.
    *
    * Chosen, and then proven PER LAMP rather than assumed: a capability write to
@@ -155,7 +155,7 @@ export interface CircadianPlan {
 }
 
 /**
- * Whether this plan pre-stages THIS lamp: "Set lights before they turn on" was
+ * Whether this plan pre-stages THIS lamp: "Keep lights updated, even while off" was
  * chosen, and the lamp is one the test proved stays off.
  *
  * Both halves, always, and that is the whole of the 2026-09-23 change: the

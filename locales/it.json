@@ -322,7 +322,7 @@
       "many": "__count__ di luci cambiate a mano",
       "other": "__count__ luci cambiate a mano"
     },
-    "circadianPreStageOff": "L'impostazione del colore prima dell'accensione è stata disattivata automaticamente: una di queste luci si è accesa da sola.",
+    "circadianPreStageOff": "L'aggiornamento delle luci spente è stato interrotto automaticamente: una di queste luci si è accesa da sola.",
     "publishOnly": "Calcola come dovrebbero essere le sue luci e le lascia stare finché un telecomando o un Flow non lo chiede.",
     "mappingCount": {
       "one": "__count__ assegnazione",
@@ -452,11 +452,11 @@
     "transition": "Transizione",
     "control": {
       "title": "Come Lightkeeper controlla le tue luci",
-      "after": "Cambia le luci dopo l'accensione",
-      "afterWhy": "Le luci possono accendersi con il colore precedente e cambiare un attimo dopo.",
-      "afterBrightnessWhy": "Le luci possono accendersi con la luminosità precedente e cambiare un attimo dopo.",
-      "before": "Imposta le luci prima dell'accensione",
-      "beforeWhy": "Le luci si accendono con il colore giusto. Serve prima un breve test, perché alcune luci si accendono quando vengono impostate.",
+      "after": "Aggiorna le luci mentre sono accese",
+      "afterWhy": "Le luci possono accendersi con il colore precedente e aggiornarsi un attimo dopo.",
+      "afterBrightnessWhy": "Le luci possono accendersi con la luminosità precedente e aggiornarsi un attimo dopo.",
+      "before": "Aggiorna le luci, anche da spente",
+      "beforeWhy": "Le luci si accendono già con il colore giusto. Serve prima un breve test, perché alcune luci si accendono quando vengono impostate.",
       "none": "Non cambiare le luci automaticamente",
       "noneWhy": "Lightkeeper calcola colore e luminosità ma lascia stare le tue luci. Usa i valori nei tuoi Flow.",
       "test": {
@@ -467,7 +467,7 @@
       "testing": "Test in corso…",
       "testNote": "Richiede circa 15 secondi. Ogni luce lampeggia una volta, poi torna com'era.",
       "passed": "Si accende con il colore giusto",
-      "fallback": "Si è accesa quando è stata impostata, quindi viene cambiata dopo l'accensione",
+      "fallback": "Si è accesa quando è stata impostata, quindi viene aggiornata solo mentre è accesa",
       "testedNow": {
         "one": "Testata proprio ora · la luce è tornata com'era",
         "many": "Testate proprio ora · __count__ luci tornate com'erano",
@@ -478,7 +478,7 @@
         "many": "Testate proprio ora · __restored__ luci su __count__ tornate com'erano",
         "other": "Testate proprio ora · __restored__ luci su __count__ tornate com'erano"
       },
-      "testedBefore": "Dall'ultimo test. Le luci aggiunte da allora vengono cambiate dopo l'accensione finché non vengono testate.",
+      "testedBefore": "Dall'ultimo test. Le luci aggiunte da allora vengono aggiornate solo mentre sono accese, finché non vengono testate.",
       "testAgain": "Testa di nuovo",
       "testFailed": "Non è stato possibile eseguire il test. Controlla che le luci siano raggiungibili e riprova."
     },
@@ -787,7 +787,7 @@
     "addASchedule": "Aggiungi almeno una programmazione.",
     "targetSelectionChanged": "Le luci scelte sono cambiate durante la verifica. Sceglile di nuovo.",
     "notAControlMode": "“__mode__” non è un modo in cui Lightkeeper può controllare le luci.",
-    "cannotSetBefore": "Questo dispositivo non può impostare le luci prima dell'accensione.",
+    "cannotSetBefore": "Questo dispositivo non può aggiornare le luci mentre sono spente.",
     "notATransition": "“__transition__” non è una transizione che Lightkeeper conosce.",
     "notALightList": "Questo non è un elenco di luci che questo dispositivo può provare."
   },
@@ -819,7 +819,7 @@
     "7": "Dom"
   },
   "warnings": {
-    "preStageUntested": "Impostato per cambiare le luci prima dell'accensione, ma nessuna luce è stata ancora testata, quindi non lo fa su nessuna. Apri Ripara ed esegui il test delle luci nell'ultima schermata."
+    "preStageUntested": "Impostato per aggiornare le luci anche da spente, ma nessuna luce è stata ancora testata, quindi non lo fa su nessuna. Apri Ripara ed esegui il test delle luci nell'ultima schermata."
   },
   "names": {
     "suffixed": "__suffix__ __place__",
