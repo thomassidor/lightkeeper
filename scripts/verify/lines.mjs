@@ -125,6 +125,7 @@ export const RETIRED = Object.freeze({
   T138: 'colour on arrival through the old switch — replaced by T166-T168',
   T140: 'the old one-lamp pre-stage test — replaced by T167',
   ...range(182, 186, 'the 0.6.6 control PICKER on the tile, removed unrun when it moved into Settings — replaced by T195-T199'),
+  ...range(201, 203, 'the 0.6.6 brightness-scale setting, removed unrun with the scale in 1.0.0 — replaced by T206-T207'),
 });
 
 /**

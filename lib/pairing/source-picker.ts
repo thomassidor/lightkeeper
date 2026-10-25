@@ -1,5 +1,4 @@
 import { colourSwatch, warmthSwatch } from './flow-screens';
-import { toPerceptual, type BrightnessScale } from '../outputs/light-intent';
 import { LEAVE_ALONE } from '../outputs/lightkeeper-settings';
 import { VALUE_CAPABILITIES, type PublishedValues } from '../runtime/published-values';
 
@@ -53,7 +52,7 @@ export interface SourceRow {
   subtitle: string;
   /** Colour list only: a CSS colour, or null where the device has nothing to show yet. */
   swatch?: string | null;
-  /** Brightness list only: PERCEPTUAL 0–1, or null where nothing is being called for. */
+  /** Brightness list only: the published `dim`, 0–1, or null where nothing is being called for. */
   level?: number | null;
   /**
    * Present when this source keeps its own lights up to date, which makes
@@ -88,21 +87,14 @@ export function sharedLightCount(
 }
 
 /**
- * The level a brightness source is calling for, on the axis every slider uses.
- *
- * `lightkeeper_brightness` is published as a DEVICE value — the axis a lamp is
- * addressed on, through the app's `BrightnessScale` — and every percentage
- * anywhere in pairing is on the stored axis: the job screen's own brightness
- * slider, the curve editor, the daylight response. Under the natural scale those
- * two differ by a lot. Drawing the raw published number as "%" beside them would
- * put two different axes under one sign, so somebody who set a curve to 40%
- * would find this screen reporting 13% for the same device and have no way at
- * all to tell which was lying.
+ * The level a brightness source is calling for: its published `dim`, which is
+ * the axis every slider in pairing is on too, so the two can sit side by side
+ * under one "%" without disagreeing.
  */
-export function sourceLevel(values: PublishedValues, scale: BrightnessScale): number | null {
+export function sourceLevel(values: PublishedValues): number | null {
   const value = values[VALUE_CAPABILITIES.brightness];
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
-  return toPerceptual(value, scale);
+  return value;
 }
 
 /**
@@ -169,7 +161,6 @@ export function sourceRows(
   kind: SourceKind,
   devices: readonly SourceDevice[],
   leaveAlone: { name: string; subtitle: string },
-  scale: BrightnessScale,
 ): SourceRow[] {
   const rows: SourceRow[] = [...devices]
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -178,7 +169,7 @@ export function sourceRows(
       name: device.name,
       subtitle: device.subtitle,
       ...(kind === 'brightness'
-        ? { level: sourceLevel(device.values, scale) }
+        ? { level: sourceLevel(device.values) }
         : { swatch: paintSwatch(device) }),
       ...(device.keepsLightsUpdated === true
         ? { warn: { sharedLights: device.sharedLights ?? 0 } }

@@ -113,11 +113,13 @@ describe('which lamps the pass may touch', () => {
       {
         zoneName: 'Studio',
         lights: [
-          { id: 'g', name: 'Group', capabilities: ['onoff', 'light_temperature'] },
-          { id: 'm1', name: 'Spot 1', capabilities: ['onoff', 'light_temperature'] },
-          { id: 'm2', name: 'Spot 2', capabilities: ['onoff', 'light_temperature'] },
+          { id: 'g', name: 'Group', capabilities: ['onoff', 'dim', 'light_temperature'] },
+          { id: 'm1', name: 'Spot 1', capabilities: ['onoff', 'dim', 'light_temperature'] },
+          { id: 'm2', name: 'Spot 2', capabilities: ['onoff', 'dim', 'light_temperature'] },
           { id: 'p', name: 'Plug lamp', capabilities: ['onoff', 'dim'] },
-          { id: 'x', name: 'Dead', capabilities: ['onoff'], available: false },
+          { id: 'x', name: 'Dead', capabilities: ['onoff', 'dim'], available: false },
+          // The light picker offers anything with `onoff`; an appliance's plug is not a test lamp.
+          { id: 'ac', name: 'Aircon Plug', capabilities: ['onoff'] },
         ],
       },
       { zoneName: 'Hall', lights: [{ id: 'h', name: 'Hall', capabilities: ['onoff'] }] },
@@ -132,6 +134,7 @@ describe('which lamps the pass may touch', () => {
     // Fewer than five distinct lamps: the rest clamp to the last, and say so.
     assert.equal(free.chosen.daylight.id, 'p');
     assert.ok(!free.all.some(l => l.id === 'x'), 'an unavailable lamp is never offered');
+    assert.ok(!free.all.some(l => l.id === 'ac'), 'a device that cannot dim is never offered');
     assert.ok(!free.all.some(l => l.id === 'h'), 'another room is never offered');
 
     const busy = chooseLamps(rooms, 'Studio', new Set(['g']), overlaps);
@@ -256,12 +259,10 @@ describe('flowcards: the published rows and the two cards', () => {
   test("expectedPublished is each runtime's own arithmetic", () => {
     const curve = expectedPublished('curve', { now: { warmth: 0.6, brightness: 0.5 }, adjustBrightness: false });
     assert.deepEqual(curve, { lightkeeper_temperature: 0.6, lightkeeper_brightness: null });
+    // Every brightness is Homey's `dim`: the published value is the runtime's own.
     const lit = expectedPublished('curve', { now: { warmth: 0.6, brightness: 0.5 }, adjustBrightness: true });
-    assert.ok(Math.abs(Number(lit.lightkeeper_brightness) - Math.pow(0.5, 2.2)) < 1e-12);
-    // On "Same as Homey" the published value is the stored one, and the
-    // scale comes from the same /diagnostics document as the runtime.
-    const linear = expectedPublished('curve', { now: { warmth: 0.6, brightness: 0.5 }, adjustBrightness: true }, 'linear');
-    assert.equal(linear.lightkeeper_brightness, 0.5);
+    assert.equal(lit.lightkeeper_brightness, 0.5);
+    assert.equal(expectedPublished('daylight', { now: { brightness: 0.5, level: 0.3, source: 'sky' } }).lightkeeper_brightness, 0.5);
 
     const sky = expectedPublished('daylight', { now: { brightness: 0.5, level: 0.3, source: 'sky' } });
     assert.equal(sky.lightkeeper_daylight, 0.3);
@@ -281,6 +282,9 @@ describe('flowcards: the published rows and the two cards', () => {
     assert.equal(conditionResult(true), true);
     assert.equal(conditionResult({ result: false }), false);
     assert.equal(conditionResult({}), null);
+    // Firmware 13.5's shape, and a card that threw rather than answered.
+    assert.equal(conditionResult({ result: true, error: null, usedTokens: [], elapsedTime: 3 }), true);
+    assert.deepEqual(conditionResult({ result: undefined, error: 'Device not found', usedTokens: [] }), { error: 'Device not found' });
     assert.equal(conditionResult(undefined), null);
   });
 

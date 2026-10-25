@@ -1,4 +1,6 @@
 import { CURRENT_SCHEMA_VERSION, type ControllerProfile } from './controller-profile';
+import { carryBrightness } from '../outputs/light-intent';
+import type { LegacyBrightnessScale } from '../app-contract';
 import { runMigrationChain, type MigrationResult, type MigrationStep } from '../support/migrations';
 import { validateControllerProfile } from '../validation/plans';
 
@@ -28,22 +30,48 @@ import { validateControllerProfile } from '../validation/plans';
  * `DeviceLifecycle` quarantines the device with its store untouched, so it comes
  * up unavailable with a reason rather than running on a plan nobody can vouch
  * for. Delete it and add it again.
+ *
+ * **1 → 2 (1.0.0): every brightness becomes Homey's own `dim`.** The app-wide
+ * "Brightness scale" setting is gone, and with it the natural scale it defaulted
+ * to (`dim = p^2.2`, so 50% read 22% in Homey). A plan saved on that scale has
+ * every "Set brightness" button's preset converted through `carryBrightness()`, which keeps every lamp at the
+ * level it was showing; one saved under *Same as Homey* already holds `dim`
+ * values and is only re-stamped. Which of the two a plan is comes from the
+ * retired setting itself (`legacyBrightnessScale()` on the app), passed in
+ * because a step is otherwise a pure function of the stored shape.
  */
 
 export type Migration = MigrationStep;
 
 /**
- * Keyed by the version being migrated FROM. Empty: see the header. Add a new
- * entry, never edit an existing one — an installed base is already carrying the
- * old shape.
+ * Keyed by the version being migrated FROM. See the header for each step. Add a
+ * new entry, never edit an existing one — an installed base is already carrying
+ * the old shape.
  */
-const MIGRATIONS: Record<number, Migration> = {};
+const migrations = (legacy: LegacyBrightnessScale): Record<number, Migration> => ({
+  1: raw => ({
+    ...raw,
+    mappings: Array.isArray(raw.mappings)
+      ? raw.mappings.map(rule => {
+        if (!rule || typeof rule !== 'object') return rule;
+        const preset = (rule as Record<string, unknown>).preset;
+        if (!preset || typeof preset !== 'object' || !('brightness' in preset)) return rule;
+        const record = preset as Record<string, unknown>;
+        return { ...rule, preset: { ...record, brightness: carryBrightness(record.brightness, legacy) } };
+      })
+      : raw.mappings,
+    schemaVersion: 2,
+  }),
+});
 
-export function migrateProfile(raw: unknown): MigrationResult<ControllerProfile> {
+export function migrateProfile(
+  raw: unknown,
+  legacy: LegacyBrightnessScale = 'natural',
+): MigrationResult<ControllerProfile> {
   return runMigrationChain(raw, {
     label: 'Profile',
     current: CURRENT_SCHEMA_VERSION,
-    table: MIGRATIONS,
+    table: migrations(legacy),
     validate: validateControllerProfile,
   });
 }

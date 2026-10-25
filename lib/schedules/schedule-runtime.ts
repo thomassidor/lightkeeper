@@ -10,7 +10,6 @@ import { LightTargetAdapter, type WriteRecord } from '../outputs/light-target-ad
 import { TargetResolver } from '../outputs/target-resolver';
 import { TargetStateCache } from '../outputs/target-state-cache';
 import { planIntent, type PlannedWrite } from '../outputs/intent-planner';
-import { DEFAULT_BRIGHTNESS_SCALE, toDevice, type BrightnessScale } from '../outputs/light-intent';
 import { paletteColor } from '../circadian/palette';
 import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
@@ -76,12 +75,6 @@ export interface ScheduleRuntimeDeps {
    * write nor prove stop() left nothing armed.
    */
   timers?: Partial<Timers>;
-  /**
-   * The app-wide `BrightnessScale`, read at every use so a change on the
-   * settings page reaches the next window without a restart. Absent means the
-   * natural scale; the app always supplies it, and most test rigs leave it out.
-   */
-  brightnessScale?: () => BrightnessScale;
   log: (...args: unknown[]) => void;
   onStateChange: (state: ControllerState, detail?: StateDetail) => void;
   /**
@@ -285,7 +278,7 @@ export class ScheduleRuntime {
     const colour = entry?.color !== undefined ? paletteColor(entry.color) : undefined;
 
     this.values.set({
-      [VALUE_CAPABILITIES.brightness]: entry?.brightness !== undefined ? toDevice(entry.brightness, this.scale()) : null,
+      [VALUE_CAPABILITIES.brightness]: entry?.brightness ?? null,
       [VALUE_CAPABILITIES.temperature]: entry?.temperature ?? null,
       // A locale KEY, not a word: `lib/` has no access to `homey.__`, and the
       // device layer resolves it on the way to the capability row and the Flow
@@ -297,10 +290,6 @@ export class ScheduleRuntime {
 
   private now(): number {
     return this.timers.now();
-  }
-
-  private scale(): BrightnessScale {
-    return this.deps.brightnessScale?.() ?? DEFAULT_BRIGHTNESS_SCALE;
   }
 
   /**
@@ -811,9 +800,7 @@ export class ScheduleRuntime {
    * then warmth. They are composed rather than expressed as one new intent type
    * because the planner already knows how to skip a target that cannot dim, and
    * the write queue already orders onoff before dim so the level lands on a lit
-   * lamp. Brightness is stored as the person set it, so it converts through
-   * toDevice() here, on the app's `BrightnessScale` — 40% means what it means
-   * everywhere else.
+   * lamp. Brightness is stored as Homey's own `dim`, so it is written as it is.
    */
   private planOn(entry: ScheduleEntry): { writes: PlannedWrite[]; skipped: number } {
     const plans = [planIntent({ type: 'power', value: true }, this.targetIds, this.cache, DEFAULT_BEHAVIOR)];
@@ -821,7 +808,7 @@ export class ScheduleRuntime {
     const brightness = this.brightnessFor(entry);
     if (brightness !== undefined) {
       plans.push(planIntent(
-        { type: 'brightness_absolute', value: toDevice(brightness, this.scale()) },
+        { type: 'brightness_absolute', value: brightness },
         this.targetIds, this.cache, DEFAULT_BEHAVIOR,
       ));
     }

@@ -44,7 +44,7 @@ module.exports = class CurveDevice extends LightkeeperDevice<CircadianPlan, Circ
   override readonly controlModes: readonly ControlMode[] = ['after', 'before', 'none'];
 
   migrate(raw: unknown): PlanMigration<CircadianPlan> {
-    return migrateCurvePlan(raw);
+    return migrateCurvePlan(raw, this.app.legacyBrightnessScale());
   }
 
   registry(): DeviceRegistry<CircadianPlan, CircadianRuntime> {

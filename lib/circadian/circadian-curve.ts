@@ -43,7 +43,7 @@ export interface AnchorContext {
 export interface CurveValue {
   /** 0–1, where 1 is the WARMEST end (platform §6). */
   warmth: number;
-  /** Perceptual 0–1. Only present when both bracketing points carry one. */
+  /** Homey's `dim`, 0–1. Only present when both bracketing points carry one. */
   brightness?: number;
   /**
    * A colour to write INSTEAD of the warmth, where the lamp can take one.

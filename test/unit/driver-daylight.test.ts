@@ -229,7 +229,7 @@ describe('review, control and save', () => {
     assert.equal(review.hero.percent, '42%');
     assert.equal(review.hero.detail, translate('review.nowFromSensor', { lux: 340, degrees: 20, sensor: 'Window sensor' }));
     assert.equal(review.rows[1].value, 'Window sensor');
-    assert.equal(review.rows[2].value, `${translate('review.underLux', { lux: SUGGESTED.darkLux })} → 90%`);
+    assert.equal(review.rows[2].value, `${translate('review.underLux', { lux: SUGGESTED.darkLux })} → 80%`);
     // Two of the three: a brightness written to an off lamp switches it on.
     assert.deepEqual(review.control.modes, ['after', 'none']);
     // The last row, after "Right now", taps back to the response step.
@@ -243,7 +243,7 @@ describe('review, control and save', () => {
     const { session } = await paired();
     const review = await session.call('getReview');
     assert.equal(review.rows[1].value, translate('review.theSun'));
-    assert.equal(review.rows[2].value, `${translate('review.belowDegrees', { degrees: -6 })} → 90%`);
+    assert.equal(review.rows[2].value, `${translate('review.belowDegrees', { degrees: -6 })} → 80%`);
   });
 
   test('a sensor that has gone reads as missing, not as a blank', async () => {

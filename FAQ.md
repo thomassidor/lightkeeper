@@ -222,37 +222,24 @@ A remote button can do the same composing without a Flow at all — see
 
 Yes — that is why it is the number it is. The brightness tag is what Lightkeeper actually sends a
 lamp, so dropping it into Homey's own *Dim to* card puts the lamp exactly where Lightkeeper would
-put it.
+put it. It is also the number on the setup screen: 55% there is 55% in the tag and 55% in Homey's
+own slider.
 
-It will not match the percentage on the setup screen, and it is not meant to. Lightkeeper stores
-brightness the way it is *perceived* and sends it the way a lamp is *addressed*, and those are
-different numbers: a lamp set to 55% on the slider is sent 26%. The setup screens speak the first
-language and your Flows speak the second — unless you choose *Same as Homey*, below, where the two
-are the same number.
+### Is 50% in Lightkeeper the same as 50% in Homey?
 
-### Why does 74% in Lightkeeper show as 50% in Homey?
+Yes. Every brightness Lightkeeper stores, shows and sends is Homey's own number, so a curve point at
+50% puts the lamp where Homey's slider at 50% does, and the lowest you can set is 1%.
 
-Because on the default scale, *Natural*, Lightkeeper's sliders follow how the eye sees light rather
-than how much power the lamp is given. Your eye is far more sensitive at the dim end, so a lamp
-given half its power looks much brighter than half. Lightkeeper corrects for that: 50% on its
-sliders *looks* half as bright, and Homey's own slider, which shows the lamp's power, reads 22% for
-it. 74% reads 50%, and 83% reads 66%.
+Bear in mind that the eye is far more sensitive at the dim end: a lamp at half its power looks a
+good deal brighter than half, so the numbers that make a difference at night are the small ones —
+10% is a dim room, 2% a night light.
 
-If you would rather the two numbers matched, open Homey settings → Lightkeeper and set
-**Brightness scale** to **Same as Homey**. Then Lightkeeper sends the number you set: 50% is 50% in
-Homey, and 100% is still 100%.
-
-- **Nothing you set is converted.** A curve point at 74% stays 74% and is now sent as 74%, so your
-  lights get brighter wherever you set anything below 100%. Curves and Room-sensing Lights follow
-  within a minute, a schedule at its next block, a remote's *Set brightness* button at its next
-  press.
-- **The dim end gets coarser.** The sliders step in fives, and from 10% to 15% is a big jump in how
-  bright a lamp looks when those numbers are the lamp's own power.
-- **The lowest setting is brighter.** Every slider starts at 10%, which on the natural scale is
-  about 0.6% of a lamp's power and on *Same as Homey* is 10% of it. A night light that sat at the
-  bottom of a curve will be noticeably brighter.
-- **A remote's dimming feels the same.** Steps and holds always move along the natural curve, so
-  turning a dial is as even at the bottom of the range as at the top on either scale.
+Until 1.0.0's release the default was a *Natural* scale of Lightkeeper's own, where 50% looked half
+as bright and read 22% in Homey. It is gone. If your devices were set up on it, the update converted
+every brightness you had set to the number it was already being sent as, so your lights look
+exactly as they did — a curve point that said 74% now says 52%, which is what the lamp was always
+given. A remote's dimming is unchanged: steps and holds still move evenly from the bottom of the
+range to the top.
 
 ### What does "On – with Lightkeeper" on a remote button do?
 
@@ -568,7 +555,8 @@ sensor readings used at that time. An override includes when it was detected, wh
 changed, its reported value and the expected value; “external” can mean another automation as well
 as a person. Power changes that resume control are recorded too.
 
-The export labels perceptual brightness separately from device dim values. `writes` counts
+The export says how its brightness numbers are to be read (`semantics`): every one is the lamp's
+own dim, as Homey shows it. `writes` counts
 planned capability commands; an API success is not a physical measurement of the lamp. Current
 snapshots have `sampledAt`, while historical passes retain their own timestamps. Histories are
 bounded, newest first, and lost on app restart; retention metadata shows how many entries were

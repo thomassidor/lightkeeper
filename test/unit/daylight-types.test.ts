@@ -202,7 +202,7 @@ describe('sanitiseResponse - the two ends', () => {
   });
 
   test('anything under the floor is lifted to it', () => {
-    const { response } = sanitiseResponse({ ...VALID, dark: 0.04, bright: 0.09 });
+    const { response } = sanitiseResponse({ ...VALID, dark: 0.004, bright: 0.009 });
     assert.equal(response.dark, MINIMUM_BRIGHTNESS);
     assert.equal(response.bright, MINIMUM_BRIGHTNESS);
   });
@@ -341,11 +341,29 @@ describe('the daylight migration chain, after the reset', () => {
     // Both ramps used to be eased with a raised cosine, which Balanced is within
     // 0.016 of (interpolate.test.ts): the room does not visibly change.
     const { transition: _new, ...v1Response } = CURRENT.response;
-    const { plan, migrated } = migrateDaylightPlan({ ...CURRENT, schemaVersion: 1, response: v1Response });
+    // Saved under "Same as Homey", so the 1.0.0 step leaves the ends alone and
+    // this test is about the transition only.
+    const { plan, migrated } = migrateDaylightPlan({ ...CURRENT, schemaVersion: 1, response: v1Response }, 'linear');
     assert.equal(migrated, true);
-    assert.equal(plan.schemaVersion, 2);
+    assert.equal(plan.schemaVersion, CURRENT_DAYLIGHT_SCHEMA_VERSION);
     assert.equal(plan.response.transition, 'balanced');
     assert.equal('transition' in plan, false, 'inside the response, never at the root');
+  });
+
+  test('a version 2 plan stored on the natural scale has both ends converted to dim', () => {
+    // 0.8 and 0.3 perceptual are what its lamps were being sent as 0.612 and
+    // 0.071 — so those are the numbers that keep the room as it was.
+    const { plan, steps } = migrateDaylightPlan({ ...CURRENT, schemaVersion: 2 }, 'natural');
+    assert.deepEqual(steps, [2]);
+    assert.equal(plan.response.dark, 0.612);
+    assert.equal(plan.response.bright, 0.071);
+    assert.equal(plan.schemaVersion, 3);
+  });
+
+  test('a version 2 plan saved under "Same as Homey" already holds dim values', () => {
+    const { plan } = migrateDaylightPlan({ ...CURRENT, schemaVersion: 2 }, 'linear');
+    assert.equal(plan.response.dark, 0.8);
+    assert.equal(plan.response.bright, 0.3);
   });
 
   test('a version 1 plan with no response is refused by the validator, not invented', () => {

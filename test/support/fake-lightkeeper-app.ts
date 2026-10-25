@@ -66,8 +66,8 @@ export interface DriverAppOptions {
   surfaces?: Record<string, { inputs: unknown[]; fingerprint: string; fingerprintV2?: string; rejected?: unknown[] }>;
   reattach?: { deviceId: string; deviceName: string } | undefined;
   credentialValid?: boolean;
-  /** The app-wide brightness scale. Natural unless a test says otherwise. */
-  brightnessScale?: 'natural' | 'linear';
+  /** What the retired "Brightness scale" setting held. Natural unless a test says otherwise. */
+  legacyBrightnessScale?: 'natural' | 'linear';
 }
 
 /**
@@ -136,7 +136,7 @@ export function driverApp(client: FakeApiClient, options: DriverAppOptions = {})
     catalog,
     bridge,
     discovery,
-    brightnessScale: () => options.brightnessScale ?? 'natural',
+    legacyBrightnessScale: () => options.legacyBrightnessScale ?? 'natural',
     health: {
       findReattachCandidate: async () => options.reattach,
     },

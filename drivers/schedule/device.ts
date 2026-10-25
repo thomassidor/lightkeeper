@@ -32,7 +32,7 @@ module.exports = class ScheduleDevice extends LightkeeperDevice<SchedulePlan, Sc
   override readonly valueCapabilities = [VALUE_CAPABILITIES.brightness, VALUE_CAPABILITIES.temperature];
 
   migrate(raw: unknown): PlanMigration<SchedulePlan> {
-    return migrateSchedulePlan(raw);
+    return migrateSchedulePlan(raw, this.app.legacyBrightnessScale());
   }
 
   registry(): DeviceRegistry<SchedulePlan, ScheduleRuntime> {

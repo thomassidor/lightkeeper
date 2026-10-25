@@ -170,7 +170,7 @@ export function levelFromElevation(response: DaylightResponse, degrees: number):
 }
 
 /**
- * Level → perceptual brightness, between the response's two ends.
+ * Level → brightness (Homey's `dim`), between the response's two ends.
  *
  * Direction-agnostic on purpose — see the docblock on DaylightResponse. Which
  * end is larger is the user's choice, and this function does not know or care

@@ -609,7 +609,7 @@ module.exports = class ControllerDriver extends LightkeeperDriver {
         sources: sourceRows(kind, await this.sourceDevices(kind, await this.buttonLights(state, rule)), {
           name: this.tr('flow.leaveAlone'),
           subtitle: this.tr('flow.leaveAloneHint'),
-        }, this.app.brightnessScale()),
+        }),
       };
     });
 

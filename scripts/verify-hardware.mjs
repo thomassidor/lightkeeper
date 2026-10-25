@@ -3889,14 +3889,20 @@ function chooseLamps(rooms, room, busy, overlaps) {
       + `Rooms offered: ${rooms.map(r => r.zoneName).join(', ')}` };
   }
 
+  // Only lamps that DIM. The app's light picker also offers anything with
+  // `onoff` — on the reference Homey that is a plug feeding the Garage aircon,
+  // which this pass handed to its remote and its Room-sensing Light on
+  // 25 October 2026. Nothing was written to it that run, but the `bridge`
+  // step switches the remote's lights, and an appliance is not a test lamp.
   const all = wanted
     .flatMap(candidate => /** @type {any[]} */ (candidate?.lights ?? []))
-    .filter(light => light?.available !== false);
+    .filter(light => light?.available !== false
+      && (light?.capabilities ?? []).includes('dim'));
 
   if (all.length === 0) {
     return { error: room
-      ? `"${room}" has no available lights to point anything at`
-      : 'this Homey offers no available lights to point anything at' };
+      ? `"${room}" has no available dimmable lights to point anything at`
+      : 'this Homey offers no available dimmable lights to point anything at' };
   }
 
   const warm = all.filter(l => (l?.capabilities ?? []).includes('light_temperature'));
@@ -4725,13 +4731,30 @@ async function controlLegacyPreStage(api, app) {
     report('T169', 'SKIPPED', 'none of your own curve-driven devices has pre-staging chosen');
     return;
   }
+  /**
+   * Only an EMPTY list is checkable here. The per-lamp test is the only thing
+   * that ever fills `preStageLights`, so a non-empty one is evidence the test
+   * ran — a device paired or repaired since, not one carried across from before
+   * the test existed. This line used to fail those: on 25 October 2026 it
+   * failed a circadian light the household had paired that afternoon, whose
+   * test had proved all three of its lamps.
+   */
+  let checked = 0;
   for (const runtime of legacy) {
     const listed = /** @type {string[]} */ (runtime?.preStageLights ?? []);
     const lamps = (runtime?.targetIds ?? []).length;
-    report('T169', listed.length === 0 ? 'OK' : 'FAILED',
-      `"${runtime?.name}" chose pre-staging before the per-lamp test existed, and now pre-stages `
-      + (listed.length === 0 ? `none of its ${lamps} lamp(s) until it is tested from Repair`
-        : `${listed.length} of its ${lamps} lamp(s) that no test here ever proved`));
+    if (listed.length > 0) {
+      note(`"${runtime?.name}" has pre-staging chosen and its test has run: it pre-stages `
+        + `${listed.length} of its ${lamps} lamp(s), the ones that test proved`);
+      continue;
+    }
+    checked += 1;
+    report('T169', 'OK', `"${runtime?.name}" chose pre-staging and has never been tested, so it `
+      + `pre-stages none of its ${lamps} lamp(s) until it is tested from Repair`);
+  }
+  if (checked === 0) {
+    report('T169', 'SKIPPED', 'every one of your devices with pre-staging chosen has been tested since, '
+      + 'so none is in the state this line checks');
   }
 }
 
@@ -4934,6 +4957,11 @@ async function testLamps(api, app, session, label, lamps) {
     return null;
   }
   const ids = lamps.map(lamp => String(lamp.id));
+  // A Homey light group and its members are one set of bulbs behind several
+  // ids, so a device driving a member drives the group too. Without this the
+  // Garage group "Cieling Lamp" read as not put back on 25 October 2026, when
+  // what moved it was Garage circadian taking its two members at switch-on.
+  const overlaps = await lampOverlaps(api);
   const before = await Promise.all(ids.map(id => snapshotLamp(api, id)));
   const lit = before.filter(lamp => lamp.values.onoff === true).length;
   // Every lamp, registered before the test touches any of them. Released below
@@ -4977,9 +5005,10 @@ async function testLamps(api, app, session, label, lamps) {
     if (drift.length === 0) continue;
     // Only owners that can write every axis that moved: `drift` entries start
     // with the capability's name.
-    const owners = (drivenBy.get(before[i].id) ?? [])
+    const sharing = overlaps.get(String(before[i].id)) ?? new Set([String(before[i].id)]);
+    const owners = [...new Set([...sharing].flatMap(id => drivenBy.get(id) ?? [])
       .filter(owner => drift.every(entry => owner.writes === null || owner.writes.includes(entry.split(' ')[0])))
-      .map(owner => owner.name);
+      .map(owner => owner.name))];
     if (owners.length > 0 && before[i].values.onoff === after[i].values.onoff) {
       // Same power state, a different colour: the lamp came back on and a device
       // that drives it applied its own. Not put back, on purpose — writing the
@@ -5543,35 +5572,29 @@ async function commandFlowCards(api, room) {
  * What a runtime's `/diagnostics` entry says its capability rows should hold —
  * pure, and the arithmetic is the app's own: a curve publishes its warmth, and
  * a brightness only when `adjustBrightness` is on; a Room-sensing Light
- * publishes `toDevice(brightness)` and its level, or no level when it cannot
- * tell (`publishValues()` in each runtime). γ = 2.2, as `toDevice` has it on
- * the natural `BrightnessScale`, and 1 on the linear one — which is why the
- * scale is read from the same diagnostics document as the runtime, rather than
- * assumed: a Homey left on "Same as Homey" would fail every brightness here.
+ * publishes its brightness and its level, or no level when it cannot tell
+ * (`publishValues()` in each runtime). Every brightness is Homey's `dim` — the
+ * app-wide scale that used to sit between the two was retired in 1.0.0 — so
+ * the expectation is the runtime's own number, unconverted.
  *
  * @param {'curve' | 'daylight'} kind
  * @param {any} runtime
- * @param {unknown} [scale] `semantics.brightnessScale` from `/diagnostics`
  * @returns {Record<string, number | null>}
  */
-function expectedPublished(kind, runtime, scale) {
-  const gamma = scale === 'linear' ? 1 : 2.2;
+function expectedPublished(kind, runtime) {
   const now = runtime?.now ?? null;
   /** @param {unknown} value */
   const finite = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
-  /** @param {number | null} perceptual */
-  const toDevice = (perceptual) => (perceptual === null
-    ? null : Math.pow(Math.min(1, Math.max(0, perceptual)), gamma));
 
   if (kind === 'daylight') {
     return {
-      lightkeeper_brightness: toDevice(finite(now?.brightness)),
+      lightkeeper_brightness: finite(now?.brightness),
       lightkeeper_daylight: now?.source === 'none' ? null : finite(now?.level),
     };
   }
   return {
     lightkeeper_temperature: finite(now?.warmth),
-    lightkeeper_brightness: runtime?.adjustBrightness === true ? toDevice(finite(now?.brightness)) : null,
+    lightkeeper_brightness: runtime?.adjustBrightness === true ? finite(now?.brightness) : null,
   };
 }
 
@@ -5628,7 +5651,7 @@ async function flowPublishedValues(api, ours, diagnostics) {
     if (!device) continue;
     /** @type {any} */
     const live = await api.devices.getDevice({ id: device.homeyId, $cache: false, $updateCache: false });
-    const expected = expectedPublished(kind, r, diagnostics?.semantics?.brightnessScale);
+    const expected = expectedPublished(kind, r);
     /** @type {Record<string, unknown>} */
     const actual = {};
     for (const capability of Object.keys(expected)) {
@@ -5647,17 +5670,23 @@ async function flowPublishedValues(api, ours, diagnostics) {
 }
 
 /**
- * The boolean out of `runFlowCardCondition`, whatever it is wrapped in — or
- * null for a shape nobody has seen, which must read as "unanswered", never as
- * false. Pure.
+ * The boolean out of `runFlowCardCondition`, whatever it is wrapped in; the
+ * card's own error when it threw instead of answering; or null for a shape
+ * nobody has seen, which must read as "unanswered", never as false. Pure.
  *
  * @param {unknown} answer
- * @returns {boolean | null}
+ * @returns {boolean | { error: string } | null}
  */
 function conditionResult(answer) {
   if (typeof answer === 'boolean') return answer;
   const wrapped = /** @type {any} */ (answer)?.result;
-  return typeof wrapped === 'boolean' ? wrapped : null;
+  if (typeof wrapped === 'boolean') return wrapped;
+  // Firmware 13.5 answers `{ result, error, usedTokens, elapsedTime }`; a card
+  // that threw carries its message in `error` and no boolean. That is the card
+  // FAILING, which a caller must report as such rather than as an unknown shape.
+  const error = /** @type {any} */ (answer)?.error;
+  if (error) return { error: typeof error === 'string' ? error : String(error?.message ?? JSON.stringify(error)) };
+  return null;
 }
 
 /**
@@ -5729,6 +5758,10 @@ async function flowDarkness(api, daylight) {
       continue;
     }
     const result = conditionResult(answer);
+    if (result !== null && typeof result === 'object') {
+      report('T151', 'FAILED', `"${daylight.name}": the condition threw at ${threshold} instead of answering: ${result.error}`);
+      continue;
+    }
     if (result === null) {
       report('T151', 'SKIPPED', `"${daylight.name}": the condition answered in a shape this script `
         + `does not know (${describeKeys(answer)}) — read it by hand and widen conditionResult()`);
@@ -5924,9 +5957,8 @@ async function flowSetLights(api, app, ours, diagnostics, room) {
     const fresh = await app.get('/diagnostics');
     const colourRuntime = /** @type {any[]} */ (fresh?.circadian ?? []).find(r => runtimeId(r) === colourFrom.dataId);
     const brightnessRuntime = /** @type {any[]} */ (fresh?.daylight ?? []).find(r => runtimeId(r) === brightnessFrom.dataId);
-    const scale = fresh?.semantics?.brightnessScale;
-    const wantTemperature = expectedPublished('curve', colourRuntime, scale).lightkeeper_temperature;
-    const wantDim = expectedPublished('daylight', brightnessRuntime, scale).lightkeeper_brightness;
+    const wantTemperature = expectedPublished('curve', colourRuntime).lightkeeper_temperature;
+    const wantDim = expectedPublished('daylight', brightnessRuntime).lightkeeper_brightness;
 
     const refusedOn = await run({ lights, ...sources, power: 'on' });
     /** @type {string[]} */

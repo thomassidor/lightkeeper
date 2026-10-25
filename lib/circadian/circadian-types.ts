@@ -69,10 +69,8 @@ export interface CircadianPoint {
    */
   warmth: number;
   /**
-   * Perceptual brightness 0–1, converted with toDevice() at write time so "40%"
-   * means 40% of PERCEIVED brightness — the same axis the dimming gestures and
-   * the schedule screen use. Present on every point or on none: see
-   * `adjustBrightness`.
+   * Brightness as Homey's own `dim`, 0–1 (`MINIMUM_BRIGHTNESS`): 40% here is 40% in Homey's
+   * slider. Present on every point or on none: see `adjustBrightness`.
    */
   brightness?: number;
   /**
@@ -195,18 +193,19 @@ export function preStagesLamp(
  * one thing a first screen can say without a sentence. The toggle is still
  * there, still all-or-nothing, and switching it off remembers these values.
  *
- * The numbers are a day rather than a ramp: 44% at 06:30 is enough to find the
- * kitchen by, 94% at 19:00 is the evening the lights are actually wanted for,
- * and 36% at 22:30 is a room being left rather than a room being used. All five
- * clear MINIMUM_BRIGHTNESS by a wide margin, so none of them meets the floor
- * the sanitiser applies.
+ * The numbers are a day rather than a ramp, in Homey's own `dim`: 15% at 06:30
+ * is enough to find the kitchen by, 85% at 19:00 is the evening the lights are
+ * actually wanted for, and 10% at 22:30 is a room being left rather than a room
+ * being used. They are the old perceptual defaults (44 / 80 / 64 / 94 / 36%)
+ * through γ = 2.2 to the nearest five, so a new device looks as one always has.
+ * All five clear MINIMUM_BRIGHTNESS by a wide margin.
  */
 export const DEFAULT_POINTS: readonly CircadianPoint[] = [
-  { id: 'p1', anchor: { kind: 'clock', at: 6 * 60 + 30 }, warmth: 0.90, color: 'amber', brightness: 0.44 },
-  { id: 'p2', anchor: { kind: 'clock', at: 9 * 60 }, warmth: 0.20, color: 'coolwhite', brightness: 0.80 },
-  { id: 'p3', anchor: { kind: 'clock', at: 14 * 60 }, warmth: 0.40, color: 'neutral', brightness: 0.64 },
-  { id: 'p4', anchor: { kind: 'clock', at: 19 * 60 }, warmth: 0.75, color: 'coral', brightness: 0.94 },
-  { id: 'p5', anchor: { kind: 'clock', at: 22 * 60 + 30 }, warmth: 1.00, color: 'violet', brightness: 0.36 },
+  { id: 'p1', anchor: { kind: 'clock', at: 6 * 60 + 30 }, warmth: 0.90, color: 'amber', brightness: 0.15 },
+  { id: 'p2', anchor: { kind: 'clock', at: 9 * 60 }, warmth: 0.20, color: 'coolwhite', brightness: 0.6 },
+  { id: 'p3', anchor: { kind: 'clock', at: 14 * 60 }, warmth: 0.40, color: 'neutral', brightness: 0.35 },
+  { id: 'p4', anchor: { kind: 'clock', at: 19 * 60 }, warmth: 0.75, color: 'coral', brightness: 0.85 },
+  { id: 'p5', anchor: { kind: 'clock', at: 22 * 60 + 30 }, warmth: 1.00, color: 'violet', brightness: 0.1 },
 ] as const;
 
 export interface SanitisedCurve {

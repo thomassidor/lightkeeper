@@ -1,4 +1,6 @@
 import { DEFAULT_SIMPLE_PLAN, type SimpleCircadianPlan } from './simple-curve';
+import { carryBrightness } from '../outputs/light-intent';
+import type { LegacyBrightnessScale } from '../app-contract';
 import { runMigrationChain, type MigrationResult, type MigrationStep } from '../support/migrations';
 import { validateSimpleCircadianPlan } from '../validation/plans';
 
@@ -33,24 +35,49 @@ import { validateSimpleCircadianPlan } from '../validation/plans';
  * where the old ramp put all of it. New devices get Balanced. The change is
  * named in the changelog, because a device that looks different tomorrow with
  * no explanation is the worse surprise.
+ *
+ * **2 → 3 (1.0.0): every brightness becomes Homey's own `dim`.** The app-wide
+ * "Brightness scale" setting is gone, and with it the natural scale it defaulted
+ * to (`dim = p^2.2`, so 50% read 22% in Homey). A plan saved on that scale has
+ * each zone's brightness converted through `carryBrightness()`, which keeps every lamp at the
+ * level it was showing; one saved under *Same as Homey* already holds `dim`
+ * values and is only re-stamped. Which of the two a plan is comes from the
+ * retired setting itself (`legacyBrightnessScale()` on the app), passed in
+ * because a step is otherwise a pure function of the stored shape.
  */
-export const CURRENT_CIRCADIAN_SCHEMA_VERSION = 2;
+export const CURRENT_CIRCADIAN_SCHEMA_VERSION = 3;
 
 export type CircadianMigration = MigrationStep;
 
 /** Keyed by the version being migrated FROM. See the header for each step. */
-const CIRCADIAN_MIGRATIONS: Record<number, CircadianMigration> = {
+const circadianMigrations = (legacy: LegacyBrightnessScale): Record<number, CircadianMigration> => ({
   1: raw => ({ ...raw, transition: 'quick', schemaVersion: 2 }),
-};
+  2: raw => {
+    const zones = raw.zones && typeof raw.zones === 'object' ? raw.zones as Record<string, unknown> : null;
+    if (!zones) return { ...raw, schemaVersion: 3 };
+    const carried: Record<string, unknown> = { ...zones };
+    for (const name of ['morning', 'midday', 'evening']) {
+      const zone = zones[name];
+      if (zone && typeof zone === 'object' && 'brightness' in zone) {
+        const record = zone as Record<string, unknown>;
+        carried[name] = { ...record, brightness: carryBrightness(record.brightness, legacy) };
+      }
+    }
+    return { ...raw, zones: carried, schemaVersion: 3 };
+  },
+});
 
 /** What a plan with no stored zones falls back to. Exported for the driver. */
 export { DEFAULT_SIMPLE_PLAN };
 
-export function migrateCircadianPlan(raw: unknown): MigrationResult<SimpleCircadianPlan> {
+export function migrateCircadianPlan(
+  raw: unknown,
+  legacy: LegacyBrightnessScale = 'natural',
+): MigrationResult<SimpleCircadianPlan> {
   return runMigrationChain(raw, {
     label: 'Circadian',
     current: CURRENT_CIRCADIAN_SCHEMA_VERSION,
-    table: CIRCADIAN_MIGRATIONS,
+    table: circadianMigrations(legacy),
     validate: validateSimpleCircadianPlan,
   });
 }

@@ -65,7 +65,7 @@ export interface ColourSource extends ValueSource {
 }
 
 export interface LightSettings {
-  /** Device `dim`, 0..1, already through the perceptual curve. Null leaves it alone. */
+  /** Device `dim`, 0..1, as the source published it. Null leaves it alone. */
   brightness: number | null;
   /** `light_temperature`, 0..1, 1 = warmest. Null leaves warmth alone. */
   temperature: number | null;

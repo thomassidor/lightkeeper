@@ -199,7 +199,6 @@ module.exports = {
    *   circadian:    [{ id, state, name, enabled, now, nextPoint, points,
    *                    timezone, localTime, targetNames, overridden, preStage }],
    *   recentWrites: [{ at, deviceId, capability, value, ok, ms, error? }],
-   *   brightnessScale: 'natural' | 'linear',
    * }
    * ```
    *
@@ -330,28 +329,7 @@ module.exports = {
       // empty on a Homey that runs only schedules — the one list that tells
       // "never fired" from "fired and could not reach the light".
       recentWrites: app.recentWrites.entries().slice(0, 20),
-      brightnessScale: app.brightnessScale(),
     };
-  },
-
-  /**
-   * The settings page's "Brightness scale". Body: `{ scale }`. Returns
-   * `{ brightnessScale }`, the value now stored.
-   *
-   * Strict on the way in, where the stored value is forgiving on the way out:
-   * a body naming neither scale is refused rather than read as "natural",
-   * because a page that sent something else has a bug worth hearing about, and
-   * silently switching a household's lights to the other curve is not the way
-   * to hear it.
-   */
-  async setBrightnessScale({ homey, body }: any) {
-    const app = appOf(homey);
-    const scale: unknown = body?.scale;
-    if (scale !== 'natural' && scale !== 'linear') {
-      throw new Error(`scale must be "natural" or "linear", not ${JSON.stringify(scale)}`);
-    }
-    app.setBrightnessScale(scale);
-    return { brightnessScale: app.brightnessScale() };
   },
 
   /**
@@ -493,7 +471,7 @@ module.exports = {
       // Counters only, read and copied. Neither call reads anything from the
       // Homey: a report must not change what it is reporting on (platform §15).
       catalog: { devices: app.catalog.stats(), cards: app.cards.stats() },
-      semantics: diagnosticSemantics(app.brightnessScale()),
+      semantics: diagnosticSemantics(),
       eventHistory: app.recentEvents.retention(),
       app: { id: homey.manifest.id, version: homey.manifest.version },
       credential: app.credentials.getStatus(),

@@ -77,7 +77,7 @@ export interface CircadianZone {
   /** Normalised colour temperature 0–1, where 1 is the WARMEST end (platform §6). */
   temperature: number;
   /**
-   * Perceptual brightness 0–1. Every zone carries one or none of them does — the
+   * Brightness as Homey's own `dim`, 0–1 (`MINIMUM_BRIGHTNESS`). Every zone carries one or none of them does — the
    * curve engine interpolates brightness only where both bracketing points have
    * it, and two thirds of a brightness curve would have to invent the rest.
    */
@@ -124,9 +124,9 @@ export interface SimpleCircadianPlan {
 
 /** What a new device starts with: a warm morning and evening, a cool working day. */
 export const DEFAULT_ZONES: CircadianZones = {
-  morning: { temperature: 0.78, brightness: 0.55 },
-  midday: { temperature: 0.18, brightness: 0.9 },
-  evening: { temperature: 0.86, brightness: 0.45 },
+  morning: { temperature: 0.78, brightness: 0.25 },
+  midday: { temperature: 0.18, brightness: 0.8 },
+  evening: { temperature: 0.86, brightness: 0.15 },
   morningEnd: 30,
   eveningStart: -60,
 };

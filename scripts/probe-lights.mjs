@@ -144,14 +144,13 @@ const ENABLER_CAPABILITIES = new Set(['light_mode']);
  */
 export const THRESHOLDS = {
   /**
-   * lib/outputs/light-intent.ts GAMMA — the perceptual curve's exponent. The
-   * natural `BrightnessScale` only: the probe asks lamps questions about their
-   * own axis and never reads the app's setting, so "Same as Homey" changes
-   * nothing it measures.
+   * lib/outputs/light-intent.ts GAMMA — the perceptual curve's exponent, which
+   * the app now uses for movement only (a remote's step, a hold ramp, a
+   * Room-sensing Light's fade). Every stored brightness is a `dim`.
    */
   GAMMA: 2.2,
-  /** lib/outputs/light-intent.ts MINIMUM_BRIGHTNESS — the floor the brightness sliders start at. */
-  MINIMUM_BRIGHTNESS: 0.1,
+  /** lib/outputs/light-intent.ts MINIMUM_BRIGHTNESS — the floor every stored brightness is lifted to, as a `dim`. */
+  MINIMUM_BRIGHTNESS: 0.01,
   /** lib/outputs/target-state-cache.ts ECHO_DEDUPE_MS — how long a duplicate echo stays a duplicate. */
   ECHO_DEDUPE_MS: 1500,
   /** lib/outputs/target-state-cache.ts OVERRIDE_SETTLE_MS — after this, a report is somebody else's. */
@@ -3243,11 +3242,11 @@ async function stepColour(api, light) {
 /**
  * The exact value the app writes for its own minimum brightness.
  *
- * `MINIMUM_BRIGHTNESS` is 0.1 PERCEPTUAL, which through γ=2.2 is a device value
- * of about 0.0063 — and `litDim()` exists to promise that a positive request for
- * light stays light. Whether it does is a fact about the lamp: a machine cannot
- * say whether 0.0063 LOOKS lit, but it can say whether the lamp answered by
- * switching itself off.
+ * `MINIMUM_BRIGHTNESS` is a `dim` of 0.01, the lowest a stored plan may hold,
+ * and `litDim()` exists to promise that a positive request for light stays
+ * light. Whether it does is a fact about the lamp: a machine cannot say whether
+ * 0.01 LOOKS lit, but it can say whether the lamp answered by switching itself
+ * off.
  *
  * @param {any} api
  * @param {Light} light
@@ -3256,7 +3255,7 @@ async function stepBrightnessFloor(api, light) {
   if (!(light.handle.capabilities ?? []).includes('dim')) return null;
 
   const options = light.declared.dim ?? {};
-  const raw = toDevice(THRESHOLDS.MINIMUM_BRIGHTNESS);
+  const raw = THRESHOLDS.MINIMUM_BRIGHTNESS;
   const value = quantise(clampToRange(raw, options.min ?? null, options.max ?? null),
     options.decimals ?? null);
 
@@ -3267,30 +3266,23 @@ async function stepBrightnessFloor(api, light) {
   const after = await readAll(api, light.ref.id, ['onoff', 'dim']);
 
   const wentDark = after.values.onoff !== true || Number(after.values.dim) === 0;
-  // Reported back on the perceptual axis as well, because that is the axis the
-  // sliders and the stored plans are on: a lamp that quantised 0.0063 up to 0.01
-  // is at 0.14 perceptual, not at 0.10, and the difference is what the user set.
-  const heldPerceptual = toPerceptual(Number(after.values.dim));
 
   if (wentDark) {
     finding(light, 'DIM_MIN_GOES_DARK', {
       step: 'P5f', capability: 'dim',
-      observed: `wrote ${round(value)} (perceptual ${THRESHOLDS.MINIMUM_BRIGHTNESS} through gamma `
-        + `${THRESHOLDS.GAMMA}) and the lamp reports onoff ${String(after.values.onoff)}, dim `
-        + `${round(after.values.dim)}`,
+      observed: `wrote ${round(value)} (the app's floor, ${THRESHOLDS.MINIMUM_BRIGHTNESS}) and the lamp `
+        + `reports onoff ${String(after.values.onoff)}, dim ${round(after.values.dim)}`,
       numbers: { wrote: value, heldDim: Number(after.values.dim) },
       evidence: [written.seq],
     });
   } else {
-    report('P5f', 'OK', `minimum brightness ${round(value)}: still on, holds `
-      + `${round(after.values.dim)} (perceptual ${round(heldPerceptual)})`);
+    report('P5f', 'OK', `minimum brightness ${round(value)}: still on, holds ${round(after.values.dim)}`);
   }
 
   return {
     wrote: value,
     onoff: after.values.onoff,
     dim: after.values.dim,
-    heldPerceptual: Number.isFinite(heldPerceptual) ? Number(heldPerceptual.toFixed(3)) : null,
   };
 }
 

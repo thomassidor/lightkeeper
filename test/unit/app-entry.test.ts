@@ -429,32 +429,40 @@ describe('the location', () => {
   });
 });
 
-describe('the brightness scale', () => {
-  test('a house that never chose is on the natural scale', async () => {
+/**
+ * The retired "Brightness scale" setting, as the migrations read it.
+ *
+ * Every brightness is Homey's `dim` now. What remains of the setting is the
+ * answer to one question a plan saved before 1.0.0's release asks once: which
+ * scale was I stored on? Absent was natural, so absent must still read as
+ * natural — a house that never opened the settings page has perceptual plans.
+ */
+describe('the retired brightness scale', () => {
+  test('a house that never chose was on the natural scale', async () => {
     const { app } = await boot();
-    assert.equal(app.brightnessScale(), 'natural');
+    assert.equal(app.legacyBrightnessScale(), 'natural');
     await app.onUninit();
   });
 
-  /**
-   * Every one of the four managers is handed the app's own getter, and that is
-   * the wiring worth a test: each manager treats an absent getter as "natural",
-   * so one left unwired would ignore the setting silently on that device type.
-   */
-  test('the stored choice reaches all four engines, and a change is read live', async () => {
+  test('a house that chose "Same as Homey" stored dim values already', async () => {
     const { app, homey } = await boot({ settings: { brightnessScale: 'linear' } });
-    const managers = [app.controllers, app.schedules, app.curves, app.daylights];
-    for (const manager of managers) assert.equal(manager.deps.brightnessScale(), 'linear');
-
-    app.setBrightnessScale('natural');
-    assert.equal(homey.settings.get('brightnessScale'), 'natural');
-    for (const manager of managers) assert.equal(manager.deps.brightnessScale(), 'natural');
+    assert.equal(app.legacyBrightnessScale(), 'linear');
+    // Read, never written, and never cleared: see `legacyBrightnessScale()`.
+    assert.equal(homey.settings.get('brightnessScale'), 'linear');
     await app.onUninit();
   });
 
   test('a stored value that is neither scale reads as natural', async () => {
     const { app } = await boot({ settings: { brightnessScale: 'loud' } });
-    assert.equal(app.brightnessScale(), 'natural');
+    assert.equal(app.legacyBrightnessScale(), 'natural');
+    await app.onUninit();
+  });
+
+  test('no engine is handed a scale any more', async () => {
+    const { app } = await boot({ settings: { brightnessScale: 'natural' } });
+    for (const manager of [app.controllers, app.schedules, app.curves, app.daylights]) {
+      assert.equal('brightnessScale' in manager.deps, false);
+    }
     await app.onUninit();
   });
 });

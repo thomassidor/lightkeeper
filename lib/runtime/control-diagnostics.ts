@@ -2,7 +2,6 @@ import { BoundedLog } from '../support/bounded-log';
 import type { Capability, PlannedWrite } from '../outputs/intent-planner';
 import type { WriteOutcome } from '../outputs/command-scheduler';
 import type { EvidenceSink } from '../support/evidence-sink';
-import type { BrightnessScale } from '../outputs/light-intent';
 import { OVERRIDE_EXPIRY_MS } from '../outputs/target-state-cache';
 
 export interface OverrideRecord {
@@ -231,28 +230,21 @@ export class ControlHistory<T extends ControlAction> {
 }
 
 /**
- * What the numbers in a diagnostics document mean. A function of the app's
- * `BrightnessScale` because one of them is: a capture read without knowing
- * which scale wrote it would put every `dim` on the wrong curve.
+ * What the numbers in a diagnostics document mean.
+ *
+ * `brightness` says `dim_0_1` outright because a capture from before 1.0.0's
+ * release could be on the retired perceptual scale, and a reader comparing
+ * the two must be able to tell which they are holding.
  */
-export function diagnosticSemantics(scale: BrightnessScale) {
-  return { brightnessScale: scale, ...BRIGHTNESS_SEMANTICS[scale], ...DIAGNOSTIC_SEMANTICS };
+export function diagnosticSemantics() {
+  return DIAGNOSTIC_SEMANTICS;
 }
 
-const BRIGHTNESS_SEMANTICS = {
-  natural: {
-    brightness: 'perceptual_0_1',
-    brightnessConversion: 'dim = brightness^2.2, then capability quantisation and minimum lit level',
-  },
-  linear: {
-    brightness: 'linear_0_1',
-    brightnessConversion: 'dim = brightness (linear scale), then capability quantisation and minimum lit level',
-  },
-} as const;
-
 const DIAGNOSTIC_SEMANTICS = {
+  brightness: 'dim_0_1',
+  brightnessConversion: 'none: every stored and published brightness is the dim written, then capability quantisation and minimum lit level',
   dim: 'device_0_1',
-  brightnessSteps: 'remote steps and hold ramps move along gamma 2.2 under either scale',
+  brightnessSteps: 'remote steps, hold ramps and the Room-sensing Light fade move along gamma 2.2; aim is reported as a dim',
   writes: 'planned capability commands; see outcomes for completion',
   skipped: 'excluded targets; unchanged targets are listed separately in action.targets',
   writeSuccess: 'API accepted the command; physical lamp state is not verified',

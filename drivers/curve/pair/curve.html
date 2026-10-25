@@ -1309,7 +1309,7 @@ function __lkBootCv(Homey) {
     el.brightToggle.setAttribute('aria-checked', state.adjustBrightness ? 'true' : 'false');
     el.brightBlock.style.display = state.adjustBrightness ? '' : 'none';
     if (state.adjustBrightness) {
-      var brightness = point.brightness === undefined ? 0.8 : point.brightness;
+      var brightness = point.brightness === undefined ? 0.6 : point.brightness;
       el.brightPct.textContent = lk.percent(Math.round(brightness * 100));
       setSlider(el.brightKnob, brightness);
     }
@@ -1480,7 +1480,7 @@ function __lkBootCv(Homey) {
       if (state.adjustBrightness) {
         var kept = remembered[point.id];
         point.brightness = point.brightness === undefined
-          ? (kept === undefined ? 0.8 : kept)
+          ? (kept === undefined ? 0.6 : kept)
           : point.brightness;
       } else {
         if (point.brightness !== undefined) remembered[point.id] = point.brightness;
@@ -1535,7 +1535,7 @@ function __lkBootCv(Homey) {
       anchor: { kind: 'clock', at: minute % 1440 },
       warmth: 0.5,
       color: state.palette[0] ? state.palette[0].id : undefined,
-      brightness: state.adjustBrightness ? 0.8 : undefined
+      brightness: state.adjustBrightness ? 0.6 : undefined
     });
     state.selected = state.points.length - 1;
     render();

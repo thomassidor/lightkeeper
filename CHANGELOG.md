@@ -27,6 +27,27 @@ patch. From 1.0 the app follows semantic versioning:
 New features and redrawn setup screens still arrive in minor versions; what they may not do is break
 a setup you already made.
 
+**Every brightness is Homey's own number, and the *Brightness scale* setting is gone.** 0.6.6 offered
+two meanings for a stored brightness and defaulted to *Natural*, a perceptual scale of the app's own
+(`dim = p^2.2`): 50% looked half as bright, and read 22% in Homey's slider beside it. That was a
+scale invented for a problem Homey already has a number for. Now a curve point, a schedule block, a
+Room-sensing Light's two ends, a remote's *Set brightness* and the published *Brightness now* are
+all Homey's `dim` — 50% here is 50% there — and the floor is 1% rather than 10%.
+
+- **Nothing you set up changes how it looks.** Each device type's migration chain gains one step
+  that converts a plan stored on the natural scale to the number it was already being sent as
+  (`carryBrightness()`, floored at 1% so a night setting stays lit), so a curve point that said 74%
+  says 52% and the lamp does not move. A plan saved under *Same as Homey* already held `dim` values
+  and is only re-stamped; the retired setting is read once per device to tell the two apart.
+- **A new device starts where one always has.** The defaults were chosen on the natural scale and
+  are converted to the nearest 5%: a new Colour Curve Light's day is 15 / 60 / 35 / 85 / 10%, a
+  circadian light's zones 25 / 80 / 15%, a Room-sensing Light's ends 80% and 5%.
+- **Movement keeps its curve.** A remote's step, a hold ramp and a Room-sensing Light's fade still
+  move along γ = 2.2 — equal `dim` steps flash at the dark end — and none of them shows a number.
+- The settings page's section, its six strings in thirteen languages, the
+  `POST /brightness-scale` route and `semantics.brightnessScale` in diagnostics are gone;
+  `semantics.brightness` says `dim_0_1`.
+
 Four fixes:
 
 - **Removing a device no longer leaves your other devices asking for a new API key.** After a

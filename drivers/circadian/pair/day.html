@@ -1438,7 +1438,7 @@ function __lkBootDy(Homey) {
     // inventing the missing segments.
     for (var i = 0; i < KEYS.length; i++) {
       var zone = state.zones[KEYS[i]];
-      if (state.adjustBrightness && zone.brightness === undefined) zone.brightness = 0.6;
+      if (state.adjustBrightness && zone.brightness === undefined) zone.brightness = 0.3;
     }
     renderZone();
     push();

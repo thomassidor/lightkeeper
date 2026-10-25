@@ -82,9 +82,10 @@ The script cannot do these. Report each by its number.
 
 ## 4. This release
 
-**1.0.0 — out of early access, and nothing new to run but the install.** 1.0.0 is 0.6.6's code with
-updated development tools: the app a Homey runs is unchanged, so its two lines are about the new
-Homey CLI and about the promise itself. **The promise rests on the passes below it, and they are
+**1.0.0 — out of early access, the install, and the brightness scale gone.** Beyond the fixes in its
+changelog, 1.0.0 is 0.6.6's code with updated development tools and one product change: every
+brightness is Homey's own number, and the *Brightness scale* setting is gone. So its four lines are
+about the new Homey CLI, the promise itself, and a house crossing that change. **The promise rests on the passes below it, and they are
 still owed** — 1.0 tells a household that an ordinary update keeps their setup working, and the
 0.6.6, 0.6.5 and 0.6.0 lines are what that claim has not yet been checked against. Run them before
 publishing 1.0.0, not after.
@@ -100,9 +101,28 @@ publishing 1.0.0, not after.
   as they were — no Repair, no re-adding. This is the 1.0 promise, run once against the release
   that makes it.
 
+### 1.0.0 — the brightness scale is gone
+
+**T201–T203 are retired unrun**: they tested the *Brightness scale* setting, which was removed
+before anything was published. Every brightness is Homey's own `dim` now, and devices stored on the
+old natural scale are converted once, on the first start of this build. The suite proves each
+store's conversion step and each engine writing a stored number as it is; what it cannot see is a
+real house crossing the migration, which is what these two are.
+
+- [ ] **T206** **A house on the natural scale crosses without a visible change.** On a Homey whose
+      devices were set up before this build (and whose settings page never chose *Same as Homey*),
+      note a lamp's own slider in the Homey app while a curve or Room-sensing Light drives it, then
+      install this build. The lamp does not move. Open the device in Repair: its brightness reads
+      the number Homey's slider shows (a point that said 74% now says 52%), and `node
+      scripts/diagnostics.mjs --raw` shows each plan at its new `schemaVersion`.
+- [ ] **T207** **50% is 50%.** Set a Colour Curve Light's points to 50% (brightness on): within a
+      minute the lamp's own slider in the Homey app reads 50%, and so does the device's *Brightness
+      now* tag. A remote's *Set brightness* at 60% lands at 60%. Homey settings → Lightkeeper has no
+      *Brightness scale* section.
+
 **0.6.6 — capability icons, the control and Transition settings, the Transition choice and the
-brightness scale, on top of the 0.6.5 and 0.6.0 passes that are still owed.** 0.6.6's eighteen lines
-are first: T181, T195–T200 and T201–T203 take ten minutes with a phone each, T187–T190 want an afternoon of the day going by, and
+brightness scale, on top of the 0.6.5 and 0.6.0 passes that are still owed.** 0.6.6's fifteen live lines
+are first: T181 and T195–T200 take ten minutes with a phone each, T187–T190 want an afternoon of the day going by, and
 T191–T194 want the Homey switched to another language for a few minutes. T182–T186 are retired
 unrun: they tested a picker on the tile, which moved into the device's Settings before anything was
 published.
@@ -157,26 +177,6 @@ T199 comes free.
       change *Transition* from *Balanced* to *Gradual* and save. Open Repair: its curve screen and the
       *Transition* row on *Ready to add* both say *Gradual*, and the next minute's write follows the
       new shape (`node scripts/diagnostics.mjs` — the target moves steadily rather than easing).
-
-### 0.6.6 — the brightness scale
-
-The suite proves each engine converts on the scale it is handed and that the app hands all four the
-stored one. What it cannot see is the settings page itself, and a lamp's own slider agreeing with
-the number on it. Use the Colour Curve Light from T200 and any Light Remote with a *Set brightness*
-button. None of these is answered by `verify-hardware.mjs`, which reads the scale from
-`/diagnostics` and expects published brightness on whichever one is set.
-
-- [ ] **T201** **The setting, on a phone.** Homey settings → Lightkeeper shows *Brightness scale*
-      under the API key, with *Natural* checked on a Homey that never chose. Its line reads "50% …
-      22%". Choose *Same as Homey*; leave the page and come back: it is still chosen.
-- [ ] **T202** **A curve follows within a minute.** Set every point of the Colour Curve Light to 74%
-      (brightness on). On *Natural* the lamp's own slider in the Homey app reads about 51%; switch to
-      *Same as Homey* and within a minute it reads 74%, and the device's *Brightness now* tag reads
-      74%. Switch back: about 51% again. `node scripts/diagnostics.mjs` names the scale in
-      `semantics`.
-- [ ] **T203** **A remote's preset follows on its next press.** A *Set brightness* button at 60%:
-      on *Natural* the lamp lands at about 33% in the Homey app, on *Same as Homey* at 60%. Turning a
-      dial or holding a dimmer button feels the same on both.
 
 ### 0.6.6 — Transition: Gradual, Balanced or Quick
 
@@ -817,6 +817,37 @@ taken, and it is why the pin moved. T35-T41 matter most here, because 3.21.0 cha
 non-JSON error and those lines walk every credential failure the app classifies. `memory`: 48.3 MB
 PSS at 10.7% free, heap 20.8 MB — lower than the morning's reading, and not comparable with it:
 different hour, and a restart between.
+
+**And once more that evening, on the build that retires the brightness scale — in three rooms
+only.** Studio ran `full --yes` (107 OK), and Garage and Terrace + Garden ran `pair control flowcards
+teardown`; the household asked for those three rooms and no others, and the whole-house run started
+first was stopped. Killed mid-pass, the script's undo stack did **not** run on Windows: its five
+`[verify]` devices were left driving Studio lamps until `teardown --yes` removed them. Read a killed
+pass as needing that, every time.
+
+The migration crossed on the household's own devices with nothing visible (T206, by the numbers):
+all five Room-sensing Lights' ends came back as exactly `p^2.2` to a thousandth (Garage 0.438 → 0.163,
+0.907 → 0.807), the Terrace lamps held 0.07 through the install, no override was raised, and
+diagnostics say `brightness: dim_0_1`. The curves and circadian lights follow no brightness, so had
+nothing to convert. T207 is still a person's: the lamp's own slider against the curve's 50%.
+
+Three script defects, all fixed, none the app's:
+
+1. **The lamp chooser picked a plug.** The app's light picker offers anything with `onoff`, and in
+   Garage the pass handed "Aircon Plug" to its remote and its Room-sensing Light. Nothing was written
+   to it that run — the Room-sensing Light came up `needs_repair` on a lamp that cannot dim, and no
+   step that switches lights ran — but `bridge` would have switched an appliance. `chooseLamps` now
+   takes only lamps with `dim`. The same plug is why T151 met an answer it could not read: the
+   condition threw, and `conditionResult` now reports a thrown card as a failure with its message.
+2. **T169 failed a device paired that afternoon.** It read every device of yours with pre-staging
+   chosen as one carried across from before the per-lamp test, and "Terrace + Garden circadian" had
+   been tested and had proved its three lamps. A non-empty `preStageLights` is evidence the test ran;
+   only an empty one is the state T169 checks.
+3. **T167 read a light group as not put back.** "Cieling Lamp (Garage)" is a group of Ceiling 1 and
+   2, which Garage circadian took at switch-on; the excuse looked for an owner of the group's own id.
+   It now looks through the group to its members, as `chooseLamps` already did.
+
+Garage again with all three fixed: **45 OK, 0 failed, 2 skipped** (T149 and T180, the house).
 
 **1. "Test my lights" left three Tuya bulbs at its own warmth — and they are the lights it passes.**
 The pass's T167 said every lamp was back "except where another device drives it", and excused the

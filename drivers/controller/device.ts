@@ -46,7 +46,7 @@ module.exports = class ControllerDevice extends LightkeeperDevice<ControllerProf
    * destructure here and a handful of lines in two test files.
    */
   migrate(raw: unknown): PlanMigration<ControllerProfile> {
-    return migrateProfile(raw);
+    return migrateProfile(raw, this.app.legacyBrightnessScale());
   }
 
   registry(): DeviceRegistry<ControllerProfile, ControllerRuntime> {

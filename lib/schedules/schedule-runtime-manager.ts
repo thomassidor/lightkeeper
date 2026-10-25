@@ -9,7 +9,6 @@ import { discoverTimeCard, type TimeCardDiscovery } from './time-card-discovery'
 import type { SchedulePlan } from './schedule-types';
 import { RuntimeRegistry } from '../runtime/runtime-registry';
 import type { WriteRecord } from '../outputs/light-target-adapter';
-import type { BrightnessScale } from '../outputs/light-intent';
 import { messageOf } from '../support/homey-errors';
 import type { Timers } from '../support/timers';
 
@@ -40,12 +39,6 @@ export interface ScheduleManagerDeps {
   cards?: FlowCardCatalogue;
   /** The Homey's IANA timezone. */
   timezone: () => string | undefined;
-  /**
-   * The app-wide `BrightnessScale`, handed to every runtime. Optional, and
-   * absent means the natural scale: every test rig leaves it out, app.ts never
-   * does.
-   */
-  brightnessScale?: () => BrightnessScale;
   /**
    * Timers handed to every runtime this manager builds, registered or
    * ephemeral, for their write queues and the rest of their clocks. Absent
@@ -155,7 +148,6 @@ export class ScheduleRuntimeManager {
       timeCard: () => this.timeCard(),
       ...(this.deps.onWriteResult ? { onWriteResult: this.deps.onWriteResult } : {}),
       timezone: this.deps.timezone,
-      ...(this.deps.brightnessScale ? { brightnessScale: this.deps.brightnessScale } : {}),
       ...(this.deps.timers ? { timers: this.deps.timers } : {}),
       log: this.deps.log,
     };

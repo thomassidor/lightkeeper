@@ -1368,7 +1368,7 @@ function __lkBootBl(Homey) {
   el.brightToggle.addEventListener('click', function () {
     var entry = current();
     if (!entry) return;
-    entry.brightness = entry.brightness === undefined ? 0.6 : undefined;
+    entry.brightness = entry.brightness === undefined ? 0.3 : undefined;
     render();
     push();
   });

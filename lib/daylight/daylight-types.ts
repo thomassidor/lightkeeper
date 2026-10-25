@@ -122,9 +122,9 @@ export interface DaylightResponse {
   darkLux: number;
   /** At and above this many lux, fully bright. Must be above `darkLux`. */
   brightLux: number;
-  /** Perceptual brightness 0–1 when it is fully dark outside. */
+  /** Brightness as Homey's `dim`, 0–1, when it is fully dark outside. */
   dark: number;
-  /** Perceptual brightness 0–1 when it is fully bright outside. */
+  /** Brightness as Homey's `dim`, 0–1, when it is fully bright outside. */
   bright: number;
   /**
    * The sun elevations the two ends sit at, in degrees, when there is no sensor.
@@ -187,8 +187,8 @@ export const DEFAULT_RESPONSE: DaylightResponse = {
   sensor: null,
   darkLux: 5,
   brightLux: 500,
-  dark: 0.9,
-  bright: 0.25,
+  dark: 0.8,
+  bright: 0.05,
   // Civil twilight, and a middling northern-European summer noon — see the two
   // constants. Defaults rather than fixed now: the screen pre-fills them from
   // today's own sun path, the same way it pre-fills the two lux numbers from the

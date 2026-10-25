@@ -342,16 +342,16 @@ describe('sanitising what a screen sends', () => {
   });
 
   test('a positive brightness under the floor is lifted to it, never stored as sent', () => {
-    // A positive brightness is never written as darkness. 5% quantises to
-    // `dim` 0.00 at the lamp under γ = 2.2, so a window that STORED 5% would
-    // read as configured and come on dark. Zero is still "unset" (above); only
-    // a request for light is floored, and it lands exactly on the floor.
+    // A positive brightness is never written as darkness. Under half a
+    // hundredth quantises to `dim` 0.00 at the lamp, so a window that STORED it
+    // would read as configured and come on dark. Zero is still "unset" (above);
+    // only a request for light is floored, and it lands exactly on the floor.
     const { entries } = sanitiseEntries([
-      { id: 'a', onAt: '07:00', end: { kind: 'duration', minutes: 30 }, brightness: 0.05 },
+      { id: 'a', onAt: '07:00', end: { kind: 'duration', minutes: 30 }, brightness: 0.004 },
       { id: 'b', onAt: '09:00', end: { kind: 'duration', minutes: 30 }, brightness: 0.0001 },
       { id: 'c', onAt: '11:00', end: { kind: 'duration', minutes: 30 }, brightness: 0.35 },
     ]);
-    assert.equal(MINIMUM_BRIGHTNESS, 0.1, 'the floor this test was written against');
+    assert.equal(MINIMUM_BRIGHTNESS, 0.01, 'the floor this test was written against');
     assert.deepEqual(entries.map(e => e.brightness), [MINIMUM_BRIGHTNESS, MINIMUM_BRIGHTNESS, 0.35]);
   });
 });

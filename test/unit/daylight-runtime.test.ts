@@ -9,7 +9,7 @@ import { VALUE_CAPABILITIES } from '../../lib/runtime/published-values';
 import type { LuminanceSource } from '../../lib/daylight/luminance-source';
 import type { DeviceCatalog } from '../../lib/device-catalog';
 import type { HomeyApiService } from '../../lib/homey-api-service';
-import { toDevice, toPerceptual } from '../../lib/outputs/light-intent';
+import { dimFromPerceived, perceivedFromDim } from '../../lib/outputs/light-intent';
 import { OVERRIDE_EXPIRY_MS } from '../../lib/outputs/target-state-cache';
 import { settle as sharedSettle } from '../support/deferred';
 import { zoneLights } from '../support/fake-catalog';
@@ -63,10 +63,11 @@ function light(id: string, capabilities = ['onoff', 'dim'], values: Record<strin
 }
 
 /**
- * What a perceptual brightness actually lands on the lamp as.
+ * What a point on the perceptual axis — where the slew and the deadband move —
+ * actually lands on the lamp as.
  *
  * Through gamma AND through the capability's own `decimals`, because planIntent
- * quantises: expecting a bare toDevice() value here would be asserting against
+ * quantises: expecting a bare dimFromPerceived() value would be asserting against
  * a number the lamp never sees, and would hide a change to either conversion.
  */
 /** Comfortably past the runtime's 3 s settle window. */
@@ -74,7 +75,7 @@ const SETTLE_PAST = 10_000;
 
 function dimFor(perceptual: number, decimals = 2): number {
   const factor = 10 ** decimals;
-  return Math.round(toDevice(perceptual, 'natural') * factor) / factor;
+  return Math.round(dimFromPerceived(perceptual) * factor) / factor;
 }
 
 function plan(response: Partial<DaylightResponse> = {}, enabled = true): DaylightPlan {
@@ -94,8 +95,6 @@ function harness(options: {
   reading?: { lux: number; deviceIds: string[] } | null;
   /** When the watched sensor last reported. Defaults to the moving `now`. */
   sensorAt?: () => number | null;
-  /** The app-wide brightness scale. Absent is natural. */
-  brightnessScale?: () => 'natural' | 'linear';
   /**
    * A REAL evaluator over the fake luminance source instead of the scripted
    * verdict, for the tests whose claim is about what the response itself
@@ -199,7 +198,6 @@ function harness(options: {
     displayName: () => 'Kitchen daylight',
     now: () => now,
     ...(options.timers ? { timers: options.timers } : {}),
-    ...(options.brightnessScale ? { brightnessScale: options.brightnessScale } : {}),
     log: (...args) => logs.push(args.map(String).join(' ')),
     onStateChange: (state, detail) => states.push({ state, detail }),
   });
@@ -326,7 +324,8 @@ describe('DaylightRuntime - the rising edge of onoff is the feature', () => {
     await h.runtime.drain();
 
     assert.equal(h.dimWrites().length, 1);
-    assert.equal(h.dimWrites()[0].value, dimFor(0.5));
+    // The verdict's brightness is Homey's `dim`, written as it is.
+    assert.equal(h.dimWrites()[0].value, 0.5);
   });
 
   test('and the write is NOT slewed, because that would look like a fault', async () => {
@@ -334,7 +333,7 @@ describe('DaylightRuntime - the rising edge of onoff is the feature', () => {
     // it an hour ago says nothing about where it is now. Easing up to the right
     // level over ninety seconds after somebody flicked a switch reads as broken.
     const h = harness({
-      devices: [light('l1', ['onoff', 'dim'], { onoff: false, dim: toDevice(0.1, 'natural') })],
+      devices: [light('l1', ['onoff', 'dim'], { onoff: false, dim: dimFor(0.1) })],
       verdict: { brightness: 0.95 },
     });
     await h.runtime.start();
@@ -343,7 +342,7 @@ describe('DaylightRuntime - the rising edge of onoff is the feature', () => {
     await h.settle();
     await h.runtime.drain();
 
-    assert.equal(h.dimWrites().at(-1)!.value, dimFor(0.95));
+    assert.equal(h.dimWrites().at(-1)!.value, 0.95);
   });
 
   test('switching a lamp off forgets what was sent, so the next on is fresh', async () => {
@@ -445,11 +444,13 @@ describe('DaylightRuntime - the slew limit', () => {
     const h = harness({ devices: [light('l1', ['onoff', 'dim'], { dim: dimFor(0.1) })] });
     await h.runtime.start();
     await converge(h);
-    const settledAt = toPerceptual(h.dimWrites().at(-1)!.value as number, 'natural');
+    const settledAt = perceivedFromDim(h.dimWrites().at(-1)!.value as number);
 
-    h.setVerdict({ brightness: 0.9 });
+    // The slew is a statement about the perceptual axis, so the targets here
+    // are given on it and read back on it.
+    h.setVerdict({ brightness: dimFromPerceived(0.9) });
     await tick(h);
-    const afterOneTick = toPerceptual(h.dimWrites().at(-1)!.value as number, 'natural');
+    const afterOneTick = perceivedFromDim(h.dimWrites().at(-1)!.value as number);
 
     // One tick must not have arrived anywhere near the target. Measured from
     // where it had settled, not from where the lamp started: converge() has
@@ -467,10 +468,10 @@ describe('DaylightRuntime - the slew limit', () => {
     await converge(h);
     const from = h.dimWrites().length;
 
-    h.setVerdict({ brightness: 0.95 });
+    h.setVerdict({ brightness: dimFromPerceived(0.95) });
     await converge(h);
 
-    const levels = h.dimWrites().slice(from).map(w => toPerceptual(w.value as number, 'natural'));
+    const levels = h.dimWrites().slice(from).map(w => perceivedFromDim(w.value as number));
     for (let i = 1; i < levels.length; i += 1) {
       const step = Math.abs(levels[i] - levels[i - 1]);
       // A little headroom for the round trip through gamma and `decimals`: the
@@ -483,10 +484,10 @@ describe('DaylightRuntime - the slew limit', () => {
   test('the slew moves in the right direction, downwards too', async () => {
     const h = harness({ devices: [light('l1', ['onoff', 'dim'], { dim: dimFor(0.9) })] });
     await h.runtime.start();
-    h.setVerdict({ brightness: 0.15 });
+    h.setVerdict({ brightness: dimFromPerceived(0.15) });
     await converge(h);
 
-    const levels = h.dimWrites().map(w => toPerceptual(w.value as number, 'natural'));
+    const levels = h.dimWrites().map(w => perceivedFromDim(w.value as number));
     for (let i = 1; i < levels.length; i += 1) {
       assert.ok(levels[i] <= levels[i - 1] + 1e-9, `step ${i} went the wrong way`);
     }
@@ -501,10 +502,10 @@ describe('DaylightRuntime - the slew limit', () => {
     // computes the same step from the same place. A creep that stalls.
     const h = harness({ devices: [light('l1', ['onoff', 'dim'], { dim: dimFor(0.1) })] });
     await h.runtime.start();
-    h.setVerdict({ brightness: 0.42 });
+    h.setVerdict({ brightness: dimFromPerceived(0.42) });
     await converge(h);
 
-    const landed = toPerceptual(h.dimWrites().at(-1)!.value as number, 'natural');
+    const landed = perceivedFromDim(h.dimWrites().at(-1)!.value as number);
     assert.ok(Math.abs(landed - 0.42) < 0.03, `stalled at ${landed} instead of reaching 0.42`);
   });
 
@@ -528,10 +529,7 @@ describe('DaylightRuntime - the slew limit', () => {
     assert.ok(first !== undefined, 'the lamp was never written to at all');
     // Unknown means unknown: with nothing to slew FROM, the aim is the target,
     // which is what `aimFor` already does for a genuinely absent level.
-    assert.ok(
-      Math.abs(toPerceptual(first.value as number, 'natural') - 0.6) < 0.02,
-      `first write was ${first.value} (perceptual ${toPerceptual(first.value as number, 'natural')}), not the target`,
-    );
+    assert.ok(Math.abs((first.value as number) - 0.6) < 0.02, `first write was ${first.value}, not the target`);
     // The failure this pins: nothing near the floor, ever.
     for (const write of h.dimWrites()) {
       assert.ok((write.value as number) > 0.02, `wrote ${write.value} to a lit lamp`);
@@ -539,22 +537,22 @@ describe('DaylightRuntime - the slew limit', () => {
   });
 
   /**
-   * The first pass slews from the lamp's own level, which has to be read back
-   * on the SAME scale it will be written on. A lamp at dim 0.50 is at 50% on
-   * the linear scale and at about 73% on the natural one — so reading it back
-   * naturally while writing linearly would step a lamp that wants to go UP by
-   * walking it down first.
+   * The first pass slews from the lamp's own `dim`, read onto the perceptual
+   * axis the slew moves on. Reading it back on any other axis than the one the
+   * step is taken on would step a lamp that wants to go UP by walking it down
+   * first. What is published is the response's `dim`, untouched by the slew.
    */
-  test('on the linear scale it slews from the lamp’s level as Homey reports it', async () => {
+  test('it slews from the lamp’s own level, one perceptual step, and publishes the dim', async () => {
     const h = harness({
       devices: [light('l1', ['onoff', 'dim'], { dim: 0.5 })],
       verdict: { brightness: 0.6 },
-      brightnessScale: () => 'linear',
     });
     await h.runtime.start();
     await tick(h);
 
-    assert.equal(h.dimWrites()[0]!.value, 0.55, 'one step of 0.05 up from 0.50, on the scale Homey shows');
+    const oneStep = Math.round(dimFromPerceived(perceivedFromDim(0.5) + MAX_STEP_PER_TICK) * 100) / 100;
+    assert.equal(h.dimWrites()[0]!.value, oneStep, 'one perceptual step up from 0.50, not straight to 0.60');
+    assert.ok(oneStep > 0.5 && oneStep < 0.6);
     assert.equal(h.runtime.publishedValues()['lightkeeper_brightness'], 0.6);
   });
 
@@ -853,7 +851,9 @@ describe('DaylightRuntime - a lamp that stops responding', () => {
     assert.equal(h.runtime.currentState, 'partial');
 
     h.acceptWrites('l1');
-    h.setVerdict({ brightness: 0.5 });
+    // Far enough from where the aim walked to that the pass writes: a no-op the
+    // filter drops cannot prove the lamp is taking writes again.
+    h.setVerdict({ brightness: 0.3 });
     h.advance(2 * 60_000);
     await tick(h);
 
@@ -866,7 +866,7 @@ describe('DaylightRuntime - a lamp that stops responding', () => {
     // keep out of the tick path.
     assert.equal(h.runtime.currentState, 'partial');
 
-    h.setVerdict({ brightness: 0.55 });
+    h.setVerdict({ brightness: 0.25 });
     h.advance(2 * 60_000);
     await tick(h);
 
@@ -1016,7 +1016,7 @@ describe('DaylightRuntime - the shared sensor service', () => {
 
 describe('diagnostics and power restoration regressions', () => {
   test('all six targets have decisions, including the unchanged lamp', async () => {
-    const h = harness({ devices: Array.from({ length: 6 }, (_, i) => light('l' + i, undefined, { dim: 0.03 })), verdict: { brightness: 0.2 } });
+    const h = harness({ devices: Array.from({ length: 6 }, (_, i) => light('l' + i, undefined, { dim: 0.03 })), verdict: { brightness: 0.03 } });
     await h.runtime.start();
     await sharedSettle(12);
     h.advance(10_000);
@@ -1535,7 +1535,7 @@ describe('DaylightRuntime - overrides, at their edges', () => {
     // somewhere and the plan unchanged — so if the records survive expiry the
     // filter sees the same intended value it last landed and writes nothing:
     // the override lapses and the lamp stays at 0.05 for good.
-    const h = harness({ devices: [light('l1', undefined, { dim: 0.3 })], verdict: { brightness: 0.8 } });
+    const h = harness({ devices: [light('l1', undefined, { dim: 0.3 })], verdict: { brightness: dimFromPerceived(0.8) } });
     await h.runtime.start();
     await converge(h);
     const target = dimFor(0.8);
@@ -1611,7 +1611,7 @@ describe('DaylightRuntime - overrides, at their edges', () => {
     // it: a lamp slewed from further away stops inside the deadband, short.
     const h = harness({
       devices: [light('l1', undefined, { dim: 0.8 })],
-      verdict: { brightness: toPerceptual(0.86, 'natural') },
+      verdict: { brightness: 0.86 },
     });
     await h.runtime.start();
     await h.runtime.drain();
@@ -1632,8 +1632,8 @@ describe('DaylightRuntime - overrides, at their edges', () => {
     // loud wrong answer ("somebody took it over") into a quiet right one. The
     // count is what keeps the quiet one from becoming a quiet WRONG one: a lamp
     // nothing can move must not read as a runtime with nothing to do.
-    const wanted = toPerceptual(0.5, 'natural') + 0.04;
-    const h = harness({ devices: [light('l1', undefined, { dim: 0.5 })], verdict: { brightness: wanted } });
+    const wanted = perceivedFromDim(0.5) + 0.04;
+    const h = harness({ devices: [light('l1', undefined, { dim: 0.5 })], verdict: { brightness: dimFromPerceived(wanted) } });
     await h.runtime.start();
     await h.runtime.drain();
     await h.settle();
@@ -1656,8 +1656,8 @@ describe('DaylightRuntime - committed is what LANDED', () => {
     // committed, the no-op filter would see the next pass's identical value as
     // already at the lamp and drop it — and with the aim inside the deadband
     // there is no later pass that differs, so the lamp would never be written.
-    const wanted = toPerceptual(0.5, 'natural') + 0.04;
-    const h = harness({ devices: [light('l1', undefined, { dim: 0.5 })], verdict: { brightness: wanted } });
+    const wanted = perceivedFromDim(0.5) + 0.04;
+    const h = harness({ devices: [light('l1', undefined, { dim: 0.5 })], verdict: { brightness: dimFromPerceived(wanted) } });
     h.refuseWrites('l1');
     await h.runtime.start();
     await h.runtime.drain();
@@ -1726,7 +1726,7 @@ describe('DaylightRuntime - the raise-then-rise test, condition by condition', (
     const h = harness({
       plan: risky(),
       devices: [light('l1', undefined, { dim: 0.5 })],
-      verdict: { level: 0.2, brightness: toPerceptual(0.5, 'natural') },
+      verdict: { level: 0.2, brightness: 0.5 },
     });
     await h.runtime.start();
     await sharedSettle(12);
@@ -1794,9 +1794,8 @@ describe('DaylightRuntime - publishing when it cannot tell how light it is', () 
     assert.equal(h.runtime.currentValue().source, 'none', 'precondition');
 
     const values = h.runtime.publishedValues();
-    // 0.6 ^ 2.2 = 0.325, at the capability's two decimals.
-    assert.equal(values[VALUE_CAPABILITIES.brightness], 0.33);
-    assert.equal(values[VALUE_CAPABILITIES.brightness], dimFor(0.6));
+    // The stored dark end, as it is: every brightness is Homey's `dim`.
+    assert.equal(values[VALUE_CAPABILITIES.brightness], 0.6);
     assert.equal(values[VALUE_CAPABILITIES.daylight], null);
     assert.equal(isDarkEnough(values, 1), false);
     await h.runtime.stop();
