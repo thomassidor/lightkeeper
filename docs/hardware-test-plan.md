@@ -91,11 +91,11 @@ publishing 1.0.0, not after.
 
 ### 1.0.0 — the install, and the promise
 
-- [ ] **T204** **A launch install with CLI 4.6.1.** With no `.dev-build` file, `npx homey app install`
+- [x] **T204** **A launch install with CLI 4.6.1.** With no `.dev-build` file, `npx homey app install`
   succeeds (a bare `× Missing File` is retried plainly, never with `--clean`), the app starts, and
   `node scripts/diagnostics.mjs` reports `credential: present=true valid=true` — the stored key
   survived — and no evidence recorder.
-- [ ] **T205** **Devices made on 0.6.6 need nothing.** Every device that existed before the install
+- [x] **T205** **Devices made on 0.6.6 need nothing.** Every device that existed before the install
   is still `ready` afterwards, with its lights, schedule, curve or response and its Settings exactly
   as they were — no Repair, no re-adding. This is the 1.0 promise, run once against the release
   that makes it.
@@ -792,6 +792,67 @@ the machine rather than of this app**, and three restarts of one build spanned 7
       no Flow, so a device that goes unavailable here means something else moved with it. Check the
       app's settings page too: the first section is headed **Light Remotes**, and a device that is
       mid-repair says "this device needs repair" rather than naming a type it is not.
+
+### Last run — 25 October 2026, firmware 13.5.3, app 1.0.0 (`df878ef` + this run's fixes, launch build)
+
+**122 OK, 0 failed, 2 skipped** on `full --yes --house`, against `df878ef` as installed. The two
+skips are this house, not the app: **T149** wants a dimmable lamp in Studio that none of the
+owner's devices drives, and Studio has none; **T180** needs a Homey with no Flow-owning device
+left. `control --house` tested **29 lamps in seven rooms**, then all 29 at once in 6.4 s — 19 stay
+off when set, 10 fall back. All four motion sensors in the house were judged usable (T171).
+
+**T204 OK, T205 OK.** A plain `install` (no `× Missing File` this time) came back with
+`credential: present=true valid=true` and no evidence recorder, and all eleven of the owner's
+devices returned in exactly the state they held before — eight `ready` or deliberately disabled,
+the Terrace schedule and Terrace Room-sensing Light `partial` for the reason below, before and after.
+
+`memory`: **60.9 MB PSS** at **9.0% free, 538 MB swap**, 66.3 MB after the pass; app heap 29.2 MB
+of 70 MB, 10.1 MB of it at modules-loaded. A reading about this Homey this hour (platform §15).
+
+Firmware is **13.5.3**, up from 13.5.0. Nothing in `docs/homey-platform.md` was re-derived.
+
+**1. "Test my lights" left three Tuya bulbs at its own warmth — and they are the lights it passes.**
+The pass's T167 said every lamp was back "except where another device drives it", and excused the
+three Terrace bulbs (`com.tuya2`) as their Room-sensing Light "doing its job at switch-on". A
+Room-sensing Light writes only `dim`; what had moved was `light_temperature`, 1.000 → 0.210, the
+test's own value. Reproduced by hand on one bulb: it keeps a warmth written while off — which is
+why it passes the test — and applies it a few hundred ms **after** acking the switch-on, over
+whatever arrives in between. A warmth sent 0 or 300 ms after the ack was lost every time; 600, 1000
+and 2500 ms all landed. `restoreLamp` now waits `RESTORE_SETTLE_MS` (1 s) after switching a lamp
+back on, and the re-run on this build left all three where they were found — checked against a
+starting warmth of 1.0, because at 0.21 the test's own value would have hidden the bug.
+`probe-lights.mjs` had the same race in its own restore (`RESTORE_FAILED light_temperature
+1.000 → 0.500` on Cyren) and waits the same second now; verified on that bulb. And the hardware
+script now excuses drift only on an axis the owning device can write, which is what hid this.
+
+**2. A Room-sensing Light wrote to an offline lamp once a minute, all morning.** "Light 1"
+(Terrace, Tuya) is unavailable in Homey. Its Room-sensing Light sent it a `dim` every tick, each
+refused by Homey in ~10 ms with "This device is currently unavailable." — 388 refusals had pushed
+every real write out of the device's 30-entry write log. The curve-driven types and the Room-sensing
+Light now pass over a lamp Homey marks unavailable (status `unavailable` in a pass's targets) and
+write to it the moment it returns, because availability is in the target fingerprint. The device
+stays `partial`, "1 of 4 lights unavailable", which is true.
+
+**Probe, four lamps per integration (Hue and Tuya; 66 OK, 0 failed).** Tuya bulbs stage a `dim`
+written while off and stay off (`OFF_DIM_STAYS_OFF`) — the opposite of Hue, where a `dim` turns
+the lamp on. Nothing in the app depends on that: no engine writes a `dim` to a lamp that is off,
+and `impliesOn`'s fallback sends the second write that finding names. Those findings came out
+`inconclusive` because the household's Terrace Room-sensing Light took the bulbs' brightness back
+each time the probe switched them on, which is that device working. `--driver` was documented as
+repeatable and kept only the first value; it keeps all of them now. The probe was deliberately
+NOT run with `--all`: that selection includes nine devices that are not lamps — the NAS, the
+dishwasher, plugs, a tablet — and the probe switches each one off for twenty seconds.
+
+**What a run does to a household, recorded so the next one plans for it.** The install's catch-up
+switched the Terrace lamps back on at 09:42 inside their 05:45–10:00 window, twenty minutes after
+somebody had switched them off — designed behaviour, and one a restart repeats. The schedule's
+10:00 off then failed on one bulb ("Could not refresh token", the Tuya integration's own) and a
+boundary write is never retried, so that bulb stayed on until put back by hand. The trigger-card
+catalogue was read **7.5 times an hour** through a probe's worth of device updates, against 28.6 on
+the build before `b888042`; both reads were the pass pairing its own remotes.
+
+Still owed, and none of it machine-answerable: **T3, T9–T11, T53, T54**, and the 0.6.6, 0.6.5 and
+0.6.0 blocks above.
 
 ### Last run — 22 September 2026, firmware 13.5.0, app 0.6.5 (`ee09fa6`, launch build)
 

@@ -24,7 +24,7 @@ import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
 import { assessTargets } from '../runtime/target-health';
 import {
-  diffTargets, releaseTarget, resolveSnapshot, type TargetSnapshot,
+  diffTargets, isUnavailable, releaseTarget, resolveSnapshot, type TargetSnapshot,
 } from '../outputs/target-snapshot';
 import { fireAndForget } from '../support/async';
 import { canonical } from '../support/same';
@@ -697,6 +697,13 @@ export class DaylightRuntime {
     for (const deviceId of candidates) {
       if (!options.force && this.overrides.has(deviceId)) {
         excluded.set(deviceId, 'overridden');
+        skipped += 1;
+        continue;
+      }
+
+      // Homey refuses the write itself; see isUnavailable(). Forced or not.
+      if (isUnavailable(this.snapshot, deviceId)) {
+        excluded.set(deviceId, 'unavailable');
         skipped += 1;
         continue;
       }

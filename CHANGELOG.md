@@ -27,7 +27,7 @@ patch. From 1.0 the app follows semantic versioning:
 New features and redrawn setup screens still arrive in minor versions; what they may not do is break
 a setup you already made.
 
-Two fixes:
+Four fixes:
 
 - **Removing a device no longer leaves your other devices asking for a new API key.** After a
   device's Flows were deleted, Lightkeeper removed its now-empty Flow folder — and a Homey that
@@ -41,6 +41,16 @@ Two fixes:
   and tested with a coloured curve came back on in colour mode, showing whatever hue it last had. It
   now restores the mode, then only the axis that mode shows — the rule the circadian screen's
   "Stop preview" already followed, and one shared table (`AXES_FOR_MODE`) serves both.
+- **"Test my lights" waits for a light to finish switching on before putting it back.** Found on the
+  25 October hardware pass: three Tuya bulbs that keep a warmth written while they are off apply it a
+  few hundred milliseconds *after* acking the switch-on, on top of the restore sent straight behind
+  it — so the test left them at its own warmth, and these are exactly the lights it passes. Measured
+  on one of them, a warmth sent 0 or 300 ms after the ack was lost every time and 600 ms or later
+  always landed; the restore now waits a second (`RESTORE_SETTLE_MS`), once, for every light at once.
+- **A light Homey marks unavailable is no longer sent a change every minute.** Homey refuses such a
+  write itself, in about 10 ms, so a Room-sensing Light driving an offline garden lamp logged 388
+  refusals in a morning and pushed every real write out of its history. The curve-driven types and
+  the Room-sensing Light now pass over it, and write to it the moment Homey says it is back.
 
 Hardening, from a security audit. Pair sessions and the app API are a scriptable surface
 (platform §14), so a stored setting is not proof of anything:
@@ -119,10 +129,17 @@ Under the hood, and none of it in the app a Homey runs:
   `writesLightsFrom`, and twenty-one doc comments that had drifted off the code they describe are
   back on it. A Flow the app refuses to delete because it is another device's is no longer counted
   as deleted, and removing a device no longer logs "its Flows cleaned up" when they were not.
-- **Two test-tooling fixes.** A daylight driver test failed from mid-October to late February,
-  because Copenhagen's sun never reaches the 25° bright end then; it now runs at 40°N. And on Node
+- **Five test-tooling fixes.** A daylight driver test failed from mid-October to late February,
+  because Copenhagen's sun never reaches the 25° bright end then; it now runs at 40°N. On Node
   24 the coverage script lost `lib/outputs/test-outcome.ts` to the runner's default test-file
-  exclusion, which now matches `test-*.ts`.
+  exclusion, which now matches `test-*.ts`. `verify-hardware.mjs` excused any colour that moved on
+  a lamp a running device drives as "that device doing its job" — including a Room-sensing Light,
+  which writes only `dim`, and that hid the restore failure above; it now excuses only an axis the
+  owner can write. `probe-lights.mjs --driver` is repeatable as documented, where it used to keep
+  the first and ignore the rest. And `diagnostics.mjs` names the window boundary a schedule last
+  fired instead of printing "undefined". `lib/validation/guards.ts`, covered only through the
+  validators that call it, had slipped under its per-file coverage floor and failed
+  `npm run test:coverage` on a clean checkout; it has a test of its own now.
 
 ## 0.6.6
 

@@ -204,8 +204,9 @@ is shared only if you choose. [`docs/privacy.md`](docs/privacy.md) has the full 
 - **Out of early access.** Nothing needs redoing.
 - **A minor or patch update keeps every device working as you set it up.** Anything that would need
   Repair, re-adding a device or losing a setting comes only as a major version, and says so.
-- **Two fixes:** removing a device no longer leaves your other devices asking for a new API key, and
-  "Test my lights" puts each light back in its own mode rather than leaving a white light on a colour.
+- **Fixes:** removing a device no longer leaves your other devices asking for a new API key, and
+  "Test my lights" puts each light back as it found it — its own mode, and its own warmth on lights
+  that bring back an older setting as they switch on.
 - **Hardened and lighter:** a Flow is deleted only when the live Flow names its device, and less
   background work — plus a test audit, and development tools updated.
 

@@ -91,7 +91,7 @@ export function expireOverrides(
 
 export interface TargetDecision {
   deviceId: string;
-  status: 'overridden' | 'off' | 'prestage_declined' | 'unchanged' | 'queued' | 'inactive';
+  status: 'overridden' | 'unavailable' | 'off' | 'prestage_declined' | 'unchanged' | 'queued' | 'inactive';
   commands: number;
 }
 

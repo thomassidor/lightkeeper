@@ -220,7 +220,12 @@ function digest(/** @type {any} */ diagnostics) {
 
     const action = runtime.lastAction;
     if (action) {
-      out.push(`   last pass ${age(now, action.at)}: ${action.reason}${action.detail ? ` — ${action.detail}` : ''},`
+      // A schedule's action has no `reason`: it records which window boundary
+      // fired, so say that rather than print "undefined".
+      const entry = runtime.entries?.find((/** @type {any} */ e) => e.id === action.entryId);
+      const reason = action.reason
+        ?? (action.boundary ? `${action.boundary}${entry ? ` at ${entry[action.boundary]}` : ''}` : 'pass');
+      out.push(`   last pass ${age(now, action.at)}: ${reason}${action.detail ? ` — ${action.detail}` : ''},`
         + ` ${action.writes} write(s), ${action.skipped} skipped`);
     }
     if (runtime.section === 'daylight') {
