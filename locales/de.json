@@ -759,7 +759,8 @@
     "targetSelectionChanged": "Die gewählten Lichter haben sich während der Prüfung geändert. Wähle sie erneut.",
     "notAControlMode": "„__mode__“ ist keine Art, wie Lightkeeper Lichter steuern kann.",
     "cannotSetBefore": "Dieses Gerät kann Lichter nicht vor dem Einschalten einstellen.",
-    "notATransition": "„__transition__“ ist kein Übergang, den Lightkeeper kennt."
+    "notATransition": "„__transition__“ ist kein Übergang, den Lightkeeper kennt.",
+    "notALightList": "Das ist keine Liste von Lichtern, die dieses Gerät testen kann."
   },
   "mappingDropped": {
     "notOneOfTheLights": "Diese Taste nennt ein Licht, das diese Fernbedienung nicht steuert.",

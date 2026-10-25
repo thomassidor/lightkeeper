@@ -882,7 +882,11 @@ export class DeviceLifecycle<
     // After the Flows, and on BOTH branches — the journal outlives the device
     // either way, and it is keyed on a device id that will never come back.
     this.owner.forgetFlowJournal();
-    this.owner.log('Deleted and its Flows cleaned up');
+    // Says nothing about the Flows on purpose. Their removal can fall short —
+    // an unreadable Flow list deletes none of them, and leaves them to the
+    // orphan sweep — and the bridge logs what it actually removed. This line
+    // used to say "and its Flows cleaned up" whatever had happened.
+    this.owner.log('Deleted');
   }
 
   async uninit(): Promise<void> {

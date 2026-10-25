@@ -216,6 +216,13 @@ class Cached<T> {
   private at = 0;
   private inFlight: Promise<T> | null = null;
   private release: unknown = null;
+  /**
+   * Bumped by `clear()`. A fetch that was already in flight when `clear()` ran
+   * still answers its own caller, but may not store its result or arm a
+   * release timer: on teardown that re-retained a whole projection and left a
+   * timer armed after everything was meant to be gone.
+   */
+  private generation = 0;
   private readonly counts: Omit<CatalogueReadStats, 'retained'> = {
     fetches: 0, failures: 0, lastMs: null, lastCount: null,
   };
@@ -227,9 +234,11 @@ class Cached<T> {
     if (this.inFlight) return this.inFlight;
 
     const startedAt = this.timers.now();
+    const generation = this.generation;
     this.counts.fetches += 1;
     const attempt = fetch()
       .then(value => {
+        if (generation !== this.generation) return value;
         this.value = value;
         this.at = this.timers.now();
         this.counts.lastMs = this.at - startedAt;
@@ -253,9 +262,13 @@ class Cached<T> {
   }
 
   clear(): void {
+    this.generation += 1;
     this.cancelRelease();
     this.value = null;
     this.at = 0;
+    // Not joined by the next `get()` either: that would hand a later caller
+    // the very read this call was meant to let go of.
+    this.inFlight = null;
   }
 
   private armRelease(): void {

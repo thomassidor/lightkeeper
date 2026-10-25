@@ -760,7 +760,8 @@
     "targetSelectionChanged": "Lamporna du valde ändrades medan de kontrollerades. Välj dem igen.",
     "notAControlMode": "”__mode__” är inte ett sätt som Lightkeeper kan styra lampor på.",
     "cannotSetBefore": "Den här enheten kan inte ställa in lampor innan de tänds.",
-    "notATransition": "”__transition__” är inte en övergång som Lightkeeper känner till."
+    "notATransition": "”__transition__” är inte en övergång som Lightkeeper känner till.",
+    "notALightList": "Det är ingen lista över lampor som den här enheten kan testa."
   },
   "mappingDropped": {
     "notOneOfTheLights": "Knappen anger en lampa som den här fjärrkontrollen inte styr.",

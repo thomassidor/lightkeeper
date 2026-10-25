@@ -196,6 +196,25 @@ describe('flow card catalogue', () => {
     assert.equal(catalogue.stats().actions.retained, false);
   });
 
+  /**
+   * The same promise for a read that was still in flight when `clear()` ran:
+   * teardown does not wait for a health pass to finish asking for cards.
+   */
+  test('a read in flight across clear() answers its caller and keeps nothing', async () => {
+    const timers = new FakeTimers();
+    const { api, calls } = fakeApi([FAT_CARD]);
+    const catalogue = new FlowCardCatalogue(api, { timers });
+
+    const inFlight = catalogue.triggerCards();
+    catalogue.clear();
+    assert.equal((await inFlight).length, 1, 'its own caller still gets the cards');
+
+    assert.equal(timers.pending, 0, 'no release timer armed after teardown');
+    assert.equal(catalogue.stats().triggers.retained, false, 'and no projection retained');
+    await catalogue.triggerCards();
+    assert.equal(calls.length, 2, 'the next question is a fresh read, not the one let go of');
+  });
+
   /** For `/diagnostics`: how often the expensive read happens, and what it costs. */
   test('stats count reads, failures, duration and size, and never carry a card', async () => {
     const timers = new FakeTimers();

@@ -895,7 +895,8 @@
     "targetSelectionChanged": "تغيّرت الأضواء التي اخترتها أثناء التحقق. اخترها مرة أخرى.",
     "notAControlMode": "«__mode__» ليست طريقة يستطيع Lightkeeper التحكم بها في الأضواء.",
     "cannotSetBefore": "لا يستطيع هذا الجهاز ضبط الأضواء قبل تشغيلها.",
-    "notATransition": "«__transition__» ليس انتقالًا يعرفه Lightkeeper."
+    "notATransition": "«__transition__» ليس انتقالًا يعرفه Lightkeeper.",
+    "notALightList": "هذه ليست قائمة أضواء يمكن لهذا الجهاز اختبارها."
   },
   "mappingDropped": {
     "notOneOfTheLights": "يشير هذا الزر إلى ضوء لا يتحكم به جهاز التحكم عن بُعد هذا.",

@@ -32,6 +32,7 @@ import { fireAndForget } from '../support/async';
 import { withDefaults, type Timers } from '../support/timers';
 import { sameCatalogue, sameManagedFlows } from '../support/same';
 import { messageOf } from '../support/homey-errors';
+import { LocalisedError } from '../support/localised-error';
 import { VisibleState } from './visible-state';
 import { worstVerdict, type Verdict } from './verdict';
 
@@ -48,6 +49,13 @@ function rampFor(intent: LightIntent): { kind: 'brightness' | 'temperature'; dir
 }
 
 /**
+ * The most lights one Test may name: the stored-plan cap on a target list
+ * (`MAX_TARGET_DEVICES` in lib/validation/plans.ts), so a list the app could
+ * itself have stored is never refused.
+ */
+const MAX_TEST_TARGETS = 256;
+
+/**
  * What the Test control on the mapping screen drives.
  *
  * A thin re-export, and that is the point: it used to be a second copy of the
@@ -56,13 +64,6 @@ function rampFor(intent: LightIntent): { kind: 'brightness' | 'temperature'; dir
  * `test/unit/mapping-and-state.test.ts` asserts the equivalence for every
  * function.
  */
-/**
- * The most lights one Test may name: the stored-plan cap on a target list
- * (`MAX_TARGET_DEVICES` in lib/validation/plans.ts), so a list the app could
- * itself have stored is never refused.
- */
-const MAX_TEST_TARGETS = 256;
-
 export function intentForFunction(
   func: LightFunction,
   behavior: ControllerBehavior,
@@ -521,17 +522,21 @@ export class ControllerRuntime {
    * named nothing, and reading "none of these are mine" as "all of mine" is
    * the heuristic guess this app never makes. The cap is checked before any of
    * that, so an oversized list costs nothing.
+   *
+   * Refused with locale KEYS, because the pair session's `test` handler shows
+   * the error on the mapping screen and `lib/` cannot translate. "None of
+   * yours" is the one a real screen can meet — a rule's lights that dropped
+   * out of the targets since they were chosen — so it says what to do about
+   * it. The other two only a scripted caller can send.
    */
   private testTargets(deviceIds: unknown): string[] {
     if (deviceIds === undefined || deviceIds === null) return this.targetIds;
-    if (!Array.isArray(deviceIds)) throw new Error('deviceIds is not a list');
+    if (!Array.isArray(deviceIds)) throw new LocalisedError('errors.notALightList');
     if (deviceIds.length === 0) return this.targetIds;
-    if (deviceIds.length > MAX_TEST_TARGETS) {
-      throw new Error(`deviceIds has more than ${MAX_TEST_TARGETS} entries`);
-    }
+    if (deviceIds.length > MAX_TEST_TARGETS) throw new LocalisedError('errors.notALightList');
     const named = new Set(deviceIds.filter((id): id is string => typeof id === 'string'));
     const ours = this.targetIds.filter(id => named.has(id));
-    if (ours.length === 0) throw new Error('none of those lights belong to this controller');
+    if (ours.length === 0) throw new LocalisedError('errors.targetSelectionChanged');
     return ours;
   }
 

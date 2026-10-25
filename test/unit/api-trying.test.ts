@@ -1,5 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { LocalisedError } from '../../lib/support/localised-error';
 
 const api = require('../../api') as {
   previewDevice(args: any): Promise<any>;
@@ -446,6 +447,21 @@ describe('POST /controllers/:id/test', () => {
     });
 
     assert.deepEqual(recorded.functions, [{ func: 'brightness_up', deviceIds: ['l1', 'l2'] }]);
+  });
+
+  test('a refusal from the runtime arrives translated, not as its locale key', async () => {
+    const { homey: h } = homey({ controllers: [CONTROLLER_ID] });
+    (h.app.controllers.get(CONTROLLER_ID) as any).testFunction = async () => {
+      throw new LocalisedError('errors.targetSelectionChanged');
+    };
+    const asked: string[] = [];
+    (h as any).__ = (key: string) => { asked.push(key); return 'Choose them again.'; };
+
+    await assert.rejects(
+      () => api.testControllerFunction({ homey: h, params: { id: CONTROLLER_ID }, body: { func: 'on', deviceIds: ['x'] } }),
+      /^Error: Choose them again\.$/,
+    );
+    assert.deepEqual(asked, ['errors.targetSelectionChanged']);
   });
 
   test('a missing func is refused', async () => {

@@ -20,6 +20,8 @@ import type {
 } from './lib/app-contract';
 import { requireArray } from './lib/validation/guards';
 import { messageOf } from './lib/support/homey-errors';
+import { LocalisedError } from './lib/support/localised-error';
+import { translatorFor } from './lib/support/i18n';
 import { heapReport } from './lib/support/heap-report';
 import { evidenceRoutes } from './lib/support/evidence-feature';
 
@@ -755,7 +757,14 @@ module.exports = {
     // keeps only this controller's own lights, and ignores non-strings. A
     // `.map(String)` here would walk an oversized list before that cap.
     const deviceIds = Array.isArray(body?.deviceIds) ? body.deviceIds : undefined;
-    return runtime.testFunction(func as any, deviceIds);
+    try {
+      return await runtime.testFunction(func as any, deviceIds);
+    } catch (error) {
+      // `testFunction` refuses with a locale key (the pair session translates
+      // it on its own way out); this caller says it in the Homey's language too.
+      if (error instanceof LocalisedError) throw new Error(translatorFor(homey)(error.key, error.tokens));
+      throw error;
+    }
   },
 
 };

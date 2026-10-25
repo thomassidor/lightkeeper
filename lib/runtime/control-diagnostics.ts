@@ -159,15 +159,6 @@ export class ControlHistory<T extends ControlAction> {
   }
 
   /**
-   * A report we set aside, folded into the row for the last one like it.
-   *
-   * Every suppression reason lands here — including the wholly routine echo of
-   * a write the app has just made, which is most of the traffic on a device
-   * that pre-stages. Folding keeps the reason visible (and its count, which is
-   * itself a signal: a lamp echoing forty times is worth seeing) at the cost of
-   * one slot rather than forty.
-   */
-  /**
    * Record one pass. A pass that wrote nothing and matches the NEWEST row
    * exactly is folded into it instead of taking a slot of its own.
    *
@@ -197,6 +188,15 @@ export class ControlHistory<T extends ControlAction> {
     );
   }
 
+  /**
+   * A report we set aside, folded into the row for the last one like it.
+   *
+   * Every suppression reason lands here — including the wholly routine echo of
+   * a write the app has just made, which is most of the traffic on a device
+   * that pre-stages. Folding keeps the reason visible (and its count, which is
+   * itself a signal: a lamp echoing forty times is worth seeing) at the cost of
+   * one slot rather than forty.
+   */
   ignored(event: ControlEvent): void {
     this.events.addRepeat(
       event,

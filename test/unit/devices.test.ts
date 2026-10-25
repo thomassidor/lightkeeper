@@ -183,7 +183,7 @@ describe('a controller whose remote changes', () => {
       ['removeAll', ID, ['f1', 'f2']],
     ]);
     assert.deepEqual(instance.getStoreValue('profile').managedFlows, []);
-    assert.ok(instance.logs.includes('Source changed: removed 2 of 2 flow(s) from the old remote'));
+    assert.ok(instance.logs.includes('Source changed: 2 of 2 flow(s) from the old remote settled'));
   });
 
   /**

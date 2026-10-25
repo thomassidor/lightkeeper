@@ -170,6 +170,15 @@ export const DEFAULT_SIMPLE_PLAN: Omit<SimpleCircadianPlan, 'target' | 'schemaVe
  * review screen's "Follows the sun" times are a promise about what the device
  * will then do.
  *
+ * **The sun is asked about at LOCAL NOON, not at `nowMs`.** `sunTimes` answers
+ * for the UTC day containing the instant it is given, and local midnight is not
+ * UTC midnight: in Copenhagen the first two hours of every local day are still
+ * yesterday in UTC. The runtime caches this once per local day, at its first
+ * tick after local midnight — so handing `sunTimes` that instant fixed
+ * YESTERDAY's sun for the whole of today, everywhere east of Greenwich. Local
+ * noon sits inside the UTC day whose solar noon is today's for every zone whose
+ * offset roughly follows its longitude, which is every zone a Homey is sold in.
+ *
  * An empty context is not a failure: `resolveBoundaries` falls back to fixed
  * hours, which is the right answer for a Homey that has never been told where
  * it is and for a polar day with no sunrise to anchor to.
@@ -181,7 +190,8 @@ export function sunAnchorContext(
 ): AnchorContext {
   const usable = usableLocation(location);
   if (!usable) return {};
-  const times = sunTimes(usable.latitude, usable.longitude, nowMs);
+  const localNoonMs = nowMs + (12 * 60 - localNow(timezone, nowMs).minutesOfDay) * 60_000;
+  const times = sunTimes(usable.latitude, usable.longitude, localNoonMs);
   if (times.sunriseMs === null || times.sunsetMs === null) return {};
   return {
     sunriseMinute: localNow(timezone, times.sunriseMs).minutesOfDay,

@@ -57,7 +57,8 @@ Hardening, from a security audit. Pair sessions and the app API are a scriptable
   silently taking over the first's lights and Flows. Every device id this app has ever created keeps
   working.
 - **The Test control** (pairing screen and app API) refuses a job name that is not a light function,
-  and only ever touches the controller's own lights, at most 256 of them.
+  and only ever touches the controller's own lights, at most 256 of them — saying so in the Homey's
+  language when it refuses.
 - **A stored schedule never runs more than twelve blocks** — a plan holding more keeps its first
   twelve instead of generating extra Flows — and every list a screen or a stored plan can carry is
   bounded, including the lamps a pre-stage test proved.
@@ -111,10 +112,13 @@ Under the hood, and none of it in the app a Homey runs:
 - **A code review's tidy-up.** All five drivers now extend one `LightkeeperDriver` shell instead of
   carrying the same translator, pair-session host and typed app five times; the override record
   that anchors the four-hour deadline and folds repeats is one function rather than three pasted
-  copies; the review screen and the running device read the sun through one `sunAnchorContext`
-  (whose cache now rolls over at local midnight, not UTC). `GET /sensors/:id/history`, an app Web
-  API route nothing called, is gone, along with the unused `writesLightsFrom`, and eighteen doc
-  comments that had drifted off the code they describe are back on it.
+  copies; the review screen and the running device read the sun through one `sunAnchorContext`,
+  whose cache now rolls over at local midnight rather than UTC and which reads that day's sun at
+  local noon — the cache's first ask after midnight is still yesterday in UTC east of Greenwich.
+  `GET /sensors/:id/history`, an app Web API route nothing called, is gone, along with the unused
+  `writesLightsFrom`, and twenty-one doc comments that had drifted off the code they describe are
+  back on it. A Flow the app refuses to delete because it is another device's is no longer counted
+  as deleted, and removing a device no longer logs "its Flows cleaned up" when they were not.
 - **Two test-tooling fixes.** A daylight driver test failed from mid-October to late February,
   because Copenhagen's sun never reaches the 25° bright end then; it now runs at 40°N. And on Node
   24 the coverage script lost `lib/outputs/test-outcome.ts` to the runner's default test-file

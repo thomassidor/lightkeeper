@@ -109,9 +109,11 @@ module.exports = class ControllerDevice extends LightkeeperDevice<ControllerProf
 
     // Owned by THIS device or not deleted at all — the bridge checks each live
     // Flow's `controller` argument against `deviceId` before it deletes.
-    const removed = await this.app.bridge.removeAll(this.deviceId, obsolete);
-    this.log(`Source changed: removed ${removed} of ${obsolete.length} flow(s) from the old remote`);
-    if (removed < obsolete.length) {
+    // SETTLED, not removed: a Flow refused as another device's counts as done
+    // too. How many were actually removed is the bridge's own log line.
+    const settled = await this.app.bridge.removeAll(this.deviceId, obsolete);
+    this.log(`Source changed: ${settled} of ${obsolete.length} flow(s) from the old remote settled`);
+    if (settled < obsolete.length) {
       this.app.bridge.deferCleanup(this.deviceId, obsolete.map(ref => ref.flowId));
     }
   }

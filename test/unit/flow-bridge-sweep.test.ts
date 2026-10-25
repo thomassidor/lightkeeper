@@ -530,6 +530,27 @@ describe('a stored reference is a claim, and the live Flow is the proof', () => 
     assert.deepEqual(h.deleted, ['mine']);
   });
 
+  /**
+   * A refusal is SETTLED — nothing is left for a retry — but it is not a
+   * removal. Counting it as one overstated every report, and handed another
+   * device's folder to the empty-folder cleanup as if this device had emptied it.
+   */
+  test('a refused id is settled but never counted as deleted, in sync or removeAll', async () => {
+    const h = rig({ theirs: managedFlow('theirs', OTHER), mine: managedFlow('mine', OWNER) });
+    h.bridge.deferCleanup(OWNER, ['theirs', 'mine']);
+    const result = await h.bridge.sync(syncRequest([ref('theirs', 'k-unwanted')]));
+
+    assert.deepEqual(h.deleted, ['mine']);
+    assert.equal(result.deleted, 1, 'the one Flow actually removed, not the two refusals beside it');
+    assert.deepEqual(result.staleReplacements, [], 'a refusal is not left for a retry either');
+    assert.deepEqual((h.settings.get(`flowJournal:${OWNER}`) as any).cleanup, []);
+
+    const again = rig({ theirs: managedFlow('theirs', OTHER), mine: managedFlow('mine', OWNER) });
+    assert.equal(await again.bridge.removeAll(OWNER, [ref('theirs'), ref('mine', 'k2')]), 2, 'both settled');
+    assert.ok(again.logged.includes(`Removed 1 of 2 flow(s) for ${OWNER}; 1 refused as not its own`),
+      again.logged.join('\n'));
+  });
+
   test('an id the snapshot lacked and nobody could look up is KEPT for the next pass', async () => {
     const h = rig({}, { failLookup: true });
     h.bridge.deferCleanup(OWNER, ['unseen']);

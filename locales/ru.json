@@ -827,7 +827,8 @@
     "targetSelectionChanged": "Выбранные светильники изменились во время проверки. Выберите их снова.",
     "notAControlMode": "«__mode__» — это не способ, которым Lightkeeper может управлять светом.",
     "cannotSetBefore": "Это устройство не может настраивать свет до включения.",
-    "notATransition": "«__transition__» — это не переход, который знает Lightkeeper."
+    "notATransition": "«__transition__» — это не переход, который знает Lightkeeper.",
+    "notALightList": "Это не список светильников, которые это устройство может проверить."
   },
   "mappingDropped": {
     "notOneOfTheLights": "Эта кнопка указывает на светильник, которым этот пульт не управляет.",

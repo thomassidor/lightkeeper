@@ -759,7 +759,8 @@
     "targetSelectionChanged": "De lys, du valgte, ændrede sig, mens det blev tjekket. Vælg dem igen.",
     "notAControlMode": "»__mode__« er ikke en måde, Lightkeeper kan styre lys på.",
     "cannotSetBefore": "Denne enhed kan ikke indstille lys, før de tænder.",
-    "notATransition": "»__transition__« er ikke en overgang, Lightkeeper kender."
+    "notATransition": "»__transition__« er ikke en overgang, Lightkeeper kender.",
+    "notALightList": "Det er ikke en liste over lys, som denne enhed kan teste."
   },
   "mappingDropped": {
     "notOneOfTheLights": "Den knap nævner et lys, som denne fjernbetjening ikke styrer.",

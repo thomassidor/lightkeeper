@@ -827,7 +827,8 @@
     "targetSelectionChanged": "Wybrane światła zmieniły się podczas sprawdzania. Wybierz je ponownie.",
     "notAControlMode": "„__mode__” nie jest sposobem, w jaki Lightkeeper może sterować światłami.",
     "cannotSetBefore": "To urządzenie nie może ustawiać świateł przed ich włączeniem.",
-    "notATransition": "„__transition__” nie jest przejściem, które zna Lightkeeper."
+    "notATransition": "„__transition__” nie jest przejściem, które zna Lightkeeper.",
+    "notALightList": "To nie jest lista świateł, które to urządzenie może przetestować."
   },
   "mappingDropped": {
     "notOneOfTheLights": "Ten przycisk wskazuje światło, którym ten pilot nie steruje.",

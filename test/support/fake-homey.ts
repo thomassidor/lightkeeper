@@ -103,7 +103,7 @@ export function localised(key: string, tokens: Record<string, string | number> =
  * What every SDK class carries: `homey`, and a `log`/`error` that RECORD.
  *
  * Recorded because half of what these shells do that is worth asserting is a
- * line in the log — "Ignoring set_lights: …", "Source changed: removed 3 of 3".
+ * line in the log — "Ignoring set_lights: …", "Source changed: 3 of 3 … settled".
  */
 class Recorder {
   homey!: FakeHomey;

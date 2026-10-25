@@ -793,7 +793,8 @@
     "targetSelectionChanged": "Las luces elegidas cambiaron mientras se comprobaban. Vuelve a elegirlas.",
     "notAControlMode": "“__mode__” no es una forma en que Lightkeeper pueda controlar las luces.",
     "cannotSetBefore": "Este dispositivo no puede ajustar las luces antes de que se enciendan.",
-    "notATransition": "“__transition__” no es una transición que Lightkeeper conozca."
+    "notATransition": "“__transition__” no es una transición que Lightkeeper conozca.",
+    "notALightList": "Eso no es una lista de luces que este dispositivo pueda probar."
   },
   "mappingDropped": {
     "notOneOfTheLights": "Ese botón indica una luz que este mando no controla.",

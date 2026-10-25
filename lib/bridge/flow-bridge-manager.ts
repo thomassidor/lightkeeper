@@ -591,8 +591,11 @@ export class FlowBridgeManager {
     // A previous pass failed before committing its complete replacement set.
     const unfinished: string[] = [];
     for (const id of journal.staged) {
-      if (!await deleteOwned(id)) unfinished.push(id);
-      else delete liveFlows[id];
+      const outcome = await deleteOwned(id);
+      if (outcome === 'unknown') unfinished.push(id);
+      // A refused id is still a live flow — somebody else's — so it stays in
+      // the snapshot; only one that is gone leaves it.
+      else if (outcome === 'removed') delete liveFlows[id];
     }
     journal.staged = unfinished;
     this.saveJournal(request.controllerId, journal);
@@ -734,9 +737,13 @@ export class FlowBridgeManager {
       this.saveJournal(request.controllerId, journal);
       committed = true;
       for (const id of [...cleanup]) {
-        if (await deleteOwned(id)) {
-          result.deleted += 1;
+        const outcome = await deleteOwned(id);
+        if (outcome !== 'unknown') {
           cleanup.delete(id);
+          // A refused flow is not ours: not a delete to report, and its folder
+          // is not ours to tidy either.
+          if (outcome === 'refused') continue;
+          result.deleted += 1;
           const folderOf = flowInfos.find(f => f.id === id)?.folder;
           if (folderOf) abandoned.add(folderOf);
         } else {
@@ -752,7 +759,9 @@ export class FlowBridgeManager {
         if (wanted.has(key)) continue;
         if (result.references.some(r => r.flowId === ref.flowId)) continue;
         const folderOf = flowInfos.find(f => f.id === ref.flowId)?.folder;
-        if (await deleteOwned(ref.flowId)) {
+        const outcome = await deleteOwned(ref.flowId);
+        if (outcome === 'refused') continue; // dropped, uncounted: see deleteOwnedFlow
+        if (outcome === 'removed') {
           result.deleted += 1;
           if (folderOf) abandoned.add(folderOf);
         } else {
@@ -1022,9 +1031,14 @@ export class FlowBridgeManager {
    * afterwards the flows that knew which folder they were in are gone.
    *
    * Returns how many references are settled: deleted, already gone, or refused
-   * as not ours. All three leave nothing for a retry to do.
+   * as not ours. All three leave nothing for a retry to do, which is what
+   * `afterApply` compares against. How many of them were actually REMOVED is
+   * said in this method's own log line, because a settled count read as a
+   * delete count overstates every refusal as a removal.
    */
   async removeAll(owner: string, references: ManagedFlowReference[]): Promise<number> {
+    // Nothing to prove ownership of, so nothing worth a Flow list read or a log line.
+    if (references.length === 0) return 0;
     let live: Record<string, any>;
     let cardIds: Set<string>;
     try {
@@ -1037,25 +1051,29 @@ export class FlowBridgeManager {
       return 0;
     }
 
+    // Each folder read from the snapshot taken BEFORE the deletes, and kept
+    // only for a flow this call actually removed: a refused flow is somebody
+    // else's, and so is the folder it sits in.
     const emptied = new Set<string>();
+    const counts: Record<OwnedDeleteOutcome, number> = { removed: 0, refused: 0, unknown: 0 };
     for (const ref of references) {
-      const folder = live[ref.flowId]?.folder;
-      if (folder) emptied.add(String(folder));
+      const folder = Object.prototype.hasOwnProperty.call(live, ref.flowId) ? live[ref.flowId]?.folder : undefined;
+      const outcome = await this.deleteOwnedFlow(owner, ref.flowId, live, cardIds);
+      counts[outcome] += 1;
+      if (outcome === 'removed' && folder) emptied.add(String(folder));
     }
-
-    let deleted = 0;
-    for (const ref of references) {
-      if (await this.deleteOwnedFlow(owner, ref.flowId, live, cardIds)) deleted += 1;
-    }
+    this.log(`Removed ${counts.removed} of ${references.length} flow(s) for ${owner}`
+      + (counts.refused ? `; ${counts.refused} refused as not its own` : '')
+      + (counts.unknown ? `; ${counts.unknown} could not be removed` : ''));
 
     // `createRoot: false`: this is a DELETE path and must never create a
     // folder — see `load()`. Cleaning up after a removal used to be able to
     // recreate an empty root the user had deleted, and, on a dead key, to
     // attempt a folder write that flips every device to needs_credential.
-    if (deleted > 0) {
+    if (emptied.size > 0) {
       await this.folders.cleanUpEmpty(await this.folders.load({ createRoot: false }), emptied);
     }
-    return deleted;
+    return counts.removed + counts.refused;
   }
 
   private async createFlow(flow: CompiledFlow, folder: string | undefined): Promise<{ id: string }> {
@@ -1072,20 +1090,6 @@ export class FlowBridgeManager {
   }
 
   /**
-   * Delete a flow, idempotently.
-   *
-   * `true` means the flow is GONE, not that a delete call succeeded — so a
-   * flow the user already removed by hand counts as success, because the
-   * desired end state holds. It used to return `false` there, and every caller
-   * counts that as a failure: a user who tidied up their Flow list before
-   * deleting the device saw "12 flows could not be removed" and went looking
-   * for a broken API key.
-   *
-   * Everything else stays `false`. A 401, a 403 or an unreachable Homey all
-   * mean "we could not tell", and reading "could not tell" as "it is gone" is
-   * how a reference is dropped while the Flow it names goes on firing.
-   */
-  /**
    * Delete a flow named by a STORED reference — only if the live flow is ours.
    *
    * Every id that reaches a delete from a device store, the journal in app
@@ -1095,23 +1099,24 @@ export class FlowBridgeManager {
    * forged them.
    *
    * `live` is the snapshot the caller already read for its own purposes, so
-   * the common case costs no extra round trip. Four answers, all `true`
-   * except a delete that failed and a flow nobody could look at:
+   * the common case costs no extra round trip. Three outcomes, and the first
+   * two are both SETTLED — nothing is left for a retry to do — but only the
+   * first removed anything, which is why they are not one `true`:
    *
-   *  - **attributed to `owner`**: deleted through `deleteFlow`, idempotent as
-   *    ever;
-   *  - **attributed to somebody else, or to nobody**: refused and logged. Not
-   *    retried either, because no later pass can make it ours — so `true`, and
-   *    the reference is dropped. This includes a generated flow the user
-   *    re-pointed at another device by editing its `controller` argument: it
-   *    stopped being this device's when they did that;
-   *  - **absent from the snapshot, and confirmed gone** by asking for that one
-   *    flow: the end state holds, which is what `deleteFlow` concludes from a
+   *  - **`removed`**: attributed to `owner` and deleted through `deleteFlow`,
+   *    idempotent as ever — or absent from the snapshot and confirmed gone by
+   *    asking for that one flow, which is what `deleteFlow` concludes from a
    *    404 too;
-   *  - **absent from the snapshot, and the lookup failed**: `false` — "we
-   *    could not tell" is never "it is gone", for the reason `deleteFlow`'s
-   *    own docblock gives. The caller keeps the reference and the next pass
-   *    asks again.
+   *  - **`refused`**: attributed to somebody else, or to nobody. Logged, and
+   *    not retried, because no later pass can make it ours: the reference is
+   *    dropped. This includes a generated flow the user re-pointed at another
+   *    device by editing its `controller` argument — it stopped being this
+   *    device's when they did that. NOT counted as a delete, and its folder is
+   *    not this device's to tidy;
+   *  - **`unknown`**: the delete failed, or the flow was absent from the
+   *    snapshot and the lookup failed. "We could not tell" is never "it is
+   *    gone", for the reason `deleteFlow`'s own docblock gives; the caller
+   *    keeps the reference and the next pass asks again.
    *
    * Why absence is CONFIRMED rather than believed: `sync()` reads its snapshot
    * at the start of a pass, and `deferCleanup` can add an id while that pass
@@ -1125,25 +1130,25 @@ export class FlowBridgeManager {
     flowId: string,
     live: Record<string, any>,
     cardIds: Set<string>,
-  ): Promise<boolean> {
-    if (typeof flowId !== 'string' || flowId.length === 0) return true;
+  ): Promise<OwnedDeleteOutcome> {
+    if (typeof flowId !== 'string' || flowId.length === 0) return 'refused';
     // An OWN property, not `live[flowId]`: the snapshot is a plain object and a
     // stored id of `constructor` must not find its prototype. (`Object.hasOwn`
     // is ES2022, past the es2021 lib this app compiles against.)
     let flow: unknown = Object.prototype.hasOwnProperty.call(live, flowId) ? live[flowId] : undefined;
     if (flow === undefined) {
       const looked = await this.lookUpFlow(flowId);
-      if (looked === GONE) return true;
-      if (looked === UNKNOWN) return false;
+      if (looked === GONE) return 'removed';
+      if (looked === UNKNOWN) return 'unknown';
       flow = looked;
     }
     const attributed = ownerDeviceIdOf(flow, cardIds);
     if (attributed !== owner) {
       this.log(`Not deleting flow ${flowId}: it is not attributed to ${owner}`
         + (attributed ? ` (it names ${attributed})` : ' (it calls no Lightkeeper card)'));
-      return true;
+      return 'refused';
     }
-    return this.deleteFlow(flowId);
+    return await this.deleteFlow(flowId) ? 'removed' : 'unknown';
   }
 
   /**
@@ -1166,7 +1171,20 @@ export class FlowBridgeManager {
   }
 
   /**
-   * The raw delete. Callers holding a STORED id use `deleteOwnedFlow` instead.
+   * Delete a flow, idempotently.
+   *
+   * `true` means the flow is GONE, not that a delete call succeeded — so a
+   * flow the user already removed by hand counts as success, because the
+   * desired end state holds. It used to return `false` there, and every caller
+   * counts that as a failure: a user who tidied up their Flow list before
+   * deleting the device saw "12 flows could not be removed" and went looking
+   * for a broken API key.
+   *
+   * Everything else stays `false`. A 401, a 403 or an unreachable Homey all
+   * mean "we could not tell", and reading "could not tell" as "it is gone" is
+   * how a reference is dropped while the Flow it names goes on firing.
+   *
+   * This is the raw delete: callers holding a STORED id use `deleteOwnedFlow`.
    */
   private async deleteFlow(flowId: string): Promise<boolean> {
     try {
@@ -1245,6 +1263,9 @@ function readJournal(saved: unknown): FlowJournal {
     staged: ids(raw.staged),
   };
 }
+
+/** What `deleteOwnedFlow` did with one stored id. See its docblock. */
+type OwnedDeleteOutcome = 'removed' | 'refused' | 'unknown';
 
 /** What `lookUpFlow` answers when there is no flow to hand back. */
 const GONE = Symbol('gone');

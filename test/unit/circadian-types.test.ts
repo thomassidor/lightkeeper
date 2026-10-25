@@ -200,6 +200,27 @@ describe('the three zones', () => {
     assert.deepEqual(sunAnchorContext({ latitude: 78.2, longitude: 15.6 }, 'Arctic/Longyearbyen', midsummer), {});
   });
 
+  test('the sun is TODAY\'s at every hour of the local day, either side of Greenwich', () => {
+    // The runtime caches this at its first tick after local midnight, so the
+    // hour it is asked at must not change the day it answers for. Near an
+    // equinox, when sunrise moves fastest, so that yesterday's sun and today's
+    // are minutes apart and a test of "the same day" can tell them apart.
+    const place = (latitude: number, longitude: number, timezone: string) =>
+      (utc: number) => sunAnchorContext({ latitude, longitude }, timezone, utc);
+
+    // Copenhagen, UTC+1: 00:30 local on 21 March is still 20 March in UTC.
+    const copenhagen = place(55.68, 12.57, 'Europe/Copenhagen');
+    const justAfterMidnight = copenhagen(Date.UTC(2026, 2, 20, 23, 30));
+    const noon = copenhagen(Date.UTC(2026, 2, 21, 11, 0));
+    const yesterday = copenhagen(Date.UTC(2026, 2, 20, 11, 0));
+    assert.deepEqual(justAfterMidnight, noon);
+    assert.notDeepEqual(justAfterMidnight, yesterday, 'the two days must differ, or this proves nothing');
+
+    // Honolulu, UTC-10: 23:30 local on 21 March is already 22 March in UTC.
+    const honolulu = place(21.31, -157.86, 'Pacific/Honolulu');
+    assert.deepEqual(honolulu(Date.UTC(2026, 2, 22, 9, 30)), honolulu(Date.UTC(2026, 2, 21, 22, 0)));
+  });
+
   test('across a daylight-saving change the anchors move with the wall clock, not the sun', () => {
     // The zone boundaries are local minutes, so on the day the clocks change
     // the sun has moved two minutes and the anchor an hour. Measured against

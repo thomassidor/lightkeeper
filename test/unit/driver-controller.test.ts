@@ -695,7 +695,7 @@ describe('the Test control refuses what the screen would never send', () => {
 
   test('a list naming only strangers is refused, not widened to every light', async () => {
     const { session, client } = await readyForButtons();
-    await assert.rejects(session.call('test', { func: 'on', deviceIds: ['l3'] }), /none of those lights/);
+    await assert.rejects(session.call('test', { func: 'on', deviceIds: ['l3'] }), /The lights you chose changed/);
     assert.deepEqual(client.writes, []);
   });
 
@@ -703,7 +703,7 @@ describe('the Test control refuses what the screen would never send', () => {
     const { session, client } = await readyForButtons();
     const asked = watchReads(client);
     const huge = Array.from({ length: 10_000 }, (_, i) => `x${i}`);
-    await assert.rejects(session.call('test', { func: 'on', deviceIds: huge }), /more than 256/);
+    await assert.rejects(session.call('test', { func: 'on', deviceIds: huge }), /not a list of lights this device can test/);
     assert.deepEqual(client.writes, []);
     // Building the ephemeral runtime reads its own two lamps; none of the
     // ten thousand named ones is ever asked about.

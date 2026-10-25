@@ -1104,7 +1104,10 @@ export class CircadianRuntime {
    *
    * The LOCAL day — local midnight, in epoch minutes. It was the UTC day, which
    * rolls over at 02:00 in Copenhagen and at 14:00 in Honolulu, so a morning
-   * boundary could be resolved against yesterday's sunrise.
+   * boundary could be resolved against yesterday's sunrise. Keying on the local
+   * day is only half of that: the first ask after local midnight is still
+   * yesterday in UTC east of Greenwich, which is why `sunAnchorContext` reads
+   * the sun at local noon rather than at the instant it is handed.
    */
   private sunContext(): AnchorContext {
     const now = this.now();
