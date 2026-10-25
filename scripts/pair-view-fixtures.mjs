@@ -315,7 +315,7 @@ const PALETTE_SWATCHES = PALETTE.map(colour => ({
 /**
  * "How Lightkeeper controls your lights", as `reviewControl()` sends it.
  *
- * "Set lights before they turn on" chosen and already tested, so one render
+ * "Keep lights updated, even while off" chosen and already tested, so one render
  * shows the radio group, the unfolded option and both kinds of result row —
  * which is three of the design's five screenshots of this control at once.
  */

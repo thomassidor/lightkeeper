@@ -335,7 +335,7 @@
       "many": "__count__ świateł zmienionych ręcznie",
       "other": "__count__ światła zmienionego ręcznie"
     },
-    "circadianPreStageOff": "Ustawianie barwy przed włączeniem świateł zostało automatycznie wyłączone: jedno z tych świateł włączyło się samo.",
+    "circadianPreStageOff": "Aktualizowanie wyłączonych świateł zostało automatycznie zatrzymane: jedno z tych świateł włączyło się samo.",
     "publishOnly": "Wylicza, jakie powinny być jego światła, i nie rusza ich, dopóki nie poprosi pilot albo Flow.",
     "mappingCount": {
       "one": "__count__ przypisanie",
@@ -471,10 +471,10 @@
     "transition": "Przejście",
     "control": {
       "title": "Jak Lightkeeper steruje twoimi światłami",
-      "after": "Zmieniaj światła po włączeniu",
-      "afterWhy": "Światła mogą włączyć się w poprzedniej barwie i zmienić ją chwilę później.",
-      "afterBrightnessWhy": "Światła mogą włączyć się z poprzednią jasnością i zmienić ją chwilę później.",
-      "before": "Ustawiaj światła przed włączeniem",
+      "after": "Aktualizuj światła, gdy są włączone",
+      "afterWhy": "Światła mogą włączyć się w poprzedniej barwie i zostać zaktualizowane chwilę później.",
+      "afterBrightnessWhy": "Światła mogą włączyć się z poprzednią jasnością i zostać zaktualizowane chwilę później.",
+      "before": "Aktualizuj światła, także gdy są wyłączone",
       "beforeWhy": "Światła włączają się od razu we właściwej barwie. Najpierw potrzebny jest krótki test, bo niektóre światła włączają się, gdy się je ustawia.",
       "none": "Nie zmieniaj świateł automatycznie",
       "noneWhy": "Lightkeeper wylicza barwę i jasność, ale nie rusza twoich świateł. Użyj tych wartości we własnych Flow.",
@@ -487,7 +487,7 @@
       "testing": "Testowanie…",
       "testNote": "Trwa około 15 sekund. Każde światło mignie raz, a potem wróci do poprzedniego stanu.",
       "passed": "Włącza się we właściwej barwie",
-      "fallback": "Włączyło się przy ustawianiu, więc jest zmieniane po włączeniu",
+      "fallback": "Włączyło się przy ustawianiu, więc jest aktualizowane tylko, gdy jest włączone",
       "testedNow": {
         "one": "Przetestowano przed chwilą · światło wróciło do poprzedniego stanu",
         "few": "Przetestowano przed chwilą · __count__ światła wróciły do poprzedniego stanu",
@@ -500,7 +500,7 @@
         "many": "Przetestowano przed chwilą · do poprzedniego stanu wróciło __restored__ z __count__ świateł",
         "other": "Przetestowano przed chwilą · do poprzedniego stanu wróciło __restored__ z __count__ światła"
       },
-      "testedBefore": "Według ostatniego testu. Światła dodane od tego czasu są zmieniane po włączeniu, dopóki nie zostaną przetestowane.",
+      "testedBefore": "Według ostatniego testu. Światła dodane od tego czasu są aktualizowane tylko, gdy są włączone, dopóki nie zostaną przetestowane.",
       "testAgain": "Przetestuj ponownie",
       "testFailed": "Nie udało się przeprowadzić testu. Sprawdź, czy światła są osiągalne, i spróbuj ponownie."
     },
@@ -820,7 +820,7 @@
     "addASchedule": "Dodaj co najmniej jeden blok harmonogramu.",
     "targetSelectionChanged": "Wybrane światła zmieniły się podczas sprawdzania. Wybierz je ponownie.",
     "notAControlMode": "„__mode__” nie jest sposobem, w jaki Lightkeeper może sterować światłami.",
-    "cannotSetBefore": "To urządzenie nie może ustawiać świateł przed ich włączeniem.",
+    "cannotSetBefore": "To urządzenie nie może aktualizować świateł, gdy są wyłączone.",
     "notATransition": "„__transition__” nie jest przejściem, które zna Lightkeeper.",
     "notALightList": "To nie jest lista świateł, które to urządzenie może przetestować."
   },
@@ -852,7 +852,7 @@
     "7": "Nd"
   },
   "warnings": {
-    "preStageUntested": "Wybrano ustawianie świateł przed włączeniem, ale żadne światło nie zostało jeszcze przetestowane, więc nie dotyczy to żadnego. Otwórz „Napraw” i uruchom test świateł na ostatnim ekranie."
+    "preStageUntested": "Wybrano aktualizowanie świateł także wtedy, gdy są wyłączone, ale żadne światło nie zostało jeszcze przetestowane, więc nie dotyczy to żadnego. Otwórz „Napraw” i uruchom test świateł na ostatnim ekranie."
   },
   "names": {
     "suffixed": "__place__ — __suffix__",

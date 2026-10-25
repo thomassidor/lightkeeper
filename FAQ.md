@@ -270,9 +270,9 @@ button that sets them too means two devices setting the same bulbs at every swit
 brightnesses, the colour twice, and lights that visibly step between them. The source picker warns
 when the device you pick drives its own lights, and says how many of the button's lights it shares.
 Change the answer from the device itself: its Settings (the gear on its page) carry the same
-choices. Only
-*Set lights before they turn on* still wants **Repair** once, for the light test — until a light has
-passed it, the device sets nothing in advance, and its page says so.
+choices. Only *Keep lights updated, even while off* still wants **Repair** once, for the light
+test — until a light has passed it, the device updates no light while it is off, and its page says
+so.
 
 A Homey **device group** counts as the lamps inside it. A remote driving a group called "Ceiling"
 and a curve driving the three spots in that group are driving the same three bulbs, and the warning
@@ -467,10 +467,10 @@ Stated plainly, because a limit you find out about later is worse than one you w
   of lights that are already on and — if you ask it to — sets the colour of lights that are off so
   they are right the moment they come on.
 - **Setting the colour of a light that is off is a choice, and then a test.** Without it a light
-  comes on as it was and changes a second or two later — *Change lights after they turn on*, the
-  default. *Set lights before they turn on* needs **Test my lights** first, because on some
-  integrations a colour sent to an off lamp switches it on: each light blinks once, and only the lights
-  that stayed off are ever set in advance. A light that later comes on by itself from one is taken off
+  comes on as it was and changes a second or two later — *Keep lights updated while they're on*,
+  the default. *Keep lights updated, even while off* needs **Test my lights** first, because on
+  some integrations a colour sent to an off lamp switches it on: each light blinks once, and only
+  the lights that stayed off are ever set in advance. A light that later comes on by itself from one is taken off
   that list for good, and the others carry on. A device that had this switched on before 0.6.5's
   per-light test existed stops doing it until you run the test once from **Repair**.
 - **Brightness is never pre-staged**, only colour. A brightness write turns an off lamp on; that is

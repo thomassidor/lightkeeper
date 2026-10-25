@@ -322,7 +322,7 @@
       "many": "__count__ luces cambiadas a mano",
       "other": "__count__ luces cambiadas a mano"
     },
-    "circadianPreStageOff": "Se ha desactivado automáticamente ajustar el color antes de que se enciendan las luces: una de ellas se encendió sola.",
+    "circadianPreStageOff": "Se ha dejado de actualizar automáticamente las luces apagadas: una de ellas se encendió sola.",
     "publishOnly": "Calcula cómo deberían estar sus luces y no las toca hasta que un mando o un Flow lo pida.",
     "mappingCount": {
       "one": "__count__ asignación",
@@ -452,11 +452,11 @@
     "transition": "Transición",
     "control": {
       "title": "Cómo controla Lightkeeper tus luces",
-      "after": "Cambiar las luces después de encenderse",
-      "afterWhy": "Las luces pueden encenderse con su color anterior y cambiar un momento después.",
-      "afterBrightnessWhy": "Las luces pueden encenderse con su brillo anterior y cambiar un momento después.",
-      "before": "Ajustar las luces antes de encenderse",
-      "beforeWhy": "Las luces se encienden con el color correcto. Antes hace falta una prueba rápida, porque algunas luces se encienden al ajustarlas.",
+      "after": "Actualizar las luces mientras están encendidas",
+      "afterWhy": "Las luces pueden encenderse con su color anterior y actualizarse un momento después.",
+      "afterBrightnessWhy": "Las luces pueden encenderse con su brillo anterior y actualizarse un momento después.",
+      "before": "Actualizar las luces, incluso apagadas",
+      "beforeWhy": "Las luces se encienden ya con el color correcto. Antes hace falta una prueba rápida, porque algunas luces se encienden al ajustarlas.",
       "none": "No cambiar las luces automáticamente",
       "noneWhy": "Lightkeeper calcula el color y el brillo, pero no toca tus luces. Usa los valores en tus propios Flows.",
       "test": {
@@ -467,7 +467,7 @@
       "testing": "Probando…",
       "testNote": "Tarda unos 15 segundos. Cada luz parpadea una vez y vuelve a como estaba.",
       "passed": "Se enciende con el color correcto",
-      "fallback": "Se encendió al ajustarla, así que se cambia después de encenderse",
+      "fallback": "Se encendió al ajustarla, así que solo se actualiza mientras está encendida",
       "testedNow": {
         "one": "Probada ahora mismo · la luz ha vuelto a como estaba",
         "many": "Probadas ahora mismo · __count__ luces han vuelto a como estaban",
@@ -478,7 +478,7 @@
         "many": "Probadas ahora mismo · __restored__ de __count__ luces han vuelto a como estaban",
         "other": "Probadas ahora mismo · __restored__ de __count__ luces han vuelto a como estaban"
       },
-      "testedBefore": "De la última prueba. Las luces añadidas desde entonces se cambian después de encenderse hasta que se prueben.",
+      "testedBefore": "De la última prueba. Las luces añadidas desde entonces solo se actualizan mientras están encendidas, hasta que se prueben.",
       "testAgain": "Probar de nuevo",
       "testFailed": "No se ha podido hacer la prueba. Comprueba que las luces están accesibles y vuelve a intentarlo."
     },
@@ -786,7 +786,7 @@
     "addASchedule": "Añade al menos un horario.",
     "targetSelectionChanged": "Las luces elegidas cambiaron mientras se comprobaban. Vuelve a elegirlas.",
     "notAControlMode": "“__mode__” no es una forma en que Lightkeeper pueda controlar las luces.",
-    "cannotSetBefore": "Este dispositivo no puede ajustar las luces antes de que se enciendan.",
+    "cannotSetBefore": "Este dispositivo no puede actualizar las luces mientras están apagadas.",
     "notATransition": "“__transition__” no es una transición que Lightkeeper conozca.",
     "notALightList": "Eso no es una lista de luces que este dispositivo pueda probar."
   },
@@ -818,7 +818,7 @@
     "7": "Dom"
   },
   "warnings": {
-    "preStageUntested": "Está configurado para ajustar las luces antes de que se enciendan, pero aún no se ha probado ninguna luz, así que no se ajusta ninguna. Abre Reparar y haz la prueba de luces en la última pantalla."
+    "preStageUntested": "Está configurado para actualizar las luces incluso apagadas, pero aún no se ha probado ninguna luz, así que no se actualiza ninguna. Abre Reparar y haz la prueba de luces en la última pantalla."
   },
   "names": {
     "suffixed": "__suffix__ de __place__",

@@ -1196,8 +1196,8 @@ export class CircadianRuntime {
       const isOn = this.cache.state(deviceId).actualOn === true;
       if (isOn) lit.push(deviceId);
 
-      // A light that is off is only worth writing to when the user chose to set
-      // lights before they turn on AND this lamp passed the test — and even then
+      // A light that is off is only worth writing to when the user chose to keep
+      // lights updated even while off AND this lamp passed the test — and even then
       // only its colour; see the brightness leg below.
       if (!isOn && !preStagesLamp(this.plan, deviceId)) {
         excluded.set(deviceId, 'off');
@@ -1823,7 +1823,7 @@ export class CircadianRuntime {
   private async disablePreStage(deviceId: string): Promise<void> {
     const listed = this.plan.preStageLights ?? [];
     if (!this.plan.preStage || !listed.includes(deviceId)) return;
-    // The choice stays: "Set lights before they turn on" is still what the
+    // The choice stays: "Keep lights updated, even while off" is still what the
     // household picked, and the review screen shows this lamp as the fallback
     // the next time it is opened. Only the lamp's own pass is withdrawn.
     this.plan = { ...this.plan, preStageLights: listed.filter(id => id !== deviceId) };
@@ -2003,7 +2003,7 @@ export class CircadianRuntime {
    * The review screen's test, and the per-lamp successor to `probePreStage()`
    * above — which answers "can this household pre-stage?" off one lamp that
    * happens to be off, and so could never produce the per-lamp list that
-   * "Set lights before they turn on" now stores (`preStageLights`).
+   * "Keep lights updated, even while off" now stores (`preStageLights`).
    *
    * **A lamp that is ON is switched off first**, and that is what "each light
    * blinks once, then goes back to how it was" on the screen means. Testing

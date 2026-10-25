@@ -56,7 +56,7 @@ interface SessionState {
   adjustBrightness: boolean;
   /** How each zone blends into the next. See `zoneValueAt`. */
   transition: Transition;
-  /** "Set lights before they turn on" — see lib/pairing/control-choice.ts. */
+  /** "Keep lights updated, even while off" — see lib/pairing/control-choice.ts. */
   preStage: boolean;
   /** The lamps the review screen's test proved. Absent = never tested. */
   preStageLights?: string[] | undefined;

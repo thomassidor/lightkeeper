@@ -309,7 +309,7 @@
       "one": "__count__ lys endret for hånd",
       "other": "__count__ lys endret for hånd"
     },
-    "circadianPreStageOff": "Å stille inn fargen før lysene slås på, ble slått av automatisk: ett av disse lysene slo seg på av seg selv.",
+    "circadianPreStageOff": "Oppdatering av lys som er av, ble stoppet automatisk: ett av disse lysene slo seg på av seg selv.",
     "publishOnly": "Regner ut hva lysene skal være, og lar dem være til en fjernkontroll eller en Flow ber om det.",
     "mappingCount": {
       "one": "__count__ tilordning",
@@ -433,11 +433,11 @@
     "transition": "Overgang",
     "control": {
       "title": "Slik styrer Lightkeeper lysene dine",
-      "after": "Endre lys etter at de slås på",
-      "afterWhy": "Lys kan slå seg på i forrige farge og skifte et øyeblikk senere.",
-      "afterBrightnessWhy": "Lys kan slå seg på med forrige lysstyrke og skifte et øyeblikk senere.",
-      "before": "Still inn lys før de slås på",
-      "beforeWhy": "Lysene slås på i riktig farge. Krever en rask test først, fordi noen lys slår seg på når de stilles inn.",
+      "after": "Hold lysene oppdatert mens de er på",
+      "afterWhy": "Lys kan slå seg på i forrige farge og oppdateres et øyeblikk senere.",
+      "afterBrightnessWhy": "Lys kan slå seg på med forrige lysstyrke og oppdateres et øyeblikk senere.",
+      "before": "Hold lysene oppdatert, også når de er av",
+      "beforeWhy": "Lysene slås på i riktig farge med en gang. Krever en rask test først, fordi noen lys slår seg på når de stilles inn.",
       "none": "Ikke endre lys automatisk",
       "noneWhy": "Lightkeeper beregner farge og lysstyrke, men lar lysene dine være. Bruk verdiene i dine egne Flows.",
       "test": {
@@ -447,7 +447,7 @@
       "testing": "Tester…",
       "testNote": "Tar omtrent 15 sekunder. Hvert lys blinker én gang og går så tilbake til slik det var.",
       "passed": "Slås på i riktig farge",
-      "fallback": "Slo seg på da det ble stilt inn, så det endres etter at det slås på",
+      "fallback": "Slo seg på da det ble stilt inn, så det oppdateres bare mens det er på",
       "testedNow": {
         "one": "Testet akkurat nå · lyset er tilbake slik det var",
         "other": "Testet akkurat nå · __count__ lys er tilbake slik de var"
@@ -456,7 +456,7 @@
         "one": "Testet akkurat nå · __restored__ av __count__ lys er tilbake slik det var",
         "other": "Testet akkurat nå · __restored__ av __count__ lys er tilbake slik de var"
       },
-      "testedBefore": "Fra forrige test. Lys som er lagt til siden, endres etter at de slås på, til de er testet.",
+      "testedBefore": "Fra forrige test. Lys som er lagt til siden, oppdateres bare mens de er på, til de er testet.",
       "testAgain": "Test igjen",
       "testFailed": "Testen kunne ikke kjøres. Sjekk at lysene kan nås, og prøv igjen."
     },
@@ -752,7 +752,7 @@
     "addASchedule": "Legg til minst én tidsplan.",
     "targetSelectionChanged": "Lysene du valgte, endret seg mens dette ble sjekket. Velg dem på nytt.",
     "notAControlMode": "«__mode__» er ikke en måte Lightkeeper kan styre lys på.",
-    "cannotSetBefore": "Denne enheten kan ikke stille inn lys før de slås på.",
+    "cannotSetBefore": "Denne enheten kan ikke oppdatere lys mens de er av.",
     "notATransition": "«__transition__» er ikke en overgang Lightkeeper kjenner til.",
     "notALightList": "Dette er ikke en liste over lys denne enheten kan teste."
   },
@@ -784,7 +784,7 @@
     "7": "søn"
   },
   "warnings": {
-    "preStageUntested": "Satt til å endre lys før de slås på, men ingen lys er testet for det ennå, så det skjer for ingen av dem. Åpne Reparer og kjør lystesten på det siste skjermbildet."
+    "preStageUntested": "Satt til å holde lysene oppdatert også når de er av, men ingen lys er testet for det ennå, så det skjer for ingen av dem. Åpne Reparer og kjør lystesten på det siste skjermbildet."
   },
   "names": {
     "suffixed": "__place__ – __suffix__",

@@ -159,13 +159,13 @@ T199 comes free.
       (the gear): *How Lightkeeper controls your lights* and *Transition* are there. Choose *Don't
       change lights automatically* and save. Switch one of its lamps off and on: the lamp comes on
       where it was left and stays there, and `node scripts/diagnostics.mjs` shows no writes from that
-      device. Restart the app: Settings still say *Don't change*. Choose *Change lights after they
-      turn on* and repeat the switch-on: the lamp is changed a moment after it comes on.
-- [ ] **T196** **A Room-sensing Light offers two.** Its Settings list exactly *Change lights after
-      they turn on* and *Don't change lights automatically*.
+      device. Restart the app: Settings still say *Don't change*. Choose *Keep lights updated while
+      they're on* and repeat the switch-on: the lamp is changed a moment after it comes on.
+- [ ] **T196** **A Room-sensing Light offers two.** Its Settings list exactly *Keep lights updated
+      while they're on* and *Don't change lights automatically*.
 - [ ] **T197** **"Before", chosen in Settings on a device never tested, says so.** On a Colour Curve
-      Light whose review-screen test has never run, choose *Set lights before they turn on* and save.
-      The device's page shows the warning telling you to run the test in Repair, and its lights behave
+      Light whose review-screen test has never run, choose *Keep lights updated, even while off* and
+      save. The device's page shows the warning telling you to run the test in Repair, and its lights behave
       as *after*. Run the test in Repair, save, and the warning is gone.
 - [ ] **T198** **A Repair moves Settings.** Change the choice and the Transition on Repair's screens
       and save: the device's Settings show both new values without a restart.
@@ -367,16 +367,16 @@ test — it asks what YOUR integrations do, and it now switches lamps that are o
 nothing in this app did before.
 
 - [ ] **T166** The choice, and that it sticks. Add a circadian light: the last screen must ask **How
-      Lightkeeper controls your lights**, with *Change lights after they turn on* chosen and nothing
-      unfolded, and no closing sentence. Add it, open **Repair**, and the same answer must be chosen.
+      Lightkeeper controls your lights**, with *Keep lights updated while they're on* chosen and
+      nothing unfolded, and no closing sentence. Add it, open **Repair**, and the same answer must be chosen.
       Choose *Don't change lights automatically*, save, and repair again: that must be chosen. Then add
       a Room-sensing Light: its last screen must offer exactly two answers, the first worded for
       brightness. A schedule's and a remote's last screens must offer none.
 - [ ] **T167** "Test my lights", on your own lamps, some on and some off. On a Colour Curve Light's
-      last screen, choose *Set lights before they turn on* and press **Test my {n} lights** with at
-      least one target lamp ON and one OFF. Every lamp must blink once and end exactly as it started —
+      last screen, choose *Keep lights updated, even while off* and press **Test my {n} lights** with
+      at least one target lamp ON and one OFF. Every lamp must blink once and end exactly as it started —
       on at its own brightness and colour, or off. The list must name every lamp, each either *Turns
-      on in the right colour* or *Turned on when set, so it is changed after it turns on*, followed by
+      on in the right colour* or *Turned on when set, so it is only updated while on*, followed by
       *Tested just now · n lights back to how they were*. Report which of your lamps landed where —
       that list is the evidence, and on the reference Homey roughly half a Hue household is expected
       to be the fallback. Then repeat with **six or more** lamps: the answer must arrive, not a "did
@@ -390,8 +390,8 @@ nothing in this app did before.
 - [ ] **T169** A device that pre-staged before this build stops until it is tested. Before
       installing, note a circadian or curve device whose `/diagnostics` shows `preStage: true`.
       After installing, its `preStageLights` must be `[]` and its lamps must come on as they were and
-      correct themselves; Repair must open on *Set lights before they turn on*, untested, with the
-      test button. Running the test there and saving must bring T168's behaviour back.
+      correct themselves; Repair must open on *Keep lights updated, even while off*, untested, with
+      the test button. Running the test there and saving must bring T168's behaviour back.
 - [ ] **T170** *Don't change lights automatically*, chosen on the last screen. On a Colour Curve
       Light, choose it and save. For the next hour, no write from this device may reach any of its
       lamps, the tile must stay ready, and its colour rows must keep moving. A preview from

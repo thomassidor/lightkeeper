@@ -46,19 +46,19 @@
         {
           "id": "after",
           "label": {
-            "en": "Change lights after they turn on",
-            "nl": "Lampen aanpassen nadat ze aangaan",
-            "de": "Lichter nach dem Einschalten anpassen",
-            "fr": "Modifier les lumières après leur allumage",
-            "it": "Cambia le luci dopo l'accensione",
-            "sv": "Ändra lamporna efter att de tänts",
-            "no": "Endre lys etter at de slås på",
-            "es": "Cambiar las luces después de encenderse",
-            "da": "Ændr lys, efter de tænder",
-            "ru": "Менять свет после включения",
-            "pl": "Zmieniaj światła po włączeniu",
-            "ko": "조명이 켜진 후 바꾸기",
-            "ar": "تغيير الأضواء بعد تشغيلها"
+            "en": "Keep lights updated while they’re on",
+            "nl": "Lampen bijwerken zolang ze aan zijn",
+            "de": "Lichter aktuell halten, solange sie an sind",
+            "fr": "Mettre à jour les lumières quand elles sont allumées",
+            "it": "Aggiorna le luci mentre sono accese",
+            "sv": "Håll lamporna uppdaterade medan de är tända",
+            "no": "Hold lysene oppdatert mens de er på",
+            "es": "Actualizar las luces mientras están encendidas",
+            "da": "Hold lys opdateret, mens de er tændt",
+            "ru": "Обновлять свет, пока он включён",
+            "pl": "Aktualizuj światła, gdy są włączone",
+            "ko": "켜져 있는 동안 조명 업데이트하기",
+            "ar": "تحديث الأضواء أثناء تشغيلها"
           }
         },
         {

@@ -390,7 +390,7 @@ export function registerCurvePreviewHandlers(
  *
  * Returned as a function for `registerControlHandlers` (lib/pairing/
  * control-choice.ts) rather than registered here, because the RESULT belongs
- * to the control: the lamps that pass are what "Set lights before they turn on"
+ * to the control: the lamps that pass are what "Keep lights updated, even while off"
  * stores. The runtime is ephemeral, like the preview's, so the test works
  * before a device exists — and stopped only after the probe has put every lamp
  * back.

@@ -144,7 +144,7 @@ export const DEFAULT_ZONES: CircadianZones = {
  * switch-on a visible colour change 1.3–1.9 s after the lamp came on, and is off
  * again now because the question it answered has moved to where it can be
  * answered properly. The review screen asks "How Lightkeeper controls your
- * lights", and "Set lights before they turn on" pre-stages only the lamps its
+ * lights", and "Keep lights updated, even while off" pre-stages only the lamps its
  * own per-lamp test watched stay off (`preStageLights`). Defaulting it on would
  * mean defaulting to a choice nobody can make before the test has run — and a
  * chosen-but-untested device behaves as option 1 anyway.

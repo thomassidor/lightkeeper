@@ -105,9 +105,9 @@ Every setup has a **Test** button that drives your real lights before you save.
 The Light Remote and the light schedule work through Flows that Lightkeeper writes and maintains;
 point one at a room and lamps added later are picked up. Deleting the device deletes its Flows and
 nothing else. The other three write no Flows and need no key: they adjust lights directly, and never
-switch one on or off. In each one's Settings you choose how it controls your lights — after they
-turn on, before they turn on (not on a Room-sensing Light), or not at all — and its **Transition**:
-*Gradual*, *Balanced* or *Quick*.
+switch one on or off. In each one's Settings you choose how it controls your lights — kept updated
+while they're on, kept updated even while off (not on a Room-sensing Light), or not at all — and
+its **Transition**: *Gradual*, *Balanced* or *Quick*.
 
 ## Using Lightkeeper in your own Flows
 
@@ -209,6 +209,8 @@ is shared only if you choose. [`docs/privacy.md`](docs/privacy.md) has the full 
   that bring back an older setting as they switch on.
 - **Every brightness is Homey's own number** — 50% here is 50% in Homey — and the *Brightness
   scale* setting is gone. Devices set up before are converted so their lights look exactly the same.
+- **Clearer names for how a device controls your lights:** *Keep lights updated while they're on*
+  and *Keep lights updated, even while off*.
 - **Hardened and lighter:** a Flow is deleted only when the live Flow names its device, and less
   background work — plus a test audit, and development tools updated.
 
