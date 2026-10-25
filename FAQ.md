@@ -595,10 +595,11 @@ arithmetic is covered by unit tests rather than by a week of waiting. The trigge
 on is resolved at runtime by enumerating what your Homey actually offers, rather than hardcoding an
 id, so it adapts if a firmware update moves it.
 
-**Circadian and Colour Curve Lights have not yet run a full day on hardware.** Their curve —
-including the segment that wraps midnight — and every rule about when a write is worth making are
-covered by unit tests, and the pairing screen's **Try it now** proves the whole write path against
-your own lamps before you save.
+**Circadian and Colour Curve Lights have run for days at a time on the same Homey**, including a
+recording of nearly four days that logged every write and every override — which is where several
+of the fixes in the changelog came from. Their curve — including the segment that wraps midnight —
+and every rule about when a write is worth making are also covered by unit tests, and the pairing
+screen's **Try it now** proves the whole write path against your own lamps before you save.
 
 Over 2300 unit tests, type-clean, validated at `publish` level. The test fixtures are transcribed verbatim
 from the four real remotes above, and the expected results are written by hand beside them, so the

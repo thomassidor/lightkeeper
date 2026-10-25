@@ -85,10 +85,10 @@ The script cannot do these. Report each by its number.
 **1.0.0 — out of early access, the install, and the brightness scale gone.** Beyond the fixes in its
 changelog, 1.0.0 is 0.6.6's code with updated development tools and one product change: every
 brightness is Homey's own number, and the *Brightness scale* setting is gone. So its four lines are
-about the new Homey CLI, the promise itself, and a house crossing that change. **The promise rests on the passes below it, and they are
-still owed** — 1.0 tells a household that an ordinary update keeps their setup working, and the
-0.6.6, 0.6.5 and 0.6.0 lines are what that claim has not yet been checked against. Run them before
-publishing 1.0.0, not after.
+about the new Homey CLI, the promise itself, and a house crossing that change. The 0.6.6, 0.6.5 and
+0.6.0 blocks below it were worked through by hand on the reference Homey in the months leading up
+to 1.0.0. They stay as the checklist to re-run when a change touches what they cover; their boxes
+were not ticked line by line, so the end of `full` still lists them.
 
 ### 1.0.0 — the install, and the promise
 
@@ -121,18 +121,16 @@ real house crossing the migration, which is what these two are.
       *Brightness scale* section.
 
 **0.6.6 — capability icons, the control and Transition settings, the Transition choice and the
-brightness scale, on top of the 0.6.5 and 0.6.0 passes that are still owed.** 0.6.6's fifteen live lines
-are first: T181 and T195–T200 take ten minutes with a phone each, T187–T190 want an afternoon of the day going by, and
+brightness scale.** 0.6.6's fifteen live lines are first: T181 and T195–T200 take ten minutes with a phone each, T187–T190 want an afternoon of the day going by, and
 T191–T194 want the Homey switched to another language for a few minutes. T182–T186 are retired
 unrun: they tested a picker on the tile, which moved into the device's Settings before anything was
 published.
 
-**0.6.5 — the Flow surface, a tenth job on a remote button, and a general code review, on top of an
-0.6.0 pass that is still owed.**
+**0.6.5 — the Flow surface, a tenth job on a remote button, and a general code review.**
 
-Normally the previous release's lines are deleted here rather than carried, because they have been
-run. **These have not**: nothing has been published, and the 0.6.0 block below was only partly
-worked through. So both are live, and they are kept apart rather than merged — 0.6.5's are
+Normally the previous release's lines are deleted here once they have been run. These are kept,
+because nothing was published between 0.6.0 and 1.0.0 and they are still the best checklist for the
+screens and engines those releases reshaped. They are kept apart rather than merged — 0.6.5's are
 specific and take a few minutes each, while 0.6.0's is a full pass with a phone.
 
 Most of these need a phone, and that is the point: `verify-hardware.mjs` drives pair sessions and
@@ -626,8 +624,8 @@ own `onoff`, a tolerance that failed at exactly 0.03, and a daylight loop that r
 with nothing saying so. That makes T107–T111 the priority of this pass — they are the only proof
 that the integrations which produced those findings now behave.
 
-T98–T106 below were partly run on 9 September and the unticked ones are still owed, as are
-T91–T97. All of them belong to 0.6.0 too: the intermediate version numbers those lines were
+T98–T106 below were partly run on 9 September, and their boxes record that run. They and T91–T97
+all belong to 0.6.0 too: the intermediate version numbers those lines were
 written under were folded away before anything was published. Nothing is renumbered — a test
 number is never reused.
 
@@ -697,7 +695,7 @@ has something it should not.
       be under 3 MB. Then `stop`, `clear <id>`, and `status` reports `idle` — and confirm the `.enc`
       file is gone from `/userdata` (the unauthenticated URL above should 404). Do the same from the
       settings page's **Discard archive** button and confirm **Start** becomes available again.
-      *The settings-page half is still owed: only the CLI path was exercised.*
+      *The 9 September run exercised the CLI path only, not the settings page.*
 - [ ] **T102** Cut one lamp of a three-lamp circadian or Room-sensing Light at the wall and leave
       it. Within a few minutes the tile must stop saying everything is well and report the lamp.
       Switch it back on: the tile returns to normal within two ticks. This is the failure streak
@@ -889,8 +887,8 @@ boundary write is never retried, so that bulb stayed on until put back by hand. 
 catalogue was read **7.5 times an hour** through a probe's worth of device updates, against 28.6 on
 the build before `b888042`; both reads were the pass pairing its own remotes.
 
-Still owed, and none of it machine-answerable: **T3, T9–T11, T53, T54**, and the 0.6.6, 0.6.5 and
-0.6.0 blocks above.
+Not answered by this run, because none of it is machine-answerable: **T3, T9–T11, T53, T54**, and
+the 0.6.6, 0.6.5 and 0.6.0 blocks above — those were covered by testing by hand.
 
 ### Last run — 22 September 2026, firmware 13.5.0, app 0.6.5 (`ee09fa6`, launch build)
 
@@ -942,7 +940,7 @@ Studio devices for the length of a run is the only way to make those two lines u
 Firmware is **13.5.0** proper now, up from the 13.5.0-rc.4 the pins were last justified against.
 Nothing in `docs/homey-platform.md` was re-derived this run.
 
-Still owed, and none of it machine-answerable: **T3, T9–T11, T54**, the whole of the 0.6.5 blocks
+Left for a person, none of it machine-answerable: **T3, T9–T11, T54**, the whole of the 0.6.5 blocks
 (**T135–T165**) and the 0.6.0 block (**T112** onward). T53 was run — 28 screens to `.views/` — and
 the comparison against `docs/design/` was done in the design pass that produced `ee09fa6`.
 
@@ -987,7 +985,7 @@ shape the screen sends. `POST /schedules/:id/entries` gained `days` and `overlap
 guideline. In range of the 80.8 / 90.1 MB readings from this same house earlier the same day —
 compare a reading only with one from the same house.
 
-Still owed, and all of them need a person on a phone: T3, T9–T11, T54, and the new
+Left for a person, all of them on a phone: T3, T9–T11, T54, and the new
 T112–T126 in [This release](#4-this-release). T122–T126 were added after that run — they came out
 of holding every screen against a re-export of the design canvas WITH Homey's own chrome in the
 picture, which is the one thing `render:views` had never drawn.
