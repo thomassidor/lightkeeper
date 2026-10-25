@@ -6,7 +6,8 @@ every site that depends on something written down below.
 
 This is how Homey actually behaves, as opposed to how it appears to, and it is documented nowhere
 else. Every section was established against real hardware: Homey Pro 2023, firmware 13.4.0-13.4.1,
-homey-api 3.19.2.
+homey-api 3.19.2. The app now ships homey-api 3.21.0, taken on 25 October 2026 with a full hardware
+pass on firmware 13.5.3; no section was re-derived for it.
 
 **The reference Homey now runs firmware 13.5.0** (observed 9 September 2026; it was on 13.5.0-rc.4
 on 2 September). §17 was established on it outright, and two earlier sections have been re-checked

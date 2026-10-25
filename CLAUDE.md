@@ -376,7 +376,8 @@ README.md  FAQ.md  CHANGELOG.md  CONTRIBUTING.md
 # The Homey platform reference lives in `docs/homey-platform.md`
 
 Eighteen numbered sections on how Homey actually behaves — every one established against real
-hardware (Homey Pro 2023, firmware 13.4.0, homey-api 3.19.2) and documented nowhere else. **Read it
+hardware (Homey Pro 2023, firmware 13.4.0, homey-api 3.19.2; the full pass re-run on 13.5.3 with
+homey-api 3.21.0) and documented nowhere else. **Read it
 before changing anything that talks to Homey.** It used to be the middle of this file; it moved out
 so that a human developer could find it under a name that says what it is.
 
@@ -562,20 +563,28 @@ gone stale (`cron:every` is now `cron:every_nth`, with a different shape); the c
 depends on, `cron:time_exactly`, is unchanged and is still the only card matching the shape match.
 Nothing else in the reference has been re-checked.
 
-- **`homey-api` is pinned exactly at `3.19.2`** — no caret. This is the version verified on
-  Homey Pro 2023, firmware 13.4.0 (and still installing and connecting fine on 13.5.0-rc.4). Its `engines.node` says `>=24`, which npm only *warns* about
-  (`EBADENGINE`); the package runs fine on the Node the Homey actually has and on Node 22 locally.
-  A review recommended downgrading to `3.17.3` purely on the strength of that field — **do not**,
-  on that evidence alone: it swaps a version proven on real hardware for one that never has been.
+- **`homey-api` is pinned exactly at `3.21.0`** — no caret. Taken from dependabot on
+  25 October 2026 with a full hardware pass on firmware 13.5.3 (122 OK, 0 failed — the same as
+  3.19.2 that morning, including T35-T41, the credential lines). The diff from 3.19.2 that
+  touches this app: a non-JSON error body now lands in `message` rather than `error` (the visible
+  `err.message` is unchanged, and nothing here reads `err.error`), and reconnect handlers are
+  guarded against throwing. Its new `jsonwebtoken` dependency is required only by
+  `AthomCloudAPI`, which the deep `HomeyAPI/HomeyAPI` path in `homey-api-service.ts` never
+  loads. 3.19.2 was verified on 13.4.0 before it. Its `engines.node` says `>=24`, which npm only
+  *warns* about (`EBADENGINE`); the package runs fine on the Node the Homey actually has and on
+  Node 22 locally. A review once recommended downgrading to `3.17.3` purely on the strength of that
+  field — **do not**, on that evidence alone: it swaps a version proven on real hardware for one
+  that never has been.
 - **CI runs Node 22**, to stay near current firmware. The CLI is a devDependency at exactly
   `homey@4.6.1` and `validate` runs it from the lockfile: an unpinned `npx homey` changes what
   "publish-level valid" means between two runs of one commit, and even a pinned `npx homey@4.6.1`
   leaves the CLI's own transitive tree free to move.
-  **That CLI brings its own `homey-api` 3.21.0, and it is not the one the app ships.** It hoists to
-  the top of `node_modules`, which pushes OUR 3.19.2's `socket.io-client`, `socket.io-parser` and
-  `debug` down into `node_modules/homey-api/node_modules/` — so `npm ls homey-api` shows two and a
-  lockfile diff reads like a runtime change. It is not one: the CLI packs from `npm ls --omit=dev`,
-  and that list carries the same versions as before, at the nested paths.
+  **That CLI depends on `homey-api` too, and today it is the same 3.21.0, deduped.** While the app
+  was on 3.19.2 the CLI's newer copy hoisted to the top of `node_modules` and pushed ours, and its
+  `socket.io-client`, `socket.io-parser` and `debug`, down into a nested folder, so `npm ls
+  homey-api` showed two and a lockfile diff read like a runtime change. It was not one — the CLI
+  packs from `npm ls --omit=dev` — and the next time the two versions part, it will look like that
+  again.
 - **`eslint` is at `^10`, and its Node floor is stricter than the app's own.** It declares
   `^20.19.0 || ^22.13.0 || >=24`, so a local 22.12 gets an `EBADENGINE` warning on install (eslint
   10.9.1 then ran clean on 22.12 anyway — the warning is npm's, not a refusal). `package.json`'s
