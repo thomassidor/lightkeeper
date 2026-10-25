@@ -28,7 +28,7 @@ import { DEFAULT_BEHAVIOR } from '../mapping/mapping-types';
 import type { ControllerState, StateDetail } from '../profiles/controller-profile';
 import { assessTargets } from '../runtime/target-health';
 import {
-  diffTargets, releaseTarget, resolveSnapshot, type TargetSnapshot,
+  diffTargets, isUnavailable, releaseTarget, resolveSnapshot, type TargetSnapshot,
 } from '../outputs/target-snapshot';
 import { fireAndForget } from '../support/async';
 import { withDefaults, type Timers } from '../support/timers';
@@ -192,6 +192,22 @@ const COLOR_STEP = 0.03;
  * the only way to shorten it is to watch a real bridge's event order.
  */
 const PRE_STAGE_CHECK_MS = 1500;
+
+/**
+ * How long "Test my lights" lets a lamp it has just switched back on settle
+ * before giving it back its own values.
+ *
+ * Measured on 25 October 2026 on a Tuya bulb (`com.tuya2`) that keeps a
+ * colour temperature written while it is off: switched on, it applies that
+ * held value a few hundred milliseconds AFTER acking the `onoff` write. A
+ * warmth sent 0 or 300 ms after the ack was overwritten every time; 600, 1000
+ * and 2500 ms all landed. So the restore put the test's own warmth back on
+ * three of four Terrace lamps, and the lamps the test exists to pass were
+ * exactly the ones it left changed. Twice the longest failing gap, and paid
+ * once per lamp in parallel, so the whole test stays well inside the 20 s a
+ * pair view waits.
+ */
+export const RESTORE_SETTLE_MS = 1000;
 
 /**
  * The capabilities a write to an OFF lamp can be a pre-stage write on.
@@ -1182,6 +1198,13 @@ export class CircadianRuntime {
         continue;
       }
 
+      // Homey refuses the write itself; see isUnavailable(). Forced or not.
+      if (isUnavailable(this.snapshot, deviceId)) {
+        excluded.set(deviceId, 'unavailable');
+        skipped += 1;
+        continue;
+      }
+
       const isOn = this.cache.state(deviceId).actualOn === true;
       if (isOn) lit.push(deviceId);
 
@@ -2127,6 +2150,9 @@ export class CircadianRuntime {
         return true;
       }
       await this.adapter.write(deviceId, 'onoff', true);
+      // A lamp that applies a held value on switch-on does it after the ack,
+      // and would overwrite what follows. See RESTORE_SETTLE_MS.
+      await new Promise(resolve => this.setTimer(() => resolve(null), RESTORE_SETTLE_MS));
       const mode = this.cache.supports(deviceId, 'light_mode') ? before.light_mode : undefined;
       if (mode !== undefined) await this.adapter.write(deviceId, 'light_mode', mode);
       const axes = mode !== undefined

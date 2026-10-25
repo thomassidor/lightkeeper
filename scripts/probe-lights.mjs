@@ -196,6 +196,14 @@ const PROBE = {
   BETWEEN_LIGHTS_MS: 2_000,
   /** A restore is close enough at this, or at the lamp's measured quantisation. */
   RESTORE_TOLERANCE: 0.02,
+  /**
+   * After switching a lamp back on, before giving it its values. A Tuya bulb
+   * applies a value written while it was off a few hundred ms AFTER acking the
+   * switch-on, over anything sent in between: 0 and 300 ms lost the value every
+   * time, 600 ms and later kept it (25 October 2026). The app's restore waits the
+   * same — `RESTORE_SETTLE_MS` in circadian-runtime.ts.
+   */
+  POWER_ON_SETTLE_MS: 1_000,
   /** Per read, per write, per light. */
   READ_TIMEOUT_MS: 8_000,
   WRITE_TIMEOUT_MS: 10_000,
@@ -2112,7 +2120,7 @@ export function restorePlan(snapshot, capabilities) {
 /**
  * Put the lamp back, in an order that survives the mode gate, and check.
  *
- * Three rules, each of them a bug this would otherwise have:
+ * Five rules, each of them a bug this would otherwise have:
  *
  *   - MODE LAST OF THE THREE. Writing a hue puts the lamp in colour mode and a
  *     temperature puts it back (platform §6), so restoring the values in
@@ -2133,6 +2141,10 @@ export function restorePlan(snapshot, capabilities) {
  *     13 September 2026; putting the same values back with `dim` last restored
  *     both exactly. So the power-gating write goes last among the values, where
  *     it gates nothing.
+ *   - A SECOND AFTER POWER-ON. A lamp that applies a value it was given while
+ *     off does it after acking the switch-on, on top of whatever came straight
+ *     behind it — so the restore lost a warmth on a Tuya bulb. See
+ *     `POWER_ON_SETTLE_MS`.
  *   - TOLERANCE FROM THE LAMP. A lamp with an undeclared floor cannot return to
  *     a snapshot below that floor, and reporting that as a failed restore would
  *     send somebody to a light that is exactly where they left it. So the check
@@ -2160,6 +2172,7 @@ async function restoreLight(api, light) {
   for (const step of plan) {
     const outcome = await write(light, step.capability, step.value);
     attempted.push({ capability: step.capability, ok: outcome.ok, error: outcome.error });
+    if (step.capability === 'onoff' && step.value === true) await sleep(PROBE.POWER_ON_SETTLE_MS);
   }
 
   await sleep(PROBE.LADDER_GAP_MS);
@@ -2301,12 +2314,12 @@ async function collectLights(api) {
  * has to be asked for rather than arrived at.
  *
  * @param {Light[]} lights
- * @param {{ zones: string[], names: string[], driver: string | null, all: boolean,
+ * @param {{ zones: string[], names: string[], drivers: string[], all: boolean,
  *           room: string, quick: boolean, sample: number | null }} selection
  */
 function selectLights(lights, selection) {
   const explicit = selection.zones.length > 0 || selection.names.length > 0
-    || selection.driver !== null;
+    || selection.drivers.length > 0;
 
   let chosen = lights;
 
@@ -2319,10 +2332,10 @@ function selectLights(lights, selection) {
     chosen = chosen.filter(l => wanted.includes(l.ref.name.toLowerCase())
       || wanted.includes(l.ref.id.toLowerCase()));
   }
-  if (selection.driver !== null) {
-    const wanted = selection.driver.toLowerCase();
-    chosen = chosen.filter(l => l.ref.driverId.toLowerCase().includes(wanted)
-      || l.ref.ownerUri.toLowerCase().includes(wanted));
+  if (selection.drivers.length > 0) {
+    const wanted = selection.drivers.map(d => d.toLowerCase());
+    chosen = chosen.filter(l => wanted.some(w => l.ref.driverId.toLowerCase().includes(w)
+      || l.ref.ownerUri.toLowerCase().includes(w)));
   }
   if (!explicit && !selection.all && selection.room) {
     const room = selection.room.toLowerCase();
@@ -4005,7 +4018,7 @@ async function scanForConflicts(api, lights) {
  *
  * @param {Light[]} lights
  * @param {Set<string>} phases
- * @param {{ all: boolean, room: string, zones: string[], names: string[], driver: string | null }} scope
+ * @param {{ all: boolean, room: string, zones: string[], names: string[], drivers: string[] }} scope
  */
 function printPlan(lights, phases, scope) {
   const perLight = phases.size === 0 ? 0.2 : 0.6 + phases.size * 0.5;
@@ -4021,7 +4034,7 @@ function printPlan(lights, phases, scope) {
   const explicit = [
     ...scope.zones.map(zone => `--zone "${zone}"`),
     ...scope.names.map(name => `--light "${name}"`),
-    ...(scope.driver === null ? [] : [`--driver "${scope.driver}"`]),
+    ...scope.drivers.map(driver => `--driver "${driver}"`),
   ];
   if (explicit.length > 0) {
     console.log(`scope: ${explicit.join(', ')}`);
@@ -4647,12 +4660,13 @@ async function main() {
   const explicitScope = parsed.switches.has('--all')
     || (parsed.options['--zone'] ?? []).length > 0
     || (parsed.options['--light'] ?? []).length > 0
-    || parsed.options['--driver'] !== undefined;
+    || (parsed.options['--driver'] ?? []).length > 0;
 
   const selection = {
     zones: parsed.options['--zone'] ?? [],
     names: parsed.options['--light'] ?? [],
-    driver: parsed.options['--driver']?.[0] ?? null,
+    // Every one, as documented: `--driver a --driver b` used to probe only `a`.
+    drivers: parsed.options['--driver'] ?? [],
     all: parsed.switches.has('--all'),
     room: explicitScope ? null : config.room,
     quick: parsed.switches.has('--quick'),

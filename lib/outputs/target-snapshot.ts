@@ -83,6 +83,25 @@ function fingerprintOf(devices: CatalogDevice[], missing: string[]): string {
 }
 
 /**
+ * Whether Homey itself says this target is unavailable — the one answer a write
+ * cannot change.
+ *
+ * Measured on 25 October 2026: an outdoor lamp Homey marked unavailable was sent
+ * a `dim` by its Room-sensing Light once a minute for hours, every write refused
+ * in ~10 ms with "This device is currently unavailable." — 388 refusals pushed
+ * every real write out of a 30-entry log. Homey refuses locally, so the write
+ * reaches nothing and proves nothing; skipping it loses nothing either, because
+ * availability is in the fingerprint and its return re-resolves the targets and
+ * runs a pass straight away.
+ *
+ * Only `available === false`. A lamp cut at the wall stays `available: true`
+ * (platform §6) and is the write-failure streak's job, not this one's.
+ */
+export function isUnavailable(snapshot: TargetSnapshot | null, deviceId: string): boolean {
+  return snapshot?.devices.some(device => device.id === deviceId && device.available === false) === true;
+}
+
+/**
  * What a runtime has to release, and what it has to prime, to go from one
  * snapshot to the next.
  */

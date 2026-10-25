@@ -4881,7 +4881,13 @@ async function testableLampsByRoom(session, only = '') {
 async function driversAndOverrides(app) {
   /** @type {any} */
   const diagnostics = await app.get('/diagnostics');
-  /** @type {Map<string, string[]>} */
+  /**
+   * Each owner with the axes it can write. A Room-sensing Light writes `dim`
+   * and nothing else, so a colour that moved on its lamp is not its doing — and
+   * excusing that drift as "the device doing its job" hid a restore that had
+   * failed on three Tuya lamps (25 October 2026).
+   * @type {Map<string, Array<{ name: string, writes: string[] | null }>>}
+   */
   const drivenBy = new Map();
   /** @type {Array<{ device: string, lamp: string, at: number, capability: string }>} */
   const overrides = [];
@@ -4891,8 +4897,9 @@ async function driversAndOverrides(app) {
   ]) {
     const name = String(runtime?.name ?? runtimeId(runtime));
     if (runtime?.enabled === false) continue;
+    const writes = runtime?.kind === 'daylight' ? ['dim'] : null;
     for (const id of /** @type {string[]} */ (runtime?.targetIds ?? [])) {
-      drivenBy.set(id, [...(drivenBy.get(id) ?? []), name]);
+      drivenBy.set(id, [...(drivenBy.get(id) ?? []), { name, writes }]);
     }
     for (const target of /** @type {any[]} */ (runtime?.targets ?? [])) {
       if (target?.overridden && target?.override?.at) {
@@ -4968,7 +4975,11 @@ async function testLamps(api, app, session, label, lamps) {
   for (let i = 0; i < before.length; i += 1) {
     const drift = lampDrift(before[i], after[i]);
     if (drift.length === 0) continue;
-    const owners = drivenBy.get(before[i].id) ?? [];
+    // Only owners that can write every axis that moved: `drift` entries start
+    // with the capability's name.
+    const owners = (drivenBy.get(before[i].id) ?? [])
+      .filter(owner => drift.every(entry => owner.writes === null || owner.writes.includes(entry.split(' ')[0])))
+      .map(owner => owner.name);
     if (owners.length > 0 && before[i].values.onoff === after[i].values.onoff) {
       // Same power state, a different colour: the lamp came back on and a device
       // that drives it applied its own. Not put back, on purpose — writing the

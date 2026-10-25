@@ -3,7 +3,7 @@ import { ownsNothing, zoneLights } from '../support/fake-catalog';
 import { FakeTimers } from '../support/fake-timers';
 import assert from 'node:assert/strict';
 
-import { CircadianRuntime } from '../../lib/circadian/circadian-runtime';
+import { CircadianRuntime, RESTORE_SETTLE_MS } from '../../lib/circadian/circadian-runtime';
 import type { CircadianPlan } from '../../lib/circadian/circadian-types';
 import type { DeviceCatalog } from '../../lib/device-catalog';
 import type { HomeyApiService } from '../../lib/homey-api-service';
@@ -97,6 +97,12 @@ function harness(options: {
    * the outcome pre-staging exists to rule out (platform §6).
    */
   turnsOnWhenSet?: string[];
+  /**
+   * Lamps that keep a colour written while OFF and apply it this long AFTER
+   * being switched on, overwriting anything sent in between — the Tuya bulbs
+   * measured on 25 October 2026. See RESTORE_SETTLE_MS.
+   */
+  appliesHeldOnPowerOn?: { ids: string[]; ms: number };
   /** The app-wide brightness scale, read per pass. Absent is natural. */
   brightnessScale?: () => 'natural' | 'linear';
 } = {}) {
@@ -120,6 +126,9 @@ function harness(options: {
    * the runtime had cancelled (a teardown, a superseding write) still ran.
    */
   const timers = new FakeTimers(options.now ?? EVENING);
+  /** For `appliesHeldOnPowerOn`: what each lamp was given while off, and when it came on. */
+  const held = new Map<string, Map<string, unknown>>();
+  const poweredOnAt = new Map<string, number>();
 
   const deviceHandle = (id: string) => {
     const device = devices.find(d => d.id === id)!;
@@ -142,6 +151,19 @@ function harness(options: {
         // The Homey reports back what it was told, which is what makes the echo
         // dedupe and the override tolerance worth testing at all.
         if (device.capabilitiesObj[capabilityId]) device.capabilitiesObj[capabilityId].value = value;
+        if (options.appliesHeldOnPowerOn?.ids.includes(id)) {
+          const lampHeld = held.get(id) ?? new Map<string, unknown>();
+          held.set(id, lampHeld);
+          if (capabilityId === 'onoff') {
+            if (value === true) poweredOnAt.set(id, timers.now());
+          } else if (device.capabilitiesObj.onoff?.value === false) {
+            lampHeld.set(capabilityId, value);
+          } else if (lampHeld.has(capabilityId)
+            && timers.now() - (poweredOnAt.get(id) ?? -Infinity) < options.appliesHeldOnPowerOn.ms) {
+            // Too soon after switch-on: the lamp's own held value lands on top.
+            device.capabilitiesObj[capabilityId].value = lampHeld.get(capabilityId);
+          }
+        }
         if (options.turnsOnWhenSet?.includes(id)
           && (capabilityId === 'light_temperature' || capabilityId === 'light_hue')
           && device.capabilitiesObj.onoff?.value === false) {
@@ -362,6 +384,26 @@ describe('circadian writes', () => {
     await settle();
 
     assert.deepEqual(temperatures(h.writes).map(w => w.deviceId), ['l2']);
+  });
+
+  test('a light Homey reports unavailable is left alone until it returns', async () => {
+    // Homey refuses the write itself, so a once-a-minute retry reached nothing
+    // and filled the write log with refusals. Its return re-resolves the targets.
+    const gone = light('l2');
+    gone.available = false;
+    const h = harness({ devices: [light('l1'), gone] });
+    await h.runtime.start();
+    await settle();
+
+    assert.deepEqual(temperatures(h.writes).map(w => w.deviceId), ['l1']);
+    const decision = h.runtime.diagnostics().lastAction?.targets?.find(t => t.deviceId === 'l2');
+    assert.equal(decision?.status, 'unavailable');
+
+    gone.available = true;
+    await h.runtime.refreshTargets();
+    await settle();
+
+    assert.deepEqual(temperatures(h.writes).map(w => w.deviceId), ['l1', 'l2']);
   });
 
   test('with pre-staging on, a light that is off is set in advance', async () => {
@@ -772,6 +814,32 @@ describe('pre-staging that turns out to be unsafe', () => {
    * test is two waits long whatever the count, one after another it is two per
    * lamp.
    */
+  test('a lamp that applies a held colour on switch-on is still put back as it was', async () => {
+    // Measured on Tuya bulbs: a warmth sent the moment the lamp acked `onoff`
+    // was overwritten by the one the test had given it while off, so the test
+    // left three of four lamps at its own warmth.
+    const h = harness({
+      plan: plan({ preStage: true, preStageLights: [], target: { kind: 'devices', deviceIds: ['l1'] } }),
+      devices: [light('l1', undefined, { onoff: true, dim: 0.7, light_temperature: 0.3 })],
+      appliesHeldOnPowerOn: { ids: ['l1'], ms: 500 },
+    });
+    await h.runtime.startIdle();
+
+    let outcome: Awaited<ReturnType<typeof h.runtime.probePreStageAll>> | null = null;
+    const pending = h.runtime.probePreStageAll(0).then(result => { outcome = result; });
+    for (let elapsed = 0; elapsed <= 5000 && outcome === null; elapsed += 100) {
+      await h.settle();
+      h.elapse(100);
+    }
+    await h.settle();
+    await pending;
+
+    assert.equal(outcome!.lights[0]!.restored, true);
+    assert.notEqual(h.writes.find(w => w.capability === 'light_temperature')?.value, 0.3,
+      'the test must have written a warmth of its own, or this proves nothing');
+    assert.equal(h.devices[0]!.capabilitiesObj.light_temperature.value, 0.3);
+  });
+
   test('the per-lamp test waits twice in all, not twice per lamp', async () => {
     const WAIT = 1500;
     const h = harness({
@@ -800,7 +868,8 @@ describe('pre-staging that turns out to be unsafe', () => {
     assert.notEqual(answeredAt, null, 'the test never answered');
     const took = answeredAt! - started;
     assert.ok(took >= 2 * WAIT, `each lamp still waits twice — answered after ${took} ms`);
-    assert.ok(took <= 2 * WAIT + 200,
+    // Plus one restore settle, paid by all three lamps at once.
+    assert.ok(took <= 2 * WAIT + RESTORE_SETTLE_MS + 200,
       `three lamps took ${took} ms: two waits is ${2 * WAIT}, one after another would be ${6 * WAIT}`);
   });
 

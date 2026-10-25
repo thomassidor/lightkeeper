@@ -735,6 +735,28 @@ describe('DaylightRuntime - health', () => {
     assert.equal(h.runtime.currentState, 'partial');
   });
 
+  test('an unavailable lamp is not written to, and is written to the moment it returns', async () => {
+    // Measured: Homey refuses a write to a device it marks unavailable in ~10 ms,
+    // and a once-a-minute retry filled the write log with nothing but refusals.
+    const gone = light('l2');
+    gone.available = false;
+    const h = harness({ devices: [light('l1'), gone] });
+    await h.runtime.start();
+    await h.runtime.drain();
+    await tick(h);
+
+    assert.equal(h.dimWrites().filter(w => w.deviceId === 'l2').length, 0);
+    const decision = h.runtime.diagnostics().lastAction?.targets?.find(t => t.deviceId === 'l2');
+    assert.equal(decision?.status, 'unavailable');
+
+    gone.available = true;
+    await h.runtime.refreshTargets();
+    await h.runtime.drain();
+    await h.settle();
+
+    assert.equal(h.dimWrites().filter(w => w.deviceId === 'l2').length, 1);
+  });
+
   test('no sensor and no location is needs_repair, and names which', async () => {
     const h = harness({ verdict: { source: 'none', elevation: null } });
     await h.runtime.start();
