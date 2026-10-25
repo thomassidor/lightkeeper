@@ -13,8 +13,8 @@ access.** Every 0.x version was described as early access, in the store descript
 in every changelog entry. From 1.0 the app follows semantic versioning: a minor or patch
 update keeps every device a user already added working as they set it up, and anything
 that would need Repair or re-adding a device is a major version, named as such in the
-changelog. The "what is still untested" section at the end of this document is still the
-honest list of what has not been run on hardware.
+changelog. "Known limitations, stated plainly" at the end of this document is the honest
+list of what the app does not do and what has not been measured on hardware.
 
 ---
 
@@ -117,10 +117,12 @@ Three consequences a reviewer may want to verify:
   mean dozens of them per device in the user's own Flow list.
 - **It never switches a light on or off.** It only writes colour, and only to lights
   that are already on — unless the user opts into pre-setting the colour of lights
-  that are off, which the pairing screen makes them prove on their own lamps first,
-  and which the app disables by itself if a lamp ever comes on from such a write.
+  that are off. That is proven per lamp by a test on the last setup screen, only the
+  lamps that passed are ever pre-set, and a lamp that is ever seen coming on from such
+  a write is struck off the list by the app itself. The user can also choose that the
+  device writes to no light at all and only publishes its values for their own Flows.
 - It stands down for any light whose colour someone changes by hand, until that light
-  is switched off and on again.
+  is switched off and on again, or for four hours at most.
 
 ---
 
@@ -271,9 +273,11 @@ accident of implementation.
   a certainty rather than a risk.
 - Rotary behaviour differs by pairing path. Matter BILRESA exposes stepping with
   no release event, so no hold-ramp is offered for it.
-- Circadian lights are clock times only too — the stored anchor is a union with a
-  sunrise/sunset variant declared and deliberately refused, because real sun times
-  would need `homey:manager:geolocation`, which this app does not request.
+- A Colour Curve Light's points are clock times only. The stored anchor is a union
+  with a sunrise/sunset variant declared and deliberately refused for now: the
+  circadian light already follows the real sunrise and sunset through its three
+  zones' boundaries (the `homey:manager:geolocation` section above), but a curve
+  point anchored to the sun is not offered yet.
 - A circadian light and a schedule pointed at the same lights will disagree: the
   schedule sets a warmth at its boundary and the circadian light overwrites it within
   minutes. Stated in the README and FAQ rather than detected.
@@ -286,14 +290,17 @@ accident of implementation.
   the lights stay on until the next boundary. The app deliberately does not switch a
   household's lights off at start-up on the assumption that it once switched them on;
   it does switch them on when it starts up *inside* a window.
-- **Per-transport output latency beyond the Hue Bridge is untested**, because
-  every light on the test Homey sits behind that bridge. A `setCapabilityValue`
-  to a Hue Bridge light acks in roughly 275 ms; nothing is claimed about Zigbee
-  or Matter lights driven directly.
+- **Output latency is measured behind two integrations only.** A `setCapabilityValue`
+  to a light behind the Hue Bridge acks in roughly 275 ms, and to a Tuya bulb through
+  Tuya's own Homey app in 217–294 ms (25 October 2026). Nothing is claimed about Zigbee
+  or Matter lights driven directly, because the test Homey has none.
 
 Verified end to end on a Homey Pro 2023 (firmware 13.4.0) against IKEA STYRBAR
 (Zigbee, local), Philips Hue Dimmer v2 and Hue Tap Dial (Hue Bridge), and IKEA
-BILRESA (Matter/Thread).
+BILRESA (Matter/Thread). The scripted hardware pass — one of each device type built,
+exercised and deleted, the API key revoked and restored, the app restarted — was last
+run in full on firmware 13.5.3 with homey-api 3.21.0 on 25 October 2026: 122 checks
+passed and none failed, with the setup test on every light in a 29-lamp house.
 
 The schedule device was verified on the same Homey on 18 August 2026: a 20:25–20:30
 window over three Hue spots, both boundaries firing within ~20 ms of the clock, the

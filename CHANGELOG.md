@@ -113,8 +113,12 @@ Under the hood, and none of it in the app a Homey runs:
   functions floor beside them; the suite is past 2500 tests.
 
 - **Development tools updated** — eslint 10.13, typescript-eslint 8.72, tsx 4.23.15 and the Homey
-  CLI 4.6.1, plus `actions/setup-node` 7.1.0 in CI. `homey-api`, the app's one runtime dependency,
-  stays at the 3.19.2 verified on hardware.
+  CLI 4.6.1, plus `actions/setup-node` 7.1.0 in CI.
+- **`homey-api`, the app's one runtime dependency, moves from 3.19.2 to 3.21.0**, taken with a full
+  hardware pass on firmware 13.5.3 on 25 October 2026: 122 OK, 0 failed, the same as 3.19.2 that
+  morning. What changed for this app is the shape of a non-JSON error (its text moves from `error`
+  to `message`; nothing here reads the former) and reconnect handlers that can no longer throw. Its
+  new `jsonwebtoken` dependency is never loaded on the local path the app uses.
 - **Two vulnerable packages replaced inside the Homey CLI's own tree** with npm `overrides`: `tmp`
   to 0.2.7, and `image-size` to 0.6.2 — a step back on purpose, to the release before the parser
   with the bug existed. `CLAUDE.md` says why the forward fix (2.x) would silently switch off

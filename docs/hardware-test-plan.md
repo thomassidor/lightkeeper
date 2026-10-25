@@ -811,6 +811,13 @@ of 70 MB, 10.1 MB of it at modules-loaded. A reading about this Homey this hour 
 
 Firmware is **13.5.3**, up from 13.5.0. Nothing in `docs/homey-platform.md` was re-derived.
 
+**Then again on homey-api 3.21.0 (dependabot), the same afternoon: 122 OK, 0 failed, the same two
+skips.** That is the pass step 5 of the release checklist asks for before a `homey-api` bump is
+taken, and it is why the pin moved. T35-T41 matter most here, because 3.21.0 changed the shape of a
+non-JSON error and those lines walk every credential failure the app classifies. `memory`: 48.3 MB
+PSS at 10.7% free, heap 20.8 MB — lower than the morning's reading, and not comparable with it:
+different hour, and a restart between.
+
 **1. "Test my lights" left three Tuya bulbs at its own warmth — and they are the lights it passes.**
 The pass's T167 said every lamp was back "except where another device drives it", and excused the
 three Terrace bulbs (`com.tuya2`) as their Room-sensing Light "doing its job at switch-on". A
