@@ -46,14 +46,14 @@
     "homey-api": "3.21.0"
   },
   "devDependencies": {
-    "@tsconfig/node16": "^16.1.9",
+    "@tsconfig/node16": "^16.1.10",
     "@types/homey": "npm:homey-apps-sdk-v3-types@^0.3.12",
     "@types/node": "^20.0.0",
-    "eslint": "^10.13.0",
-    "homey": "4.6.1",
+    "eslint": "^10.15.0",
+    "homey": "4.6.3",
     "tsx": "^4.23.15",
     "typescript": "^5.4.0",
-    "typescript-eslint": "^8.72.0"
+    "typescript-eslint": "^8.72.2"
   },
   "overrides": {
     "homey": {
